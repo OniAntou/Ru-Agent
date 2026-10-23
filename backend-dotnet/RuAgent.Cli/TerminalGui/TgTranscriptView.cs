@@ -298,7 +298,10 @@ public sealed partial class TgTranscriptView : View
             ? CharacterCount(text)
             : CharacterCount(grown) - CharacterCount(last.Text);
         MarkOutputUnseen();
-        if (HasExpandedBlocks)
+        // A grown row can turn into a markdown table row; the table branch of the rebuild
+        // renders several wrapped rows for one source row, so the incremental tail reflow
+        // (which assumes the tail owns _tailRows entries) would append a second copy.
+        if (HasExpandedBlocks || grown.Contains('|'))
         {
             _wrapWidth = -1;
         }
@@ -487,6 +490,9 @@ public sealed partial class TgTranscriptView : View
             var labelEnd = text.IndexOf(' ', 2);
             if (labelEnd < 0) labelEnd = text.Length;
             SetAttribute(TgPalette.Attr(tone));
+            // One UTF-16 unit on purpose: a surrogate pair is split across the two AddStr
+            // calls exactly as the terminal writes it, and a lone surrogate would be
+            // replaced by the driver rather than dropped.
             AddStr(text[..1]);
             SetAttribute(TgPalette.Attr(tone == TuiToken.Err ? TuiToken.Err : TuiToken.Bright));
             AddStr(text[1..labelEnd]);
@@ -532,13 +538,13 @@ public sealed partial class TgTranscriptView : View
     {
         _selectedBlock = null;
         EnsureWrapped();
-        if (_followingTail)
-        {
-            _scrollTop = Math.Max(0, _wrapped.Count + LiveRows - Math.Max(1, Viewport.Height));
-            SetFollowingTail(false);
-        }
-
-        _scrollTop = Math.Clamp(_scrollTop + delta, 0, Math.Max(0, _wrapped.Count + LiveRows - Math.Max(1, Viewport.Height)));
+        // Scrolling further down while already at the bottom must leave the view following
+        // the tail: unfollowing here raised the "new output" hint even though the operator
+        // was looking at the newest row.
+        var maxTop = Math.Max(0, _wrapped.Count + LiveRows - Math.Max(1, Viewport.Height));
+        var from = _followingTail ? maxTop : _scrollTop;
+        _scrollTop = Math.Clamp(from + delta, 0, maxTop);
+        SetFollowingTail(_scrollTop >= maxTop);
         SetNeedsDraw();
     }
 
@@ -552,7 +558,12 @@ public sealed partial class TgTranscriptView : View
         }
         else if (_tailDirty && _lines.Count > 0)
         {
-            _wrapped.RemoveRange(_wrapped.Count - _tailRows, _tailRows);
+            var take = Math.Clamp(_tailRows, 0, _wrapped.Count);
+            if (take > 0)
+            {
+                _wrapped.RemoveRange(_wrapped.Count - take, take);
+            }
+
             _tailRows = AppendWrapped(_lines[^1].Text, _lines[^1].Style, _lines[^1].Spans, width);
             _tailDirty = false;
         }

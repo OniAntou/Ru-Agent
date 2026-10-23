@@ -671,8 +671,11 @@
                         <TextBlock Text="Keys stay in Windows Credential Manager. Choose a model from the chat composer after connecting."
                                    Style="{StaticResource SettingDescStyle}" />
                     </StackPanel>
-                    <StackPanel x:Name="ProviderEditor" Spacing="24"
-                                Visibility="{x:Bind ViewModel.IsProviderEditorOpen, Mode=OneWay}">
+                    <ContentControl x:Name="ProviderEditor"
+                                    HorizontalContentAlignment="Stretch"
+                                    IsEnabled="{x:Bind ViewModel.IsProviderManagementEnabled, Mode=OneWay}"
+                                    Visibility="{x:Bind ViewModel.IsProviderEditorOpen, Mode=OneWay}">
+                        <StackPanel Spacing="24">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                             <Button x:Name="ProviderBackButton" Content="Back" Command="{x:Bind ViewModel.ReturnToProvidersCommand}"
                                     IsEnabled="{x:Bind ViewModel.IsProviderNavigationEnabled, Mode=OneWay}"
@@ -826,7 +829,8 @@
                         </Border>
                         <TextBlock Text="Changes save automatically. This provider will be used for new runs; choose its model in chat."
                                    Style="{StaticResource SettingDescStyle}" />
-                    </StackPanel>
+                        </StackPanel>
+                    </ContentControl>
                 </StackPanel>
             </ScrollViewer>
             <!-- Approval rules: what "Always allow" remembered, and the way to forget it. -->

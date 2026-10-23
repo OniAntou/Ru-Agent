@@ -202,6 +202,10 @@ the extracted session payload, not to the whole database. Only the CLI reads
 that `.db` store: the desktop picker imports `.jsonl` (Claude Code, Codex,
 Antigravity) and points opencode users at
 `ru agent session import <opencode.db> --harness opencode`.
+The supported SQLite layout is OpenCode v1: scalar `session` metadata columns
+and JSON `message.data`/`part.data` payloads. Missing columns and newer layouts
+such as `session_v2` fail with `opencode_schema_unsupported` rather than being
+guessed. Database paths containing semicolons are handled as literal paths.
 
 ### RPC subscriptions can end without a terminal event
 

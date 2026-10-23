@@ -15,7 +15,10 @@ public sealed record ToolExecutionContext(
     IReadOnlySet<string>? SessionScopes = null,
     string RunId = "",
     bool IsAuthenticatedV2Execution = false,
-    bool ImageInputAccepted = false);
+    bool ImageInputAccepted = false)
+{
+    internal Terminal.CanonicalCommandIntent? AuthorizedTerminalIntent { get; init; }
+}
 
 public sealed record ToolExecutionOutcome(
     string Status,

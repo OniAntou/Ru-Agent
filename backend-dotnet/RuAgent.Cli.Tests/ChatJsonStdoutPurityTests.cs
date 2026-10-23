@@ -41,9 +41,14 @@ public sealed class ChatJsonStdoutPurityTests
 
     private static List<string> AssertStdoutIsNdjson(string stdout)
     {
-        var lines = stdout
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToList();
+        // Blank lines are a contract violation, not noise: a consumer reading this stream
+        // line by line must never see one. Stripping them here is what hid a real leak
+        // (the transcript renderer used to write its turn separator to stdout in --json).
+        var raw = stdout.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n');
+        var rawLines = raw.Length == 0 ? [] : raw.Split('\n');
+        Assert.DoesNotContain(rawLines, line => line.Trim().Length == 0);
+
+        var lines = rawLines.Select(line => line.Trim()).Where(line => line.Length > 0).ToList();
         foreach (var line in lines)
         {
             using var document = JsonDocument.Parse(line);
@@ -192,6 +197,88 @@ public sealed class ChatJsonStdoutPurityTests
         // Only the one scripted prompt line was read: the approval itself never reads stdin
         // and the chat exits instead of asking for another prompt the consumer must not answer.
         Assert.Equal(1, reader.ReadCount);
+    }
+
+    [Fact]
+    public async Task ChatAsync_Json_CompletedTurn_KeepsStdoutPure()
+    {
+        // Regression: the transcript renderer used to write its turn separator and its
+        // completion footer to stdout even in --json. The assertion above strips nothing,
+        // and this case drives a turn all the way to a completed state event.
+        var outWriter = new StringWriter();
+        var errWriter = new StringWriter();
+        // The turn completes normally, so the loop asks for the next line; /exit ends it.
+        var reader = new ScriptedThrowingReader("hello\n/exit\n");
+        var commands = CreateCommands(request =>
+        {
+            var uri = request.RequestUri!.ToString();
+            if (request.Method == HttpMethod.Get && uri.Contains("/settings"))
+            {
+                return Settings();
+            }
+
+            if (request.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies", StringComparison.Ordinal))
+            {
+                return Json(JsonSerializer.Serialize(new { session_id = SessionId, preset = "standard", version = 1 }));
+            }
+
+            if (request.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/runs", StringComparison.Ordinal))
+            {
+                return Json(JsonSerializer.Serialize(new
+                {
+                    run_id = RunId,
+                    session_id = SessionId,
+                    workspace_id = "ws_" + new string('c', 32),
+                    status = "running",
+                    preset = "standard",
+                    created_at = "2026-09-30T00:00:00Z",
+                    updated_at = "2026-09-30T00:00:00Z",
+                }), HttpStatusCode.Created);
+            }
+
+            if (request.Method == HttpMethod.Get && uri.Contains("/agent/v1/runs/", StringComparison.Ordinal)
+                && !uri.Contains("/events", StringComparison.Ordinal))
+            {
+                return Json(JsonSerializer.Serialize(new
+                {
+                    run_id = RunId,
+                    session_id = SessionId,
+                    workspace_id = "ws_" + new string('c', 32),
+                    status = "completed",
+                    preset = "standard",
+                    last_sequence = 2,
+                    created_at = "2026-09-30T00:00:00Z",
+                    updated_at = "2026-09-30T00:00:02Z",
+                    terminal_at = "2026-09-30T00:00:02Z",
+                }));
+            }
+
+            if (request.Method == HttpMethod.Get && uri.Contains("/events", StringComparison.Ordinal))
+            {
+                string Frame(int sequence, string status, string summary, string eventId) =>
+                    $"id: {sequence}\n" +
+                    $"data: {{\"protocol_version\":1,\"event_id\":\"{eventId}\",\"run_id\":\"{RunId}\",\"session_id\":\"{SessionId}\",\"sequence\":{sequence},\"event_type\":\"run.state_changed\",\"occurred_at\":\"2026-09-30T00:00:0{sequence}Z\",\"status\":\"{status}\",\"safe_summary\":\"{summary}\"}}\n\n";
+
+                var sse = Frame(1, "running", "started", "evt_" + new string('e', 32))
+                    + Frame(2, "completed", "done", "evt_" + new string('f', 32));
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+                };
+            }
+
+            return Json("{}", HttpStatusCode.NotFound);
+        }, outWriter, errWriter, reader);
+
+        var exit = await commands.ChatAsync(
+            new ChatCommand("C:\\workspace", SessionId, "standard", Json: true),
+            CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        var lines = AssertStdoutIsNdjson(outWriter.ToString());
+        Assert.Contains(lines, line => line.Contains("\"event_type\":\"run.state_changed\"", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Contains("\"status\":\"completed\"", StringComparison.Ordinal));
+        Assert.True(lines.Count >= 2, "expected the durable frames on stdout: " + outWriter);
     }
 
     private sealed class FakeHandler : HttpMessageHandler

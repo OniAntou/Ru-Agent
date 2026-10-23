@@ -21,7 +21,7 @@ public sealed class StructuredTranscriptTests
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
         var writer = new TgTranscriptWriter(app, window.Transcript);
-        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true };
         app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
         {
@@ -148,7 +148,7 @@ public sealed class StructuredTranscriptTests
     {
         using var color = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
         var writer = new PresentationProbe();
-        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true };
         transcript.BeginTurn();
         transcript.AppendAssistant("# Heading\nHi **there** and `README.md`\n```cs\nreturn 42;\n```\n");
@@ -175,7 +175,7 @@ public sealed class StructuredTranscriptTests
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
         var writer = new TgTranscriptWriter(app, window.Transcript);
-        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true };
         app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
         {

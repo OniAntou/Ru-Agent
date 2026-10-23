@@ -88,18 +88,13 @@ internal sealed class RunStartCore
         }
         catch (AgentApiException ex)
         {
-            if (IsPreCommitPresetError(ex))
+            // A pre-commit rejection never mutated the session, so there is nothing to roll
+            // back. Anything later may have committed, and the restore runs either way: the
+            // old two-branch form reported the same failure whether or not it succeeded.
+            if (!IsPreCommitPresetError(ex))
             {
-                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
-                return null;
-            }
-
-            if (!await RestorePresetOrReportAsync(
-new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
-                .ConfigureAwait(false))
-            {
-                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
-                return null;
+                await RestorePresetOrReportAsync(new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                    .ConfigureAwait(false);
             }
 
             await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
@@ -107,25 +102,14 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (OperationCanceledException)
         {
-            if (!await RestorePresetOrReportAsync(
-new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
-                .ConfigureAwait(false))
-            {
-                throw;
-            }
-
+            await RestorePresetOrReportAsync(new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                .ConfigureAwait(false);
             throw;
         }
         catch (Exception ex)
         {
-            if (!await RestorePresetOrReportAsync(
-new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
-                .ConfigureAwait(false))
-            {
-                await _err.WriteLineAsync($"preset_update_failed: {ex.Message}").ConfigureAwait(false);
-                return null;
-            }
-
+            await RestorePresetOrReportAsync(new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                .ConfigureAwait(false);
             await _err.WriteLineAsync($"preset_update_failed: {ex.Message}").ConfigureAwait(false);
             return null;
         }

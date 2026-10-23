@@ -46,15 +46,6 @@ public sealed class TuiStatusLine
     /// <summary>Elapsed seconds of the turn in progress.</summary>
     public double ElapsedSeconds => _elapsedSeconds;
 
-    /// <summary>True while this row owns the current terminal line.</summary>
-    public bool IsLive { get; set; }
-
-    /// <summary>
-    /// True when the row is painted inside the sticky footer instead of at the transcript
-    /// cursor, so transcript appends must not repaint it.
-    /// </summary>
-    public bool InFooter { get; set; }
-
     public void SetState(TuiRunState state)
     {
         _state = state;
@@ -126,38 +117,6 @@ public sealed class TuiStatusLine
         _responding = false;
     }
 
-    /// <summary>
-    /// Serializes the live-row check and the paint against <see cref="Clear"/>:
-    /// a ticker that read <see cref="IsLive"/> just before a stop must not paint
-    /// over the row the stop cleared.
-    /// </summary>
-    private readonly object _liveGate = new();
-
-    public void Render(int width)
-    {
-        lock (_liveGate)
-        {
-            if (!IsLive || InFooter)
-            {
-                return;
-            }
-
-            _surface.RepaintSingleLine(Compose(width), width);
-        }
-    }
-
-    public void Clear(int width)
-    {
-        lock (_liveGate)
-        {
-            IsLive = false;
-            _surface.ClearSingleLine(width);
-        }
-    }
-
-    /// <summary>The composed row to repaint after a transcript block, or null when the row is idle.</summary>
-    public string? LiveRow(int width) => IsLive && !InFooter ? Compose(width) : null;
-
     /// <summary>Pure composition of the live row; every line is exactly <paramref name="width"/> cells.</summary>
     public string Compose(int width)
     {
@@ -194,9 +153,11 @@ public sealed class TuiStatusLine
         switch (_state)
         {
             case TuiRunState.Thinking:
+                // Same wording as Presentation(): the classic row used to keep saying
+                // "Thinking" while the TG row already reported "Writing response".
                 return TuiPalette.Paint(SpinnerFrame, TuiToken.Brand)
                     + " "
-                    + TuiPalette.Paint("Thinking", TuiToken.Meta)
+                    + TuiPalette.Paint(_responding ? "Writing response" : "Thinking", TuiToken.Meta)
                     + TuiPalette.Paint(" · " + FormatElapsed(_elapsedSeconds), TuiToken.Line);
             case TuiRunState.Tool:
                 var label = string.IsNullOrWhiteSpace(_activity) ? "Running tool" : _activity;

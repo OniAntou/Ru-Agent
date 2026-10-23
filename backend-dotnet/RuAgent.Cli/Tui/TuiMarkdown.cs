@@ -40,7 +40,7 @@ public sealed partial class TuiMarkdown
     public bool HighlightCode { get; set; }
 
     public IReadOnlyList<string> RenderLogicalLine(string line, int width) =>
-        !InFence && line.Contains('|') ? [line]
+        !InFence && IsTableCandidate(line) ? [line]
             : RenderLine(line, TryRule(line, out _) ? width : Math.Max(width, line.Length + 16));
 
     public string PreviewLine(string line, int width)
@@ -238,6 +238,35 @@ public sealed partial class TuiMarkdown
 
     private static bool IsEscapable(char c) => !char.IsLetterOrDigit(c);
 
+     /// <summary>
+    /// A row the transcript's table renderer may group: outer pipes plus at least two
+    /// separators. Inner-pipe prose stays on the normal inline path.
+    /// </summary>
+    private static bool IsTableCandidate(string line)
+    {
+        var trimmed = line.AsSpan().Trim();
+        if (trimmed.Length < 3)
+        {
+            return false;
+        }
+
+        if (trimmed[0] != '|' && trimmed[^1] != '|')
+        {
+            return false;
+        }
+
+        var pipes = 0;
+        foreach (var c in trimmed)
+        {
+            if (c == '|')
+            {
+                pipes++;
+            }
+        }
+
+        return pipes >= 2;
+    }
+
     private static bool IsFenceLine(string line)
     {
         var trimmed = line.AsSpan().TrimStart();
@@ -394,7 +423,9 @@ public sealed partial class TuiMarkdown
     private static string CodeRow(string line, int width)
     {
         var body = TuiText.Truncate(TuiText.Strip(line), Math.Max(1, width - TuiText.VisibleWidth(Gutter)));
-        return TuiPalette.DimPaint(Gutter) + TuiPalette.Paint(body, TuiToken.Meta);
+        // Code is the content the operator came to read: paint it at ink weight and let the
+        // gutter recede, instead of dimming both into one grey band.
+        return TuiPalette.Paint(Gutter, TuiToken.Line) + TuiPalette.Paint(body, TuiToken.Ink);
     }
 
     /// <summary>

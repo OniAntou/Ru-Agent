@@ -17,7 +17,8 @@ public static class TgPalette
         return new Color(r, g, b, 255);
     }
 
-    public static Color ToColor((int R, int G, int B) rgb) => new(rgb.R, rgb.G, rgb.B, 255);
+    public static Color ToColor((int R, int G, int B) rgb) =>
+        new(Math.Clamp(rgb.R, 0, 255), Math.Clamp(rgb.G, 0, 255), Math.Clamp(rgb.B, 0, 255), 255);
 
     /// <summary>
     /// The floating card's cool neutral fill separates it from the prompt surface.

@@ -122,7 +122,7 @@ public sealed class TgTranscriptWriterTests
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
         var writer = new TgTranscriptWriter(app, window.Transcript);
-        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { Width = 60 };
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
@@ -151,7 +151,7 @@ public sealed class TgTranscriptWriterTests
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
         var writer = new TgTranscriptWriter(app, window.Transcript);
-        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 40 };
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
@@ -416,7 +416,7 @@ public sealed class TgTranscriptWriterTests
         using var pinned = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
         using var window = TgChatWindow.Build();
         var writer = new TgTranscriptWriter(app, window.Transcript);
-        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
@@ -449,7 +449,7 @@ public sealed class TgTranscriptWriterTests
         using var pinned = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
         using var window = TgChatWindow.Build();
         var writer = new TgTranscriptWriter(app, window.Transcript);
-        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
@@ -507,14 +507,14 @@ public sealed class TgTranscriptWriterTests
     /// the span transcript must keep that paint instead of stripping it back to plain rows.
     /// </summary>
     [Fact]
-    public async void RecoveredReplyKeepsItsMarkdownSpans()
+    public void RecoveredReplyKeepsItsMarkdownSpans()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var pinned = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
         using var window = TgChatWindow.Build();
         var writer = new TgTranscriptWriter(app, window.Transcript);
-        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
         const string full = "So du: **0.007347 USD** trong `models`.";
         var pending = Task<bool>.FromResult(true);
@@ -566,14 +566,14 @@ public sealed class TgTranscriptWriterTests
 
     /// <summary>Reconciliation of an unpainted reply must not leak raw markdown markers.</summary>
     [Fact]
-    public async void RecoveredPlainReplyStaysPlainWithoutRawMarkers()
+    public void RecoveredPlainReplyStaysPlainWithoutRawMarkers()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var pinned = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
         using var window = TgChatWindow.Build();
         var writer = new TgTranscriptWriter(app, window.Transcript);
-        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
         const string full = "So du o dong trong suot.";
         var pending = Task<bool>.FromResult(true);

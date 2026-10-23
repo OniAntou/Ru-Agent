@@ -57,10 +57,15 @@ public sealed partial class ToolExecutionService
         CancellationToken cancellationToken) =>
         ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: true);
 
+    internal Task<ToolResult> ExecuteAuthenticatedV2Async(
+        AgentEnvelope request, CanonicalCommandIntent intent, CancellationToken cancellationToken) =>
+        ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: true, intent);
+
     private async Task<ToolResult> ExecuteAsync(
         AgentEnvelope request,
         CancellationToken cancellationToken,
-        bool isAuthenticatedV2Execution)
+        bool isAuthenticatedV2Execution,
+        CanonicalCommandIntent? authorizedTerminalIntent = null)
     {
         var started = Stopwatch.StartNew();
         try
@@ -159,7 +164,7 @@ public sealed partial class ToolExecutionService
                 approvalToken: null,
                 ReadOptionalString(request.Payload, "run_id") ?? request.SessionId,
                 isAuthenticatedV2,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken, authorizedTerminalIntent).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -468,7 +473,8 @@ public sealed partial class ToolExecutionService
         string? approvalToken,
         string runId,
         bool isAuthenticatedV2Execution,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        CanonicalCommandIntent? authorizedTerminalIntent = null)
     {
         var started = Stopwatch.StartNew();
         try
@@ -518,7 +524,10 @@ public sealed partial class ToolExecutionService
             sessionScopes,
             runId,
             IsAuthenticatedV2Execution: isAuthenticatedV2Execution,
-            ImageInputAccepted: ReadImageInputAccepted(contextRequest.Payload));
+            ImageInputAccepted: ReadImageInputAccepted(contextRequest.Payload))
+        {
+            AuthorizedTerminalIntent = isAuthenticatedV2Execution ? authorizedTerminalIntent : null,
+        };
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         if (!IsTerminalRunOrShellCall(ReadString(contextRequest.Payload, "tool_id"), arguments))

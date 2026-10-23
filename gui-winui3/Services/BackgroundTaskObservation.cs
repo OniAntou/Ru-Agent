@@ -18,8 +18,16 @@ public sealed class BackgroundTaskObservation
         _failures = 0;
     }
 
-    public void Fail()
+    public void Fail(bool retryable = true)
     {
+        if (!retryable)
+        {
+            _failures = 0;
+            Status = Rows.Count > 0
+                ? "Task status unavailable · showing last known tasks."
+                : "Task status unavailable for this run.";
+            return;
+        }
         _failures = Math.Min(4, _failures + 1);
         Status = Rows.Count > 0
             ? "Refresh unavailable · showing last known tasks. Retrying…"

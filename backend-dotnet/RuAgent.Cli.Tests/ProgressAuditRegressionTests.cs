@@ -192,7 +192,7 @@ public sealed class ProgressAuditRegressionTests
         {
             using var color = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
             var writer = new TgTranscriptWriter(app, window.Transcript);
-            var surface = new TuiSurface(writer) { SuppressRepaints = true };
+            var surface = new TuiSurface(writer);
             var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
             if (split > 0)
             {
@@ -258,7 +258,7 @@ public sealed class ProgressAuditRegressionTests
         RunUi((app, window, _) =>
         {
             var writer = new TgTranscriptWriter(app, window.Transcript);
-            var surface = new TuiSurface(writer) { SuppressRepaints = true };
+            var surface = new TuiSurface(writer);
             var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
             transcript.AppendAssistant(table
                 ? "| File | Value |\n| --- | --- |\n| README.md | 140,600 |\n"

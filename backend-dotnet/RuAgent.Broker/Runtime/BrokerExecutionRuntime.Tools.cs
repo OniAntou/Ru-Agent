@@ -29,6 +29,17 @@ public sealed partial class BrokerExecutionRuntime
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            var preparedRunId = ReadRunIdOrSession(request);
+            if (!TryGetOwnedRunLease(request, preparedRunId, out var preparedLease, out var preparedLeaseError) || preparedLease is null)
+            {
+                return ToolExecutionReply.Error(preparedLeaseError, "run lease is not open");
+            }
+
+            if (preparedLease.Lifetime.IsRevoked && !_delegations.ContainsKey(preparedRunId))
+            {
+                return ToolExecutionReply.Error("run_not_open", "run was cancelled before execution started");
+            }
+
             preparation = PrepareToolExecute(request);
         }
         finally
@@ -45,15 +56,21 @@ public sealed partial class BrokerExecutionRuntime
         // close raced with the preparation): the token is one-time, so check the
         // lease again before invoking the handler.
         var runId = ReadRunIdOrSession(request);
-        if (!TryGetOwnedRunLease(request, runId, out _, out var leaseError))
+        if (!TryGetOwnedRunLease(request, runId, out var lease, out var leaseError) || lease is null)
         {
             return ToolExecutionReply.Error(leaseError, "run lease is not open");
+        }
+
+        if (lease.Lifetime.IsRevoked && !_delegations.ContainsKey(runId))
+        {
+            return ToolExecutionReply.Error("run_not_open", "run was cancelled before execution started");
         }
 
         var executionToken = registration.Token;
         if (executionToken.IsCancellationRequested)
         {
-            return ToolExecutionReply.Error("run_not_open", "run was cancelled before execution started");
+            var errorCode = _delegations.ContainsKey(runId) ? "subagent_parent_revoked" : "run_not_open";
+            return ToolExecutionReply.Error(errorCode, "run was cancelled before execution started");
         }
 
         using var telemetryActivity = BrokerTelemetry.StartToolActivity();
@@ -97,10 +114,14 @@ public sealed partial class BrokerExecutionRuntime
             return new ToolEvaluateResult(new RuntimeError(leaseError, "run lease is not open"), null);
         }
 
+        if (lease.Lifetime.IsRevoked && !_delegations.ContainsKey(runId))
+        {
+            return new ToolEvaluateResult(new RuntimeError("run_not_open", "run lease is not open"), null);
+        }
+
         if (!lease.AdvertisedCapabilities.Contains(toolId))
         {
-            // Phase 2 advertises only files.list/files.read; terminal and mutation tools stay
-            // unadvertised until their phases land, regardless of what a rule might allow.
+            // A policy rule cannot grant a tool absent from this lease's advertised surface.
             return new ToolEvaluateResult(new RuntimeError("phase_not_available", "tool is not advertised yet"), null);
         }
 
@@ -122,6 +143,9 @@ public sealed partial class BrokerExecutionRuntime
 
         var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants)
             .Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
+
+        if (evaluation.Decision != "deny" && context.TerminalResolutionError is { } resolutionError)
+            return new ToolEvaluateResult(null, DecisionReply("deny", resolutionError, null));
 
         var delegation = EvaluateDelegation(lease, context);
         if (delegation is { Decision: "deny" } || delegation is { Decision: "ask" } && evaluation.Decision == "allow")
@@ -284,6 +308,9 @@ public sealed partial class BrokerExecutionRuntime
         if (EvaluateDelegation(lease, authContext) is { Decision: "deny" } delegatedDenial)
             return new ToolExecutePreparation(ToolExecutionReply.Error(delegatedDenial.ReasonCode, "delegation denied execution"), null);
 
+        if (authContext.TerminalResolutionError is not null)
+            return new ToolExecutePreparation(ToolExecutionReply.Error("decision_stale", "terminal target is no longer available"), null);
+
         var expected = new ApprovalBinding(
             RequestId: runId,
             SessionId: request.SessionId,
@@ -305,7 +332,10 @@ public sealed partial class BrokerExecutionRuntime
             ? new ToolExecutePreparation(
                 ToolExecutionReply.Error("broker_not_ready", "tool execution is not registered"),
                 null)
-            : new ToolExecutePreparation(null, _authenticatedToolHandler);
+            : new ToolExecutePreparation(null,
+                _authenticatedTerminalHandler is { } terminalHandler && authContext.TerminalIntent is { } intent
+                    ? (envelope, ct) => terminalHandler(envelope, intent, ct)
+                    : _authenticatedToolHandler);
     }
 
     /// <summary>

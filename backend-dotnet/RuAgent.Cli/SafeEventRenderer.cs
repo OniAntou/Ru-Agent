@@ -1,8 +1,15 @@
+using System.Text;
 using System.Text.Json;
 using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli;
 
+/// <summary>
+/// Human-readable rendering of the durable event stream for the append-only commands
+/// (<c>agent run</c>, <c>agent attach</c>). Safe envelope fields only: the stream never
+/// carries prompt, command, output or secret text, and a transient frame carries raw
+/// model/tool content that this renderer deliberately withholds.
+/// </summary>
 public static class SafeEventRenderer
 {
     public static void Render(HarnessSafeEventEnvelope envelope, TextWriter writer)
@@ -31,15 +38,16 @@ public static class SafeEventRenderer
     {
         ArgumentNullException.ThrowIfNull(frame);
         ArgumentNullException.ThrowIfNull(writer);
+
         if (frame.IsTransient)
         {
-            // Transient frames are connection-local and do not advance durable cursor.
-            // Render only safe bounded preview, never raw private content.
-            var preview = frame.Data.Length > 200 ? frame.Data.Substring(0, 200) + "..." : frame.Data;
-            // Ensure no forbidden fields leak (defensive)
-            if (ContainsForbidden(preview))
-                preview = "[redacted]";
-            writer.WriteLine($"[transient:{frame.TransientSequence}] {frame.EventType} {preview}");
+            // Transient frames are connection-local and carry raw model text or tool output
+            // in their data. Printing even a prefix of it contradicts the tracer contract and
+            // the "safe fields only" promise this class documents, and the substring guard
+            // that used to police it both missed nested payloads and redacted ordinary prose
+            // that merely quoted a field name. Report the shape, never the bytes.
+            var bytes = Encoding.UTF8.GetByteCount(frame.Data ?? string.Empty);
+            writer.WriteLine($"[transient:{frame.TransientSequence}] {frame.EventType} data_bytes={bytes}");
             return;
         }
 
@@ -73,14 +81,7 @@ public static class SafeEventRenderer
 
     private static string Escape(string s)
     {
-        if (s.Length > 500) return s.Substring(0, 500) + "...";
+        if (s.Length > 500) return Tui.TuiText.SafeCut(s, 500) + "...";
         return s.Replace("\n", " ").Replace("\r", " ");
-    }
-
-    private static bool ContainsForbidden(string json)
-    {
-        // Quick check for forbidden field names that must never appear in safe output
-        var lower = json.ToLowerInvariant();
-        return lower.Contains("\"prompt\"") || lower.Contains("\"command\"") || lower.Contains("\"output\"") || lower.Contains("\"secret\"") || lower.Contains("\"argv\"") || lower.Contains("\"diff\"");
     }
 }

@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
+using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
@@ -18,6 +19,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
     private readonly BrokerSession _session;
     private readonly IReadOnlySet<string> _executableScopes;
     private readonly Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? _authenticatedToolHandler;
+    private readonly Func<AgentEnvelope, CanonicalCommandIntent, CancellationToken, Task<ToolResult>>? _authenticatedTerminalHandler;
     private readonly Func<string, string?, JsonObject>? _sessionTasksHandler;
     private readonly Func<string, Task>? _sessionClosedHandler;
     private readonly Func<string, Task>? _sessionGrantsRevokedHandler;
@@ -95,6 +97,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _executableScopes = backend.ExecutableScopes;
         _authenticatedToolHandler = backend.AuthenticatedToolHandler;
+        _authenticatedTerminalHandler = backend.AuthenticatedTerminalHandler;
         _sessionTasksHandler = backend.SessionTasksHandler;
         _sessionClosedHandler = backend.SessionClosedHandler;
         _sessionGrantsRevokedHandler = backend.SessionGrantsRevokedHandler;
@@ -129,6 +132,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
             foreach (var runId in runIds)
             {
                 _runCancellations.CancelRun(runId);
+                _runCancellations.UnbindRun(runId);
                 _pendingV2.RemoveRun(runId);
             }
 
@@ -263,12 +267,19 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
                 return new RunLeaseResult(new RuntimeError(errorCode ?? "lease_failed", "run lease failed"));
             }
 
+            if (!_session.TryGetRunLease(lease.RunId, out var boundLease) || boundLease is null)
+            {
+                return new RunLeaseResult(new RuntimeError("run_not_open", "run lease is not open"));
+            }
+
+            _runCancellations.BindRun(boundLease.RunId, boundLease.Lifetime);
+
             return new RunLeaseResult(
                 null,
-                lease.RunId,
-                lease.Snapshot.Version,
-                lease.BindingVersion,
-                lease.AdvertisedCapabilities);
+                boundLease.RunId,
+                boundLease.Snapshot.Version,
+                boundLease.BindingVersion,
+                boundLease.AdvertisedCapabilities);
         }
         catch (AgentProtocolException error)
         {
@@ -327,6 +338,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
         CancelRun(runId);
         if (_session.TryCloseRun(runId))
         {
+            _runCancellations.UnbindRun(runId, lease.Lifetime);
             return new RunCloseResult(null, Closed: true, RunId: runId);
         }
 
@@ -361,7 +373,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
         _session.DirectoryGrants.RevokeSession(targetSessionId);
         foreach (var runId in _session.RunIdsForSession(targetSessionId))
         {
-            _runCancellations.CancelRun(runId);
+            _runCancellations.CancelActiveRun(runId);
         }
         if (_sessionGrantsRevokedHandler is { } revoke)
         {
@@ -512,7 +524,8 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
         Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? AuthenticatedToolHandler,
         Func<string, string?, JsonObject>? SessionTasksHandler,
         Func<string, Task>? SessionClosedHandler,
-        Func<string, Task>? SessionGrantsRevokedHandler = null)
+        Func<string, Task>? SessionGrantsRevokedHandler = null,
+        Func<AgentEnvelope, CanonicalCommandIntent, CancellationToken, Task<ToolResult>>? AuthenticatedTerminalHandler = null)
     {
         public static ToolExecutionBackend From(ToolExecutionService tools)
         {
@@ -522,7 +535,8 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
                 (request, cancellationToken) => tools.ExecuteAuthenticatedV2Async(request, cancellationToken),
                 tools.HandleSessionTasks,
                 tools.RemoveSessionAsync,
-                tools.RevokeSessionGrantsAsync);
+                tools.RevokeSessionGrantsAsync,
+                (request, intent, ct) => tools.ExecuteAuthenticatedV2Async(request, intent, ct));
         }
     }
 }

@@ -122,7 +122,14 @@ public sealed class SkillBodyStore
     {
         try
         {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+            using var stream = HardLinkGuard.OpenRead(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                4096,
+                FileOptions.SequentialScan);
+            HardLinkGuard.RequireFinalPathMatches(stream.SafeFileHandle, path);
             var bytes = new byte[64 * 1024 + 1];
             var count = 0;
             while (count < bytes.Length)

@@ -14,6 +14,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **feat(agent)**: MCP servers (ADR 0025). Declare stdio servers in `~/.ru/mcp.json` (credentials by Windows Credential Manager entry name) and the agent gets one `mcp` tool: `list_servers`, `list_tools` and `call`. The Broker starts each server once per Host inside a kill-on-close job object; calls are bounded, text-only, untrusted and redacted. Starting or calling a server asks in Standard (`mcp_call_requires_approval`, "Always allow" remembers one server and tool), is denied in Plan and runs in Full Access. Workspace files never declare servers, and subagents do not get the tool.
 
 - **fix(security)**: A workspace's own `Stop` hook no longer runs when the run finished without the workspace being trusted. Declining (or letting expire) the trust prompt finishes the run, and the first release of Stop hooks then ran the cloned repository's `.ru\hooks.json` command at exactly that moment. Trust is now read when the hook fires; an untrusted workspace or a failed lookup runs only the user's own Stop hooks, from the profile folder.
+- **fix(gui)**: A retained run without a live tool gateway now reports unavailable
+  background-task status without endlessly promising retries after completion.
+  Known running tasks remain visible and continue refreshing.
+
+- **fix(cli)**: Host bookkeeping events no longer print as feed rows. `run.note_added`
+  (runtime-context snapshots, compaction checkpoints, recovery notes, subagent
+  inbox/apply records), `context.compacted` and `input.requested` used to fall through to
+  the unknown-event fallback and appear as `[seq] run.note_added: runtime_context_snapshot`;
+  every such row also closed the tool block, so the feed summary disappeared and the
+  tools looked like scattered lines. They are now silent (debug log only); the approval
+  and compaction paths keep their own, readable notices.
+
+- **feat(cli)**: The transcript feed reads as a block instead of a log. Consecutive tool
+  calls are indented together and close with a summary (`4 tools · 9.6s`, marked `✗` when
+  one failed); each tool row orders outcome glyph, muted name, brightest target and
+  receding metrics with a unit that follows the tool (`132 lines`, `3 matches`, `+18 −2`,
+  `1.2s`); notices keep the dim bullet and paint their message in its own tone; fenced
+  code prints at ink weight behind a dim gutter; and the live row shares the tool row's
+  two-cell indent so it settles in place. The summary trails the block because terminal
+  output is append-only in both sinks.
+
+- **fix(broker)**: Skill bodies now use handle-based hard-link checks. Run cancellation
+  revokes the current lease and covers tools registering concurrently; revoking folder
+  grants still permits subsequent approval requests. Terminal approvals bind the resolved
+  executable and cwd, and dispatch uses that same canonical command intent.
+- **fix(host)**: Provider snapshot loads share work per run without blocking unrelated
+  runs or cached reads. Subagent apply/inspection operations serialize per root run
+  instead of across all workspaces.
+- **fix(clients)**: TUI shutdown retains pending run creation through acknowledgement
+  and cancellation settlement. Settings disables provider editing while Back saves and
+  reloads. Public Host startup preserves caller cancellation. The TypeScript SDK can
+  launch Windows batch paths containing spaces and rejects unsafe batch arguments.
+- **fix(import)**: OpenCode SQLite import reads the v1 scalar session columns and
+  validates the schema; unsupported database layouts return a named failure.
+
+- **refactor(cli)**: Terminal.Gui is the only interactive terminal engine. The
+  append-only path is now a printer: cursor tracking, sticky footer, live-row repaint,
+  resize rebuild and the three-row composer were unreachable in production (the CLI
+  suppressed repaints unconditionally), so they and their tests are gone. The fallback
+  still prints the same transcript rows, panels and colours; nothing visible to the
+  interactive terminal changed.
+
+- **fix(tui)**: The terminal text layer is now one engine for both sinks. Measurement,
+  wrapping and rune decoding live in `TuiText`; the Terminal.Gui importer and the
+  append-only writer no longer carry their own width table, rune decoder or escape
+  skipper. Common emoji (🚀, ✅, ⚡, ⭐) measure two cells instead of one, tabs advance to
+  the shared 8-column stops, and an unpaired UTF-16 surrogate is rendered as U+FFFD
+  instead of throwing: `char.ConvertToUtf32` used to abort the turn from inside the paint
+  path whenever a 500-character summary or a `[..^1]` hint trim split a pair.
+- **fix(cli)**: `agent chat --json` no longer writes to stdout through the transcript
+  renderer. A turn used to emit a blank line (and, on completion, the human footer and
+  the "no text arrived" notice) into the NDJSON stream; the renderer now paints into a
+  null sink while still tracking streamed text for recovery. The stdout-purity test no
+  longer strips empty lines, and a completed-turn case covers it.
+- **fix(cli)**: SGR colours outside the valid range (`38;5;300`, `38;2;999;0;0`, negative
+  operands) are clamped or fall back to the default ink. They used to reach Terminal.Gui's
+  `Color` constructor and throw `OverflowException`/`ArgumentOutOfRangeException` from
+  inside the transcript import, aborting the frame.
+- **fix(cli)**: `agent run`/`agent attach` no longer print a 200-character prefix of a
+  transient frame. The preview carried raw model prose, and its forbidden-field guard was
+  a substring match that also redacted ordinary sentences quoting a field name; transient
+  frames now report only their type and byte count.
+- **fix(cli)**: `agent policy import` rolls back the rules it already created when a later
+  rule fails, and names any rule the rollback could not remove. It used to leave a partial
+  policy the operator never confirmed.
+- **fix(cli)**: `agent session export/import` validate the session id, harness name, file
+  and output paths and reject duplicate switches, like every other parser. `run` and `chat`
+  now share one option parser instead of two drifting copies.
+- **fix(tui)**: A completed streaming row that has become a markdown table is rebuilt
+  instead of appended twice, scrolling down at the tail no longer raises the "new output"
+  hint, ctrl+o retained rows are replaced per affordance and capped at 16,000 units, and
+  the append-only history honours the documented 200,000-character budget and 16,000-unit
+  line cap. The live row says "Writing response" in both engines.
+- **fix(cli)**: A refused composer submission now distinguishes an oversized prompt from a
+  command carrying attachments, the queue releases temp files outside its lock, and a
+  clipboard read abandoned after its 5-second join deletes the temp PNG it produced.
 
 - **feat(providers)**: New Anthropic runs reserve up to 32,000 output tokens instead of 8,192 when the model's output limit (registry or Models.dev `limit.output`) and its context window are known, held to a quarter of the window. Thinking and large `write` calls no longer run out of room at 8,192; models with an unpublished limit keep 8,192, and existing pins keep the value they were pinned with.
 

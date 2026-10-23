@@ -29,6 +29,7 @@ public sealed partial class AgentCommands
         {
             var loop = new TgChatLoop(tgWindow!, cancellationToken);
             tgLoop = loop;
+            loop.SetShutdownSettlement(runSession.WaitForRunSettlementAsync);
             var guiDispatcher = new ChatLineDispatcher(
                 HandleSlashLineWithDocumentAsync,
                 (prompt, ct) => HandlePromptLineAsync(prompt, ct));
@@ -147,6 +148,10 @@ public sealed partial class AgentCommands
 
             loop.Stop();
             await loop.Completion.ConfigureAwait(false);
+            // Stop releases the native UI on its short bound. A create acknowledgement
+            // may still be reconciling after caller cancellation; keep the run owner alive
+            // until its accepted run has been cancelled or its unknown outcome reported.
+            await loop.WaitForShutdownSettlementAsync().ConfigureAwait(false);
         }
     }
 }

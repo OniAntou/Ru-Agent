@@ -20,6 +20,93 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "ru-run-provider-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task Resolving_one_run_does_not_hold_up_an_unrelated_run_snapshot()
+    {
+        var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
+        await store.SaveAsync((await store.ReadAsync(default)) with
+        { Backend = "Custom OpenAI", CustomModel = "a", CustomUrl = "https://provider.invalid/v1" }, default);
+        await using var harness = await BackendHarnessTestFixture.CreateAsync();
+        var first = await harness.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + new string('e', 32), new string('e', 32));
+        var second = await harness.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + new string('f', 32), new string('f', 32));
+        var credentials = new Credentials();
+        var handler = new BlockingCatalogHandler();
+        var catalog = new ProviderCatalogService(new HttpClient(handler), credentials, TimeProvider.System);
+        var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
+        await selections.PinAsync(first.Run.RunId, CustomPin("https://provider-a.invalid/v1", "a"), default);
+        await selections.PinAsync(second.Run.RunId, CustomPin("https://provider-b.invalid/v1", "a"), default);
+        await using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog,
+            selections, (_, _) => Task.FromResult(false));
+
+        var firstTask = factory.GetAsync(first.Run.RunId, default);
+        await handler.FirstRequestEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var secondTask = factory.GetAsync(second.Run.RunId, default);
+        var secondRequestEntered = false;
+        try
+        {
+            await handler.SecondRequestEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            secondRequestEntered = true;
+        }
+        catch (TimeoutException) { }
+        finally
+        {
+            handler.ReleaseRequests.TrySetResult();
+        }
+
+        var snapshots = await Task.WhenAll(firstTask, secondTask);
+        Assert.True(secondRequestEntered, "An unrelated run waited for the first run's provider I/O to finish.");
+        Assert.Equal(2, snapshots.Length);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task A_waiter_retries_after_the_owner_cancels_a_same_run_load()
+    {
+        var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
+        await store.SaveAsync((await store.ReadAsync(default)) with
+        { Backend = "Custom OpenAI", CustomModel = "a", CustomUrl = "https://provider.invalid/v1" }, default);
+        await using var harness = await BackendHarnessTestFixture.CreateAsync();
+        var run = await harness.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + new string('e', 32), new string('e', 32));
+        var credentials = new Credentials();
+        var handler = new BlockingCatalogHandler();
+        var catalog = new ProviderCatalogService(new HttpClient(handler), credentials, TimeProvider.System);
+        var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
+        await selections.PinAsync(run.Run.RunId, CustomPin("https://provider-a.invalid/v1", "a"), default);
+        await using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog,
+            selections, (_, _) => Task.FromResult(false));
+        using var ownerCancellation = new CancellationTokenSource();
+
+        var owner = factory.GetAsync(run.Run.RunId, ownerCancellation.Token);
+        await handler.FirstRequestEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var waiter = factory.GetAsync(run.Run.RunId, default);
+        ownerCancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => owner);
+
+        var retryEntered = false;
+        try
+        {
+            await handler.SecondRequestEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            retryEntered = true;
+        }
+        catch (TimeoutException) { }
+        finally
+        {
+            handler.ReleaseRequests.TrySetResult();
+        }
+
+        var snapshot = await waiter;
+        Assert.True(retryEntered, "A canceled shared load was not retried by the caller with a live token.");
+        Assert.Equal("a", snapshot.Model);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    private static AgentRunProviderSelection CustomPin(string baseUri, string model) => new(
+        "Custom OpenAI", "custom", ProviderProtocols.ChatCompletions, baseUri, model, "custom_api_key",
+        "{}", null, model, "native");
+
+    [Fact]
     public async Task Same_run_keeps_model_key_and_effort_after_settings_change()
     {
         var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
@@ -607,6 +694,28 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
                   {"data":[{"id":"a","context_length":222222,"supported_parameters":["reasoning_effort"],"reasoning_efforts":["low","high"]},{"id":"b"}]}
                   """),
             });
+    }
+
+    private sealed class BlockingCatalogHandler : HttpMessageHandler
+    {
+        private int _requestCount;
+
+        public TaskCompletionSource FirstRequestEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondRequestEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseRequests { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int RequestCount => Volatile.Read(ref _requestCount);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var count = Interlocked.Increment(ref _requestCount);
+            if (count == 1) FirstRequestEntered.TrySetResult();
+            if (count == 2) SecondRequestEntered.TrySetResult();
+            await ReleaseRequests.Task.WaitAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"data":[{"id":"a"}]}"""),
+            };
+        }
     }
 
     /// <summary>Any network fetch is a fail: the missing key/model must throw first.</summary>

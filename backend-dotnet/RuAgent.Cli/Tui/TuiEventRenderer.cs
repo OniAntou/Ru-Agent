@@ -15,16 +15,11 @@ public sealed class TuiSessionRenderer
     private readonly TuiSurface _surface;
     private readonly TuiStatusLine _status;
     private readonly TuiTranscript _transcript;
-    private CancellationTokenSource? _liveCancellation;
-    private Stopwatch? _liveWatch;
 
     public TuiSessionRenderer(TextWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
-        _surface = new TuiSurface(writer)
-        {
-            SuppressRepaints = Console.IsOutputRedirected || !ReferenceEquals(writer, Console.Out),
-        };
+        _surface = new TuiSurface(writer);
         _status = new TuiStatusLine(_surface);
         _transcript = new TuiTranscript(_surface, _status);
     }
@@ -43,15 +38,8 @@ public sealed class TuiSessionRenderer
         set => _transcript.Width = value;
     }
 
-    /// <summary>
-    /// When set, the ticker asks the caller to repaint the live row (sticky footer) instead of
-    /// repainting the row at the transcript cursor.
-    /// </summary>
-    public Action? LiveRowRepaintHook { get; set; }
-
     public void Reset()
     {
-        StopLiveRow();
         _status.Reset();
         _status.SetState(TuiRunState.Idle);
     }
@@ -61,32 +49,13 @@ public sealed class TuiSessionRenderer
         if (_surface.Writer is ITranscriptTurnRewriter screen) screen.BeginAssistantTurn();
         _transcript.BeginTurn();
         _status.SetState(TuiRunState.Thinking);
-        StartLiveRow();
     }
 
-    public void EndTurn()
-    {
-        StopLiveRow();
-        _transcript.EndTurn();
-    }
+    public void EndTurn() => _transcript.EndTurn();
 
-    public void EndTurn(TuiTurnOutcome outcome, string? errorCode)
-    {
-        StopLiveRow();
-        _transcript.EndTurn(outcome, errorCode);
-    }
+    public void EndTurn(TuiTurnOutcome outcome, string? errorCode) => _transcript.EndTurn(outcome, errorCode);
 
     public void Flush() => _transcript.Flush();
-
-    /// <summary>Composes activity for a screen-owned timer without console repaints.</summary>
-    public string ComposeActivity(int width)
-    {
-        if (_status.State is TuiRunState.Thinking or TuiRunState.Tool)
-        {
-            _status.SetElapsed(_transcript.ElapsedSeconds);
-        }
-        return _status.Compose(width);
-    }
 
     public TuiActivityPresentation PresentActivity(int width)
     {
@@ -209,85 +178,7 @@ public sealed class TuiSessionRenderer
         }
     }
 
-    private void StartLiveRow()
-    {
-        StopLiveRow();
-        if (_surface.SuppressRepaints)
-        {
-            return;
-        }
 
-        _status.IsLive = true;
-        _liveWatch = Stopwatch.StartNew();
-        var watch = _liveWatch;
-        _liveCancellation = new CancellationTokenSource();
-        var token = _liveCancellation.Token;
-
-        // Fire-and-forget: the loop is cancellation-cooperative (token checked
-        // every iteration, all throws caught inside), so no join is needed and
-        // none is wanted on the render thread. See StopLiveRow.
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                while (!token.IsCancellationRequested)
-                {
-                    _status.SetElapsed(watch.Elapsed.TotalSeconds);
-                    if (LiveRowRepaintHook is { } hook)
-                    {
-                        hook();
-                    }
-                    else
-                    {
-                        _status.Render(Width);
-                    }
-
-                    await Task.Delay(120, token).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Turn ended; the row is cleared by StopLiveRow.
-            }
-            catch (Exception)
-            {
-                // Background tick failure must not bubble unobserved
-            }
-        }, token);
-    }
-
-    private void StopLiveRow()
-    {
-        if (_liveCancellation is null)
-        {
-            return;
-        }
-
-        var cts = _liveCancellation;
-        _liveCancellation = null;
-        _liveWatch = null;
-
-        try
-        {
-            // Never block here: the loop checks the token every iteration and
-            // exits on its own within one tick, while Wait(200) froze the TUI
-            // on the render thread at every turn end. Faults cannot escape to
-            // UnobservedTaskException: the loop body swallows OperationCanceled
-            // and Exception alike, and this CTS is fresh so the task cannot be
-            // born canceled.
-            cts.Cancel();
-        }
-        catch (Exception)
-        {
-            // Cancellation raced the loop; the row state below is authoritative.
-        }
-        finally
-        {
-            cts.Dispose();
-        }
-
-        _status.Clear(Width);
-    }
 }
 
 public static class TuiEventRenderer

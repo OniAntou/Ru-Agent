@@ -58,6 +58,7 @@ public static class TerminalLimits
     public const int MaxArgumentChars = 4096;
     public const int MaxScriptChars = 32_000;
     public const int MaxExecutableChars = 2048;
+    public const int MaxCanonicalExecutableChars = 4096;
     public const int MaxWorkingDirectoryChars = 2048;
 
     /// <summary>

@@ -466,11 +466,14 @@ public sealed partial class ToolExecutionService
             context.SessionId,
             IsTrue(arguments, "read_only"),
             ReadWriteSet(arguments),
-            Approved: context.Approved);
+            Approved: context.Approved)
+        {
+            AuthorizedIntent = context.AuthorizedTerminalIntent,
+        };
         // Resolve before registering a task: otherwise the detached pump hides
         // actionable resolution errors behind process_start_failed, and a
         // background request can report "started" without an executable.
-        _ = tools.Terminal.CanonicalizeRun(request);
+        if (request.AuthorizedIntent is null) _ = tools.Terminal.CanonicalizeRun(request);
         var (executionId, pump) = StartTerminalTask(
             context,
             lifetimeMs,
@@ -531,8 +534,11 @@ public sealed partial class ToolExecutionService
             IsTrue(arguments, "read_only"),
             ReadWriteSet(arguments),
             Approved: context.Approved,
-            Network: IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"));
-        _ = tools.Terminal.CanonicalizeShell(shellRequest);
+            Network: IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"))
+        {
+            AuthorizedIntent = context.AuthorizedTerminalIntent,
+        };
+        if (shellRequest.AuthorizedIntent is null) _ = tools.Terminal.CanonicalizeShell(shellRequest);
         var grant = new PolicyGrant(
             context.SessionId,
             context.SessionScopes ?? _session.ScopesFor(context.SessionId),

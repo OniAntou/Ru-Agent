@@ -128,7 +128,7 @@ public sealed class TerminalAdapter
         ArgumentNullException.ThrowIfNull(grant);
         ArgumentNullException.ThrowIfNull(request);
         ValidateWriteSet(request.ReadOnly, request.WriteSet);
-        var intent = CanonicalizeRun(request);
+        var intent = request.AuthorizedIntent ?? CanonicalizeRun(request);
         EnforceWorkingDirectoryPolicy(intent, confineWorkspace);
 
         var networkAuthorized = IsNetworkAuthorized(
@@ -220,7 +220,7 @@ public sealed class TerminalAdapter
             throw new ArgumentException("terminal_script_invalid", nameof(request));
         }
 
-        var intent = CanonicalizeShell(request);
+        var intent = request.AuthorizedIntent ?? CanonicalizeShell(request);
         EnforceWorkingDirectoryPolicy(intent, confineWorkspace);
 
         // V2 authorization (automatic or approved) has already been consumed by

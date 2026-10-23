@@ -4,6 +4,8 @@ namespace RuAgent.Cli;
 internal sealed class ChatRunSession : IDisposable
 {
     private CancellationTokenSource? _turnCancellation;
+    private readonly object _settlementGate = new();
+    private TaskCompletionSource? _runSettlement;
     private readonly List<string> _assistantPayloads = new();
     private readonly HashSet<string> _seenPayloads = new(StringComparer.Ordinal);
     private bool _suppressedReply;
@@ -15,6 +17,40 @@ internal sealed class ChatRunSession : IDisposable
     internal CancellationToken Token => _turnCancellation?.Token
         ?? throw new InvalidOperationException("chat_turn_not_active");
     internal IReadOnlyList<string> AssistantPayloads => _assistantPayloads;
+
+    internal IDisposable RetainRunSettlement()
+    {
+        lock (_settlementGate)
+        {
+            if (_runSettlement is not null)
+                throw new InvalidOperationException("chat_run_settlement_already_active");
+            _runSettlement = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            return new RunSettlementLease(this, _runSettlement);
+        }
+    }
+
+    internal Task WaitForRunSettlementAsync()
+    {
+        lock (_settlementGate)
+            return _runSettlement?.Task ?? Task.CompletedTask;
+    }
+
+    private void ReleaseRunSettlement(TaskCompletionSource settlement)
+    {
+        lock (_settlementGate)
+        {
+            if (!ReferenceEquals(_runSettlement, settlement)) return;
+            _runSettlement = null;
+        }
+        settlement.TrySetResult();
+    }
+
+    private sealed class RunSettlementLease(ChatRunSession owner, TaskCompletionSource settlement) : IDisposable
+    {
+        private ChatRunSession? _owner = owner;
+
+        public void Dispose() => Interlocked.Exchange(ref _owner, null)?.ReleaseRunSettlement(settlement);
+    }
 
     /// <summary>
     /// True when the turn streamed a reply the host suppressed for recovery. The

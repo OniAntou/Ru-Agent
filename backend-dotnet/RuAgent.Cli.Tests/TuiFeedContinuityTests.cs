@@ -24,11 +24,11 @@ public sealed class TuiFeedContinuityTests
             renderer.BeginTurn();
             renderer.Transcript.ApplyActivity(activity);
             renderer.RenderEnvelope(Event("tool.execution_completed", 1));
-            Assert.Contains(window.Transcript.Lines, row => row.Style == TranscriptStyle.Tool && row.Text.StartsWith("· Read"));
+            Assert.Contains(window.Transcript.Lines, row => row.Style == TranscriptStyle.Tool && row.Text.StartsWith("  · Read", StringComparison.Ordinal));
             renderer.Transcript.AppendAssistant("Here is the result.");
             renderer.Flush();
             renderer.Transcript.ApplyActivity(activity with { State = AgentActivityState.Completed, DurationMs = 120 });
-            Assert.Single(window.Transcript.Lines, row => row.Style == TranscriptStyle.Tool && row.Text.StartsWith("✓ Read"));
+            Assert.Single(window.Transcript.Lines, row => row.Style == TranscriptStyle.Tool && row.Text.StartsWith("  ✓ Read", StringComparison.Ordinal));
             Assert.Contains(window.Transcript.Lines, row => row.Text == "Here is the result.");
             Assert.Equal(1, renderer.Transcript.ToolsSettled);
             app.RequestStop();
@@ -46,12 +46,12 @@ public sealed class TuiFeedContinuityTests
     public void RunStatusDoesNotMasqueradeAsTheToolOutcome(string runStatus, AgentActivityState toolState, string glyph)
     {
         using var output = new StringWriter();
-        var surface = new TuiSurface(output) { SuppressRepaints = true };
+        var surface = new TuiSurface(output);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true };
         transcript.ApplyActivity(new AgentActivityModel("read_a", AgentActivityKind.Explore, toolState,
             "sample.txt", null, null, null, null, null, null, 100, "ok", "Read", null, null));
         transcript.ApplyDurable(Event("tool.execution_completed", 1, runStatus));
-        Assert.StartsWith(glyph + " Read", TuiText.Strip(output.ToString()));
+        Assert.StartsWith("  " + glyph + " Read", TuiText.Strip(output.ToString()));
     }
 
     [Theory]
@@ -63,7 +63,7 @@ public sealed class TuiFeedContinuityTests
     public void MetadataBetweenDeltasDoesNotSplitTheSentence(string eventType)
     {
         using var output = new StringWriter();
-        var surface = new TuiSurface(output) { SuppressRepaints = true };
+        var surface = new TuiSurface(output);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface));
         transcript.BeginTurn();
         transcript.AppendAssistant("Em đang kiểm");
@@ -98,7 +98,7 @@ public sealed class TuiFeedContinuityTests
     public void PlanProgressIsCompactDeduplicatedAndDoesNotSplitStreamingProse()
     {
         using var output = new StringWriter();
-        var surface = new TuiSurface(output) { SuppressRepaints = true };
+        var surface = new TuiSurface(output);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface));
         var plan = new AgentActivityModel("plan", AgentActivityKind.Todo, AgentActivityState.Completed,
             null, null, null, null, null, null, null, null, "ok", null, null, null)

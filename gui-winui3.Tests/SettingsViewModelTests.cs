@@ -382,10 +382,12 @@ public sealed partial class SettingsViewModelTests
 
         public int SettingsReads { get; private set; }
 
+        public Func<int, Task<AppSettingsDto?>>? GetSettingsOverride { get; set; }
+
         public Task<AppSettingsDto?> GetSettingsAsync()
         {
             SettingsReads++;
-            return Task.FromResult<AppSettingsDto?>(Settings);
+            return GetSettingsOverride?.Invoke(SettingsReads) ?? Task.FromResult<AppSettingsDto?>(Settings);
         }
 
         public Task<IReadOnlyList<ModelsDevEntryDto>> GetModelsDevAsync() =>

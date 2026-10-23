@@ -25,7 +25,15 @@ public sealed partial class BrokerExecutionRuntime
         var runId = ReadRunIdOrSession(request);
         using var operation = _runCancellations.Register(runId, ct);
         BrokerRunLease root;
-        await _lifecycleGate.WaitAsync(operation.Token).ConfigureAwait(false);
+        try
+        {
+            await _lifecycleGate.WaitAsync(operation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && operation.Token.IsCancellationRequested)
+        {
+            throw new AgentProtocolException("subagent_parent_revoked");
+        }
+
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);

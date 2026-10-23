@@ -4,6 +4,8 @@ using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy.Commands;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Tools.Paths;
+using RuAgent.Broker.Tools.Terminal;
+using RuAgent.Protocol;
 using RuAgent.Protocol.Subagents;
 
 namespace RuAgent.Broker.Policy;
@@ -87,6 +89,9 @@ public sealed class PolicyContextFactory
         var argv = PolicyContext.EmptyArgv;
         string? resolvedExecutable = null;
         CommandAnalysis? terminalAnalysis = null;
+        CanonicalCommandIntent? terminalIntent = null;
+        string? terminalResolutionError = null;
+        string? requestedExecutable = null;
 
         if (operationClass == PolicyOperationClasses.Terminal)
         {
@@ -179,13 +184,37 @@ public sealed class PolicyContextFactory
             }
             else
             {
-                // Match the Host's remembered shell approval. Policy runs before
-                // executable resolution: keep the selected runtime and its exact
-                // invocation, rather than an empty executable/argv that can never
-                // match the user's approved script. Execution still resolves and
-                // validates the executable through the terminal adapter.
                 resolvedExecutable = OptionalText(arguments, "shell") ?? "powershell";
                 argv = ["-NoProfile", "-NonInteractive", "-Command", shellScript!];
+            }
+
+            try
+            {
+                requestedExecutable = resolvedExecutable;
+                var commands = new CommandIntentResolver(_canonicalRoot);
+                terminalIntent = mode == "run"
+                    ? commands.ResolveRun(new CanonicalCommandRequest(resolvedExecutable!, argv,
+                        canonicalCwd, timeoutMs, networkDeclared))
+                    : commands.ResolveShell(new CanonicalShellRequest(shellScript!, canonicalCwd,
+                        timeoutMs, networkDeclared, OptionalText(arguments, "shell")));
+                if (terminalIntent.ResolvedExecutable.Length > TerminalLimits.MaxCanonicalExecutableChars)
+                    throw new CommandIntentException("executable_invalid");
+                if (!string.Equals(terminalIntent.CanonicalWorkingDirectory, canonicalCwd, StringComparison.Ordinal))
+                    throw new CommandIntentException("invalid_cwd");
+                if (mode == "run")
+                {
+                    terminalAnalysis = _commandAnalyzers.Analyze(terminalIntent.ResolvedExecutable, terminalIntent.Arguments);
+                    terminalIntent = terminalIntent.Classified(terminalAnalysis.OperationClass);
+                }
+                resolvedExecutable = terminalIntent.ResolvedExecutable;
+                argv = terminalIntent.Arguments;
+            }
+            catch (CommandIntentException error)
+            {
+                // Keep policy denial/ask-rule precedence available for malformed or missing
+                // executables. The runtime refuses to issue execution authority for them.
+                terminalResolutionError = error.Code;
+                terminalIntent = null;
             }
         }
         else
@@ -387,7 +416,12 @@ public sealed class PolicyContextFactory
             TerminalAnalysis: terminalAnalysis,
             ToolOp: toolId is "read" or "write" or "mcp" ? ReadOpOf(toolId, arguments) : null,
             BashMode: toolId == "bash" ? OptionalText(arguments, "mode") : null,
-            Background: background);
+            Background: background)
+        {
+            TerminalIntent = terminalIntent,
+            TerminalResolutionError = terminalResolutionError,
+            RequestedExecutable = requestedExecutable,
+        };
     }
 
     private ResolvedPath ResolveNonTerminalTarget(string pathInput)

@@ -32,7 +32,8 @@ public sealed class TgChromeTests
             // activity tone, and the metrics flush right like every tool row. Cell
             // coordinates are window-relative, so the view's own X offset applies.
             var liveRowIndex = window.Transcript.Frame.Y + 1;
-            var glyph = TgSnapshot.CellAttribute(app, liveRowIndex, window.Transcript.Frame.X).Foreground;
+            // The live row shares the tool row's two-cell feed indent.
+            var glyph = TgSnapshot.CellAttribute(app, liveRowIndex, window.Transcript.Frame.X + TuiActivityPresentation.Indent).Foreground;
             Assert.True(
                 TgPalette.ToColor(TuiToken.Brand) == glyph,
                 $"glyph foreground: expected {TgPalette.ToColor(TuiToken.Brand)} actual {glyph}");

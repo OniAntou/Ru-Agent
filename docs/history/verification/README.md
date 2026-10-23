@@ -3,6 +3,7 @@
 These records are dated evidence, not current operating instructions. [Current verification](../../operations/verification.md) owns commands and acceptance boundaries.
 
 - [undated](undated.md)
+- [2026-10-23](2026-10-23.md)
 - [2026-10-20](2026-10-20.md)
 - [2026-10-19](2026-10-19.md)
 - [2026-10-17](2026-10-17.md)

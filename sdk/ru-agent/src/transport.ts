@@ -84,22 +84,37 @@ export class BridgeTransport {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     };
-    // Windows cannot exec a .cmd/.bat directly without a shell; cmd.exe /d /s /c
-    // runs the batch file and forwards the remaining argv. cmd performs %VAR%
-    // expansion and metacharacter interpretation on its own command line and
-    // offers no reliable way to escape those inside an argument, so an argument
-    // that carries them is refused rather than forwarded in a mangled shape.
-    if (/\.(cmd|bat)$/i.test(options.command)) {
-      const unsafe = args.filter((arg) => /[%^&|<>]/.test(arg));
+    // Windows cannot exec a .cmd/.bat directly without a shell. Supply /c with a
+    // single explicitly quoted command string: cmd.exe /s strips the outer pair,
+    // leaving the batch path and each literal argument separately quoted. Do not
+    // let cmd expand variables or interpret command separators from argv.
+    const isBatchFile = /\.(cmd|bat)$/i.test(options.command);
+    if (isBatchFile) {
+      if (/[%"\r\n]/.test(options.command)) {
+        throw new BridgeTransportError("bridge spawn refused: cmd.exe cannot safely preserve the batch file path");
+      }
+      const unsafe = args.filter((arg) => /[%^&|<>"\r\n]/.test(arg));
       if (unsafe.length > 0) {
         throw new BridgeTransportError(
-          `bridge spawn refused: cmd.exe metacharacters cannot be escaped safely in arguments: ${unsafe.join(", ")}`,
+          "bridge spawn refused: cmd.exe metacharacters cannot be escaped safely in arguments",
         );
       }
     }
-    const child = /\.(cmd|bat)$/i.test(options.command)
-      ? spawn("cmd.exe", ["/d", "/s", "/c", options.command, ...args], spawnOptions)
-      : spawn(options.command, args, spawnOptions);
+    let child: ReturnType<typeof spawn>;
+    if (isBatchFile) {
+      // Every argument is quoted for cmd.exe. Double terminal backslashes so a
+      // downstream Windows CRT does not treat the quote as escaped. /v:off
+      // also keeps literal exclamation marks safe when delayed expansion was
+      // enabled in the parent shell.
+      const quoteArgument = (arg: string) => `"${arg.replace(/\\+$/u, (slashes) => slashes + slashes)}"`;
+      const commandLine = [quoteArgument(options.command), ...args.map(quoteArgument)].join(" ");
+      child = spawn("cmd.exe", ["/d", "/v:off", "/s", "/c", `"${commandLine}"`], {
+        ...spawnOptions,
+        windowsVerbatimArguments: true,
+      });
+    } else {
+      child = spawn(options.command, args, spawnOptions);
+    }
     return new BridgeTransport(child as ChildProcessWithoutNullStreams);
   }
 

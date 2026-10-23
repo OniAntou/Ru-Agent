@@ -5,11 +5,11 @@ Isolated [historical verification evidence](history/verification/README.md)
 records old snapshots without making them current operating instructions.
 Completed implementation plans and design drafts belong in Git history.
 
-A plan may sit in the working tree only while it is still open, and it must say
-so with a `status: pending` or `status: in-progress` marker.
-`test_completed_implementation_archives_are_not_kept_in_the_checkout` enforces
-that for `docs/superpowers/plans/`, `docs/superpowers/specs/` and `docs/plans/`,
-so an unlabelled draft cannot sit in the checkout indefinitely.
+Open plans may sit under `docs/plans/` with a `status: pending` or
+`status: in-progress` marker. Generated plans and specs under
+`docs/superpowers/` must be removed before verification/integration.
+`test_completed_implementation_archives_are_not_kept_in_the_checkout` checks
+these locations so obsolete drafts cannot accumulate in the checkout.
 
 ## Guides
 

@@ -8,6 +8,12 @@ uses catalog details only for rates; sequential/data-only chat skips that lookup
 
 ## Core TUI
 
+Stopping the UI keeps its two-second bound for ordinary turn handlers. The chat
+owner separately retains a pending create request until acknowledgement recovery
+settles and any late accepted run's cancellation request completes. It waits for
+that settlement before disposing the API client; UI completion alone does not
+mean the pending run is unowned.
+
 The terminal is a compact coding surface: chat, inline tool activity and expandable
 errors/diffs, approvals, attachments, session/model selection and run recovery.
 The header retains its live context meter. Plans appear as compact completed/total
@@ -17,6 +23,23 @@ belongs in the GUI; headless CLI and RPC capabilities are independent of this UI
 Terminal.Gui owns the interactive screen. Shared event and Markdown formatting
 projects semantic transcript rows and styled runs directly to native attributes;
 sequential text output and legacy command/diagnostic imports remain separate adapters.
+
+Only Terminal.Gui draws an interactive frame; the append-only adapter is a printer.
+It writes finished rows and keeps a bounded history, with no cursor positioning,
+sticky footer, live-row repaint, resize rebuild or framed composer. Those paths were
+unreachable in production (the CLI suppressed repaints unconditionally), and keeping
+them meant maintaining a second renderer that no terminal could see. The interactive
+engine's live row, footer and panels are unchanged.
+
+Both adapters share one text engine. `TuiText` owns display-cell measurement, rune
+decoding, wrapping and the common truncations; the Terminal.Gui importer and the
+append-only writer call it instead of keeping their own tables. A row measured one
+cell short wraps on the real terminal and misplaces every absolute cursor move after
+it, so the table has to be single: CJK and the common emoji blocks measure two cells,
+tabs advance to the same 8-column stops the terminal uses, and an unpaired UTF-16
+surrogate renders as U+FFFD rather than throwing from the paint path. The append-only
+surface bounds its rebuild history by rows and characters (2,000 / 200,000, with a
+16,000-unit per-line cap) exactly like the Terminal.Gui transcript.
 _Avoid_: Requiring GUI feature parity or treating presentation metadata as authority.
 
 Pending images appear as `[image 1] [image 2]` in the composer's spacer row,

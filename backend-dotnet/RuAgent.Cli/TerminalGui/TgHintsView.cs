@@ -283,7 +283,7 @@ public sealed class TgHintsView : View
         return column;
     }
 
-    /// <summary>Bright key caps with meta words, matching ComposerBox.ComposeHints.</summary>
+    /// <summary>Bright key caps with meta words.</summary>
     private void DrawRight(int column, int maxWidth)
     {
         Draw(column, GetRightHintSegments(Viewport.Width), maxWidth);

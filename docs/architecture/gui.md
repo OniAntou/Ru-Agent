@@ -288,6 +288,8 @@ provider changes and backend replacement invalidate the request; disposal
 suppresses both its verdict and retries. The view owns debounce timing and
 renders only the current completion. The authenticated Host still validates
 and stores the candidate atomically; this coordinator never writes credentials.
+Provider inputs are disabled during Back's save/reload operation, so a late load
+cannot overwrite a newly edited value.
 The TUI keeps raw Markdown lines until completion and projects semantic
 `TranscriptLine`/`TranscriptRun` records directly to Terminal.Gui through
 `ITranscriptPresentationWriter`. Row roles are explicit. Markdown previews,
@@ -394,6 +396,9 @@ on a workspace change; background refreshes do not take input focus.
 failures, labels them stale and retries at 4/8/16/30-second intervals while the
 surface remains visible. An authoritative successful response resets the delay
 and can establish an empty list; a root/session change drops the old observation.
+An explicit `broker_gateway_unavailable` response retains uncertainty without
+promising endless retries for a completed run. Running turns or last-known running
+tasks still trigger polling; unavailable data is never presented as an empty list.
 The subagent observer publishes freshness changes even when snapshot identity is
 unchanged. Card, narrow-window peek and reader share one summary that includes
 preparations and unavailable attempts. The resize grip exposes a RangeValue

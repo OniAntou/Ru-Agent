@@ -89,6 +89,7 @@ public sealed partial class AgentCommands
             return 1;
         }
 
+        var createdRuleIds = new List<string>(file.Rules.Count);
         foreach (var rule in file.Rules)
         {
             var matcher = new
@@ -112,16 +113,57 @@ public sealed partial class AgentCommands
             try
             {
                 var result = await _agentClient.CreatePolicyAsync(body, interactive: true, cancellationToken).ConfigureAwait(false);
-                await _out.WriteLineAsync($"imported rule {result.GetProperty("rule_id").GetString()} scope:{rule.Scope}").ConfigureAwait(false);
+                var ruleId = result.GetProperty("rule_id").GetString();
+                if (!string.IsNullOrWhiteSpace(ruleId))
+                {
+                    createdRuleIds.Add(ruleId);
+                }
+
+                await _out.WriteLineAsync($"imported rule {ruleId} scope:{rule.Scope}").ConfigureAwait(false);
             }
             catch (AgentApiException ex)
             {
                 await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
+                await RollbackImportedRulesAsync(createdRuleIds).ConfigureAwait(false);
                 return 1;
             }
         }
 
+        await _out.WriteLineAsync($"imported {createdRuleIds.Count} rule(s)").ConfigureAwait(false);
         return 0;
+    }
+
+    /// <summary>
+    /// Removes the rules a failed import already committed. The host has no batch route, so
+    /// a partial import used to leave the policy in a state the operator never confirmed.
+    /// A rollback that itself fails is reported by id: the operator must know which grants
+    /// survived.
+    /// </summary>
+    private async Task RollbackImportedRulesAsync(IReadOnlyList<string> ruleIds)
+    {
+        if (ruleIds.Count == 0)
+        {
+            await _err.WriteLineAsync("policy_import_rolled_back: no rule had been committed").ConfigureAwait(false);
+            return;
+        }
+
+        var stuck = new List<string>();
+        for (var i = ruleIds.Count - 1; i >= 0; i--)
+        {
+            try
+            {
+                await _agentClient.DeletePolicyAsync(ruleIds[i], interactive: true, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception rollbackError)
+            {
+                stuck.Add($"{ruleIds[i]} ({CliErrorText.ShortMessage(rollbackError.Message)})");
+            }
+        }
+
+        await _err.WriteLineAsync(stuck.Count == 0
+            ? $"policy_import_rolled_back: removed {ruleIds.Count} rule(s)"
+            : $"policy_import_partial: {stuck.Count} rule(s) remain; remove them with 'ru agent policy remove <rule-id>': {string.Join(", ", stuck)}")
+            .ConfigureAwait(false);
     }
 
     public async Task<int> PolicyRemoveAsync(PolicyRemoveCommand cmd, CancellationToken cancellationToken)

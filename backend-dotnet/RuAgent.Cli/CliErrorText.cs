@@ -42,6 +42,6 @@ public static class CliErrorText
     private static string SingleLine(string text, int maximum)
     {
         var flat = text.Replace("\r", " ").Replace("\n", " ");
-        return flat.Length <= maximum ? flat : flat[..(maximum - 1)] + "…";
+        return flat.Length <= maximum ? flat : Tui.TuiText.SafeCut(flat, maximum - 1) + "…";
     }
 }

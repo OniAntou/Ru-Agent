@@ -24,7 +24,7 @@ public sealed class TgChatLoop
     private const long MaxQueuedSubmissionBytes = 32L * 1024 * 1024;
     private const int MaxSubmissionPromptChars = 16_000;
 
-    /// <summary>How long <see cref="Stop"/> lets an in-flight turn finish before releasing waiters.</summary>
+    /// <summary>How long <see cref="Stop"/> lets an in-flight turn finish before releasing UI waiters.</summary>
     private static readonly TimeSpan StopDrainTimeout = TimeSpan.FromSeconds(2);
 
     private readonly TgChatWindow _window;
@@ -43,6 +43,7 @@ public sealed class TgChatLoop
     private Func<string, bool>? _stateChangingCommandClassifier;
     private Action<ChatSubmissionSnapshot>? _submissionAccepted;
     private Action<ChatSubmissionSnapshot>? _submissionDiscarded;
+    private Func<Task>? _shutdownSettlement;
     private long _queuedSubmissionBytes;
     private Func<string>? _attachmentLabelProvider;
     private Func<int>? _attachmentCountProvider;
@@ -92,6 +93,14 @@ public sealed class TgChatLoop
     }
 
     public Task Completion => _completion.Task;
+
+    /// <summary>
+    /// Adds session-owned work that must settle before its state can be disposed after
+    /// the UI has stopped. This does not extend the UI completion bound.
+    /// </summary>
+    internal void SetShutdownSettlement(Func<Task> settlement) => _shutdownSettlement = settlement;
+
+    internal Task WaitForShutdownSettlementAsync() => _shutdownSettlement?.Invoke() ?? Task.CompletedTask;
 
     /// <summary>
     /// A snapshot of the bounded prompt history (newest last, matching the classic reader),
@@ -234,7 +243,12 @@ public sealed class TgChatLoop
         var submission = _snapshotFactory?.Invoke(line);
         if (_snapshotFactory is not null && submission is null)
         {
-            _window.Hints.ShowFeedback(SubmissionUnavailableHint, true);
+            // The factory refuses for two different reasons: a command carrying pending
+            // attachments, and a composed prompt over the 16k budget. Reporting the
+            // attachment wording for an oversized prompt sent the operator looking in the
+            // wrong place.
+            var isCommandLine = line.TrimStart().StartsWith('/');
+            _window.Hints.ShowFeedback(isCommandLine ? SubmissionUnavailableHint : SubmissionTooLargeHint, true);
             return;
         }
 
@@ -331,7 +345,7 @@ public sealed class TgChatLoop
     public void Stop()
     {
         Task turnDone;
-        var discarded = 0;
+        var discardedSubmissions = new List<ChatSubmissionSnapshot>();
         lock (_queueGate)
         {
             _stopped = true;
@@ -342,12 +356,21 @@ public sealed class TgChatLoop
             while (_queued.TryDequeue(out var submission))
             {
                 _queuedSubmissionBytes -= submission.OwnedBytes;
-                _submissionDiscarded?.Invoke(submission);
-                discarded++;
+                discardedSubmissions.Add(submission);
             }
 
             turnDone = _turnDone?.Task ?? Task.CompletedTask;
         }
+
+        // Release runs temp-file I/O; doing it under the lock blocked the UI thread's key
+        // handling (Stop is called from the window's IsRunningChanged handler) on a slow or
+        // network filesystem.
+        foreach (var discardedSubmission in discardedSubmissions)
+        {
+            _submissionDiscarded?.Invoke(discardedSubmission);
+        }
+
+        var discarded = discardedSubmissions.Count;
 
         if (discarded > 0)
         {
@@ -391,30 +414,46 @@ public sealed class TgChatLoop
     private void StartTurn(ChatSubmissionSnapshot submission)
     {
         TaskCompletionSource turnDone;
+        CancellationToken turnToken;
+        var stoppedBeforeStart = false;
         lock (_queueGate)
         {
-            if (_stopped)
+            stoppedBeforeStart = _stopped;
+            if (stoppedBeforeStart)
             {
                 _busy = false;
                 _turnDone = null;
-                _submissionDiscarded?.Invoke(submission);
-                return;
-            }
-
-            _busy = true;
-            // Link the session's token: a shutdown outside the window (or a handover) must
-            // stop the in-flight turn too, not only the local Escape path.
-            _turn = CancellationTokenSource.CreateLinkedTokenSource(_outerToken);
-            if (_cancelRequested)
-            {
-                // An Escape that arrived between turns cancels this one now
-                // instead of being lost.
-                _cancelRequested = false;
-                _turn.Cancel();
             }
 
             turnDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            _turnDone = turnDone;
+            if (!stoppedBeforeStart)
+            {
+                _busy = true;
+                // Link the session's token: a shutdown outside the window (or a handover)
+                // must stop the in-flight turn too, not only the local Escape path.
+                _turn = CancellationTokenSource.CreateLinkedTokenSource(_outerToken);
+                if (_cancelRequested)
+                {
+                    // An Escape that arrived between turns cancels this one now
+                    // instead of being lost.
+                    _cancelRequested = false;
+                    _turn.Cancel();
+                }
+
+                turnToken = _turn.Token;
+                _turnDone = turnDone;
+            }
+            else
+            {
+                turnToken = CancellationToken.None;
+            }
+        }
+
+        if (stoppedBeforeStart)
+        {
+            // Release does temp-file I/O; it must not run under the queue lock.
+            _submissionDiscarded?.Invoke(submission);
+            return;
         }
 
         // The Grok-style user block: a filled three-row card with the prompt chevron on
@@ -426,7 +465,7 @@ public sealed class TgChatLoop
             _window.Transcript.Append(string.Empty, TranscriptStyle.User);
         });
         var stream = new TranscriptStream(_window.Transcript, Dispatch);
-        _ = RunTurnAsync(submission, stream, _turn.Token, turnDone);
+        _ = RunTurnAsync(submission, stream, turnToken, turnDone);
     }
 
     private async Task RunTurnAsync(

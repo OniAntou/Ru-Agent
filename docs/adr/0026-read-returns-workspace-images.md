@@ -89,9 +89,11 @@ For an image, `read` returns small JSON metadata (`path`, `media_type`,
 `total_bytes`, `width`, `height`, `sha256`, `duration_ms`) and carries the bytes
 in a separate, optional image field. That field travels on the Broker's
 `ToolExecutionOutcome` and `ToolResult` and on the Host's `ToolExecutionReceipt`.
-The JSON output, its 4 MiB cap, the `ToolOutput` payload and the client-visible
-activity stay small and unchanged in shape. The model-facing `read` input schema
-does not change; only its description does.
+The JSON output keeps its 4 MiB cap and the `ToolOutput` payload stays small. An
+image result carries this metadata instead of the text fields (`content`,
+`bytes_read`, `truncated`, `offset`); client readers of `read` output already
+treat those fields as optional. The model-facing `read` input schema does not
+change; only its description does.
 
 ### Persistence
 

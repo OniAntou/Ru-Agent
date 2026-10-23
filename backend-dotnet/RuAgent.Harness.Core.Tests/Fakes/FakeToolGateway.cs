@@ -96,7 +96,8 @@ public sealed class FakeToolGateway : IToolGateway, IApprovalCleanupGateway
                 forced.ResultPayloadId,
                 forced.SideEffectsPossible,
                 forced.ModelContent,
-                forced.ContentEncoding);
+                forced.ContentEncoding,
+                image: forced.Image);
         }
         if (_remainingTransportFailures > 0)
         {

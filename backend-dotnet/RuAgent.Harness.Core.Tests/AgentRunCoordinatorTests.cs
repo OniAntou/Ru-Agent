@@ -285,6 +285,59 @@ public sealed partial class AgentRunCoordinatorTests
         Assert.False(Assert.Single(result.Receipts).ModelContent.IsEmpty);
     }
 
+    /// <summary>
+    /// ADR 0026: an image receipt commits its image beside the result, model-only and
+    /// opaque, under the id derived from the result payload, in the same commit.
+    /// </summary>
+    [Fact]
+    public async Task Image_receipt_commits_a_model_only_image_payload_beside_its_result()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 7];
+        var gateway = new FakeToolGateway
+        {
+            ForcedReceipt = new ToolExecutionReceipt(
+                new ExecutionId("exec_" + new string('f', 32)),
+                new ToolCallId("call_" + new string('f', 32)),
+                ToolExecutionOutcome.Succeeded,
+                "ok",
+                null,
+                sideEffectsPossible: false,
+                modelContent: System.Text.Encoding.UTF8.GetBytes("{\"media_type\":\"image/png\"}"),
+                image: new RuAgent.Protocol.ToolOutputImage("image/png", png)),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+
+        var result = await Coordinator(model, gateway, store).RunOneStepAsync(RunId(), CancellationToken.None);
+
+        var receiptCommit = Assert.Single(
+            store.Commits,
+            commit => commit.Events.Any(item => item.Kind == HarnessEventKind.ToolExecutionCompleted));
+        var output = Assert.Single(receiptCommit.Payloads, payload => payload.Kind == HarnessPayloadKind.ToolOutput);
+        var image = Assert.Single(receiptCommit.Payloads, payload => payload.Kind == HarnessPayloadKind.ToolImage);
+        Assert.Equal(ToolImagePayloadId.For(output.PayloadId), image.PayloadId);
+        Assert.Equal(HarnessPayloadAudience.ModelContext, image.Audience);
+        Assert.Equal(HarnessPayloadEncoding.Opaque, image.Encoding);
+        Assert.Equal(png, image.Plaintext.ToArray());
+        // No event names the image: nothing binds it to model context or the client feed.
+        Assert.DoesNotContain(receiptCommit.Events, item => item.PayloadId == image.PayloadId);
+        Assert.NotNull(Assert.Single(result.Receipts).Image);
+    }
+
+    [Fact]
+    public void Only_a_successful_result_with_content_carries_an_image()
+    {
+        var image = new RuAgent.Protocol.ToolOutputImage("image/png", new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+        Assert.Throws<ArgumentException>(() => new ToolExecutionReceipt(
+            new ExecutionId("exec_" + new string('f', 32)), new ToolCallId("call_" + new string('f', 32)),
+            ToolExecutionOutcome.Failed, "image_too_large", null, false, new byte[] { 1 }, image: image));
+        Assert.Throws<ArgumentException>(() => new ToolExecutionReceipt(
+            new ExecutionId("exec_" + new string('f', 32)), new ToolCallId("call_" + new string('f', 32)),
+            ToolExecutionOutcome.Succeeded, "ok", null, false, image: image));
+    }
+
     [Fact]
     public async Task Receipt_is_durable_before_the_next_model_step()
     {

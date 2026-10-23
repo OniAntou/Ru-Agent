@@ -726,6 +726,60 @@ public sealed class InProcessModelConversationTests
         Assert.Equal("model_history_invalid", error.Code);
     }
 
+    /// <summary>
+    /// ADR 0026: an attached tool image rides on its tool turn; an image left out of the
+    /// request is named in the result text rather than dropped silently.
+    /// </summary>
+    [Fact]
+    public void Tool_images_ride_on_their_tool_turns_and_omitted_images_are_named()
+    {
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3];
+        var image = new RuAgent.Protocol.ToolOutputImage("image/png", png);
+        var context = Snapshot(ModelContextEntry.Text("user", 1, ModelContextRole.User, "Look at both"),
+            AssistantCallsEntry("call", 2,
+            [
+                new ModelToolCall("provider_old", "read", "1.0.0", Json("{\"path\":\"old.png\"}")),
+                new ModelToolCall("provider_new", "read", "1.0.0", Json("{\"path\":\"new.png\"}")),
+            ]),
+            ToolResultEntry("result-old", 3, "internal_old", "provider_old", "{\"path\":\"old.png\"}").WithToolImage(null),
+            ToolResultEntry("result-new", 4, "internal_new", "provider_new", "{\"path\":\"new.png\"}").WithToolImage(image));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        var tools = messages!.Where(message => message.Role == "tool").ToArray();
+        Assert.Empty(tools[0].Images);
+        Assert.EndsWith(RuAgent.Protocol.ToolOutputImage.OmittedNote, tools[0].Content, StringComparison.Ordinal);
+        var attached = Assert.Single(tools[1].Images);
+        Assert.Equal("image/png", attached.MimeType);
+        Assert.Equal(Convert.ToBase64String(png), attached.Base64Data);
+        Assert.DoesNotContain(RuAgent.Protocol.ToolOutputImage.OmittedNote, tools[1].Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Native_history_projectors_put_tool_images_in_their_protocol_shapes()
+    {
+        var image = new ModelImage("image/webp", "UklGRgAAAABXRUJQ");
+        var turns = new[]
+        {
+            new ModelTurn("assistant", string.Empty, [new ModelFunctionCall("provider-1", "read", Json("{\"path\":\"a.webp\"}"))]),
+            new ModelTurn("tool", "{\"path\":\"a.webp\"}", toolCallId: "provider-1", toolResultCode: "ok", images: [image]),
+        };
+        var anthropic = new ProviderContinuation("anthropic", "anthropic_messages", "claude-fable-5", 1,
+            [new JsonObject { ["type"] = "tool_use", ["id"] = "provider-1", ["name"] = "read", ["input"] = JsonNode.Parse("{\"path\":\"a.webp\"}") }]);
+        var openAi = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,
+            [new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "provider-1", ["name"] = "read", ["arguments"] = "{\"path\":\"a.webp\"}" }]);
+
+        var content = AnthropicMessagesHistoryProjector.Project(turns, [anthropic], "claude-fable-5")[1]["content"]!
+            .AsArray()[0]!["content"]!.AsArray();
+        var output = OpenAiResponsesHistoryProjector.Project(turns, [openAi], "gpt-5.6-luna")[^1]["output"]!.AsArray();
+
+        Assert.Equal(["text", "image"], content.Select(block => block!["type"]!.GetValue<string>()));
+        Assert.Equal("image/webp", content[1]!["source"]!["media_type"]!.GetValue<string>());
+        Assert.Equal(image.Base64Data, content[1]!["source"]!["data"]!.GetValue<string>());
+        Assert.Equal(["input_text", "input_image"], output.Select(part => part!["type"]!.GetValue<string>()));
+        Assert.Equal(image.DataUrl, output[1]!["image_url"]!.GetValue<string>());
+    }
+
     private static ModelContextSnapshot Snapshot(params ModelContextEntry[] entries) =>
         new(entries, Array.Empty<byte>());
 

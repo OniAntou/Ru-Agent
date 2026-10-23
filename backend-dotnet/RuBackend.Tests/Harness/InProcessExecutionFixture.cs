@@ -19,7 +19,8 @@ internal sealed class InProcessExecutionFixture : IDisposable
     private readonly bool _ownsWorkspace;
 
     public InProcessExecutionFixture(string? workspaceRoot = null, bool subagentControls = true,
-        Lazy<global::RuBackend.Harness.Subagents.SubagentControlDispatcher>? subagents = null)
+        Lazy<global::RuBackend.Harness.Subagents.SubagentControlDispatcher>? subagents = null,
+        Func<string, CancellationToken, Task<bool>>? imageInputAccepted = null)
     {
         _ownsWorkspace = workspaceRoot is null;
         WorkspaceRoot = workspaceRoot ?? Path.Combine(
@@ -46,7 +47,10 @@ internal sealed class InProcessExecutionFixture : IDisposable
             Session,
             Tools,
             advertisedCapabilities: Session.AdvertisedCapabilities);
-        Factory = new global::RuBackend.Harness.Broker.InProcessToolGatewayFactory(Runtime, subagents);
+        Factory = new global::RuBackend.Harness.Broker.InProcessToolGatewayFactory(Runtime, subagents)
+        {
+            ImageInputAccepted = imageInputAccepted,
+        };
     }
 
     public string WorkspaceRoot { get; }

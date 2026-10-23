@@ -8,7 +8,7 @@ public static class AgentToolPromptGuidance
         var tools = toolIds.ToHashSet(StringComparer.Ordinal);
         var lines = new List<string>();
         if (tools.Contains("read"))
-            lines.Add("Use read for text inspection and to look at workspace images such as screenshots. Continue large outputs with the returned projection cursor; an excerpt is not the complete file.");
+            lines.Add("Use read for text inspection. Continue large outputs with the returned projection cursor; an excerpt is not the complete file. read also shows you a workspace image, such as a screenshot, when your model accepts images.");
         if (tools.Contains("grep"))
             lines.Add("Search args: grep needs query (+ optional path, file_glob, is_regex only for real regex). Grep path may be a file or directory.");
         if (tools.Contains("glob"))

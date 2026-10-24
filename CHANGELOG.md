@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **style(gui)**: Add animated green Braille waves behind the startup wordmark,
+  with a quiet center, a static reduced-motion frame and a plain high-contrast
+  canvas. Soften the field edges, add green-to-mint depth and smooth the wave cadence.
+  Add a dimmer, slower distant field and soft light from below for a subdued
+  cinematic startup treatment, with a gentle, interruptible wordmark entrance.
+  Stop background updates as soon as startup finishes or leaves the screen.
+
+- **style(gui)**: Give the startup wordmark a stronger green identity and match
+  the loading accent to a green-to-mint palette.
+
+- **fix(gui)**: Center loading against the real window viewport, including when the
+  shell layout is wider than its visible bounds. Keep both wordmark and status on
+  that center axis; add a moving brand accent without dimming the title.
+
 - **feat(cli)**: Prose now reflows as a paragraph. Consecutive prose lines render as one
   screen row (soft breaks join with a space) instead of one row per source line, and every
   block form — blank line, heading, list, quote, rule, fence, table, tool row, notice, end
@@ -15,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because it cannot unprint.
 
 - **style(gui)**: Replace the startup console artwork with a centered, smooth Inter
-  Ru Agent wordmark, a short entrance and a gentle loading pulse. Honor reduced
+  Ru Agent wordmark, a short entrance and an animated loading accent. Honor reduced
   motion, reveal the chat as soon as its surface is ready, and keep startup errors
   visible with an Open app action. Closing the window stops all startup motion.
 

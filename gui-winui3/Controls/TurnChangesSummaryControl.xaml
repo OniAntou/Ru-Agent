@@ -1,0 +1,82 @@
+<UserControl
+    x:Class="RuApp.Controls.TurnChangesSummaryControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:services="using:RuApp.Services"
+    IsTabStop="False" Visibility="Collapsed">
+    <Border Background="{StaticResource RuSurfaceBrush}"
+            BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+            CornerRadius="{StaticResource AppCardCornerRadius}">
+        <StackPanel>
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Padding="14,12"
+                  BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,0,1">
+                <Border Width="36" Height="36" CornerRadius="8" Background="{StaticResource RuCanvasBrush}"
+                        VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE943;" FontSize="18" Foreground="{StaticResource RuMutedBrush}"
+                              AutomationProperties.AccessibilityView="Raw" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock x:Name="SummaryTitle" FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"
+                               Foreground="{StaticResource RuInkBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock x:Name="AddedTotal" FontSize="11" FontFamily="{StaticResource RuMonoFontFamily}"
+                                   Foreground="{StaticResource RuSuccessBrush}" />
+                        <TextBlock x:Name="RemovedTotal" FontSize="11" FontFamily="{StaticResource RuMonoFontFamily}"
+                                   Foreground="{StaticResource RuDangerBrush}" />
+                    </StackPanel>
+                </StackPanel>
+                <Button Grid.Column="2" Content="View changes" Click="OnViewChangesClick"
+                        Padding="10,5" FontSize="11" VerticalAlignment="Center"
+                        AutomationProperties.Name="View changes in this turn" />
+            </Grid>
+            <ListView x:Name="FilesList" SelectionMode="None" IsTabStop="False"
+                      MaxHeight="320" Padding="6,4" Background="Transparent" BorderThickness="0"
+                      ScrollViewer.HorizontalScrollMode="Disabled"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      AutomationProperties.Name="Files edited in this turn">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="MinHeight" Value="0" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="IsTabStop" Value="False" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="services:TurnChangedFile">
+                        <Button Click="OnFileClick" Tag="{x:Bind}" Background="Transparent"
+                                BorderThickness="0" Padding="8,8" HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch" MinHeight="36"
+                                AutomationProperties.Name="{x:Bind AccessibleName}"
+                                ToolTipService.ToolTip="{x:Bind Path}">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <TextBlock FontFamily="{StaticResource RuMonoFontFamily}"
+                                           FontSize="12" TextTrimming="CharacterEllipsis" MaxLines="1"
+                                           Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center">
+                                    <Run Text="{x:Bind Directory}" Foreground="{StaticResource RuMutedBrush}" /><Run Text="{x:Bind FileName}" />
+                                </TextBlock>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <TextBlock Text="{x:Bind AddedText}" FontFamily="{StaticResource RuMonoFontFamily}"
+                                               FontSize="11" Foreground="{StaticResource RuSuccessBrush}" />
+                                    <TextBlock Text="{x:Bind RemovedText}" FontFamily="{StaticResource RuMonoFontFamily}"
+                                               FontSize="11" Foreground="{StaticResource RuDangerBrush}" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+            <Button x:Name="ExpandButton" Click="OnExpandClick" Background="Transparent" BorderThickness="0"
+                    Padding="8,6" Margin="6,0,6,6" MinHeight="32" HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="ExpandLabel" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                    <FontIcon x:Name="ExpandIcon" Glyph="&#xE70D;" FontSize="10" Foreground="{StaticResource RuMutedBrush}"
+                              AutomationProperties.AccessibilityView="Raw" />
+                </StackPanel>
+            </Button>
+            <TextBlock x:Name="DetailsError" Visibility="Collapsed" Margin="14,0,14,10" TextWrapping="Wrap"
+                       FontSize="12" Foreground="{StaticResource RuDangerBrush}" AutomationProperties.LiveSetting="Polite" />
+        </StackPanel>
+    </Border>
+</UserControl>

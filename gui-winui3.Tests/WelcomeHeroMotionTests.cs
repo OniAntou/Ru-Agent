@@ -50,9 +50,9 @@ public sealed class WelcomeHeroMotionTests
         string entrance = GuiSource.MethodBody(code, "PlayWelcomeHeroEntrance");
         Assert.Contains("BeginTime", entrance, StringComparison.Ordinal);
 
-        Assert.Contains(
-            "AnimationsEnabled",
-            GuiSource.MethodBody(GuiSource.Text("Controls", "WelcomeOverlay.cs"), "SetStatusText"),
-            StringComparison.Ordinal);
+        // Decorative startup motion never delays a loading status change.
+        var status = GuiSource.MethodBody(GuiSource.ViewText("WelcomeOverlay"), "SetStatusText");
+        Assert.Contains("_statusLabel.Text = text", status, StringComparison.Ordinal);
+        Assert.DoesNotContain("Storyboard", status, StringComparison.Ordinal);
     }
 }

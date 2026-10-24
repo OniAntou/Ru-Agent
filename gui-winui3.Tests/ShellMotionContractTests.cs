@@ -141,15 +141,13 @@ public sealed class ShellMotionContractTests
     }
 
     [Fact]
-    public void The_send_button_cross_fades_between_send_and_stop()
+    public void The_send_button_changes_its_action_and_visible_identity_together()
     {
         var code = GuiSource.ViewText("ChatView");
         var face = GuiSource.MethodBody(code, "ApplySendFace");
-        Assert.Contains("UiMotion.SwapContent", face, StringComparison.Ordinal);
+        Assert.DoesNotContain("UiMotion.SwapContent", face, StringComparison.Ordinal);
         Assert.Contains("RunPanel.SendGlyph", face, StringComparison.Ordinal);
-        // Only a real face change animates: IsRunning raises a change only when the
-        // value flips (AgentRunPanelViewModelTests), and only that change animates.
-        Assert.Contains("ApplySendFace(animate: true)", GuiSource.MethodBody(code, "OnRunPanelPropertyChanged"), StringComparison.Ordinal);
+        Assert.Contains("ApplySendFace()", GuiSource.MethodBody(code, "OnRunPanelPropertyChanged"), StringComparison.Ordinal);
     }
 
     [Fact]

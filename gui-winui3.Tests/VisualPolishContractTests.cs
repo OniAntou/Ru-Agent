@@ -32,6 +32,23 @@ public sealed class VisualPolishContractTests
     ];
 
     [Fact]
+    public void Startup_brand_green_is_green_in_both_themes_and_readable_as_a_wordmark()
+    {
+        foreach (string theme in new[] { "Light", "Dark" })
+        {
+            var block = ThemeBlock(theme);
+            string green = ColorValue(block, "RuBrandGreenColor");
+            var hex = green.TrimStart('#');
+            int red = Convert.ToInt32(hex[..2], 16);
+            int channelGreen = Convert.ToInt32(hex.Substring(2, 2), 16);
+            int blue = Convert.ToInt32(hex.Substring(4, 2), 16);
+            Assert.True(channelGreen > red && channelGreen > blue, $"{theme}: brand must read as green.");
+            Assert.True(Contrast(green, ColorValue(block, "RuCanvasColor")) >= 3,
+                $"{theme}: large startup wordmark must clear 3:1.");
+        }
+    }
+
+    [Fact]
     public void Light_muted_text_passes_aa_on_canvas_and_sidebar()
     {
         var light = ThemeBlock("Light");
@@ -58,11 +75,23 @@ public sealed class VisualPolishContractTests
         var light = ThemeBlock("Light");
         string surface = ColorValue(light, "RuSurfaceColor");
 
-        foreach (var token in new[] { "RuInfoColor", "RuVioletColor", "RuPinkColor", "RuDangerColor" })
+        foreach (var token in new[] { "RuInfoColor", "RuVioletColor", "RuPinkColor", "RuDangerColor", "RuWarningColor" })
         {
             Assert.True(Contrast(ColorValue(light, token), surface) >= 4.5,
                 $"{token} must clear 4.5:1 on light surface.");
         }
+    }
+
+    [Theory]
+    [InlineData(UiTheme.Light)]
+    [InlineData(UiTheme.Dark)]
+    [InlineData(UiTheme.DarkMeteorShower)]
+    public void Runtime_warning_text_remains_readable_after_switching_theme(UiTheme theme)
+    {
+        var palette = RuThemePalettes.PaletteFor(theme);
+        static string Hex(Windows.UI.Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+        Assert.True(Contrast(Hex(palette.Warning), Hex(palette.Surface)) >= 4.5,
+            $"{theme}: warning text must clear 4.5:1 on its surface.");
     }
 
     [Theory]
@@ -257,12 +286,12 @@ public sealed class VisualPolishContractTests
     [Fact]
     public void Welcome_overlay_paints_only_from_theme_tokens()
     {
-        var overlay = GuiSource.Text("Controls", "WelcomeOverlay.cs");
+        var overlay = GuiSource.ViewText("WelcomeOverlay");
 
         foreach (var token in new[]
                  {
                      "RuCanvasBrush", "RuSurfaceBrush", "RuInkBrush", "RuMutedBrush",
-                     "RuLineBrush", "RuAccentBrush", "RuAccentSoftBrush",
+                     "RuLineBrush", "RuBrandGreenBrush", "RuSuccessBrush", "RuDangerBrush",
                  })
         {
             Assert.Contains(token, overlay, StringComparison.Ordinal);
@@ -298,7 +327,7 @@ public sealed class VisualPolishContractTests
         // loops come to disagree about the setting.
         foreach (var control in new[] { "WelcomeOverlay.cs", "MeteorShowerField.cs" })
         {
-            var source = GuiSource.Text("Controls", control);
+            var source = control == "WelcomeOverlay.cs" ? GuiSource.ViewText("WelcomeOverlay") : GuiSource.Text("Controls", control);
 
             Assert.Contains("UiTiming.AnimationsEnabled", source, StringComparison.Ordinal);
             Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);

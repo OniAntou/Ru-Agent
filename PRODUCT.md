@@ -56,6 +56,8 @@ workspace trust).
 - Keep the current dark tone (user decision, 2026-10-21): refine within the existing
   dark visual language rather than replacing it.
 - Name and wordmark: "ru agent" (`docs/assets/wordmark-clean.svg`, `wordmark.svg`).
+- GUI wordmarks use smooth Inter typography; blocky lettering belongs to the CLI
+  (user decision, 2026-10-24). The desktop startup animation follows this distinction.
 
 ## Evidence on Hand
 

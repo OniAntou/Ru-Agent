@@ -47,15 +47,58 @@ public sealed class WelcomeOverlayContractTests
     }
 
     [Fact]
-    public void WelcomeOverlay_runs_no_looping_animation()
+    public void WelcomeOverlay_gates_decorative_motion_and_cleans_up_on_disposal()
     {
-        // The animated background was replaced by static art: no render loop,
-        // no repeating storyboard may come back.
-        var source = GuiSource.Text("Controls", "WelcomeOverlay.cs");
+        // The owner chose Braille waves; both motion owners share OS preferences.
+        var source = GuiSource.ViewText("WelcomeOverlay");
 
         Assert.DoesNotContain("BackgroundPaths", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("RepeatBehavior.Forever", source, StringComparison.Ordinal);
         Assert.DoesNotContain("CompositionTarget.Rendering", source, StringComparison.Ordinal);
+        var pulse = GuiSource.MethodBody(source, "StartLoadingSweep");
+        Assert.Contains("UiTiming.AnimationsEnabled", pulse, StringComparison.Ordinal);
+        Assert.Contains("_accentSlide", pulse, StringComparison.Ordinal);
+        Assert.DoesNotContain("_ruWordmark", pulse, StringComparison.Ordinal);
+        Assert.Contains("StopBrandMotion", GuiSource.MethodBody(source, "Dispose"), StringComparison.Ordinal);
+        Assert.Contains("_watchTimer?.Stop()", GuiSource.MethodBody(source, "Dispose"), StringComparison.Ordinal);
+        Assert.Contains("UiTiming.AnimationsEnabled", GuiSource.MethodBody(source, "OnBrailleTick"), StringComparison.Ordinal);
+        Assert.Contains("StopBrailleMotion", GuiSource.MethodBody(source, "StopBrandMotion"), StringComparison.Ordinal);
+        Assert.Contains("DisposeBraille", GuiSource.MethodBody(source, "Dispose"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Loading_content_is_centered_instead_of_stretching_to_the_scroll_viewport_height()
+    {
+        // Native Measure/Arrange reproduced the top-aligned children when their
+        // StackPanel stretches, despite ScrollViewer.VerticalContentAlignment.
+        var constructor = GuiSource.MethodBody(GuiSource.ViewText("WelcomeOverlay"), "WelcomeOverlay");
+        int start = constructor.IndexOf("_content = new StackPanel", StringComparison.Ordinal);
+        int end = constructor.IndexOf("};", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+        Assert.Contains("VerticalAlignment = VerticalAlignment.Center", constructor[start..end], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Loading_uses_actual_window_viewport_instead_of_an_oversized_shell_layout()
+    {
+        var source = GuiSource.ViewText("WelcomeOverlay");
+        var bounds = GuiSource.MethodBody(source, "ApplyViewportBounds");
+        Assert.Contains("Width = viewportWidth", bounds, StringComparison.Ordinal);
+        Assert.Contains("Height = viewportHeight", bounds, StringComparison.Ordinal);
+        Assert.Contains("HorizontalAlignment = HorizontalAlignment.Left", bounds, StringComparison.Ordinal);
+        Assert.Contains("VerticalAlignment = VerticalAlignment.Top", bounds, StringComparison.Ordinal);
+        Assert.Contains("sender.Size", GuiSource.MethodBody(source, "OnViewportChanged"), StringComparison.Ordinal);
+        Assert.Contains("UnbindViewportRoot", GuiSource.MethodBody(source, "Dispose"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GUI_brand_uses_native_type_instead_of_blocky_art()
+    {
+        var source = GuiSource.ViewText("WelcomeOverlay");
+        Assert.Contains("RuUiFontFamily", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("RuMonoFontFamily", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SvgImageSource", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("_giantGlyph", source, StringComparison.Ordinal);
+        Assert.Contains("Open app", source, StringComparison.Ordinal);
     }
 
     private static int CanvasZIndex(XElement element) =>

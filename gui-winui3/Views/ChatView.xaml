@@ -485,6 +485,7 @@
                                             Visibility="{x:Bind ShowLegacyText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
+                    <controls:TurnChangesSummaryControl Message="{x:Bind}" />
                     <!--
                       An error that has somewhere to go next offers that place. A
                       missing provider key is the case this exists for: the message
@@ -953,7 +954,7 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="services:QueuedAgentTurn">
-                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" MinHeight="26">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" MinHeight="32">
                                             <TextBlock Grid.Column="0"
                                                        Text="{x:Bind Label}"
                                                        FontFamily="{StaticResource RuUiFontFamily}"
@@ -963,8 +964,8 @@
                                                        MaxLines="1"
                                                        VerticalAlignment="Center" />
                                             <Button Grid.Column="1"
-                                                    Width="18"
-                                                    Height="18"
+                                                    Width="28"
+                                                    Height="28"
                                                     Padding="0"
                                                     Background="Transparent"
                                                     Foreground="{StaticResource RuMutedBrush}"
@@ -1008,7 +1009,7 @@
                                                  <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}"/>
                                              </Border>
                                             <Button HorizontalAlignment="Right" VerticalAlignment="Top"
-                                                    Width="18" Height="18" Padding="0" Margin="2"
+                                                    Width="28" Height="28" Padding="0" Margin="2"
                                                     Background="{StaticResource RuAccentBrush}" Foreground="{StaticResource RuOnAccentBrush}"
                                                     BorderThickness="0" CornerRadius="{StaticResource AppPillCornerRadius}"
                                                     Click="OnRemoveAttachmentClick" Tag="{x:Bind Id}"
@@ -1027,7 +1028,7 @@
                                                     <FontIcon Glyph="{x:Bind FileIconGlyph, Mode=OneWay}" FontSize="13" Foreground="{StaticResource RuAccentBrush}"/>
                                                     <TextBlock Text="{x:Bind FileName, Mode=OneWay}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" MaxWidth="120" TextTrimming="CharacterEllipsis"/>
                                                     <TextBlock Text="{x:Bind FormattedSize, Mode=OneWay}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" Margin="0,0,2,0"/>
-                                                    <Button Width="18" Height="18" Padding="0"
+                                                    <Button Width="28" Height="28" Padding="0"
                                                             Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
                                                             BorderThickness="0" CornerRadius="{StaticResource AppPillCornerRadius}"
                                                             Click="OnRemoveAttachmentClick" Tag="{x:Bind Id}"

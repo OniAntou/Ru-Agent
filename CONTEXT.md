@@ -232,6 +232,15 @@ Implementation: [gui](docs/architecture/gui.md#session-side-surface).
 _Avoid_: treating the background-task list as the agent's todo plan
 
 
+**Turn Change Summary**:
+The read-only card beneath a settled assistant turn, grouping its completed edit
+activities by recorded file path. Line totals sum recorded edits rather than a
+net Git diff. The reader preserves each edit's before/after preview; missing
+evidence remains unavailable. It never modifies files or grants authority.
+Implementation: [GUI turn summary](docs/architecture/gui.md#turn-change-summary).
+_Avoid_: mixing session-wide edits or current filesystem content into an older turn.
+
+
 **Multimodal Image Payload**:
 A validated bounded client image persisted encrypted for authenticated-client and model-context audiences, then projected to a vision-capable provider. Unsupported models fail by name.
 Implementation: [host](docs/architecture/host.md#multimodal-image-payload).

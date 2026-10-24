@@ -26,7 +26,7 @@ public static class ContentDialogGate
     /// wait resumes on the caller's thread, which must be the UI thread:
     /// <see cref="ContentDialog.ShowAsync"/> requires it.
     /// </summary>
-    public static async Task<ContentDialogResult> ShowAsync(ContentDialog dialog)
+    public static async Task<ContentDialogResult> ShowAsync(ContentDialog dialog, Func<bool>? isCurrent = null)
     {
         ArgumentNullException.ThrowIfNull(dialog);
 
@@ -35,6 +35,9 @@ public static class ContentDialogGate
         {
             for (var attempt = 0; ; attempt++)
             {
+                // A queued reader may have lost its owning message/session while
+                // another dialog was open. Recheck on the UI thread before showing.
+                if (isCurrent?.Invoke() == false) return ContentDialogResult.None;
                 try
                 {
                     return await dialog.ShowAsync();

@@ -2,6 +2,53 @@
 
 Current reference. [System ownership](../architecture.md) · [Domain glossary](../../CONTEXT.md) · [Tool policy](../operations/agent-tools.md).
 
+## Startup screen
+
+The desktop startup uses a centered native Inter `Ru Agent` wordmark rather than
+the CLI's blocky lettering. `WelcomeOverlay` owns layout/status and its Motion
+partial owns a bounded entrance, a green loading sweep, and a 180 ms exit.
+The Braille partial owns a decorative green wave field behind the brand treatment.
+Real startup readiness interrupts the entrance; there
+is no minimum display time, invented percentage or completion delay. Large text
+and narrow/short windows use a bounded wordmark and a scrollable content host.
+The content StackPanel explicitly centers on both axes. The overlay is pinned to
+the actual `XamlRoot.Size`, aligned top-left, and follows viewport changes rather
+than inheriting a possibly wider shell layout. Its Layout partial releases the
+XamlRoot subscription on unload/close. The wordmark remains fully opaque while
+waiting; the moving accent is decorative and exposes no percentage to automation.
+`RuBrandGreenBrush` gives the wordmark a true green identity, with a darker variant
+for Light. A green-to-mint accent sweeps underneath it on a 1.6-second cycle and
+stays static under reduced motion. Background waves use actual eight-dot Unicode
+Braille cells, with deterministic spatial dithering, green-to-mint depth and an empty central ellipse
+for the wordmark and status. A bounded 128-column by 56-row field updates at most
+every 50 ms while visible and starting; resizing adapts cell counts to the viewport.
+Smooth density falloff softens the screen edges and the central exclusion; slow
+wave phases keep adjacent dot patterns coherent. Column geometry is reused across
+rows, and identical frames do not trigger another text layout.
+The subdued cinematic treatment adds a dimmer, out-of-phase Braille field at half
+speed, refreshed at most every 100 ms on the same timer. A stationary native
+Composition radial light rises softly from below the viewport and fades toward
+the edges. It is weaker in Light theme and hidden in high contrast; its visuals
+are released on unload/disposal. The wordmark enters over 650 ms, interruptible
+by readiness, while its foreground and central quiet area remain clear.
+Reduced motion uses a fixed frame, and high contrast hides the decorative field.
+The Braille timer stops on readiness, error, exit, unload and disposal; the display
+never waits for a wave cycle. No web surface or per-frame rendering event is used.
+
+`StartupScreenPresentation` maps the shell's startup phase to reader-facing copy.
+Host readiness waits for `MainWindow` to compose the chat surface before dismissal;
+optional catalog/session/health refreshes do not hold the usable surface behind
+the screen. Slow startup shows a factual hint after eight seconds. Missing-root,
+Host failure and unexpected startup exceptions stop motion and remain visible with
+an Open app action; Enter/Space also dismiss those settled error states.
+
+The loading watch checks the shared OS animation gate every 250 ms, replacing
+motion with a static wordmark and Braille frame when animations are disabled,
+including live changes.
+Unloading/window close stops timers and storyboards and completes any pending
+dismissal task; repeated dismissal shares the in-flight completion. Ready/error
+status is applied immediately and announced politely rather than delayed by a fade.
+
 ## Context window popup
 
 The compact composer popup shows used/context capacity, a thin segmented bar and
@@ -71,6 +118,9 @@ A delete removes the row as soon as the Host confirms it, then refreshes with
 `RefreshLatestAsync`, which supersedes a poll that may hold the pre-delete list.
 The workspace sidebar has no search or current-workspace filter. Group expansion,
 pins, pagination, drag ordering and active-session visibility stay in its projection.
+Workspaces, Recents and CLI Sessions headings pair their labels with decorative
+grid, history and minimal terminal-prompt icons; the labels and existing controls
+remain the accessible interaction targets.
 `SidebarLayoutState` owns one expanded width in the 220–360 px range for every
 window tier. The title-bar workspace-sidebar toggle hides it completely and
 restores its last width. `MainWindow.SidebarLayout.cs` handles pointer identity,
@@ -82,6 +132,13 @@ cursor and keyboard focus indicator remain available. A 1 px column with negativ
 margins clips a UserControl's pointer target.
 The removed Starry Night preference resolves to plain Dark;
 only Light, Dark and Meteor Shower remain selectable.
+Settings navigation scrolls horizontally in narrow mode and vertically in the
+wide sidebar; category buttons can grow with text scaling. The command palette
+uses a 620 px maximum width, safe viewport margins and a height bounded by the
+overlay. Composer remove controls have 28 px pointer targets. Send/Stop updates
+its visible glyph and accessible name synchronously with the run state, without
+a deferred content-swap animation. Light warning text uses the same readable
+semantic color in the startup resources and runtime palette.
 `ChatModelPickerViewModel` owns the chat's model and reasoning selection: the
 grouped catalog subscription, debounced picker search, model save (a failed save
 is reported on the composer, not swallowed) and the effort options for the
@@ -238,6 +295,13 @@ notify existing session rows without changing their layout fingerprint. The
 sidebar's color wave shares one timer across realized running titles and
 releases row subscriptions on recycling/window close; reduced motion uses a
 static tint and the Running accessibility label remains available.
+Windows animation preference changes are dispatched to the window and refresh
+that static/animated state without restarting Ru. Windows builds before 19041
+use a one-second preference poll because they lack the change event. Window close
+releases both the OS subscription and the fallback timer. Right-side panel
+transitions snapshot the presented opacity/translation before stopping a
+storyboard, so a visibility reversal retargets from its current frame. Session
+reset still cancels transitions and restores the neutral visual state.
 `AgentReplyAccumulator` is the view's sole reply-delta deduplication owner;
 rebinding the same run preserves delivered-frame and reset identities.
 Retries truncate only the failed model step's text, preserving earlier steps;
@@ -384,6 +448,31 @@ Sidebar placement is separate UI state: app-root sessions default to Recents;
 manual grouping/reordering survives refresh and restart but never changes the
 Conversation Session's actual working directory or execution permissions.
 _Avoid_: treating an HTTP 200 response as a successful delete
+
+## Turn change summary
+
+`TurnChangesProjection` builds a snapshot from one settled assistant message's
+edit activities. The latest activity identity wins before filtering; only
+completed edits with a file path count. Paths group case-insensitively with slash
+normalization, without filesystem access or authority resolution. Counts sum
+recorded edit operations using 64-bit totals, not a net Git diff; missing or
+invalid counts display `—` rather than a false zero. Each file retains its own
+ordered edit previews and line offsets instead of concatenating unrelated hunks.
+
+`TurnChangesSummaryControl` sits after the reply text in the assistant template.
+It hides while streaming or without edits, shows four files initially and expands
+into a height-bounded, virtualized list. It observes message/collection changes
+while loaded and item updates only once settled; unloading releases subscriptions.
+The existing run-owned transcript replay restores old turns without adopting the
+next run's edits. The session-wide Changes tab keeps its independent projection.
+
+File clicks and View changes open `TurnChangesDetailsControl`, a read-only native
+reader with a file picker and virtualized edits using `FileEditPreviewControl`.
+Missing previews are explicit. The shared dialog gate rechecks optional ownership
+after waiting, so a queued reader cannot open for a recycled message/session.
+Unloading, rebinding or resuming the message closes the reader; viewport changes
+resize its content. It uses recorded data only, with no file writes, new endpoint
+or permission changes.
 
 ## Session Side Surface
 

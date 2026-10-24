@@ -19,6 +19,13 @@ public sealed partial class MainWindow
 
     private object? _paletteFocusReturn;
 
+    private void OnCommandPaletteOverlaySizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Keep the results list inside short windows as well as narrow ones.
+        CommandPaletteCard.MaxHeight = Math.Max(0, Math.Min(480,
+            e.NewSize.Height - CommandPaletteCard.Margin.Top - CommandPaletteCard.Margin.Bottom));
+    }
+
     private void InitializeCommandPalette()
     {
         Palette = new CommandPaletteViewModel(BuildPaletteCommands);

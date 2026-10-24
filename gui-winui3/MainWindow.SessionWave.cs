@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Media;
 using RuApp.Models;
 using RuApp.Services;
 using Windows.Foundation;
+using Windows.UI.ViewManagement;
 
 namespace RuApp;
 
@@ -18,6 +19,43 @@ public sealed partial class MainWindow
     private readonly Stopwatch _sessionWaveClock = new();
     private DispatcherQueueTimer? _sessionWaveTimer;
     private bool _sessionWaveAnimationsEnabled = UiTiming.AnimationsEnabled;
+    private UISettings? _sessionMotionSettings;
+    private DispatcherQueueTimer? _sessionMotionPoll;
+
+    private void InitializeSessionTitleMotion()
+    {
+        _sessionMotionSettings = new UISettings();
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
+        {
+            _sessionMotionSettings.AnimationsEnabledChanged += OnSessionAnimationsChanged;
+        }
+        else
+        {
+            // The app also supports older Windows builds without this event.
+            _sessionMotionPoll = DispatcherQueue.CreateTimer();
+            _sessionMotionPoll.Interval = TimeSpan.FromSeconds(1);
+            _sessionMotionPoll.Tick += (_, _) => RefreshSessionMotionPreference();
+            _sessionMotionPoll.Start();
+        }
+        _sessionWaveAnimationsEnabled = _sessionMotionSettings.AnimationsEnabled;
+        RefreshSessionTitleWaves();
+    }
+
+    private void OnSessionAnimationsChanged(UISettings sender, object args)
+    {
+        // Windows delivers preference changes off the window dispatcher. Read the
+        // latest value on delivery so queued changes cannot restore an older one.
+        DispatcherQueue.TryEnqueue(RefreshSessionMotionPreference);
+    }
+
+    private void RefreshSessionMotionPreference()
+    {
+        if (_closed || _sessionMotionSettings is null) return;
+        bool enabled = _sessionMotionSettings.AnimationsEnabled;
+        if (enabled == _sessionWaveAnimationsEnabled) return;
+        _sessionWaveAnimationsEnabled = enabled;
+        RefreshSessionTitleWaves();
+    }
 
     private void OnSessionTitleLoaded(object sender, RoutedEventArgs e) => AttachSessionTitle((TextBlock)sender);
     private void OnSessionTitleUnloaded(object sender, RoutedEventArgs e) => DetachSessionTitle((TextBlock)sender);
@@ -97,6 +135,11 @@ public sealed partial class MainWindow
 
     private void StopSessionTitleWaves()
     {
+        if (_sessionMotionSettings is not null && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
+            _sessionMotionSettings.AnimationsEnabledChanged -= OnSessionAnimationsChanged;
+        _sessionMotionPoll?.Stop();
+        _sessionMotionPoll = null;
+        _sessionMotionSettings = null;
         _sessionWaveTimer?.Stop();
         if (_sessionWaveTimer is not null) _sessionWaveTimer.Tick -= OnSessionWaveTick;
         _sessionWaveTimer = null;

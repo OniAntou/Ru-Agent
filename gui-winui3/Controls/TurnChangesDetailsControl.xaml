@@ -1,0 +1,37 @@
+<UserControl
+    x:Class="RuApp.Controls.TurnChangesDetailsControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:RuApp.Controls"
+    xmlns:services="using:RuApp.Services">
+    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
+        <TextBlock Text="Recorded edits from this turn. Totals include each edit to a file."
+                   TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+        <ComboBox x:Name="FilePicker" Grid.Row="1" DisplayMemberPath="Path"
+                  HorizontalAlignment="Stretch" SelectionChanged="OnFileSelectionChanged"
+                  AutomationProperties.Name="Changed file" />
+        <ListView x:Name="EditsList" Grid.Row="2" SelectionMode="None" Padding="0"
+                  Background="Transparent" BorderThickness="0"
+                  AutomationProperties.Name="Recorded edits in selected file">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="services:TurnChangeEdit">
+                    <StackPanel Spacing="6" Margin="0,0,0,12">
+                        <TextBlock Text="{x:Bind Location}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                        <controls:FileEditPreviewControl BeforeText="{x:Bind BeforeText}" AfterText="{x:Bind AfterText}"
+                            StartLine="{x:Bind StartLine}"
+                            Visibility="{x:Bind HasPreview, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        <TextBlock Text="Diff unavailable for this recorded edit." TextWrapping="Wrap"
+                            Foreground="{StaticResource RuMutedBrush}" FontSize="12"
+                            Visibility="{x:Bind HasNoPreview, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</UserControl>

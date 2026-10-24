@@ -365,7 +365,11 @@
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="6,0">
                 <Button Click="OnSidebarSectionToggleClick" Tag="{x:Bind Key}" Padding="0" Style="{StaticResource WorkspaceRowButtonStyle}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Toggle Recents">
                     <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock x:Name="RecentsHeader" Text="RECENTS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <FontIcon Glyph="&#xE81C;" FontSize="12" Width="14" Height="14" Foreground="{StaticResource RuMutedBrush}"
+                                      IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw"/>
+                            <TextBlock x:Name="RecentsHeader" Text="RECENTS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
                         <FontIcon Grid.Column="1" Glyph="{x:Bind ChevronGlyph}" FontSize="10" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
@@ -376,7 +380,13 @@
             <Grid Margin="6,0">
                 <Button Click="OnSidebarSectionToggleClick" Tag="{x:Bind Key}" Padding="0" Style="{StaticResource WorkspaceRowButtonStyle}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Toggle CLI Session">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                        <TextBlock Text="{x:Bind Label}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Path Width="14" Height="14" Data="M2,3.5 L6,7 L2,10.5 M8,10.5 H12"
+                                  Stroke="{StaticResource RuMutedBrush}" StrokeThickness="1.2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                  IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw"/>
+                            <TextBlock Text="{x:Bind Label}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
                         <FontIcon Grid.Column="1" Glyph="{x:Bind ChevronGlyph}" FontSize="10" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
@@ -385,8 +395,14 @@
         <DataTemplate x:Key="SidebarWorkspacesTemplate" x:DataType="services:SidebarSectionRow">
             <Grid Margin="6,0">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="2">
-                                <TextBlock x:Name="WorkspaceHeader" Grid.Column="0" Text="WORKSPACES" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
-                                           Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <Path Width="14" Height="14"
+                                          Data="M2,2 H6 V6 H2 Z M8,2 H12 V6 H8 Z M2,8 H6 V12 H2 Z M8,8 H12 V12 H8 Z"
+                                          Stroke="{StaticResource RuMutedBrush}" StrokeThickness="1.2" StrokeLineJoin="Round"
+                                          IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw"/>
+                                    <TextBlock x:Name="WorkspaceHeader" Text="WORKSPACES" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
+                                               Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
                                 <Button x:Name="WorkspaceNewButton" Grid.Column="1" Click="OnWorkspaceAddClick" Background="Transparent" BorderThickness="0" Padding="6,4"
                                         ToolTipService.ToolTip="Add workspace" AutomationProperties.Name="Add workspace">
                                     <FontIcon Glyph="&#xE710;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
@@ -758,16 +774,17 @@
               Grid.RowSpan="2"
               Canvas.ZIndex="520"
               TabFocusNavigation="Cycle"
+              SizeChanged="OnCommandPaletteOverlaySizeChanged"
               Visibility="Collapsed"
               AutomationProperties.Name="Command palette">
             <Border Background="{StaticResource RuCanvasBrush}"
                     Opacity="0.6"
                     PointerPressed="OnCommandPaletteBackdropPointerPressed" />
             <Border x:Name="CommandPaletteCard"
-                    Width="620"
+                    MaxWidth="620"
                     MaxHeight="480"
                     Margin="24,88,24,24"
-                    HorizontalAlignment="Center"
+                    HorizontalAlignment="Stretch"
                     VerticalAlignment="Top"
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderBrush="{StaticResource RuLineBrush}"
@@ -876,7 +893,7 @@
             </Border>
         </Grid>
 
-        <!-- Welcome & Loading Overlay (static art while backend initializes) -->
+        <!-- Native GUI wordmark and live startup state above the shell. -->
         <controls:WelcomeOverlay x:Name="WelcomeOverlay"
                                  Grid.Row="0"
                                  Grid.RowSpan="2"

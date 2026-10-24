@@ -86,7 +86,7 @@ namespace RuApp.Views
             switch (e.PropertyName)
             {
                 case nameof(AgentRunPanelViewModel.IsRunning):
-                    ApplySendFace(animate: true);
+                    ApplySendFace();
                     UpdateQueuedTurnsPanel();
                     break;
                 case nameof(AgentRunPanelViewModel.IsPanelVisible):
@@ -137,28 +137,22 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// The two faces occupy the same box, so a cross-fade reads as one button turning
-        /// over instead of a glyph blinking into a different one.
+        /// Keep the visible face in sync with the action a click will perform.
+        /// A delayed glyph swap can still look like Send while the button stops a run.
         /// </summary>
-        private void ApplySendFace(bool animate)
+        private void ApplySendFace()
         {
             if (SendButton is null) return;
             AutomationProperties.SetName(SendButton, RunPanel.SendName);
             if (ChatInputTextBox is not null) ChatInputTextBox.PlaceholderText = RunPanel.ComposerPlaceholder;
             if (SendButtonIcon is null) return;
 
-            void ApplyFace()
+            SendButtonIcon.Glyph = RunPanel.SendGlyph;
+            SendButtonIcon.Margin = RunPanel.IsRunning ? new Thickness(0) : new Thickness(-1, 1, 0, 0);
+            if (Application.Current.Resources.TryGetValue("RuOnAccentBrush", out var onAccent) && onAccent is Brush onAccentBrush)
             {
-                SendButtonIcon.Glyph = RunPanel.SendGlyph;
-                SendButtonIcon.Margin = RunPanel.IsRunning ? new Thickness(0) : new Thickness(-1, 1, 0, 0);
-                if (Application.Current.Resources.TryGetValue("RuOnAccentBrush", out var onAccent) && onAccent is Brush onAccentBrush)
-                {
-                    SendButtonIcon.Foreground = onAccentBrush;
-                }
+                SendButtonIcon.Foreground = onAccentBrush;
             }
-
-            if (animate) Services.UiMotion.SwapContent(SendButtonIcon, ApplyFace);
-            else ApplyFace();
         }
 
         /// <summary>Approval arrives via SSE while the user may be scrolled up; put the keyboard on it once.</summary>

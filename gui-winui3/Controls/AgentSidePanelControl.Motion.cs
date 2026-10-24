@@ -9,12 +9,14 @@ namespace RuApp.Controls;
 public sealed partial class AgentSidePanelControl
 {
     private Storyboard? _visibilityAnimation;
+    private FrameworkElement? _visibilityHost;
     public bool IsVisibilityExiting { get; private set; }
 
     public void CancelVisibilityAnimations()
     {
         var animation = _visibilityAnimation;
         _visibilityAnimation = null;
+        _visibilityHost = null;
         IsVisibilityExiting = false;
         animation?.Stop();
         CardHost.Opacity = PanelHost.Opacity = 1;
@@ -23,7 +25,7 @@ public sealed partial class AgentSidePanelControl
 
     private void CancelVisibilityExit()
     {
-        if (IsVisibilityExiting) CancelVisibilityAnimations();
+        if (IsVisibilityExiting) PlayVisibilityEntrance();
     }
 
     public void PlayVisibilityEntrance() =>
@@ -43,6 +45,11 @@ public sealed partial class AgentSidePanelControl
 
     private void PlaySurfaceTransition(FrameworkElement host, TranslateTransform slide, bool exiting, Action? completed)
     {
+        // Stop() removes animated values. Snapshot the presented state first so
+        // reversing a transition continues from the frame the user actually saw.
+        bool continuing = _visibilityAnimation is not null && ReferenceEquals(_visibilityHost, host);
+        double fromOpacity = continuing ? host.Opacity : exiting ? 1 : 0;
+        double fromX = continuing ? slide.X : exiting ? 0 : 12;
         CancelVisibilityAnimations();
         if (!UiTiming.AnimationsEnabled)
         {
@@ -51,8 +58,8 @@ public sealed partial class AgentSidePanelControl
         }
 
         IsVisibilityExiting = exiting;
-        host.Opacity = exiting ? 1 : 0;
-        slide.X = exiting ? 0 : 12;
+        host.Opacity = fromOpacity;
+        slide.X = fromX;
         var animation = new Storyboard();
         var duration = TimeSpan.FromMilliseconds(exiting ? 140 : 180);
         var fade = new DoubleAnimation { To = exiting ? 0 : 1, Duration = duration };
@@ -69,11 +76,13 @@ public sealed partial class AgentSidePanelControl
         animation.Children.Add(fade);
         animation.Children.Add(glide);
         _visibilityAnimation = animation;
+        _visibilityHost = host;
         animation.Completed += (_, _) =>
         {
             // A cancelled transition cannot complete a newer visibility request.
             if (!ReferenceEquals(_visibilityAnimation, animation)) return;
             _visibilityAnimation = null;
+            _visibilityHost = null;
             IsVisibilityExiting = false;
             animation.Stop();
             host.Opacity = 1;

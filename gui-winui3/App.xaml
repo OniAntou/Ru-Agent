@@ -23,9 +23,10 @@
                     <Color x:Key="RuAccentHoverColor">#334155</Color>
                     <Color x:Key="RuAccentPressedColor">#0B1220</Color>
                     <Color x:Key="RuSuccessColor">#047857</Color>
-                    <Color x:Key="RuWarningColor">#F59E0B</Color>
+                    <Color x:Key="RuWarningColor">#9A5B00</Color>
                     <Color x:Key="RuDangerColor">#B91C1C</Color>
                     <Color x:Key="RuInfoColor">#075985</Color>
+                    <Color x:Key="RuBrandGreenColor">#137A3D</Color>
                     <Color x:Key="RuVioletColor">#7E22CE</Color>
                     <Color x:Key="RuNewChatStartColor">#DEF0E5</Color>
                     <Color x:Key="RuNewChatMiddleColor">#E6EEF8</Color>
@@ -132,6 +133,7 @@
                     <Color x:Key="RuWarningColor">#FBBF24</Color>
                     <Color x:Key="RuDangerColor">#F87171</Color>
                     <Color x:Key="RuInfoColor">#38BDF8</Color>
+                    <Color x:Key="RuBrandGreenColor">#4ADE80</Color>
                     <Color x:Key="RuVioletColor">#C084FC</Color>
                     <Color x:Key="RuNewChatStartColor">#203E34</Color>
                     <Color x:Key="RuNewChatMiddleColor">#293847</Color>
@@ -244,6 +246,7 @@
             <SolidColorBrush x:Key="RuWarningBrush" Color="{ThemeResource RuWarningColor}" />
             <SolidColorBrush x:Key="RuDangerBrush" Color="{ThemeResource RuDangerColor}" />
             <SolidColorBrush x:Key="RuInfoBrush" Color="{ThemeResource RuInfoColor}" />
+            <SolidColorBrush x:Key="RuBrandGreenBrush" Color="{ThemeResource RuBrandGreenColor}" />
             <SolidColorBrush x:Key="RuVioletBrush" Color="{ThemeResource RuVioletColor}" />
             <SolidColorBrush x:Key="RuPinkBrush" Color="{ThemeResource RuPinkColor}" />
 

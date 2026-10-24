@@ -36,7 +36,7 @@
             </Style>
 
             <Style x:Key="SidebarNavButtonStyle" TargetType="Button">
-                <Setter Property="Height" Value="32" />
+                <Setter Property="MinHeight" Value="32" />
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Left" />
                 <Setter Property="Background" Value="Transparent" />
@@ -106,34 +106,39 @@
                 BorderBrush="{StaticResource RuLineBrush}"
                 BorderThickness="0,0,1,0">
             <Grid Padding="12,16,12,16">
-                <StackPanel x:Name="SettingsNavigationButtons" Spacing="4">
-                    <TextBlock x:Name="SettingsNavigationHeading" Text="Settings" Style="{StaticResource SidebarCategoryHeadingStyle}" Margin="8,0,8,6" />
-                    <!-- General Tab Button -->
-                    <Button x:Name="NavGeneralBtn"
-                            Content="General"
-                            AutomationProperties.Name="General settings"
-                            Click="OnNavGeneralClick"
-                            Style="{StaticResource SidebarNavButtonStyle}" />
-                    <!-- Models / AI Providers Tab Button -->
-                    <Button x:Name="NavModelsBtn"
-                            Content="Models &amp; Providers"
-                            AutomationProperties.Name="Models and providers settings"
-                            Click="OnNavModelsClick"
-                            Style="{StaticResource SidebarNavButtonStyle}" />
-                    <Button x:Name="NavRulesBtn"
-                            Content="Approval rules"
-                            AutomationProperties.Name="Approval rules"
-                            Click="OnNavRulesClick"
-                            Style="{StaticResource SidebarNavButtonStyle}" />
-                    <Button x:Name="NavShortcutsBtn"
-                            Content="Keyboard shortcuts"
-                            AutomationProperties.Name="Keyboard shortcuts"
-                            Click="OnNavShortcutsClick"
-                            Style="{StaticResource SidebarNavButtonStyle}" />
-                    <Button x:Name="NavAboutBtn" Content="About"
-                            AutomationProperties.Name="About Ru"
-                            Click="OnNavAboutClick" Style="{StaticResource SidebarNavButtonStyle}" />
-                </StackPanel>
+                <ScrollViewer x:Name="SettingsNavigationScroll"
+                              HorizontalScrollBarVisibility="Disabled"
+                              HorizontalScrollMode="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="SettingsNavigationButtons" Spacing="4">
+                        <TextBlock x:Name="SettingsNavigationHeading" Text="Settings" Style="{StaticResource SidebarCategoryHeadingStyle}" Margin="8,0,8,6" />
+                        <!-- General Tab Button -->
+                        <Button x:Name="NavGeneralBtn"
+                                Content="General"
+                                AutomationProperties.Name="General settings"
+                                Click="OnNavGeneralClick"
+                                Style="{StaticResource SidebarNavButtonStyle}" />
+                        <!-- Models / AI Providers Tab Button -->
+                        <Button x:Name="NavModelsBtn"
+                                Content="Models &amp; Providers"
+                                AutomationProperties.Name="Models and providers settings"
+                                Click="OnNavModelsClick"
+                                Style="{StaticResource SidebarNavButtonStyle}" />
+                        <Button x:Name="NavRulesBtn"
+                                Content="Approval rules"
+                                AutomationProperties.Name="Approval rules"
+                                Click="OnNavRulesClick"
+                                Style="{StaticResource SidebarNavButtonStyle}" />
+                        <Button x:Name="NavShortcutsBtn"
+                                Content="Keyboard shortcuts"
+                                AutomationProperties.Name="Keyboard shortcuts"
+                                Click="OnNavShortcutsClick"
+                                Style="{StaticResource SidebarNavButtonStyle}" />
+                        <Button x:Name="NavAboutBtn" Content="About"
+                                AutomationProperties.Name="About Ru"
+                                Click="OnNavAboutClick" Style="{StaticResource SidebarNavButtonStyle}" />
+                    </StackPanel>
+                </ScrollViewer>
             </Grid>
         </Border>
 

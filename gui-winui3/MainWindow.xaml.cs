@@ -27,6 +27,7 @@ namespace RuApp
         private readonly StartupCancellationScope _startup = new();
         private Task _startupTask = Task.CompletedTask;
         private bool _closed;
+        private bool _startupSurfaceReady;
 
         private ChatView? _chatView;
         private SettingsView? _settingsView;
@@ -97,6 +98,7 @@ namespace RuApp
             try
             {
                 this.InitializeComponent();
+                InitializeSessionTitleMotion();
             SidebarResizer.WidthRequested += OnSidebarWidthRequested;
                 this.Title = "Ru — Conversational Runtime";
 
@@ -154,21 +156,8 @@ namespace RuApp
 
         private void ApplyWelcomeStatus()
         {
-            switch (Shell.StartupPhase)
-            {
-                case ShellStartupPhase.Starting:
-                    WelcomeOverlay?.SetStatus(Shell.WelcomeText, isReady: false);
-                    break;
-                case ShellStartupPhase.RootMissing:
-                    WelcomeOverlay?.SetStatus(Shell.WelcomeText, isReady: true, isError: true);
-                    break;
-                case ShellStartupPhase.Ready:
-                    WelcomeOverlay?.NotifyReady();
-                    break;
-                case ShellStartupPhase.Failed:
-                    WelcomeOverlay?.NotifyReady(isError: true);
-                    break;
-            }
+            var presentation = StartupScreenPresentation.For(Shell.StartupPhase, _startupSurfaceReady);
+            WelcomeOverlay?.SetStatus(presentation.StatusText, presentation.IsReady, presentation.IsError);
         }
 
         /// <summary>The polls run only while a Host session is up.</summary>
@@ -273,7 +262,12 @@ namespace RuApp
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.WriteCrashEvent(ex);
-                if (!_closed) Shell.ReportError("Could not start Ru. Please check the logs.");
+                if (!_closed)
+                {
+                    Shell.ReportError("Could not start Ru. Please check the logs.");
+                    WelcomeOverlay?.SetStatus("Ru couldn't finish starting. Open the app to review its status.",
+                        isReady: true, isError: true);
+                }
             }
         }
 
@@ -357,6 +351,8 @@ namespace RuApp
                 // The conversation surface is Agent-only.
                 ContentFrame.Content = _chatView;
                 SetActiveNav(NavChat);
+                _startupSurfaceReady = true;
+                ApplyWelcomeStatus();
                 _providerCatalogController.SetPollingActive(true);
                 _groupedCatalogs?.SetPollingActive(true);
                 _ = _groupedCatalogs?.RefreshIfDueAsync();
@@ -713,6 +709,7 @@ namespace RuApp
             if (_closed) return;
             _closed = true;
             StopSessionTitleWaves();
+            WelcomeOverlay?.Dispose();
             Shell.Close();
             _startup.Cancel();
             _sessionsTimer?.Stop();

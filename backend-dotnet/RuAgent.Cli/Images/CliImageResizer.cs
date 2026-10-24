@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -19,12 +20,27 @@ public static class CliImageResizer
     public const int DefaultMaxDimension = 2048;
     public const int DefaultMaxBytes = 4 * 1024 * 1024;
 
+    /// <summary>
+    /// Largest source canvas accepted before GDI+ decodes it. A small compressed file can
+    /// claim a multi-gigapixel canvas; scaling happens after the source decode, so the
+    /// cap has to be checked from the container header first. 64 MP covers 8K frames and
+    /// ordinary camera photos while keeping the worst-case RGBA surface near 256 MB.
+    /// </summary>
+    public const long MaxSourcePixels = 64_000_000;
+
     public static CliResizedImage ResizeIfNeeded(
         byte[] bytes,
         int maxDimension = DefaultMaxDimension,
         int maxBytes = DefaultMaxBytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
+
+        if (TryReadDimensions(bytes, out var sourceWidth, out var sourceHeight)
+            && (long)sourceWidth * sourceHeight > MaxSourcePixels)
+        {
+            throw new InvalidDataException(
+                $"image is {sourceWidth}x{sourceHeight}; the source pixel limit is {MaxSourcePixels / 1_000_000} MP");
+        }
 
         if (IsWebp(bytes))
         {
@@ -79,6 +95,135 @@ public static class CliImageResizer
         bytes.Length >= 12
         && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
         && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P';
+
+    /// <summary>
+    /// Reads the canvas size from the container header without decoding pixels. PNG, JPEG,
+    /// BMP and WebP are the formats the picker accepts; an unreadable header is left for
+    /// the decoder to reject with its own bounded reason.
+    /// </summary>
+    public static bool TryReadDimensions(byte[] bytes, out int width, out int height)
+    {
+        width = 0;
+        height = 0;
+        if (TryReadPngDimensions(bytes, out width, out height))
+        {
+            return true;
+        }
+
+        if (IsWebp(bytes))
+        {
+            return TryReadWebpDimensions(bytes, out width, out height);
+        }
+
+        return TryReadJpegDimensions(bytes, out width, out height)
+            || TryReadBmpDimensions(bytes, out width, out height);
+    }
+
+    private static bool TryReadPngDimensions(byte[] bytes, out int width, out int height)
+    {
+        width = 0;
+        height = 0;
+        if (bytes.Length < 24
+            || bytes[0] != 0x89 || bytes[1] != 0x50 || bytes[2] != 0x4E || bytes[3] != 0x47
+            || bytes[4] != 0x0D || bytes[5] != 0x0A || bytes[6] != 0x1A || bytes[7] != 0x0A
+            || bytes[12] != 'I' || bytes[13] != 'H' || bytes[14] != 'D' || bytes[15] != 'R')
+        {
+            return false;
+        }
+
+        width = BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(16));
+        height = BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(20));
+        return width > 0 && height > 0;
+    }
+
+    private static bool TryReadJpegDimensions(byte[] bytes, out int width, out int height)
+    {
+        width = 0;
+        height = 0;
+        if (bytes.Length < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8)
+        {
+            return false;
+        }
+
+        var index = 2;
+        while (index + 3 < bytes.Length)
+        {
+            if (bytes[index] != 0xFF)
+            {
+                index++;
+                continue;
+            }
+
+            var marker = bytes[index + 1];
+            index += 2;
+            if (marker is 0xD8 or 0xD9)
+            {
+                continue;
+            }
+
+            if (marker == 0xDA)
+            {
+                // Start of scan: the frame header must already have appeared.
+                return false;
+            }
+
+            if (marker is >= 0xD0 and <= 0xD7)
+            {
+                continue;
+            }
+
+            if (index + 1 >= bytes.Length)
+            {
+                return false;
+            }
+
+            var length = (bytes[index] << 8) | bytes[index + 1];
+            if (length < 2 || index + length > bytes.Length)
+            {
+                return false;
+            }
+
+            if (IsStartOfFrame(marker) && length >= 7)
+            {
+                height = (bytes[index + 3] << 8) | bytes[index + 4];
+                width = (bytes[index + 5] << 8) | bytes[index + 6];
+                return width > 0 && height > 0;
+            }
+
+            index += length;
+        }
+
+        return false;
+    }
+
+    private static bool IsStartOfFrame(byte marker) =>
+        marker is >= 0xC0 and <= 0xCF and not 0xC4 and not 0xC8 and not 0xCC;
+
+    private static bool TryReadBmpDimensions(byte[] bytes, out int width, out int height)
+    {
+        width = 0;
+        height = 0;
+        if (bytes.Length < 26 || bytes[0] != 'B' || bytes[1] != 'M')
+        {
+            return false;
+        }
+
+        var headerSize = BitConverter.ToInt32(bytes, 14);
+        if (headerSize == 12)
+        {
+            width = BitConverter.ToUInt16(bytes, 18);
+            height = BitConverter.ToUInt16(bytes, 20);
+        }
+        else if (headerSize >= 40)
+        {
+            width = BitConverter.ToInt32(bytes, 18);
+            // A negative height means a top-down bitmap; the canvas is still |height|.
+            var rawHeight = BitConverter.ToInt32(bytes, 22);
+            height = rawHeight == int.MinValue ? 0 : Math.Abs(rawHeight);
+        }
+
+        return width > 0 && height > 0;
+    }
 
     private static CliResizedImage PassThroughWebp(byte[] bytes, int maxDimension, int maxBytes)
     {

@@ -182,9 +182,12 @@ public sealed partial class AgentCommands
             if (RunParkSignal.TryRead(frame, runId, out var reason))
             {
                 var current = await _agentClient.GetRunAsync(runId, frameCt).ConfigureAwait(false);
-                // Replay can contain old parks followed by a later Continue. Only the
-                // current durable boundary may detach this live subscription.
-                if (IsParkedRunStatus(current.Status) && current.LastSequence == frame.DurableSequence)
+                // Replay can contain old parks followed by a later Continue, so the run's
+                // current state decides. Requiring the park frame to be the latest durable
+                // sequence hung a live attach whenever a note was committed after the park;
+                // the Host holds the SSE stream open for parked runs. A resumed run reports
+                // running/completed here and still ignores its replayed park.
+                if (IsParkedRunStatus(current.Status))
                 {
                     parked = true;
                     parkReason = reason;

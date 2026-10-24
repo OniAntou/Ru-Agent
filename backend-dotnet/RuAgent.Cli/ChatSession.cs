@@ -123,11 +123,18 @@ public sealed partial class AgentCommands
             // The TG frame has no scrollback behind the picker, so a cancelled bare form must
             // reprint the option panel instead of leaving the operator with a silent no-op.
             _slashCommands.ReprintPanelOnPickerCancel = tgMode;
-            _slashCommands.Picker = (list, ct) => cmd.Json
-                ? Task.FromResult<string?>(null)
-                : tgMode
-                    ? TgPanelRequests.RequestChoiceAsync(tgWindow!, list, ct)
-                    : Task.FromResult<string?>(null);
+            // Terminal.Gui is the only engine with a floating picker. The sequential
+            // fallback leaves Picker null so the command handlers print their option
+            // panels (or a bounded interactive_required) instead of calling a no-op.
+            if (!cmd.Json && tgMode)
+            {
+                _slashCommands.Picker = (list, ct) => TgPanelRequests.RequestChoiceAsync(tgWindow!, list, ct);
+            }
+            else
+            {
+                _slashCommands.Picker = null;
+            }
+
             _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json
                 ? Task.FromResult<string?>(null)
                 : tgMode
@@ -216,21 +223,7 @@ public sealed partial class AgentCommands
             // The non-slash branch of the sequential key loop, moved into the shape the
             // dispatcher expects. 'continue' became 'return' (both resume the key loop),
             // and dispatcherExitCode carries the paths that used to return from ChatAsync.
-            sessionCommands = new ChatSessionCommands(
-                () => runSession.IsTurnActive,
-                () => sessionId,
-                ct => _sessionClient.CreateAsync(ct),
-                async (query, ct) => ChatSessionWorkflow.Filter(await _sessionClient.ListAsync(ct).ConfigureAwait(false), query),
-                SwitchSessionAsync,
-                _slashCommands.Picker,
-                // The session card (switch + delete) and the delete call exist only where a panel
-                // can be drawn; the sequential engine keeps the plain list and /resume <id>.
-                tgMode ? (list, ct) => TgPanelRequests.RequestSessionChoiceAsync(tgWindow!, list, ct) : null,
-                tgMode ? DeleteSessionAsync : null,
-                WriteDiagnosticLineAsync,
-                humanOut,
-                _err,
-                cmd.Json);
+            sessionCommands = CreateSessionCommands();
 
             try
             {
@@ -248,6 +241,13 @@ public sealed partial class AgentCommands
                     _slashCommands.FramelessReports = false;
                     humanOut = _out;
                     _slashCommands.HumanOut = _out;
+                    // The Terminal.Gui delegates now point at a disposed view. Drop the
+                    // picker and masked panel, and rebuild the session list paths so
+                    // commands use the sequential fallbacks.
+                    _slashCommands.Picker = null;
+                    _slashCommands.SecretPanelPrompt = null;
+                    _slashCommands.SecretPrompt = (prompt, ct) => Tui.ConsoleSecretInput.ReadAsync(_out, prompt, ct);
+                    sessionCommands = CreateSessionCommands();
                     sessionRenderer = CreateSessionRenderer(_out);
                     tgApp!.Dispose();
                 }

@@ -463,6 +463,14 @@ internal static class TgAnsiPaint
     /// </summary>
     internal sealed record WrappedSpans(string Row, IReadOnlyList<TgSpan> Spans);
 
+    /// <summary>
+    /// The repeated leading shape of a wrapped presentation row. A quote keeps its gutter
+    /// on every row; a list marker belongs to the first row and later rows align under the
+    /// text with spaces, matching the classic renderer.
+    /// </summary>
+    private sealed record WrapAffix(
+        int Length, int Width, IReadOnlyList<TgSpan> First, IReadOnlyList<TgSpan> Continuation);
+
     /// <summary>Splits paragraphs on newlines, then wraps each on word boundaries. Unlike
     /// <see cref="TuiText.Wrap"/> the rows keep their original spaces, which keeps every
     /// span slice aligned to its source range; a span never straddles two rows.</summary>
@@ -482,7 +490,22 @@ internal static class TgAnsiPaint
                 continue;
             }
 
-            WrapParagraphWords(spans, offset, paragraph, width, rows);
+            var affix = offset == 0 ? DetectWrapAffix(paragraph, spans) : null;
+            if (affix is { } first && paragraph.Length > first.Length && width > first.Width)
+            {
+                var bodyRows = new List<WrappedSpans>();
+                WrapParagraphWords(
+                    spans, offset + first.Length, paragraph[first.Length..], width - first.Width, bodyRows, first);
+                if (bodyRows.Count == 0)
+                {
+                    bodyRows.Add(Slice(paragraph, spans, offset, offset + paragraph.Length));
+                }
+
+                rows.AddRange(bodyRows);
+                continue;
+            }
+
+            WrapParagraphWords(spans, offset, paragraph, width, rows, null);
         }
 
         return rows;
@@ -505,41 +528,81 @@ internal static class TgAnsiPaint
                 continue;
             }
 
-            var index = 0;
-            var start = 0;
-            var used = 0;
-            while (index < paragraph.Length)
+            var affix = offset == 0 ? DetectWrapAffix(paragraph, spans) : null;
+            if (affix is { } first && paragraph.Length > first.Length && width > first.Width)
             {
-                var (codePoint, consumed) = ReadRune(paragraph, index);
-                var runeWidth = TuiText.RuneWidth(codePoint);
-                if (used + runeWidth > width && index > start)
-                {
-                    rows.Add(Slice(paragraph, spans, offset + start, offset + index));
-                    start = index;
-                    used = 0;
-                }
-
-                used += runeWidth;
-                index += consumed;
+                HardWrapParagraph(
+                    spans, offset + first.Length, paragraph[first.Length..], width - first.Width, rows, first);
+                continue;
             }
 
-            rows.Add(Slice(paragraph, spans, offset + start, offset + paragraph.Length));
+            HardWrapParagraph(spans, offset, paragraph, width, rows, null);
         }
 
         return rows;
     }
 
+    private static void HardWrapParagraph(
+        IReadOnlyList<TgSpan> spans,
+        int paragraphSourceOffset,
+        string paragraph,
+        int width,
+        List<WrappedSpans> rows,
+        WrapAffix? affix)
+    {
+        void AddRow(int start, int end)
+        {
+            var body = Slice(paragraph, spans, paragraphSourceOffset + start, paragraphSourceOffset + end);
+            rows.Add(affix is null
+                ? body
+                : Prepend(rows.Count == 0 ? affix.First : affix.Continuation, body));
+        }
+
+        var index = 0;
+        var start = 0;
+        var used = 0;
+        while (index < paragraph.Length)
+        {
+            var (codePoint, consumed) = ReadRune(paragraph, index);
+            var runeWidth = TuiText.RuneWidth(codePoint);
+            if (used + runeWidth > width && index > start)
+            {
+                AddRow(start, index);
+                start = index;
+                used = 0;
+            }
+
+            used += runeWidth;
+            index += consumed;
+        }
+
+        AddRow(start, paragraph.Length);
+    }
+
     private static void WrapParagraphWords(
-        IReadOnlyList<TgSpan> spans, int paragraphSourceOffset, string paragraph, int width, List<WrappedSpans> rows)
+        IReadOnlyList<TgSpan> spans,
+        int paragraphSourceOffset,
+        string paragraph,
+        int width,
+        List<WrappedSpans> rows,
+        WrapAffix? affix)
     {
         var index = 0;
         var rowStart = -1;
         var rowEnd = 0;
         var rowWidth = 0;
 
+        void AddRow(int start, int end)
+        {
+            var body = Slice(paragraph, spans, paragraphSourceOffset + start, paragraphSourceOffset + end);
+            rows.Add(affix is null
+                ? body
+                : Prepend(rows.Count == 0 ? affix.First : affix.Continuation, body));
+        }
+
         void Commit(int endColumn)
         {
-            rows.Add(Slice(paragraph, spans, paragraphSourceOffset + rowStart, paragraphSourceOffset + endColumn));
+            AddRow(rowStart, endColumn);
             rowStart = -1;
             rowWidth = 0;
         }
@@ -606,7 +669,7 @@ internal static class TgAnsiPaint
                     var runeWidth = TuiText.RuneWidth(codePoint);
                     if (rowStart >= 0 && chunkWidth + runeWidth > width)
                     {
-                        rows.Add(Slice(paragraph, spans, paragraphSourceOffset + chunkStart, paragraphSourceOffset + wordIndex));
+                        AddRow(chunkStart, wordIndex);
                         chunkStart = wordIndex;
                         chunkWidth = 0;
                         rowStart = wordIndex;
@@ -626,6 +689,105 @@ internal static class TgAnsiPaint
         {
             Commit(rowEnd);
         }
+    }
+
+    private static WrapAffix? DetectWrapAffix(string text, IReadOnlyList<TgSpan> spans)
+    {
+        if (text.StartsWith("│ ", StringComparison.Ordinal))
+        {
+            // The gutter is part of the quote's shape, so it repeats with its own paint.
+            var gutter = Slice(text, spans, 0, 2).Spans;
+            return new WrapAffix(2, 2, gutter, gutter);
+        }
+
+        var length = BulletPrefixLength(text);
+        if (length == 0)
+        {
+            length = OrderedPrefixLength(text);
+        }
+
+        if (length == 0)
+        {
+            return null;
+        }
+
+        // A marker belongs to the first row only; later rows keep the text column with
+        // unpainted spaces, exactly like the classic wrapper's continuation indent.
+        var indent = new TgSpan(new string(' ', length), TgPalette.Attr(TuiToken.Ink));
+        return new WrapAffix(length, length, Slice(text, spans, 0, length).Spans, [indent]);
+    }
+
+    private static int BulletPrefixLength(string text)
+    {
+        if (text.StartsWith("    •  ", StringComparison.Ordinal))
+        {
+            return 7;
+        }
+
+        return text.StartsWith("  •  ", StringComparison.Ordinal) ? 5 : 0;
+    }
+
+    private static int OrderedPrefixLength(string text)
+    {
+        if (!text.StartsWith("  ", StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        var index = 2;
+        while (index < text.Length && char.IsAsciiDigit(text[index]) && index < 5)
+        {
+            index++;
+        }
+
+        var digits = index - 2;
+        if (digits is < 1 or > 3
+            || index + 2 >= text.Length
+            || text[index] != '.'
+            || text[index + 1] != ' '
+            || text[index + 2] != ' ')
+        {
+            return 0;
+        }
+
+        return index + 3;
+    }
+
+    private static WrappedSpans Prepend(IReadOnlyList<TgSpan> prefix, WrappedSpans body)
+    {
+        if (prefix.Count == 0)
+        {
+            return body;
+        }
+
+        var spans = new List<TgSpan>(prefix.Count + body.Spans.Count);
+        foreach (var span in prefix)
+        {
+            AddMerged(spans, span);
+        }
+
+        foreach (var span in body.Spans)
+        {
+            AddMerged(spans, span);
+        }
+
+        return new WrappedSpans(string.Concat(spans.Select(span => span.Text)), spans);
+    }
+
+    private static void AddMerged(List<TgSpan> spans, TgSpan span)
+    {
+        if (span.Text.Length == 0)
+        {
+            return;
+        }
+
+        if (spans.Count > 0 && spans[^1].Attr.Equals(span.Attr))
+        {
+            spans[^1] = spans[^1] with { Text = spans[^1].Text + span.Text };
+            return;
+        }
+
+        spans.Add(span);
     }
 
     private static IEnumerable<(string Paragraph, int SourceOffset)> Paragraphs(string text)

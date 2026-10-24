@@ -101,6 +101,16 @@ public sealed class TuiSessionRenderer
             return;
         }
 
+        if (envelope.ProtocolVersion != HarnessSafeEventEnvelope.CurrentProtocolVersion)
+        {
+            // The Host and CLI agree on one envelope version; rendering an unknown shape
+            // would be guesswork. Name the mismatch instead of silently dropping the turn.
+            _transcript.Note(
+                $"unsupported_protocol_version: {envelope.ProtocolVersion} (expected {HarnessSafeEventEnvelope.CurrentProtocolVersion})",
+                TuiToken.Err);
+            return;
+        }
+
         RenderEnvelope(envelope);
     }
 

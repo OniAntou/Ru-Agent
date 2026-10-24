@@ -294,7 +294,7 @@ public sealed class AgentSlashCommands
         }
 
         await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
-            $"  models.dev list unavailable ({error}) - showing the known providers only")).ConfigureAwait(false);
+            $"  models.dev list unavailable ({ChatDisplayText.Sanitize(error, 160)}) - showing the known providers only")).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -447,6 +447,13 @@ public sealed class AgentSlashCommands
 
     private async Task SwitchBackendAsync(string arg, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(arg))
+        {
+            await _err.WriteLineAsync("invalid_backend: no backend selected").ConfigureAwait(false);
+            await _err.FlushAsync().ConfigureAwait(false);
+            return;
+        }
+
         try
         {
             var trimmed = arg.Trim();
@@ -547,12 +554,13 @@ public sealed class AgentSlashCommands
                 var candidatesFooter = string.IsNullOrWhiteSpace(backend) ? null : backend;
 
                 // Fewer than two candidates means there is nothing to choose between: show
-                // the card instead of a one-row picker.
+                // the card instead of a one-row picker. The sequential engine has no
+                // picker, so it always prints the candidate panel.
                 if (candidates.Count > 1 && Picker is not null)
                 {
                     var list = new Tui.ChoiceList("model", candidates, footer: candidatesFooter, showRowCount: true);
                     var picked = await Picker(list, cancellationToken).ConfigureAwait(false);
-                    if (picked is not null)
+                    if (!string.IsNullOrWhiteSpace(picked))
                     {
                         await SetModelAsync(root, backend, picked, cancellationToken).ConfigureAwait(false);
                         await _humanOut.FlushAsync().ConfigureAwait(false);
@@ -560,7 +568,15 @@ public sealed class AgentSlashCommands
                     }
                 }
 
-                WriteModelCard(root, backend);
+                if (candidates.Count > 0)
+                {
+                    WriteModelPanel(root, backend, candidates);
+                }
+                else
+                {
+                    WriteModelCard(root, backend);
+                }
+
                 await _humanOut.FlushAsync().ConfigureAwait(false);
                 return;
             }
@@ -582,9 +598,55 @@ public sealed class AgentSlashCommands
 
     private async Task SetModelAsync(JsonElement settings, string? backend, string model, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            await _err.WriteLineAsync("invalid_model: no model selected").ConfigureAwait(false);
+            await _err.FlushAsync().ConfigureAwait(false);
+            return;
+        }
+
         var saveBody = new JsonObject { [ModelFieldFor(backend)] = model };
         await _settingsClient.UpdateAsync(saveBody, cancellationToken).ConfigureAwait(false);
         await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Switched active model to: {model}")).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The non-picker model surface: the active selection plus the same catalog rows the
+    /// picker would show, so a sequential terminal (or a cancelled TG picker) still names
+    /// every choice instead of only the current model.
+    /// </summary>
+    private void WriteModelPanel(JsonElement settings, string? backend, IReadOnlyList<Tui.ChoiceItem> candidates)
+    {
+        var model = ReadModel(settings, backend) ?? string.Empty;
+        var hasKey = ReadApiKeyState(settings, backend);
+        var current = new List<Tui.PanelRow>
+        {
+            new("backend", string.IsNullOrWhiteSpace(backend) ? "unknown" : backend),
+            new("model", string.IsNullOrWhiteSpace(model) ? "not set" : model),
+        };
+
+        if (hasKey is { } configured)
+        {
+            current.Add(new Tui.PanelRow("api key", configured ? "configured" : "missing"));
+        }
+        else if (IsModelsDevBackend(backend))
+        {
+            current.Add(new Tui.PanelRow("api key", "use /key <provider> to sign in"));
+        }
+
+        var rows = candidates
+            .Select(item => new Tui.PanelRow(item.Label, item.Detail))
+            .ToList();
+        var sections = new List<Tui.PanelSection> { new("session", current) };
+        if (rows.Count > 0)
+        {
+            sections.Add(new Tui.PanelSection("catalog", rows));
+        }
+
+        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "model", sections, "/model <name>"))
+        {
+            _humanOut.WriteLine(line);
+        }
     }
 
     private void WriteModelCard(JsonElement settings, string? backend)

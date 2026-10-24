@@ -157,6 +157,43 @@ public sealed class TuiMarkdownTests
     }
 
     [Fact]
+    public void WrappedBulletKeepsTheMarkerColumnOnContinuationRows()
+    {
+        using var _ = Level();
+        var rows = new TuiMarkdown().RenderLine("- " + string.Join(' ', Enumerable.Repeat("word", 30)), 40);
+
+        Assert.True(rows.Count > 1);
+        Assert.StartsWith("  •  ", rows[0], StringComparison.Ordinal);
+        Assert.All(rows.Skip(1), row => Assert.StartsWith("     ", row, StringComparison.Ordinal));
+        Assert.All(rows, row => Assert.True(TuiText.VisibleWidth(row) <= 40));
+        Assert.DoesNotContain(rows, row => row.Contains('…'));
+    }
+
+    [Fact]
+    public void WrappedQuoteKeepsItsGutterOnEveryRow()
+    {
+        using var _ = Level();
+        var rows = new TuiMarkdown().RenderLine("> " + string.Join(' ', Enumerable.Repeat("word", 30)), 40);
+
+        Assert.True(rows.Count > 1);
+        Assert.All(rows, row => Assert.StartsWith("│ ", row, StringComparison.Ordinal));
+        Assert.All(rows, row => Assert.True(TuiText.VisibleWidth(row) <= 40));
+    }
+
+    [Fact]
+    public void ALongWordIsWrappedInsteadOfLosingItsTail()
+    {
+        using var _ = Level();
+        var word = "https://example.com/" + new string('a', 100);
+        var rows = new TuiMarkdown().RenderLine(word, 30);
+        var visible = TuiText.Strip(string.Concat(rows));
+
+        Assert.DoesNotContain(rows, row => row.Contains('…'));
+        Assert.Contains(new string('a', 100), visible, StringComparison.Ordinal);
+        Assert.All(rows, row => Assert.True(TuiText.VisibleWidth(row) <= 30));
+    }
+
+    [Fact]
     public void ALongLineWrapsWithinTheWidth()
     {
         using var _ = Level();

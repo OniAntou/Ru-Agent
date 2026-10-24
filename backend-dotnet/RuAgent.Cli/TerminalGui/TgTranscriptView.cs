@@ -129,6 +129,46 @@ public sealed partial class TgTranscriptView : View
         SetNeedsDraw();
     }
 
+    /// <summary>
+    /// Removes only prose rows appended since <paramref name="mark"/>. A retried or
+    /// host-suppressed model step may have settled tool rows after the prose it streamed;
+    /// those receipts stay on screen while the superseded answer leaves.
+    /// </summary>
+    internal void RemoveProseSince(int mark)
+    {
+        if (mark < 0 || mark > _lines.Count)
+        {
+            return;
+        }
+
+        var removed = false;
+        for (var index = _lines.Count - 1; index >= mark; index--)
+        {
+            if (_lines[index].Style == TranscriptStyle.Prose)
+            {
+                RemoveLine(index);
+                removed = true;
+            }
+        }
+
+        if (!removed)
+        {
+            return;
+        }
+
+        // Removing a row shifts every later tool row's retained index; invalidate the
+        // writer's activity map with the same generation counter retention uses.
+        RetentionVersion++;
+        _wrapWidth = -1;
+        _tailDirty = false;
+        if (_lines.Count == 0)
+        {
+            ContentCleared?.Invoke();
+        }
+
+        SetNeedsDraw();
+    }
+
     internal void ReplaceToolRow(int index, string text)
     {
         if (index < 0 || index >= _lines.Count || _lines[index].Style != TranscriptStyle.Tool) return;

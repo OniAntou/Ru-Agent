@@ -60,6 +60,22 @@ public sealed class TuiPanelTests
     }
 
     [Fact]
+    public void Compose_StripsTerminalControlsFromUntrustedPanelText()
+    {
+        using var _ = TuiPalette.PinLevel(TuiColorLevel.None);
+        var lines = TuiPanel.Compose(
+            80,
+            "model\u001b[2J",
+            [new PanelSection("catalog\u0007", [new PanelRow("model", "safe\u001b]0;pwn\u0007name")])],
+            "esc\u001b[2J");
+
+        var text = string.Join("\n", lines);
+        Assert.DoesNotContain('\u001b', text);
+        Assert.DoesNotContain('\u0007', text);
+        Assert.Contains("safe", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compose_TruncatesAVeryLongRowInsteadOfWrapping()
     {
         var longValue = new string('x', 500);

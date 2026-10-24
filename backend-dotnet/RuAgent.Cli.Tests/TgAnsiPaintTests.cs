@@ -176,6 +176,60 @@ public sealed class TgAnsiPaintTests
     }
 
     [Fact]
+    public void HardWrapSpans_RepeatsBulletIndentOnContinuationRows()
+    {
+        using var _ = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        var painted = "  " + TuiPalette.Paint("•", TuiToken.Brand2) + "  "
+            + string.Join(' ', Enumerable.Repeat("word", 12));
+        var (clean, spans) = TgAnsiPaint.Parse(painted);
+        Assert.NotNull(spans);
+
+        var rows = TgAnsiPaint.HardWrapSpans(clean, spans!, 20);
+
+        Assert.True(rows.Count > 1);
+        Assert.StartsWith("  •  ", rows[0].Row, StringComparison.Ordinal);
+        Assert.All(rows.Skip(1), row => Assert.StartsWith("     ", row.Row, StringComparison.Ordinal));
+        Assert.All(rows, row => Assert.True(TuiText.VisibleWidth(row.Row) <= 20));
+        Assert.All(rows, row => Assert.Equal(row.Row, string.Concat(row.Spans.Select(span => span.Text))));
+        Assert.Equal(clean, rows[0].Row + string.Concat(rows.Skip(1).Select(row => row.Row[5..])));
+    }
+
+    [Fact]
+    public void HardWrapSpans_RepeatsTheQuoteGutterOnContinuationRows()
+    {
+        using var _ = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        var painted = TuiPalette.DimPaint("│ ") + string.Join(' ', Enumerable.Repeat("word", 12));
+        var (clean, spans) = TgAnsiPaint.Parse(painted);
+        Assert.NotNull(spans);
+
+        var rows = TgAnsiPaint.HardWrapSpans(clean, spans!, 20);
+
+        Assert.True(rows.Count > 1);
+        Assert.All(rows, row => Assert.StartsWith("│ ", row.Row, StringComparison.Ordinal));
+        Assert.All(rows, row => Assert.True(TuiText.VisibleWidth(row.Row) <= 20));
+        Assert.All(rows, row => Assert.Equal(row.Row, string.Concat(row.Spans.Select(span => span.Text))));
+        Assert.Equal(clean, rows[0].Row + string.Concat(rows.Skip(1).Select(row => row.Row[2..])));
+    }
+
+    [Fact]
+    public void WordWrapSpans_RepeatsOrderedMarkerIndentOnContinuationRows()
+    {
+        using var _ = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        var painted = "  " + TuiPalette.Paint("10.", TuiToken.Brand2) + "  "
+            + string.Join(' ', Enumerable.Repeat("word", 12));
+        var (clean, spans) = TgAnsiPaint.Parse(painted);
+        Assert.NotNull(spans);
+
+        var rows = TgAnsiPaint.WordWrapSpans(clean, spans!, 24);
+
+        Assert.True(rows.Count > 1);
+        Assert.StartsWith("  10.  ", rows[0].Row, StringComparison.Ordinal);
+        Assert.All(rows.Skip(1), row => Assert.StartsWith("       ", row.Row, StringComparison.Ordinal));
+        Assert.All(rows, row => Assert.True(TuiText.VisibleWidth(row.Row) <= 24));
+        Assert.All(rows, row => Assert.Equal(row.Row, string.Concat(row.Spans.Select(span => span.Text))));
+    }
+
+    [Fact]
     public void HardWrapSpans_SplitsColumnsKeepingBackticksGutterRowsAligned()
     {
         using var _ = TuiPalette.PinLevel(TuiColorLevel.TrueColor);

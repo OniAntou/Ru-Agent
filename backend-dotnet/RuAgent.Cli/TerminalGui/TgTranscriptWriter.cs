@@ -23,9 +23,9 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
 
     public void AppendToolRow(string activityId, string text)
     {
-        var clean = TuiText.Strip(text);
+        var clean = TuiText.SanitizeUntrusted(text);
         var hidden = clean.Contains("ctrl+o", StringComparison.Ordinal)
-            ? RetainedLinesProvider?.Invoke().Select(TuiText.Strip).ToArray() : null;
+            ? RetainedLinesProvider?.Invoke().Select(TuiText.SanitizeUntrusted).ToArray() : null;
         try
         {
             app.Invoke(() =>
@@ -42,7 +42,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
 
     public void UpdateToolRow(string activityId, string text)
     {
-        var clean = TuiText.Strip(text);
+        var clean = TuiText.SanitizeUntrusted(text);
         try
         {
             app.Invoke(() =>
@@ -151,7 +151,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
                 // Invoke queues worker-thread calls. Read the mark here, after
                 // BeginAssistantStep has executed, rather than before that queued
                 // callback has had a chance to record it.
-                if (_assistantStepMark >= 0) transcript.DropRowsSince(_assistantStepMark);
+                if (_assistantStepMark >= 0) transcript.RemoveProseSince(_assistantStepMark);
                 _assistantStepMark = -1;
                 _projectedRow = false;
             });
@@ -163,7 +163,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
 
     public void RetainDetails(IReadOnlyList<string> rows)
     {
-        var clean = rows.Select(TuiText.Strip).ToArray();
+        var clean = rows.Select(TuiText.SanitizeUntrusted).ToArray();
         try { app.Invoke(() => transcript.SetCollapsedDetails(clean, TranscriptStyle.Meta)); }
         catch (NotInitializedException) { }
     }

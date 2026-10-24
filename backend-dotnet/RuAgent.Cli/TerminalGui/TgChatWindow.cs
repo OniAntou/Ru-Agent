@@ -430,7 +430,8 @@ public sealed class TgChatWindow : Window
         bool allowDelete = false)
     {
         SetApprovalWaiting(false);
-        var list = new ChoiceList(title, items, selected, footer);
+        var safeTitle = ChatDisplayText.Sanitize(title, 120);
+        var list = new ChoiceList(safeTitle, items, selected, footer);
         _approval = null;
         _choices = list;
         _choicesAllowDelete = allowDelete;
@@ -438,7 +439,7 @@ public sealed class TgChatWindow : Window
         ShowPanel((width, height) => TuiCard.ComposeListFitting(
             TuiCard.ComputeWidth(width),
             height,
-            title,
+            safeTitle,
             "esc",
             CardItems(list),
             list.Selected,
@@ -450,12 +451,17 @@ public sealed class TgChatWindow : Window
 
     private static IReadOnlyList<CardItem> CardItems(ChoiceList list) =>
         list.Items
-            .Select(item => new CardItem(item.Label, string.IsNullOrEmpty(item.Detail) ? null : item.Detail, item.Enabled))
+            .Select(item => new CardItem(
+                ChatDisplayText.Sanitize(item.Label, 160),
+                string.IsNullOrEmpty(item.Detail) ? null : ChatDisplayText.Sanitize(item.Detail, 240),
+                item.Enabled))
             .ToList();
 
     /// <summary>The picker footer: the caller's copy, or the shared navigation hints.</summary>
     private static string PickerFooter(ChoiceList list) =>
-        string.IsNullOrWhiteSpace(list.Footer) ? "↑↓ select · enter apply" : list.Footer;
+        string.IsNullOrWhiteSpace(list.Footer)
+            ? "↑↓ select · enter apply"
+            : ChatDisplayText.Sanitize(list.Footer, 160);
 
     /// <summary>
     /// The masked secret panel: typed characters append to the buffer, Backspace trims it,
@@ -719,7 +725,11 @@ public sealed class TgChatWindow : Window
                     choices.Move(1);
                     break;
                 case TgPanelKeyKind.Enter:
-                    ResolveConfirmed(choices.Current.Value);
+                    if (choices.Current.Enabled)
+                    {
+                        ResolveConfirmed(choices.Current.Value);
+                    }
+
                     return;
                 case TgPanelKeyKind.Escape:
                     ResolveCancelled();

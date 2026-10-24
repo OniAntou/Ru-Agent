@@ -48,6 +48,34 @@ public sealed class TgPanelsTests
     }
 
     [Fact]
+    public void Picker_StripsTerminalControlsFromCatalogText()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        window.Transcript.Append("picker", TranscriptStyle.Prose);
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            window.ShowPicker(
+                "models\u001b[2J",
+                [new ChoiceItem("model\u0007name", "provider\u001b]0;pwn\u0007", "model-name")]);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            var text = string.Join('\n', TgSnapshot.Capture(app));
+            Assert.DoesNotContain('\u001b', text);
+            Assert.DoesNotContain('\u0007', text);
+            Assert.Contains("model name", text, StringComparison.Ordinal);
+            app.RequestStop();
+            return false;
+        });
+
+        app.Run(window);
+    }
+
+    [Fact]
     public void Approval_AtShortHeightKeepsEveryChoiceAndActionFooterVisible()
     {
         using IApplication app = Application.Create();
@@ -91,6 +119,38 @@ public sealed class TgPanelsTests
                     return false;
                 });
             });
+            return false;
+        });
+
+        app.Run(window);
+    }
+
+    [Fact]
+    public void Enter_on_a_disabled_no_match_row_does_not_confirm()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        window.Transcript.Append("existing conversation", TranscriptStyle.Prose);
+        var confirmed = "sentinel";
+        window.PanelConfirmed += value => confirmed = value;
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            window.FocusComposer();
+            window.ShowPicker("models", [new ChoiceItem("gpt-4o", string.Empty, "gpt-4o")]);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            app.InjectKey(new Key('z'));
+            app.InjectKey(Key.Enter);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(500), () =>
+        {
+            Assert.Equal("sentinel", confirmed);
+            app.RequestStop();
             return false;
         });
 

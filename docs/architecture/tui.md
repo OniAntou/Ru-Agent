@@ -37,20 +37,32 @@ append-only writer call it instead of keeping their own tables. A row measured o
 cell short wraps on the real terminal and misplaces every absolute cursor move after
 it, so the table has to be single: CJK and the common emoji blocks measure two cells,
 tabs advance to the same 8-column stops the terminal uses, and an unpaired UTF-16
-surrogate renders as U+FFFD rather than throwing from the paint path. The append-only
-surface bounds its rebuild history by rows and characters (2,000 / 200,000, with a
-16,000-unit per-line cap) exactly like the Terminal.Gui transcript.
+surrogate renders as U+FFFD rather than throwing from the paint path. Model and tool
+text is stripped of ANSI escape sequences, C0/C1 controls and bidi/format characters
+before either sink sees it; a sequence split across two streamed deltas is neutralised
+rather than left to complete. Native presentation rows expand tabs from the row's
+current column before measuring. A submitted multiline prompt is one user-block row per
+source line, with continuation rows aligned under the chevron. Span-painted bullet and
+quote rows repeat their marker column or `│` gutter on continuation rows, with the body
+wrapped in the remaining width, so the screen and classic renderers agree on the shape.
+The append-only surface bounds its rebuild history by rows and characters (2,000 /
+200,000, with a 16,000-unit per-line cap) exactly like the Terminal.Gui transcript.
 _Avoid_: Requiring GUI feature parity or treating presentation metadata as authority.
 
 Pending images appear as `[image 1] [image 2]` in the composer's spacer row,
 including while another turn streams. The labels are presentation only; submission
 snapshots retain the original image data URLs. Queued/admitted images leave the draft;
 images held after a pre-acceptance failure are marked `/retry:` until accepted.
-Clipboard decode and image-limit failures also appear in the live status row.
+Clipboard decode and image-limit failures also appear in the live status row. The
+resizer reads the PNG/JPEG/BMP/WebP container header and rejects a source canvas over
+64 MP before GDI+ allocates the decoded surface; the longest side is then capped at 2048
+and the encoded result at 4 MB.
 
 Read-only document panels strip legacy ANSI sequences before wrapping into native
 card rows. Their wrap budget includes the card's item indentation, preventing
 per-row clipping; the original output still reaches the transcript's styled importer.
+Panel and picker labels coming from a remote catalog (provider names, model ids) are
+sanitized like transcript text before they are measured or painted.
 
 The repository `bin/ru.cmd` launcher prefers the standalone Release win-x64 CLI
 publish and falls back to the desktop's flat publish when that CLI is absent.

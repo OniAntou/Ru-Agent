@@ -8,13 +8,17 @@ public sealed partial class TgTranscriptWriter
 {
     private static TgTranscriptRow NativeRow(TranscriptLine row)
     {
+        var column = 0;
         var spans = row.Runs.Select(run =>
         {
+            var clean = TuiText.SanitizeUntrusted(run.Text);
+            var text = TuiText.ExpandTabs(clean, column, out var endColumn);
+            column = endColumn;
             var rgb = TuiPalette.Rgb(run.Token);
             var foreground = run.Dim ? TgPalette.ToColor((rgb.R / 2, rgb.G / 2, rgb.B / 2)) : TgPalette.ToColor(rgb);
             var attr = new Terminal.Gui.Drawing.Attribute(foreground, TgPalette.ToColor((0, 0, 0)),
                 run.Bold ? TextStyle.Bold : TextStyle.None);
-            return new TgSpan(TuiText.Strip(run.Text), attr);
+            return new TgSpan(text, attr);
         }).ToArray();
         var style = row.Role switch
         {
@@ -80,7 +84,7 @@ public sealed partial class TgTranscriptWriter
     public void AppendActivityPresentation(string activityId, TranscriptLine row, IReadOnlyList<string>? details = null)
     {
         var native = NativeRow(row);
-        var hidden = details?.Select(TuiText.Strip).ToArray();
+        var hidden = details?.Select(TuiText.SanitizeUntrusted).ToArray();
         try
         {
             app.Invoke(() =>

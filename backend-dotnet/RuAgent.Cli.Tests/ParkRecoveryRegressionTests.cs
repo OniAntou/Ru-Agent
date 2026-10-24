@@ -70,6 +70,24 @@ public sealed class ParkRecoveryRegressionTests
     }
 
     [Fact]
+    public async Task Attach_detaches_a_park_even_when_a_note_follows_it()
+    {
+        var events = Frame(1, "continue.requested", "waiting_user", "provider_quota_exhausted")
+            + Frame(2, "run.note_added", "waiting_user", "context_snapshot");
+        using var http = new HttpClient(new Handler(req => req.RequestUri!.AbsolutePath.EndsWith("/events")
+            ? Sse(new HeldStream(events)) : Json(RunJson("waiting_user", 2))));
+        var output = new StringWriter();
+        using var commands = new AgentCommands(Session(), http, output, new StringWriter());
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        var exit = await commands.AttachAsync(new AttachCommand(RunId, false), deadline.Token);
+
+        Assert.Equal(2, exit);
+        Assert.False(deadline.IsCancellationRequested);
+        Assert.Contains("provider_quota_exhausted", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Replaying_an_old_park_does_not_detach_a_resumed_run()
     {
         var events = Frame(1, "continue.requested", "waiting_user", "provider_rate_limited")

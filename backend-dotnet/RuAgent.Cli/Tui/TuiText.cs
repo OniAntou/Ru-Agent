@@ -79,6 +79,69 @@ public static class TuiText
     }
 
     /// <summary>
+    /// Removes terminal control content from untrusted text: ANSI escape sequences (including
+    /// a sequence split across two deltas), C0/C1 controls, and bidi/format characters. Tabs
+    /// and newlines survive because the transcript uses them for layout. This is the
+    /// display-side filter for model and tool output; callers must keep any raw copy they need
+    /// for reconciliation.
+    /// </summary>
+    public static string SanitizeUntrusted(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+
+        var stripped = Strip(text);
+        var builder = new StringBuilder(stripped.Length);
+        var index = 0;
+        while (index < stripped.Length)
+        {
+            if (stripped[index] == '\u001b')
+            {
+                index = SkipAnsi(stripped, index);
+                continue;
+            }
+
+            var status = Rune.DecodeFromUtf16(stripped.AsSpan(index), out var rune, out var consumed);
+            if (status != System.Buffers.OperationStatus.Done || consumed <= 0)
+            {
+                // A surrogate pair can be split across two streamed deltas. Keep the raw
+                // code unit so the next delta can complete it; the measurement helpers
+                // already render a truly lone surrogate as U+FFFD.
+                builder.Append(stripped[index]);
+                index++;
+                continue;
+            }
+
+            index += consumed;
+            if (rune.Value is '\n' or '\t')
+            {
+                builder.Append(rune);
+                continue;
+            }
+
+            if ((rune.Value < 0x20) || (rune.Value is >= 0x7F and <= 0x9F))
+            {
+                continue;
+            }
+
+            var category = Rune.GetUnicodeCategory(rune);
+            if (category is UnicodeCategory.Control
+                or UnicodeCategory.Format
+                or UnicodeCategory.LineSeparator
+                or UnicodeCategory.ParagraphSeparator)
+            {
+                continue;
+            }
+
+            builder.Append(rune);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
     /// Display cells for one code point: 0 for combining/format/control, 2 for wide and
     /// emoji ranges, 1 otherwise. East-Asian ambiguous characters count as 1, matching the
     /// default (non-CJK) terminal setting this TUI targets.
@@ -305,15 +368,24 @@ public static class TuiText
     }
 
     /// <summary>Expands tabs to spaces at the shared tab stops (exact-output paths only).</summary>
-    public static string ExpandTabs(string text)
+    public static string ExpandTabs(string? text) => ExpandTabs(text, 0, out _);
+
+    /// <summary>
+    /// Expands tabs from <paramref name="startColumn"/> so a tab inside a run keeps the
+    /// column it would occupy in the finished row. Returns the display column after the
+    /// expanded text.
+    /// </summary>
+    public static string ExpandTabs(string? text, int startColumn, out int endColumn)
     {
+        text ??= string.Empty;
+        var column = Math.Max(0, startColumn);
         if (text.IndexOf('\t') < 0)
         {
+            endColumn = column + VisibleWidth(text);
             return text;
         }
 
-        var builder = new System.Text.StringBuilder(text.Length + 8);
-        var column = 0;
+        var builder = new StringBuilder(text.Length + 8);
         var index = 0;
         while (index < text.Length)
         {
@@ -340,6 +412,7 @@ public static class TuiText
             AppendDecoded(builder, text, start, index, codePoint);
         }
 
+        endColumn = column;
         return builder.ToString();
     }
 

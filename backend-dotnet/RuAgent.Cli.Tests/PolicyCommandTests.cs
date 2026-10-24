@@ -199,6 +199,66 @@ public sealed class PolicyCommandTests
     }
 
     [Fact]
+    public async Task PolicyImport_MissingRuleId_OnALaterRule_RollsBackEarlierRules()
+    {
+        var session = CreateSession();
+        var tempFile = Path.GetTempFileName();
+        var policyJson = "{\"version\":1,\"rules\":["
+            + "{\"scope\":\"global\",\"decision\":\"allow\",\"matcher\":{\"tool_id\":\"read\"}},"
+            + "{\"scope\":\"global\",\"decision\":\"deny\",\"matcher\":{\"tool_id\":\"bash\"}}]}";
+        File.WriteAllText(tempFile, policyJson);
+
+        var posts = 0;
+        var deleted = new List<string>();
+        var handler = CreateFakeClient(async req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+            {
+                posts++;
+                if (posts == 1)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.Created)
+                    {
+                        Content = new StringContent(
+                            JsonSerializer.Serialize(new { rule_id = "rule_" + new string('b', 32) }),
+                            Encoding.UTF8,
+                            "application/json"),
+                    };
+                }
+
+                // A success envelope without the id makes the committed rule unknowable.
+                return new HttpResponseMessage(HttpStatusCode.Created)
+                {
+                    Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+                };
+            }
+
+            if (req.Method == HttpMethod.Delete && uri.Contains("/agent/v1/policies/", StringComparison.Ordinal))
+            {
+                deleted.Add(uri[(uri.LastIndexOf('/') + 1)..]);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"deleted\":true}", Encoding.UTF8, "application/json"),
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var outWriter = new StringWriter();
+        var errWriter = new StringWriter();
+        var commands = new AgentCommands(session, handler, outWriter, errWriter, new StringReader("y\n"));
+        var exit = await commands.PolicyImportAsync(new PolicyImportCommand(true, tempFile, false), CancellationToken.None);
+
+        Assert.Equal(1, exit);
+        Assert.Equal(2, posts);
+        Assert.Equal(["rule_" + new string('b', 32)], deleted);
+        Assert.Contains("invalid_response", errWriter.ToString(), StringComparison.Ordinal);
+        File.Delete(tempFile);
+    }
+
+    [Fact]
     public async Task PolicyImport_WithoutConfirmation_Cancels()
     {
         var session = CreateSession();

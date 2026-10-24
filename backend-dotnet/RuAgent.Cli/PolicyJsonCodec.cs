@@ -201,7 +201,7 @@ public static class PolicyJsonCodec
             writer.WriteNumber("version", file.Version);
             writer.WritePropertyName("rules");
             writer.WriteStartArray();
-            foreach (var rule in file.Rules.OrderBy(r => r.Scope, StringComparer.Ordinal).ThenBy(r => r.Decision, StringComparer.Ordinal))
+            foreach (var rule in file.Rules)
             {
                 writer.WriteStartObject();
                 writer.WriteString("scope", rule.Scope);

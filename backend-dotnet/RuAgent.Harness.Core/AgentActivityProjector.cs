@@ -457,6 +457,7 @@ public static class AgentActivityProjector
             ("edit", _) => "Edit",
             ("write", "delete") => "Delete",
             ("write", "restore") => "Restore",
+            ("write", _) => "Write",
             ("bash", _) => "Terminal",
             ("web_fetch", _) => "Fetch",
             ("read", "help") => "Docs",

@@ -293,7 +293,7 @@ public sealed class WebAdapterTests
             new WebContentSanitizer(),
             new Uri("https://html.duckduckgo.com/html/"));
 
-        var result = await adapter.SearchAsync("dotnet docs", 2, CancellationToken.None);
+        var result = await adapter.SearchAsync("snippet text", 2, CancellationToken.None);
 
         Assert.Equal(2, result.Count);
         Assert.Equal("first snippet text", result[0].Snippet);

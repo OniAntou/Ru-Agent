@@ -77,7 +77,7 @@ public static class AgentRecoveryNotes
         "edit_no_match" => "Re-read the same file, then correct the exact old text before retrying the edit.",
         "edit_not_unique" => "Re-read the same file and narrow old_string or set expected_occurrences to the observed match count.",
         "workspace_changed" => "Inspect the current workspace and reconcile the change; do not overwrite stale content.",
-        "process_exit_nonzero" => "Inspect the verification diagnostics, fix the cause, then rerun that same verification.",
+        "process_exit_nonzero" => "For a declared required check, inspect the verification diagnostics, fix the cause and rerun that check. For exploratory work, repair the command or use an alternative relevant source; do not claim the failed command succeeded.",
         "verification_stale" => "Code changed after a successful check. Rerun that same verification against the current changes.",
         "verification_pending" => "The required check is still running. Read its terminal output until its real exit is known; starting it is not a pass.",
         "verification_result_missing" => "The check has no confirmed terminal exit. Inspect its retained output or rerun it; do not infer success.",

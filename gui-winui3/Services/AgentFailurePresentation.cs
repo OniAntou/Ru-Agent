@@ -53,25 +53,16 @@ internal static class AgentFailurePresentation
         && !string.IsNullOrWhiteSpace(Render(safeStatus));
 
     /// <summary>
-    /// Composes the inline status copy above the composer. A failed run defers to
-    /// the transcript failure card only when that card is actually present: the
-    /// card is suppressed once a reply has been rendered, so blanking the inline
-    /// status then would remove the only actionable failure signal.
+    /// Keeps terminal failure visible above the composer. The transcript does
+    /// not render a terminal summary card, and completed thinking rows alone
+    /// cannot explain why no answer arrived.
     /// </summary>
     internal static string InlineFailureStatus(
         string? runStatus,
         string? failureReason,
         bool isRunning,
         bool hasRenderedReply)
-    {
-        string rendered = Render(failureReason);
-        if (!ShouldKeepVisible(runStatus, failureReason) || isRunning)
-        {
-            return rendered;
-        }
-
-        return hasRenderedReply ? rendered : string.Empty;
-    }
+        => Render(failureReason);
 
     internal static string Render(string? status)
     {

@@ -100,7 +100,8 @@ reconciliation surfaces from Phase 3:
   their older approval contract; production v2 calls use Broker authorization.
   `RU_MAX_CONCURRENT_MODEL_STEPS` still bounds concurrent provider generation.
 - Managed Web: `web_search` resolves the configured engine against a fixed set
-  of public HTML engines and returns the first usable result, rather than
+  of public HTML engines and returns the first usable result after an
+  accent-insensitive query-term and explicit `site:` sanity check, rather than
   substituting a second tool or a second provider. It is the one documented
   exception to the no-substitution invariant, and every request still passes
   `WebPolicy`, so it cannot widen the network boundary or bypass a denial.

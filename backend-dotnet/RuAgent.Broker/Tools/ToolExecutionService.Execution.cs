@@ -102,7 +102,7 @@ public sealed partial class ToolExecutionService
                     ToolResultStatuses.Failed,
                     new JsonObject(),
                     error.Code,
-                    "Tool arguments were rejected.",
+                    ArgumentRepairHint(binding, arguments),
                     started,
                     ToolVerificationStates.NotRequired,
                     adapterInvoked: false);
@@ -489,7 +489,7 @@ public sealed partial class ToolExecutionService
                 ToolResultStatuses.Failed,
                 new JsonObject(),
                 error.Code,
-                "Tool arguments were rejected.",
+                ArgumentRepairHint(binding, arguments),
                 started,
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
@@ -613,6 +613,14 @@ public sealed partial class ToolExecutionService
                     ? $"old_string matched {error.MatchCount} times. Set expected_occurrences to {error.MatchCount} to replace all, or narrow old_string to a unique span."
                     : "old_string was not found in the file. Re-read the file and copy the exact text including whitespace.",
                 VerificationFailure(binding));
+        }
+        catch (HttpRequestException error) when (binding.Manifest.Id is "web_search" or "web_fetch")
+        {
+            var code = error.StatusCode is { } status ? $"web_http_{(int)status}" : "web_network_error";
+            outcome = ToolExecutionOutcome.Failed(code,
+                "The web request failed. Use another relevant public source or explain the missing evidence; "
+                + "do not retry this URL unchanged or bypass an access restriction through terminal scraping.",
+                ToolVerificationStates.NotRequired);
         }
         catch (Exception error)
         {

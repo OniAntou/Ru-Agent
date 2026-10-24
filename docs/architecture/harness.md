@@ -712,9 +712,12 @@ projection travels as private context metadata, outside canonical provider histo
 and outstanding commands are supplied in bounded runtime context guidance.
 
 For `bash`, optional `purpose=verification` declares a check requiring observed
-exit zero. An unannotated nonzero exit, timeout or cancellation also remains
-outstanding. Reading another file or passing a different command cannot resolve
-it. New authenticated terminal receipts carry an authority-derived
+exit zero. Reading another file or passing a different command cannot resolve
+that required check. Unannotated or `purpose=inspection` process failures remain
+failed diagnostic receipts, not new mandatory checks: a failed optional lookup
+may be abandoned for another relevant source. The latest failed result still
+requires repair or an honest blocked/partial response; this never marks it passed.
+New authenticated terminal receipts carry an authority-derived
 `verification_identity`: resolved executable, exact argv and canonical cwd,
 independent of timeout and workflow intent. Cwd aliases therefore resolve the
 same check without changing the full approval intent hash. Original receipts
@@ -749,6 +752,12 @@ required checks use `not_applicable`. Missing history never certifies a check.
 This definition still does not prove all acceptance criteria were tested.
 
 ## Repeated Tool Recovery
+
+The same schema-invalid enum/type/required field is counted across changed file
+names and content: after three rejected calls the repetition guard advises repair,
+then stops after its existing bounded note budget. A corrected schema is allowed.
+Field diagnostics come from the Protocol catalog and never rewrite arguments or
+expand execution authority.
 
 Identical calls and short failed-call cycles are suppressed before duplicate
 dispatch. Up to two `[REPETITION GUARD]` notes ask the same model to change its

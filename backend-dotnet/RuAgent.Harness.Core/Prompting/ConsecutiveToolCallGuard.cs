@@ -46,7 +46,8 @@ public static class ConsecutiveToolCallGuard
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(proposed);
         if (!TryDescribeRepetition(context, proposed, out receiptCode)
-            && !FailedToolCycleGuard.TryDescribe(context, proposed, out receiptCode))
+            && !FailedToolCycleGuard.TryDescribe(context, proposed, out receiptCode)
+            && !MalformedToolCallGuard.TryDescribe(context, proposed, out receiptCode))
         {
             receiptCode = null;
             return RepetitionGuardVerdict.NotRepeated;
@@ -69,9 +70,9 @@ public static class ConsecutiveToolCallGuard
     public static string BuildRepairNote(string? receiptCode)
     {
         var code = string.IsNullOrWhiteSpace(receiptCode) ? "rejected" : receiptCode;
-        return $"{RepairNotePrefix} You already sent this exact tool call and it did not "
+        return $"{RepairNotePrefix} You already sent this exact tool call or the same invalid argument and it did not "
             + $"succeed ({code}). Repeating the identical call cannot succeed. Change the "
-            + "arguments, use a different tool, or explain what is blocking you.";
+            + "rejected arguments to match the schema, not just the file name/content; use a different tool, or explain what is blocking you.";
     }
 
     private static bool TryDescribeRepetition(

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tools)**: Clarify file creation versus editing in model guidance and repair
+  hints. Keep malformed write activity labeled as Write, and explain that edit
+  cannot create a file or use empty old text.
+
+- **fix(agent)**: Separate failed exploration from declared required verification,
+  bound repeated malformed arguments across changing file names, and give exact
+  schema repair feedback without rewriting tool arguments.
+- **fix(web)**: Reject obviously off-query search candidates and report HTTP status
+  or connection errors instead of generic adapter failures.
+- **fix(gui)**: Keep the terminal failure visible when a run ends without a reply.
+
 - **fix(harness)**: Keep background checks stale when code changes during execution;
   derive terminal check identity from the resolved executable, argv and cwd.
   Build live and resumed summaries from receipt-backed checks so edits alone

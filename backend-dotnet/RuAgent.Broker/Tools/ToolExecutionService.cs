@@ -268,7 +268,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private static string IoRepairHint(string? code) => code switch
     {
         "is_directory" => "target is a directory, and file tools address files: list it and act on the files inside, or remove it with an approved terminal command.",
-        "file_not_found" => "file does not exist: list the directory to check the path, or create it with write.",
+        "file_not_found" => "file does not exist: list the directory to check the path. To create a new file use write with op=write, path and content; edit only modifies an existing file.",
         "file_exists" => "file already exists: read it, then retry with op=write, the same path and content, and overwrite=true; use edit for a partial change.",
         _ => "Tool input or output failed.",
     };
@@ -277,6 +277,10 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         candidate is not null && StableCodePattern.IsMatch(candidate)
             ? candidate
             : fallback;
+
+    private static string ArgumentRepairHint(ToolBinding binding, JsonObject arguments) =>
+        ToolArgumentDiagnostics.Find(binding.Manifest.Id, binding.Manifest.Version,
+            System.Text.Json.JsonSerializer.SerializeToElement(arguments))?.Hint ?? "Tool arguments were rejected.";
 
     /// <summary>
     /// Bounded, redacted adapter-failure diagnostic for the broker stderr log.

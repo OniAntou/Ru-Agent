@@ -253,7 +253,9 @@ public sealed class WebSearchAdapter
                 throw new InvalidDataException("web_search_parse_failed");
             }
 
-            return results;
+            var relevant = WebSearchRelevance.Filter(endpoint, query, results);
+            if (relevant.Count == 0) throw new InvalidDataException("web_search_irrelevant_results");
+            return relevant;
         }
 
         throw new InvalidDataException("web_redirect_limit");

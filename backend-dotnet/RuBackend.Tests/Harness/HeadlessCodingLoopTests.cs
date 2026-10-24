@@ -177,6 +177,27 @@ public sealed partial class HeadlessCodingLoopTests
         Assert.Contains("M other.txt", workspace.GitStatusPorcelain(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Failed_exploration_can_finish_after_alternative_evidence_without_recovery_loop()
+    {
+        using var workspace = GitWorkspace.Create();
+        var runner = new ScriptedRunner();
+        runner.Enqueue(ToolCall("terminal.run", """{"executable":"cmd.exe","arguments":["/d","/c","exit","1"],"purpose":"inspection"}"""));
+        runner.Enqueue(ToolCall("files.read", """{"path":"seed.txt"}"""));
+        runner.Enqueue(FinalStep("The alternative evidence is seed.txt; the exploratory command failed."));
+        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
+        using var client = factory.CreateAuthenticatedClient();
+        var runId = await CreateTrustedRunAsync(client, workspace.Path);
+        Assert.True(await WaitForStatusAsync(client, runId,
+            new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)));
+        Assert.Equal("completed", await GetStatusAsync(client, runId));
+        var events = await ReadEventsAsync(client, runId);
+        Assert.Contains(events, e => e.GetProperty("event_type").GetString() == "tool.execution_completed"
+            && e.GetProperty("safe_summary").GetString() == "process_exit_nonzero");
+        Assert.DoesNotContain(events, e => e.GetProperty("event_type").GetString() == "run.note_added"
+            && e.GetProperty("safe_summary").GetString() == "unverified_after_tool_failure");
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

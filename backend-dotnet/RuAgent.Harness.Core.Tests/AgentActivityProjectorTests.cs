@@ -6,7 +6,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Core.Tests;
 
-public sealed class AgentActivityProjectorTests
+public sealed partial class AgentActivityProjectorTests
 {
     private static void AssertPreview(string? detail, string expectedBefore, string expectedAfter)
     {

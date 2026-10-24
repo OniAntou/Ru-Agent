@@ -9,7 +9,7 @@ using Xunit;
 
 namespace RuAgent.Broker.Tests;
 
-public sealed class ToolExecutionServiceTests
+public sealed partial class ToolExecutionServiceTests
 {
     [Fact]
     public async Task Read_hashing_observes_tool_cancellation()

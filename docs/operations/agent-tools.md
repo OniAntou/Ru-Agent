@@ -170,8 +170,16 @@ were present but none resolved to a usable target, the call fails closed as
 returning an empty answer. Known engines require their result markup; CAPTCHA
 and navigation anchors cannot win the race. Bing links are decoded to the
 public destination and titles/snippets come from the result block. This does
-not guarantee upstream relevance or availability: free engines may still
-block requests or return weak results.
+not guarantee semantic relevance or availability: free engines may still
+block requests or return weak results. Known HTML engines now discard obvious
+off-query candidates with no meaningful query-term overlap (accent-insensitive),
+and honor explicit `site:` restrictions before accepting a winner. All discarded
+candidates produce `web_search_irrelevant_results`; the race continues to other
+engines. This is a lexical sanity check, not a factual accuracy score.
+HTTP failures surface as `web_http_<status>` (for example 403, 404, 429) and
+connection failures as `web_network_error`, rather than generic `adapter_error`.
+Use another source or report unavailable evidence; do not bypass an access error
+by terminal scraping. Once a relevant source answers the question, finish.
 
 Web downloads default to 4 MiB, with the existing configurable 4 MiB ceiling.
 Fetch parses HTML locally through AngleSharp without loading resources or
@@ -216,6 +224,16 @@ the untrusted wrapper/truncation marker), and `bash` `read_output` cursors count
 receipt, and spool metadata; it does not claim older output exchanges remain in
 the bounded model history. Missing call context fails closed if clipping needs
 a cursor. Paging does not authorize a new operation or bypass Broker approval.
+
+### File creation versus editing
+
+Create a new file with `write` and all three fields: `op="write"`, `path`,
+and `content`. `edit` never creates files: it requires an existing target and
+non-empty `old_string` copied from a fresh read. Empty/missing `old_string`
+receives explicit creation guidance without rewriting the call. Missing-target
+errors explain the same `write` operation; permissions and overwrite checks remain
+in force. Activity rows keep the actual `write` identity even if its `op` is
+missing or invalid; a rejected write is not presented as an `edit` attempt.
 
 ### File discovery output
 
@@ -382,7 +400,7 @@ A `Length` finish is not a completed turn: the entire step, including partial
 tool calls, is suppressed before any execution and gets up to two recovery notes
 requesting smaller output, then fails as `model_output_truncated`. A
 `ContentFilter` or `Error` finish fails immediately as `model_content_filtered`
-or `model_reply_error`. All recovery kinds share a cumulative 12-note run cap;
+or `model_reply_error`. All recovery kinds share a cumulative 24-note run cap;
 provider-transient failures retain their existing retry/Continue behavior, and
 prompt failures never take the note path.
 
@@ -472,7 +490,7 @@ the prose from the conversation outbox, retains the assistant step internally fo
 as an `InternalOnly` payload, and answers with a bounded durable `[HARNESS RECOVERY]`
 note in the model context naming the failed receipt code, so the model can redo the
 call, use a different tool, or report the blocker. The unverified case is bounded to
-2 notes and every recovery case shares a global cap of 6 notes per window; once the
+4 notes and every recovery case shares a global cap of 24 notes per run; once the
 bound is spent the run fails with the receipt error code (falling back to `tool_failed`)
 exactly as before. An unverified success claim is never displayed to the user as a
 completed answer. A subsequent different tool call remains eligible for normal execution
@@ -902,7 +920,10 @@ must be rerun after later known mutations, including edits while a check runs in
 the background. Authenticated receipts identify the actual resolved invocation,
 so cwd aliases do not create unrelated checks. `purpose=inspection` declares read-only intent;
 it is not enforced filesystem confinement. The default `command` remains compatible
-with earlier calls. An observed unexpected process failure must still be resolved.
+with earlier calls. Exploratory/default failures remain failed receipts and do
+not create mandatory test obligations; declare required build/test checks with
+`purpose=verification`. A later alternative source does not certify the failed
+command, but can supply the requested information.
 For a task explicitly testing failure, declare `purpose=expected_failure` and the
 exact `expected_exit_code` (1-255) before execution. This satisfies only that negative
 check, preserves its failed receipt, and never accepts denial, timeout, cancellation

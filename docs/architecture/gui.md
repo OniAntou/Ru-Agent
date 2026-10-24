@@ -1,5 +1,11 @@
 # Gui implementation
 
+Terminal failures keep their actionable inline status above the composer even
+when no assistant reply was rendered. The transcript does not add a terminal
+summary card; settled thinking rows alone must not hide a failed run.
+Write activity retains its `Write` label even when its required operation field
+is missing; rejected creation attempts must not appear as `Editing`.
+
 Current reference. [System ownership](../architecture.md) · [Domain glossary](../../CONTEXT.md) · [Tool policy](../operations/agent-tools.md).
 
 ## Startup screen

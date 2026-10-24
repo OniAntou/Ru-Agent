@@ -138,7 +138,11 @@ public sealed partial class BrokerExecutionRuntime
         }
         catch (PolicyContextException error)
         {
-            return new ToolEvaluateResult(null, DecisionReply("deny", error.Code, null, error.Hint));
+            var issue = error.Code == "malformed_call"
+                ? ToolArgumentDiagnostics.Find(toolId, toolVersion, System.Text.Json.JsonSerializer.SerializeToElement(arguments)) : null;
+            var hint = issue is null ? error.Hint : string.Join(" ", new[] { error.Hint, issue.Hint }
+                .Where(part => !string.IsNullOrWhiteSpace(part)));
+            return new ToolEvaluateResult(null, DecisionReply("deny", error.Code, null, hint));
         }
 
         var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants)

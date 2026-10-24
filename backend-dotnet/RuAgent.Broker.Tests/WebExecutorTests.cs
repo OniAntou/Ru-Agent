@@ -9,7 +9,7 @@ using Xunit;
 
 namespace RuAgent.Broker.Tests;
 
-public sealed class WebExecutorTests
+public sealed partial class WebExecutorTests
 {
     [Fact]
     public async Task Service_requires_approval_for_web_ops()

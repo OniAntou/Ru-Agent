@@ -144,10 +144,10 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
-    public void Failed_run_without_a_rendered_reply_defers_to_the_transcript_card()
+    public void Failed_run_without_a_rendered_reply_keeps_the_failure_visible()
     {
         Assert.Equal(
-            string.Empty,
+            AgentFailurePresentation.Render("repeated_tool_call"),
             AgentFailurePresentation.InlineFailureStatus(
                 "failed",
                 "repeated_tool_call",

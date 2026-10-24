@@ -28,7 +28,8 @@ public sealed partial class RunVerificationEvidence
     }
 
     public string? BlockingCode => Overflowed ? "verification_tracking_limit"
-        : Checks.FirstOrDefault(check => check.Status != VerificationCheckStatus.Passed)?.Code;
+        : Checks.FirstOrDefault(check => (check.IsVerification || check.ExpectedExitCode != 0)
+            && check.Status != VerificationCheckStatus.Passed)?.Code;
 
     public bool IsExpectedFailure(ToolExecutionReceipt receipt) =>
         receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero"
@@ -36,7 +37,8 @@ public sealed partial class RunVerificationEvidence
 
     public string? DescribePending()
     {
-        var pending = Checks.Where(check => check.Status != VerificationCheckStatus.Passed).ToArray();
+        var pending = Checks.Where(check => (check.IsVerification || check.ExpectedExitCode != 0)
+            && check.Status != VerificationCheckStatus.Passed).ToArray();
         if (pending.Length == 0 && !Overflowed) return null;
         return "Outstanding declared checks: " + string.Join(", ", pending.Take(8)
             .Select(check => $"{check.ProviderCallId} ({check.Code}): {check.Command}"))
@@ -104,7 +106,8 @@ public sealed partial class RunVerificationEvidence
             if (!tracked && purpose != "verification" && !negative && !actualProcessFailure) continue;
             if (!tracked && checks.Count >= MaximumChecks) { overflowed = true; continue; }
             var initial = new VerificationCheckEvidence(identity, providerId, null, expectedExit,
-                !negative, VerificationCheckStatus.Pending, "verification_pending", DescribeCommand(args));
+                purpose == "verification" || tracked && checks[identity].IsVerification,
+                VerificationCheckStatus.Pending, "verification_pending", DescribeCommand(args));
             var assessed = Assess(initial, receipt, entry.Content, providerId, false);
             checks[identity] = assessed;
             if (negative && assessed.Status == VerificationCheckStatus.Passed

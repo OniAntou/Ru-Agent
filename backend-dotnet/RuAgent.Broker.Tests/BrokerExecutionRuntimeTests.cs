@@ -21,6 +21,31 @@ namespace RuAgent.Broker.Tests;
 [Collection(nameof(WindowsProcessCollection))]
 public sealed class BrokerExecutionRuntimeTests
 {
+    [Fact]
+    public async Task Terminal_verification_fingerprint_uses_resolved_cwd_and_survives_failure()
+    {
+        using var fixture = new RuntimeFixture();
+        const string session = "verification-identity";
+        const string run = "verification-run";
+        Assert.Null((await fixture.Runtime.OpenRunAsync(
+            RunOpen(run, session, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default)).Error);
+        string? fingerprint = null;
+        foreach (var cwd in new[] { ".", fixture.Root })
+        {
+            var arguments = new JsonObject { ["mode"] = "run", ["executable"] = "cmd.exe",
+                ["arguments"] = new JsonArray("/d", "/c", "exit", "1"), ["working_directory"] = cwd };
+            var decision = await fixture.Runtime.EvaluateAsync(Evaluate("eval-" + Guid.NewGuid().ToString("N"), session, run, "bash", arguments), default);
+            Assert.Equal("allow", decision.Decision!.Decision);
+            var result = await fixture.Runtime.ExecuteAuthorizedAsync(Execute("exec-" + Guid.NewGuid().ToString("N"),
+                session, run, "bash", decision.Decision.AuthorizationToken!, arguments), default);
+            Assert.Equal(ToolResultStatuses.Failed, result.Receipt!.Status);
+            var observed = result.Receipt.Output["verification_identity"]!.GetValue<string>();
+            Assert.Equal(64, observed.Length);
+            if (fingerprint is not null) Assert.Equal(fingerprint, observed);
+            fingerprint = observed;
+        }
+    }
+
     [Theory]
     [InlineData("run")]
     [InlineData("shell")]

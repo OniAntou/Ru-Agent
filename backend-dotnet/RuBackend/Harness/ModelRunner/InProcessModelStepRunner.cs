@@ -142,6 +142,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             }
             catch (ModelStepException error) when (
                 error.Retryable
+                && (error.RetryAfter is null || error.RetryAfter <= MaximumRetryDelay)
                 && attempt + 1 < MaxModelStepAttempts
                 && !cancellationToken.IsCancellationRequested)
             {
@@ -189,8 +190,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         if (double.IsNaN(jitterSample) || jitterSample is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(jitterSample));
         var jitteredTicks = (long)(backoff.Ticks * (0.8 + 0.4 * jitterSample));
         var delay = TimeSpan.FromTicks(Math.Max(0, jitteredTicks));
-        if (retryAfter is { } serverDelay && serverDelay > delay) delay = serverDelay;
-        return delay > MaximumRetryDelay ? MaximumRetryDelay : delay;
+        if (delay > MaximumRetryDelay) delay = MaximumRetryDelay;
+        return retryAfter is { } serverDelay && serverDelay > delay ? serverDelay : delay;
     }
 
     private const long RequestSafetyMarginTokens = 64;

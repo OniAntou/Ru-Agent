@@ -33,6 +33,9 @@ public sealed partial class RunVerificationEvidence
                     : failed with { Code = "verification_result_missing" };
             if (receipt.Outcome == ToolExecutionOutcome.Failed && exitCode == 0)
                 return failed with { Code = "verification_result_missing" };
+            if (exitCode == check.ExpectedExitCode && check.InvalidatedDuringExecution)
+                return check with { ProviderCallId = providerId, ExecutionId = execution,
+                    Status = VerificationCheckStatus.Stale, Code = "verification_stale" };
             return check with { ProviderCallId = providerId, ExecutionId = execution,
                 Status = exitCode == check.ExpectedExitCode ? VerificationCheckStatus.Passed : VerificationCheckStatus.Failed,
                 Code = exitCode == check.ExpectedExitCode ? "ok"

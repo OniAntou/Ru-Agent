@@ -177,20 +177,24 @@ public sealed partial class HeadlessCodingLoopTests
         Assert.Contains("M other.txt", workspace.GitStatusPorcelain(), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Failed_verification_requires_same_command_to_pass_after_repair()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Failed_verification_requires_same_command_to_pass_after_repair(bool useCwdAlias)
     {
         using var workspace = GitWorkspace.Create();
         var runner = new ScriptedRunner();
         var verification = JsonSerializer.Serialize(new {
             executable = "cmd.exe", arguments = new[] { "/d", "/c", "findstr", "repaired", "seed.txt" },
-            purpose = "verification", working_directory = workspace.Path });
+            purpose = "verification", working_directory = useCwdAlias ? "." : workspace.Path });
         runner.Enqueue(ToolCall("terminal.run", verification));
         runner.Enqueue(FinalStep("premature completion"));
         runner.Enqueue(ToolCall("files.read", """{"path":"seed.txt"}"""));
         runner.Enqueue(FinalStep("still premature"));
         runner.Enqueue(ToolCall("files.edit", """{"path":"seed.txt","old_string":"seed","new_string":"repaired"}"""));
-        runner.Enqueue(ToolCall("terminal.run", verification));
+        var rerun = JsonNode.Parse(verification)!.AsObject();
+        rerun["working_directory"] = workspace.Path;
+        runner.Enqueue(ToolCall("terminal.run", rerun.ToJsonString()));
         runner.Enqueue(FinalStep("verified repair"));
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
         using var client = factory.CreateAuthenticatedClient();
@@ -203,6 +207,10 @@ public sealed partial class HeadlessCodingLoopTests
         Assert.Equal(2, events.Count(e => e.GetProperty("event_type").GetString() == "run.note_added"
             && e.GetProperty("safe_summary").GetString() == "unverified_after_tool_failure"));
         Assert.Contains("repaired", File.ReadAllText(Path.Combine(workspace.Path, "seed.txt")), StringComparison.Ordinal);
+        var publisher = factory.Services.GetRequiredService<RuBackend.Harness.AgentRunSummaryLivePublisher>();
+        var terminalRun = await factory.Services.GetRequiredService<IHarnessEventStore>().GetRunAsync(new RunId(runId), default);
+        await publisher.TryReserveSummaryAsync(terminalRun!, default);
+        Assert.Equal("verified", publisher.BuildSummary(terminalRun!).VerificationState);
     }
 
     [Fact]

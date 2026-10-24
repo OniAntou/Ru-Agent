@@ -69,6 +69,16 @@ public sealed class ProviderQuotaTests
         Assert.Equal(TimeSpan.FromSeconds(17), error.RetryAfter);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Long_retry_after_is_preserved_for_runner_admission(bool responses)
+    {
+        var error = await Assert.ThrowsAsync<ModelProviderException>(() => Generate(responses,
+            new StringContent("{}"), retryAfter: TimeSpan.FromSeconds(120)));
+        Assert.Equal(TimeSpan.FromSeconds(120), error.RetryAfter);
+    }
+
     [Fact]
     public async Task Oversized_error_content_is_not_read_or_reported_as_quota()
     {

@@ -623,6 +623,8 @@ public sealed partial class ToolExecutionService
             VerificationFailure(binding));
         }
 
+        if (binding.Manifest.Id == "bash" && context.AuthorizedTerminalIntent is { } terminalIntent)
+            AddVerificationIdentity(outcome.Output, terminalIntent);
         outcome = outcome with
         {
             DurationMs = checked((int)Math.Min(int.MaxValue, started.ElapsedMilliseconds)),

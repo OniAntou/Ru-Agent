@@ -238,7 +238,10 @@ matches sequentially without retaining skipped match objects; collection is boun
 by the page size plus one lookahead, stopping once the page is known. Discovery has
 no aggregate byte cutoff; per-file, candidate, directory and time bounds still apply. Output
 includes `offset`, `next_offset`, `scan_incomplete`, `discovered_files` and
-`scanned_files` (the files actually searched). A final exact-size page has no
+`scanned_files` (the files actually searched). Files over the 1 MiB search limit
+increment `excluded_by_size` and `skipped` and set `scan_incomplete=true`, including
+an explicit file target. This does not imply a next page; use bounded `read` or
+another appropriate approved tool for those files. A final exact-size page has no
 next cursor. `truncated` can also indicate a scan/time bound or regex timeout;
 `scan_incomplete=true` means coverage is incomplete, not proof that another
 page exists. Narrow the path/query in that case. Each page re-scans files;
@@ -895,7 +898,9 @@ The hook runs through `cmd.exe` in the workspace root with the same credential-s
 
 Use `purpose=verification` for a terminal command whose exit zero verifies the task.
 Its result stays outstanding across unrelated reads, restart and compaction, and
-must be rerun after later mutations. `purpose=inspection` declares read-only intent;
+must be rerun after later known mutations, including edits while a check runs in
+the background. Authenticated receipts identify the actual resolved invocation,
+so cwd aliases do not create unrelated checks. `purpose=inspection` declares read-only intent;
 it is not enforced filesystem confinement. The default `command` remains compatible
 with earlier calls. An observed unexpected process failure must still be resolved.
 For a task explicitly testing failure, declare `purpose=expected_failure` and the

@@ -160,7 +160,12 @@ public sealed class PublicHostStarterTests : IDisposable
     public async Task Default_starter_does_not_conflict_with_port_8000()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 8000);
-        listener.Start();
+        try { listener.Start(); }
+        catch (SocketException error) when (error.SocketErrorCode == SocketError.AddressAlreadyInUse)
+        {
+            // An existing listener provides the same occupied-port precondition.
+            // This test owns only its attempted listener, never the existing process.
+        }
         var locator = new PublicHostLocator(Path.Combine(_root, "dynamic-port"));
         var port = FindFreePort();
         using var process = System.Diagnostics.Process.GetCurrentProcess();

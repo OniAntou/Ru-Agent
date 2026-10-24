@@ -1,3 +1,4 @@
+using RuAgent.Harness.Core.Context;
 using System.Collections.Concurrent;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence.Privacy;
@@ -9,11 +10,13 @@ namespace RuBackend.Harness;
 /// Builds a bounded, safe terminal summary from runtime activity and optionally publishes
 /// it as a transient SSE frame. Summary data is connection-only and is never persisted.
 /// </summary>
-public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
+public sealed partial class AgentRunSummaryLivePublisher : IAgentActivitySink
 {
     private const int MaximumTerminalSummaries = 256;
     private const int MaximumActiveStates = 4096;
 
+    private readonly IModelContextSource? _contextSource;
+    private readonly ILogger<AgentRunSummaryLivePublisher>? _logger;
     private readonly HarnessLiveEventHub _liveEvents;
     private readonly AgentActivityLivePublisher _activityPublisher;
     private readonly ConcurrentDictionary<string, SummaryState> _states = new(StringComparer.Ordinal);
@@ -22,8 +25,11 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
     private readonly ConcurrentDictionary<string, AgentRunSummary> _terminalSummaries = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<string> _terminalOrder = new();
 
-    public AgentRunSummaryLivePublisher(HarnessLiveEventHub liveEvents, KnownSecretRedactor? secrets = null)
+    public AgentRunSummaryLivePublisher(HarnessLiveEventHub liveEvents, KnownSecretRedactor? secrets = null,
+        IModelContextSource? contextSource = null, ILogger<AgentRunSummaryLivePublisher>? logger = null)
     {
+        _contextSource = contextSource;
+        _logger = logger;
         _liveEvents = liveEvents ?? throw new ArgumentNullException(nameof(liveEvents));
         _activityPublisher = new AgentActivityLivePublisher(liveEvents, secrets);
     }
@@ -127,7 +133,7 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
         var summary = AgentRunSummary.FromTerminalRun(
             run,
             state.WorkspaceLabel,
-            state.ToMetrics());
+            state.ToMetrics(), state.Verification());
 
         // Reservation can race this read. Returning the cached value when it won the
         // race keeps every late subscriber on the same terminal snapshot.
@@ -233,8 +239,14 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
         private string? _workspaceLabel;
         private int _filesScanned;
         private int _filesChanged;
-        private bool _hasVerifiedMutation;
-        private bool _hasUnverifiedMutation;
+        private bool _hasConfirmedMutation;
+        private bool _hasUnconfirmedMutation;
+
+        private RunVerificationEvidence? _verification;
+        public void SetVerification(RunVerificationEvidence evidence)
+        { lock (_gate) _verification = evidence; }
+        public RunVerificationEvidence? Verification()
+        { lock (_gate) return _verification; }
 
         public string? WorkspaceLabel
         {
@@ -281,11 +293,11 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
                     if (activity.State == AgentActivityState.Completed)
                     {
                         _filesChanged = SaturatingAdd(_filesChanged, 1);
-                        _hasVerifiedMutation = true;
+                        _hasConfirmedMutation = true;
                     }
                     else
                     {
-                        _hasUnverifiedMutation = true;
+                        _hasUnconfirmedMutation = true;
                     }
                 }
             }
@@ -300,8 +312,8 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
                     _filesChanged == 0 ? null : _filesChanged,
                     null,
                     null,
-                    _hasVerifiedMutation,
-                    _hasUnverifiedMutation);
+                    _hasConfirmedMutation,
+                    _hasUnconfirmedMutation);
             }
         }
 

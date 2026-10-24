@@ -61,7 +61,7 @@ internal static class ModelRateLimitError
         var value = response.Headers.RetryAfter?.Delta
             ?? (response.Headers.RetryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : null);
         return value is { } delay && delay > TimeSpan.Zero
-            ? delay > TimeSpan.FromSeconds(60) ? TimeSpan.FromSeconds(60) : delay
+            ? delay
             : null;
     }
 

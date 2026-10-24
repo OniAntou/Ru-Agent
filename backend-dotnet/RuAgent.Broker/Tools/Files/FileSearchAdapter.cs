@@ -75,6 +75,7 @@ public sealed class FileSearchAdapter
         var candidates = new List<(string Path, string Relative)>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var traversalCapped = false;
+        var excludedBySize = 0;
         if (!Directory.Exists(baseResolved.CanonicalPath))
         {
             // A file path searches just that file through the same guards
@@ -93,6 +94,7 @@ public sealed class FileSearchAdapter
                 {
                     HardLinkGuard.RequireSingleLink(baseResolved.CanonicalPath);
                     var info = new FileInfo(baseResolved.CanonicalPath);
+                    if (info.Exists && info.Length > FileToolLimits.MaxSearchFileSize) excludedBySize++;
                     if (info.Exists && info.Length <= FileToolLimits.MaxSearchFileSize)
                     {
                         candidates.Add((baseResolved.CanonicalPath, relative));
@@ -145,7 +147,8 @@ public sealed class FileSearchAdapter
                 {
                     HardLinkGuard.RequireSingleLink(resolved.CanonicalPath);
                     var info = new FileInfo(resolved.CanonicalPath);
-                    if (!info.Exists || info.Length > FileToolLimits.MaxSearchFileSize) continue;
+                    if (!info.Exists) continue;
+                    if (info.Length > FileToolLimits.MaxSearchFileSize) { excludedBySize++; continue; }
                 }
                 catch { continue; }
                 candidates.Add((resolved.CanonicalPath, relative));
@@ -207,7 +210,7 @@ public sealed class FileSearchAdapter
 
         var final = results.Take(maxResults).ToList();
         var hasMore = results.Count > maxResults;
-        var incomplete = traversalCapped || searchIncomplete;
+        var incomplete = traversalCapped || searchIncomplete || excludedBySize > 0;
         int? nextOffset = hasMore && offset + final.Count <= FileToolLimits.MaxOffset ? offset + final.Count : null;
         stopwatch.Stop();
         return new JsonObject
@@ -221,7 +224,8 @@ public sealed class FileSearchAdapter
             ["discovered_files"] = candidates.Count,
             ["scanned_files"] = scannedFiles,
             ["scanned_directories"] = visited.Count,
-            ["skipped"] = skippedFiles,
+            ["skipped"] = skippedFiles + excludedBySize,
+            ["excluded_by_size"] = excludedBySize,
             ["duration_ms"] = (int)stopwatch.ElapsedMilliseconds,
         };
     }

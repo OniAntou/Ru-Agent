@@ -25,7 +25,11 @@ bounded `provider.attempts`, `provider.selected_effort` and
 
 Generation retries stay bounded to five attempts. The 2/5/10/20-second backoff
 bases use 0.8–1.2 jitter, honor a longer positive HTTP `Retry-After` delta or
-date, and cap each wait at 60 seconds. Cancellation interrupts the delay.
+date. The automatic wait budget is 60 seconds per retry: a longer server hint
+is preserved and parks the logical step immediately with its original provider
+code, rather than shortening the hint and retrying early. Continue starts an
+explicit new attempt; this is not an automatic cooldown timer across user actions
+or Host restarts. Cancellation interrupts accepted automatic waits.
 Rate-limit metadata propagates through Chat Completions, Responses and Anthropic
 errors without changing provider selection. Exhaustion retains the existing
 explicit-Continue behavior; retries never dispatch a partial tool call.

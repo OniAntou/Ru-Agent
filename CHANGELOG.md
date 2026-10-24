@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: Keep background checks stale when code changes during execution;
+  derive terminal check identity from the resolved executable, argv and cwd.
+  Build live and resumed summaries from receipt-backed checks so edits alone
+  cannot claim verified completion.
+- **fix(search)**: Report files excluded by the per-file size bound as incomplete
+  coverage, with explicit exclusion counts.
+- **fix(providers)**: Preserve long Retry-After hints and park before an automatic
+  retry would exceed the wait budget, instead of retrying before the server allows.
+- **test(runtime)**: Keep the occupied-port startup test independent of existing
+  listeners and give SSE deletion checks margin beyond the parked poll interval.
+
 - **fix(harness)**: Keep terminal verification outstanding across unrelated reads,
   compaction and restart; invalidate passed checks after later mutations. Support
   explicitly declared negative tests without changing failed execution receipts.

@@ -35,6 +35,20 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
 
     // ---------- deterministic ordinal relative paths ----------
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Search_reports_size_exclusions_instead_of_complete_empty_coverage(bool explicitFile)
+    {
+        File.WriteAllText(Path.Combine(_root, "large.cs"), new string('x', FileToolLimits.MaxSearchFileSize) + "needle");
+        var result = await _search.ExecuteAsync(new JsonObject {
+            ["path"] = explicitFile ? "large.cs" : ".", ["query"] = "needle" }, default);
+        Assert.Equal(0, result["count"]!.GetValue<int>());
+        Assert.True(result["scan_incomplete"]!.GetValue<bool>());
+        Assert.Equal(1, result["excluded_by_size"]!.GetValue<int>());
+        Assert.Null(result["next_offset"]);
+    }
+
     [Fact]
     public async Task Search_file_path_searches_just_that_file()
     {

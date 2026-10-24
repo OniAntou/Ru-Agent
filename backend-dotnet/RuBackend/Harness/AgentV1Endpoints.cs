@@ -389,7 +389,7 @@ public static partial class AgentV1Endpoints
 
             // Reserve before writing so a runtime publisher racing this endpoint cannot
             // enqueue a duplicate hub frame after the direct connection-local frame.
-            summaryPublisher.TryReserveSummary(terminalRun, out _);
+            await summaryPublisher.TryReserveSummaryAsync(terminalRun, ct).ConfigureAwait(false);
             var summary = summaryPublisher.BuildSummary(terminalRun);
             var wire = new AgentRunSummaryWire(
                 summary.Status,

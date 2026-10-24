@@ -239,11 +239,11 @@ public sealed partial class InProcessModelStepRunnerTests
     }
 
     [Fact]
-    public void Retry_delay_honors_bounded_retry_after_and_jitters_without_exceeding_the_cap()
+    public void Retry_delay_never_shortens_server_minimum_and_bounds_local_backoff()
     {
         Assert.Equal(TimeSpan.FromSeconds(4), InProcessModelStepRunner.ComputeRetryDelay(
             TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), jitterSample: 0.5));
-        Assert.Equal(TimeSpan.FromSeconds(60), InProcessModelStepRunner.ComputeRetryDelay(
+        Assert.Equal(TimeSpan.FromHours(1), InProcessModelStepRunner.ComputeRetryDelay(
             TimeSpan.FromSeconds(2), TimeSpan.FromHours(1), jitterSample: 1));
         Assert.Equal(TimeSpan.FromSeconds(1.6), InProcessModelStepRunner.ComputeRetryDelay(
             TimeSpan.FromSeconds(2), null, jitterSample: 0));
@@ -258,6 +258,19 @@ public sealed partial class InProcessModelStepRunnerTests
         var result = await Runner(provider).RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None);
         Assert.Equal(2, result.ProviderAttempts);
         Assert.Equal(2, provider.Calls);
+    }
+
+    [Fact]
+    public async Task Long_server_delay_parks_without_an_early_automatic_second_attempt()
+    {
+        var provider = new ScriptedProvider((_, _) => Throws(new ModelProviderException(
+            "rate_limited", true, retryAfter: TimeSpan.FromSeconds(120))));
+        var error = await Assert.ThrowsAsync<ModelRunnerProtocolException>(() =>
+            Runner(provider).RunStepAsync(Request(), _ => ValueTask.CompletedTask, default));
+        Assert.Equal("provider_rate_limited", error.Code);
+        Assert.True(error.Retryable);
+        Assert.Equal(1, provider.Calls);
+        Assert.Equal(TimeSpan.FromSeconds(120), Assert.IsType<ModelStepException>(error.InnerException).RetryAfter);
     }
 
     [Fact]

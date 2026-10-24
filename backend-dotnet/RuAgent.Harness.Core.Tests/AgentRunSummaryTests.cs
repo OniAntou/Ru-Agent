@@ -8,7 +8,7 @@ public sealed class AgentRunSummaryTests
     private static readonly DateTimeOffset Timestamp = new(2026, 8, 28, 0, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void Completed_run_maps_to_verified_summary_when_mutation_evidence_is_verified()
+    public void Completed_edit_without_verification_is_not_verified()
     {
         var summary = AgentRunSummary.FromTerminalRun(
             MakeRun(HarnessRunState.Completed),
@@ -16,7 +16,7 @@ public sealed class AgentRunSummaryTests
             new AgentRunSummaryMetrics(5, 1, 0, 0, true, false));
 
         Assert.Equal("succeeded", summary.Status);
-        Assert.Equal("verified", summary.VerificationState);
+        Assert.Equal("unverified", summary.VerificationState);
         Assert.Equal(5, summary.FilesScanned);
         Assert.Equal(1, summary.FilesChanged);
     }

@@ -140,6 +140,50 @@ public sealed class VerificationCompletionTests
         Assert.Equal(excerpt, excerpt.Normalize());
     }
 
+    [Fact]
+    public void Background_check_started_before_mutation_cannot_verify_the_new_code()
+    {
+        var entries = Batch(1, "start", "bash", Verification, ToolExecutionOutcome.Succeeded,
+            "ok", """{"execution_id":"background-test","state":"running"}""")
+            .Concat(Batch(3, "edit", "edit", "{}", ToolExecutionOutcome.Succeeded, "ok", "{}"))
+            .Concat(Batch(5, "finish", "bash", """{"mode":"read_output","execution_id":"background-test"}""",
+                ToolExecutionOutcome.Succeeded, "ok", """{"state":"exited","exit_code":0}"""));
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out var code));
+        Assert.Equal("verification_stale", code);
+        var rerun = entries.Concat(Batch(7, "rerun", "bash", Verification,
+            ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""));
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(rerun), out _));
+    }
+
+    [Fact]
+    public void Authority_identity_resolves_cwd_aliases_and_preserves_distinct_commands()
+    {
+        var digest = new string('a', 64);
+        var failed = Batch(1, "test", "bash", Verification, ToolExecutionOutcome.Failed,
+            "process_exit_nonzero", JsonSerializer.Serialize(new { exit_code = 1, verification_identity = digest }));
+        var alias = Verification.Replace("\"purpose\"", "\"working_directory\":\"C:/workspace\",\"purpose\"");
+        var passed = Batch(3, "retest", "bash", alias, ToolExecutionOutcome.Succeeded,
+            "ok", JsonSerializer.Serialize(new { exit_code = 0, verification_identity = digest }));
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(failed.Concat(passed)), out _));
+        var distinct = Batch(3, "different", "bash", alias, ToolExecutionOutcome.Succeeded,
+            "ok", JsonSerializer.Serialize(new { exit_code = 0, verification_identity = new string('b', 64) }));
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(failed.Concat(distinct)), out _));
+    }
+
+    [Fact]
+    public void Legacy_check_upgrades_only_after_exact_replay_with_authority_metadata()
+    {
+        var digest = new string('c', 64);
+        var entries = Batch(1, "legacy", "bash", Verification, ToolExecutionOutcome.Failed,
+            "process_exit_nonzero", """{"exit_code":1}""")
+            .Concat(Batch(3, "upgrade", "bash", Verification, ToolExecutionOutcome.Failed,
+                "process_exit_nonzero", JsonSerializer.Serialize(new { exit_code = 1, verification_identity = digest })))
+            .Concat(Batch(5, "alias", "bash", Verification.Replace("\"purpose\"", "\"working_directory\":\"C:/workspace\",\"purpose\""),
+                ToolExecutionOutcome.Succeeded, "ok", JsonSerializer.Serialize(new { exit_code = 0, verification_identity = digest })));
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out _));
+        Assert.Single(Snapshot(entries).VerificationEvidence.Checks);
+    }
+
     private const string Verification = """{"mode":"shell","script":"dotnet test","purpose":"verification"}""";
 
     internal static ModelContextSnapshot Snapshot(IEnumerable<ModelContextEntry> entries) => new(entries.ToArray(), Array.Empty<byte>());

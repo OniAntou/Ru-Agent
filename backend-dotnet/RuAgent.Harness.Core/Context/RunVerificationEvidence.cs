@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace RuAgent.Harness.Core.Context;
@@ -8,7 +7,7 @@ public enum VerificationCheckStatus { Pending, Passed, Failed, Stale }
 
 public sealed record VerificationCheckEvidence(string Identity, string ProviderCallId,
     string? ExecutionId, int ExpectedExitCode, bool IsVerification,
-    VerificationCheckStatus Status, string Code, string Command);
+    VerificationCheckStatus Status, string Code, string Command, bool InvalidatedDuringExecution = false);
 
 /// <summary>Host-derived original receipt evidence; survives compaction, grants no authority.</summary>
 public sealed partial class RunVerificationEvidence
@@ -16,14 +15,16 @@ public sealed partial class RunVerificationEvidence
     public const int MaximumChecks = 256;
     public IReadOnlyList<VerificationCheckEvidence> Checks { get; }
     public bool Overflowed { get; }
+    public bool HasMutations { get; }
     private readonly HashSet<string> _expectedFailures;
 
     private RunVerificationEvidence(IEnumerable<VerificationCheckEvidence> checks,
-        HashSet<string> expectedFailures, bool overflowed)
+        HashSet<string> expectedFailures, bool overflowed, bool hasMutations)
     {
         Checks = new ReadOnlyCollection<VerificationCheckEvidence>(checks.ToArray());
         _expectedFailures = expectedFailures;
         Overflowed = overflowed;
+        HasMutations = hasMutations;
     }
 
     public string? BlockingCode => Overflowed ? "verification_tracking_limit"
@@ -50,6 +51,7 @@ public sealed partial class RunVerificationEvidence
         var expected = new HashSet<string>(StringComparer.Ordinal);
         var calls = new Dictionary<string, ModelToolCall>(StringComparer.Ordinal);
         bool overflowed = false;
+        bool hasMutations = false;
         foreach (var entry in originalRunEntries.OrderBy(entry => entry.Sequence))
         {
             if (entry.Kind == ModelContextEntryKind.AssistantStep)
@@ -60,14 +62,22 @@ public sealed partial class RunVerificationEvidence
             }
             if (entry.ToolReceipt is not { ProviderCallId: { } providerId } receipt
                 || !calls.TryGetValue(providerId, out var proposed)) continue;
-            // Most turns only inspect files. With no tracked check there is
-            // nothing for a nonterminal mutation to invalidate or resolve.
-            if (checks.Count == 0 && proposed.ToolId != "bash") continue;
+            bool terminal = proposed.ToolId == "bash" && proposed.ToolVersion == "1.0.0";
+            bool effect = receipt.Outcome == ToolExecutionOutcome.Succeeded || receipt.SideEffectsPossible
+                || receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown;
+            if (!terminal)
+            {
+                if (effect && (proposed.ToolId is "write" or "edit" or "agent_apply" || receipt.SideEffectsPossible))
+                {
+                    hasMutations = true;
+                    InvalidateChecks(checks);
+                }
+                continue;
+            }
             var args = proposed.Arguments;
             string purpose = StringArg(args, "purpose") ?? "command";
             string mode = StringArg(args, "mode") ?? "run";
-            bool terminal = proposed.ToolId == "bash" && proposed.ToolVersion == "1.0.0";
-            if (terminal && mode is "read_output" or "kill")
+            if (mode is "read_output" or "kill")
             {
                 var executionId = StringArg(args, "execution_id");
                 foreach (var prior in checks.Values.Where(check => executionId is not null
@@ -75,19 +85,20 @@ public sealed partial class RunVerificationEvidence
                     checks[prior.Identity] = Assess(prior, receipt, entry.Content, providerId, mode == "kill");
                 continue;
             }
-            bool effect = receipt.Outcome == ToolExecutionOutcome.Succeeded || receipt.SideEffectsPossible
-                || receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown;
-            bool mutation = proposed.ToolId is "write" or "edit" or "agent_apply"
-                || !terminal && receipt.SideEffectsPossible || terminal && purpose == "command";
-            if (mutation && effect)
-                foreach (var check in checks.Values.Where(check => check.IsVerification
-                    && check.Status == VerificationCheckStatus.Passed).ToArray())
-                    checks[check.Identity] = check with { Status = VerificationCheckStatus.Stale, Code = "verification_stale" };
-            if (!terminal) continue;
+            if (purpose == "command" && effect)
+            {
+                hasMutations = true;
+                InvalidateChecks(checks);
+            }
             int expectedExit = 0;
             bool negative = purpose == "expected_failure" && TryExpectedExit(args, out expectedExit);
             if (!negative) expectedExit = 0;
-            string identity = CommandIdentity(args, expectedExit);
+            string rawIdentity = CommandIdentity(args, expectedExit);
+            string identity = ReceiptIdentity(entry.Content, expectedExit) ?? rawIdentity;
+            // Upgrade a legacy check only after the exact original invocation is
+            // observed again with authority metadata, never by guessing old paths.
+            if (identity != rawIdentity && checks.Remove(rawIdentity, out var legacy))
+                checks[identity] = legacy with { Identity = identity };
             bool tracked = checks.ContainsKey(identity);
             bool actualProcessFailure = receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
             if (!tracked && purpose != "verification" && !negative && !actualProcessFailure) continue;
@@ -103,26 +114,16 @@ public sealed partial class RunVerificationEvidence
                 else overflowed = true;
             }
         }
-        return new(checks.Values, expected, overflowed);
+        return new(checks.Values, expected, overflowed, hasMutations);
     }
 
-    private static string CommandIdentity(JsonElement args, int expectedExit)
+    private static void InvalidateChecks(Dictionary<string, VerificationCheckEvidence> checks)
     {
-        using var buffer = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartObject();
-            foreach (string name in new[] { "executable", "script", "shell" })
-                if (args.TryGetProperty(name, out var value)) { writer.WritePropertyName(name); value.WriteTo(writer); }
-            writer.WritePropertyName("arguments");
-            if (args.TryGetProperty("arguments", out var arguments)) arguments.WriteTo(writer);
-            else { writer.WriteStartArray(); writer.WriteEndArray(); }
-            writer.WriteString("mode", StringArg(args, "mode") ?? "run");
-            writer.WriteString("working_directory", StringArg(args, "working_directory") ?? ".");
-            writer.WriteNumber("expected_exit_code", expectedExit);
-            writer.WriteEndObject();
-        }
-        return Convert.ToHexString(SHA256.HashData(buffer.ToArray()));
+        foreach (var check in checks.Values.Where(check => check.IsVerification
+            && check.Status is VerificationCheckStatus.Passed or VerificationCheckStatus.Pending).ToArray())
+            checks[check.Identity] = check.Status == VerificationCheckStatus.Pending
+                ? check with { InvalidatedDuringExecution = true }
+                : check with { Status = VerificationCheckStatus.Stale, Code = "verification_stale" };
     }
 
     private static string? StringArg(JsonElement args, string name) =>
@@ -136,6 +137,8 @@ public sealed partial class RunVerificationEvidence
         string text = StringArg(args, "script") ?? StringArg(args, "executable") ?? "terminal check";
         if (args.TryGetProperty("arguments", out var arguments) && arguments.ValueKind == JsonValueKind.Array)
             text += " " + arguments.GetRawText();
+        text = "cwd=" + (StringArg(args, "working_directory") ?? ".")
+            + "; mode=" + (StringArg(args, "mode") ?? "run") + "; " + text;
         text = text.Replace('\0', ' ');
         if (text.Length <= 512) return text;
         var length = char.IsHighSurrogate(text[511]) ? 511 : 512;

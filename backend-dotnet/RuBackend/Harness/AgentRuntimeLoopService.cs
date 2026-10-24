@@ -695,7 +695,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             if (run.State.IsTerminal())
             {
                 if (_userApplies is not null) await _userApplies.DriveAsync(run, cancellationToken).ConfigureAwait(false);
-                PublishRunFinished(run);
+                await PublishRunFinishedAsync(run, cancellationToken).ConfigureAwait(false);
                 await RemoveRunRegistrationAsync(new RunId(runIdValue)).ConfigureAwait(false);
                 return;
             }
@@ -891,7 +891,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
         if (racedRun.State.IsTerminal())
         {
-            PublishRunFinished(racedRun);
+            await PublishRunFinishedAsync(racedRun, cancellationToken).ConfigureAwait(false);
             await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
             return (false, null);
         }
@@ -1043,7 +1043,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                 {
                     if (refreshed.Run.State.IsTerminal())
                     {
-                        PublishRunFinished(refreshed.Run);
+                        await PublishRunFinishedAsync(refreshed.Run, cancellationToken).ConfigureAwait(false);
                         await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                         return;
                     }
@@ -1099,7 +1099,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             {
                 if (resumed.Run.State.IsTerminal())
                 {
-                    PublishRunFinished(resumed.Run);
+                    await PublishRunFinishedAsync(resumed.Run, cancellationToken).ConfigureAwait(false);
                     await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                 }
 
@@ -1125,7 +1125,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                     {
                         if (resumedInput.Run.State.IsTerminal())
                         {
-                            PublishRunFinished(resumedInput.Run);
+                            await PublishRunFinishedAsync(resumedInput.Run, cancellationToken).ConfigureAwait(false);
                             await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                         }
 
@@ -1194,7 +1194,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
                 if (result.Run.State.IsTerminal())
                 {
-                    PublishRunFinished(result.Run);
+                    await PublishRunFinishedAsync(result.Run, cancellationToken).ConfigureAwait(false);
                     await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                 }
 
@@ -1458,7 +1458,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
         if (run is { } terminal && terminal.State.IsTerminal())
         {
-            PublishRunFinished(terminal);
+            await PublishRunFinishedAsync(terminal, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -1466,9 +1466,10 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     /// Publishes a finished run's summary and starts its Stop hooks. Callers reach this
     /// before the run's registration is released, so its workspace root is still known.
     /// </summary>
-    private void PublishRunFinished(AgentRun run)
+    private async Task PublishRunFinishedAsync(AgentRun run, CancellationToken cancellationToken)
     {
-        _summaryPublisher?.TryPublishSummary(run);
+        if (_summaryPublisher is not null)
+            await _summaryPublisher.TryPublishSummaryAsync(run, cancellationToken).ConfigureAwait(false);
         if (_lifecycleHooks is not null
             && run.State.IsTerminal()
             && _roots.TryGetRoot(run.RunId, out var workspaceRoot)

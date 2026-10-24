@@ -28,8 +28,9 @@ public sealed class AgentSseReconnectTests
         {
             var artifacts = factory.Services.GetRequiredService<RuAgent.Harness.Persistence.IHarnessSessionArtifactStore>();
             await artifacts.CloseAndDeleteAsync(session, DateTimeOffset.UtcNow, CancellationToken.None);
-            await Task.WhenAny(read, Task.Delay(1000));
-            Assert.True(read.IsCompleted, "The run is gone, but the live SSE response remains open indefinitely.");
+            // The parked fallback poll itself is one second; wait on EOF with
+            // margin for the DB reload and scheduler, not an equal-delay race.
+            await read.WaitAsync(TimeSpan.FromSeconds(3), timeout.Token);
             Assert.DoesNotContain("final_snapshot", await read, StringComparison.Ordinal);
             var hub = factory.Services.GetRequiredService<HarnessLiveEventHub>();
             Assert.True(await WaitUntilAsync(() => hub.SubscriberCount == 0, TimeSpan.FromSeconds(2)));

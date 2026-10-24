@@ -8,7 +8,7 @@ using ActivityState = RuAgent.Protocol.Harness.AgentActivityState;
 
 namespace RuBackend.Tests.Harness;
 
-public sealed class AgentRunSummaryLivePublisherTests
+public sealed partial class AgentRunSummaryLivePublisherTests
 {
     [Fact]
     public async Task Publisher_emits_safe_activity_and_one_typed_terminal_summary()
@@ -44,7 +44,7 @@ public sealed class AgentRunSummaryLivePublisherTests
         var summaryFrame = Assert.Single(frames, frame => frame.Kind == "agent.summary");
         var summary = AgentRunSummaryWireCodec.Parse(summaryFrame.Data);
         Assert.Equal("succeeded", summary.Status);
-        Assert.Equal("verified", summary.VerificationState);
+        Assert.Equal("unverified", summary.VerificationState);
         Assert.Equal("Test Agent", summary.WorkspaceLabel);
         Assert.Equal(5, summary.FilesScanned);
         Assert.Equal(1, summary.FilesChanged);

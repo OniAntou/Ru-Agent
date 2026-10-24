@@ -1,3 +1,5 @@
+using RuAgent.Harness.Core.Context;
+
 namespace RuAgent.Harness.Core;
 
 /// <summary>
@@ -54,7 +56,8 @@ public sealed record AgentRunSummary
     public static AgentRunSummary FromTerminalRun(
         AgentRun run,
         string? workspaceLabel,
-        AgentRunSummaryMetrics? metrics = null)
+        AgentRunSummaryMetrics? metrics = null,
+        RunVerificationEvidence? verificationEvidence = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         if (!run.State.IsTerminal())
@@ -71,11 +74,12 @@ public sealed record AgentRunSummary
             _ => throw new ArgumentOutOfRangeException(nameof(run)),
         };
         var safeMetrics = metrics ?? AgentRunSummaryMetrics.Empty;
-        var verification = safeMetrics.HasUnverifiedMutation
-            ? "unverified"
-            : safeMetrics.HasVerifiedMutation
-                ? "verified"
-                : "not_applicable";
+        bool hasChecks = verificationEvidence?.Checks.Any(check => check.IsVerification) == true;
+        bool hasMutations = verificationEvidence?.HasMutations == true
+            || safeMetrics.HasVerifiedMutation || safeMetrics.HasUnverifiedMutation;
+        var verification = hasChecks
+            ? verificationEvidence!.BlockingCode is null ? "verified" : "unverified"
+            : hasMutations ? "unverified" : "not_applicable";
 
         return new AgentRunSummary(
             status,
@@ -117,6 +121,7 @@ public sealed record AgentRunSummary
     }
 }
 
+/// <summary>Legacy activity metrics confirm tool execution, never test acceptance.</summary>
 public sealed record AgentRunSummaryMetrics(
     int? FilesScanned,
     int? FilesChanged,

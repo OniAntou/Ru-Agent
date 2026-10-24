@@ -714,10 +714,19 @@ and outstanding commands are supplied in bounded runtime context guidance.
 For `bash`, optional `purpose=verification` declares a check requiring observed
 exit zero. An unannotated nonzero exit, timeout or cancellation also remains
 outstanding. Reading another file or passing a different command cannot resolve
-it. Rerunning the same executable/script, arguments, mode and cwd can resolve it;
-timeout changes and the intent label do not change check identity. Subsequent
-successful or ambiguous known mutations invalidate passed verification checks.
-Background checks remain pending until their execution's exit is observed.
+it. New authenticated terminal receipts carry an authority-derived
+`verification_identity`: resolved executable, exact argv and canonical cwd,
+independent of timeout and workflow intent. Cwd aliases therefore resolve the
+same check without changing the full approval intent hash. Original receipts
+preserve this metadata through restart and compaction. Legacy receipts without
+the fingerprint retain raw-argument identity until an exact replay supplies
+authority metadata; the Host does not guess an old executable or filesystem identity.
+
+Successful or ambiguous known run-local mutations invalidate passed checks and
+mark pending checks as changed during execution. A later exit zero from such a
+background check becomes stale, rather than certifying the newer code. A fresh
+rerun can resolve it. This tracks observed run-local mutations, not an OS-enforced
+snapshot or proof that another process/session did not change the workspace.
 
 A deliberately failing task may declare `purpose=expected_failure` and an exact
 `expected_exit_code` from 1 through 255 before execution. Only that observed
@@ -731,6 +740,13 @@ Tracking is bounded to 256 distinct checks and fails closed on overflow. The
 existing bounded recovery or explicit `[BLOCKED]` outcome handles outstanding
 checks. This is evidence for declared checks, not a claim that all code is correct
 or every possible verification has run.
+
+Terminal summaries load the same original-receipt evidence before reserving the
+immutable live/late-subscriber summary. A completed edit alone is `unverified`;
+`verified` requires declared/observed required checks that passed without an
+outstanding failure, pending result or stale check. Runs without mutations or
+required checks use `not_applicable`. Missing history never certifies a check.
+This definition still does not prove all acceptance criteria were tested.
 
 ## Repeated Tool Recovery
 

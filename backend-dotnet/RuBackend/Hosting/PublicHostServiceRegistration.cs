@@ -199,7 +199,11 @@ internal static class PublicHostServiceRegistration
                 services.GetRequiredService<SessionWorkStateStore>()));
         services.AddSingleton<IHarnessEventStore>(services => services.GetRequiredService<SqliteHarnessEventStore>());
         services.AddSingleton<HarnessLiveEventHub>();
-        services.AddSingleton<AgentRunSummaryLivePublisher>();
+        services.AddSingleton(services => new AgentRunSummaryLivePublisher(
+            services.GetRequiredService<HarnessLiveEventHub>(), services.GetRequiredService<KnownSecretRedactor>(),
+            new RuAgent.Harness.Persistence.Context.SqliteModelContextSource(
+                services.GetRequiredService<HarnessSqliteOptions>(), services.GetRequiredService<HarnessPayloadStore>()),
+            services.GetRequiredService<ILogger<AgentRunSummaryLivePublisher>>()));
         // Headless runtime loop: per-run coordinators, outbox delivery, and model/tool driving.
         services.AddSingleton<AgentRuntimeWakeSignal>();
         services.AddSingleton(services => new RuBackend.Harness.Hooks.RunLifecycleHooks(

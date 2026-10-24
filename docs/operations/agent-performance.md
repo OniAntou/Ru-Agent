@@ -66,3 +66,7 @@ private tasks and actual verifier outcomes for coding-quality comparisons.
 
 The benchmark script keeps structured JSONL on stdout and stores stderr in each
 sample's `.stderr.log`; diagnostic lines cannot be parsed as measurement rows.
+
+A positive Retry-After longer than the 60-second automatic wait budget parks the
+step without an early retry. The original delay is retained on the exception;
+Continue is an explicit new attempt, not an automatically scheduled cooldown.

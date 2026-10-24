@@ -30,7 +30,8 @@ public sealed partial class ModelContextSourceTests
                 modelStepId: new ModelStepId("step_11111111111111111111111111111111"), payloadId: proposal.PayloadId)],
             [proposal], []), default);
         Assert.Equal(HarnessCommitOutcome.Committed, proposalCommit.Outcome);
-        var result = TextPayload(21, HarnessPayloadKind.ToolOutput, """{"exit_code":1}""");
+        var result = TextPayload(21, HarnessPayloadKind.ToolOutput, JsonSerializer.Serialize(
+            new { exit_code = 1, verification_identity = new string('a', 64) }));
         var failedRun = NextRun(proposedRun, 2, 3);
         var resultCommit = await store.CommitAsync(new HarnessCommit(request.Run.RunId, 1, failedRun,
             [new HarnessEventIntent(HarnessStoreTestFixture.Event(21), HarnessEventKind.ToolExecutionCompleted,
@@ -55,5 +56,28 @@ public sealed partial class ModelContextSourceTests
         Assert.Equal("process_exit_nonzero", restored.VerificationEvidence.BlockingCode);
         Assert.True(FailedToolCompletionGuard.TryGetFailure(restored, out _));
         Assert.Same(restored.VerificationEvidence, ContextCheckpoint.WithDirective(restored).VerificationEvidence);
+        Assert.StartsWith("canonical:", Assert.Single(restored.VerificationEvidence.Checks).Identity);
+        using var alias = JsonDocument.Parse("""{"mode":"shell","script":"dotnet test","purpose":"verification","working_directory":"C:/workspace"}""");
+        var retestStep = new AssistantStep(null, [new ModelToolCall("retest", "bash", "1.0.0", alias.RootElement)], AssistantFinishReason.ToolCalls, 1);
+        var retest = new HarnessPayloadIntent(HarnessStoreTestFixture.Payload(24), HarnessPayloadKind.AssistantStep,
+            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext, HarnessPayloadEncoding.Json,
+            4096, AssistantStepJsonCodec.Serialize(retestStep));
+        var retestRun = NextRun(compactedResult, 5, 6);
+        var retestCommit = await store.CommitAsync(new HarnessCommit(request.Run.RunId, 4, retestRun,
+            [new HarnessEventIntent(HarnessStoreTestFixture.Event(24), HarnessEventKind.ModelStepCompleted,
+                modelStepId: new ModelStepId("step_22222222222222222222222222222222"), payloadId: retest.PayloadId)], [retest], []), default);
+        Assert.Equal(HarnessCommitOutcome.Committed, retestCommit.Outcome);
+        var passing = TextPayload(25, HarnessPayloadKind.ToolOutput, JsonSerializer.Serialize(
+            new { exit_code = 0, verification_identity = new string('a', 64) }));
+        var passingCommit = await store.CommitAsync(new HarnessCommit(request.Run.RunId, 5, NextRun(retestRun, 6, 7),
+            [new HarnessEventIntent(HarnessStoreTestFixture.Event(25), HarnessEventKind.ToolExecutionCompleted,
+                toolCallId: new ToolCallId("call_22222222222222222222222222222222"), providerCallId: "retest",
+                executionId: new ExecutionId("exec_22222222222222222222222222222222"), payloadId: passing.PayloadId,
+                safeCode: "ok", toolOutcome: ToolExecutionOutcome.Succeeded, sideEffectsPossible: false)], [passing], []), default);
+        Assert.Equal(HarnessCommitOutcome.Committed, passingCommit.Outcome);
+        var afterRetest = await new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
+            .AssembleAsync(request.Run.RunId, default);
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(afterRetest, out _));
+
     }
 }

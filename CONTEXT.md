@@ -157,7 +157,9 @@ _Avoid_: fallback answer, substitute model, retry on another backend
 **Receipt-backed Verification**:
 A bounded projection of original run-local terminal proposals and execution receipts.
 Declared checks and observed process failures remain outstanding through unrelated
-reads, compaction and restart; later mutations invalidate passed checks. Explicit
+reads, compaction and restart; known run-local mutations invalidate passed checks
+and pending checks that would certify older code. New terminal receipts identify
+the canonical executable/argv/cwd; this fingerprint never grants authority. Explicit
 expected nonzero exits can satisfy a negative test without rewriting its failed
 receipt. Intent metadata grants no authority and does not prove complete correctness.
 Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).

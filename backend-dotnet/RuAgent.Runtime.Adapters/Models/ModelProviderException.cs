@@ -8,7 +8,7 @@ public sealed class ModelProviderException : Exception
         Code = code;
         Retryable = retryable;
         RetryAfter = retryAfter is { } delay && delay > TimeSpan.Zero
-            ? delay > TimeSpan.FromSeconds(60) ? TimeSpan.FromSeconds(60) : delay
+            ? delay
             : null;
     }
 

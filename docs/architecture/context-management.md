@@ -6,8 +6,8 @@ and snapshots cannot grant paths, tools, approval or a different provider/model.
 
 ## Structured checkpoints
 
-Provider-backed compaction uses one auxiliary request to the run's pinned
-provider/model. It reuses protocol-specific history projection and opaque
+Provider-backed compaction uses one auxiliary request, plus at most one format
+repair, to the run's pinned provider/model. It reuses protocol-specific history projection and opaque
 continuations. Its final user message requests eight ordered sections: request
 and intent, decisions and constraints, files and changes, results and failures,
 pending work, current work, next step, and critical context. Previous checkpoints
@@ -23,17 +23,19 @@ The auxiliary request has a 60-second deadline and an output cap of at most
 It uses the model's declared lowest reasoning effort when available for this
 auxiliary request; ordinary task requests retain their selected effort.
 Empty, malformed, truncated, filtered or tool-producing responses return named
-`checkpoint_*` failures; no returned tool is dispatched. Production does not
+`checkpoint_*` failures; no returned tool is dispatched. A malformed format gets
+one repair using the original covered history and at most 4,000 characters of
+the rejected candidate as untrusted data. Other failures are not format-retried. Production does not
 substitute deterministic excerpts after a failed provider summary. Test/scripted
 runners without the summarizer interface retain deterministic compaction.
 
-Before dispatch, a durable `checkpoint_started` note reserves one model call in
+Before each dispatch, including repair, a durable `checkpoint_started` note reserves one model call in
 the run's budget and, when configured, its family budget. No tool budget is
 reserved. Reported usage is stored through `ModelUsageRecorded` even when the
 returned checkpoint text later fails validation. Prompt-composition receipts retain private block digests
 and never expose raw instruction or prompt text. A crash after admission keeps
 the spent reservation; it cannot make a dispatched call free. A failed summary
-does not replace original history. An automatic malformed/permanent checkpoint
+does not replace original history. An exhausted format repair or permanent checkpoint
 failure stops the run with its named error. Transient provider failures, operator-repairable account limits and the
 checkpoint deadline park a root run for explicit Continue; internal children
 fail instead of requesting user input. Neither path loops automatically.

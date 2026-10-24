@@ -41,6 +41,7 @@ public sealed record ProviderBootstrapData
         Credential = Require(credential, 4096, nameof(credential), allowEmpty: true);
         Endpoint = endpoint;
         RequestOptions = ProviderRequestOptionsValidator.ValidateAndClone(protocol, requestOptions, nameof(requestOptions));
+        SelectedReasoningEffort = ReadEffort(RequestOptions);
         ReducedEffortRequestOptions = reducedEffortRequestOptions is null
             ? null
             : ProviderRequestOptionsValidator.ValidateAndClone(protocol, reducedEffortRequestOptions, nameof(reducedEffortRequestOptions));
@@ -80,6 +81,9 @@ public sealed record ProviderBootstrapData
     public string Credential { get; }
 
     public JsonObject? RequestOptions { get; private set; }
+
+    /// <summary>The user-selected effort, retained when an individual repair uses reduced effort.</summary>
+    public string SelectedReasoningEffort { get; }
 
     /// <summary>
     /// Request options for the lowest reasoning effort the model offers, when that differs from
@@ -127,6 +131,13 @@ public sealed record ProviderBootstrapData
         if (protocol == ProviderProtocols.AnthropicMessages && value > AnthropicMessagesModelProvider.MaximumSupportedOutputTokens)
             throw new ArgumentException("Anthropic output cap exceeds the adapter limit.", nameof(value));
         return value;
+    }
+
+    private static string ReadEffort(JsonObject? options)
+    {
+        var value = options?["reasoning_effort"]?.GetValue<string>()
+            ?? options?["reasoning"]?["effort"]?.GetValue<string>();
+        return value is "none" or "minimal" or "low" or "medium" or "high" or "xhigh" or "max" ? value : "unknown";
     }
 
     private static string Require(string? value, int maximum, string parameterName, bool allowEmpty = false)

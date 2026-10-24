@@ -8,7 +8,7 @@ using Xunit;
 
 namespace RuAgent.Harness.Persistence.Tests;
 
-public sealed class ModelContextSourceTests
+public sealed partial class ModelContextSourceTests
 {
     [Fact]
     public async Task Runtime_snapshot_restores_as_untrusted_user_context_and_is_not_client_readable()
@@ -221,7 +221,8 @@ public sealed class ModelContextSourceTests
         string compactionId,
         string summary,
         string coveredSourceId,
-        DateTimeOffset occurredAt)
+        DateTimeOffset occurredAt,
+        long coveredSequence = 1)
     {
         var bytes = Encoding.UTF8.GetBytes(summary);
         var payload = new HarnessPayloadIntent(
@@ -231,7 +232,7 @@ public sealed class ModelContextSourceTests
             HarnessPayloadEncoding.Utf8Text,
             4096,
             bytes);
-        var range = new ContextEntryRange(coveredSourceId, 1, 1);
+        var range = new ContextEntryRange(coveredSourceId, coveredSequence, coveredSequence);
         var outcome = await store.CommitAsync(
             new HarnessCommit(
                 runId,

@@ -100,6 +100,7 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
         // Original encrypted receipts remain durable. Derive private scope hints before replacing
         // their model projection, including for image/text-mode runs that never admit cache snapshots.
         var observedPaths = FileObservationPaths.Read(sessionBase.Concat(runLocal));
+        var verificationEvidence = RunVerificationEvidence.Project(runLocal);
         await ApplyCompactionsAsync(
                 connection,
                 runId,
@@ -119,7 +120,7 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
         await AppendSessionWorkStateAsync(connection, runId, sessionBase, cancellationToken)
             .ConfigureAwait(false);
 
-        return new ModelContextSourceSnapshot(sessionBase, runLocal, inheritedPaths.Concat(observedPaths).ToArray());
+        return new ModelContextSourceSnapshot(sessionBase, runLocal, inheritedPaths.Concat(observedPaths).ToArray(), verificationEvidence);
     }
 
     private async Task AppendSessionWorkStateAsync(

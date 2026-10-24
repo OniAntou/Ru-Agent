@@ -1044,13 +1044,16 @@ public sealed class ModelStepServiceTests
     {
         // Pins the whole MapProviderException table: renames or a flipped retry
         // flag reach the Host's durable code, so they must not go unnoticed.
-        var provider = new ThrowingProvider(new ModelProviderException(providerCode, providerRetryable));
+        var provider = new ThrowingProvider(new ModelProviderException(providerCode, providerRetryable,
+            retryAfter: TimeSpan.FromSeconds(17)));
 
         var error = await Assert.ThrowsAsync<ModelStepException>(() =>
             new ModelStepService(provider).RunAsync(Request(), CancellationToken.None));
 
         Assert.Equal(expectedCode, error.Code);
         Assert.Equal(expectedRetryable, error.Retryable);
+        if (providerCode is "rate_limited" or "server_error")
+            Assert.Equal(TimeSpan.FromSeconds(17), error.RetryAfter);
     }
 
     [Fact]

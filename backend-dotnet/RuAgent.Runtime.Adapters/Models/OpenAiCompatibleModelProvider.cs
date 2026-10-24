@@ -46,7 +46,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
             {
                 throw response.StatusCode == HttpStatusCode.TooManyRequests
                     ? await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                    : MapStatus(response.StatusCode);
+                    : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
             }
 
             Stream stream;
@@ -563,7 +563,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         throw new ModelProviderException("malformed_payload", retryable: false);
     }
 
-    private static ModelProviderException MapStatus(HttpStatusCode statusCode) => statusCode switch
+    private static ModelProviderException MapStatus(HttpStatusCode statusCode, TimeSpan? retryAfter) => statusCode switch
     {
         HttpStatusCode.Unauthorized => new ModelProviderException("auth_failed", retryable: false),
         HttpStatusCode.Forbidden => new ModelProviderException("forbidden", retryable: false),
@@ -577,7 +577,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         // the generic 4xx bucket told the reader to check the model and the key, neither of which
         // is wrong, so an empty balance looked like a configuration mistake.
         HttpStatusCode.PaymentRequired => new ModelProviderException("provider_payment_required", retryable: false),
-        >= HttpStatusCode.InternalServerError => new ModelProviderException("server_error", retryable: true),
+        >= HttpStatusCode.InternalServerError => new ModelProviderException("server_error", retryable: true, retryAfter: retryAfter),
         _ => new ModelProviderException("http_error", retryable: false),
     };
 }

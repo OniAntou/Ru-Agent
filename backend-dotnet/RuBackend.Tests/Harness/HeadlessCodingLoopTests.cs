@@ -130,6 +130,7 @@ public sealed partial class HeadlessCodingLoopTests
         runner.Enqueue(ToolCall("terminal.run", JsonSerializer.Serialize(new
         {
             executable = "cmd.exe", arguments = new[] { "/d", "/c", "exit", "7" },
+            purpose = "expected_failure", expected_exit_code = 7,
             working_directory = Path.GetTempPath(),
         })));
 
@@ -152,14 +153,9 @@ public sealed partial class HeadlessCodingLoopTests
         // The unrelated dirty file must still be dirty after the read-only steps.
         Assert.Contains("M other.txt", workspace.GitStatusPorcelain(), StringComparison.Ordinal);
 
-        // Approval resumes the parked call instead of dropping it: cmd.exe
-        // executes exactly once and exits nonzero. The failed receipt stays
-        // visible behind the recovery note, so the prose is answered with note #1,
-        // the corrected read succeeds, and only the prose after that verified
-        // call is accepted as the final answer.
-        runner.Enqueue(FinalStep("repair finished"));
-        runner.Enqueue(ToolCall("files.read", """{"path":"seed.txt"}"""));
-        runner.Enqueue(FinalStep("repair finished"));
+        // This intentionally failing command tests approval/resume, not code verification.
+        // Its failed receipt must remain visible, with its anticipated exit explicitly declared.
+        runner.Enqueue(FinalStep("expected failure observed"));
         using var approve = await client.PostAsJsonAsync(
             $"/agent/v1/runs/{runId}/approvals/{approvalId}",
             new { command = "allow_once" });
@@ -168,18 +164,45 @@ public sealed partial class HeadlessCodingLoopTests
         var completedSeen = await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30));
         Assert.True(completedSeen, $"no terminal after approval; now={await GetStatusAsync(client, runId)}");
         var terminal = await ReadEventsAsync(client, runId);
-        // The parked failing command plus the corrected read both complete:
-        // the failed call is not counted as verified and the recovery read is.
         Assert.Equal(
-            preApprovalCompletions + 2,
-            terminal.Where(e => e.GetProperty("event_type").GetString() == "tool.execution_completed").Count());
-        Assert.Contains(terminal, e => e.GetProperty("event_type").GetString() == "run.note_added");
+            preApprovalCompletions + 1,
+            terminal.Count(e => e.GetProperty("event_type").GetString() == "tool.execution_completed"));
+        Assert.Contains(terminal, e => e.GetProperty("event_type").GetString() == "tool.execution_completed"
+            && e.GetProperty("safe_summary").GetString() == "process_exit_nonzero");
         Assert.Equal("completed", await GetStatusAsync(client, runId));
 
         // The raw post-approval commit must not have advanced HEAD (nothing was staged),
         // and the unrelated dirty file is untouched.
         Assert.Equal(workspace.HeadAfterSeed, workspace.HeadNow());
         Assert.Contains("M other.txt", workspace.GitStatusPorcelain(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Failed_verification_requires_same_command_to_pass_after_repair()
+    {
+        using var workspace = GitWorkspace.Create();
+        var runner = new ScriptedRunner();
+        var verification = JsonSerializer.Serialize(new {
+            executable = "cmd.exe", arguments = new[] { "/d", "/c", "findstr", "repaired", "seed.txt" },
+            purpose = "verification", working_directory = workspace.Path });
+        runner.Enqueue(ToolCall("terminal.run", verification));
+        runner.Enqueue(FinalStep("premature completion"));
+        runner.Enqueue(ToolCall("files.read", """{"path":"seed.txt"}"""));
+        runner.Enqueue(FinalStep("still premature"));
+        runner.Enqueue(ToolCall("files.edit", """{"path":"seed.txt","old_string":"seed","new_string":"repaired"}"""));
+        runner.Enqueue(ToolCall("terminal.run", verification));
+        runner.Enqueue(FinalStep("verified repair"));
+        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
+        using var client = factory.CreateAuthenticatedClient();
+        var runId = await CreateTrustedRunAsync(client, workspace.Path);
+        Assert.True(await WaitForStatusAsync(client, runId,
+            new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)));
+        Assert.Equal("completed", await GetStatusAsync(client, runId));
+        var events = await ReadEventsAsync(client, runId);
+        Assert.Equal(4, events.Count(e => e.GetProperty("event_type").GetString() == "tool.execution_completed"));
+        Assert.Equal(2, events.Count(e => e.GetProperty("event_type").GetString() == "run.note_added"
+            && e.GetProperty("safe_summary").GetString() == "unverified_after_tool_failure"));
+        Assert.Contains("repaired", File.ReadAllText(Path.Combine(workspace.Path, "seed.txt")), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -159,3 +159,19 @@ def test_unknown_task_and_live_call_without_authorization_are_rejected(tmp_path)
         benchmark.run_live(None, tmp_path, None, False, 1)
     with pytest.raises(ValueError, match="trust-workspace"):
         benchmark.run_live(None, tmp_path, None, True, 1)
+
+
+def test_private_task_root_reuses_prepare_and_trusted_grader_without_copying_oracle(tmp_path):
+    import shutil
+    task = next(task for task in benchmark.tasks("swe") if task.language == "python")
+    private = tmp_path / "private"
+    shutil.copytree(task.path, private / task.id)
+    selected = benchmark.tasks("swe", private)
+    assert len(selected) == 1
+    trial = benchmark.prepare(selected[0], tmp_path / "trial")
+    workspace = Path(trial["workspace"])
+    assert not (workspace / "solution").exists()
+    assert not (workspace / "tests" / "grade.py").exists()
+    assert benchmark.grade(selected[0], workspace)["reward"] == 0
+    benchmark.apply_reference(selected[0], workspace)
+    assert benchmark.grade(selected[0], workspace)["reward"] == 1

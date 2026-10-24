@@ -187,6 +187,8 @@ public static class AgentToolDefinitionCatalog
         // tighter foreground hard max when background is not set.
         ("timeout_ms", IntegerSchema(1, TerminalLimits.BackgroundMaxLifetimeMs)),
         ("network_intent", BooleanSchema()),
+        ("purpose", WithDescription(EnumSchema(["command", "inspection", "verification", "expected_failure"]), "Workflow intent only; never changes execution permission or the actual tool outcome. Use verification for required checks, inspection for read-only diagnostics, expected_failure only for a deliberately failing command requested by the task.")),
+        ("expected_exit_code", WithDescription(IntegerSchema(1, 255), "For purpose=expected_failure only: the exact anticipated nonzero process exit. Denials, cancellation, timeout, unknown execution and other exit codes are never accepted as the expected result.")),
         .. TerminalWriteSetProperties(),
         ("background", BooleanSchema()),
         ("execution_id", StringSchema(TerminalLimits.MaxExecutionIdChars, minLength: 1)),

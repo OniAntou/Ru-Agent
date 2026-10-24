@@ -39,7 +39,7 @@ public sealed class AgentContextAssembler
 
         return new ModelContextSnapshot(
             combined,
-            ModelContextSnapshot.Canonicalize(combined), source.ObservedFilePaths);
+            ModelContextSnapshot.Canonicalize(combined), source.ObservedFilePaths, source.VerificationEvidence);
     }
 
     private static void RejectDuplicateSequence(IReadOnlyList<ModelContextEntry> entries)

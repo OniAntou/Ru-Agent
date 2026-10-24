@@ -66,16 +66,13 @@ public sealed class FileSearchAdapter
         if (maxResults < 1 || maxResults > FileToolLimits.MaxResults) throw new ArgumentException("invalid_max_results");
         var offset = arguments["offset"] is JsonValue off && off.TryGetValue<int>(out var offValue) ? offValue : 0;
         if (offset < 0 || offset > FileToolLimits.MaxOffset) throw new ArgumentException("invalid_offset");
-        // Collect enough per file that the global page stays complete: a file
-        // capped at max_results would hide matches belonging to later pages.
         // One extra match distinguishes a full final page from a known next page.
-        // Both inputs are range-checked above, so the sum cannot overflow.
-        var collectLimit = offset + maxResults + 1;
+        // Nonzero offsets are skipped in-order below, without retaining their JSON.
+        var collectLimit = maxResults + 1;
         var fileGlobRegex = fileGlob is null ? null : new FileGlobPattern(fileGlob);
         var baseResolved = ResolveChecked(basePath);
         var stopwatch = Stopwatch.StartNew();
         var candidates = new List<(string Path, string Relative)>();
-        long candidateBytes = 0;
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var traversalCapped = false;
         if (!Directory.Exists(baseResolved.CanonicalPath))
@@ -99,7 +96,6 @@ public sealed class FileSearchAdapter
                     if (info.Exists && info.Length <= FileToolLimits.MaxSearchFileSize)
                     {
                         candidates.Add((baseResolved.CanonicalPath, relative));
-                        candidateBytes += info.Length;
                     }
                 }
                 catch
@@ -150,12 +146,6 @@ public sealed class FileSearchAdapter
                     HardLinkGuard.RequireSingleLink(resolved.CanonicalPath);
                     var info = new FileInfo(resolved.CanonicalPath);
                     if (!info.Exists || info.Length > FileToolLimits.MaxSearchFileSize) continue;
-                    if (candidateBytes + info.Length > FileToolLimits.MaxTotalSearchBytes)
-                    {
-                        traversalCapped = true;
-                        break;
-                    }
-                    candidateBytes += info.Length;
                 }
                 catch { continue; }
                 candidates.Add((resolved.CanonicalPath, relative));
@@ -164,39 +154,59 @@ public sealed class FileSearchAdapter
         }
         }
 
-        // Consume batches in ordinal path order. Bound collection by the requested
-        // offset/page plus a lookahead; stop opening later files once the page is known.
+        // Nonzero offsets scan candidates sequentially so skipped matches never
+        // become retained JSON and parallel files cannot multiply page allocation.
         candidates.Sort((left, right) => StringComparer.Ordinal.Compare(left.Relative, right.Relative));
         var scannedFiles = 0;
         var skippedFiles = 0;
         var searchIncomplete = false;
         var results = new List<JsonObject>();
-        for (var index = 0; index < candidates.Count && results.Count < collectLimit; index += _maxSearchConcurrency)
+        if (offset > 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (stopwatch.ElapsedMilliseconds > FileToolLimits.MaxTimeMs) { traversalCapped = true; break; }
-            var remaining = collectLimit - results.Count;
-            var batchSize = Math.Min(_maxSearchConcurrency, candidates.Count - index);
-            var batch = new Task<FileSearchOutcome>[batchSize];
-            for (var batchIndex = 0; batchIndex < batchSize; batchIndex++)
+            var remainingSkip = offset;
+            foreach (var candidate in candidates)
             {
-                var candidate = candidates[index + batchIndex];
-                batch[batchIndex] = SearchCandidateAsync(candidate.Path, candidate.Relative, query,
-                    queryRegex, caseSensitive, remaining, stopwatch, cancellationToken);
-            }
-            var completed = await Task.WhenAll(batch).ConfigureAwait(false);
-            // Retain only page matches; per-file outcomes can be released after this batch.
-            scannedFiles += completed.Length;
-            foreach (var outcome in completed)
-            {
+                if (results.Count >= collectLimit) break;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (stopwatch.ElapsedMilliseconds > FileToolLimits.MaxTimeMs) { traversalCapped = true; break; }
+                var outcome = await SearchCandidateAsync(candidate.Path, candidate.Relative, query,
+                    queryRegex, caseSensitive, collectLimit - results.Count, remainingSkip, stopwatch, cancellationToken).ConfigureAwait(false);
+                scannedFiles++;
                 if (outcome.Skipped) skippedFiles++;
                 searchIncomplete |= outcome.Incomplete;
-                results.AddRange(outcome.Matches.Take(collectLimit - results.Count));
+                remainingSkip -= outcome.SkippedMatches;
+                results.AddRange(outcome.Matches);
+            }
+        }
+        else
+        {
+            // Keep the common first-page path parallel while bounding each batch
+            // to the page and one lookahead, independent of the offset ceiling.
+            for (var index = 0; index < candidates.Count && results.Count < collectLimit; index += _maxSearchConcurrency)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (stopwatch.ElapsedMilliseconds > FileToolLimits.MaxTimeMs) { traversalCapped = true; break; }
+                var batchSize = Math.Min(_maxSearchConcurrency, candidates.Count - index);
+                var batch = new Task<FileSearchOutcome>[batchSize];
+                for (var batchIndex = 0; batchIndex < batchSize; batchIndex++)
+                {
+                    var candidate = candidates[index + batchIndex];
+                    batch[batchIndex] = SearchCandidateAsync(candidate.Path, candidate.Relative, query,
+                        queryRegex, caseSensitive, collectLimit, 0, stopwatch, cancellationToken);
+                }
+                var completed = await Task.WhenAll(batch).ConfigureAwait(false);
+                scannedFiles += completed.Length;
+                foreach (var outcome in completed)
+                {
+                    if (outcome.Skipped) skippedFiles++;
+                    searchIncomplete |= outcome.Incomplete;
+                    results.AddRange(outcome.Matches.Take(collectLimit - results.Count));
+                }
             }
         }
 
-        var final = results.Skip(offset).Take(maxResults).ToList();
-        var hasMore = results.Count > offset + maxResults;
+        var final = results.Take(maxResults).ToList();
+        var hasMore = results.Count > maxResults;
         var incomplete = traversalCapped || searchIncomplete;
         int? nextOffset = hasMore && offset + final.Count <= FileToolLimits.MaxOffset ? offset + final.Count : null;
         stopwatch.Stop();
@@ -216,7 +226,7 @@ public sealed class FileSearchAdapter
         };
     }
 
-    private async Task<FileSearchOutcome> SearchCandidateAsync(string path, string relative, string query, Regex? queryRegex, bool caseSensitive, int collectLimit, Stopwatch budget, CancellationToken cancellationToken)
+    private async Task<FileSearchOutcome> SearchCandidateAsync(string path, string relative, string query, Regex? queryRegex, bool caseSensitive, int collectLimit, int skipMatches, Stopwatch budget, CancellationToken cancellationToken)
     {
         try
         {
@@ -233,6 +243,7 @@ public sealed class FileSearchAdapter
             string? line;
             var lineNumber = 0;
             var incomplete = false;
+            var skippedMatches = 0;
             while ((line = reader.ReadLine()) is not null)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -255,8 +266,14 @@ public sealed class FileSearchAdapter
                 }
 
                 var index = queryRegex is null ? line.IndexOf(query, caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase) : (match!.Success ? match.Index : -1);
-                if (index >= 0 && matches.Count < collectLimit)
+                if (index >= 0)
                 {
+                    if (skippedMatches < skipMatches)
+                    {
+                        skippedMatches++;
+                        continue;
+                    }
+                    if (matches.Count >= collectLimit) break;
                     var previewStart = line.Length > 512 ? Math.Max(0, index - 128) : 0;
                     var preview = line.Substring(previewStart, Math.Min(512, line.Length - previewStart));
                     matches.Add(new JsonObject { ["path"] = relative, ["line"] = lineNumber, ["column"] = index + 1,
@@ -264,7 +281,7 @@ public sealed class FileSearchAdapter
                     if (matches.Count == collectLimit) break;
                 }
             }
-            return new FileSearchOutcome(matches, false, incomplete);
+            return new FileSearchOutcome(matches, false, incomplete, skippedMatches);
         }
         catch (OperationCanceledException) { throw; }
         catch (UnauthorizedAccessException) { return FileSearchOutcome.SkippedFile; }
@@ -272,7 +289,7 @@ public sealed class FileSearchAdapter
         catch (ArgumentException) { return FileSearchOutcome.SkippedFile; }
     }
 
-    private sealed record FileSearchOutcome(IReadOnlyList<JsonObject> Matches, bool Skipped, bool Incomplete = false)
+    private sealed record FileSearchOutcome(IReadOnlyList<JsonObject> Matches, bool Skipped, bool Incomplete = false, int SkippedMatches = 0)
     {
         public static FileSearchOutcome SkippedFile => new(Array.Empty<JsonObject>(), true);
     }

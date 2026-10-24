@@ -46,6 +46,8 @@ public sealed class PreparedModelStep
                 request.AllImages.Sum(image => (long)Encoding.UTF8.GetByteCount(image.Base64Data)), request.AllImages.Count())
             : null;
         OutputTokenCap = request.MaximumOutputTokens;
+        EffectiveReasoningEffort = ReadEffort(request.Settings);
+        SelectedReasoningEffort = source.ProviderBootstrap.SelectedReasoningEffort;
         SerializedBodyBytes = request.PreparedBodyJson is { } body
             ? Encoding.UTF8.GetByteCount(body)
             : 0;
@@ -67,16 +69,26 @@ public sealed class PreparedModelStep
     public int SerializedBodyBytes { get; }
     public string? SerializedBodySha256 { get; }
     public int? OutputTokenCap { get; }
+    public string EffectiveReasoningEffort { get; }
+    public string SelectedReasoningEffort { get; }
+
+    private static string ReadEffort(JsonObject settings)
+    {
+        var value = settings["reasoning_effort"]?.GetValue<string>()
+            ?? settings["reasoning"]?["effort"]?.GetValue<string>();
+        return value is "none" or "minimal" or "low" or "medium" or "high" or "xhigh" or "max" ? value : "unknown";
+    }
 }
 
 public sealed class ModelStepException : Exception, IStableStepError
 {
-    public ModelStepException(string code, bool retryable, Exception? innerException = null, string? trace = null)
+    public ModelStepException(string code, bool retryable, Exception? innerException = null, string? trace = null, TimeSpan? retryAfter = null)
         : base($"model_step_{code}", innerException)
     {
         Code = code;
         Retryable = retryable;
         Trace = trace;
+        RetryAfter = retryAfter;
     }
 
     public string Code { get; }
@@ -84,6 +96,8 @@ public sealed class ModelStepException : Exception, IStableStepError
     public string StepErrorCode => Code;
 
     public bool Retryable { get; }
+
+    public TimeSpan? RetryAfter { get; }
 
     /// <summary>
     /// Bounded, metadata-only diagnostic line for this failure (counts, flags, lengths,
@@ -1053,9 +1067,11 @@ public sealed class ModelStepService
     {
         "timeout" => new ModelStepException("provider_timeout", retryable: true, error),
         "auth_failed" or "forbidden" => new ModelStepException("provider_auth", retryable: false, error),
-        "rate_limited" => new ModelStepException("provider_rate_limited", retryable: true, error),
+        "rate_limited" => new ModelStepException("provider_rate_limited", retryable: true,
+            innerException: error, retryAfter: error.RetryAfter),
         "quota_exhausted" => new ModelStepException("provider_quota_exhausted", retryable: false, error),
-        "server_error" => new ModelStepException("provider_server_error", retryable: true, error),
+        "server_error" => new ModelStepException("provider_server_error", retryable: true,
+            innerException: error, retryAfter: error.RetryAfter),
         "transport_error" => new ModelStepException("provider_transport_error", retryable: true, error),
         // Split on purpose: an unreadable chunk is a per-response accident and
         // the next request is a fresh draw, so the Host's bounded retry is the

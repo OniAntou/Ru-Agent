@@ -9,7 +9,8 @@ public sealed record ModelContextSnapshot
     public ModelContextSnapshot(
         IReadOnlyList<ModelContextEntry> entries,
         ReadOnlyMemory<byte> canonicalUtf8,
-        IReadOnlyList<string>? observedFilePaths = null)
+        IReadOnlyList<string>? observedFilePaths = null,
+        RunVerificationEvidence? verificationEvidence = null)
     {
         ArgumentNullException.ThrowIfNull(entries);
         var copiedEntries = entries.ToArray();
@@ -21,6 +22,7 @@ public sealed record ModelContextSnapshot
         Entries = new ReadOnlyCollection<ModelContextEntry>(copiedEntries);
         CanonicalUtf8 = canonicalUtf8.ToArray();
         ObservedFilePaths = FileObservationPaths.Copy(observedFilePaths);
+        VerificationEvidence = verificationEvidence ?? RunVerificationEvidence.Project(copiedEntries);
     }
 
     public IReadOnlyList<ModelContextEntry> Entries { get; }
@@ -29,6 +31,9 @@ public sealed record ModelContextSnapshot
 
     /// <summary>Host-only scope discovery metadata, excluded from the model's canonical history.</summary>
     public IReadOnlyList<string> ObservedFilePaths { get; }
+
+    /// <summary>Private original-receipt evidence, excluded from canonical model history.</summary>
+    public RunVerificationEvidence VerificationEvidence { get; }
 
     internal static byte[] Canonicalize(IReadOnlyList<ModelContextEntry> entries)
     {

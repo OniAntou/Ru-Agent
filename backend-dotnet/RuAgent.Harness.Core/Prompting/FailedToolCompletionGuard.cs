@@ -9,6 +9,11 @@ public static class FailedToolCompletionGuard
         ArgumentNullException.ThrowIfNull(context);
 
         errorCode = string.Empty;
+        if (context.VerificationEvidence.BlockingCode is { } verificationCode)
+        {
+            errorCode = verificationCode;
+            return true;
+        }
         if (context.Entries.Count == 0)
         {
             return false;
@@ -40,6 +45,7 @@ public static class FailedToolCompletionGuard
         for (var i = startIndex + 1; i <= lastIndex; i++)
         {
             var receipt = context.Entries[i].ToolReceipt;
+            if (receipt is not null && context.VerificationEvidence.IsExpectedFailure(receipt)) continue;
             if (receipt is null || receipt.Outcome != ToolExecutionOutcome.Succeeded)
             {
                 var code = receipt?.Code;

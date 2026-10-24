@@ -14,13 +14,15 @@ public sealed record ModelContextSourceSnapshot
     public ModelContextSourceSnapshot(
         IReadOnlyList<ModelContextEntry> sessionBase,
         IReadOnlyList<ModelContextEntry> runLocal,
-        IReadOnlyList<string>? observedFilePaths = null)
+        IReadOnlyList<string>? observedFilePaths = null,
+        RunVerificationEvidence? verificationEvidence = null)
     {
         ArgumentNullException.ThrowIfNull(sessionBase);
         ArgumentNullException.ThrowIfNull(runLocal);
         SessionBase = Copy(sessionBase, nameof(sessionBase));
         RunLocal = Copy(runLocal, nameof(runLocal));
         ObservedFilePaths = FileObservationPaths.Copy(observedFilePaths);
+        VerificationEvidence = verificationEvidence ?? RunVerificationEvidence.Project(RunLocal);
     }
 
     public IReadOnlyList<ModelContextEntry> SessionBase { get; }
@@ -29,6 +31,8 @@ public sealed record ModelContextSourceSnapshot
 
     /// <summary>Private discovery hints derived before history compaction; never model text or authority.</summary>
     public IReadOnlyList<string> ObservedFilePaths { get; }
+
+    public RunVerificationEvidence VerificationEvidence { get; }
 
     private static IReadOnlyList<ModelContextEntry> Copy(
         IReadOnlyList<ModelContextEntry> source,

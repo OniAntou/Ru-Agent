@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: Keep terminal verification outstanding across unrelated reads,
+  compaction and restart; invalidate passed checks after later mutations. Support
+  explicitly declared negative tests without changing failed execution receipts.
+- **fix(providers)**: Restore selected reasoning effort after truncation repair,
+  honor bounded Retry-After with jitter, and expose attempt/effective-effort diagnostics.
+- **fix(context)**: Allow one budgeted format repair for malformed checkpoints,
+  retaining original history when repair fails.
+- **fix(search)**: Remove the aggregate 10 MiB discovery cutoff and bound paged
+  match allocation independently of offset while retaining traversal/time limits.
+- **feat(benchmark)**: Validate private task fingerprints and import matched
+  multi-agent cohorts with separate correctness, autonomy and telemetry completeness.
+  Keep benchmark JSONL measurements separate from provider stderr diagnostics.
+
 - **style(gui)**: Add animated green Braille waves behind the startup wordmark,
   with a quiet center, a static reduced-motion frame and a plain high-contrast
   canvas. Soften the field edges, add green-to-mint depth and smooth the wave cadence.

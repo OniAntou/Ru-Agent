@@ -29,6 +29,39 @@ public sealed partial class ContextCompactionCoordinatorTests
         Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events), evt => evt.Kind == HarnessEventKind.ToolExecutionRequested);
     }
 
+    [Fact]
+    public async Task Malformed_checkpoint_gets_one_durable_format_repair_call_before_compaction()
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var model = new CheckpointModel(store) { MalformedFirst = true };
+        var result = await CheckpointCoordinator(model, store).CompactAsync(
+            RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
+
+        Assert.Equal(ContextCompactionOutcome.Committed, result.Outcome);
+        Assert.Equal(2, result.Run!.ModelStepsInWindow);
+        Assert.Equal(2, model.Calls);
+        Assert.Contains(ContextCheckpoint.RepairInstruction, string.Join("\n", model.Requests[1].Context.Entries.Select(entry => entry.Content)));
+        Assert.Equal(2, store.Commits.SelectMany(commit => commit.Events).Count(evt => evt.SafeCode == "checkpoint_started"));
+        Assert.Equal(2, store.Commits.SelectMany(commit => commit.Events).Count(evt => evt.Kind == HarnessEventKind.ModelUsageRecorded));
+        Assert.Contains(store.Commits, commit => commit.ContextCompaction is not null);
+    }
+
+    [Fact]
+    public async Task Format_repair_cannot_dispatch_after_first_call_spends_remaining_budget()
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(AgentBudgetPolicy.ModelStepLimit - 1));
+        var model = new CheckpointModel(store) { MalformedFirst = true };
+        var result = await CheckpointCoordinator(model, store).CompactAsync(
+            RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
+        Assert.Equal("model_step_budget_exhausted", result.ErrorCode);
+        Assert.Equal(HarnessRunState.WaitingUser, result.Run!.State);
+        Assert.Equal(AgentBudgetPolicy.ModelStepLimit, result.Run.ModelStepsInWindow);
+        Assert.Equal(1, model.Calls);
+        Assert.DoesNotContain(store.Commits, commit => commit.ContextCompaction is not null);
+    }
+
     [Theory]
     [InlineData("checkpoint_invalid")]
     [InlineData("checkpoint_incomplete")]
@@ -40,7 +73,9 @@ public sealed partial class ContextCompactionCoordinatorTests
         var model = new CheckpointModel(store) { ErrorCode = code };
         var result = await CheckpointCoordinator(model, store).CompactAsync(RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
         Assert.Equal(code, result.ErrorCode);
-        Assert.Equal(1, result.Run!.ModelStepsInWindow);
+        var calls = code == "checkpoint_invalid" ? 2 : 1;
+        Assert.Equal(calls, result.Run!.ModelStepsInWindow);
+        Assert.Equal(calls, model.Calls);
         Assert.DoesNotContain(store.Commits, commit => commit.ContextCompaction is not null);
         Assert.Contains(store.Commits.SelectMany(commit => commit.Events), evt => evt.Kind == HarnessEventKind.ModelUsageRecorded);
     }
@@ -148,14 +183,18 @@ public sealed partial class ContextCompactionCoordinatorTests
     {
         public int Calls { get; private set; }
         public ModelStepRequest? Request { get; private set; }
+        public List<ModelStepRequest> Requests { get; } = [];
         public string? ErrorCode { get; init; }
+        public bool MalformedFirst { get; init; }
         public Task<ContextCheckpointResult> SummarizeAsync(ModelStepRequest request, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
             Assert.Contains(store.Commits.SelectMany(commit => commit.Events), evt => evt.SafeCode == "checkpoint_started");
             Calls++;
             Request = request;
+            Requests.Add(request);
             var text = string.Join("\n", ContextCheckpoint.Sections.Select(section => section + "\n- keep Vietnamese responses"));
+            if (MalformedFirst && Calls == 1) text = "## malformed";
             return Task.FromResult(new ContextCheckpointResult(text, new ModelUsage(100, 50, 150, null, null), ErrorCode));
         }
         public Task<ModelStepResult> RunStepAsync(ModelStepRequest request, Func<AssistantDelta, ValueTask> delta, CancellationToken ct) =>

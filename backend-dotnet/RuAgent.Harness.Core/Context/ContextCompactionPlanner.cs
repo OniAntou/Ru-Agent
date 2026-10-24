@@ -57,7 +57,8 @@ public sealed record ContextCompactionPlan(
     string SummaryText,
     long BeforeTokens,
     long AfterTokens,
-    string InputHash);
+    string InputHash,
+    RunVerificationEvidence? VerificationEvidence = null);
 
 public static class ContextCompactionPlanner
 {
@@ -194,7 +195,7 @@ public static class ContextCompactionPlanner
             summaryText,
             beforeTokens,
             ModelContextSizeEstimator.EstimateTokens(projectedSnapshot),
-            ComputeInputHash(coveredSnapshot, decision.Strategy, reason));
+            ComputeInputHash(coveredSnapshot, decision.Strategy, reason), snapshot.VerificationEvidence);
     }
 
     private static HashSet<ModelContextEntry> BuildProtectedEntries(

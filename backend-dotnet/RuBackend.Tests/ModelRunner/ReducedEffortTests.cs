@@ -58,7 +58,7 @@ public sealed class ReducedEffortTests
     }
 
     [Fact]
-    public async Task A_truncation_note_in_context_makes_the_next_request_use_the_reduced_effort()
+    public async Task Truncation_repair_uses_low_effort_once_then_restores_the_selected_effort()
     {
         var provider = new CapturingProvider();
         var runner = new InProcessModelStepRunner(new ModelStepService(provider))
@@ -67,21 +67,53 @@ public sealed class ReducedEffortTests
         };
 
         await runner.RunStepAsync(Request(withTruncationNote: false), _ => ValueTask.CompletedTask, CancellationToken.None);
-        await runner.RunStepAsync(Request(withTruncationNote: true), _ => ValueTask.CompletedTask, CancellationToken.None);
+        var repair = await runner.RunStepAsync(Request(withTruncationNote: true), _ => ValueTask.CompletedTask, CancellationToken.None);
+        var resumed = await runner.RunStepAsync(Request(withTruncationNote: true, repairCompleted: true), _ => ValueTask.CompletedTask, CancellationToken.None);
+        await runner.RunStepAsync(Request(withTruncationNote: true, repairCompleted: true, repeatedTruncation: true),
+            _ => ValueTask.CompletedTask, CancellationToken.None);
 
         Assert.Equal("high", provider.Requests[0].Settings["reasoning_effort"]!.GetValue<string>());
         Assert.Equal("low", provider.Requests[1].Settings["reasoning_effort"]!.GetValue<string>());
+        Assert.Equal("high", provider.Requests[2].Settings["reasoning_effort"]!.GetValue<string>());
+        Assert.Equal("low", repair.EffectiveEffort);
+        Assert.Equal("high", repair.SelectedEffort);
+        Assert.Equal(1, repair.ProviderAttempts);
+        Assert.Equal("high", resumed.EffectiveEffort);
+        Assert.Equal("high", resumed.SelectedEffort);
+        Assert.Equal("low", provider.Requests[3].Settings["reasoning_effort"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("none")]
+    [InlineData("minimal")]
+    [InlineData("low")]
+    [InlineData("medium")]
+    [InlineData("high")]
+    [InlineData("xhigh")]
+    [InlineData("max")]
+    public async Task Diagnostics_preserve_each_supported_effort_without_raw_settings(string effort)
+    {
+        var provider = new CapturingProvider();
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider)) {
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap(Effort(effort), null)) };
+        var result = await runner.RunStepAsync(Request(false), _ => ValueTask.CompletedTask, default);
+        Assert.Equal(effort, result.SelectedEffort);
+        Assert.Equal(effort, result.EffectiveEffort);
     }
 
     private static ProviderBootstrapData Bootstrap(JsonObject? options, JsonObject? reduced) => new(
         "Kilo", "chat_completions", new Uri("https://step-provider.invalid/v1"), "model-b", "step-secret",
         requestOptions: options, contextWindowTokens: 32_768, reducedEffortRequestOptions: reduced);
 
-    private static ModelStepRequest Request(bool withTruncationNote)
+    private static ModelStepRequest Request(bool withTruncationNote, bool repairCompleted = false, bool repeatedTruncation = false)
     {
         var entries = new List<ModelContextEntry> { ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt") };
         if (withTruncationNote)
             entries.Add(ModelContextEntry.Text("note-1", 2, ModelContextRole.System, AgentRecoveryNotes.BuildTruncatedNote()));
+        if (repairCompleted)
+            entries.Add(ModelContextEntry.Assistant("repair-1", 3, new AssistantStep("repaired", [], AssistantFinishReason.Stop, 1)));
+        if (repeatedTruncation)
+            entries.Add(ModelContextEntry.Text("note-2", 4, ModelContextRole.System, AgentRecoveryNotes.BuildTruncatedNote()));
         return new ModelStepRequest(
             new RuAgent.Harness.Core.RunId("run_" + new string('a', 32)),
             new ModelStepId("step_" + new string('b', 32)),

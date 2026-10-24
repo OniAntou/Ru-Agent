@@ -239,6 +239,39 @@ public sealed partial class InProcessModelStepRunnerTests
     }
 
     [Fact]
+    public void Retry_delay_honors_bounded_retry_after_and_jitters_without_exceeding_the_cap()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(4), InProcessModelStepRunner.ComputeRetryDelay(
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), jitterSample: 0.5));
+        Assert.Equal(TimeSpan.FromSeconds(60), InProcessModelStepRunner.ComputeRetryDelay(
+            TimeSpan.FromSeconds(2), TimeSpan.FromHours(1), jitterSample: 1));
+        Assert.Equal(TimeSpan.FromSeconds(1.6), InProcessModelStepRunner.ComputeRetryDelay(
+            TimeSpan.FromSeconds(2), null, jitterSample: 0));
+    }
+
+    [Fact]
+    public async Task Retry_after_is_carried_into_the_bounded_retry_and_attempt_count()
+    {
+        var provider = new ScriptedProvider((_, attempt) => attempt == 1
+            ? Throws(new ModelProviderException("rate_limited", retryable: true, retryAfter: TimeSpan.FromMilliseconds(1)))
+            : Deltas(new ModelDelta("ok", [], completed: true, finishReason: "stop")));
+        var result = await Runner(provider).RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None);
+        Assert.Equal(2, result.ProviderAttempts);
+        Assert.Equal(2, provider.Calls);
+    }
+
+    [Fact]
+    public async Task Cancellation_interrupts_retry_after_wait_before_the_next_provider_attempt()
+    {
+        var provider = new ScriptedProvider((_, _) =>
+            Throws(new ModelProviderException("rate_limited", retryable: true, retryAfter: TimeSpan.FromSeconds(30))));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Runner(provider).RunStepAsync(
+            Request(), _ => ValueTask.CompletedTask, cancellation.Token));
+        Assert.Equal(1, provider.Calls);
+    }
+
+    [Fact]
     public async Task Provider_bootstrap_is_resolved_per_attempt_and_reaches_the_provider()
     {
         var bootstraps = 0;

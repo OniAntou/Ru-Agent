@@ -12,7 +12,6 @@ public static class FileToolLimits
     public const int MaxPatternLength = 512;
     public const int MaxQueryLength = 2048;
     public const int MaxSearchFileSize = 1 * 1024 * 1024;
-    public const int MaxTotalSearchBytes = 10 * 1024 * 1024;
     public const int MaxTimeMs = 5000;
     public const int DefaultMaxEntries = 512;
     public const int DefaultMaxResults = 128;

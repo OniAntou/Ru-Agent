@@ -72,6 +72,7 @@ public sealed class FileSearchHandleIdentityTests : IDisposable
             null,
             false,
             10,
+            0, // No paging offset in the deterministic handle-swap probe.
             Stopwatch.StartNew(),
             CancellationToken.None,
         ])!;

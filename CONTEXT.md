@@ -154,6 +154,16 @@ Implementation: [harness](docs/architecture/harness.md#recovery-note).
 _Avoid_: fallback answer, substitute model, retry on another backend
 
 
+**Receipt-backed Verification**:
+A bounded projection of original run-local terminal proposals and execution receipts.
+Declared checks and observed process failures remain outstanding through unrelated
+reads, compaction and restart; later mutations invalidate passed checks. Explicit
+expected nonzero exits can satisfy a negative test without rewriting its failed
+receipt. Intent metadata grants no authority and does not prove complete correctness.
+Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
+_Avoid_: treating a successful inspection, summary or model claim as a passed check
+
+
 **Repeated Tool Recovery**:
 A bounded repetition guard suppressing duplicate dispatch and asking the same model to change its proposal. It cannot turn a failed receipt into successful verification.
 Implementation: [harness](docs/architecture/harness.md#repeated-tool-recovery).

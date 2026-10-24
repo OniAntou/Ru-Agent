@@ -36,4 +36,14 @@ public static class HarnessTelemetry
             activity.SetStatus(outcomeCode == "succeeded" ? ActivityStatusCode.Ok : ActivityStatusCode.Error);
         }
     }
+
+    public static void SetProviderExecution(Activity? activity, int attempts, string? selectedEffort, string? effectiveEffort)
+    {
+        if (activity is null) return;
+        activity.SetTag("provider.attempts", Math.Clamp(attempts, 1, 5));
+        if (selectedEffort is "none" or "minimal" or "low" or "medium" or "high" or "xhigh" or "max" or "unknown")
+            activity.SetTag("provider.selected_effort", selectedEffort);
+        if (effectiveEffort is "none" or "minimal" or "low" or "medium" or "high" or "xhigh" or "max" or "unknown")
+            activity.SetTag("provider.effective_effort", effectiveEffort);
+    }
 }

@@ -234,7 +234,9 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
             .ToList();
         var workspaceActivity = await BuildWorkspaceActivityReferenceAsync(run, cancellationToken).ConfigureAwait(false);
         var backgroundTasks = await BuildBackgroundTaskReferenceAsync(cancellationToken).ConfigureAwait(false);
-        var reservedReferences = (workspaceActivity is null ? 0 : 1) + (backgroundTasks is null ? 0 : 1);
+        var verification = modelContext.VerificationEvidence.DescribePending();
+        var reservedReferences = (workspaceActivity is null ? 0 : 1) + (backgroundTasks is null ? 0 : 1)
+            + (verification is null ? 0 : 1);
         var maximumResultReferences = ToolResultReferenceBudget - reservedReferences;
         var hasOmittedResults = toolResults.Count > maximumResultReferences;
         var resultReferenceBudget = maximumResultReferences - (hasOmittedResults ? 1 : 0);
@@ -279,6 +281,8 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
         // last: the overflow guard below keeps the newest entries.
         if (backgroundTasks is not null)
             references.Add(backgroundTasks);
+        if (verification is not null)
+            references.Add(new PromptReference("verification_state", "receipt-backed outstanding checks", verification));
 
         // The reservation above is arithmetic, not a guarantee: a third source of
         // references added later could overflow the Core bound. Degrade instead of

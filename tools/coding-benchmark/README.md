@@ -172,6 +172,83 @@ not establish a causal effect of the fixes.
 
 Set `RU_REASONING_EFFORT` (for example `low`) in the environment of the benchmark command to pick the reasoning effort for the whole trial without editing saved settings; `request_options_json` in the run's pinned provider selection records what was applied. Set `RU_DRIVE_FAILURE_DIAGNOSTIC` to a file path to capture the full exception when a run ends with `runtime_drive_failed`.
 
+## Held-out external-agent comparisons
+
+`compare` imports JSONL predictions and externally produced acceptance results;
+it does not call an agent or verifier. Keep task instructions, repositories and
+verifiers in a private evaluation store. Publish a manifest containing only a
+task ID and SHA-256 fingerprint for each task, plus a cohort pin and fresh
+attempt count. Fingerprint the task bundle (instructions, baseline, verifier,
+acceptance rules) with a canonical file-content hash; never put a reference
+patch or solution in the manifest. A private task can span any number of files
+and can use a long instruction. The comparator verifies each definition against `--task-store`; definition hashes
+exclude the `solution` directory and generated build directories.
+
+```json
+{
+  "schema_version": 1,
+  "cohort": {
+    "agent": "Ru",
+    "agent_version": "release-2026.10.24",
+    "model": "provider/model-id",
+    "effort": "high",
+    "protocol": "responses",
+    "toolchain": "windows-x64-dotnet-10-node-22.18",
+    "deadline_seconds": 1800
+  },
+  "attempts_per_task": 3,
+  "tasks": [
+    {"task_id": "heldout/long-migration-01", "task_sha256": "<64 lowercase hex characters>"}
+  ]
+}
+```
+
+Each JSONL line must include `task_id`, `task_sha256`, one-based `attempt`, all
+cohort pins (`agent`, `agent_version`, `model`, `effort`, `protocol`,
+`toolchain`, `deadline_seconds`), `status`, externally graded boolean `correct`,
+boolean `intervention`, and `wall_seconds`. `status` is `completed`, `timeout`,
+`interrupted`, `infrastructure_error` or `failed`. Optional
+`model_attempts`, `tool_attempts`, `input_tokens`, and `output_tokens` are
+nonnegative integers or `null`. Missing records remain missing; the report
+lists them and marks the cohort incomplete. Duplicate, unexpected, mismatched
+fingerprint or incompatible provenance records are rejected. Import an
+independent record set for each product/configuration; only compare cohorts
+whose task manifest, acceptance verifier, toolchain and deadline match. This
+summary does not imply cross-product comparability when configurations differ.
+
+```powershell
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py compare --manifest heldout-manifest.json --predictions predictions.jsonl --task-store D:\private-evaluation --report comparison.json
+```
+
+Correctness includes any externally accepted prediction, divided by expected trials;
+`observed_correctness_rate` separately describes received trials. Autonomous completion
+counts only correct, completed, non-intervened trials, divided by the full
+expected matrix, so missing trials cannot inflate the rate. Timeout and
+infrastructure interruption stay separate. Latency p50/p95 includes every
+received trial. Usage totals remain null unless present for every received
+record; the report's completeness flags make partial telemetry visible. No
+external-agent result exists until prediction files and verifier outcomes are
+actually collected.
+
+For a direct comparison, `compare-cohorts --cohorts cohorts.json --track harness
+--task-store D:\private-evaluation --report comparison.json` reads an array of
+`{"label":"Ru","manifest":"ru.json","predictions":"ru.jsonl"}` entries, resolving
+paths relative to `cohorts.json`. The harness track requires identical model,
+effort, protocol, toolchain, deadline, task hashes and trial matrix. The product
+track permits different model/effort/protocol configurations and labels that
+limitation; tasks, toolchain and deadline must still match.
+
+Private tasks can use the existing task format and trusted grading workflow:
+`prepare --suite swe --task-root D:\private-evaluation --task task-id --destination
+D:\trials\ru-01`, then run the selected agent only in the emitted workspace with
+the emitted instruction, and `grade --suite swe --task-root D:\private-evaluation
+--task task-id --workspace D:\trials\ru-01\workspace`. Keep the private definition,
+verifier and reference solution outside the agent workspace. Collect process
+status, intervention, duration and actual usage independently; import the trusted
+grader's acceptance as `correct`. The importer does not attest self-reported
+outcomes or run competitors automatically. Long multi-file task definitions use
+the same explicit editable-source constraints and existing verifier limits.
+
 ## Environment and comparison limits
 
 The single-agent readiness diagnostic (2026-10-13, retained in git history)

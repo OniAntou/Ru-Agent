@@ -52,3 +52,17 @@ HTTP handler. Its SQLite, exact preparation, dispatch, Broker reads and receipts
 are real. It measures Host work and message-prefix stability; it does not establish
 provider latency, actual KV-cache hits, model quality or native UI performance.
 Compare matched tasks/provider settings separately when investigating live delays.
+
+### Provider retry and effort evidence
+
+Step traces add bounded `provider.attempts` (1-5), `provider.selected_effort` and
+`provider.effective_effort` on successful model results. Fixed retry diagnostics
+also report attempt/code/wait duration on provider errors; do not treat one model
+step as one HTTP request. Truncation reduces effort only while its repair is
+pending; later ordinary steps restore the selected effort. Checkpoint calls have
+separate durable admission and usage, including their one allowed format repair.
+Synthetic loop measurements exclude real model/network latency; use matched
+private tasks and actual verifier outcomes for coding-quality comparisons.
+
+The benchmark script keeps structured JSONL on stdout and stores stderr in each
+sample's `.stderr.log`; diagnostic lines cannot be parsed as measurement rows.

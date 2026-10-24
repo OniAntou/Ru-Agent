@@ -13,7 +13,8 @@ internal static class ModelRateLimitError
         token.ThrowIfCancellationRequested();
         if (response.StatusCode != HttpStatusCode.TooManyRequests)
             throw new ArgumentException("Expected HTTP 429.", nameof(response));
-        if (response.Content.Headers.ContentLength > MaximumBodyBytes) return Throttle();
+        var retryAfter = GetRetryAfter(response);
+        if (response.Content.Headers.ContentLength > MaximumBodyBytes) return Throttle(retryAfter);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(2));
         try
@@ -26,19 +27,19 @@ internal static class ModelRateLimitError
                 var count = await stream.ReadAsync(buffer.AsMemory(used), deadline.Token).ConfigureAwait(false);
                 if (count == 0) break;
                 used += count;
-                if (used > MaximumBodyBytes) return Throttle();
+                if (used > MaximumBodyBytes) return Throttle(retryAfter);
             }
 
             using var document = JsonDocument.Parse(buffer.AsMemory(0, used), new JsonDocumentOptions { MaxDepth = 8 });
             if (document.RootElement.ValueKind != JsonValueKind.Object
                 || !document.RootElement.TryGetProperty("error", out var error)
-                || error.ValueKind != JsonValueKind.Object) return Throttle();
+                || error.ValueKind != JsonValueKind.Object) return Throttle(retryAfter);
 
             if (error.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String)
             {
                 if (IsQuotaCode(code.GetString()))
                     return new("quota_exhausted", retryable: false);
-                return Throttle(); // A specific code takes priority over a broader type.
+                return Throttle(retryAfter); // A specific code takes priority over a broader type.
             }
             if (code.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
                 && error.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String
@@ -48,12 +49,21 @@ internal static class ModelRateLimitError
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { }
         catch (Exception error) when (error is JsonException or IOException or HttpRequestException) { }
         token.ThrowIfCancellationRequested();
-        return Throttle();
+        return Throttle(retryAfter);
     }
 
     // Remaining-request headers also describe a rate window; zero alone is not
     // proof of exhausted credit. Unknown/malformed bodies remain throttles.
-    private static ModelProviderException Throttle() => new("rate_limited", retryable: true);
+    private static ModelProviderException Throttle(TimeSpan? retryAfter) => new("rate_limited", retryable: true, retryAfter: retryAfter);
+
+    internal static TimeSpan? GetRetryAfter(HttpResponseMessage response)
+    {
+        var value = response.Headers.RetryAfter?.Delta
+            ?? (response.Headers.RetryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : null);
+        return value is { } delay && delay > TimeSpan.Zero
+            ? delay > TimeSpan.FromSeconds(60) ? TimeSpan.FromSeconds(60) : delay
+            : null;
+    }
 
     internal static bool IsQuotaCode(string? code) => code is
         "insufficient_quota" or "billing_hard_limit_reached" or "credit_balance_exhausted"

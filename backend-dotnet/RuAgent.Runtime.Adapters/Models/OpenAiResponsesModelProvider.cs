@@ -40,7 +40,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
             if (!response.IsSuccessStatusCode)
                 throw response.StatusCode == HttpStatusCode.TooManyRequests
                     ? await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                    : MapStatus(response.StatusCode);
+                    : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
             Stream stream;
             try { stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { throw new ModelProviderException("timeout", true); }
@@ -418,7 +418,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
         throw new ModelProviderException("malformed_payload", false);
     }
 
-    private static ModelProviderException MapStatus(HttpStatusCode s) => s switch
+    private static ModelProviderException MapStatus(HttpStatusCode s, TimeSpan? retryAfter) => s switch
     {
         >= HttpStatusCode.MultipleChoices and < HttpStatusCode.BadRequest => new("redirect_rejected", false),
         HttpStatusCode.Unauthorized => new("auth_failed", false),
@@ -428,7 +428,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
         // serving capacity; either way the fix is picking another model.
         HttpStatusCode.NotFound => new("model_unavailable", false),
         HttpStatusCode.PaymentRequired => new("provider_payment_required", false),
-        >= HttpStatusCode.InternalServerError => new("server_error", true),
+        >= HttpStatusCode.InternalServerError => new("server_error", true, retryAfter: retryAfter),
         _ => new("http_error", false),
     };
 }

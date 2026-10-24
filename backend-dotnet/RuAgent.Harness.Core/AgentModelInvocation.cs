@@ -272,6 +272,8 @@ internal sealed class AgentModelInvocation
                     ElapsedMilliseconds(thinkingStartedAt),
                     safeCode: "succeeded",
                     detail: RedactDetail(modelResult.ReasoningText)));
+        HarnessTelemetry.SetProviderExecution(telemetryActivity, modelResult.ProviderAttempts,
+            modelResult.SelectedEffort, modelResult.EffectiveEffort);
         HarnessTelemetry.SetStepOutcome(telemetryActivity, "succeeded");
         var modelDroppedCount = checked((int)(_frames.DroppedCount - droppedBefore));
         if (modelDroppedCount > 0)

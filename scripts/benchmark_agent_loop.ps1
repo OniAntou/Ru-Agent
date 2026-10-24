@@ -45,7 +45,9 @@ try {
                 $sampleLog = Join-Path $outputPath "$stepCount-$mode-$sample.jsonl"
                 $arguments = @($binary, "--steps=$stepCount", "--restart-at=$([int]($stepCount / 2))")
                 if ($mode -eq 'uncached') { $arguments += '--no-cache' }
-                & dotnet @arguments *> $sampleLog
+                # JSONL is stdout-only; provider diagnostics belong to stderr.
+                $diagnosticLog = Join-Path $outputPath "$stepCount-$mode-$sample.stderr.log"
+                & dotnet @arguments > $sampleLog 2> $diagnosticLog
                 if ($LASTEXITCODE -ne 0) { throw "Benchmark process failed; see $sampleLog" }
                 $rows = @(Get-Content -LiteralPath $sampleLog | ForEach-Object { $_ | ConvertFrom-Json })
                 if ($rows.Count -ne $stepCount -or @($rows | Where-Object { $_.error -ne $null -or $_.state -ne 'Running' }).Count -ne 0) {

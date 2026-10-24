@@ -56,12 +56,36 @@ public sealed class ProviderQuotaTests
         Assert.Equal(expected == "rate_limited", error.Retryable);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Server_unavailability_also_preserves_retry_after(bool responses)
+    {
+        var error = await Assert.ThrowsAsync<ModelProviderException>(() => Generate(responses,
+            new StringContent("synthetic private error"), status: HttpStatusCode.ServiceUnavailable,
+            retryAfter: TimeSpan.FromSeconds(17)));
+        Assert.Equal("server_error", error.Code);
+        Assert.True(error.Retryable);
+        Assert.Equal(TimeSpan.FromSeconds(17), error.RetryAfter);
+    }
+
     [Fact]
     public async Task Oversized_error_content_is_not_read_or_reported_as_quota()
     {
         var body = "{\"error\":{\"code\":\"insufficient_quota\"}}" + new string(' ', 20_000);
         var error = await Failure(false, new StringContent(body));
         Assert.Equal("rate_limited", error.Code);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Retry_after_delta_is_preserved_as_bounded_metadata(bool responses)
+    {
+        var error = await Assert.ThrowsAsync<ModelProviderException>(() => Generate(responses, new StringContent("{}"),
+            retryAfter: TimeSpan.FromSeconds(17)));
+        Assert.Equal("rate_limited", error.Code);
+        Assert.Equal(TimeSpan.FromSeconds(17), error.RetryAfter);
     }
 
     [Fact]
@@ -80,12 +104,14 @@ public sealed class ProviderQuotaTests
         => await Assert.ThrowsAsync<ModelProviderException>(() => Generate(responses, content, remaining, token));
 
     private static async Task Generate(bool responses, HttpContent content,
-        string? remaining = null, CancellationToken token = default, HttpStatusCode status = HttpStatusCode.TooManyRequests)
+        string? remaining = null, CancellationToken token = default, HttpStatusCode status = HttpStatusCode.TooManyRequests,
+        TimeSpan? retryAfter = null)
     {
         using var http = new HttpClient(new Handler(() =>
         {
             var response = new HttpResponseMessage(status) { Content = content };
             if (remaining is not null) response.Headers.TryAddWithoutValidation("x-ratelimit-remaining-requests", remaining);
+            if (retryAfter is { } delay) response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(delay);
             return response;
         }));
         IModelProvider provider = responses ? new OpenAiResponsesModelProvider(http) : new OpenAiCompatibleModelProvider(http);

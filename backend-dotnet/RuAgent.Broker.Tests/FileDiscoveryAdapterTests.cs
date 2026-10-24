@@ -147,6 +147,24 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _search.ExecuteAsync(new JsonObject { ["path"] = "src", ["query"] = "needle" }, cts.Token));
     }
 
+    [Fact]
+    public async Task Search_large_offset_skips_matches_across_files_without_losing_page_order()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.txt"), string.Concat(Enumerable.Repeat("needle\n", 6000)));
+        File.WriteAllText(Path.Combine(_root, "b.txt"), string.Concat(Enumerable.Repeat("needle\n", 6000)));
+        var args = new JsonObject { ["query"] = "needle", ["offset"] = 10000, ["max_results"] = 2 };
+        var result = await _search.ExecuteAsync(args, default);
+        var matches = result["results"]!.AsArray();
+        Assert.Equal(2, matches.Count);
+        Assert.All(matches, match => Assert.Equal("b.txt", match!["path"]!.GetValue<string>()));
+        Assert.Equal(4001, matches[0]!["line"]!.GetValue<int>());
+        Assert.Equal(4002, matches[1]!["line"]!.GetValue<int>());
+        Assert.Equal(10002, result["next_offset"]!.GetValue<int>());
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _search.ExecuteAsync(args, cancellation.Token));
+    }
+
     // ---------- hidden / binary handling ----------
 
     [Fact]
@@ -360,6 +378,27 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         Assert.Equal(new[] { "p0.txt", "p1.txt" }, firstPaths);
         Assert.Equal(new[] { "p2.txt", "p3.txt" }, secondPaths);
         Assert.Empty(firstPaths.Intersect(secondPaths));
+    }
+
+    [Fact]
+    public async Task Search_covers_candidates_beyond_ten_mib_aggregate_file_size()
+    {
+        const int candidateCount = 20;
+        var padding = new string('x', 900_000);
+        for (var index = 0; index < candidateCount; index++)
+        {
+            var marker = index == candidateCount - 1 ? "needle" : "no-match";
+            File.WriteAllText(Path.Combine(_root, $"bulk-{index:D2}.txt"), padding + marker);
+        }
+
+        var result = await _search.ExecuteAsync(
+            new JsonObject { ["path"] = ".", ["query"] = "needle" }, CancellationToken.None);
+
+        var match = Assert.Single(result["results"]!.AsArray());
+        Assert.Equal("bulk-19.txt", match!["path"]!.GetValue<string>());
+        Assert.Equal(candidateCount, result["discovered_files"]!.GetValue<int>());
+        Assert.Equal(candidateCount, result["scanned_files"]!.GetValue<int>());
+        Assert.False(result["scan_incomplete"]!.GetValue<bool>());
     }
 
     [Fact]

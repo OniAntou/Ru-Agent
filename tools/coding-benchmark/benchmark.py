@@ -21,11 +21,11 @@ GIT_ENV = {
 }
 
 
-def tasks(suite):
+def tasks(suite, task_root=None):
     directories = {"terminal": "tasks", "swe": "swe-tasks", "everyday": "everyday-tasks"}
     if suite not in directories:
         raise ValueError("unknown suite")
-    directory = ROOT / directories[suite]
+    directory = Path(task_root) if task_root is not None else ROOT / directories[suite]
     return [load_task(path, suite) for path in sorted(directory.iterdir()) if path.is_dir()]
 
 
@@ -199,13 +199,19 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
 
 def main():
     parser = argparse.ArgumentParser(description="Ru custom Terminal-Bench / SWE-bench-style tooling")
-    parser.add_argument("command", choices=["list", "validate", "prepare", "grade", "self-test", "grade-patch", "export-patch", "export-swe", "run-live"])
+    parser.add_argument("command", choices=["list", "validate", "prepare", "grade", "self-test", "grade-patch", "export-patch", "export-swe", "run-live", "compare", "compare-cohorts"])
     parser.add_argument("--suite", choices=["terminal", "swe", "everyday", "all"], default="all")
     parser.add_argument("--task")
     parser.add_argument("--destination", type=Path)
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("--patch", type=Path)
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--predictions", type=Path)
+    parser.add_argument("--cohorts", type=Path)
+    parser.add_argument("--task-store", type=Path)
+    parser.add_argument("--task-root", type=Path, help="private task definitions for one explicit suite")
+    parser.add_argument("--track", choices=["harness", "product"])
     parser.add_argument("--attempts", type=int, default=1)
     parser.add_argument("--include-oracle", action="store_true")
     parser.add_argument("--allow-live", action="store_true")
@@ -213,7 +219,14 @@ def main():
     parser.add_argument("--ru-executable", type=Path)
     args = parser.parse_args()
     try:
-        selected = tasks("terminal") + tasks("swe") + tasks("everyday") if args.suite == "all" else tasks(args.suite)
+        if args.task_root is not None and args.suite == "all":
+            raise ValueError("--task-root requires one explicit --suite")
+        if args.command in {"compare", "compare-cohorts"}:
+            selected = []
+        elif args.suite == "all":
+            selected = tasks("terminal") + tasks("swe") + tasks("everyday")
+        else:
+            selected = tasks(args.suite, args.task_root)
         if args.task:
             selected = [task for task in selected if task.id == args.task]
             if not selected:
@@ -244,6 +257,25 @@ def main():
             if args.report is None:
                 raise ValueError("--report required for JSONL export")
             result = export_swe(args.report, args.include_oracle)
+        elif args.command == "compare":
+            if args.manifest is None or args.predictions is None or args.report is None or args.task_store is None:
+                raise ValueError("compare requires --manifest, --predictions, --task-store and --report")
+            from evaluation import compare, load_manifest, load_records
+            result = compare(load_manifest(args.manifest, args.task_store), load_records(args.predictions))
+        elif args.command == "compare-cohorts":
+            if args.cohorts is None or args.track is None or args.task_store is None or args.report is None:
+                raise ValueError("compare-cohorts requires --cohorts, --track, --task-store and --report")
+            from evaluation import compare_cohorts, load_manifest, load_records
+            entries = json.loads(args.cohorts.read_text(encoding="utf-8"))
+            if not isinstance(entries, list):
+                raise ValueError("cohorts must be an array")
+            for entry in entries:
+                if not isinstance(entry, dict) or not all(isinstance(entry.get(key), str)
+                        for key in ("manifest", "predictions")):
+                    raise ValueError("each cohort needs manifest and predictions paths")
+                entry["manifest"] = load_manifest(args.cohorts.parent / entry["manifest"], args.task_store)
+                entry["records"] = load_records(args.cohorts.parent / entry["predictions"])
+            result = compare_cohorts(entries, args.track)
         else:
             result = run_live(selected, args.destination, args.ru_executable, args.allow_live, args.attempts, args.trust_workspace)
         if args.report is not None and args.command != "export-swe":

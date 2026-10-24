@@ -532,9 +532,7 @@ public sealed class AgentApprovalEndpointTests
         {
             var runner = new ScriptedRunner(
                 BatchToolStep(),
-                FinalStep("done"),
-                ToolCall("files.read", """{"path":"README.md"}"""),
-                FinalStep("done"));
+                FinalStep("expected failure observed"));
             factory = new BackendWebApplicationFactory(
                 dataPaths: dataPaths,
                 modelStepRunner: runner);
@@ -584,21 +582,17 @@ public sealed class AgentApprovalEndpointTests
                     StateDeadline));
 
             var after = await ReadEventsAsync(client, runId);
-            Assert.Equal(
-                proposedBefore.Length + 1,
+            Assert.Equal(proposedBefore.Length,
                 after.Count(item => item.GetProperty("event_type").GetString() == "tool.proposed"));
-            Assert.Equal(
-                4,
+            Assert.Equal(3,
                 after.Count(item => item.GetProperty("event_type").GetString() == "tool.execution_completed"));
-            Assert.Equal(
-                1,
-                after.Count(item => item.GetProperty("event_type").GetString() == "approval.requested"));
-            // Batch request, the prose answer after cmd.exe exits nonzero
-            // (answered with a recovery note), the corrected read, then
-            // the script's final answer after that verified call: the failed tool
-            // no longer ends the run and the unverified prose is never accepted.
-            Assert.Contains(after, item => item.GetProperty("event_type").GetString() == "run.note_added");
-            Assert.Equal(4, runner.RequestCount);
+            Assert.Single(after, item => item.GetProperty("event_type").GetString() == "approval.requested");
+            Assert.Contains(after, item => item.GetProperty("event_type").GetString() == "tool.execution_completed"
+                && item.GetProperty("safe_summary").GetString() == "process_exit_nonzero");
+            var final = JsonDocument.Parse(await client.GetStringAsync($"/agent/v1/runs/{runId}")).RootElement;
+            Assert.Equal("completed", final.GetProperty("status").GetString());
+            Assert.Equal(2, runner.RequestCount);
+
         }
         finally
         {
@@ -1295,7 +1289,7 @@ public sealed class AgentApprovalEndpointTests
                     "provider-batch-2",
                     "bash",
                     "1.0.0",
-                    JsonDocument.Parse(FailureCommand())
+                    JsonDocument.Parse(ExpectedFailureCommand())
                         .RootElement.Clone()),
                 new ModelToolCall(
                     "provider-batch-3",
@@ -1323,6 +1317,10 @@ public sealed class AgentApprovalEndpointTests
 
     private static string Command(string marker) =>
         JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/c", "echo", marker }, working_directory = Path.GetTempPath() });
+
+    private static string ExpectedFailureCommand() =>
+        JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/d", "/c", "exit", "7" },
+            working_directory = Path.GetTempPath(), purpose = "expected_failure", expected_exit_code = 7 });
 
     private static string FailureCommand() =>
         JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/d", "/c", "exit", "7" }, working_directory = Path.GetTempPath() });

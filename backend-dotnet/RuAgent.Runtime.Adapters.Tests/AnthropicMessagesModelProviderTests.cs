@@ -595,6 +595,25 @@ public sealed class AnthropicMessagesModelProviderTests
         Assert.DoesNotContain("secret body", ex.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task GenerateAsync_preserves_bounded_retry_after_for_retryable_http_response(HttpStatusCode status)
+    {
+        var handler = new RecordingHandler(_ =>
+        {
+            var response = new HttpResponseMessage(status)
+                { Content = new StringContent("secret body", Encoding.UTF8, "text/plain") };
+            response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(9));
+            return response;
+        });
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+        var error = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+            await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None)));
+        Assert.Equal(TimeSpan.FromSeconds(9), error.RetryAfter);
+        Assert.DoesNotContain("secret body", error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task GenerateAsync_rejects_malformed_order_message_delta_before_start()
     {

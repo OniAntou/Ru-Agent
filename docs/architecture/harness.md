@@ -36,7 +36,10 @@ reasoning fields. The Host reads credentials directly from its own store, so no
 per-step handoff file exists. New runs receive an unselected pin row atomically;
 any retained run without a selection fails closed as
 `provider_selection_missing`, rather than adopting current settings. There is
-no retry with another provider, model, key, protocol or effort.
+no retry with another provider, model, key or protocol. Ordinary requests use the
+pinned reasoning options, with the truncation-recovery exception described in
+[provider execution](providers.md): the declared lowest effort is used only for a pending truncation repair, then
+ordinary requests restore the selected effort.
 
 The schema retains a bounded session-workspace lookup index and typed run-model
 metadata; unknown historical context windows remain unknown. Migration executes
@@ -699,6 +702,35 @@ The reset retains the rejected model-step identity and advances its sequence;
 earlier accepted steps and tool receipts remain intact in GUI and TUI.
 
 _Avoid_: fallback answer, substitute model, retry on another backend
+
+## Receipt-backed verification
+
+`RunVerificationEvidence` projects original run-local tool proposals and receipts
+before compaction. A fresh process reconstructs the same checks from encrypted
+history; summaries, session handoffs and model claims cannot clear them. The
+projection travels as private context metadata, outside canonical provider history,
+and outstanding commands are supplied in bounded runtime context guidance.
+
+For `bash`, optional `purpose=verification` declares a check requiring observed
+exit zero. An unannotated nonzero exit, timeout or cancellation also remains
+outstanding. Reading another file or passing a different command cannot resolve
+it. Rerunning the same executable/script, arguments, mode and cwd can resolve it;
+timeout changes and the intent label do not change check identity. Subsequent
+successful or ambiguous known mutations invalidate passed verification checks.
+Background checks remain pending until their execution's exit is observed.
+
+A deliberately failing task may declare `purpose=expected_failure` and an exact
+`expected_exit_code` from 1 through 255 before execution. Only that observed
+`process_exit_nonzero` satisfies it; its original receipt remains failed. Denial,
+unknown outcomes, timeout and cancellation never become expected success.
+`purpose=inspection` declares read-only intent and does not invalidate earlier
+checks, but is not OS-enforced proof of absence of side effects. These labels
+change completion bookkeeping only, never tool authority or approval.
+
+Tracking is bounded to 256 distinct checks and fails closed on overflow. The
+existing bounded recovery or explicit `[BLOCKED]` outcome handles outstanding
+checks. This is evidence for declared checks, not a claim that all code is correct
+or every possible verification has run.
 
 ## Repeated Tool Recovery
 

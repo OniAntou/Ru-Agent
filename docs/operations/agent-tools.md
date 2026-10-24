@@ -233,8 +233,10 @@ Grep previews include the match instead of always showing the line's prefix.
 column of the preview. Results retain ordinal path/line ordering. Grep scans
 UTF-8 files without treating a leading BOM as content or a line column, so
 first-line anchored regexes behave the same with and without a BOM. It scans
-ordered batches with bounded concurrency and bounds collection by the requested
-offset/page plus one lookahead, stopping before later files once the page is known. Output
+ordered batches with bounded concurrency for the first page. Nonzero offsets skip
+matches sequentially without retaining skipped match objects; collection is bounded
+by the page size plus one lookahead, stopping once the page is known. Discovery has
+no aggregate byte cutoff; per-file, candidate, directory and time bounds still apply. Output
 includes `offset`, `next_offset`, `scan_incomplete`, `discovered_files` and
 `scanned_files` (the files actually searched). A final exact-size page has no
 next cursor. `truncated` can also indicate a scan/time bound or regex timeout;
@@ -888,3 +890,15 @@ marked `untrusted`; other content types are counted, not returned. Failures are 
 Two run-level events use the same file. **UserPromptSubmit** runs when a run is created, before anything of it is written; exit code `2` refuses the prompt with HTTP 422 `prompt_blocked_by_hook` and the hook's stderr (first 200 characters) as the message, so no run exists. Its stdin carries `event`, `session_id`, `workspace`, `workspace_trusted` and `prompt` (null with `prompt_omitted: true` above 32 KB). Until the workspace is trusted only the user's own `~/.ru/hooks.json` prompt hooks run, and they start in the user's profile folder so `cmd.exe` cannot resolve a bare program name against workspace files. **Stop** runs once when a run finishes, without being waited for, with `event`, `run_id`, `session_id`, `workspace`, `workspace_trusted`, `status` and `terminal_error_code`; it cannot change the run. Trust is checked when the hook fires: a run that finished because trust was declined or expired, or whose trust cannot be read, runs only the user's own Stop hooks, from the profile folder. Both ignore `matcher`.
 
 The hook runs through `cmd.exe` in the workspace root with the same credential-stripped environment as agent terminal children plus `RU_HOOK_EVENT`; it receives one JSON object on stdin (`event`, `tool_id`, `tool_call_id`, `run_id`, `workspace`, `arguments` unless larger than 32 KB, and for PostToolUse `outcome` and `code`). Files over 64 KB, links and malformed JSON are ignored; at most 32 hooks per event are read. A workspace `hooks.json` is workspace-supplied code that runs as your Windows user once tools are evaluated, so open only workspaces you trust. Hooks are loaded when a run's gateway is created, apply to subagents, and are not a security boundary. Because a hook's command runs outside terminal policy, `.ru\hooks.json` (in the workspace or the user profile) is a structured protected path: the model's `write`/`edit` are denied in `plan` and `standard`. A terminal command in `standard` can still write the file; that residual is the terminal launch authority `standard` already grants.
+
+### Declaring terminal checks
+
+Use `purpose=verification` for a terminal command whose exit zero verifies the task.
+Its result stays outstanding across unrelated reads, restart and compaction, and
+must be rerun after later mutations. `purpose=inspection` declares read-only intent;
+it is not enforced filesystem confinement. The default `command` remains compatible
+with earlier calls. An observed unexpected process failure must still be resolved.
+For a task explicitly testing failure, declare `purpose=expected_failure` and the
+exact `expected_exit_code` (1-255) before execution. This satisfies only that negative
+check, preserves its failed receipt, and never accepts denial, timeout, cancellation
+or unknown outcome. See [receipt-backed verification](../architecture/harness.md#receipt-backed-verification).

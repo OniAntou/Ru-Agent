@@ -15,6 +15,21 @@ executable calls or continuation; the Harness records it internally and applies
 its existing bounded truncation recovery. Even a complete call preceding a
 truncated call is discarded with that step.
 
+Truncation recovery uses the pinned model's declared reduced-effort options
+only while its latest output-truncation note has no later accepted assistant
+step (or compacted replacement). After a usable repair, ordinary requests restore
+the selected effort. Provider/model/protocol identity stays pinned. Checkpoint
+generation separately uses its declared reduced effort. Step diagnostics expose
+bounded `provider.attempts`, `provider.selected_effort` and
+`provider.effective_effort` tags; they contain no prompts or credentials.
+
+Generation retries stay bounded to five attempts. The 2/5/10/20-second backoff
+bases use 0.8–1.2 jitter, honor a longer positive HTTP `Retry-After` delta or
+date, and cap each wait at 60 seconds. Cancellation interrupts the delay.
+Rate-limit metadata propagates through Chat Completions, Responses and Anthropic
+errors without changing provider selection. Exhaustion retains the existing
+explicit-Continue behavior; retries never dispatch a partial tool call.
+
 Responses `response.incomplete` is a terminal event: `max_output_tokens`
 preserves usage and returns `length` without parsing partial function arguments;
 `content_filter` discards calls and maps to the existing Harness

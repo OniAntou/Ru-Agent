@@ -51,6 +51,18 @@ public sealed class AgentToolDefinitionCatalogTests
     ];
 
     [Fact]
+    public void Bash_verification_metadata_is_optional_and_expected_exit_is_bounded()
+    {
+        var properties = Properties("bash");
+        Assert.Equal(new[] { "command", "inspection", "verification", "expected_failure" },
+            properties["purpose"]!["enum"]!.AsArray().Select(value => value!.GetValue<string>()));
+        Assert.Equal(1, properties["expected_exit_code"]!["minimum"]!.GetValue<int>());
+        Assert.Equal(255, properties["expected_exit_code"]!["maximum"]!.GetValue<int>());
+        Assert.DoesNotContain("purpose", Required("bash"));
+        Assert.DoesNotContain("expected_exit_code", Required("bash"));
+    }
+
+    [Fact]
     public void Get_returns_exact_stable_inventory_and_retired_ids_are_absent()
     {
         var definitions = AgentToolDefinitionCatalog.Get();

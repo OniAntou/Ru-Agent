@@ -21,6 +21,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
 {
     private const int MaxModelStepAttempts = 5;
     private static readonly TimeSpan[] ModelStepRetryBackoffs = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)];
+    private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromSeconds(60);
 
     // Conversation blocks stay small; untrusted runtime references carry bounded
     // source output and explicit cursors when more can be fetched.
@@ -51,6 +52,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
 
     // Tests shrink the backoff; production waits out transient provider limits.
     internal TimeSpan[] StepRetryBackoffsOverride { get; set; } = ModelStepRetryBackoffs;
+    internal Func<double> RetryJitterSample { get; set; } = Random.Shared.NextDouble;
 
     internal static IReadOnlyList<TimeSpan> DefaultStepRetryBackoffs => ModelStepRetryBackoffs;
 
@@ -76,6 +78,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         // otherwise make the client silently drop every retry frame as a
         // duplicate. The next attempt continues past what was already published.
         long publishedSequences = 0;
+        string effectiveEffort = "unknown";
+        string selectedEffort = "unknown";
 
         while (true)
         {
@@ -92,6 +96,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                     && prepared.EstimatedInputTokens
                         > prepared.MaxPromptTokens - RequestSafetyMarginTokens)
                     throw new ModelStepException("context_limit_reached", retryable: false);
+                effectiveEffort = prepared.EffectiveReasoningEffort;
+                selectedEffort = prepared.SelectedReasoningEffort;
                 // A retried attempt replaces the previous attempt's answer: tell the
                 // client to drop the partial text it already rendered before any of this
                 // attempt's text arrives. Attempt 1 has nothing to supersede.
@@ -131,7 +137,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                     MapFinishReason(result.FinishReason),
                     estimatedInputTokens: 0,
                     result.Usage);
-                return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText, result.ProviderContinuation);
+                return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText,
+                    result.ProviderContinuation, attempt + 1, effectiveEffort, selectedEffort);
             }
             catch (ModelStepException error) when (
                 error.Retryable
@@ -146,7 +153,9 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 var backoffs = StepRetryBackoffsOverride.Length == MaxModelStepAttempts - 1
                     ? StepRetryBackoffsOverride
                     : ModelStepRetryBackoffs;
-                await Task.Delay(backoffs[attempt], cancellationToken).ConfigureAwait(false);
+                var delay = ComputeRetryDelay(backoffs[attempt], error.RetryAfter, RetryJitterSample());
+                Console.Error.WriteLine($"ru.host model_retry attempt={attempt + 1} code={error.Code} wait_ms={(int)delay.TotalMilliseconds}");
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 // A model-formatting rejection is handed back to the model on the
                 // next attempt instead of failing the run closed.
                 selectionFeedbackCode = error.Code;
@@ -161,7 +170,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 // exhausted transients distinguishable instead of collapsing
                 // them into model_failed.
                 Console.Error.WriteLine(
-                    $"ru.host step_failed code={error.Code} attempt={attempt} retryable={error.Retryable}");
+                    $"ru.host step_failed code={error.Code} attempt={attempt + 1} retryable={error.Retryable}");
                 throw new ModelRunnerProtocolException(error.Code, error.Retryable, error);
             }
             catch (ModelRunnerProtocolException error)
@@ -169,10 +178,19 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 // A protocol rejection carried a bounded code already; one log
                 // line is the difference between a diagnosable failure and a guess.
                 Console.Error.WriteLine(
-                    $"ru.host step_failed code={error.Code} attempt={attempt} retryable=false");
+                    $"ru.host step_failed code={error.Code} attempt={attempt + 1} retryable=false");
                 throw;
             }
         }
+    }
+
+    internal static TimeSpan ComputeRetryDelay(TimeSpan backoff, TimeSpan? retryAfter, double jitterSample)
+    {
+        if (double.IsNaN(jitterSample) || jitterSample is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(jitterSample));
+        var jitteredTicks = (long)(backoff.Ticks * (0.8 + 0.4 * jitterSample));
+        var delay = TimeSpan.FromTicks(Math.Max(0, jitteredTicks));
+        if (retryAfter is { } serverDelay && serverDelay > delay) delay = serverDelay;
+        return delay > MaximumRetryDelay ? MaximumRetryDelay : delay;
     }
 
     private const long RequestSafetyMarginTokens = 64;
@@ -198,9 +216,9 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         bool preparingSnapshot = false)
     {
         var bootstrap = await LoadProviderBootstrapAsync(request.RunId, cancellationToken).ConfigureAwait(false);
-        // A reply cut off by the output limit usually means the reasoning used the budget: once the
-        // context holds a truncation note, retry at the lowest effort the model offers.
-        if (AgentRecoveryNotes.NoteCount(request.Context, AgentRecoveryKind.OutputTruncated) > 0)
+        // Reduce effort only while a truncation note is awaiting its next assistant response.
+        // Both the note and that response are durable context, so restart cannot extend the window.
+        if (HasPendingTruncationRepair(request.Context))
             bootstrap = bootstrap.WithReducedEffort();
         var images = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
         var nativeText = (preparingSnapshot || request.Preparation is InProcessPreparedStep)
@@ -256,6 +274,18 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             throw new ModelRunnerProtocolException("invalid_request", retryable: false, error);
         }
     }
+
+    private static bool HasPendingTruncationRepair(ModelContextSnapshot context)
+    {
+        var latestTruncation = context.Entries
+            .Where(entry => entry.Role == ModelContextRole.System && entry.Content is { } content
+                && content.StartsWith($"{AgentRecoveryNotes.NotePrefix} {AgentRecoveryNotes.KindMarker(AgentRecoveryKind.OutputTruncated)}", StringComparison.Ordinal))
+            .Select(entry => (long?)entry.Sequence).Max();
+        return latestTruncation is { } sequence
+            && !context.Entries.Any(entry => (entry.Role == ModelContextRole.Assistant
+                || entry.Kind == ModelContextEntryKind.Summary) && entry.Sequence > sequence);
+    }
+
 
     private async Task<NativeHistory> BuildNativeHistoryAsync(
         ModelStepRequest request,

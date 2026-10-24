@@ -45,7 +45,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
 
         using (response)
         {
-            if (!response.IsSuccessStatusCode) throw MapStatus(response.StatusCode);
+            if (!response.IsSuccessStatusCode) throw MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
             Stream stream;
             try { stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { throw new ModelProviderException("timeout", true); }
@@ -422,12 +422,12 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
         return tools;
     }
 
-    private static ModelProviderException MapStatus(HttpStatusCode s) => s switch
+    private static ModelProviderException MapStatus(HttpStatusCode s, TimeSpan? retryAfter) => s switch
     {
         >= HttpStatusCode.MultipleChoices and < HttpStatusCode.BadRequest => new("redirect_rejected", false),
         HttpStatusCode.Unauthorized => new("auth_failed", false),
         HttpStatusCode.Forbidden => new("forbidden", false),
-        HttpStatusCode.TooManyRequests => new("rate_limited", true),
+        HttpStatusCode.TooManyRequests => new("rate_limited", true, retryAfter: retryAfter),
         // Gateways answer 404 both for unknown models and for models with no
         // serving capacity; either way the fix is picking another model.
         HttpStatusCode.NotFound => new("model_unavailable", false),
@@ -436,8 +436,8 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
         // generic 4xx bucket, whose copy sends the reader to /model and /key instead of to a
         // top-up.
         HttpStatusCode.PaymentRequired => new("provider_payment_required", false),
-        (HttpStatusCode)529 => new("server_error", true),
-        >= HttpStatusCode.InternalServerError => new("server_error", true),
+        (HttpStatusCode)529 => new("server_error", true, retryAfter: retryAfter),
+        >= HttpStatusCode.InternalServerError => new("server_error", true, retryAfter: retryAfter),
         _ => new("http_error", false),
     };
 }

@@ -36,6 +36,10 @@ public sealed partial class AgentCommands
             }
             return 0;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             await _err.WriteLineAsync($"session_list_error: {ex.Message}").ConfigureAwait(false);
@@ -57,6 +61,17 @@ public sealed partial class AgentCommands
         {
             var interchange = new SessionInterchangeApiClient(_session, _httpClient, clientSource: "cli");
             var result = await interchange.ExportAsync(cmd.SessionId, cmd.Harness, cancellationToken).ConfigureAwait(false);
+
+            // The names come from the host, but they become local paths. A name with a
+            // separator, a drive prefix or ".." would escape --out (and the partner's
+            // layout when no --out was given), so reject the whole export before any write.
+            if (result.Files.Any(file => !IsSafeExportFileName(file.Name)))
+            {
+                await _err.WriteLineAsync(
+                    "session_export_invalid_target: the host returned a file name that is not a plain file name.")
+                    .ConfigureAwait(false);
+                return 1;
+            }
 
             IReadOnlyList<RuAgent.SessionInterchange.SessionFileTarget> targets;
             if (cmd.OutputDirectory is { Length: > 0 } directory)
@@ -130,12 +145,27 @@ public sealed partial class AgentCommands
             await _out.WriteLineAsync("  Restart that agent to pick the session up.").ConfigureAwait(false);
             return 0;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             await _err.WriteLineAsync($"session_export_error: {ex.Message}").ConfigureAwait(false);
             return 1;
         }
     }
+
+    /// <summary>
+    /// An export name is a file name, not a path. Rejecting anything that resolves to a
+    /// directory or a different parent keeps a host-provided name from escaping the
+    /// directory the caller chose.
+    /// </summary>
+    private static bool IsSafeExportFileName(string? name) =>
+        !string.IsNullOrWhiteSpace(name)
+        && name is not ("." or "..")
+        && string.Equals(name, Path.GetFileName(name), StringComparison.Ordinal)
+        && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
 
     /// <summary>
     /// Turns another agent's session file into a Ru session.
@@ -269,6 +299,10 @@ public sealed partial class AgentCommands
             await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Successfully rewound session {cmd.SessionId} to message {cmd.ToMessageIndex}")).ConfigureAwait(false);
             return 0;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             await _err.WriteLineAsync($"session_rewind_error: {ex.Message}").ConfigureAwait(false);
@@ -301,6 +335,10 @@ public sealed partial class AgentCommands
             await _sessionClient.DeleteAsync(cmd.SessionId, cancellationToken).ConfigureAwait(false);
             await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Deleted session {cmd.SessionId}")).ConfigureAwait(false);
             return 0;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (AgentApiException ex)
         {

@@ -52,6 +52,29 @@ public sealed class TgTranscriptWriterTests
     }
 
     [Fact]
+    public void NativePresentationRowsExpandTabsBeforeMeasuring()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        {
+            writer.AppendPresentation(TranscriptLine.Plain("a\tb", TranscriptRole.Prose));
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(350), () =>
+        {
+            Assert.Contains(window.Transcript.Lines, row => row.Text == "a       b");
+            app.RequestStop();
+            return false;
+        });
+
+        app.Run(window);
+    }
+
+    [Fact]
     public void BackgroundRetryRewindsAfterQueuedStepMarkHasReachedTheView()
     {
         using IApplication app = Application.Create();

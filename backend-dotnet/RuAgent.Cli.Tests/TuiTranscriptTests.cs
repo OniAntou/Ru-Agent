@@ -160,6 +160,40 @@ public sealed class TuiTranscriptTests
 
 
     [Fact]
+    public void ClassicAssistantTextCannotInjectTerminalControls()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("\u001b[2J\u001b]0;pwn\u0007visible");
+        transcript.Flush();
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var text = output.ToString();
+        Assert.DoesNotContain("\u001b", text, StringComparison.Ordinal);
+        Assert.Contains("visible", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ClearViewResetsCountersRetainedDetailsAndStreamedText()
+    {
+        var (transcript, _) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("hello");
+        transcript.Flush();
+        transcript.ApplyActivity(Activity(AgentActivityKind.Thinking, AgentActivityState.Completed) with
+        {
+            Detail = "private reasoning",
+        });
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok"));
+
+        transcript.ClearView();
+
+        Assert.Equal(0, transcript.ToolsSettled);
+        Assert.Empty(transcript.RetainedLines);
+        Assert.Equal(string.Empty, transcript.StreamedAssistantText);
+    }
+
+    [Fact]
     public void ComposeFailure_RendersTitleCauseAndFix()
     {
         var lines = TuiTranscript.ComposeFailure(6.1, "provider_rate_limited");

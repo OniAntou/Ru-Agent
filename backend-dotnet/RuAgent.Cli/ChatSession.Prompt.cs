@@ -80,10 +80,21 @@ public sealed partial class AgentCommands
                 }
                 catch (RunParkedException)
                 {
-                    dispatcherExitCode = 0;
+                    // Only the --json escape ends the chat: a scripted consumer answers the
+                    // parked run out of band. A terminal keeps its REPL; the run is parked
+                    // server-side and the notice already names `ru agent answer`.
+                    if (cmd.Json) dispatcherExitCode = 0;
                     return;
                 }
                 return;
+            }
+
+            // A new turn uses the current selection, not the provider pinned by a run that
+            // was followed or continued earlier. Reset the composer meta before the run
+            // starts; a Continue returned above and keeps the retained run's identity.
+            if (tgMode)
+            {
+                RunOnTgUi(() => tgWindow!.Composer.SetMeta(submissionPreset, activeModel, backendName ?? "(provider unknown)"));
             }
 
             // The usage envelope's input/output counters restart with every run, so the
@@ -98,8 +109,10 @@ public sealed partial class AgentCommands
                 ct).ConfigureAwait(false);
             if (presetUpdate is null)
             {
+                // A retryable preset conflict is not a reason to end the operator's
+                // session: the submission is held for /retry and the composer stays live.
+                // The fail-closed restore paths below still exit when state is unsafe.
                 HoldSubmissionForRetry(submission);
-                dispatcherExitCode = 1;
                 return;
             }
 
@@ -244,6 +257,11 @@ public sealed partial class AgentCommands
                     }
 
                     await FinishTurnAsync().ConfigureAwait(false);
+                    // The create response was not a usable run (invalid binding or an
+                    // unsafe status). The preset is restored, but this turn cannot
+                    // continue: report a non-zero exit instead of asking for another
+                    // prompt as if the turn had succeeded.
+                    dispatcherExitCode = 1;
                     return;
                 }
 
@@ -257,14 +275,13 @@ public sealed partial class AgentCommands
             }
             catch (RunParkedException)
             {
-                // --json approval escape: the bounded notice already went to stderr, and
-                // the run is deliberately left waiting server-side (never auto-denied).
-                // Ending the chat hands control back to the scripted consumer, which
-                // answers it with `ru agent approve` instead of this process reading a
-                // prompt it must not consume.
+                // --json approval/input escape: the bounded notice already went to stderr,
+                // and the run is deliberately left waiting server-side. Ending the chat
+                // hands control back to the scripted consumer, which answers it with
+                // `ru agent approve` / `ru agent answer`. A terminal keeps its REPL.
                 await FinishTurnAsync().ConfigureAwait(false);
                 runSession.RememberFollowable(runSession.ActiveRunId);
-                dispatcherExitCode = 0;
+                if (cmd.Json) dispatcherExitCode = 0;
                 return;
             }
             catch (OperationCanceledException)
@@ -295,6 +312,14 @@ public sealed partial class AgentCommands
             }
             catch (AgentApiException ex) when (ex.ErrorCode == "workspace_busy")
             {
+                if (!hostAccepted)
+                {
+                    // A queued submission was already claimed from the pending attachment
+                    // list; hold it (and release its temp files) like every other
+                    // pre-accept failure so /retry can resubmit it intact.
+                    HoldSubmissionForRetry(submission);
+                }
+
                 if (!presetCommitted
                     && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                 {
@@ -321,10 +346,24 @@ public sealed partial class AgentCommands
                     }
                 }
 
+                if (!presetCommitted
+                    && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+                {
+                    await FinishTurnAsync().ConfigureAwait(false);
+                    dispatcherExitCode = 1;
+                    return;
+                }
+
                 // Pre-run rejections (missing credential, no model) already name
-                // themselves: one error line, no supplementary text.
+                // themselves: one error line, no supplementary text. A malformed create
+                // response is different: the Host may have accepted a run we cannot bind,
+                // so fail closed instead of leaving the operator in an ambiguous REPL.
                 await FinishTurnAsync().ConfigureAwait(false);
                 await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
+                if (string.Equals(ex.ErrorCode, "invalid_response", StringComparison.Ordinal))
+                {
+                    dispatcherExitCode = 1;
+                }
             }
             catch (Exception ex)
             {
@@ -418,7 +457,8 @@ public sealed partial class AgentCommands
                 if (tgMode)
                 {
                     // Clear the TG transcript and its header usage cluster in place; the
-                    // sequential layout below keeps its existing reset.
+                    // logical renderer keeps tool counters and retained details of its own,
+                    // so reset it too instead of only the painted view.
                     RunOnTgUi(() => tgWindow!.ResetTranscript());
                 }
                 else if (!cmd.Json)
@@ -426,6 +466,7 @@ public sealed partial class AgentCommands
                     await humanOut.WriteLineAsync("transcript reset").ConfigureAwait(false);
                 }
 
+                sessionRenderer.Transcript.ClearView();
                 await humanOut.FlushAsync().ConfigureAwait(false);
                 return true;
             }

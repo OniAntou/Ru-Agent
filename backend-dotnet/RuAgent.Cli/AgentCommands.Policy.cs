@@ -113,17 +113,31 @@ public sealed partial class AgentCommands
             try
             {
                 var result = await _agentClient.CreatePolicyAsync(body, interactive: true, cancellationToken).ConfigureAwait(false);
-                var ruleId = result.GetProperty("rule_id").GetString();
-                if (!string.IsNullOrWhiteSpace(ruleId))
+                var ruleId = result.TryGetProperty("rule_id", out var idElement)
+                    && idElement.ValueKind == JsonValueKind.String
+                    ? idElement.GetString()
+                    : null;
+                if (string.IsNullOrWhiteSpace(ruleId))
                 {
-                    createdRuleIds.Add(ruleId);
+                    throw new AgentApiException("invalid_response", "policy create response omitted rule_id");
                 }
 
+                createdRuleIds.Add(ruleId);
                 await _out.WriteLineAsync($"imported rule {ruleId} scope:{rule.Scope}").ConfigureAwait(false);
             }
-            catch (AgentApiException ex)
+            catch (OperationCanceledException)
             {
-                await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
+                // A partial import is not a confirmed import: remove what this command
+                // already committed before the caller's cancellation propagates.
+                await RollbackImportedRulesAsync(createdRuleIds).ConfigureAwait(false);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync(ex is AgentApiException api
+                    ? CliErrorText.Format(api)
+                    : $"policy_import_failed: {CliErrorText.ShortMessage(ex.Message)}")
+                    .ConfigureAwait(false);
                 await RollbackImportedRulesAsync(createdRuleIds).ConfigureAwait(false);
                 return 1;
             }

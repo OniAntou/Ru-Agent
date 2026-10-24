@@ -92,8 +92,8 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            var full = expected.ToString();
-            var streamed = sessionRenderer.Transcript.StreamedAssistantText;
+            var full = TuiText.SanitizeUntrusted(expected.ToString());
+            var streamed = TuiText.SanitizeUntrusted(sessionRenderer.Transcript.StreamedAssistantText);
             Tui.TuiDebug.Log("recover", $"streamed {streamed.Length} of {full.Length} chars");
             var decision = Tui.AssistantTextReconciler.Decide(streamed, full);
             if (decision == Tui.AssistantTextRecovery.Complete
@@ -104,7 +104,8 @@ public sealed partial class AgentCommands
 
             if (decision == Tui.AssistantTextRecovery.ReportTruncation)
             {
-                if (await sessionRenderer.Transcript.RecoverAssistantTurnAsync(string.Join("\n\n", completeSteps)).ConfigureAwait(false))
+                var replacement = string.Join("\n\n", completeSteps.Select(TuiText.SanitizeUntrusted));
+                if (await sessionRenderer.Transcript.RecoverAssistantTurnAsync(replacement).ConfigureAwait(false))
                     return;
                 // Both output paths append text. Report missing history rather than
                 // clearing the screen or appending an older prefix after a newer tail.
@@ -392,6 +393,9 @@ public sealed partial class AgentCommands
             try
             {
                 await _agentClient.CancelAsync(cancelRunId, CancellationToken.None).ConfigureAwait(false);
+                // The server confirmed the cancellation; the run is terminal and no longer
+                // blocks /preset or the next create.
+                runSession.ForgetCompletedRun();
                 await humanOut.WriteLineAsync(Tui.TuiPalette.Warn($"Run interrupted by user · cancelled {cancelRunId}.")).ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -486,6 +490,9 @@ public sealed partial class AgentCommands
 
                 await FollowRunAsync(targetRunId, run.LastSequence, runSession.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
+                // A completed Continue is no longer a retained run: leave the identity
+                // clean so /preset and the next create are not blocked by a terminal run.
+                runSession.ForgetCompletedRun();
             }
             catch (OperationCanceledException)
             {

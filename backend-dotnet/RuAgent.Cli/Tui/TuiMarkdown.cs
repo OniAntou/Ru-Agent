@@ -143,7 +143,7 @@ public sealed partial class TuiMarkdown
 
         if (TryNestedBullet(line, out var nested))
         {
-            return Wrap("    " + TuiPalette.Paint("•", TuiToken.Brand2) + "  " + RenderInline(nested, width, false), width, 6);
+            return Wrap("    " + TuiPalette.Paint("•", TuiToken.Brand2) + "  " + RenderInline(nested, width, false), width, 7);
         }
 
         if (IsDeeperBullet(line))
@@ -153,7 +153,7 @@ public sealed partial class TuiMarkdown
 
         if (TryBullet(line, out var bullet))
         {
-            return Wrap("  " + TuiPalette.Paint("•", TuiToken.Brand2) + "  " + RenderInline(bullet, width, false), width, 4);
+            return Wrap("  " + TuiPalette.Paint("•", TuiToken.Brand2) + "  " + RenderInline(bullet, width, false), width, 5);
         }
 
         if (TryOrdered(line, out var marker, out var ordered))
@@ -393,8 +393,10 @@ public sealed partial class TuiMarkdown
     }
 
     /// <summary>
-    /// Wraps styled text on visible width. The indent is re-emitted on the continuation
-    /// rows so a wrapped bullet keeps its marker column.
+    /// Wraps styled text on visible width. The first row keeps its original prefix (the
+    /// bullet, ordered marker or quote gutter); continuation rows re-emit the indentation.
+    /// A quote gutter is repeated because it is part of the quote's shape, while a bullet
+    /// marker belongs to the first row only and later rows align under its text.
     /// </summary>
     private static IReadOnlyList<string> Wrap(string styled, int width, int indent)
     {
@@ -409,16 +411,64 @@ public sealed partial class TuiMarkdown
             return [styled];
         }
 
-        var rows = WrapStyled(styled, width, indent);
+        var (prefix, body) = SplitPrefix(styled, indent);
+        var continuation = TuiText.Strip(prefix).Contains('│')
+            ? prefix
+            : new string(' ', indent);
+        var rows = WrapStyled(body, width, indent, prefix, continuation);
         return rows.Count == 0 ? [styled] : rows;
     }
 
-    private static IReadOnlyList<string> WrapStyled(string styled, int width, int indent)
+    /// <summary>Splits a styled line after the visible prefix width, keeping escapes whole.</summary>
+    private static (string Prefix, string Body) SplitPrefix(string styled, int indent)
+    {
+        if (indent <= 0)
+        {
+            return (string.Empty, styled);
+        }
+
+        var index = 0;
+        var used = 0;
+        while (index < styled.Length && used < indent)
+        {
+            if (styled[index] == '\u001b')
+            {
+                index = TuiText.SkipEscapeSequence(styled, index);
+                continue;
+            }
+
+            var (codePoint, consumed) = TuiText.ReadRune(styled, index);
+            if (consumed <= 0)
+            {
+                break;
+            }
+
+            used += TuiText.RuneWidth(codePoint);
+            index += consumed;
+        }
+
+        return (styled[..index], styled[index..]);
+    }
+
+    private static IReadOnlyList<string> WrapStyled(
+        string styled, int width, int indent, string prefix, string continuation)
     {
         var rows = new List<string>();
         var current = new StringBuilder();
         var used = 0;
         var limit = Math.Max(1, width - indent);
+
+        void Commit()
+        {
+            if (current.Length == 0)
+            {
+                return;
+            }
+
+            rows.Add((rows.Count == 0 ? prefix : continuation) + current);
+            current.Clear();
+            used = 0;
+        }
 
         foreach (var run in SplitRuns(styled))
         {
@@ -428,9 +478,7 @@ public sealed partial class TuiMarkdown
                 var wordWidth = TuiText.VisibleWidth(text);
                 if (current.Length > 0 && used + 1 + wordWidth > limit)
                 {
-                    rows.Add(current.ToString());
-                    current.Clear();
-                    used = 0;
+                    Commit();
                 }
 
                 if (current.Length > 0)
@@ -441,8 +489,38 @@ public sealed partial class TuiMarkdown
 
                 if (wordWidth > limit)
                 {
-                    text = TuiText.Truncate(text, limit);
-                    wordWidth = limit;
+                    // A URL or hash wider than the line must wrap, not lose its tail. The
+                    // first chunk joins the current row; later chunks become their own row
+                    // and keep the continuation indentation.
+                    var chunks = TuiText.HardWrapLine(text, limit);
+                    for (var chunkIndex = 0; chunkIndex < chunks.Count; chunkIndex++)
+                    {
+                        var chunk = chunks[chunkIndex];
+                        var chunkWidth = TuiText.VisibleWidth(chunk);
+                        if (current.Length > 0 && used + 1 + chunkWidth > limit)
+                        {
+                            Commit();
+                        }
+
+                        if (current.Length > 0)
+                        {
+                            current.Append(' ');
+                            used += 1;
+                        }
+
+                        if (chunkIndex < chunks.Count - 1)
+                        {
+                            current.Append(chunk);
+                            Commit();
+                        }
+                        else
+                        {
+                            current.Append(chunk);
+                            used += chunkWidth;
+                        }
+                    }
+
+                    continue;
                 }
 
                 current.Append(text);
@@ -450,11 +528,7 @@ public sealed partial class TuiMarkdown
             }
         }
 
-        if (current.Length > 0)
-        {
-            rows.Add(current.ToString());
-        }
-
+        Commit();
         return rows;
     }
 

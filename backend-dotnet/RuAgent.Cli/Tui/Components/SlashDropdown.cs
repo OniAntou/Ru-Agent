@@ -45,6 +45,13 @@ public static class SlashDropdown
     }
 
     /// <summary>
+    /// Picker text can come from a remote catalog or a server response. It is one display
+    /// line: strip escapes and controls and collapse whitespace before measuring it.
+    /// </summary>
+    private static string Clean(string? text, int maxChars) =>
+        ChatDisplayText.Sanitize(text, maxChars);
+
+    /// <summary>
     /// Label column sized from the longest label so full names show on wide
     /// terminals, never below the historic width, and always leaving room for
     /// the description (or the whole row when rows carry no description).
@@ -58,7 +65,7 @@ public static class SlashDropdown
         var hasDetail = false;
         foreach (var item in items)
         {
-            longest = Math.Max(longest, TuiText.VisibleWidth(item.Label));
+            longest = Math.Max(longest, TuiText.VisibleWidth(Clean(item.Label, 160)));
             if (!string.IsNullOrWhiteSpace(item.Description) || !string.IsNullOrWhiteSpace(item.Detail))
             {
                 hasDetail = true;
@@ -92,7 +99,8 @@ public static class SlashDropdown
     private static string Top(int width, string title)
     {
         var inner = width - 2;
-        var label = string.IsNullOrWhiteSpace(title) ? "select" : title.Trim();
+        var label = Clean(title, 120);
+        if (string.IsNullOrWhiteSpace(label)) label = "select";
         var left = "─ " + label + " ";
         if (TuiText.VisibleWidth(left) > inner - 1)
         {
@@ -112,13 +120,15 @@ public static class SlashDropdown
     {
         var inner = Math.Max(1, width - 4);
         var prefix = isSelected ? "❯ " : "  ";
-        var label = TuiText.Pad(TuiText.MiddleTruncate(item.Label, labelWidth), labelWidth);
+        var label = TuiText.Pad(TuiText.MiddleTruncate(Clean(item.Label, 160), labelWidth), labelWidth);
         var rest = inner - 2 - labelWidth - 1;
 
         var description = rest <= 1
             ? string.Empty
             : TuiText.Truncate(
-                string.IsNullOrWhiteSpace(item.Detail) ? item.Description : item.Description + " " + item.Detail,
+                string.IsNullOrWhiteSpace(item.Detail)
+                    ? Clean(item.Description, 240)
+                    : Clean(item.Description, 240) + " " + Clean(item.Detail, 240),
                 rest);
 
         var text = prefix + label + " " + description;
@@ -139,7 +149,7 @@ public static class SlashDropdown
     {
         var inner = width - 2;
         var counter = total > 0 ? $"{current}/{total}" : "0/0";
-        var hint = string.IsNullOrWhiteSpace(footer) ? counter : footer.Trim() + " · " + counter;
+        var hint = string.IsNullOrWhiteSpace(footer) ? counter : Clean(footer, 160) + " · " + counter;
 
         string left = string.Empty;
         string right = " " + hint + " ─";

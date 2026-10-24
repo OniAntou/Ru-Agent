@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using RuAgent.Client;
 
 namespace RuAgent.Cli.Rpc;
@@ -70,6 +71,9 @@ public sealed partial class RpcDispatcher
     ];
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private static readonly Regex RunIdPattern = new(@"^run_[0-9a-f]{32}$", RegexOptions.Compiled);
+    private static readonly Regex ApprovalIdPattern = new(@"^apr_[0-9a-f]{32}$", RegexOptions.Compiled);
+    private static readonly Regex RuleIdPattern = new(@"^rule_[0-9a-f]{32}$", RegexOptions.Compiled);
 
     private readonly PublicHostSession _session;
     private readonly SessionApiClient _sessionClient;
@@ -304,7 +308,7 @@ public sealed partial class RpcDispatcher
             return new JsonObject { ["detached"] = subscriptionId };
         }
 
-        var runId = RequireString(request, "runId", 36);
+        var runId = RequireRunId(request);
         var detached = _runBridge?.DetachRun(runId) ?? 0;
         return new JsonObject { ["detached"] = detached, ["run_id"] = runId };
     }
@@ -386,7 +390,7 @@ public sealed partial class RpcDispatcher
     private async Task<JsonNode> RunApproveAsync(RpcRequest request, CancellationToken ct)
     {
         var runId = RequireRunId(request);
-        var approvalId = RequireString(request, "approvalId", 36);
+        var approvalId = RequireApprovalId(request);
         var decision = RequireString(request, "decision", 32);
         if (decision is not ("allow_once" or "allow_session_directory" or "allow_always" or "deny"))
         {
@@ -426,7 +430,7 @@ public sealed partial class RpcDispatcher
         var runId = RequireRunId(request);
         var outcome = OptionalString(request, "outcome", 32);
         var hash = OptionalString(request, "hash", 64);
-        if (outcome is null || hash is null || hash.Length != 64)
+        if (outcome is null || hash is null || hash.Length != 64 || !hash.All(char.IsAsciiHexDigit))
         {
             throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: outcome and a 64-char hash are required.");
         }
@@ -495,12 +499,34 @@ public sealed partial class RpcDispatcher
     private static string RequireRunId(RpcRequest request)
     {
         var runId = RequireString(request, "runId", 36);
-        if (runId.Length != 36 || !runId.StartsWith("run_", StringComparison.Ordinal))
+        if (!RunIdPattern.IsMatch(runId))
         {
             throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: runId must be run_ + 32 lower hex.");
         }
 
         return runId;
+    }
+
+    private static string RequireApprovalId(RpcRequest request)
+    {
+        var approvalId = RequireString(request, "approvalId", 36);
+        if (!ApprovalIdPattern.IsMatch(approvalId))
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: approvalId must be apr_ + 32 lower hex.");
+        }
+
+        return approvalId;
+    }
+
+    private static string RequireRuleId(RpcRequest request)
+    {
+        var ruleId = RequireString(request, "ruleId", 37);
+        if (!RuleIdPattern.IsMatch(ruleId))
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: ruleId must be rule_ + 32 lower hex.");
+        }
+
+        return ruleId;
     }
 
     private async Task<JsonNode> PolicyListAsync(RpcRequest request, CancellationToken ct)
@@ -566,7 +592,7 @@ public sealed partial class RpcDispatcher
 
     private async Task<JsonNode> PolicyRemoveAsync(RpcRequest request, CancellationToken ct)
     {
-        var ruleId = RequireString(request, "ruleId", 37);
+        var ruleId = RequireRuleId(request);
         if (OptionalBool(request, "confirm") != true)
         {
             throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: policy.remove requires confirm=true.");

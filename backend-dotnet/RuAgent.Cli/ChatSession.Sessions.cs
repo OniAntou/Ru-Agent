@@ -160,6 +160,30 @@ public sealed partial class AgentCommands
             }
         }
 
+        /// <summary>
+        /// Rebuilds the session-command surface for the current engine. A tiny-terminal
+        /// handover disposes the Terminal.Gui frame, so its pickers and delete card must be
+        /// replaced by the sequential list paths; reusing the old delegate would call a
+        /// disposed panel.
+        /// </summary>
+        ChatSessionCommands CreateSessionCommands() =>
+            new(
+                () => runSession.IsTurnActive,
+                () => sessionId,
+                ct => _sessionClient.CreateAsync(ct),
+                async (query, ct) => ChatSessionWorkflow.Filter(
+                    await _sessionClient.ListAsync(ct).ConfigureAwait(false), query),
+                SwitchSessionAsync,
+                _slashCommands.Picker,
+                // The session card (switch + delete) and the delete call exist only where a panel
+                // can be drawn; the sequential engine keeps the plain list and /resume <id>.
+                tgMode ? (list, ct) => TgPanelRequests.RequestSessionChoiceAsync(tgWindow!, list, ct) : null,
+                tgMode ? DeleteSessionAsync : null,
+                WriteDiagnosticLineAsync,
+                humanOut,
+                _err,
+                cmd.Json);
+
         Task<bool> HandleSessionWorkflowAsync(string slashCmd, string? arg) =>
             sessionCommands.TryHandleAsync(slashCmd, arg, cancellationToken);
 

@@ -143,6 +143,19 @@ public sealed class ChatSessionCommandsTests
     }
 
     [Fact]
+    public async Task Resume_without_an_id_lists_sessions_when_the_sequential_engine_has_no_picker()
+    {
+        var fake = new FakeSessions();
+        fake.Sessions.Add(new ChatSessionChoice("s1", "First", 2, "ws", null));
+        var commands = fake.Build(withSessionPicker: false, withPicker: false);
+
+        await commands.TryHandleAsync("/resume", null, CancellationToken.None);
+
+        Assert.Empty(fake.Switched);
+        Assert.Contains(fake.Output, line => line.Contains("First", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Resume_with_an_id_switches_without_opening_the_card()
     {
         var fake = new FakeSessions();
@@ -214,7 +227,7 @@ public sealed class ChatSessionCommandsTests
         public int Created { get; private set; }
         public int SessionPickerCalls { get; private set; }
 
-        public ChatSessionCommands Build(bool withSessionPicker = true)
+        public ChatSessionCommands Build(bool withSessionPicker = true, bool withPicker = true)
         {
             var output = new StringWriter();
             var error = new StringWriter();
@@ -232,11 +245,13 @@ public sealed class ChatSessionCommandsTests
                     Switched.Add(id);
                     return Task.CompletedTask;
                 },
-                (list, _) =>
-                {
-                    ConfirmTitles.Add(list.Title);
-                    return Task.FromResult(ConfirmAnswers.Count > 0 ? ConfirmAnswers.Dequeue() : null);
-                },
+                withPicker
+                    ? (list, _) =>
+                    {
+                        ConfirmTitles.Add(list.Title);
+                        return Task.FromResult(ConfirmAnswers.Count > 0 ? ConfirmAnswers.Dequeue() : null);
+                    }
+                    : null,
                 withSessionPicker
                     ? (_, _) =>
                     {

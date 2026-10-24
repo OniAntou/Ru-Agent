@@ -68,6 +68,30 @@ public sealed class TgChatLoopTests
     }
 
     [Fact]
+    public async Task MultilinePromptIsStoredAsSeparateUserRows()
+    {
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        var blocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        loop.SetPromptHandler((_, _, _) => blocker.Task);
+
+        window.Composer.Input.Text = "line one\nline two";
+        loop.Submit();
+
+        var rows = window.Transcript.Lines
+            .Where(row => row.Style == TranscriptStyle.User)
+            .Select(row => row.Text)
+            .ToList();
+        Assert.Contains("  ❯ line one", rows);
+        Assert.Contains("    line two", rows);
+        Assert.DoesNotContain(rows, row => row.Contains('\n'));
+
+        blocker.TrySetResult();
+        loop.Stop();
+        await loop.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task ExecuteSubmittedLine_DispatchesSlashCommandWithoutRendering()
     {
         var seen = new List<string>();

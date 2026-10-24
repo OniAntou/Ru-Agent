@@ -45,6 +45,37 @@ public sealed class SessionInterchangeCommandsTests
     }
 
     [Fact]
+    public async Task Session_export_refuses_a_host_file_name_that_would_escape_the_output_directory()
+    {
+        var root = Directory.CreateTempSubdirectory("ru-cli-export").FullName;
+        var directory = Directory.CreateDirectory(Path.Combine(root, "out")).FullName;
+        try
+        {
+            var handler = new StubHandler("""
+                {"status":"ok","harness":"codex","display_name":"Codex",
+                 "session":{"id":"s1","title":"T","messages":2,
+                            "working_directory":"D:\\LLM","created_at":"2026-09-20T09:30:00+00:00"},
+                 "files":[{"name":"../escaped.jsonl","content":"x\n"}]}
+                """);
+            var errors = new StringWriter();
+            var commands = new AgentCommands(Session(), new HttpClient(handler), new StringWriter(), errors);
+
+            var exit = await commands.SessionExportAsync(
+                new SessionExportCommand("s1", "codex", directory, Json: false),
+                CancellationToken.None);
+
+            Assert.Equal(1, exit);
+            Assert.Contains("session_export_invalid_target", errors.ToString(), StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(root, "escaped.jsonl")));
+            Assert.Empty(Directory.GetFiles(directory));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Session_export_reports_a_refusal_from_the_host_instead_of_writing_nothing_silently()
     {
         var directory = Directory.CreateTempSubdirectory("ru-cli-export").FullName;

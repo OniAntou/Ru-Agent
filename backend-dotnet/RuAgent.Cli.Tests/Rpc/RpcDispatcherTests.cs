@@ -84,6 +84,23 @@ public sealed class RpcDispatcherTests
         Assert.Equal(RpcProtocol.NotInitialized, ex.RpcErrorCode);
     }
 
+    [Theory]
+    [InlineData("run.status", "{\"runId\":\"run_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\"}")]
+    [InlineData("run.approve", "{\"runId\":\"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"approvalId\":\"apr_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\",\"decision\":\"allow_once\"}")]
+    [InlineData("run.reconcile", "{\"runId\":\"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"outcome\":\"applied\",\"hash\":\"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\"}")]
+    [InlineData("policy.remove", "{\"ruleId\":\"rule_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\",\"confirm\":true}")]
+    public async Task Identifiers_are_validated_before_any_http_call(string method, string paramsJson)
+    {
+        var (dispatcher, requests) = CreateDispatcher();
+        await dispatcher.DispatchAsync(Request("initialize", "{\"protocolVersion\":1}"), CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
+            () => dispatcher.DispatchAsync(Request(method, paramsJson), CancellationToken.None));
+
+        Assert.Equal(RpcProtocol.InvalidParams, ex.RpcErrorCode);
+        Assert.Empty(requests);
+    }
+
     [Fact]
     public async Task Unknown_method_returns_method_not_found()
     {

@@ -49,6 +49,21 @@ public sealed class CliImageResizerTests
         return stream.ToArray();
     }
 
+    /// <summary>A PNG signature and IHDR chunk only: enough to read dimensions, no pixels.</summary>
+    private static byte[] PngHeaderOnly(int width, int height)
+    {
+        var bytes = new byte[33];
+        byte[] signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        signature.CopyTo(bytes, 0);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(8), 13);
+        "IHDR"u8.CopyTo(bytes.AsSpan(12));
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(16), width);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(20), height);
+        bytes[24] = 8;
+        bytes[25] = 6;
+        return bytes;
+    }
+
     [Fact]
     public void ResizeIfNeeded_SmallPngPassesThroughUntouched()
     {
@@ -110,6 +125,42 @@ public sealed class CliImageResizerTests
         Assert.NotSame(bytes, result.Bytes);
         Assert.Equal(400, result.Width);
         Assert.Equal(400, result.Height);
+    }
+
+    [Fact]
+    public void ResizeIfNeeded_RejectsAPixelBombBeforeDecoding()
+    {
+        var bytes = PngHeaderOnly(100_000, 100_000);
+
+        var exception = Assert.Throws<InvalidDataException>(() => CliImageResizer.ResizeIfNeeded(bytes));
+
+        Assert.Contains("pixel", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TryReadDimensions_ReadsPngJpegAndBmpHeaders()
+    {
+        Assert.True(CliImageResizer.TryReadDimensions(Png(120, 80), out var pngWidth, out var pngHeight));
+        Assert.Equal((120, 80), (pngWidth, pngHeight));
+
+        Assert.True(CliImageResizer.TryReadDimensions(Jpeg(120, 80, 90), out var jpegWidth, out var jpegHeight));
+        Assert.Equal((120, 80), (jpegWidth, jpegHeight));
+
+        Assert.True(CliImageResizer.TryReadDimensions(Bmp(64, 48), out var bmpWidth, out var bmpHeight));
+        Assert.Equal((64, 48), (bmpWidth, bmpHeight));
+    }
+
+    [Fact]
+    public void TryReadDimensions_RejectsAnOverflowingBmpHeight()
+    {
+        var bytes = new byte[54];
+        bytes[0] = (byte)'B';
+        bytes[1] = (byte)'M';
+        BitConverter.GetBytes(40).CopyTo(bytes, 14);
+        BitConverter.GetBytes(10).CopyTo(bytes, 18);
+        BitConverter.GetBytes(int.MinValue).CopyTo(bytes, 22);
+
+        Assert.False(CliImageResizer.TryReadDimensions(bytes, out _, out _));
     }
 
     [Fact]

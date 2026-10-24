@@ -254,7 +254,7 @@ public sealed partial class AgentCommands
             }
         }
 
-        await _err.WriteLineAsync($"reconcile_failed: {body}").ConfigureAwait(false);
+        await _err.WriteLineAsync($"reconcile_failed: {CliErrorText.ShortMessage(body)}").ConfigureAwait(false);
         return (1, null, null);
     }
 
@@ -283,12 +283,12 @@ public sealed partial class AgentCommands
         {
             await _err.WriteLineAsync(body.Contains("reconcile_stale", StringComparison.Ordinal)
                 ? $"reconcile_stale: workspace changed since inspection; rerun 'agent reconcile' to refresh."
-                : $"reconcile_failed: {body}");
+                : $"reconcile_failed: {CliErrorText.ShortMessage(body)}");
             return 1;
         }
 
         // --json owns stdout: the human confirmation goes to stderr.
-        await (cmd.Json ? _err : _out).WriteLineAsync($"reconciled {cmd.RunId}: {body}").ConfigureAwait(false);
+        await (cmd.Json ? _err : _out).WriteLineAsync($"reconciled {cmd.RunId}: {CliErrorText.ShortMessage(body)}").ConfigureAwait(false);
         return 0;
     }
 
@@ -319,7 +319,7 @@ public sealed partial class AgentCommands
             var body = await ReadBoundedBodyAsync(resp.Content, cancellationToken).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
-                await _err.WriteLineAsync($"trust_failed: {body}").ConfigureAwait(false);
+                await _err.WriteLineAsync($"trust_failed: {CliErrorText.ShortMessage(body)}").ConfigureAwait(false);
                 return 1;
             }
             await _out.WriteLineAsync($"trust {cmd.RunId} {(cmd.Approve ? "approved" : "denied")}").ConfigureAwait(false);

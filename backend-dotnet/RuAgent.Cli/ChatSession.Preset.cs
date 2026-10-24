@@ -9,7 +9,7 @@ public sealed partial class AgentCommands
         private async Task ChangePresetAsync(string? argument)
         {
             var selection = await ChatPresetSelection.SelectAsync(cmd, argument,
-                runSession.IsTurnActive || runSession.ActiveRunId is not null
+                runSession.IsTurnActive
                     || runSession.ParkedRunId is not null || runSession.FollowableRunId is not null,
                 tgMode && !cmd.Json ? _slashCommands.Picker : null, cancellationToken).ConfigureAwait(false);
             if (selection.Error is not null)

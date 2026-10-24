@@ -115,6 +115,8 @@ public sealed partial class TuiTranscript
     public async Task<bool> RecoverAssistantTurnAsync(string fullText)
     {
         if (_surface.Writer is not ITranscriptTurnRewriter screen) return false;
+        fullText = TuiText.SanitizeUntrusted(fullText);
+        if (fullText.Length == 0) return false;
         Flush();
         var markdown = new TuiMarkdown { HighlightCode = _fullScreenCards };
         bool replaced;
@@ -158,7 +160,7 @@ public sealed partial class TuiTranscript
     {
         if (_surface.Presentation is not null)
         {
-            foreach (var line in lines) _surface.AppendPresentation(TranscriptLine.Plain(TuiText.Strip(line), TranscriptRole.Meta));
+            foreach (var line in lines) _surface.AppendPresentation(TranscriptLine.Plain(TuiText.SanitizeUntrusted(line), TranscriptRole.Meta));
         }
         else _surface.WriteBlock(lines);
     }
@@ -211,13 +213,55 @@ public sealed partial class TuiTranscript
         _surface.Line();
     }
 
+    /// <summary>
+    /// Resets the logical transcript state for <c>/clear</c> without writing a turn
+    /// separator. The Terminal.Gui view clears its own rows; this drops the renderer's
+    /// retained details, tool counters, buffered prose and markdown state so the next
+    /// <c>/status</c>, Ctrl+O or stream starts from an empty session view. A parked run is
+    /// session state, not transcript state, so its pause flag is retained.
+    /// </summary>
+    public void ClearView()
+    {
+        _retained.Clear();
+        _pendingTools.Clear();
+        _settledActivityIds.Clear();
+        _settledToolRows.Clear();
+        _streamedAssistant.Clear();
+        _lineBuffer = string.Empty;
+        _proseLine.Clear();
+        _paragraph.Clear();
+        _lastProsePreview = 0;
+        _inToolBlock = false;
+        _atLineStart = true;
+        _hasStreamedDelta = false;
+        _terminalCode = null;
+        _summaryDetail = null;
+        _sawCompletion = false;
+        _pendingPlanProgress = null;
+        _lastPlanProgress = null;
+        _toolsSettled = 0;
+        _toolGroupOpen = false;
+        _toolGroupCount = 0;
+        _toolGroupFailed = false;
+        _markdown.Reset();
+        _turnWatch.Reset();
+        if (!_paused)
+        {
+            _status.Reset();
+        }
+    }
+
     // ------------------------------------------------------------------
     // Streaming assistant text (markers swallowed, block text guttered).
     // ------------------------------------------------------------------
 
     public void AppendAssistant(string text)
     {
-        if (string.IsNullOrEmpty(text))
+        // Model deltas are untrusted terminal input. Strip escape/control content before it
+        // reaches either sink; a sequence split across two deltas is neutralised because the
+        // leading ESC is dropped and the remaining bytes render as harmless text.
+        var safeText = TuiText.SanitizeUntrusted(text);
+        if (safeText.Length == 0)
         {
             return;
         }
@@ -225,7 +269,7 @@ public sealed partial class TuiTranscript
 
         if (_streamedAssistant.Length < MaxRetainedAssistantCharacters)
         {
-            _streamedAssistant.Append(text);
+            _streamedAssistant.Append(safeText);
         }
 
         if (!_hasStreamedDelta)
@@ -241,7 +285,7 @@ public sealed partial class TuiTranscript
             _atLineStart = true;
         }
 
-        _lineBuffer += text;
+        _lineBuffer += safeText;
         // Both marker families are held back: a tool-call wrapper and a markdown emphasis
         // can each be cut in half by a delta boundary.
         var hold = Math.Max(PartialMarkerSuffixLength(_lineBuffer), TuiMarkdown.Holdback(_lineBuffer));
@@ -1198,7 +1242,7 @@ public sealed partial class TuiTranscript
     private static List<string> ExtractDiffLines(string? text) =>
         string.IsNullOrWhiteSpace(text)
             ? []
-            : text.Split('\n').Where(IsDiffLine).ToList();
+            : TuiText.SanitizeUntrusted(text).Split('\n').Where(IsDiffLine).ToList();
 
 
 
@@ -1372,6 +1416,7 @@ public sealed partial class TuiTranscript
             return;
         }
 
+        text = TuiText.SanitizeUntrusted(text);
         var lines = text.Split('\n');
         var diffLines = lines.Where(IsDiffLine).ToList();
         if (diffLines.Count == 0)
@@ -1659,6 +1704,7 @@ public sealed partial class TuiTranscript
             return string.Empty;
         }
 
+        text = TuiText.SanitizeUntrusted(text);
         if (text.Length > 500)
         {
             text = TuiText.SafeCut(text, 500) + "…";

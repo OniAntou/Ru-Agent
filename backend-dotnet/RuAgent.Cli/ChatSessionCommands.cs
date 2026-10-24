@@ -93,9 +93,17 @@ internal sealed class ChatSessionCommands
             return true;
         }
 
-        if (_json || _picker is null)
+        if (_json)
         {
             await _writeLine(_error, "interactive_required: /resume needs a session id or an interactive picker").ConfigureAwait(false);
+            return true;
+        }
+
+        if (_picker is null)
+        {
+            // The sequential engine has no picker: list the sessions so the operator can
+            // choose one with an explicit /resume <id> argument.
+            await ListSessionsAsync(null, cancellationToken).ConfigureAwait(false);
             return true;
         }
 

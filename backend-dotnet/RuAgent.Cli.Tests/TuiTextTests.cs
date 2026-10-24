@@ -56,6 +56,24 @@ public sealed class TuiTextTests
     }
 
     [Fact]
+    public void SanitizeUntrusted_RemovesEscapesControlsAndBidiButKeepsLayout()
+    {
+        Assert.Equal(
+            "hitxt\n\tnext",
+            TuiText.SanitizeUntrusted("\u001b[2Jhi\u0007\u202Etxt\n\tnext"));
+        Assert.Equal("visible", TuiText.SanitizeUntrusted("\u001b]0;title\u0007visible"));
+    }
+
+    [Fact]
+    public void ExpandTabs_StartsAtTheGivenColumn()
+    {
+        Assert.Equal("a       b", TuiText.ExpandTabs("a\tb", 0, out var firstEnd));
+        Assert.Equal(9, firstEnd);
+        Assert.Equal("a    b", TuiText.ExpandTabs("a\tb", 3, out var secondEnd));
+        Assert.Equal(9, secondEnd);
+    }
+
+    [Fact]
     public void RuneWidth_ClassifiesControlsAndNegativeInput()
     {
         Assert.Equal(0, TuiText.RuneWidth(0));

@@ -1,4 +1,5 @@
 using RuAgent.Cli.TerminalGui;
+using RuAgent.Cli.Tui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Drivers;
@@ -48,6 +49,33 @@ public sealed class TgTranscriptTests
     }
 
     [Fact]
+    public void WrappedBulletPresentationRepeatsItsContinuationIndent()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = new Window { BorderStyle = LineStyle.None };
+        var transcript = new TgTranscriptView { Width = 30, Height = Dim.Fill() };
+        window.Add(transcript);
+        var line = new TuiMarkdown().RenderPresentation(
+            "- " + string.Join(' ', Enumerable.Repeat("word", 20)), 30)[0];
+        var spans = line.Runs
+            .Select(run => new TgSpan(run.Text, TgPalette.Attr(run.Token)))
+            .ToArray();
+        transcript.Append(line.Text, TranscriptStyle.Prose, spans);
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            var rows = TgSnapshot.Capture(app).TakeWhile(row => row.Length > 0).ToList();
+            Assert.True(rows.Count > 1);
+            Assert.StartsWith("  •  ", rows[0], StringComparison.Ordinal);
+            Assert.All(rows.Skip(1), row => Assert.StartsWith("     ", row, StringComparison.Ordinal));
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    [Fact]
     public void ProseWrapsAtTheFullViewportWidthOnAWideScreen()
     {
         // The transcript used to cap prose at 100 cells, so a 160-column frame wrapped
@@ -89,6 +117,20 @@ public sealed class TgTranscriptTests
         Assert.Equal("kept", kept.Text);
         // The retention counters follow the drop, so later trims still measure the view.
         Assert.Equal(4, transcript.RetainedCharacterCount);
+    }
+
+    [Fact]
+    public void RemoveProseSince_KeepsSettledToolRows()
+    {
+        using var transcript = new TgTranscriptView { Frame = new System.Drawing.Rectangle(0, 0, 80, 10) };
+        transcript.Append("kept", TranscriptStyle.Prose);
+        var mark = transcript.CommittedRowCount;
+        transcript.Append("✓ Read a.cs", TranscriptStyle.Tool);
+        transcript.Append("superseded", TranscriptStyle.Prose);
+
+        transcript.RemoveProseSince(mark);
+
+        Assert.Equal(["kept", "✓ Read a.cs"], transcript.Lines.Select(row => row.Text));
     }
 
     [Fact]

@@ -65,6 +65,18 @@ public sealed class SessionDeleteCommandTests
     }
 
     [Fact]
+    public async Task Cancellation_propagates_instead_of_becoming_a_delete_error()
+    {
+        using var http = new HttpClient(new FakeHandler(_ => Json("{}")));
+        using var commands = new AgentCommands(Session(), http, new StringWriter(), new StringWriter());
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            commands.SessionDeleteAsync(new SessionDeleteCommand("sess_1", Yes: true), cancelled.Token));
+    }
+
+    [Fact]
     public async Task Delete_with_yes_issues_the_delete_and_reports_it()
     {
         var deletes = new List<string>();

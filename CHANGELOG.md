@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(cli)**: Correct confirmed CLI/TUI defects. Disabled picker rows can no longer
+  be confirmed (including the empty model a no-match filter could save); the sequential
+  engine prints picker options instead of calling a no-op picker; `ask_user` parks keep
+  the REPL alive outside `--json`; multiline prompts render one row per source line;
+  wrapped bullets keep their marker column and long words wrap instead of truncating;
+  model/tool text is stripped of terminal controls; tabs are measured from the current
+  row column; a park followed by a durable note detaches `agent attach`; a superseded
+  model step removes only prose, not tool receipts; `/clear` resets the logical
+  transcript counters; Terminal.Gui span rows repeat bullet/quote prefixes on wrapped
+  continuation rows; panel and picker text from catalogs is stripped of terminal
+  controls; oversized source images are rejected from their header before decoding;
+  `session export` refuses a host file name that would escape its target directory;
+  and RPC identifiers/error bodies follow their documented bounds.
+
 - **style(gui)**: Add animated green Braille waves behind the startup wordmark,
   with a quiet center, a static reduced-motion frame and a plain high-contrast
   canvas. Soften the field edges, add green-to-mint depth and smooth the wave cadence.

@@ -29,13 +29,16 @@ public static class TuiPanel
     {
         ArgumentNullException.ThrowIfNull(sections);
         var w = Math.Clamp(width, MinWidth, MaxWidth);
-        var lines = framed ? new List<string> { Top(w, title) } : new List<string>();
+        var safeTitle = Clean(title, 120);
+        var safeFooter = Clean(footer, 160);
+        var lines = framed ? new List<string> { Top(w, safeTitle) } : new List<string>();
         string Row(string text) => framed ? Frame(w, text) : TuiText.Truncate(text, w);
         var firstSection = true;
 
         foreach (var section in sections)
         {
-            if (!string.IsNullOrWhiteSpace(section.Title))
+            var sectionTitle = Clean(section.Title, 120);
+            if (!string.IsNullOrWhiteSpace(sectionTitle))
             {
                 if (!firstSection)
                 {
@@ -43,7 +46,7 @@ public static class TuiPanel
                     lines.Add(framed ? Row(string.Empty) : " ");
                 }
 
-                lines.Add(Row(TuiPalette.Paint("  " + section.Title!.Trim(), TuiToken.Brand2)));
+                lines.Add(Row(TuiPalette.Paint("  " + sectionTitle, TuiToken.Brand2)));
                 firstSection = false;
             }
 
@@ -53,20 +56,28 @@ public static class TuiPanel
             }
         }
 
-        if (framed) lines.Add(Bottom(w, footer));
+        if (framed) lines.Add(Bottom(w, safeFooter));
         return lines;
     }
+
+    /// <summary>
+    /// Panel text can come from a remote catalog (provider names, model ids) or from
+    /// settings. It is a single display line, never terminal input: strip escapes and
+    /// controls and collapse whitespace before measuring or painting it.
+    /// </summary>
+    private static string Clean(string? text, int maxChars) =>
+        ChatDisplayText.Sanitize(text, maxChars);
 
     private static string ComposeRow(int width, PanelRow row, bool framed)
     {
         var inner = Math.Max(1, width - (framed ? 4 : 0));
         var contentBudget = Math.Max(1, inner - 2);
-        var label = TuiText.Pad(row.Label, Math.Min(LabelColumn, contentBudget));
+        var label = TuiText.Pad(Clean(row.Label, 160), Math.Min(LabelColumn, contentBudget));
         var labelWidth = TuiText.VisibleWidth(label);
         var detailWidth = contentBudget - labelWidth - 1;
         var detail = string.IsNullOrWhiteSpace(row.Detail) || detailWidth < MinDetailWidth
             ? string.Empty
-            : TuiText.Truncate(row.Detail!.Trim(), detailWidth);
+            : TuiText.Truncate(Clean(row.Detail, 512), detailWidth);
 
         var content = labelWidth >= contentBudget
             ? TuiPalette.Paint(label, TuiToken.Meta)

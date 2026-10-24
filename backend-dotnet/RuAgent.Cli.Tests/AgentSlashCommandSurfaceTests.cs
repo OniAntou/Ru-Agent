@@ -101,6 +101,23 @@ public sealed class AgentSlashCommandSurfaceTests
         Assert.Contains("gpt-4o", text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Status_StripsTerminalControlsFromSettingsValues()
+    {
+        using var _ = TuiPalette.PinLevel(TuiColorLevel.None);
+        var output = new StringWriter();
+        var commands = Create(
+            output,
+            settingsJson: "{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt\\u0007-4o\",\"has_openai_api_key\":true}");
+
+        Assert.True(await commands.TryHandleAsync("/status", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var text = output.ToString();
+        Assert.DoesNotContain('\u001b', text);
+        Assert.DoesNotContain('\u0007', text);
+        Assert.Contains("gpt", text, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("/activity")]
     [InlineData("/todos")]

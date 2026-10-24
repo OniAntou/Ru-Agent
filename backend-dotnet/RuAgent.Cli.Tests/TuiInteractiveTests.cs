@@ -233,6 +233,19 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
+    public void TuiSessionRenderer_NamesAnUnsupportedProtocolVersion()
+    {
+        var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw) { Width = 80 };
+        var envelope = new HarnessSafeEventEnvelope(
+            2, "evt_" + new string('a', 32), "run_" + new string('b', 32), "sess_1", 1,
+            "run.state_changed", "2026-09-10T00:00:00Z", "running", "started");
+        renderer.RenderFrame(new SseFrame(1, "run.state_changed", JsonSerializer.Serialize(envelope), false, null));
+
+        Assert.Contains("unsupported_protocol_version", sw.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TuiSessionRenderer_RendersCompactionAndRetryActivities()
     {
         using (TuiPalette.PinLevel(TuiColorLevel.None))
@@ -871,7 +884,18 @@ public sealed class TuiInteractiveTests
                 }
 
                 state = "standard";
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"session_id\":\"sess_123\",\"preset\":\"standard\",\"version\":1,\"snapshot_token\":\"sps_" + new string('a', 32) + "\"}", Encoding.UTF8, "application/json") };
+                var snapshotToken = document.RootElement.TryGetProperty("snapshot_token", out var tokenElement)
+                    && tokenElement.ValueKind == JsonValueKind.String
+                        ? tokenElement.GetString()
+                        : null;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "{\"session_id\":\"sess_123\",\"preset\":\"standard\",\"version\":1,\"snapshot_token\":\""
+                        + snapshotToken + "\"}",
+                        Encoding.UTF8,
+                        "application/json"),
+                };
             }
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs"))
                 return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("{\"run_id\":\"run_" + new string('a', 32) + "\",\"session_id\":\"sess_123\",\"workspace_id\":\"ws_test\",\"status\":\"failed\",\"preset\":\"standard\",\"created_at\":\"2026-09-24T00:00:00Z\",\"updated_at\":\"2026-09-24T00:00:00Z\"}", Encoding.UTF8, "application/json") };
@@ -883,11 +907,12 @@ public sealed class TuiInteractiveTests
             return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
         });
         var reader = new CountingReader("hello\n");
-        var commands = new AgentCommands(session, new HttpClient(handler), new StringWriter(), new StringWriter(), reader);
+        var errWriter = new StringWriter();
+        var commands = new AgentCommands(session, new HttpClient(handler), new StringWriter(), errWriter, reader);
 
         var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", true), CancellationToken.None);
 
-        Assert.Equal(1, exit);
+        Assert.True(exit == 1, $"exit={exit} restore={restoreCalled} state={state} events={eventsCalled} reads={reader.ReadCount} err={errWriter}");
         Assert.True(restoreCalled);
         Assert.Equal("plan", state);
         Assert.Equal(1, reader.ReadCount);

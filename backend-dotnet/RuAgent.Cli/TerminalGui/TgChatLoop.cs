@@ -458,10 +458,22 @@ public sealed class TgChatLoop
 
         // The Grok-style user block: a filled three-row card with the prompt chevron on
         // its middle row. Pad rows carry the fill only; the text row carries the prompt.
+        // A multiline prompt is split into one row per source line, with the continuation
+        // rows aligned under the text after the chevron; a raw newline inside a row would
+        // otherwise be interpreted by the terminal outside the view's row model.
         Dispatch(() =>
         {
             _window.Transcript.Append(string.Empty, TranscriptStyle.User);
-            _window.Transcript.Append("  ❯ " + submission.Prompt, TranscriptStyle.User);
+            var promptLines = submission.Prompt
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n')
+                .Split('\n');
+            for (var index = 0; index < promptLines.Length; index++)
+            {
+                var safe = TuiText.SanitizeUntrusted(promptLines[index]);
+                _window.Transcript.Append((index == 0 ? "  ❯ " : "    ") + safe, TranscriptStyle.User);
+            }
+
             _window.Transcript.Append(string.Empty, TranscriptStyle.User);
         });
         var stream = new TranscriptStream(_window.Transcript, Dispatch);

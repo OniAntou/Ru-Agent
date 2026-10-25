@@ -116,7 +116,7 @@ public sealed partial class ToolExecutionService
             {
                 var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
                 var argumentsHash = PendingApprovalStore.ComputeArgumentsHash(toolId, toolVersion, arguments);
-                var terminalApprovalToken = toolId is "bash" or "terminal.run" or "terminal.shell"
+                var terminalApprovalToken = toolId is "bash" or "powershell" or "run_process" or "terminal.run" or "terminal.shell"
                     ? _approvalTokens.Issue(
                         request.RequestId,
                         request.SessionId,
@@ -453,6 +453,7 @@ public sealed partial class ToolExecutionService
     /// </summary>
     private static bool IsTerminalRunOrShellCall(string toolId, JsonObject arguments)
     {
+        if (toolId is "powershell" or "run_process") return true;
         if (!string.Equals(toolId, "bash", StringComparison.Ordinal))
         {
             return false;
@@ -585,7 +586,9 @@ public sealed partial class ToolExecutionService
         {
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "invalid_arguments"),
-                "Tool arguments were rejected.",
+                error.Message is "read_line_too_long" or "read_line_scan_limit" ? IoRepairHint(error.Message)
+                    : error.Message == "edit_overlap" ? "Edits overlap in the original file. Combine them into one exact replacement or use disjoint spans."
+                    : "Tool arguments were rejected.",
                 VerificationFailure(binding));
         }
         catch (IOException error)
@@ -631,7 +634,7 @@ public sealed partial class ToolExecutionService
             VerificationFailure(binding));
         }
 
-        if (binding.Manifest.Id == "bash" && context.AuthorizedTerminalIntent is { } terminalIntent)
+        if (binding.Manifest.Id is "bash" or "powershell" or "run_process" && context.AuthorizedTerminalIntent is { } terminalIntent)
             AddVerificationIdentity(outcome.Output, terminalIntent);
         outcome = outcome with
         {

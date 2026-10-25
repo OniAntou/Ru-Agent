@@ -23,12 +23,14 @@ public sealed class BackgroundTaskNoteTracker
     public const int MaxNotesPerProbe = 8;
 
     private readonly Func<CancellationToken, Task<JsonObject>> _probe;
+    private readonly bool _legacyTerminal;
     private readonly ConcurrentDictionary<string, string> _lastStates = new(StringComparer.Ordinal);
     private readonly object _gate = new();
 
-    public BackgroundTaskNoteTracker(Func<CancellationToken, Task<JsonObject>> probe)
+    public BackgroundTaskNoteTracker(Func<CancellationToken, Task<JsonObject>> probe, string toolProfile = AgentToolProfiles.Legacy)
     {
         _probe = probe ?? throw new ArgumentNullException(nameof(probe));
+        _legacyTerminal = AgentToolProfiles.Includes(toolProfile, "bash");
     }
 
     /// <summary>
@@ -115,7 +117,9 @@ public sealed class BackgroundTaskNoteTracker
             : notes.GetRange(notes.Count - MaxNotesPerProbe, MaxNotesPerProbe);
         var note = "Background terminal task state changed: "
             + string.Join("; ", recent)
-            + ". Page live output with bash mode=read_output (execution_id) or stop a task with mode=kill.";
+            + (_legacyTerminal
+                ? ". Page live output with bash mode=read_output (execution_id) or stop a task with mode=kill."
+                : ". Page live output with terminal_read (execution_id) or stop a task with terminal_stop (execution_id).");
         return note.Length <= MaxNoteLength ? note : note[..MaxNoteLength];
     }
 }

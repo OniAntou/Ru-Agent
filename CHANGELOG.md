@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tools)**: Pin simpler coding tool profiles per run, with explicit
+  Windows terminal operations, atomic same-file multi-edit, line-based reads,
+  and policy-checked multi-file unified patches. Preserve legacy run tools.
+- **feat(tools)**: Add an opt-in `coding_code_v1` profile with bounded synchronous
+  JavaScript tool orchestration, encrypted nested receipts, shared tool budgets,
+  and conservative interruption handling. Retain all nested verification evidence
+  while sending selected results to the model. No LSP or browser automation.
+- **feat(benchmark)**: Add a file-creation/multi-edit workflow with a Unicode path,
+  explicit process-scoped tool-profile selection and observed tool/model-step
+  counts. Distinguish missing nested-call/error telemetry from measured counts.
+- **fix(patch)**: Preserve CRLF and final-newline semantics and reject malformed
+  hunk counts, positions and overlapping ranges.
+- **fix(approvals)**: Keep patch, restore and terminal lifecycle approvals
+  single-use instead of remembering a matcher that cannot bind their contents
+  or opaque IDs. Preserve explicit ask rules for terminal output/stop tools.
+- **fix(providers)**: Preserve cancellation when it races a provider rejection.
+- **feat(search)**: Allow an explicitly configured JSON search backend with
+  bounded structured results and no silent HTML fallback; retain HTML racing
+  as the default mode.
+
 - **fix(tools)**: Clarify file creation versus editing in model guidance and repair
   hints. Keep malformed write activity labeled as Write, and explain that edit
   cannot create a file or use empty old text.

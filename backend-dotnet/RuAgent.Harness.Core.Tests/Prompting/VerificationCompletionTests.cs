@@ -8,6 +8,17 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 public sealed class VerificationCompletionTests
 {
     [Fact]
+    public void Coding_terminal_check_is_invalidated_by_multi_edit_and_completed_by_rerun()
+    {
+        const string args = """{"script":"dotnet test","purpose":"verification"}""";
+        var initial = Batch(1, "check", "powershell", args, ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}""")
+            .Concat(Batch(3, "change", "edit_file", "{}", ToolExecutionOutcome.Succeeded, "ok", "{}"));
+        Assert.Equal("verification_stale", Snapshot(initial).VerificationEvidence.Checks.Single().Code);
+        var repaired = initial.Concat(Batch(5, "recheck", "powershell", args, ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""));
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(repaired), out _));
+    }
+
+    [Fact]
     public void Expected_nonzero_exit_can_complete_without_rewriting_failed_receipt()
     {
         var entries = Batch(1, "negative", "bash",

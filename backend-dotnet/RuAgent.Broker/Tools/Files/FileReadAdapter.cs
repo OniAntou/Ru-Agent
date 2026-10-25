@@ -8,7 +8,7 @@ using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools.Files;
 
-public sealed class FileReadAdapter
+public sealed partial class FileReadAdapter
 {
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private readonly string _workspaceRoot;

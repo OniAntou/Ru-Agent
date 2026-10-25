@@ -406,11 +406,12 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
         if (modelTools.Count > RuAgent.Protocol.AgentToolDefinitionCatalog.MaximumModelTools)
             throw new ModelProviderException("malformed_payload", false);
         var tools = new JsonArray();
+        var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in modelTools.OfType<JsonObject>())
         {
             var name = ReadString(item["tool_id"]);
             var schema = item["input_schema"] as JsonObject;
-            if (name is null || schema is null) throw new ModelProviderException("malformed_payload", false);
+            if (name is null || schema is null || !names.Add(name)) throw new ModelProviderException("malformed_payload", false);
             tools.Add(new JsonObject
             {
                 ["name"] = name,

@@ -57,6 +57,18 @@ public static class AgentActivityProjector
     {
         ArgumentNullException.ThrowIfNull(proposal);
 
+        try
+        {
+            if (RuAgent.Protocol.CodingToolArguments.AdapterToolId(proposal.ToolId) is { } adapterId)
+            {
+                var arguments = RuAgent.Protocol.CodingToolArguments.ToAdapterArguments(proposal.ToolId,
+                    System.Text.Json.Nodes.JsonNode.Parse(proposal.Arguments.GetRawText())!.AsObject());
+                proposal = new ToolProposal(proposal.RunId, proposal.ModelStepId, proposal.ToolCallId, proposal.ProviderCallId,
+                    proposal.ModelOrder, adapterId, proposal.ToolVersion, System.Text.Json.JsonSerializer.SerializeToElement(arguments));
+            }
+        }
+        catch (ArgumentException) { /* Invalid arguments still need a visible failed activity. */ }
+
         var op = ReadOp(proposal);
         var metadata = ToolActivityMetadataExtractor.Extract(proposal, receipt);
         var kind = (proposal.ToolId, op) switch
@@ -64,7 +76,7 @@ public static class AgentActivityProjector
             ("read", "list") or ("glob", _) => AgentActivityKind.Explore,
             ("grep", _) or ("web_search", _) => AgentActivityKind.Search,
             ("read", "read") => AgentActivityKind.Analyze,
-            ("write", _) or ("edit", _) => AgentActivityKind.Edit,
+            ("write", _) or ("edit", _) or ("apply_patch", _) => AgentActivityKind.Edit,
             ("bash", _) => AgentActivityKind.Terminal,
             // Without this the tool fell to the default below and was reported as a bare
             // status line with its metadata deliberately stripped, so the one row that
@@ -455,6 +467,7 @@ public static class AgentActivityProjector
             ("read", "read") => "View",
             ("write", "write") => "Write",
             ("edit", _) => "Edit",
+            ("apply_patch", _) => "Patch",
             ("write", "delete") => "Delete",
             ("write", "restore") => "Restore",
             ("write", _) => "Write",

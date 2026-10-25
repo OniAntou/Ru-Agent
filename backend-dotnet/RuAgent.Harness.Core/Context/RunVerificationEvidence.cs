@@ -17,19 +17,21 @@ public sealed partial class RunVerificationEvidence
     public bool Overflowed { get; }
     public bool HasMutations { get; }
     private readonly HashSet<string> _expectedFailures;
+    private readonly string? _programFailure;
 
     private RunVerificationEvidence(IEnumerable<VerificationCheckEvidence> checks,
-        HashSet<string> expectedFailures, bool overflowed, bool hasMutations)
+        HashSet<string> expectedFailures, bool overflowed, bool hasMutations, string? programFailure = null)
     {
         Checks = new ReadOnlyCollection<VerificationCheckEvidence>(checks.ToArray());
         _expectedFailures = expectedFailures;
         Overflowed = overflowed;
         HasMutations = hasMutations;
+        _programFailure = programFailure;
     }
 
-    public string? BlockingCode => Overflowed ? "verification_tracking_limit"
+    public string? BlockingCode => _programFailure ?? (Overflowed ? "verification_tracking_limit"
         : Checks.FirstOrDefault(check => (check.IsVerification || check.ExpectedExitCode != 0)
-            && check.Status != VerificationCheckStatus.Passed)?.Code;
+            && check.Status != VerificationCheckStatus.Passed)?.Code);
 
     public bool IsExpectedFailure(ToolExecutionReceipt receipt) =>
         receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero"
@@ -37,6 +39,7 @@ public sealed partial class RunVerificationEvidence
 
     public string? DescribePending()
     {
+        if (_programFailure is not null) return _programFailure + ": program effects are not fully recorded. Inspect the workspace; do not repeat uncertain effects. Report [BLOCKED].";
         var pending = Checks.Where(check => (check.IsVerification || check.ExpectedExitCode != 0)
             && check.Status != VerificationCheckStatus.Passed).ToArray();
         if (pending.Length == 0 && !Overflowed) return null;
@@ -51,25 +54,21 @@ public sealed partial class RunVerificationEvidence
     {
         var checks = new Dictionary<string, VerificationCheckEvidence>(StringComparer.Ordinal);
         var expected = new HashSet<string>(StringComparer.Ordinal);
-        var calls = new Dictionary<string, ModelToolCall>(StringComparer.Ordinal);
         bool overflowed = false;
         bool hasMutations = false;
-        foreach (var entry in originalRunEntries.OrderBy(entry => entry.Sequence))
+        string? programFailure = null;
+        foreach (var (entry, proposed) in ExpandProgramEvidence(originalRunEntries, () =>
+            { programFailure = "program_evidence_unavailable"; hasMutations = true; InvalidateChecks(checks); }))
         {
-            if (entry.Kind == ModelContextEntryKind.AssistantStep)
-            {
-                calls.Clear();
-                foreach (var call in entry.AssistantStep!.ToolCalls) calls[call.ProviderCallId] = call;
-                continue;
-            }
-            if (entry.ToolReceipt is not { ProviderCallId: { } providerId } receipt
-                || !calls.TryGetValue(providerId, out var proposed)) continue;
-            bool terminal = proposed.ToolId == "bash" && proposed.ToolVersion == "1.0.0";
+            var receipt = entry.ToolReceipt!;
+            var providerId = receipt.ProviderCallId!;
+            bool terminal = proposed.ToolId is "bash" or "powershell" or "run_process" or "terminal_read" or "terminal_stop"
+                && proposed.ToolVersion == "1.0.0";
             bool effect = receipt.Outcome == ToolExecutionOutcome.Succeeded || receipt.SideEffectsPossible
                 || receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown;
             if (!terminal)
             {
-                if (effect && (proposed.ToolId is "write" or "edit" or "agent_apply" || receipt.SideEffectsPossible))
+                if (effect && (proposed.ToolId is "write" or "edit" or "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "agent_apply" || receipt.SideEffectsPossible))
                 {
                     hasMutations = true;
                     InvalidateChecks(checks);
@@ -77,6 +76,16 @@ public sealed partial class RunVerificationEvidence
                 continue;
             }
             var args = proposed.Arguments;
+            if (RuAgent.Protocol.CodingToolArguments.AdapterToolId(proposed.ToolId) == "bash")
+            {
+                // Even a malformed, rejected call must retain its declared verification intent.
+                var displayArguments = System.Text.Json.Nodes.JsonNode.Parse(args.GetRawText())!.AsObject();
+                displayArguments.Remove("op");
+                displayArguments.Remove("mode");
+                displayArguments.Remove("shell");
+                args = System.Text.Json.JsonSerializer.SerializeToElement(RuAgent.Protocol.CodingToolArguments.ToAdapterArguments(
+                    proposed.ToolId, displayArguments));
+            }
             string purpose = StringArg(args, "purpose") ?? "command";
             string mode = StringArg(args, "mode") ?? "run";
             if (mode is "read_output" or "kill")
@@ -117,7 +126,34 @@ public sealed partial class RunVerificationEvidence
                 else overflowed = true;
             }
         }
-        return new(checks.Values, expected, overflowed, hasMutations);
+        return new(checks.Values, expected, overflowed, hasMutations, programFailure);
+    }
+
+    private static IEnumerable<(ModelContextEntry Entry, ModelToolCall Call)> ExpandProgramEvidence(
+        IEnumerable<ModelContextEntry> source, Action unknown)
+    {
+        var calls = new Dictionary<string, ModelToolCall>(StringComparer.Ordinal);
+        foreach (var entry in source.OrderBy(item => item.Sequence))
+        {
+            if (entry.Kind == ModelContextEntryKind.AssistantStep)
+            {
+                calls.Clear();
+                foreach (var call in entry.AssistantStep!.ToolCalls) calls[call.ProviderCallId] = call;
+            }
+            if (entry.ToolReceipt is not { ProviderCallId: { } providerId } receipt || !calls.TryGetValue(providerId, out var proposed)) continue;
+            if (proposed.ToolId != "run_code") { yield return (entry, proposed); continue; }
+            if (!ProgramReceiptTrace.TryRead(entry.Content, providerId, out var trace))
+            {
+                if (receipt.SideEffectsPossible || receipt.Outcome is ToolExecutionOutcome.Succeeded or ToolExecutionOutcome.OutcomeUnknown) unknown();
+                continue;
+            }
+            foreach (var nested in trace)
+            {
+                var nestedReceipt = new ToolExecutionReceipt(receipt.ExecutionId, receipt.ToolCallId, nested.Outcome,
+                    nested.Code, null, nested.SideEffectsPossible, providerCallId: nested.Call.ProviderCallId);
+                yield return (ModelContextEntry.ToolResult(nested.Call.ProviderCallId, entry.Sequence, nestedReceipt, nested.Output.GetRawText()), nested.Call);
+            }
+        }
     }
 
     private static void InvalidateChecks(Dictionary<string, VerificationCheckEvidence> checks)

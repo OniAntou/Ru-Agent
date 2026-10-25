@@ -233,7 +233,8 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton(services => new InProcessExecutionAuthority(
             services.GetRequiredService<DataPaths>(),
             services.GetRequiredService<ILogger<InProcessExecutionAuthority>>(),
-            mcpServers: services.GetRequiredService<RuAgent.Broker.Tools.Mcp.McpServerHost>()));
+            mcpServers: services.GetRequiredService<RuAgent.Broker.Tools.Mcp.McpServerHost>(),
+            programJournal: services.GetRequiredService<HarnessPayloadStore>()));
         services.AddSingleton<IToolGatewayFactory>(services =>
             new InProcessToolGatewayFactory(
                 services.GetRequiredService<InProcessExecutionAuthority>().Runtime,

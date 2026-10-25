@@ -13,6 +13,20 @@ namespace RuBackend.Tests.Harness;
 /// </summary>
 public sealed class ApprovalPatternTests
 {
+    [Theory]
+    [InlineData("apply_patch", "patch")]
+    [InlineData("file_restore", "restore")]
+    [InlineData("write", "restore")]
+    [InlineData("terminal_read", "read")]
+    [InlineData("terminal_stop", "read")]
+    [InlineData("bash", "read")]
+    public void Opaque_mutation_intents_cannot_become_session_or_permanent_allows(string tool, string operation)
+    {
+        var binding = Binding(tool, operationClass: operation);
+        Assert.False(AgentApprovalsService.CanRememberApproval(binding));
+        Assert.Null(AgentV1Service.BuildAllowAlwaysMatcher(binding, "rule_asks", externalDirectoryRequested: false));
+    }
+
     private static ToolApprovalBinding Binding(
         string toolId,
         string? canonicalPath = null,

@@ -157,7 +157,7 @@ def export_swe(output, include_oracle):
     return {"exported": len(records), "oracle_included": include_oracle, "output": str(output)}
 
 
-def run_live(selected, destination, executable, allow_live, attempts, trust_workspace=False):
+def run_live(selected, destination, executable, allow_live, attempts, trust_workspace=False, tool_profile=None):
     if not allow_live:
         raise ValueError("live execution requires --allow-live")
     if not trust_workspace:
@@ -177,7 +177,7 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
         for attempt in range(attempts):
             trial_dir = destination / f"{task.id}-{attempt + 1}"
             trial = prepare(task, trial_dir)
-            execution = run_ru(executable, task, Path(trial["workspace"]), trial_dir, trust_workspace=trust_workspace)
+            execution = run_ru(executable, task, Path(trial["workspace"]), trial_dir, trust_workspace=trust_workspace, tool_profile=tool_profile)
             result = grade(task, Path(trial["workspace"]))
             result.update({"agent": execution, "attempt": attempt + 1, "base_commit": trial["base_commit"]})
             if execution["status"] != "completed":
@@ -217,6 +217,7 @@ def main():
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--trust-workspace", action="store_true")
     parser.add_argument("--ru-executable", type=Path)
+    parser.add_argument("--tool-profile", choices=["legacy_v1", "coding_v2", "patch_v2", "coding_code_v1"])
     args = parser.parse_args()
     try:
         if args.task_root is not None and args.suite == "all":
@@ -277,7 +278,7 @@ def main():
                 entry["records"] = load_records(args.cohorts.parent / entry["predictions"])
             result = compare_cohorts(entries, args.track)
         else:
-            result = run_live(selected, args.destination, args.ru_executable, args.allow_live, args.attempts, args.trust_workspace)
+            result = run_live(selected, args.destination, args.ru_executable, args.allow_live, args.attempts, args.trust_workspace, args.tool_profile)
         if args.report is not None and args.command != "export-swe":
             write_json(args.report, result)
         print(json.dumps(result, ensure_ascii=False, indent=2))

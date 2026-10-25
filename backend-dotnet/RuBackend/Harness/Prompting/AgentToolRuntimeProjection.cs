@@ -7,7 +7,8 @@ public readonly record struct AgentToolRuntimeAvailability(
     bool WebSearchEnabled,
     bool WebFetchEnabled,
     SubagentRole? ChildRole = null,
-    bool McpEnabled = false);
+    bool McpEnabled = false,
+    string ToolProfile = AgentToolProfiles.Legacy);
 
 public static class AgentToolRuntimeProjection
 {
@@ -16,6 +17,7 @@ public static class AgentToolRuntimeProjection
         if (availability.ChildRole is { } role && !Enum.IsDefined(role))
             throw new ArgumentOutOfRangeException(nameof(availability));
         return AgentToolDefinitionCatalog.Get()
+            .Where(definition => AgentToolProfiles.Includes(availability.ToolProfile, definition.ToolId))
             .Where(definition => availability.ChildRole is not { } childRole || SubagentRoleTools.Includes(childRole, definition.ToolId))
             .Where(definition => definition.ToolId switch
             {

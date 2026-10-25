@@ -1,4 +1,5 @@
 import json
+import os
 import queue
 import subprocess
 import threading
@@ -24,10 +25,10 @@ class RpcTrialError(RuntimeError):
 
 
 class JsonRpcProcess:
-    def __init__(self, command, cwd):
+    def __init__(self, command, cwd, *, environment=None):
         self.process = start_process(
             command, cwd=str(cwd), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, bufsize=0,
+            stderr=subprocess.PIPE, bufsize=0, env=None if environment is None else os.environ | environment,
         )
         self._responses = queue.Queue(maxsize=MAX_QUEUED_RESPONSES)
         self._lock = threading.Lock()

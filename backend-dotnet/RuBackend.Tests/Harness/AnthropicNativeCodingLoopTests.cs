@@ -222,11 +222,11 @@ public sealed partial class HeadlessCodingLoopTests
             {
                 0 => ToolBatch(("toolu-read-a", "read", "{\"path\":\"seed.txt\"}"),
                     ("toolu-read-b", "read", "{\"path\":\"missing-native-file.txt\"}")),
-                1 => ToolBatch(("toolu-write-a", "write", "{\"op\":\"write\",\"path\":\"native-sequence.txt\",\"content\":\"first\"}"),
-                    ("toolu-write-b", "edit", "{\"path\":\"native-sequence.txt\",\"old_string\":\"first\",\"new_string\":\"second\"}"),
-                    ("toolu-write-c", "edit", "{\"path\":\"native-sequence.txt\",\"old_string\":\"second\",\"new_string\":\"third\"}")),
-                2 => ToolBatch(("toolu-approval", "write", JsonSerializer.Serialize(new
-                { op = "write", path = approvalWritePath, content = "approved native edit", overwrite = true }))),
+                1 => ToolBatch(("toolu-write-a", "write_file", "{\"path\":\"native-sequence.txt\",\"content\":\"first\"}"),
+                    ("toolu-write-b", "edit_file", "{\"path\":\"native-sequence.txt\",\"edits\":[{\"old_string\":\"first\",\"new_string\":\"second\"}]}"),
+                    ("toolu-write-c", "edit_file", "{\"path\":\"native-sequence.txt\",\"edits\":[{\"old_string\":\"second\",\"new_string\":\"third\"}]}")),
+                2 => ToolBatch(("toolu-approval", "write_file", JsonSerializer.Serialize(new
+                { path = approvalWritePath, content = "approved native edit", overwrite = true }))),
                 _ => TextCompletion("Anthropic native workflow complete."),
             };
             return new HttpResponseMessage(HttpStatusCode.OK)

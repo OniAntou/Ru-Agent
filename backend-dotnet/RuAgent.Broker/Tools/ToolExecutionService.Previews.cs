@@ -21,7 +21,7 @@ public sealed partial class ToolExecutionService
 {
     private static string SafeAction(ToolManifest manifest) => manifest.Id switch
     {
-        "bash" => "Run a terminal action in the workspace.",
+        "bash" or "powershell" or "run_process" => "Run a terminal action in the workspace.",
         "mcp" => "Start or call one of your MCP servers.",
         "edit" => "Chỉnh sửa file.",
         _ => "Run an external or destructive Agent action.",
@@ -34,6 +34,15 @@ public sealed partial class ToolExecutionService
             if (arguments is null)
             {
                 return string.Empty;
+            }
+
+            if (toolId == "edit_file")
+                return Bound(arguments["edits"]?.ToJsonString() ?? string.Empty);
+            if (toolId == "apply_patch") return Bound(ReadOptionalString(arguments, "patch") ?? string.Empty);
+            if (CodingToolArguments.AdapterToolId(toolId) is { } adapterId)
+            {
+                arguments = CodingToolArguments.ToAdapterArguments(toolId, arguments);
+                toolId = adapterId;
             }
 
             var preview = toolId switch

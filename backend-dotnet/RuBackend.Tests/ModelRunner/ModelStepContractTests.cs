@@ -11,6 +11,24 @@ namespace RuBackend.Tests.ModelRunner;
 /// </summary>
 public sealed class ModelStepContractTests
 {
+    [Theory]
+    [InlineData("legacy_v1", "write", "powershell")]
+    [InlineData("coding_v2", "edit_file", "apply_patch")]
+    [InlineData("patch_v2", "apply_patch", "edit_file")]
+    public void Profile_selects_one_mutation_surface(string profile, string included, string excluded)
+    {
+        var ids = AgentToolRuntimeProjection.Select(new AgentToolRuntimeAvailability(false, false, ToolProfile: profile))
+            .Select(tool => tool.ToolId).ToArray();
+        Assert.Contains(included, ids);
+        Assert.DoesNotContain(excluded, ids);
+        if (profile != "legacy_v1")
+        {
+            Assert.Contains("powershell", ids);
+            Assert.Contains("read_file", ids);
+            Assert.DoesNotContain("bash", ids);
+        }
+    }
+
     [Fact]
     public void Runtime_capabilities_advertise_both_web_tools()
     {

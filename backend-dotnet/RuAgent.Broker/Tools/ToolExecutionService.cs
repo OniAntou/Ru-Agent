@@ -121,7 +121,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             _webFetch = new WebFetchAdapter(webClient, webPolicy, sanitizer, _webOptions.MaxResponseBytes);
             if (_webOptions.SearchEndpoint is not null)
             {
-                _webSearch = new WebSearchAdapter(webClient, webPolicy, sanitizer, _webOptions.SearchEndpoint, _webOptions.MaxResponseBytes, WebOptions.DefaultFallbackEndpoints);
+                _webSearch = new WebSearchAdapter(webClient, webPolicy, sanitizer, _webOptions.SearchEndpoint, _webOptions.MaxResponseBytes, WebOptions.DefaultFallbackEndpoints, _webOptions.SearchMode);
             }
         }
 
@@ -174,6 +174,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     {
         var executors = new Dictionary<string, ToolExecutor>(StringComparer.Ordinal)
         {
+            ["run_code"] = (_, _, _) => ValueTask.FromResult(ToolExecutionOutcome.Failed("program_runtime_required", "Programs require an authenticated run and durable journal.")),
             ["read"] = ExecuteReadAsync,
             ["list"] = ExecuteListAsync,
             ["help"] = ExecuteHelpAsync,
@@ -193,12 +194,22 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
                 ToolVerificationStates.NotRequired,
                 "Workspace glob completed."),
             ["write"] = ExecuteWriteOpAsync,
+            ["apply_patch"] = ExecutePatchAsync,
             ["edit"] = (context, arguments, _) => ExecuteFileEdit(context, arguments),
             ["bash"] = ExecuteBashAsync,
             ["web_search"] = ExecuteWebSearchAsync,
             ["web_fetch"] = ExecuteWebFetchAsync,
             ["mcp"] = ExecuteMcpAsync,
         };
+
+        foreach (var definition in AgentToolDefinitionCatalog.Get().Where(definition => CodingToolArguments.AdapterToolId(definition.ToolId) is not null))
+        {
+            var id = definition.ToolId;
+            executors[id] = id == "read_file" ? ExecuteLineReadAsync : id == "edit_file"
+                ? ExecuteMultiEditAsync
+                : (context, arguments, token) => executors[CodingToolArguments.AdapterToolId(id)!](
+                    context, CodingToolArguments.ToAdapterArguments(id, arguments), token);
+        }
 
         // Native orchestration consumes exact authorization through Runtime callbacks.
         // Ordinary/legacy dispatch must never substitute an execution adapter for it.
@@ -268,8 +279,10 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private static string IoRepairHint(string? code) => code switch
     {
         "is_directory" => "target is a directory, and file tools address files: list it and act on the files inside, or remove it with an approved terminal command.",
-        "file_not_found" => "file does not exist: list the directory to check the path. To create a new file use write with op=write, path and content; edit only modifies an existing file.",
-        "file_exists" => "file already exists: read it, then retry with op=write, the same path and content, and overwrite=true; use edit for a partial change.",
+        "file_not_found" => "file does not exist: list the directory to check the path. Create it with an advertised write_file, apply_patch add-file diff, or legacy write with op=write, path and content. An edit cannot create files.",
+        "read_line_too_long" => "A line exceeds the line-read output limit. Use read with byte paging and its returned cursor instead.",
+        "read_line_scan_limit" => "The file exceeds the 4 MiB line snapshot limit. Use read with bounded byte paging instead.",
+        "file_exists" => "file already exists: read it, then use the advertised file tool for a partial change, or retry with the same path and content and overwrite=true for deliberate replacement (legacy write also requires op=write).",
         _ => "Tool input or output failed.",
     };
 

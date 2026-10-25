@@ -60,7 +60,7 @@ public sealed class ToolBindingRegistry
         {
             return OrderedBindings()
                 .Where(binding => binding.ModelEnabled)
-                .Where(binding => profile == CapabilityProfile.Agent || !binding.Manifest.Id.StartsWith("agent_", StringComparison.Ordinal))
+                .Where(binding => profile == CapabilityProfile.Agent || binding.Manifest.Id != "run_code" && !binding.Manifest.Id.StartsWith("agent_", StringComparison.Ordinal))
                 .Where(binding => binding.Manifest.Scopes.All(scopes.Contains))
                 .ToArray();
         }
@@ -83,7 +83,7 @@ public sealed class ToolBindingRegistry
             var scopes = EffectiveScopes(profile, additionalScopes);
             return OrderedBindings()
                 .Where(binding => binding.ModelEnabled)
-                .Where(binding => profile == CapabilityProfile.Agent || !binding.Manifest.Id.StartsWith("agent_", StringComparison.Ordinal))
+                .Where(binding => profile == CapabilityProfile.Agent || binding.Manifest.Id != "run_code" && !binding.Manifest.Id.StartsWith("agent_", StringComparison.Ordinal))
                 .Where(binding => binding.Manifest.Scopes.All(scopes.Contains))
                 .Select(ToCapability)
                 .ToArray();

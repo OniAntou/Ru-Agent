@@ -119,7 +119,7 @@ public sealed class PolicyTests
         WorkspaceRequired: true);
 }
 
-public sealed class PolicyEvaluationTests
+public sealed partial class PolicyEvaluationTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 24, 12, 0, 0, TimeSpan.Zero);
 

@@ -223,6 +223,8 @@ public sealed class AgentApprovalsService
         {
             return BoundedError(409, "approval_stale", "Approval binding is missing or invalid.");
         }
+        if (isAllowAlways && !CanRememberApproval(approvalBinding))
+            return BoundedError(400, "invalid_approval_command", "This mutation requires a one-time approval.");
 
         // allow_session_directory is only meaningful for external folders;
         // terminal risk stays a one-time token. Anything else fails closed.
@@ -385,7 +387,7 @@ public sealed class AgentApprovalsService
         // the Broker can match. External-directory approvals keep the Broker
         // folder grant: the durable rule already covers later runs, so no
         // session entry is added for them.
-        if (!externalDirectoryRequested)
+        if (!externalDirectoryRequested && CanRememberApproval(approvalBinding))
         {
             SessionApprovalLedger.Remember(
                 run.SessionId.Value,
@@ -524,6 +526,7 @@ public sealed class AgentApprovalsService
         bool externalDirectoryRequested)
     {
         ArgumentNullException.ThrowIfNull(approvalBinding);
+        if (!CanRememberApproval(approvalBinding)) return null;
         if (!externalDirectoryRequested
             && askSafeCode is "terminal_protected_path_requires_approval" or "rule_asks")
         {
@@ -548,6 +551,13 @@ public sealed class AgentApprovalsService
             approvalBinding.OperationClass,
             approvalBinding.NetworkIntent);
     }
+
+    // Path/argv matchers cannot bind patch contents, recovery IDs or execution IDs.
+    // Their single-use authority must never turn into a session-wide allow.
+    internal static bool CanRememberApproval(ToolApprovalBinding binding) =>
+        binding.OperationClass is not ("patch" or "restore")
+        && binding.ToolId != "run_code"
+        && !(binding.OperationClass == "read" && binding.ToolId is "bash" or "terminal_read" or "terminal_stop");
 
     /// <summary>
     /// A bounded command prefix for a remembered terminal run: keep at most the
@@ -683,6 +693,14 @@ public sealed class AgentApprovalsService
             {
                 return null;
             }
+            var advertisedToolId = toolId;
+            var originalArguments = arguments;
+            if (RuAgent.Protocol.CodingToolArguments.AdapterToolId(toolId) is { } adapterToolId)
+            {
+                arguments = JsonSerializer.SerializeToElement(RuAgent.Protocol.CodingToolArguments.ToAdapterArguments(toolId,
+                    System.Text.Json.Nodes.JsonNode.Parse(arguments.GetRawText())!.AsObject()));
+                toolId = adapterToolId;
+            }
 
             var op = arguments.TryGetProperty("op", out var opNode) && opNode.ValueKind == JsonValueKind.String
                 ? opNode.GetString()
@@ -691,9 +709,8 @@ public sealed class AgentApprovalsService
                 ? modeNode.GetString()
                 : null;
             var isBash = string.Equals(toolId, "bash", StringComparison.Ordinal);
-            if (string.Equals(toolId, "bash", StringComparison.Ordinal)
-                && !string.Equals(mode, "run", StringComparison.Ordinal)
-                && !string.Equals(mode, "shell", StringComparison.Ordinal))
+            var isLifecycle = isBash && mode is "read_output" or "kill";
+            if (isBash && mode is not ("run" or "shell" or "read_output" or "kill"))
             {
                 return null;
             }
@@ -748,7 +765,7 @@ public sealed class AgentApprovalsService
             }
 
             var cwd = ReadString(arguments, "working_directory", ApprovalCwdMaxLength);
-            if (isBash)
+            if (isBash && !isLifecycle)
             {
                 if (!_runtimeRoots.TryGetRoot(run.RunId, out var rootPath)
                     || string.IsNullOrWhiteSpace(rootPath))
@@ -785,6 +802,8 @@ public sealed class AgentApprovalsService
                 ("write", "delete", _, _, _) => "delete",
                 ("write", "restore", _, _, _) => "restore",
                 ("edit", _, _, _, _) => "edit",
+                ("apply_patch", _, _, _, _) => "patch",
+                (_, _, _, true, "read_output" or "kill") => "read",
                 (_, _, _, true, _) => "terminal",
                 ("files.list", _, _, _, _) => "list",
                 ("files.glob", _, _, _, _) => "glob",
@@ -824,14 +843,14 @@ public sealed class AgentApprovalsService
                 networkIntent = legacyNetwork.ValueKind == JsonValueKind.True ? "declared" : "none";
             }
             var intentHash = HarnessIntentCanonicalizer.ComputeHash(
-                toolId,
+                advertisedToolId,
                 toolVersion,
-                arguments);
+                originalArguments);
 
             return new ToolApprovalBinding(
                 run.RunId,
                 toolCallId,
-                toolId,
+                advertisedToolId,
                 toolVersion,
                 canonicalPath,
                 requestedExecutable,

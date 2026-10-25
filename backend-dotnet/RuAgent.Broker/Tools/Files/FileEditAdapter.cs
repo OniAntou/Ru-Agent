@@ -24,7 +24,7 @@ public sealed class EditMatchException : InvalidOperationException
     public int MatchCount { get; }
 }
 
-public sealed class FileEditAdapter
+public sealed partial class FileEditAdapter
 {
     public const int MaxInputBytes = 4 * 1024 * 1024;
     public const int MaxFileBytes = 4 * 1024 * 1024;

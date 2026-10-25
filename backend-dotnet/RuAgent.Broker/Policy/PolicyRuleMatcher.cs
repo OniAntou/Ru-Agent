@@ -59,9 +59,7 @@ public static class PolicyRuleMatcher
     private static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context, bool exactShellInvocation,
         bool includeRequestedExecutable = false)
     {
-        if (matcher.ToolId is not null
-            && !string.Equals(matcher.ToolId, context.ToolId, StringComparison.Ordinal)
-            && !LegacyToolIdMatches(matcher.ToolId, context.ToolId, context.ToolOp, context.BashMode))
+        if (matcher.ToolId is not null && !ToolIdMatches(matcher.ToolId, context))
         {
             return false;
         }
@@ -205,6 +203,17 @@ public static class PolicyRuleMatcher
         }
 
         return context.Target?.CanonicalPath;
+    }
+
+    private static bool ToolIdMatches(string matcherId, PolicyContext context)
+    {
+        if (matcherId == context.ToolId || LegacyToolIdMatches(matcherId, context.ToolId, context.ToolOp, context.BashMode))
+            return true;
+        var adapterId = CodingToolArguments.AdapterToolId(context.ToolId);
+        if (context.ToolId == "apply_patch" && context.OperationClass != PolicyOperationClasses.Patch)
+            adapterId = context.OperationClass == PolicyOperationClasses.Edit ? "edit" : "write";
+        return adapterId is not null && (matcherId == adapterId
+            || LegacyToolIdMatches(matcherId, adapterId, context.ToolOp, context.BashMode));
     }
 
     private static bool LegacyToolIdMatches(string matcherToolId, string contextToolId, string? toolOp, string? bashMode) =>

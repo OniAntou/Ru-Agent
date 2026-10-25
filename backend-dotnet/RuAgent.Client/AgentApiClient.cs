@@ -828,7 +828,7 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
         using (doc)
         {
         var root = doc.RootElement;
-        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "provider_backend", "provider_model", "provider_protocol", "provider_model_label", "provider_calling_mode", "context_window_tokens", "context_window_source", "context_window_version", "output_token_reserve"], StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "provider_backend", "provider_model", "provider_protocol", "provider_model_label", "provider_calling_mode", "context_window_tokens", "context_window_source", "context_window_version", "output_token_reserve", "tool_profile"], StringComparer.Ordinal);
         foreach (var prop in root.EnumerateObject())
         {
             if (!allowed.Contains(prop.Name))
@@ -880,6 +880,7 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
     private static void ValidateRunMetadata(JsonElement root)
     {
         ValidateOptionalString(root, "provider_protocol", 64);
+        ValidateOptionalString(root, "tool_profile", 32);
         ValidateOptionalString(root, "provider_model_label", 256);
         ValidateOptionalString(root, "context_window_source", 64);
         ValidateOptionalString(root, "context_window_version", 128);

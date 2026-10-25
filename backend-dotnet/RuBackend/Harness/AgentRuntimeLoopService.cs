@@ -293,6 +293,11 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         }
 
         var storedRun = await _store.GetRunAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
+        if (_runModelMetadataResolver is not null)
+        {
+            var metadata = await _runModelMetadataResolver.ResolveAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
+            availability = availability with { ToolProfile = metadata.ToolProfile };
+        }
         var subagentStore = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(_sqliteOptions, _payloadStore);
         var internalRun = storedRun is not null && await subagentStore.IsInternalSessionAsync(storedRun.SessionId, cancellationToken).ConfigureAwait(false);
         if (internalRun && agentSessionId != storedRun!.SessionId.Value)
@@ -329,7 +334,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
                 ? null
                 : new AgentActivityLivePublisher(_liveEvents);
         var backgroundTaskNotes = new BackgroundTaskNoteTracker(
-            ct => _brokerGateways.ListSessionTasksAsync(brokerRunId.Value, killExecutionId: null, ct));
+            ct => _brokerGateways.ListSessionTasksAsync(brokerRunId.Value, killExecutionId: null, ct), availability.ToolProfile);
         var promptContextProvider = new RuPromptContextProvider(
             workspaceRoot,
             _instructionLoader,

@@ -6,6 +6,22 @@ namespace RuBackend.Tests.Harness;
 
 public sealed class BackgroundTaskNoteTrackerTests
 {
+    [Theory]
+    [InlineData("legacy_v1", "bash mode=read_output")]
+    [InlineData("coding_v2", "terminal_read")]
+    [InlineData("patch_v2", "terminal_read")]
+    public async Task Advice_uses_only_the_run_profiles_terminal_surface(string profile, string expected)
+    {
+        var tracker = new BackgroundTaskNoteTracker(_ => Task.FromResult(Payload(("t1", "running", null))), profile);
+        var note = await tracker.ProbeAsync(default);
+        Assert.Contains(expected, note);
+        if (profile != "legacy_v1")
+        {
+            Assert.DoesNotContain("bash", note);
+            Assert.Contains("terminal_stop", note);
+        }
+    }
+
     private static JsonObject Payload(params (string Id, string State, int? Exit)[] tasks)
     {
         var array = new JsonArray();

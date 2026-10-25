@@ -33,15 +33,18 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
     private int _disposed;
     private readonly RuAgent.Broker.Tools.Mcp.McpServerHost? _mcpServers;
     private readonly object _lifetimeGate = new();
+    private readonly RuAgent.Protocol.Programs.IProgramJournal? _programJournal;
 
     internal InProcessExecutionAuthority(
         DataPaths paths,
         ILogger logger,
         string? spoolRoot = null,
         Func<string, string?>? readEnvironment = null,
-        RuAgent.Broker.Tools.Mcp.McpServerHost? mcpServers = null)
+        RuAgent.Broker.Tools.Mcp.McpServerHost? mcpServers = null,
+        RuAgent.Protocol.Programs.IProgramJournal? programJournal = null)
     {
         _mcpServers = mcpServers;
+        _programJournal = programJournal;
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(logger);
         TerminalConcurrency = TerminalConcurrencyOptions.FromEnvironment(
@@ -115,7 +118,8 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
                 session,
                 tools,
                 approvalTokenService: approvalTokens,
-                advertisedCapabilities: session.AdvertisedCapabilities);
+                advertisedCapabilities: session.AdvertisedCapabilities,
+                programJournal: _programJournal);
             return _composedRuntime;
         }
     }
@@ -221,6 +225,13 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
         }
 
         var maxResponseBytes = WebOptions.DefaultMaxResponseBytes;
+        var modeRaw = readEnvironment("RU_AGENT_BROKER_WEB_SEARCH_MODE");
+        var mode = modeRaw switch
+        {
+            null or "" or "html_race" => WebSearchMode.HtmlRace,
+            "configured_json" => WebSearchMode.ConfiguredJson,
+            _ => (WebSearchMode)(-1),
+        };
         var maxRaw = readEnvironment("RU_AGENT_BROKER_WEB_MAX_RESPONSE_BYTES");
         if (!string.IsNullOrWhiteSpace(maxRaw))
         {
@@ -239,7 +250,8 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
             return new WebOptions(
                 enabled: true,
                 searchEndpoint: searchEndpoint,
-                maxResponseBytes: maxResponseBytes);
+                maxResponseBytes: maxResponseBytes,
+                searchMode: mode);
         }
         catch (ArgumentException error)
         {

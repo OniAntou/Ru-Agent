@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy.Commands;
 using RuAgent.Broker.Runtime;
+using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
@@ -14,7 +15,7 @@ namespace RuAgent.Broker.Policy;
 /// Builds a <see cref="PolicyContext"/> from trusted resolution. The workspace root comes only from
 /// the v2 run lease — never from RU_WORKSPACE_ROOT, the broker current directory, or model input.
 /// </summary>
-public sealed class PolicyContextFactory
+public sealed partial class PolicyContextFactory
 {
     private static readonly System.Text.RegularExpressions.Regex McpServerName =
         new("^[a-z][a-z0-9_-]{0,31}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
@@ -37,6 +38,23 @@ public sealed class PolicyContextFactory
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
         ArgumentNullException.ThrowIfNull(arguments);
+        if (toolId == "apply_patch") return CreatePatchContext(toolVersion, arguments);
+        if (toolId == "run_code")
+        {
+            var definition = AgentToolDefinitionCatalog.Find(toolId, toolVersion)
+                ?? throw new PolicyContextException("invalid_arguments");
+            try { ToolSchemaValidator.Validate(definition.InputSchema, arguments); }
+            catch (ToolSchemaException error)
+            { throw new PolicyContextException("invalid_arguments", error); }
+        }
+        var advertisedToolId = toolId;
+        var advertisedArguments = arguments;
+        if (CodingToolArguments.AdapterToolId(toolId) is { } adapterToolId)
+        {
+            try { arguments = CodingToolArguments.ToAdapterArguments(toolId, arguments); }
+            catch (ArgumentException error) { throw new PolicyContextException("invalid_arguments", error); }
+            toolId = adapterToolId;
+        }
         if (SubagentContractValidator.IsControlTool(toolId)
             && (toolVersion != "1.0.0" || !SubagentContractValidator.Validate(toolId,
                 System.Text.Json.JsonSerializer.SerializeToElement(arguments)).IsValid))
@@ -231,6 +249,9 @@ public sealed class PolicyContextFactory
                 case "help":
                     op = "help";
                     break;
+                case "run_code":
+                    op = "run_code";
+                    break;
                 case "todo_write":
                     // The task list has no path, no scope beyond the session, and no
                     // side effect outside the process: the policy only has to let it
@@ -388,7 +409,7 @@ public sealed class PolicyContextFactory
         }
 
         return new PolicyContext(
-            ToolId: toolId,
+            ToolId: advertisedToolId,
             ToolVersion: toolVersion,
             CanonicalWorkspaceRoot: _canonicalRoot,
             Target: target,
@@ -402,14 +423,14 @@ public sealed class PolicyContextFactory
             NetworkIntent: networkDeclared ? PolicyNetworkIntents.Declared : PolicyNetworkIntents.None,
             NetworkDeclared: networkDeclared,
             IntentHash: ComputeIntentHash(
-                toolId,
+                advertisedToolId,
                 toolVersion,
                 target?.CanonicalIntentHash,
                 resolvedExecutable,
                 argv,
                 canonicalCwd,
                 operationClass,
-                arguments),
+                advertisedArguments),
             TimeoutMs: timeoutMs,
             SessionId: _sessionId,
             WorkingDirectory: terminalWorkingDirectory,
@@ -460,7 +481,7 @@ public sealed class PolicyContextFactory
     {
         "read" => PolicyOperationClasses.Read,
         "list" => PolicyOperationClasses.List,
-        "help" => PolicyOperationClasses.Read,
+        "help" or "run_code" => PolicyOperationClasses.Read,
         "todo_write" => PolicyOperationClasses.Read,
         "grep" => PolicyOperationClasses.Search,
         "glob" => PolicyOperationClasses.Glob,
@@ -495,7 +516,7 @@ public sealed class PolicyContextFactory
     };
 
     private static bool IsTargetFreeOp(string toolId, string op) =>
-        toolId == "help"
+        toolId is "help" or "run_code"
         || toolId == "todo_write"
         || toolId is "web_search" or "web_fetch" or "mcp"
         || SubagentContractValidator.IsControlTool(toolId)

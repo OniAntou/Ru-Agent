@@ -164,6 +164,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             }
             catch (ModelStepException error)
             {
+                // Cancellation can win between provider rejection and the retry filter.
+                cancellationToken.ThrowIfCancellationRequested();
                 Console.Error.WriteLine(
                     $"ru.host step_rejected code={error.Code} retryable={error.Retryable}");
                 // The step driver records one durable code, and the provider

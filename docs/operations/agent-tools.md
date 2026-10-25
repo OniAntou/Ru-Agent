@@ -1,92 +1,85 @@
 # Agent tools and truthful execution
 
-This document is the operating contract for Ru's action execution kernel v1
-plus the additive Phase-2 policy authority and selected Phase-3 headless Agent
-v2 surfaces, updated 2026-10-14.
+This document is the operating contract for Ru's in-process tool authority,
+session policy and headless Agent surfaces, updated 2026-10-25.
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
 This checkpoint includes declarative Skills, bounded headless terminal execution
-(`bash` with `mode=run` or `mode=shell`), session rewind, managed
+(`powershell` and `run_process`, or legacy `bash` run/shell modes), session rewind, managed
 Git commit workflow, and dynamic model context compaction. MCP servers the user
 declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 [MCP servers](#mcp-servers)); connector libraries are not advertised Agent tools.
 
-> **Checkpoint (Agent-only generation, 2026-09-05).** Recorded at that date; the counts below are that snapshot's and the section that follows this one carries the current contract. The managed Runtime Worker it describes was retired on 2026-09-30 (model generation runs in the Host process, [ADR 0012](../adr/0012-in-process-model-runner.md)) and the Broker child was retired on 2026-10-10 (tool execution runs in process, [ADR 0014](../adr/0014-in-process-execution-and-terminal-sandbox.md)): the Host has no managed child.
-> - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
->   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
->   `RuAgent.Client`. There is no device/runtime v1 boundary; Agent
->   generation runs on the v2 one-step protocol at `/worker/v2` and the
->   `/agent/v1/*` (21 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
->   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
->   This checkpoint exposes Broker-backed model tools (`read` for one file with
->   offset/limit, `list` for one directory, `help` for the bundled docs,
->   `glob`/`grep` for bounded discovery,
->   `write` with `op=write`,
->   `edit`, one-time `write` with `op=restore`) through a durable Core (state machines incl.
->   `tool.execution_requested`, SQLite WAL `agent_harness.db`, AES-GCM
->   payloads, idempotent conversation outbox, workspace trust,
->   session permissions with monotonic version, encrypted `PolicySnapshot`
->   snapshots, `FileRecoveryStore`, approval ordering
->   `consume one-time approval → execute under N → receipt → N+1` with a
->   reusable project rule persisted only for the explicit `allow_always`
->   decision (a bounded pattern: a terminal command prefix, or an approved
->   external folder as a path pattern); every other approval is `allow_once`,
->   `allow_session_directory` (external folders only), or `deny`) and a thin
->   `RuAgent.Cli` tracer (safe envelope only, NDJSON `--json` `v:1`, no private
->   payload auto-fetch, `policy list`/`import --global FILE`/`remove`,
->   `approve <run-id> <approval-id> [--always]`/`deny`, `run --workspace PATH "prompt"`,
->   with no `--scope`/`--preset` flags exposed; the Host accepts
->   `allow_once`, `allow_session_directory` (external folders only),
->   `allow_always`, and `deny` — the server picks the right one-time token from the pending
->   binding — session-scoped directory grant
->   for `external_directory_required`, ephemeral token for
->   `terminal_delete_requires_approval`,
->   `terminal_external_mutation_requires_approval`,
->   `terminal_timeout_requires_approval`, `web_approval_required`,
->   `terminal_unknown_executable`, or
->   `terminal_protected_path_requires_approval`).
->   `--json` cannot confirm any approval.
->   Policy/approval/reconcile routes are active on the Agent v2 headless path.
->   `POST /agent/v1/runs/{runId}/reconcile` resolves ambiguous dispatch and
->   reconciliation outcomes. `--json` cannot create global rules or confirm
->   trust/approval.
->   Headless terminal requests (`bash` with `mode=run` or `mode=shell`) are available
->   under the policy/approval boundary; the managed Git commit workflow is fully shipped
->   with temporary index isolation and path attribution rollback.
->   Typed command dispatch is available through `POST /agent/v1/runs/{runId}/commands`;
->   `/compact`, `/help`, `/skills`, `/skill <name>`, and `/tasks [kill <execution_id>]` use the shared
->   Protocol parser and do not become model history. `/skills` lists workspace
->   skill name + description; `/skill <name>` loads one SKILL.md body as
->   untrusted prompt guidance. The `skill` tool lets the model load a body
->   on demand; neither path grants tools, scopes, paths, or approvals.
->   Managed startup enables standalone `web_search` and `web_fetch` as
->   approval-gated capabilities backed by the configured search engine
->   (Google HTML by default) raced against fixed free fallbacks (DuckDuckGo,
->   Bing, Mojeek); the first engine with usable results answers. Results are
->   bounded, sanitized, and explicitly
->   untrusted.
->   Workspace coordination is now opt-in per workspace through the authenticated
->   concurrency/activity/changes endpoints. Shared mode permits disjoint runs;
->   active Ru runs hold renewable workspace membership leases, and external file
->   changes are surfaced as `unknown_external` after an authoritative SHA-256
->   check and durably appended to the encrypted change journal. Terminal
->   `read_only` and `write_set` fields are additive protocol metadata; full
->   terminal write-set enforcement remains gated.
-> - Public Contract is now **48 HTTP with no WebSocket route** (20 non-Agent + 28 `/agent/v1/*`).
-> - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
->   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
->   `FileRecoveryStore`), `RuAgent.Hosting`, `RuAgent.Client`, `RuAgent.Broker`
->   (`CanonicalPathResolver`/`ProtectedPathCatalog` `v1`, `PolicyContext`/
->   `PolicySnapshotEvaluator`, `PendingApprovalStore`/`ApprovalTokenService`,
->   `FileList`/`Glob`/`Search`/`Read`/`Write`/`Edit`/`Delete`/`Restore` file
->   adapters behind the `read`/`write`/`edit` ops,
->   `FileHashService`/`AtomicFileReplacement`/`FileMutationJournal`),
->   and `RuAgent.Cli` (`PolicyJsonCodec` versioned, exact scope preview) are
->   covered in `docs/architecture.md`, `CONTEXT.md`,
->   `backend-dotnet/README.md`, and `backend-dotnet/RuAgent.Cli/README.md`.
+## Coding profiles
 
-For parent-only delegation tools, user-requested signed-in model selection, read-only user observation, limits and recovery, see [Subagents](subagents.md).
+New runs pin `coding_v2`. The experimental `patch_v2` is explicitly selected
+for matched evaluation; model names do not silently select it. Existing pins
+without metadata use `legacy_v1`. Set
+`RU_AGENT_TOOL_PROFILE=legacy_v1|coding_v2|patch_v2|coding_code_v1` in a dedicated Host process
+before starting new runs to compare profiles; changing the environment does not
+alter a running Host or an existing run. Run status reports the actual
+`tool_profile`. A profile changes tool presentation, never permissions.
+
+Use `write_file` to create, `edit_file` with an `edits` array to modify an existing
+file atomically, or `apply_patch` in the patch profile for unified diffs. Keep
+replacements exact and disjoint. Patch paths must remain inside the run workspace;
+all targets are checked, and patch approval is one-time. For Windows command text
+use `powershell` with `script`; for literal argv use `run_process`. Read retained
+output with `terminal_read` and stop a background task with `terminal_stop`.
+These operations retain terminal lifetime/output/process-tree bounds.
+
+Prefer `read_file` with 1-based `start_line` and `line_count`; continue at
+`next_line` (also updated when model context shortens the page). Use `read` for
+images, files above the 4 MiB line snapshot cap, and exceptionally long lines.
+Do not reinterpret line cursors as byte offsets. Both surfaces preserve Unicode.
+
+### Programmatic coding calls (experimental)
+
+`coding_code_v1` adds `run_code` and unified patches to the explicit coding
+surface. Supply a synchronous JavaScript function body in `code`, for example:
+
+```javascript
+const page = tools.read_file({path: 'src/example.cs', start_line: 1, line_count: 100});
+return {status: page.status, preview: page.output.content};
+```
+
+The SDK exposes only the coding tools listed in `run_code`'s schema description.
+Each returns `{status, output, error_code}`. Use normal JavaScript loops and
+filtering, then `return` the selected JSON. There is no async/Promise contract,
+CLR access, module loader, direct filesystem/network API, clock or randomness.
+Dynamic compilation (`eval`/`Function`) and generator syntax are unavailable;
+async syntax is rejected before evaluation, including unawaited functions.
+Image reads require a direct `read` call. Oversized nested output stops with
+`program_tool_output_limit`; inspect the tool directly instead of rerunning
+expensive commands to recover output.
+
+Limits: 16 KiB source, 32 sequential calls, 256 KiB selected result, 2 MiB trace,
+100,000 statements, recursion depth 64, 32 MiB interpreter allocation and 250 ms
+computation per replay. The regex timeout is 50 ms. `timeout_ms` defaults to
+30 seconds and cannot exceed 120 seconds; at most two programs run per authority.
+These constraints do not confine Windows terminal processes at the OS level.
+
+Every nested call uses the current run's normal Broker policy. An operation that
+requires approval stops with `program_requires_direct_call`; propose the exact
+standalone operation from `blocked_call` to use the normal approval UI. Its
+arguments are omitted by name above 16 KiB. Program code approvals are
+one-time and cannot become remembered path/argv rules.
+
+Intent is stored before dispatch and a receipt afterwards. A replay uses stored,
+redacted receipts; changed source/policy/SDK or an intent without a receipt
+blocks repetition. Interrupted effects can require reconciliation and workspace
+inspection. Nested calls count against the shared 256-tool-call budget window.
+An unresolved program trace blocks verified completion; Continue does not clear
+the journal or authorize repeating it. If the effects cannot be established,
+report `[BLOCKED]` and start a fresh run after inspecting the workspace.
+The root's displayed model-tool counter still counts model-visible calls;
+the shared family pool also counts nested calls. Continue opens a new window.
+
+The full trace remains encrypted audit/completion evidence. Provider context
+always receives selected results without the trace, including when the response
+would fit. Filtering cannot hide failed required checks, and nested mutations
+invalidate earlier verification. See [ADR 0028](../adr/0028-bounded-programmatic-coding-tools.md).
 
 ## Incomplete outcomes and model context
 
@@ -109,10 +102,11 @@ current user's explicit instructions or the system execution contract.
 
 ## Current capability matrix
 
-The immutable Protocol catalog contains 18 model-visible definitions (`read`,
-`list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`,
-`web_search`, `web_fetch`, `skill`, `ask_user`, `agent_spawn`, `agent_send`,
-`agent_wait`, `agent_cancel`, `agent_apply`). Each tool has one purpose: `read` takes `path` with
+The Protocol catalog contains 30 definitions, including `web_search` and `web_fetch`.
+Run-pinned inventories contain
+19 in `legacy_v1`, 25 in `coding_v2`, 24 in `patch_v2` and 27 in
+`coding_code_v1`, before availability/role filtering. Details below retain
+legacy IDs for old runs and replay; modern schemas appear above. `read` takes `path` with
 optional `offset`/`limit` (source bytes, default 1 MiB, maximum 4 MiB) and reads
 one file. A `.png`, `.jpg`, `.jpeg` or `.webp` file is returned as an image
 when the run's model accepts image input (see [Image reads](#image-reads)).
@@ -176,6 +170,18 @@ off-query candidates with no meaningful query-term overlap (accent-insensitive),
 and honor explicit `site:` restrictions before accepting a winner. All discarded
 candidates produce `web_search_irrelevant_results`; the race continues to other
 engines. This is a lexical sanity check, not a factual accuracy score.
+For a configured structured search service, set
+`RU_AGENT_BROKER_WEB_SEARCH_MODE=configured_json` and an explicit public
+`RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT`. Existing query parameters (for example
+`format=json`) are retained and `q` is appended. The endpoint must return JSON,
+canonically `{ "results": [{ "title": "...", "url": "https://...", "snippet": "..." }] }`;
+`content` is also accepted for snippets. This mode uses only that endpoint,
+without an HTML-engine race or silent fallback. Missing endpoints/unknown modes
+disable Web at startup. HTML responses fail as `web_search_json_required`,
+invalid JSON as `web_json_invalid`, and unusable/empty results remain named
+failures. Redirects, public-result validation and response bounds still apply.
+The default `html_race` mode retains the fixed engine set above.
+
 HTTP failures surface as `web_http_<status>` (for example 403, 404, 429) and
 connection failures as `web_network_error`, rather than generic `adapter_error`.
 Use another source or report unavailable evidence; do not bypass an access error
@@ -198,6 +204,10 @@ extraction are not provided by these tools (`web_content_type_not_supported`).
 The `network_intent`
 argument on a bash request is descriptive input metadata, not a security
 boundary.
+
+Model exposure in this table applies only to profiles containing the named ID.
+The `write`, `edit` and `bash` rows describe `legacy_v1`; modern replacements
+follow the same policy families with their explicit schemas above.
 
 | Capability family | Model exposure | Broker behavior |
 | --- | --- | --- |

@@ -92,7 +92,17 @@ public sealed class PolicySnapshotEvaluator
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(invariants);
-        return EvaluateInner(snapshot, context, invariants, now);
+        if (context.PatchTargets.Count == 0) return EvaluateInner(snapshot, context, invariants, now);
+        var parent = EvaluateInner(snapshot, context, invariants, now);
+        if (parent.Decision == "deny") return parent;
+        PolicyEvaluation? ask = parent.Decision == "ask" ? parent : null;
+        foreach (var target in context.PatchTargets)
+        {
+            var decision = EvaluateInner(snapshot, target, invariants, now);
+            if (decision.Decision == "deny") return decision;
+            if (decision.Decision == "ask") ask ??= decision;
+        }
+        return ask ?? new PolicyEvaluation("allow", "patch_targets_allowed", null);
     }
 
     private PolicyEvaluation EvaluateInner(

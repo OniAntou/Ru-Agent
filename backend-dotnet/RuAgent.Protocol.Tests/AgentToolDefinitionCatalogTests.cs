@@ -27,6 +27,17 @@ public sealed class AgentToolDefinitionCatalogTests
         "agent_wait",
         "agent_cancel",
         "agent_apply",
+        "run_code",
+        "apply_patch",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "file_delete",
+        "file_restore",
+        "powershell",
+        "run_process",
+        "terminal_read",
+        "terminal_stop",
     ];
 
     private static readonly string[] RetiredIds =
@@ -68,7 +79,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(19, definitions.Count);
+        Assert.Equal(30, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }

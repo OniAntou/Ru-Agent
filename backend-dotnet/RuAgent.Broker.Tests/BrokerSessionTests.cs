@@ -127,8 +127,8 @@ public sealed class BrokerSessionTests
         Assert.Null(error);
         Assert.NotNull(session.ActiveRunLease);
         Assert.Equal(
-            new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait",
-                "bash", "edit", "glob", "grep", "help", "list", "mcp", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
+            new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "apply_patch",
+                "bash", "edit", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp", "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write", "write_file" },
             session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 
@@ -203,8 +203,8 @@ public sealed class BrokerSessionTests
             Path.GetTempPath(),
             LeaseTestSnapshots.StandardEmpty());
         Assert.Equal(
-            new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait",
-                "bash", "edit", "glob", "grep", "help", "list", "mcp", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
+            new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "apply_patch",
+                "bash", "edit", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp", "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write", "write_file" },
             lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 

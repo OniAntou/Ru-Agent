@@ -16,8 +16,11 @@ from rpc_process import (
     safe_event,
     valid_token_count,
 )
+from trajectory_metrics import measure_events
 
 MAX_PROVIDER_LABEL_CHARS = 256
+TOOL_PROFILES = ("legacy_v1", "coding_v2", "patch_v2", "coding_code_v1")
+STARTUP_TIMEOUT_SECONDS = 30
 POLL_INTERVAL_SECONDS = 1
 TERMINAL_STATUSES = {"completed", "failed", "cancelled", "interrupted"}
 ACTIVE_STATUSES = {"running", "waiting_history", "waiting_history_user", "waiting_history_final"}
@@ -162,9 +165,13 @@ def run_ru(
     trust_workspace=False,
     timeout_seconds=None,
     bridge_factory=JsonRpcProcess,
+    tool_profile=None,
 ):
     if trust_workspace is not True:
         raise ValueError("live trials require explicit --trust-workspace consent")
+    if tool_profile is not None and tool_profile not in TOOL_PROFILES:
+        raise ValueError("unknown tool profile")
+    requested_profile = tool_profile
     command = build_agent_command(executable)
     candidate = Path(workspace).resolve(strict=True)
     if not candidate.is_dir():
@@ -188,10 +195,12 @@ def run_ru(
     provider_backend = None
     provider_model = None
     provider_protocol = None
+    tool_profile = None
     terminal_error_code = None
     try:
-        bridge = bridge_factory(command, candidate)
-        handshake = bridge.request("initialize", {"protocolVersion": 1, "clientInfo": {"name": "ru-benchmark", "version": "1"}}, timeout=min(RPC_TIMEOUT_SECONDS, limit))
+        bridge = bridge_factory(command, candidate) if requested_profile is None else bridge_factory(
+            command, candidate, environment={"RU_AGENT_TOOL_PROFILE": requested_profile})
+        handshake = bridge.request("initialize", {"protocolVersion": 1, "clientInfo": {"name": "ru-benchmark", "version": "1"}}, timeout=min(STARTUP_TIMEOUT_SECONDS, limit))
         methods = handshake.get("methods")
         required_methods = {"run.start", "run.attach", "run.status", "run.cancel"}
         if handshake.get("protocolVersion") != 1 or not isinstance(methods, list) or not required_methods.issubset(methods):
@@ -199,7 +208,7 @@ def run_ru(
         start_result = bridge.request("run.start", {
             "workspace": str(candidate), "prompt": task.instruction, "preset": "standard",
             "trustWorkspace": True,
-        }, timeout=min(RPC_TIMEOUT_SECONDS, max(0.01, deadline - time.monotonic())))
+        }, timeout=min(STARTUP_TIMEOUT_SECONDS, max(0.01, deadline - time.monotonic())))
         run_id = start_result.get("run_id")
         session_id = _bounded_optional_string(start_result.get("session_id"), 128)
         if not isinstance(run_id, str) or RUN_ID_PATTERN.fullmatch(run_id) is None:
@@ -235,6 +244,13 @@ def run_ru(
             provider_backend = _bounded_optional_string(run.get("provider_backend"), 128)
             provider_model = _bounded_optional_string(run.get("provider_model"), MAX_PROVIDER_LABEL_CHARS)
             provider_protocol = _bounded_optional_string(run.get("provider_protocol"), 64)
+            tool_profile = _bounded_optional_string(run.get("tool_profile"), 32)
+            # Selection is pinned lazily before the first provider step. A new
+            # running run may legitimately have no profile metadata yet.
+            if requested_profile is not None and tool_profile is not None and tool_profile != requested_profile:
+                raise RpcTrialError("tool_profile_mismatch")
+            if requested_profile is not None and run_status == "completed" and tool_profile is None:
+                raise RpcTrialError("tool_profile_unverified")
             terminal_error_code = _bounded_optional_string(run.get("terminal_error_code"), 128)
             if run_status in TERMINAL_STATUSES:
                 status = "completed" if run_status == "completed" else run_status
@@ -279,6 +295,8 @@ def run_ru(
         "provider_backend": provider_backend,
         "provider_model": provider_model,
         "provider_protocol": provider_protocol,
+        "tool_profile": tool_profile,
+        "requested_tool_profile": requested_profile,
         "terminal_error_code": terminal_error_code,
         "events": state["events"][:MAX_EVENTS],
         "events_seen": state["events_seen"],
@@ -288,6 +306,7 @@ def run_ru(
         "events_complete": completeness,
         "usage_complete": completeness,
         "token_usage": state["token_usage"],
+        "tool_metrics": measure_events(state["events"], complete=completeness is True and not state["events_truncated"]),
     }
     if cancel_error is not None:
         result["cancel_error"] = cancel_error

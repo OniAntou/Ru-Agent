@@ -606,6 +606,11 @@ public sealed partial class ToolExecutionService
     {
         try
         {
+            if (CodingToolArguments.AdapterToolId(toolId) == "bash")
+            {
+                arguments = CodingToolArguments.ToAdapterArguments(toolId, arguments);
+                toolId = "bash";
+            }
             var mode = ReadOptionalString(arguments, "mode")
                 ?? (toolId == "bash" ? "run" : null);
             if (string.Equals(mode, "shell", StringComparison.Ordinal) || toolId == "terminal.shell")

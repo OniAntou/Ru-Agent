@@ -100,6 +100,19 @@ The Protocol-owned model-visible schema and metadata for one tool. Advertisement
 Implementation: [broker](docs/architecture/broker.md#tool-definition).
 _Avoid_: treating a Broker manifest or adapter list as the model contract
 
+**Tool Profile**:
+The run-pinned selection of Protocol tool definitions shown to the model.
+Legacy runs keep their original surface; new coding profiles select simple
+file/Windows-terminal operations or unified patches. This does not select an
+execution authority or grant permission. See [ADR 0027](docs/adr/0027-pinned-coding-tool-profiles.md).
+
+**Program Invocation**:
+A run-bound `run_code` invocation in the experimental coding profile. Pure
+computation selects data; every nested coding tool still uses Broker authority.
+Its durable intent/receipt journal is keyed by run and invocation, and an intent
+without a receipt remains uncertain. This is not a child agent or a permission
+grant. See [ADR 0028](docs/adr/0028-bounded-programmatic-coding-tools.md).
+
 
 **Tool Output Projection**:
 The bounded, paged representation of a durable tool result supplied to model context and clients. Presentation excerpts preserve receipt provenance without claiming to contain the complete result.

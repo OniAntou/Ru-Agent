@@ -132,6 +132,8 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         Assert.Equal("provider_catalog", firstMetadata.ContextWindowSource);
         Assert.Equal(8_192, firstMetadata.OutputTokenReserve);
         Assert.Equal("high", first.RequestOptions?["reasoning_effort"]?.GetValue<string>());
+        Assert.Equal(RuAgent.Protocol.AgentToolProfiles.Minimal, firstMetadata.ToolProfile);
+        Assert.False(first.RequestOptions?.ContainsKey(RuAgent.Protocol.AgentToolProfiles.PinField) ?? false);
         Assert.Equal("key-one", first.Credential);
 
         credentials.Key = "key-two";

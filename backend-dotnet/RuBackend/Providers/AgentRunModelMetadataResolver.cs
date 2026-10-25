@@ -11,7 +11,8 @@ public sealed record AgentRunModelMetadata(
     long? ContextWindowTokens,
     string ContextWindowSource,
     string ContextWindowVersion,
-    int OutputTokenReserve);
+    int OutputTokenReserve,
+    string ToolProfile = RuAgent.Protocol.AgentToolProfiles.Legacy);
 
 public interface IAgentRunModelMetadataResolver
 {
@@ -43,7 +44,8 @@ public sealed class AgentRunModelMetadataResolver(
                 selection.ContextWindowTokens,
                 selection.ContextWindowSource,
                 selection.ContextWindowVersion,
-                selection.OutputTokenReserve);
+                selection.OutputTokenReserve,
+                RuAgent.Protocol.AgentToolProfiles.ReadPin(System.Text.Json.Nodes.JsonNode.Parse(selection.RequestOptionsJson)!.AsObject()));
         }
         catch (HarnessStoreException error)
         {

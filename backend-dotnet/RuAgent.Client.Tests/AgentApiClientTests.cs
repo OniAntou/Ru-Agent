@@ -35,6 +35,9 @@ public sealed partial class AgentApiClientTests
     public async Task GetRunStrictParsingAcceptsOptionalDurableProviderPinsAndLegacyAbsence()
     {
         var body = JsonSerializer.Serialize(RunSummary("OpenAI", "gpt-5"));
+        var withProfile = System.Text.Json.Nodes.JsonNode.Parse(body)!.AsObject();
+        withProfile["tool_profile"] = "coding_v2";
+        body = withProfile.ToJsonString();
         var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
             new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -52,10 +55,12 @@ public sealed partial class AgentApiClientTests
         Assert.Equal("gpt-5", pinned.ProviderModel);
         Assert.Equal("chat_completions", pinned.ProviderProtocol);
         Assert.Equal("native", pinned.ProviderCallingMode);
+        Assert.Equal("coding_v2", pinned.ToolProfile);
         Assert.Equal(128_000, pinned.ContextWindowTokens);
         Assert.Equal(8192, pinned.OutputTokenReserve);
         Assert.Null(legacy.ProviderBackend);
         Assert.Null(legacy.ProviderModel);
+        Assert.Null(legacy.ToolProfile);
         Assert.Equal(maxBackend, maxModelsDevBackend.ProviderBackend);
     }
 

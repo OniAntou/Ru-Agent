@@ -16,7 +16,7 @@ public sealed class ToolBindingRegistryTests
 
         // list, help, todo_write and skill are read-only, so the Chat profile advertises them too.
         Assert.Equal(
-            new HashSet<string> { "read", "list", "help", "todo_write", "skill", "grep", "glob", "web_fetch", "web_search" },
+            new HashSet<string> { "read", "read_file", "list", "help", "todo_write", "skill", "grep", "glob", "web_fetch", "web_search" },
             ids);
     }
 
@@ -25,7 +25,7 @@ public sealed class ToolBindingRegistryTests
     /// <c>ask_user</c> (which deliberately has no Broker binding). This is the structural
     /// half of the <c>incomplete_tool_catalog</c> guard in the constructor: the guard
     /// fails closed at runtime, this fails loudly in the suite and names the tool that
-    /// went missing. Order is not compared here — <see cref="ToolBindingRegistry.List"/>
+    /// went missing. Order is not compared here â€” <see cref="ToolBindingRegistry.List"/>
     /// sorts by id (ordinal), which is deliberately independent of the catalog's prompt
     /// ordinal.
     /// </summary>
@@ -119,7 +119,7 @@ public sealed class ToolBindingRegistryTests
 
     /// <summary>
     /// The manifest declarations themselves must stay in the catalog's ordinal order.
-    /// The registry cannot observe this — it sorts by id — so this compares the declared
+    /// The registry cannot observe this â€” it sorts by id â€” so this compares the declared
     /// order through the catalog, which is what the prompt ordinal depends on. A tool
     /// declared out of order still binds and still executes, but it silently moves in the
     /// model-facing tool list.
@@ -135,9 +135,9 @@ public sealed class ToolBindingRegistryTests
         Assert.Equal(
             new[]
             {
-                "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait",
-                "bash", "edit", "glob", "grep", "help", "list", "mcp",
-                "read", "skill", "todo_write", "web_fetch", "web_search", "write",
+                  "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "apply_patch",
+                  "bash", "edit", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp",
+                  "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write", "write_file",
             },
             bound);
         Assert.DoesNotContain("app.open", bound);
@@ -170,6 +170,17 @@ public sealed class ToolBindingRegistryTests
         ["web_fetch"] = Succeeded,
         ["skill"] = Succeeded,
         ["mcp"] = Succeeded,
+          ["read_file"] = Succeeded,
+          ["run_code"] = Succeeded,
+          ["apply_patch"] = Succeeded,
+          ["write_file"] = Succeeded,
+          ["edit_file"] = Succeeded,
+          ["file_delete"] = Succeeded,
+          ["file_restore"] = Succeeded,
+          ["powershell"] = Succeeded,
+          ["run_process"] = Succeeded,
+          ["terminal_read"] = Succeeded,
+          ["terminal_stop"] = Succeeded,
     };
 
     private static ValueTask<ToolExecutionOutcome> Succeeded(

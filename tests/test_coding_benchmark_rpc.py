@@ -58,6 +58,46 @@ class FakeRpc:
         self.closed = True
 
 
+def test_explicit_profile_is_process_scoped_and_mismatch_is_not_silent(tmp_path):
+    executable = tmp_path / "ru.exe"
+    executable.write_text("", encoding="utf-8")
+    executable.chmod(0o755)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    captured = {}
+
+    def factory(command, cwd, *, environment):
+        captured.update(environment)
+        return FakeRpc(command, cwd, statuses=[{"run_id": RUN_ID, "status": "completed", "tool_profile": "legacy_v1"}])
+
+    result = ru_trial.run_ru(executable, make_task(), workspace, tmp_path / "trial",
+                             trust_workspace=True, tool_profile="coding_v2", bridge_factory=factory)
+    assert captured == {"RU_AGENT_TOOL_PROFILE": "coding_v2"}
+    assert result["status"] == "failed"
+    assert result["run_status"] == "tool_profile_mismatch"
+    assert result["requested_tool_profile"] == "coding_v2"
+
+
+def test_profile_can_be_absent_until_first_model_step(tmp_path, monkeypatch):
+    executable = tmp_path / "ru.exe"
+    executable.write_text("", encoding="utf-8")
+    executable.chmod(0o755)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setattr(ru_trial.time, "sleep", lambda _: None)
+
+    def factory(command, cwd, *, environment):
+        return FakeRpc(command, cwd, statuses=[
+            {"run_id": RUN_ID, "status": "running"},
+            {"run_id": RUN_ID, "status": "completed", "tool_profile": "coding_v2"},
+        ])
+
+    result = ru_trial.run_ru(executable, make_task(), workspace, tmp_path / "trial",
+                             trust_workspace=True, tool_profile="coding_v2", bridge_factory=factory)
+    assert result["status"] == "completed"
+    assert result["tool_profile"] == "coding_v2"
+
+
 def make_task(timeout=30):
     return SimpleNamespace(instruction="Fix the bounded task.", agent_seconds=timeout)
 
@@ -97,7 +137,7 @@ def test_completed_run_uses_documented_snake_case_rpc_and_collects_bounded_safe_
         {"run_id": RUN_ID, "status": "running", "last_sequence": 7,
          "provider_backend": "local", "provider_model": "model-a"},
         {"run_id": RUN_ID, "status": "completed", "provider_backend": "local", "provider_model": "model-a",
-         "provider_protocol": "responses", "terminal_error_code": None, "last_sequence": 7},
+         "provider_protocol": "responses", "tool_profile": "coding_v2", "terminal_error_code": None, "last_sequence": 7},
     ]
     bridges = []
     result = ru_trial.run_ru(
@@ -116,6 +156,7 @@ def test_completed_run_uses_documented_snake_case_rpc_and_collects_bounded_safe_
     assert result["provider_backend"] == "local"
     assert result["provider_model"] == "model-a"
     assert result["provider_protocol"] == "responses"
+    assert result["tool_profile"] == "coding_v2"
     assert result["terminal_error_code"] is None
     assert result["last_sequence_seen"] == result["expected_sequence"] == 7
     assert result["events_complete"] is True

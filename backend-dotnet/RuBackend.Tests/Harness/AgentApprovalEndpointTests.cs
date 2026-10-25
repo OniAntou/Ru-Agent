@@ -24,7 +24,7 @@ namespace RuBackend.Tests.Harness;
 /// finished when its approval event is already committed and readable.
 /// </summary>
 [Collection(nameof(TerminalProcessHeavyCollection))]
-public sealed class AgentApprovalEndpointTests
+public sealed partial class AgentApprovalEndpointTests
 {
     /// <summary>
     /// How long a run is given to reach an expected state.

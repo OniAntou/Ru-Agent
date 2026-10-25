@@ -7,6 +7,8 @@ public sealed record TranscriptRun(string Text, TuiToken Token = TuiToken.Ink, b
 
 public sealed record TranscriptLine(IReadOnlyList<TranscriptRun> Runs, TranscriptRole Role = TranscriptRole.Prose)
 {
+    internal bool ContinuesPrevious { get; init; }
+    internal int StartColumn { get; init; }
     public string Text => string.Concat(Runs.Select(run => run.Text));
     public static TranscriptLine Plain(string text, TranscriptRole role = TranscriptRole.Prose, TuiToken token = TuiToken.Ink) =>
         new([new(text, token)], role);

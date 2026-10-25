@@ -49,6 +49,33 @@ The append-only surface bounds its rebuild history by rows and characters (2,000
 200,000, with a 16,000-unit per-line cap) exactly like the Terminal.Gui transcript.
 _Avoid_: Requiring GUI feature parity or treating presentation metadata as authority.
 
+Native paragraph projection splits styled, tab-expanded prose into storage segments
+of at most 16,000 UTF-16 units at rune boundaries before applying the view's per-row
+cap. Continuation segments copy without an inserted newline. The native writer tracks
+the entire provisional segment count and replaces it together on each preview or
+commit, including when the total history budget has evicted earlier segments. Retry,
+suppression and durable turn replacement operate on all segments. The existing
+2,000-row/200,000-character history budget still bounds retained content; segmentation
+does not change the model's durable context.
+
+`StreamingMarkdownProjector` owns native line/paragraph accumulation and preview
+cadence; tool activity and run lifecycle remain in `TuiTranscript`. Its
+`StreamingParagraphParser` checkpoints settled top-level inline content at whitespace
+boundaries, using Markdig source spans rather than pairing Markdown delimiters itself.
+Only the unresolved suffix is reparsed on later deltas. Open delimiters, ambiguous
+literal syntax and unclosed links/code remain provisional even when long; correctness
+takes precedence over a fixed tail-size cap. Completed soft lines add one space.
+Ambiguous block prefixes do not advance paragraph/fence state during preview.
+
+Settled `TranscriptLine` objects retain identity and their starting display column.
+The native writer caches their tab-expanded styled segments with weak keys and replaces
+only the changed tail, keeping settled view rows intact. Retention-evicted settled
+segments stay evicted on later updates; changed unresolved content can still be
+reprojected. Reset/retry clears parser state and provisional segments together. The
+append-only output adapter continues to use its existing line renderer.
+Tool groups settle their summary before the first native prose preview, so a summary
+cannot split a cached paragraph prefix from its changing tail.
+
 Pending images appear as `[image 1] [image 2]` in the composer's spacer row,
 including while another turn streams. The labels are presentation only; submission
 snapshots retain the original image data URLs. Queued/admitted images leave the draft;

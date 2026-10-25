@@ -14,7 +14,8 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
 {
     private readonly StringBuilder _pending = new();
     private bool _rowOpen;
-    private bool _projectedRow;
+    private int _projectedRows;
+    private TgTranscriptRow[] _projectedNative = [];
     private string? _assistantStepId;
     private int _assistantStepMark = -1;
     private int _turnMark = -1;
@@ -95,7 +96,8 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
                     return;
                 }
                 transcript.ReplaceProseSince(_turnMark, painted);
-                _projectedRow = false;
+                _projectedRows = 0;
+                _projectedNative = [];
                 completion.TrySetResult(true);
             });
         }
@@ -153,7 +155,8 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
                 // callback has had a chance to record it.
                 if (_assistantStepMark >= 0) transcript.RemoveProseSince(_assistantStepMark);
                 _assistantStepMark = -1;
-                _projectedRow = false;
+                _projectedRows = 0;
+                _projectedNative = [];
             });
         }
         catch (NotInitializedException)
@@ -189,10 +192,11 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
                     transcript.ClearLive();
                 }
 
-                if (_projectedRow) transcript.ReplaceTail(clean, style, spans);
-                else if (clean is { Length: > 0 } || (complete && clean is not null))
-                    transcript.Append(clean!, style, spans);
-                _projectedRow = !complete && clean is { Length: > 0 };
+                TgTranscriptRow[] rows = clean is { Length: > 0 } || (complete && clean is not null)
+                    ? [new(clean!, style, spans)] : [];
+                var retained = transcript.ReplaceProjectedRows(_projectedRows, rows);
+                _projectedRows = complete ? 0 : retained;
+                _projectedNative = [];
             });
         }
         catch (NotInitializedException) { }

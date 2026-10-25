@@ -13,7 +13,7 @@ namespace RuAgent.Cli.Tui;
 /// document and its first leaf's inline tree is mapped to styled runs, so delimiters that
 /// the scanner used to mis-pair simply cannot pair.
 /// </summary>
-internal static class MarkdigInline
+internal static partial class MarkdigInline
 {
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseEmphasisExtras()

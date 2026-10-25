@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(tui)**: Separate streaming Markdown projection from tool/lifecycle rendering.
+  Cache settled paragraph chunks and native rows, reparse only unresolved tails,
+  and preserve late Markdown closers, tab columns and bounded history during updates.
+
+- **fix(tui)**: Preserve long assistant paragraphs as bounded native segments instead
+  of clipping their tail at the per-row limit. Replace all preview segments together
+  and copy them as one paragraph, retaining Unicode, Markdown styles and history bounds.
+
 - **fix(tools)**: Clarify file creation versus editing in model guidance and repair
   hints. Keep malformed write activity labeled as Write, and explain that edit
   cannot create a file or use empty old text.

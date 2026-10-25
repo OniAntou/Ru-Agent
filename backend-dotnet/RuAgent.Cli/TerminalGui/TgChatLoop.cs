@@ -9,7 +9,7 @@ namespace RuAgent.Cli.TerminalGui;
 /// handler streams into the transcript. Command dispatch stays in
 /// <c>AgentCommands.ChatLineDispatcher</c>; this class only owns input and rendering.
 /// </summary>
-public sealed class TgChatLoop
+public sealed partial class TgChatLoop
 {
     /// <summary>Lines kept for Up/Down navigation; older entries fall off the front.</summary>
     public const int MaxHistory = 100;
@@ -207,6 +207,7 @@ public sealed class TgChatLoop
     public void Submit()
     {
         var line = _window.Composer.Input.Text?.ToString() ?? string.Empty;
+        if (TrySubmitTaskControl(line)) return;
         if (_dropHandler is not null)
         {
             var candidate = line.Trim();
@@ -321,6 +322,11 @@ public sealed class TgChatLoop
         // late Escape (or the handover's Cancel) can never hit a disposed source.
         lock (_queueGate)
         {
+            if (_taskControlCancellation is { } taskControl)
+            {
+                taskControl.Cancel();
+                return;
+            }
             if (_turn is { } turn)
             {
                 turn.Cancel();
@@ -353,13 +359,14 @@ public sealed class TgChatLoop
             // executing the run server-side until the run itself is cancelled,
             // and the caller exits the process right after this returns.
             _turn?.Cancel();
+            _taskControlCancellation?.Cancel();
             while (_queued.TryDequeue(out var submission))
             {
                 _queuedSubmissionBytes -= submission.OwnedBytes;
                 discardedSubmissions.Add(submission);
             }
 
-            turnDone = _turnDone?.Task ?? Task.CompletedTask;
+            turnDone = Task.WhenAll(_turnDone?.Task ?? Task.CompletedTask, _taskControlDone?.Task ?? Task.CompletedTask);
         }
 
         // Release runs temp-file I/O; doing it under the lock blocked the UI thread's key

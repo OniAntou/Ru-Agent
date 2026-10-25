@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Add `/tasks` to inspect and stop session background terminal tasks,
+  including while a model turn streams. Keep attachment drafts and queued prompts,
+  confirm interactive stops, recheck task ownership/state, and serialize task panels
+  with approvals and model questions. Task status refresh is explicit, without polling.
+
+- **feat(tui)**: Answer `ask_user` inside Ru with suggested choices or free text.
+  Enter sends on the existing run; Escape leaves the question pending for `/follow`.
+  Recover pending questions after session reopen and refuse stale answers without retries.
+
 - **perf(tui)**: Separate streaming Markdown projection from tool/lifecycle rendering.
   Cache settled paragraph chunks and native rows, reparse only unresolved tails,
   and preserve late Markdown closers, tab columns and bounded history during updates.

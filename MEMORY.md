@@ -1,0 +1,186 @@
+# MEMORY — Ru-Agent (máy của anh steal)
+
+## 2026-10-25 — TUI: trả lời ask_user và quản lý background task
+
+- Branch: `casluminous/fix-tui-long-paragraph`, tiếp sau commit `581fc73e` (giữ paragraph dài và parser streaming chỉ xử lý đuôi thay đổi).
+- `ask_user` đã trả lời trực tiếp trong Terminal.Gui: Tab/Shift+Tab chọn gợi ý vào editor, nhập tự do/paste Unicode, Enter gửi, Ctrl+J/Shift+Enter xuống dòng, PageUp/PageDown cuộn câu hỏi. Không tự chọn/gửi câu trả lời mặc định.
+- Esc đóng ô hỏi nhưng giữ run chờ; `/follow [run-id]` mở lại, kể cả sau khi mở lại session. Giữ draft/cursor của composer và tạm dừng queued prompts khi câu hỏi chưa được trả lời. Kiểm tra đúng run/session/snapshot trước và sau nhập, giới hạn 8192 ký tự, không tự retry POST không rõ kết quả, chống gửi lặp input đã được Host xác nhận.
+- Khôi phục câu hỏi bằng finite SSE replay có giới hạn 2048 event / 64 KiB frame / 4 giây, yêu cầu đúng identity và cursor. Câu hỏi mới thiếu payload không được dùng nhầm câu hỏi cũ.
+- `/tasks` đã tích hợp danh sách background terminal task trong Ru: command label, execution ID, state, exit code nếu có; Refresh chủ động, không polling. Chọn task đang chạy → xác nhận Stop task (mặc định Keep running). Task đã kết thúc/không rõ trạng thái không có thao tác stop.
+- `/tasks kill <execution-id>` chọn trực tiếp một task; `/tasks <run-id>` xem run thuộc session hiện tại. Khi không giữ run nào, tìm run mới nhất của session. Sequential/JSON dùng text/JSON, explicit kill không đọc thêm stdin.
+- Task control chạy độc lập khi model đang streaming, không tạo prompt/run mới, không lấy ảnh/file đang chờ gửi, không thay hàng đợi hay provider/model/preset. Chỉ cho một task-control operation; Esc trong lúc fetch hủy task control, không hủy model. Shutdown hủy/drain luồng này theo bound hiện có.
+- `ModalRequestGate` tuần tự hóa task picker với approval/trust và ask_user, tránh xác nhận nhầm waiter. Kiểm tra ownership, lấy lại trạng thái sau xác nhận rồi mới gửi stop cho đúng execution; Host phải xác nhận `killed=true`. Chỉ báo stop requested và refresh để xem trạng thái cuối, không tự suy diễn đã dừng hoặc tự retry. Broker/gateway mất thì báo lỗi rõ, không coi là danh sách rỗng.
+- Chỉ đổi CLI/TUI và tài liệu; dùng lại Host command API + Broker registry, không kill PID trực tiếp, không đổi GUI/backend/protocol/quyền thực thi.
+- Verify cuối: full CLI **1765 pass / 0 fail / 0 skip**; subset workflow/native UI **38 pass**; documentation guards **8 pass**; `git diff --check` pass. Native UI dùng ANSI test driver, HTTP dùng Host giả; chưa chạy acceptance kill process thật hoặc phiên model thật cho hai tính năng này.
+- Đã publish Release win-x64 self-contained vào bản mà `C:\Users\steal\Ru-Agent\bin\ru.cmd` ưu tiên; smoke `Ru --version` = `0.1.2-preview.1`. CLI DLL SHA256: `0BAB675C6F95C4B9EA43295868E76A14B7E8148F870570D3B3F739280771ACE7`.
+- Theo yêu cầu mới của anh: commit code, test, docs của hai tính năng và cập nhật MEMORY này trên branch hiện tại. Không kèm `TONG-KET-CONG-VIEC.md` hoặc `docs/presentation/`. Chưa có yêu cầu push trong lượt này.
+
+## 2026-10-24 — Review sau sync (chưa sửa code)
+
+- Đã làm: review tổng thể sau sync, không sửa code sản phẩm. Verify trên `dev` @ `27799246`: `build.bat` 11/11 exit 0; full .NET matrix 13 project, 7.810 pass / 0 fail / 0 skip; pytest 209 pass / 2 skip; route matrix 46 HTTP route (0 WebSocket); runtime boundary 0 interpreter trong product; ruff pass.
+- P0 — MCP approval mất identity canonical (chưa sửa):
+  - `mcp call`: schema khai báo `arguments` là JSON string (`RuAgent.Protocol/AgentToolDefinitionCatalog.cs:235-240`), nhưng Host đọc bằng `ReadStringArray` (`RuBackend/Harness/AgentApprovalsService.cs:712`), hàm này chỉ nhận array (`:904-915`) → ném lỗi, catch trả null (`:641-648`), endpoint trả `409 approval_stale` (`:222-225`). Theo code path, `mcp call` cần approval trong `standard` sẽ không approve được; chưa chạy end-to-end vì cần cấu hình MCP server.
+  - `mcp list_tools`: Host binding không có server/tool (`AgentApprovalsService.cs:709-712`) dù Broker có `mcp:<server>` + argv (`RuAgent.Broker/Policy/PolicyContextFactory.cs:289-327`). `allow_once`/`allow_always` lưu matcher chỉ gồm `tool_id=mcp` + `operation_class=mutation` (`AgentApprovalsService.cs:541-549`, `651-659`); `PolicyRuleMatcher` bỏ qua executable null/argv rỗng (`PolicyRuleMatcher.cs:95-115`) nên rule match mọi MCP call. Probe xác nhận: broad `list_tools` rule match `mcp call` = True; rule exact = False. Hệ quả: approve `list_tools` một lần có thể mở đường cho `mcp call` không hỏi lại; `allow_always` còn thành durable project rule.
+  - Test gap: `ApprovalPatternTests.An_mcp_rule_remembers_the_op_and_tool_exactly` chỉ dùng binding giả có `mcp:github` + argv (`RuBackend.Tests/Harness/ApprovalPatternTests.cs:58-75`), không đi qua `BuildApprovalBindingAsync` thật.
+  - Hướng sửa: special-case MCP trong `BuildApprovalBindingAsync` (list_tools → `mcp:<server>` + `["list_tools"]`; call → `mcp:<server>` + `["call", tool]`, không đọc `arguments` như array), hoặc để Broker gửi canonical identity trong approval event; thêm integration test cho cả `list_tools` và `call`.
+- P2 — Terminal remembered approval chưa canonical (rủi ro thiết kế, chưa coi là bug chắc chắn): Host lưu `requestedExecutable` thô (`AgentApprovalsService.cs:710`), matcher dùng label (`:545`); bare-name rule match `RequestedExecutable` (`PolicyRuleMatcher.cs:95-98`), trong khi comment nói new approvals dùng canonical full path (`:93-94`). PATH thay đổi có thể trỏ sang binary khác. Cần canonicalize ở Host hoặc lấy identity từ Broker.
+- Đã kiểm tra và loại trừ: Markdig 1.3.2 + Markdig.Signed 0.44.0 là chủ ý (GUI dùng signed, CLI dùng Markdig, test exclude assets); `WorkspacePathGuard` lexical + symlink check không thấy đường escape đã xác nhận; full test matrix vẫn xanh.
+- Working tree vẫn chỉ có untracked `MEMORY.md`, `TONG-KET-CONG-VIEC.md`, `docs/presentation/`; không sửa code sản phẩm.
+- Next: sửa P0 + test integration cho `list_tools`/`call`; sau đó xử lý canonical terminal; giữ presentation local-only. Quyết định: chưa commit gì, chưa đụng presentation.
+
+## 2026-10-24 — Sync origin/dev
+
+- `git fetch`: `origin/dev` lên `27799246` (+42 commit so với branch đang đứng), có tag `v0.1.2-preview.1`; remote branch `casluminous/fix-audit-regressions` đã bị xóa.
+- Branch cũ `casluminous/fix-audit-regressions` (`b2ff48de`) đã được merge vào dev (`94e96380`), không còn commit riêng → chuyển về `dev`, fast-forward `530f0f25` → `27799246`.
+- Working tree sạch sau sync; chỉ còn untracked `MEMORY.md`, `TONG-KET-CONG-VIEC.md`, `docs/presentation/` (không commit theo yêu cầu).
+- Chưa chạy build/test sau sync.
+
+## 2026-10-23 — Slide đồ án 6 trang + sơ đồ usecase
+
+- Cập nhật `docs/presentation/Ru-Agent-Slides.pptx` lên **6 slide**: bìa → tác nhân → **sơ đồ usecase** → danh sách 12 usecase → đặc tả UC-01 → cảm ơn.
+- Slide 3 vẽ UML rút gọn: 8 usecase cốt lõi (UC-01, 02, 04, 05, 06, 07, 08, 12) dạng ellipse trong boundary "RU AGENT"; **cả 4 actor = vòng tròn** (Người dùng xanh bên trái; Provider / Windows / Kênh cập nhật xám bên phải) theo yêu cầu; association nét mảnh. Ghi chú rõ danh sách đầy đủ 12 usecase ở slide sau.
+- Phần slide **không commit lên dự án** (theo yêu cầu); pptx + script vẫn chỉ ở local.
+- Sửa lỗi line bị lật hướng khi vẽ (dùng `flipV` cho line có slope âm) — chân stick figure và association giờ nối đúng.
+- Verify: PowerPoint COM export 6/6 PNG, python-pptx đọc đủ 6 slide, soi visual 6/6 (không overlap, không clip).
+- File pptx + script vẫn **chưa commit** (chỉ commit khi anh duyệt).
+
+## 2026-10-21 — Slide đồ án 5 trang (bìa → tác nhân → usecase → đặc tả → cảm ơn)
+
+- Tạo `docs/presentation/Ru-Agent-Slides.pptx` (5 slide, 16:9, dark GitHub + green Ru + wordmark SVG): bìa có placeholder tên GVHD/SVTH để anh tự điền; slide 2 tác nhân (Người dùng, CI/SDK, provider, Windows, update); slide 3 gồm 12 usecase chia 4 nhóm; slide 4 đặc tả UC-01 (prompt → Public Host HTTP/SSE → model → Broker/tool → lưu phiên); slide 5 cảm ơn.
+- Verify: PowerPoint COM export 5/5 PNG, python-pptx đọc đủ text; đã soi visual 2 vòng (không còn overlap/clip).
+- Script tạo: `C:\Users\steal\AppData\Local\Temp\opencode\ru-slides\make-slides.js`; file pptx chưa commit.
+
+## 2026-10-19 (tiếp 7) — build.bat full XONG (11/11, exit 0), artifact chứa fix; CHƯA commit
+
+- Anh lệnh "build" → em kill RuBackend/RuAgent.Broker/RuAgent.Cli/RuAgent.Daemon/RuApp trước (RuBackend đang chạy từ backend publish dir, build.bat cần dọn publish dir) → `build.bat` full: 11/11 bước, mỗi bước 0 warning/0 error, exit 0, Published 10:36.
+- Flat layout: `gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish` (RuApp.exe + RuBackend.exe + RuAgent.Cli.exe side-by-side) — đúng path `bin\ru.cmd` chạy.
+- Verify artifact: chuỗi `TgTerminalPaste` có trong `RuAgent.Cli.dll` (2.02MB) của flat layout (byte-scan ASCII) → fix nằm trong bản giao. Timestamp dll = 10:27:27 vì obj up-to-date (không đổi source từ bản publish 10:27 — nội dung y hệt).
+- RuBackend giờ KHÔNG chạy (kill để build) — GUI/CLI sẽ tự start-or-attach khi mở; muốn start sẵn thì bảo em.
+- Vẫn CHƯA commit: 7 file sửa + `TgTerminalPaste.cs` mới (+ MEMORY.md untracked). Suite CLI 1497/1497 (Release) đã chạy trên đúng source này trước build.
+- Anh yêu cầu tóm tắt từ mốc "metadata" (17/10) đến nay vào 1 file md → đã tạo `TONG-KET-CONG-VIEC.md` ở repo root (8 mục: metadata feature, sync dev, 2 bug reply, data-tone + prompt contract, Ctrl+V saga, build, hiện trạng/treo, bài học kỹ thuật). File untracked, chưa commit.
+
+## 2026-10-19 (tiếp 6) — ROOT CAUSE Ctrl+V tìm ra + FIX + verify thật trong WT (Ctrl+V chạy!), 1497/1497, CHƯA commit
+
+- Bằng chứng tap test (trước): WT 1.24 khi app enable `?2004h` thì gửi bracketed paste chuẩn (`ESC[200~…ESC[201~`); WT KHÔNG nuốt — app Ru nuốt.
+- Đọc source TG v2.5.0 (tải zip về `Temp\opencode\tg25`): driver ANSI là mặc định trên Windows (`DriverRegistry`), `AnsiOutput.Init` có ghi `CSI_EnableBracketedPaste` (`?2004h`) → nên WT wrap paste là đúng; parser `AnsiResponseParserBase` parse `ESC[200~` → `Paste` event → `InputProcessorImpl.Paste` → `DriverImpl.Paste` → `ApplicationImpl.Driver_Paste` → `RaisePasteEvent`.
+- **ROOT CAUSE**: `RaisePasteEvent` dispatch `Command.Paste` cho `Navigation.GetFocused()` — field này trong app trỏ vào `TgComposerView` (card cha), KHÔNG phải editor. Key events đi đường khác: `TopRunnableView.NewKeyDownEvent` → đệ quy `Focused` chain (nên gõ chữ vẫn vào editor). Paste rơi vào container → `OnPaste` default trả false → **nuốt im lặng**. Đúng triệu chứng: gõ OK, Ctrl+V chết.
+- Chứng minh không cần focus: tool `Temp\opencode\inject-console.ps1` (`AttachConsole` + `WriteConsoleInput` bơm INPUT_RECORD vào console buffer app) — conhost tự wrap thành bracketed paste; log `app.Paste len=13` khớp đúng payload → driver→app OK, chỉ dispatch sai chỗ.
+- **FIX**: file mới `RuAgent.Cli\TerminalGui\TgTerminalPaste.cs` — `Attach(IApplication)`: subscribe `app.Paste`, nếu `TopRunnableView.MostFocused is TgPromptEditor` → `TryInsertDraft(text)` + `e.Handled = true` (mirror đúng chuỗi `Focused` mà keys dùng, chặn dispatch hỏng của TG). Wire trong `AgentCommands.Chat.cs` sau khi build window.
+- Verify: test mới `Terminal_paste_inserts_into_the_composer_editor` (headless `app.RaisePasteEvent`) → CLI suite **1497/1497**; injection test binary cuối: composer `zzru-inject-555`; **real-key test trong WT** (probe3, guard foreground): gõ `zz` thật + **Ctrl+V thật** → composer `zzru-app-paste-444` (ảnh `Temp\opencode\ru-paste3-after-ctrlv.png`).
+- Diagnostics tạm đã GỠ: `TuiDebugLogger.cs` (xóa), log `editor.OnPaste`/`editor.Pasting`/`driver.Paste` (gỡ sạch — TgPromptEditor.cs về nguyên trạng). CHANGELOG thêm bullet `fix(tui)` paste (trên cùng Unreleased).
+- Còn dirty chưa commit (8 file): `AgentCommands.Chat.cs` (Attach + feedback hint + /paste dispatch + TuiDebug log paste), `TgTerminalPaste.cs` (mới), `TgChatKeyboardBindings.cs` (Ctrl+Shift+V), `TgChatLoop.cs` (feedback + log), `CliClipboard.cs` (retry), `ChatCommandCatalog.cs` (/paste), `TgPromptInteractionTests.cs`, `CHANGELOG.md`.
+- Việc tiếp: anh verify Ctrl+V trong session ru.cmd thật; duyệt commit → commit/push; **@mention CHƯA làm** — hỏi lại anh vì paste đã fix (mục đích gốc của mention là workaround paste); port 4 fix park + deploy tag vẫn hoãn.
+- Quyết định: paste luôn phải vào composer — route theo `MostFocused` thay vì `Navigation.GetFocused()` (TG có thể trỏ vào container). Giữ `/paste` + Ctrl+Shift+V làm đường phụ.
+- Notes công cụ: `AttachConsole(pid)+WriteConsoleInput` inject được input không cần window focus (dùng cho mọi test TUI sau này); PS 5.1 không có `&&`; scan chuỗi .NET trong DLL phải tìm byte UTF-16LE (đừng đọc cả file bằng Encoding.Unicode — lệch alignment); probe nhớ guard `GetForegroundWindow() == window` trước mọi SendKeys (lần đầu không guard đã bắn phím nhầm vào cửa sổ foreground — đã xin lỗi anh).
+
+## 2026-10-19 (tiếp 5) — Log anh giải mã: Ctrl+V KHÔNG tới app trong terminal thật; thêm Ctrl+Shift+V + lệnh /paste; CHƯA commit
+
+- Log lần anh chạy probe (9:21-9:22): app NHẬN keys bình thường (`/`, Backspace, "Exit", Enter) nhưng **KHÔNG có event code=86 (V+Ctrl)** — Ctrl+V bị terminal nuốt trước khi tới app. Duy nhất 1 event lạ `code=1073741895` = **G+Ctrl** (0x40000047) tại 09:22:16.798 — chưa giải mã được nguồn gốc (VK G; khả năng anh bấm nhầm hoặc terminal chuyển phím lạ).
+- Trạng thái xung quanh: clipboard anh có text 29 ký tự (không rỗng); KHÔNG có PowerToys/Unikey/EVKey/ShareX chạy; WT settings.json có mặc định `ctrl+v → Terminal.PasteFromClipboard`; registry `HKCU:\Console\%%Startup` trống (default terminal = WT trên Win11).
+- Nhánh còn nghi: (1) FOCUS không ở cửa sổ probe lúc anh bấm (double-click tab không nhắm), (2) terminal/layer nào đó chuyển phím khác.
+- Vá tính năng sẵn: **Ctrl+Shift+V** routing cùng đường _paste (TgChatKeyboardBindings); **/paste** slash command → ClipboardAttachAsync (catalog + dispatcher Chat.cs ~2323); test Theory hai biến thể phím. Suite **1496/1496**; publish CLI mới nhất 02:17-stamp→02:2x (đường backend-dotnet publish).
+- Kế tiếp: giao anh thử LẦN 2: click BÊN TRONG cửa sổ probe trước (focus), copy text tươi, bấm Ctrl+V nhiều lần, rượt nốt Ctrl+Shift+V và gõ `/paste`+Enter. Sau đó em đọc log: nếu có code=86/87 → phím tới (superhype focus lần trước); nếu vẫn không → quay lại G+ctrl phân tích mapping.
+
+## 2026-10-19 (tiếp 4) — Paste probe TỰ CHẠY THÀNH CÔNG trên máy (conhost): app-side 100% sống; nghi terminal của anh
+
+Đã làm:
+- Tự chạy probe trên máy anh (không cần anh làm gì): `Temp\opencode\ru-paste-probe.cmd` (title `ru-paste-probe`, RU_TUI_DEBUG=1, `agent chat`) + conhost + FindWindow/SendKeys ^v.
+- KẾT QUẢ (2 lần, lần 2 trên publish đã vá attach-feedback): Log chín bậc thang — `keys code=1073741910 rune=0 ctrl=True` (Ctrl+V ĐẾN app) → `paste routed to handler` → `text read: length=18/14` (Set-Clipboard "probe-paste-140600") → `inserted N characters`. Ảnh chụp `Temp\opencode\probe-conhost.png`: text "probe-paste-140600" HIỆN trong composer, con trỏ sau nó.
+- **Kết luận**: tầng phím (TG KeyDown → bindings), tầng clipboard (CliClipboard Win32), tầng insert (TryInsertDraft → render) ĐỀU HOẠT ĐỘNG khi TUI chạy trong conhost. Cái không hoạt động chỉ là khi anh bấm Ctrl+V ở terminal THẬT của anh.
+- Kiểm chứng thân terminal: WT/AppActivate FAILED (cửa sổ console thuộc conhost/WT, không PID cmd) — KHÔNG gửi phím nguy into tab anh trên WT (dừng hướng đó); AppActivate пыт forma failed.
+- Vá thêm (publish mới): THÀNH CÔNG attachN + các lỗi attach (image_too_large/model_vision_unsupported/unsupported_attachment) giờ HIỆN lên hint row khi tgMode (`ShowPasteFeedback` + `WriteAttachFeedbackAsync`), không còn đường _err vô hình nào lại paste/attach.
+- Đang dở (khi anh phản:focus): (a) Anh bấm Ctrl+V trong probe.cmd NHƯ CHÍNH ANH bấm: nếu probe window mở bằng WT (double-click .cmd theo default terminal) và vẫn trơn → log sẽ ghi `keys` KHÔNG có → terminal nuốt Ctrl+V chắc chắn; nếu có keys nhưng không insert → chi tiết clipboard đọc thấy gì (path? length?). (b) Hỏi anh copy GÌ (text hay ảnh/chụp màn hình) — đường ảnh attach khác text.
+- Note kỹ thuật: log "keys code=1073741910 rune=0 ctrl=True" = 0x40000056 (V, ctrl) — phím đúng; conghwith paste area chi tiết đã đủ vết cho ba nhánh (routed/read/insert).
+- Câu trả lời cũng lộ nguyên nhân dễ nhầm: `set RU_TUI_DEBUG=1` ở một cửa window cmd khác thì KHÔNG theo qua cửa sổ chạy ru.cmd — lần anh chạy trước log vừa trống vì vậy; dùng đúng file probe.cmd (env nội thu) để khỏi lệ prih.
+
+## 2026-10-19 (tiếp 3) — Ctrl+V không paste: visibility + retry + instrument, CHƯA commit, cần anh verify
+
+Đã làm:
+- Anh báo: copy gì vào clipboard rồi Ctrl+V không paste vào prompt TUI.
+- Trạng thái code: `TgChatKeyboardBindings` nuốt `Key.V.WithCtrl` → `TgChatLoop.Paste()` → `ClipboardAttachAsync` (Chat.cs) — đọc clipboard BẰNG TỚ (CliClipboard, không phải TG clipboard): ảnh trước (CF_DIB/CF_DIBV5/CF_DROP), text fallback qua `TryReadText`.
+- Ba lỗ hổng đã vá:
+  1. `TryReadText` mở clipboard **1 lần duy nhất** — fail (clipboard bị app khác giữ) → return null im lặng. Đã thêm `OpenClipboardWithRetry` (5 lần × 80ms, giống hình thức đường ảnh) dùng chung cho TryReadText + ReadSta.
+  2. Các failure paste (clipboard trống ảnh/hông có text) ghi vào `_err` = stderr → **vô hình khi TUI chạy** — anh sẽ thấy "không có gì xảy ra". Sửa: đường TG báo lỗi lên hint row (`ShowPasteFeedback`), đường classic giữ nguyên `_err`.
+  3. `Paste()` handler chưa wire → nuốt phím im lặng; giờ hiện "paste unavailable" + TuiDebug.
+- Instrument (RU_TUI_DEBUG=1): area `keys` (code/rune/ctrl) + area `paste` — image read path/error, text read length, inserted N chars, routed/unavailable. File log default `%TEMP%\ru-tui-debug.log`.
+- Test mới: `Ctrl_v_with_a_wired_paste_handler_routes_to_it_and_keeps_the_draft_unchanged` (headless InjectKey — phím tới View, handler chạy, draft không bị	Editor tự insert). Suite CLI **1495/1495**; `build.bat` 11/11.
+- Giả thuyết còn mở (chỉ live terminal kết luận): (a) WT/terminal tự tiêu thụ Ctrl+V thì phím KHÔNG tới app — sẽ thấy log `keys` trống khi bấm; (b) clipboard đọc fail — log `text read: length=0`; (c) đã tới + đọc OK mà không insert — log inserted thiếu. Đang dở: đợi anh chạy binary mới — nếu vẫn không paste, chạy với `RU_TUI_DEBUG=1` rồi gửi tail của `%TEMP%\ru-tui-debug.log`.
+- 7 file dirty: TgChatLoop.cs, AgentCommands.Chat.cs, CliClipboard.cs, TgPromptInteractionTests.cs.
+
+## 2026-10-19 (tiếp 2) — Data-tone + prompt contract ĐÃ commit + push
+
+- `4d927c7a feat(tui): deterministic data tone for numbers and file paths` (TgAnsiPaint/TgTranscriptView/TgAnsiPaintTests)
+- `c205a050 feat(prompt): teach the core contract when emphasis is meaningful` (RuAgentPromptBlocks + fixture golden + CHANGELOG)
+- Golden parity refresh bắt buộc khi đổi persona block: fixture `tests/fixtures/python-csharp-phase1-baseline.json` case `prompt.basic` chốt `prompt_sha256` + digest `ru.persona`; giá trị mới sinh bằng console tạm replicate `LoadPromptContext` (chỉ 2 giá trị đổi, block còn lại giữ nguyên — xác nhận qua dump). Công cụ tạm ở Temp\opencode\pdump (có thể xoá).
+- Verify lúc commit: Harness.Core.tests 492/492 (golden mới), CLI 1494/1494, `build.bat` 11/11. Branch `feat/tg-markdown-highlight` đồng bộ origin `cb337309..c205a050`. MEMORY.md vẫn untracked.
+
+## 2026-10-19 (tiếp) — Data-tone pass (tô số/path) + formatting contract trong prompt, CHƯA commit
+
+Đã làm:
+- Anh xác nhận "tính năng ổn" nhưng model (nemotron-3.5-super-vl:free) dùng markdown "cho có lệ" — data quan trọng không lên màu vì model không bọc.
+- **Data-tone pass** (renderer, deterministic): `TgAnsiPaint.Decorate(text, spans)` — regex `\b\d{1,3}(?:,\d{3})+\b` → `Brand` xanh dương (số ngăn cách dấu phẩy: giá/tiền), regex file-path ext whitelist (md/json/cs/ps1/cmd/bat/txt/yml/yaml/toml/ini/log…) → `Brand2` tím; CHỈ tô lại các đoạn span mang attr Ink (đã bold/code thì bỏ qua); text không đổi chỉ tách boundary; ngày `19/10/2026`, decimal `2.86%` KHÔNG đụng (tránh nhiễu). Nối vào: `TgTranscriptView.Append` (gate: Prose && !startWith(' ') && !contains '│') + `RebuildWrapped` bảng (`TuiMarkdownTable` row cell đã strip → decorate trực tiếp). 6 test mới trong `TgAnsiPaintTests.cs`; full CLI suite **1494/1494**; `build.bat` 11/11.
+  - Lưu ý: materialize Decorate là pass thuần (không gate), gate do caller quyết; chunk đang stream KHÔNG tô (tô khi line commit).
+- **Formatting contract** (prompt, ảnh hưởng CẢ GUI lẫn CLI): thêm 2 câu vào `RuAgentPromptBlocks.CoreContract` (Harness.Core — được phép; Persistence không đụng): dạy model khi nào dùng Markdown — heading cho section, bold CHỈ số/quyết định/thay đổi quan trọng, inline code cho path/command/tên model/identifier, bảng khi data có rows+columns, và giữ plain cho chào/question 1 dòng. Màu là việc của renderer — prompt chỉ dạy ngữ nghĩa. Patch của test: chỉ chốt block ID (`ru.persona` đứng đầu), test `Match the user's language` là Contains → thêm câu an toàn. Prompt tests 32/32, ModelStepServiceTests 71/71, `build.bat` 11/11 (Harness.Core rebuild).
+- CHANGELOG: thêm 2 bullet (`feat(tui)` data-tone, `feat(prompt)` core contract).
+- GUI có `MarkdownBlock/MarkdownEngine` (CommonMark đầy đủ) → prompt contract có lợi cho cả 2 mặt, không dại chữ.
+
+Việc treo: port 4 fix park; deploy (tag) vẫn hoãn; toàn bộ thây trên (data-tone + prompt contract) CHƯA commit — đợi anh duyệt.
+
+Quyết định: bảng màu,data: số comma-group → Brand xanh dương; path → Brand2 tím; đã bold/code/heading model tự tô → giữ nguyên; ngày/decimal/percent trơn.
+
+## 2026-10-17 (tiếp) — Branch + push + sync dev
+
+Đã làm:
+- Tạo branch `feat/tg-markdown-highlight` từ dev `530f0f25`, commit feature `4390b92c` (8 file, +1071/-55), push + tracking origin.
+- Sync `origin/dev` mới nhất `862ffca4` (8 commit: parallel sessions, full_access literal, re-trust workspace, refactor TUI bỏ inspector/tree/rewind, 请 fix tui replies/replay) bằng merge.
+- Conflict duy nhất: `CHANGELOG.md` (giữ entry của feature + entry của dev). Code auto-merge sạch nhưng gây 1 lỗi build: `TgTranscriptView.ReplaceToolRow` (code replay/regenerate mới của dev) dùng tuple 2 phần tử — đã shape thành `TgTranscriptRow` trong commit `da9e7c87`, push lên.
+- Verify sau merge: CLI suite **1483/1483** pass (thêm test replay của dev), `build.bat` 11/11 xanh.
+- `MEMORY.md` giữ untracked (không commit).
+
+Đang dở: vẫn còn việc port 4 fix park từ `backup/cli-park-local` — dev mới vẫn chưa có `/release`, `StreamEventsAsync` vẫn treo khi park (chưa kiểm lại trên `862ffca4`).
+
+Quyết định quan trọng: branch làm việc chính bây giờ là `feat/tg-markdown-highlight` (đã chứa dev mới nhất). `dev` local vẫn ở `530f0f25` — nếu muốn chạy từ dev phải pull riêng.
+
+## 2026-10-17 (tiếp 2) — Bug "trả lời mất highlight" do anh báo, đã tìm ra + fix, CHƯA commit
+
+Đã làm:
+- Anh báo: ở TUI, phần trả lời của prompt gần nhất chưa highlight data quan trọng.
+- Nguyên nhân thật (bằng chứng code): `TuiTranscript.RecoverAssistantTurnAsync` (TuiTranscript.cs:168) render đầy đủ màu rồi đưa qua `ITranscriptTurnRewriter`, NHƯNG `TgTranscriptWriter.ReplaceAssistantTurnAsync` lại `TuiText.Strip` sạch → `TgTranscriptView.ReplaceProseSince` thay block stream bằng row PLAIN. Đường này chạy khi reply bị reconcile/recover (stream thiếu đoạn, truncation, serta fix "recover completed reply from durable text" của dev mới) — đúng triệu chứng lượt gần nhất của anh.
+- Fix: `ReplaceAssistantTurnAsync` parse painted rows qua `TgAnsiPaint.Parse` → `TgTranscriptRow(clean, Prose, spans)`; `ReplaceProseSince` nhận `IReadOnlyList<TgTranscriptRow>` và Append kèm spans. Guard/timeout/`_projectedRow=false` giữ nguyên.
+- Test mới (red→green) trong `TgTranscriptWriterTests.cs`: `RecoveredReplyKeepsItsMarkdownSpans` (stream từng mảnh cắt giữa ** marker → reconcile → assert bold `0.007347 USD` + code `models` vẫn còn spans, replace không duplicate) + `RecoveredPlainReplyStaysPlainWithoutRawMarkers` (plain → spans null, không rò rỉ `**`).
+- Full CLI suite 1485/1485; `build.bat` 11/11; CHANGELOG thêm bullet fix(tui).
+- CHƯA commit fix này — đợi anh duyệt (tree đang dirty: TgTranscriptView.cs, TgTranscriptWriter.cs, TgTranscriptWriterTests.cs, CHANGELOG.md).
+
+## 2026-10-19 — Lỗi "raw JSON bước tool-call in ra màn hình" (ảnh anh gửi), fix ở CLI recovery, CHƯA commit
+
+Đã làm:
+- Anh gửi ảnh: sau tool row, 3 bản JSON step thô (`{"text":null,"tool_calls":[...],"finish_reason":"tool_calls","usage":...}`) xuất hiện như văn bản trả lời.
+- Chuỗi nguyên nhân: chat ghi ref của MỌI `model.step_completed` (Chat.cs:~1208) kể cả step thuần tool-calls; cuối lượt `RecoverMissingAssistantTextAsync` kéo payload về — với step tool-only `GetPayloadAsync` trả về chính bản ghi step JSON → join vào `full`/`completeSteps` → in raw JSON như reply. Bối cảnh làm nó xuất hiện: stream delta đứt (park/transient) nên recovery chạy.
+- Fix CLI (không đụng backend host): `AssistantTextReconciler.ProsePayloads` lọc payload là step record (object JSON có cả `tool_calls` + `finish_reason`) — mọi thing còn lại giữ nguyên (prose mở ngoặc `{`, JSON reply, mảng, markdown đều sống, kể cả JSON hỏng). Nó vào trong `RecoverMissingAssistantTextAsync`: gom fetched trước rồi lọc, TuiDebug log số payload bị bỏ.
+- Test mới trong `AssistantTextReconcilerTests.cs`: step record (text null + text có) bị bỏ; prose/JSON reply/mảng/brace hỏng sống; (fixture: James khôi phục `const string streamed ... files";` trong test cũ bị tôi lỡ tay phá khi dò ngôn ngữ).
+- Verify: AssistantTextReconciler+TgTranscript 55/55; full CLI suite **1488/1488**; `build.bat` 11/11.
+- ĐÃ commit + push (theo yêu cầu anh): `3ad69ebb fix(tui): keep markdown paint through reply reconciliation` + `cb337309 fix(agent): drop step records from reply recovery` lên `feat/tg-markdown-highlight` (origin đã đồng bộ `da9e7c87..cb337309`). Change log 2 bullet fix trong commit 2.
+- Chưa xác nhận: highlight "data quan trọng" trong TUI thực tế — anh bảo vẫn chưa thấy màu; vẫn tồn tại nghi vấn phần reply anh nhìn là đường replay/attach/replace khác hoặc model không bao bọc data bằng markdown. Sau khi anh chạy thử lại trên binary mới nếu vẫn trơn, em sẽ soi lại đường `message` (Chat.cs:~1491) và `TuiEventRenderer` thực nhận.
+- Deploy (tag/release) hoãn theo yêu cầu anh cho tới khi anh kiểm lỗi xong.
+
+
+
+## 2026-10-17 — Tính năng "metadata" (markdown highlight trong TG chat)
+
+Đã làm (branch `dev`, base `530f0f25`, CHƯA commit):
+- Tính năng hoàn chỉnh + test + build: markdown của model giờ giữ màu trong chat TG (`agent chat`).
+- Nguyên nhân gốc: `TgTranscriptWriter` (bridge) strip sạch palette escape trước khi `TgTranscriptView` vẽ; renderer upstream (`TuiMarkdown`, `HighlightCode` đã bật cho TG tại `AgentCommands.Chat.cs:2743`) paint đầy đủ nhưng màu chết ở cầu nối.
+- Cách sửa:
+  - Mới: `RuAgent.Cli\TerminalGui\TgAnsiPaint.cs` — `TgSpan(string, Attr)` + parser SGR (truecolor/256/16/bold/dim/reset, escape lạ bỏ vô hình, không style nào → trả spans null về đường plain) + `WordWrapSpans`/`HardWrapSpans` (slice spans theo range ký tự, spans phủ cả text row).
+  - `TgTranscriptView(.Blocks).cs` — row model đổi thành record `TgTranscriptRow(string Text, TranscriptStyle Style, IReadOnlyList<TgSpan>? Spans)`; `Append/AppendChunk/ReplaceTail` có overload kèm spans; `DrawRow` vẽ theo span khi có (pattern của live row); span rows wrap qua span-aware (prose word-wrap, gutter/khác hard); bound cắt chữ thì `FitSpans` clip + pad ink cho phần '…'.
+  - `TgTranscriptWriter.cs` — `Parse` thay `Strip` tại ProjectLine/CommitStream/EmitLine; `Emit(text, spans, style, append)`; preview stream giữ nguyên hành vi (trơn khi stream, có màu khi dòng hoàn tất).
+  - `Tui\TuiMarkdown.cs` 3 điểm paint cho khớp bảng màu chốt: inline code `Brand2`(tím) → `Ok`(xanh lá); inline bold quấn `Paint(..., Bright)`; heading quấn `Paint(..., Warn)` (cấp 1 vẫn bold). Màu None → Code() rỗng → sequential không đổi byte.
+  - Dim không có TextStyle → parser blend fg 50% về bg.
+- Đang dở: không — feature xong. Việc treo từ trước: port 4 fix park từ `backup/cli-park-local` (agent run treo ở park, `/release`, quota-vs-throttle, repeat-park copy) — user nói code cũ không cần commit/push, port bằng tay khi user yêu cầu lại.
+- Quyết định quan trọng:
+  - Anh chốt qua brainstorming: A (markdown model output), chỉ TG, bảng màu = đậm sáng `#eeeeee`, code xanh `_Ok #7fd88f_`, heading vàng `#f5a742`(+bold), fence bật `TuiCodeHighlight`. Skill `TuiCodeHighlight`/bullet/keyword trong block KEEPS `Brand2` (không đụng).
+  - `Palette256/Basic16` của palette là xấp xỉ xterm — parser ánh xạ theo chỉ số chuẩn, KHÔNG phải token RGB (test đã ghi chú).
+  - Không đụng: `RuAgent.Harness.Persistence` (backend GUI), sequential `--classic`, bảng `TuiMarkdownTable`.
+- Verify: full CLI suite 1462/1462 pass; TG subset 43/43; `Tui*` 608/608; `build.bat` 11/11 xanh; smoke `agent run` thật (model `nvidia/nemotron-3-ultra-550b-a55b:free`) completed.
+- Cấu hình model hiện tại: backend `models.dev:openrouter`, model `nvidia/nemotron-3-ultra-550b-a55b:free` (free thật; số dư OpenRouter 0.007347 USD không bị trừ khi chạy 11 model free).
+- Lỗi PowerShell cần nhớ: `--trust-workspace` là FLAG, prompt là arg cuối (`agent run --workspace X "prompt" --trust-workspace`).

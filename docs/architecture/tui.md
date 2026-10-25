@@ -15,7 +15,8 @@ that settlement before disposing the API client; UI completion alone does not
 mean the pending run is unowned.
 
 The terminal is a compact coding surface: chat, inline tool activity and expandable
-errors/diffs, approvals, attachments, session/model selection and run recovery.
+errors/diffs, approvals, attachments, session/model selection, run recovery and
+background terminal task inspection/control.
 The header retains its live context meter. Plans appear as compact completed/total
 counts in the transcript; there are no separate activity, todo, changes or project-file
 browser panels. Prompt history remains available with Up/Down. Detailed inspection
@@ -114,3 +115,34 @@ Document modal bounds follow the wrapped body height plus card chrome, capped by
 the available window height. The wrap cache is shared by measurement and drawing;
 content replacement requests layout, and resize clamps the scroll offset against
 the new page size. The popup does not clear background cells outside its card.
+
+`ask_user` in Terminal.Gui uses a native modal answer editor. Suggested options fill
+the editor without submitting; only Enter confirms. Text paste and Unicode/newlines
+remain answer text, never slash commands. The composer draft/cursor survives the
+modal. Escape defers the question and pauses queued prompts without cancelling the
+Host run; `/follow` remains available while the queue is paused.
+`ChatInputWorkflow` checks the exact run/session and waiting-input snapshot before
+and after editing, sends once through `AgentApiClient.AnswerAsync`, and deduplicates
+acknowledged input events. The Host retains consume-once and policy authority.
+Retained input recovery uses a finite replay (2048 events, 64 KiB per frame, four
+seconds), requires matching run/session/event identity and the summary cursor, then
+refreshes the run before opening the editor. Missing/stale questions fail visibly;
+uncertain POSTs never trigger an automatic retry. Sequential/JSON paths retain the
+out-of-band answer command and do not consume stdin on behalf of the question.
+
+`ChatTaskWorkflow` implements `/tasks [run-id]` and `/tasks kill <execution-id>` using
+the existing typed Host command API, with no execution or policy logic in the UI.
+It captures session/run identity before awaiting, verifies membership before each
+command, filters foreground entries, sanitizes labels and refuses malformed lists.
+Interactive stop defaults to keep; after confirmation a fresh list must still show
+the exact background execution running. A stop acknowledgement is reported as a
+request, never fabricated final completion. Errors and uncertain POSTs do not retry
+automatically. Broker absence is an explicit failure, not an empty success.
+
+Terminal.Gui has one bounded task-control operation independent of the model turn
+and submission queue. It bypasses attachment snapshot/admission, blocks overlapping
+submissions until finished, and cancels/drains on shutdown. Escape during its fetch
+cancels task control rather than the model. It adds no timer or periodic network
+traffic: refresh is an explicit picker action. Modal request serialization is shared
+with native questions and approval/trust prompts, preventing one panel's response
+from resolving another panel's waiter. Sequential and JSON remain nonmodal adapters.

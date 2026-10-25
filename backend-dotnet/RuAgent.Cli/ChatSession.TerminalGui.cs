@@ -29,6 +29,7 @@ public sealed partial class AgentCommands
         {
             var loop = new TgChatLoop(tgWindow!, cancellationToken);
             tgLoop = loop;
+            loop.SetTaskCommandHandler((argument, token) => ShowTasksAsync(argument, token));
             loop.SetShutdownSettlement(runSession.WaitForRunSettlementAsync);
             var guiDispatcher = new ChatLineDispatcher(
                 HandleSlashLineWithDocumentAsync,

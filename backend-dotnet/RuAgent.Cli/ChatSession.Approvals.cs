@@ -71,6 +71,13 @@ public sealed partial class AgentCommands
         /// </summary>
         async Task<string> RunTgPanelAsync(Action show, CancellationToken panelToken)
         {
+            await tgWindow!.ModalRequestGate.WaitAsync(panelToken).ConfigureAwait(false);
+            try { return await RunTgPanelCoreAsync(show, panelToken).ConfigureAwait(false); }
+            finally { tgWindow.ModalRequestGate.Release(); }
+        }
+
+        async Task<string> RunTgPanelCoreAsync(Action show, CancellationToken panelToken)
+        {
             var decision = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             void OnConfirmed(string value) => decision.TrySetResult(value);
             void OnCancelled() => decision.TrySetResult(Tui.ApprovalPrompt.Deny);
@@ -79,6 +86,7 @@ public sealed partial class AgentCommands
             {
                 tgApp!.Invoke(() =>
                 {
+                    if (decision.Task.IsCompleted) return;
                     tgWindow!.PanelConfirmed += OnConfirmed;
                     tgWindow.PanelCancelled += OnCancelled;
                     show();

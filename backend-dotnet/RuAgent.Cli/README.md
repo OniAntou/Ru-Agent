@@ -200,6 +200,32 @@ agent rpc
 - `trust` wraps `POST /agent/v1/runs/{runId}/trust`.
 - `approve` and `deny` wrap `POST /agent/v1/runs/{runId}/approvals/{approvalId}` with `allow_once`, `allow_session_directory` (external folders only), `allow_always` (authorizes once and remembers a bounded pattern as a durable project rule — a terminal command prefix, or an approved external folder as a path pattern; `rule_asks` and `terminal_protected_path_requires_approval` are refused and degrade to `allow_once`), or `deny`. The Host picks the right one-time token from the pending binding (session-scoped directory grant for `external_directory_required`, ephemeral token for `terminal_external_cwd_requires_approval`, `terminal_protected_path_requires_approval`, or `rule_asks`). Any allow also remembers the approved intent in the Host's in-process session ledger (the durable pattern when one was saved, the exact intent otherwise), so a later matching call in the same session authorizes without another prompt (the memory dies with the session or a host restart; external-directory approvals keep the session grant plus the durable rule and write no ledger entry). The interactive approval offers the session folder and the project remember for `external_directory_required`. `terminal_timeout_requires_approval` remains the standard-window gate below `full_access` and `web_approval_required` remains a compatibility reason for explicit ask rules; timeout above the protocol hard maximum is denied. `agent approve --always` sends `allow_always`; no reusable approval token is ever created. Approval is first-writer wins; second concurrent response returns `approval_stale` (409). `--json` cannot confirm approval.
 - `answer` wraps `POST /agent/v1/runs/{runId}/inputs/{inputId}` with the user's answer to an `ask_user` question (1..8192 characters). Without the answer argument it prompts; `--json` requires the argument because it must never prompt, and prints a versioned envelope carrying `run_state`. A replayed, foreign, or already-answered input id returns `input_stale` (409), an unknown run `run_not_found` (404), and an invalid body `invalid_answer` (400).
+
+Interactive Terminal.Gui chat opens `ask_user` questions inside Ru. Tab/Shift+Tab
+cycles suggestions into an editable answer; Enter sends, Ctrl+J/Shift+Enter adds a
+newline, and PageUp/PageDown scrolls a long question. Free text and text paste are
+supported without a suggested option. Escape closes the question without answering
+or cancelling the run and pauses queued prompts. `/follow [run-id]` reopens the
+pending question, including after reopening its session. Answers use the existing
+run/input endpoint and never create a new prompt or change the run's model/preset.
+Stale or uncertain submissions stop for explicit `/follow` recovery instead of
+retrying automatically. Sequential and JSON chat keep the external `agent answer`
+flow; JSON never opens an input panel.
+
+`/tasks` opens the session's background terminal task list, including while a model
+turn streams. Rows show the process label, execution ID, state and available exit
+code. Select a running row, choose **Stop task** (the default is **Keep running**),
+and refresh to observe its final state. Finished rows have no stop action. **Refresh**
+reloads on demand; there is no background polling. Escape closes the current panel.
+`/tasks kill <execution-id>` targets one task directly with the same interactive
+confirmation; `/tasks <run-id>` selects a run in the current session, useful after
+reopening a session. With no retained target, Ru discovers the newest session run.
+Missing Broker/gateway state is reported as unavailable, not an empty task list.
+The task control lane preserves pending attachments and the active model run/queue.
+While task control is open, finish it before submitting another command or prompt.
+Sequential/JSON chat lists tasks as text/JSON; an explicit `kill` argument sends the
+stop without reading stdin. All operations use the existing Host command endpoint
+and Broker session registry; the CLI never kills local process IDs itself.
 - `policy list` wraps `GET /agent/v1/policies` (scope filter). `policy import --global FILE` validates versioned JSON (rejects unknown version/fields, normalizes and displays matchers/decision before confirmation) and posts each rule with `X-Interactive-Confirmed: true`; sensitive matcher values are encrypted at rest via Host API. `--json` cannot bypass confirmation. `policy remove` wraps `DELETE /agent/v1/policies/{ruleId}` and requires interactive confirmation for global rules.
 - `cancel`/`continue`/`status` are thin HTTP wrappers.
 - `run` and `attach` return exit 2 at a current durable `waiting_user` or `reconciliation_required` boundary. The run stays parked on the Host; use `ru agent continue <run-id>` or `ru agent cancel <run-id>`. Historical park events from a resumed run do not detach the follower. Under `--json`, stdout remains NDJSON and human recovery guidance goes to stderr.

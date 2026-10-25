@@ -18,6 +18,7 @@ public static class ChatCommandCatalog
         new("/sessions", "Switch or delete sessions", "/sessions [query]"),
         new("/resume", "Resume a session", "/resume [session-id]"),
         new("/subagents", "View child tasks and results", "/subagents [run-id] [agent result [version]]"),
+        new("/tasks", "View and stop background terminal tasks", "/tasks [run-id] | /tasks kill <execution-id>"),
         new("/follow", "Follow a retained run", "/follow [run-id]"),
         new("/retry", "Retry the last held submission", "/retry"),
         new("/delete", "Delete another session", "/delete [session-id]"),

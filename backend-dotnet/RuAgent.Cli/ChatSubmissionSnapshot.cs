@@ -22,6 +22,7 @@ internal sealed record ChatSubmissionSnapshot(
     {
         var command = line.TrimStart().Split(' ', 2)[0];
         return command.Equals("/retry", StringComparison.OrdinalIgnoreCase)
+            || command.Equals("/follow", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/backend", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/model", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/key", StringComparison.OrdinalIgnoreCase)

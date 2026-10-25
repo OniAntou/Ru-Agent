@@ -112,7 +112,9 @@ public sealed partial class AgentCommands
 
                     await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
                     runSession.RememberFollowable(candidateRunId);
-                    var followNotice = string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase)
+                    var followNotice = string.Equals(run.Status, "waiting_input", StringComparison.OrdinalIgnoreCase)
+                        ? $"run {candidateRunId} is waiting for an answer · use /follow {candidateRunId}"
+                        : string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase)
                         ? $"run {candidateRunId} is waiting for approval · use /follow {candidateRunId}"
                         : $"run {candidateRunId} is still running · attach with 'ru agent attach {candidateRunId}' or follow with '/follow {candidateRunId}'";
                     if (cmd.Json)

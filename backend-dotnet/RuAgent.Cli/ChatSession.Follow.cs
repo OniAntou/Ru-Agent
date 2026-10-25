@@ -297,6 +297,11 @@ public sealed partial class AgentCommands
                             var envelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
                             if (envelope is not null && envelope.EventType == "input.requested")
                             {
+                                if (tgMode)
+                                {
+                                    await AnswerInputInTgAsync(envelope, runId, frameCt).ConfigureAwait(false);
+                                    return;
+                                }
                                 var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : runId;
                                 var request = await ReadInputRequestAsync(targetRunId, envelope.PayloadRef, frameCt).ConfigureAwait(false);
                                 if (request is { } parkedInput)
@@ -578,6 +583,31 @@ public sealed partial class AgentCommands
 
             runSession.RememberFollowable(targetRunId);
             var pendingApproval = default(RuAgent.Protocol.Harness.HarnessSafeEventEnvelope);
+            var pendingInput = default(RuAgent.Protocol.Harness.HarnessSafeEventEnvelope);
+            if (string.Equals(run.Status, "waiting_input", StringComparison.OrdinalIgnoreCase))
+            {
+                var recovery = await ChatRunWorkflow.ReadPendingInputAsync(_sseClient, run, cancellationToken).ConfigureAwait(false);
+                if (recovery.Error is not null || recovery.Pending is null)
+                {
+                    await WriteDiagnosticLineAsync(_err, recovery.Error ?? "input_recovery_incomplete: pending question unavailable").ConfigureAwait(false);
+                    return;
+                }
+                if (!tgMode || cmd.Json)
+                {
+                    var request = await ReadInputRequestAsync(targetRunId, recovery.Pending.PayloadRef, cancellationToken).ConfigureAwait(false);
+                    await WriteDiagnosticLineAsync(_err, request is { } input
+                        ? DescribeInputRequest(targetRunId, input.InputId, input.Question, input.Options)
+                        : "input_request_unavailable: pending question unavailable").ConfigureAwait(false);
+                    return;
+                }
+                var refreshed = await _agentClient.GetRunAsync(targetRunId, cancellationToken).ConfigureAwait(false);
+                if (!ChatRunWorkflow.SameSnapshot(run, refreshed))
+                {
+                    await WriteDiagnosticLineAsync(_err, "input_stale: run changed during question recovery · use /follow again").ConfigureAwait(false);
+                    return;
+                }
+                pendingInput = recovery.Pending;
+            }
             if (string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase))
             {
                 var recovery = await ChatRunWorkflow.ReadPendingApprovalAsync(_sseClient, run, cancellationToken).ConfigureAwait(false);
@@ -614,6 +644,8 @@ public sealed partial class AgentCommands
 
             try
             {
+                if (pendingInput is not null)
+                    await AnswerInputInTgAsync(pendingInput, targetRunId, runSession.Token).ConfigureAwait(false);
                 if (pendingApproval is not null)
                 {
                     var decision = await RequestApprovalAsync(

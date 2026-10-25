@@ -407,6 +407,12 @@ public sealed partial class AgentCommands
             var slashCmd = parts[0].ToLowerInvariant();
             var arg = parts.Length > 1 ? parts[1].Trim() : null;
 
+            if (slashCmd == "/tasks")
+            {
+                await ShowTasksAsync(arg, cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+
             if (slashCmd == "/preset")
             {
                 await ChangePresetAsync(arg).ConfigureAwait(false);

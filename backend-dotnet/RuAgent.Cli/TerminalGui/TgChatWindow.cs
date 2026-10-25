@@ -14,7 +14,7 @@ namespace RuAgent.Cli.TerminalGui;
 /// State changes go through this facade so the run loop never touches views.
 /// Slash suggestions and approval/trust/picker/secret panels float over the transcript.
 /// </summary>
-public sealed class TgChatWindow : Window
+public sealed partial class TgChatWindow : Window
 {
     private sealed record ModalInputState(string Text, int InsertionPoint);
 
@@ -109,12 +109,18 @@ public sealed class TgChatWindow : Window
 
     public bool IsSlashDropdownOpen => _slashDropdown?.SuperView is not null;
     public bool IsCommandPaletteOpen => _commandPaletteView?.SuperView is not null;
-    public bool IsModalPanelOpen => _panel?.SuperView is not null;
+    public bool IsModalPanelOpen => _panel?.SuperView is not null || _questionPanel?.SuperView is not null;
+    internal SemaphoreSlim ModalRequestGate { get; } = new(1, 1);
     public string CommandPaletteQuery => _commandPalette.Query;
 
     /// <summary>Routes terminal text to the active input without changing a hidden draft.</summary>
     internal bool TryPasteText(string text)
     {
+        if (_questionPanel?.SuperView is not null)
+        {
+            _questionPanel.Paste(text);
+            return true;
+        }
         if (IsCommandPaletteOpen)
         {
             var firstLine = text.Split(['\r', '\n'], 2)[0];
@@ -497,6 +503,12 @@ public sealed class TgChatWindow : Window
 
     public void HidePanel()
     {
+        if (_questionPanel?.SuperView is not null)
+        {
+            Remove(_questionPanel);
+            _questionPanel.Dispose();
+            _questionPanel = null;
+        }
         SetApprovalWaiting(false);
         var inputState = _modalInputState;
         _modalInputState = null;

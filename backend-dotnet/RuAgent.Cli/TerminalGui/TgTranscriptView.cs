@@ -21,7 +21,11 @@ public enum TranscriptStyle
 /// paints that same text as per-run Terminal.Gui attributes for markdown-rendered rows and
 /// always covers the whole text, so a row is either fully span-painted or plainly styled.
 /// </summary>
-internal sealed record TgTranscriptRow(string Text, TranscriptStyle Style, IReadOnlyList<TgSpan>? Spans = null);
+internal sealed record TgTranscriptRow(string Text, TranscriptStyle Style, IReadOnlyList<TgSpan>? Spans = null)
+{
+    // Storage segments of one logical paragraph copy without an inserted newline.
+    internal bool ContinuesPrevious { get; init; }
+}
 
 /// <summary>
 /// Append-only transcript with a tail pin and hard wrap — the Terminal.Gui analogue of the
@@ -125,7 +129,7 @@ public sealed partial class TgTranscriptView : View
         for (var index = _lines.Count - 1; index >= mark; index--)
             if (_lines[index].Style == TranscriptStyle.Prose) RemoveLine(index);
         _wrapWidth = -1;
-        foreach (var row in rows) Append(row.Text, TranscriptStyle.Prose, row.Spans);
+        foreach (var row in rows) Append(row.Text, TranscriptStyle.Prose, row.Spans, row.ContinuesPrevious);
         SetNeedsDraw();
     }
 
@@ -233,6 +237,7 @@ public sealed partial class TgTranscriptView : View
         _lines.Clear();
         _wrapped.Clear();
         _wrapCache.Clear();
+        ResetWrapGroup();
         ClearCollapsedBlocks();
         _wrapWidth = -1;
         _tailRows = 1;
@@ -249,14 +254,16 @@ public sealed partial class TgTranscriptView : View
 
     public void Append(string text, TranscriptStyle style) => Append(text, style, null);
 
-    public void Append(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans)
+    public void Append(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans) => Append(text, style, spans, false);
+
+    private void Append(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans, bool continuesPrevious)
     {
         EnsureWrapped();
         var wasEmpty = _lines.Count == 0;
         var bounded = BoundLine(text);
         var fitted = PrepareRowSpans(spans, bounded, style);
 
-        _lines.Add(new TgTranscriptRow(bounded, style, fitted));
+        _lines.Add(new TgTranscriptRow(bounded, style, fitted) { ContinuesPrevious = continuesPrevious });
         _retainedCharacters += CharacterCount(bounded);
         if (wasEmpty)
         {
@@ -271,7 +278,7 @@ public sealed partial class TgTranscriptView : View
         }
         else if (_wrapWidth > 0)
         {
-            _tailRows = AppendWrapped(_lines[^1].Text, _lines[^1].Style, _lines[^1].Spans, _wrapWidth);
+            _tailRows = AppendViewRow(_lines.Count - 1, _wrapWidth);
         }
 
         MarkOutputUnseen();
@@ -548,6 +555,7 @@ public sealed partial class TgTranscriptView : View
     {
         var oldTop = _followingTail ? Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)) : _scrollTop;
         _wrapped.Clear();
+        ResetWrapGroup();
         var rawRows = _lines.Select(row => row.Style == TranscriptStyle.Prose ? row.Text : string.Empty).ToArray();
         for (var i = 0; i < _lines.Count; i++)
         {
@@ -558,11 +566,12 @@ public sealed partial class TgTranscriptView : View
                 _wrapped.AddRange(table.Select(row => new TgTranscriptRow(row, TranscriptStyle.Prose, TgAnsiPaint.Decorate(row, null))));
                 i += consumed - 1;
                 _tailRows = 0;
+                ResetWrapGroup();
                 AppendCollapsedBlocksAfter(i + 1, summaryTop: null, width);
                 continue;
             }
             var summaryTop = _wrapped.Count;
-            _tailRows = AppendWrapped(text, style, spans, width);
+            _tailRows = AppendViewRow(i, width);
             AppendCollapsedBlocksAfter(i + 1, summaryTop, width);
         }
 
@@ -604,7 +613,7 @@ public sealed partial class TgTranscriptView : View
                 _wrapped.RemoveRange(_wrapped.Count - take, take);
             }
 
-            _tailRows = AppendWrapped(_lines[^1].Text, _lines[^1].Style, _lines[^1].Spans, width);
+            _tailRows = AppendViewRow(_lines.Count - 1, width, replacingTail: true);
             _tailDirty = false;
         }
     }

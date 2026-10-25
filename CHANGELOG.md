@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Reflow long-paragraph storage segments continuously across terminal
+  widths, preserving whitespace, inline styles and quote/list indentation.
+
 - **fix(agent)**: Stop final-prose retry loops for confirmed expected-exit
   mismatches and publish the observed failure without clearing required checks.
   Clarify native argv/exit handling and multiline JSON edit/write arguments.
@@ -54,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **feat(search)**: Allow an explicitly configured JSON search backend with
   bounded structured results and no silent HTML fallback; retain HTML racing
   as the default mode.
+- **perf(tui)**: Separate streaming Markdown projection from tool/lifecycle rendering.
+  Cache settled paragraph chunks and native rows, reparse only unresolved tails,
+  and preserve late Markdown closers, tab columns and bounded history during updates.
+
+- **fix(tui)**: Preserve long assistant paragraphs as bounded native segments instead
+  of clipping their tail at the per-row limit. Replace all preview segments together
+  and copy them as one paragraph, retaining Unicode, Markdown styles and history bounds.
 
 - **fix(tools)**: Clarify file creation versus editing in model guidance and repair
   hints. Keep malformed write activity labeled as Write, and explain that edit

@@ -8,7 +8,7 @@ public sealed partial class TgTranscriptWriter
 {
     private static TgTranscriptRow NativeRow(TranscriptLine row)
     {
-        var column = 0;
+        var column = row.StartColumn;
         var spans = row.Runs.Select(run =>
         {
             var clean = TuiText.SanitizeUntrusted(run.Text);
@@ -31,7 +31,8 @@ public sealed partial class TgTranscriptWriter
         // Unstyled rows retain their native role's default paint; plain prose must
         // not acquire a synthetic span merely because it used the typed transport.
         return new(text, style,
-            row.Runs.All(run => run.Token == TuiToken.Ink && !run.Bold && !run.Dim) ? null : spans);
+            row.Runs.All(run => run.Token == TuiToken.Ink && !run.Bold && !run.Dim) ? null : spans)
+            { ContinuesPrevious = row.ContinuesPrevious };
     }
 
     public void PreviewPresentation(IReadOnlyList<TranscriptLine> rows) => ProjectPresentation(rows, false);
@@ -39,19 +40,21 @@ public sealed partial class TgTranscriptWriter
 
     private void ProjectPresentation(IReadOnlyList<TranscriptLine> rows, bool complete)
     {
-        var native = rows.Select(NativeRow).ToArray();
+        var native = rows.SelectMany(ParagraphRows).ToArray();
         try
         {
             app.Invoke(() =>
             {
-                if (_projectedRow)
-                    transcript.ReplaceTail(native.Length == 0 ? null : native[0].Text,
-                        native.Length == 0 ? TranscriptStyle.Prose : native[0].Style,
-                        native.Length == 0 ? null : native[0].Spans);
-                else if (native.Length > 0)
-                    transcript.Append(native[0].Text, native[0].Style, native[0].Spans);
-                foreach (var row in native.Skip(1)) transcript.Append(row.Text, row.Style, row.Spans);
-                _projectedRow = !complete && native.Length > 0;
+                var unchanged = 0;
+                while (unchanged < Math.Min(_projectedNative.Length, native.Length)
+                    && ReferenceEquals(_projectedNative[unchanged], native[unchanged])) unchanged++;
+                // Do not reinsert stable segments the history budget already evicted.
+                var evicted = Math.Max(0, _projectedNative.Length - _projectedRows);
+                var skip = unchanged >= evicted ? evicted : 0;
+                var visible = skip == 0 ? native : native.Skip(skip).ToArray();
+                var retained = transcript.ReplaceProjectedRows(_projectedRows, visible, unchanged - skip);
+                _projectedRows = complete ? 0 : retained;
+                _projectedNative = complete ? [] : native;
             });
         }
         catch (NotInitializedException) { }
@@ -111,5 +114,5 @@ public sealed partial class TgTranscriptWriter
     }
 
     public Task<bool> ReplaceAssistantPresentationAsync(IReadOnlyList<TranscriptLine> rows) =>
-        ReplaceNativeAssistantAsync(rows.Select(NativeRow).ToArray());
+        ReplaceNativeAssistantAsync(rows.SelectMany(ParagraphRows).ToArray());
 }

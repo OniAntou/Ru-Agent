@@ -132,7 +132,13 @@ public sealed partial class TgTranscriptView
             start--;
         }
 
-        return string.Join(Environment.NewLine, _lines.Skip(start).Take(end - start + 1).Select(row => row.Text));
+        var text = new System.Text.StringBuilder();
+        for (var index = start; index <= end; index++)
+        {
+            if (index > start && !_lines[index].ContinuesPrevious) text.AppendLine();
+            text.Append(_lines[index].Text);
+        }
+        return text.ToString();
     }
 
     /// <summary>Toggles the selected block, defaulting to the newest retained block.</summary>
@@ -217,6 +223,7 @@ public sealed partial class TgTranscriptView
                 continue;
             }
 
+            ResetWrapGroup();
             foreach (var (hiddenText, hiddenStyle) in block.Hidden)
             {
                 _tailRows = AppendWrapped(hiddenText, hiddenStyle, null, width);

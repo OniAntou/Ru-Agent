@@ -64,6 +64,9 @@ Markdown block state advances only on complete raw lines. Terminal.Gui replaces
 the unfinished line preview at up to 30 updates per second, then commits its
 final formatting; retry removes provisional text. Fenced code retains its full
 source line and wraps to the viewport instead of permanently clipping its tail.
+Native streaming retains settled Markdown chunks and reparses the changing tail;
+late closers can still restyle unresolved emphasis, code or links. Settled chunks
+reuse native rows instead of being sanitized, styled and wrapped again for each delta.
 Plain line output waits for newline or Flush before committing Markdown.
 Markdown tables are grouped from retained raw header/separator/body rows, align
 their columns (numeric columns right-align even without a `:` marker, `:---:`
@@ -85,7 +88,12 @@ Running, waiting for approval and paused states show the queued prompt count;
 submission refusals are feedback and do not start a running indicator. The visible history
 retains at most 2,000 rows and 200,000 Unicode characters, with 16,000 UTF-16 units
 per line, including collapsed content; a notice marks discarded history. These are
-rendering limits and do not alter durable model context.
+rendering limits and do not alter durable model context. Long native assistant
+paragraphs use multiple bounded storage segments after Markdown styling and tab
+expansion; copy joins those segments without adding newlines, and display reflow
+continues across storage boundaries. Quote/list indentation and double-space layout
+keep their original whole-row wrapping. Provisional segments
+are replaced together, so preview growth and final commit do not duplicate text.
 
 ## Project context and run continuity
 

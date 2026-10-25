@@ -7,7 +7,8 @@ public enum VerificationCheckStatus { Pending, Passed, Failed, Stale }
 
 public sealed record VerificationCheckEvidence(string Identity, string ProviderCallId,
     string? ExecutionId, int ExpectedExitCode, bool IsVerification,
-    VerificationCheckStatus Status, string Code, string Command, bool InvalidatedDuringExecution = false);
+    VerificationCheckStatus Status, string Code, string Command, bool InvalidatedDuringExecution = false,
+    int? ObservedExitCode = null);
 
 /// <summary>Host-derived original receipt evidence; survives compaction, grants no authority.</summary>
 public sealed partial class RunVerificationEvidence
@@ -37,6 +38,32 @@ public sealed partial class RunVerificationEvidence
         receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero"
         && receipt.ProviderCallId is { } id && _expectedFailures.Contains(ReceiptIdentity(receipt, id));
 
+    public string? DescribeExitMismatch()
+    {
+        var mismatches = Checks.Where(IsConfirmedExitMismatch).ToArray();
+        if (mismatches.Length == 0) return null;
+        var other = Checks.Where(check => (check.IsVerification || check.ExpectedExitCode != 0)
+            && check.Status != VerificationCheckStatus.Passed && !IsConfirmedExitMismatch(check)).ToArray();
+        return "The run could not complete: a declared negative test returned a different exit code.\n\n"
+            + string.Join("\n", mismatches.Take(8).Select(check =>
+                $"- {check.Command.Replace('\r', ' ').Replace('\n', ' ')}: expected {check.ExpectedExitCode}, observed {check.ObservedExitCode}."))
+            + (mismatches.Length > 8 ? $"\n- {mismatches.Length - 8} additional mismatches." : "")
+            + (other.Length > 0 ? "\n\nOther outstanding checks: "
+                + string.Join(", ", other.Take(8).Select(check => check.Code))
+                + (other.Length > 8 ? $"; {other.Length - 8} more" : "") + "." : "")
+            + (Overflowed ? "\nRequired verification capacity was exceeded." : "")
+            + (_programFailure is not null ? "\nProgram effects are not fully recorded; do not repeat uncertain effects." : "")
+            + "\n\nThese checks remain failed. A successful alternative invocation does not change the original result. "
+            + "For a native executable's exact exit code, use run_process; a PowerShell wrapper can return 1 instead. "
+            + "No automatic retry was scheduled for this final report.";
+    }
+
+    public bool HasExitMismatch => Checks.Any(IsConfirmedExitMismatch);
+
+    private static bool IsConfirmedExitMismatch(VerificationCheckEvidence check) => check.ExpectedExitCode != 0
+        && check.Status == VerificationCheckStatus.Failed && check.Code == "expected_exit_mismatch"
+        && check.ObservedExitCode is not null;
+
     public string? DescribePending()
     {
         if (_programFailure is not null) return _programFailure + ": program effects are not fully recorded. Inspect the workspace; do not repeat uncertain effects. Report [BLOCKED].";
@@ -47,31 +74,32 @@ public sealed partial class RunVerificationEvidence
             .Select(check => $"{check.ProviderCallId} ({check.Code}): {check.Command}"))
             + (pending.Length > 8 ? $"; {pending.Length - 8} more" : "")
             + (Overflowed ? "; verification_tracking_limit" : "")
-            + ". Inspecting logs does not satisfy a check. Rerun the same check after repairs or report [BLOCKED].";
+            + (pending.Any(check => check.Code == "expected_exit_mismatch")
+                ? ". An expected-exit mismatch is an observed result, not a transient tool error. Do not keep rerunning a deliberately failing command to force its expected code. A different invocation does not clear the original check. Report the actual exit and use [BLOCKED] for the incomplete outcome."
+                : ". Inspecting logs does not satisfy a check. Rerun the same check after repairs or report [BLOCKED].");
     }
 
     public static RunVerificationEvidence Project(IEnumerable<ModelContextEntry> originalRunEntries)
     {
-        var checks = new Dictionary<string, VerificationCheckEvidence>(StringComparer.Ordinal);
-        var expected = new HashSet<string>(StringComparer.Ordinal);
-        bool overflowed = false;
+        var evidence = new VerificationEvidenceBuffer(MaximumChecks);
         bool hasMutations = false;
         string? programFailure = null;
         foreach (var (entry, proposed) in ExpandProgramEvidence(originalRunEntries, () =>
-            { programFailure = "program_evidence_unavailable"; hasMutations = true; InvalidateChecks(checks); }))
+            { programFailure = "program_evidence_unavailable"; hasMutations = true; evidence.Invalidate(); }))
         {
             var receipt = entry.ToolReceipt!;
             var providerId = receipt.ProviderCallId!;
             bool terminal = proposed.ToolId is "bash" or "powershell" or "run_process" or "terminal_read" or "terminal_stop"
                 && proposed.ToolVersion == "1.0.0";
             bool effect = receipt.Outcome == ToolExecutionOutcome.Succeeded || receipt.SideEffectsPossible
-                || receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown;
+                || receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown
+                || terminal && receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
             if (!terminal)
             {
                 if (effect && (proposed.ToolId is "write" or "edit" or "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "agent_apply" || receipt.SideEffectsPossible))
                 {
                     hasMutations = true;
-                    InvalidateChecks(checks);
+                    evidence.Invalidate();
                 }
                 continue;
             }
@@ -91,42 +119,41 @@ public sealed partial class RunVerificationEvidence
             if (mode is "read_output" or "kill")
             {
                 var executionId = StringArg(args, "execution_id");
-                foreach (var prior in checks.Values.Where(check => executionId is not null
-                    && check.ExecutionId == executionId && check.Status == VerificationCheckStatus.Pending).ToArray())
-                    checks[prior.Identity] = Assess(prior, receipt, entry.Content, providerId, mode == "kill");
+                foreach (var prior in executionId is null ? [] : evidence.Pending(executionId))
+                    evidence.Store(Assess(prior, receipt, entry.Content, providerId, mode == "kill"));
                 continue;
             }
-            if (purpose == "command" && effect)
+            var metadata = ReadTerminalMetadata(entry.Content);
+            var completedRead = receipt.Outcome == ToolExecutionOutcome.Succeeded && receipt.Code == "ok"
+                && metadata.IsReadOnlyCompleted;
+            if (purpose == "command" && effect && !completedRead)
             {
                 hasMutations = true;
-                InvalidateChecks(checks);
+                evidence.Invalidate();
             }
             int expectedExit = 0;
             bool negative = purpose == "expected_failure" && TryExpectedExit(args, out expectedExit);
             if (!negative) expectedExit = 0;
             string rawIdentity = CommandIdentity(args, expectedExit);
-            string identity = ReceiptIdentity(entry.Content, expectedExit) ?? rawIdentity;
+            string identity = metadata.CanonicalIdentity is { } digest ? "canonical:" + digest + ":" + expectedExit : rawIdentity;
             // Upgrade a legacy check only after the exact original invocation is
             // observed again with authority metadata, never by guessing old paths.
-            if (identity != rawIdentity && checks.Remove(rawIdentity, out var legacy))
-                checks[identity] = legacy with { Identity = identity };
-            bool tracked = checks.ContainsKey(identity);
+            evidence.UpgradeIdentity(rawIdentity, identity);
+            var tracked = evidence.Find(identity);
             bool actualProcessFailure = receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
-            if (!tracked && purpose != "verification" && !negative && !actualProcessFailure) continue;
-            if (!tracked && checks.Count >= MaximumChecks) { overflowed = true; continue; }
+            if (tracked is null && purpose != "verification" && !negative && !actualProcessFailure) continue;
             var initial = new VerificationCheckEvidence(identity, providerId, null, expectedExit,
-                purpose == "verification" || tracked && checks[identity].IsVerification,
+                purpose == "verification" || tracked?.IsVerification == true,
                 VerificationCheckStatus.Pending, "verification_pending", DescribeCommand(args));
             var assessed = Assess(initial, receipt, entry.Content, providerId, false);
-            checks[identity] = assessed;
+            evidence.Store(assessed);
             if (negative && assessed.Status == VerificationCheckStatus.Passed
                 && receipt.Outcome == ToolExecutionOutcome.Failed)
             {
-                if (expected.Count < MaximumChecks) expected.Add(ReceiptIdentity(receipt, providerId));
-                else overflowed = true;
+                evidence.RememberExpectedFailure(ReceiptIdentity(receipt, providerId));
             }
         }
-        return new(checks.Values, expected, overflowed, hasMutations, programFailure);
+        return new(evidence.Checks, evidence.ExpectedFailures, evidence.Overflowed, hasMutations, programFailure);
     }
 
     private static IEnumerable<(ModelContextEntry Entry, ModelToolCall Call)> ExpandProgramEvidence(
@@ -156,15 +183,6 @@ public sealed partial class RunVerificationEvidence
         }
     }
 
-    private static void InvalidateChecks(Dictionary<string, VerificationCheckEvidence> checks)
-    {
-        foreach (var check in checks.Values.Where(check => check.IsVerification
-            && check.Status is VerificationCheckStatus.Passed or VerificationCheckStatus.Pending).ToArray())
-            checks[check.Identity] = check.Status == VerificationCheckStatus.Pending
-                ? check with { InvalidatedDuringExecution = true }
-                : check with { Status = VerificationCheckStatus.Stale, Code = "verification_stale" };
-    }
-
     private static string? StringArg(JsonElement args, string name) =>
         args.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
@@ -188,6 +206,6 @@ public sealed partial class RunVerificationEvidence
     {
         code = 0;
         return args.TryGetProperty("expected_exit_code", out var value)
-            && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out code) && code is >= 1 and <= 255;
+            && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out code) && code != 0;
     }
 }

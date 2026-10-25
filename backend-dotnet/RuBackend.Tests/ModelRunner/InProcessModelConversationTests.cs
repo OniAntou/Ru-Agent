@@ -94,9 +94,9 @@ public sealed class InProcessModelConversationTests
         var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
         using var json = JsonDocument.Parse(messages![^1].Content);
         var root = json.RootElement;
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
         Assert.Equal(Encoding.UTF8.GetByteCount(root.GetProperty("content").GetString()!),
-            root.GetProperty("projection_next_offset").GetInt32());
+            root.GetProperty("next_offset").GetInt32());
         Assert.Equal("provider_large", messages[^1].ToolCallId);
     }
 
@@ -251,10 +251,10 @@ public sealed class InProcessModelConversationTests
         Assert.Equal(sourceOffset, root.GetProperty("offset").GetInt32());
         Assert.Equal(new string('a', 64), root.GetProperty("sha256").GetString());
         Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
         Assert.Equal(Encoding.UTF8.GetByteCount(visible), root.GetProperty("projection_visible_bytes").GetInt32());
         Assert.Equal(sourceOffset + Encoding.UTF8.GetByteCount(visible),
-            root.GetProperty("projection_next_offset").GetInt32());
+            root.GetProperty("next_offset").GetInt32());
         Assert.Equal("provider_read_1", result.ToolCallId);
         Assert.Equal(source, context.Entries[^1].Content);
         Assert.DoesNotContain('\uFFFD', visible);
@@ -281,8 +281,8 @@ public sealed class InProcessModelConversationTests
         var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         using var projected = JsonDocument.Parse(messages![^1].Content);
-        Assert.True(projected.RootElement.GetProperty("projection_has_more").GetBoolean());
-        Assert.Equal(12, projected.RootElement.GetProperty("projection_next_offset").GetInt32());
+        Assert.True(projected.RootElement.GetProperty("has_more").GetBoolean());
+        Assert.Equal(12, projected.RootElement.GetProperty("next_offset").GetInt32());
     }
 
     [Fact]
@@ -326,9 +326,9 @@ public sealed class InProcessModelConversationTests
         Assert.True(root.GetProperty("truncated").GetBoolean());
         Assert.InRange(visibleResults.GetArrayLength(), 1, 99);
         Assert.DoesNotContain(hiddenMarker, result.Content, StringComparison.Ordinal);
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
         Assert.Equal(sourceOffset + visibleResults.GetArrayLength(),
-            root.GetProperty("projection_next_offset").GetInt32());
+            root.GetProperty("next_offset").GetInt32());
         Assert.Equal("provider_grep_1", result.ToolCallId);
         Assert.Equal(source, context.Entries[^1].Content);
     }
@@ -349,8 +349,8 @@ public sealed class InProcessModelConversationTests
 
         using var projected = JsonDocument.Parse(messages![^1].Content);
         var root = projected.RootElement;
-        Assert.Equal(root.GetProperty("results").GetArrayLength(), root.GetProperty("projection_next_offset").GetInt32());
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(root.GetProperty("results").GetArrayLength(), root.GetProperty("next_offset").GetInt32());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
     }
 
     [Fact]
@@ -385,8 +385,8 @@ public sealed class InProcessModelConversationTests
         Assert.Equal(sourceOffset, root.GetProperty("offset").GetInt32());
         Assert.Equal(600_000, root.GetProperty("total_chars").GetInt32());
         Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
-        Assert.Equal(sourceOffset + visible.Length, root.GetProperty("projection_next_offset").GetInt32());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
+        Assert.Equal(sourceOffset + visible.Length, root.GetProperty("next_offset").GetInt32());
         Assert.Equal("provider_output_1", result.ToolCallId);
         Assert.Equal(source, context.Entries[^1].Content);
     }
@@ -564,7 +564,7 @@ public sealed class InProcessModelConversationTests
         var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         var visible = Assert.Single(messages!, message => message.Role == "tool").Content;
-        const string note = "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
+        const string note = "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at next_offset or next_line when present)";
         Assert.InRange(visible.Length, 1, ModelInputLimits.MaxToolResultChars);
         var noteOffset = visible.IndexOf(note, StringComparison.Ordinal);
         Assert.True(noteOffset >= 0);

@@ -5,17 +5,25 @@ namespace RuAgent.Harness.Core.Context;
 
 public sealed partial class RunVerificationEvidence
 {
-    private static string? ReceiptIdentity(string? content, int expectedExit)
+    private readonly record struct TerminalMetadata(string? CanonicalIdentity, bool IsReadOnlyCompleted);
+
+    private static TerminalMetadata ReadTerminalMetadata(string? content)
     {
         try
         {
             using var json = JsonDocument.Parse(content ?? "{}");
-            if (json.RootElement.ValueKind != JsonValueKind.Object) return null;
+            if (json.RootElement.ValueKind != JsonValueKind.Object) return default;
             var digest = StringArg(json.RootElement, "verification_identity");
-            return digest is { Length: 64 } && digest.All(char.IsAsciiHexDigit)
-                ? "canonical:" + digest.ToUpperInvariant() + ":" + expectedExit : null;
+            if (digest is not { Length: 64 } || !digest.All(char.IsAsciiHexDigit)) return default;
+            var readOnly = StringArg(json.RootElement, "terminal_effect") == "read_only"
+                && json.RootElement.TryGetProperty("exit_code", out var exit) && exit.ValueKind == JsonValueKind.Number
+                && exit.TryGetInt32(out var code) && code == 0
+                && StringArg(json.RootElement, "state") is null or "exited"
+                && !(StringArg(json.RootElement, "state") is null
+                    && json.RootElement.TryGetProperty("background", out var background) && background.ValueKind == JsonValueKind.True);
+            return new(digest.ToUpperInvariant(), readOnly);
         }
-        catch (JsonException) { return null; }
+        catch (JsonException) { return default; }
     }
 
     private static string CommandIdentity(JsonElement args, int expectedExit)

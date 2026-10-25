@@ -732,15 +732,29 @@ rerun can resolve it. This tracks observed run-local mutations, not an OS-enforc
 snapshot or proof that another process/session did not change the workspace.
 
 A deliberately failing task may declare `purpose=expected_failure` and an exact
-`expected_exit_code` from 1 through 255 before execution. Only that observed
+nonzero signed 32-bit `expected_exit_code` before execution. Only that observed
 `process_exit_nonzero` satisfies it; its original receipt remains failed. Denial,
 unknown outcomes, timeout and cancellation never become expected success.
+Observed exit codes remain attached to check evidence. A confirmed
+`expected_exit_mismatch` is an observed result, not a transient execution error.
+At final prose, the Host publishes one receipt-derived failure report and ends
+the run unsuccessfully rather than regenerating final prose through recovery
+notes. A corrected invocation is a separate check and cannot erase the original
+mismatch. This receipt-derived report also replaces model-authored `[BLOCKED]`
+text; other unresolved checks retain their failure codes and remain outstanding.
+The failed projection, `blocked_report` assistant payload and final conversation
+outbox intent commit atomically. Persistence permits this terminal outbox only
+for a Running-to-Failed transition with one matching report and failure event;
+session identity, same-write-set references and assistant-payload checks remain.
+Outbox delivery is fenced and idempotent; its terminal-run acknowledgement does
+not move the failed run to Completed, including after restart.
 `purpose=inspection` declares read-only intent and does not invalidate earlier
 checks, but is not OS-enforced proof of absence of side effects. These labels
 change completion bookkeeping only, never tool authority or approval.
 
-Tracking is bounded to 256 distinct checks and fails closed on overflow. The
-existing bounded recovery or explicit `[BLOCKED]` outcome handles outstanding
+Tracking retains 256 required checks independently from 64 recent diagnostics
+and fails closed if required capacity is exceeded. Except for confirmed negative
+exit mismatches, bounded recovery or an explicit `[BLOCKED]` outcome handles outstanding
 checks. This is evidence for declared checks, not a claim that all code is correct
 or every possible verification has run.
 
@@ -775,3 +789,19 @@ The built-in prompt is a neutral execution contract. Root instructions may
 guide persona and workflow but cannot grant tools, folders, network access, or
 override Broker policy.
 _Avoid_: embedded fallback persona
+
+
+### Runtime driver state ownership
+
+`AgentRuntimeLoopService` drives runs; `AgentRuntimeRootRegistry` owns registered
+roots/coordinators, and `AgentRuntimeCoordinatorFactory` composes a drive.
+`AgentRuntimeParkingState` owns client-wait and recovered-approval/version fences.
+`AgentRuntimeRunLifecycle` releases registration, Broker resources and retained
+approval state only after pending user-apply and child work is cancelled.
+The separation preserves the recovered-approval version race and cleanup order.
+
+`VerificationEvidenceBuffer` retains required checks separately from bounded
+recent diagnostics. Authority-derived `terminal_effect` metadata can identify a
+completed read-only command; it does not change policy, and failures/unknown
+commands remain conservative. Check overflow applies to required evidence,
+not the number of optional lookups or already-satisfied negative tests.

@@ -80,7 +80,9 @@ public sealed class ToolCatalogTests
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
 
         var capabilities = catalog.Registry.ListCapabilities();
-        Assert.Equal(26, capabilities.Count);
+        Assert.Equal(AgentToolDefinitionCatalog.Get().Where(d => d.ToolId != "ask_user")
+            .Select(d => d.ToolId).OrderBy(id => id, StringComparer.Ordinal),
+            capabilities.Select(c => c.ToolId).OrderBy(id => id, StringComparer.Ordinal));
         Assert.DoesNotContain(capabilities, item => item.ToolId == "app.open");
         // ask_user is Host-intercepted before gateway dispatch and deliberately has
         // no Broker binding, so it never appears in the Broker's capability surface.

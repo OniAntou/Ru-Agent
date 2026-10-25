@@ -1,5 +1,12 @@
 # Gui implementation
 
+Workspace selection uses the desktop Windows App SDK folder picker, associated
+with the owning window's `WindowId`. `WorkspaceFolderPicker` permits one dialog
+at a time and treats native Cancel/close as no selection. Unexpected failures
+reach the existing inline error and bounded exception-category/HRESULT trace.
+The selected path is pinned through the existing sidebar store; selecting a
+folder does not grant workspace trust or execution permission.
+
 Terminal failures keep their actionable inline status above the composer even
 when no assistant reply was rendered. The transcript does not add a terminal
 summary card; settled thinking rows alone must not hide a failed run.
@@ -549,3 +556,17 @@ Ordinary tooltips do not blank the document surface.
 Renderer availability and fidelity depend on the installed handler. These
 presentation bounds do not claim OS-level confinement of third-party renderers.
 See [ADR 0024](../adr/0024-local-document-preview.md).
+
+
+### Run and update lifecycle owners
+
+`AgentRunController` exposes the existing run API, with lifecycle, feed and
+approval/input responsibilities in focused files. `AgentRunFeedState` owns
+stream deduplication, terminal status and lifetime drop counters; changing run
+ownership resets feed identity without losing controller-lifetime counters.
+`UpdateAvailabilityMonitor` owns immediate/periodic update checks, a bounded
+request deadline, single-flight execution and cancellation. A callback that
+ignores cancellation retains its flight slot until it exits; stopping the view
+never waits indefinitely for it. Expected and unexpected errors reach the view's
+reporter. Behavioral tests cover timing, stop, ignored cancellation and retries;
+source checks retain UI wiring rather than implementation statement spelling.

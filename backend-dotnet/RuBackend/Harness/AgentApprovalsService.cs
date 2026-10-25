@@ -567,7 +567,7 @@ public sealed class AgentApprovalsService
     private static IReadOnlyList<string> GeneralizeTerminalArgv(ToolApprovalBinding approvalBinding)
     {
         var argv = approvalBinding.Argv;
-        if (!string.Equals(approvalBinding.ToolId, "bash", StringComparison.Ordinal)
+        if (!IsTerminalRunTool(approvalBinding.ToolId)
             || IsShellModeInvocation(approvalBinding.ResolvedExecutable, argv))
         {
             return argv;
@@ -576,13 +576,21 @@ public sealed class AgentApprovalsService
         var take = 0;
         while (take < argv.Count
             && take < MaxRememberedArgvTokens
-            && !argv[take].StartsWith('-'))
+            && !IsLeadingFlag(argv[take]))
         {
             take++;
         }
 
         return take == 0 ? argv : argv.Take(take).ToArray();
     }
+
+    private static bool IsTerminalRunTool(string toolId) =>
+        string.Equals(toolId, "bash", StringComparison.Ordinal)
+        || string.Equals(toolId, "run_process", StringComparison.Ordinal);
+
+    private static bool IsLeadingFlag(string argument) =>
+        argument.StartsWith("-", StringComparison.Ordinal)
+        || argument.StartsWith("/", StringComparison.Ordinal);
 
     /// <summary>
     /// Shell mode is persisted as a known shell wrapper around one script

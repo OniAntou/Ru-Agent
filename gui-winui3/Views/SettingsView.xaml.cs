@@ -367,6 +367,7 @@ namespace RuApp.Views
         {
             _updateLifetime.Cancel();
             StopUpdateAvailabilityChecks();
+            _updateMonitor?.Dispose();
             ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
             ViewModel.ProviderPickerCommitted -= OnProviderPickerCommitted;
             if (ProviderButton?.Flyout is Flyout providerFlyout)

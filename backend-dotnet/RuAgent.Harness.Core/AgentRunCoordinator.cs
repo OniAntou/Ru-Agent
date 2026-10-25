@@ -384,7 +384,7 @@ public sealed class AgentRunCoordinator
         if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode)
             || AgentRecoveryNotes.TryReadBlockedReply(step, out _))
         {
-            if (!AgentRecoveryNotes.TryReadBlockedReply(step, out _))
+            if (context.VerificationEvidence.HasExitMismatch || !AgentRecoveryNotes.TryReadBlockedReply(step, out _))
                 invocation.RetractAssistantText();
             return await _steps.HandleUnverifiedFailureStepAsync(
                     run,

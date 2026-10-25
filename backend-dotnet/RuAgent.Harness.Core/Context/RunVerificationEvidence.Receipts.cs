@@ -35,8 +35,9 @@ public sealed partial class RunVerificationEvidence
                 return failed with { Code = "verification_result_missing" };
             if (exitCode == check.ExpectedExitCode && check.InvalidatedDuringExecution)
                 return check with { ProviderCallId = providerId, ExecutionId = execution,
-                    Status = VerificationCheckStatus.Stale, Code = "verification_stale" };
+                    Status = VerificationCheckStatus.Stale, Code = "verification_stale", ObservedExitCode = exitCode };
             return check with { ProviderCallId = providerId, ExecutionId = execution,
+                ObservedExitCode = exitCode,
                 Status = exitCode == check.ExpectedExitCode ? VerificationCheckStatus.Passed : VerificationCheckStatus.Failed,
                 Code = exitCode == check.ExpectedExitCode ? "ok"
                     : check.ExpectedExitCode != 0 ? "expected_exit_mismatch" : "process_exit_nonzero" };

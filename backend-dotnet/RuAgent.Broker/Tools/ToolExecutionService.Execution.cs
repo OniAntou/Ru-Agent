@@ -93,7 +93,7 @@ public sealed partial class ToolExecutionService
             try
             {
                 ToolSchemaValidator.Validate(binding.Manifest.InputSchema, arguments);
-                ValidateTerminalTimeoutCeiling(toolId, arguments);
+                ValidateTerminalLaunchArguments(toolId, arguments);
             }
             catch (ToolSchemaException error)
             {
@@ -347,12 +347,14 @@ public sealed partial class ToolExecutionService
     /// adapter work, for callers that reach execution without policy
     /// evaluation.
     /// </summary>
-    private static void ValidateTerminalTimeoutCeiling(string toolId, JsonObject arguments)
+    private static void ValidateTerminalLaunchArguments(string toolId, JsonObject arguments)
     {
         if (!IsTerminalLaunch(toolId))
         {
             return;
         }
+        if (!TerminalWorkflowIntent.HasValidExpectedExitCode(arguments))
+            throw new ToolSchemaException("invalid_arguments");
 
         if (arguments["background"] is JsonValue backgroundValue
             && backgroundValue.TryGetValue<bool>(out var background)
@@ -389,7 +391,7 @@ public sealed partial class ToolExecutionService
         try
         {
             ToolSchemaValidator.Validate(binding.Manifest.InputSchema, arguments);
-            ValidateTerminalTimeoutCeiling(ReadString(contextRequest.Payload, "tool_id"), arguments);
+            ValidateTerminalLaunchArguments(ReadString(contextRequest.Payload, "tool_id"), arguments);
         }
         catch (ToolSchemaException error)
         {

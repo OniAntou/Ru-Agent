@@ -18,417 +18,6 @@ using RuBackend.Harness.Workspace;
 namespace RuBackend.Harness;
 
 /// <summary>
-/// Registers the workspace root a run drives against. Roots are process-local: after a
-/// host restart the loop skips driving until the run is reconciled (phase 3 Task 8).
-/// </summary>
-public interface IAgentRuntimeRootRegistry
-{
-    void Register(RunId runId, string workspaceRoot);
-
-    void Register(RunId runId, string workspaceRoot, PolicySnapshot policySnapshot);
-
-    bool TryGetRoot(RunId runId, out string? workspaceRoot);
-
-    bool TryGetPolicySnapshot(RunId runId, out PolicySnapshot? policySnapshot);
-
-    void RegisterCoordinator(RunId runId, AgentRunCoordinator coordinator);
-
-    bool TryGetCoordinator(RunId runId, out AgentRunCoordinator? coordinator);
-
-    Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken);
-
-    void Remove(RunId runId);
-
-    IReadOnlyList<(string RunId, string WorkspaceRoot)> Snapshot();
-}
-
-public sealed class AgentRuntimeRootRegistry : IAgentRuntimeRootRegistry
-{
-    private sealed record Registration(
-        string WorkspaceRoot,
-        PolicySnapshot? PolicySnapshot,
-        AgentRunCoordinator? Coordinator = null);
-
-    private readonly ConcurrentDictionary<string, Registration> _roots = new(StringComparer.Ordinal);
-    private readonly AgentRuntimeWakeSignal? _wake;
-
-    public AgentRuntimeRootRegistry()
-    {
-    }
-
-    /// <param name="wake">Woken on every registration so the loop drives a new run at once.</param>
-    public AgentRuntimeRootRegistry(AgentRuntimeWakeSignal wake)
-    {
-        _wake = wake ?? throw new ArgumentNullException(nameof(wake));
-    }
-
-    public void Register(RunId runId, string workspaceRoot)
-    {
-        _roots.AddOrUpdate(
-            runId.Value,
-            _ => new Registration(workspaceRoot, null),
-            (_, existing) => existing with { WorkspaceRoot = workspaceRoot });
-        _wake?.Wake();
-    }
-
-    public void Register(RunId runId, string workspaceRoot, PolicySnapshot policySnapshot)
-    {
-        ArgumentNullException.ThrowIfNull(policySnapshot);
-        _roots.AddOrUpdate(
-            runId.Value,
-            _ => new Registration(workspaceRoot, policySnapshot),
-            (_, existing) => existing with
-            {
-                WorkspaceRoot = workspaceRoot,
-                PolicySnapshot = policySnapshot,
-            });
-        _wake?.Wake();
-    }
-
-    public bool TryGetRoot(RunId runId, out string? workspaceRoot)
-    {
-        if (_roots.TryGetValue(runId.Value, out var registration))
-        {
-            workspaceRoot = registration.WorkspaceRoot;
-            return true;
-        }
-
-        workspaceRoot = null;
-        return false;
-    }
-
-    public bool TryGetPolicySnapshot(RunId runId, out PolicySnapshot? policySnapshot)
-    {
-        if (_roots.TryGetValue(runId.Value, out var registration)
-            && registration.PolicySnapshot is { } snapshot)
-        {
-            policySnapshot = snapshot;
-            return true;
-        }
-
-        policySnapshot = null;
-        return false;
-    }
-
-    public void RegisterCoordinator(RunId runId, AgentRunCoordinator coordinator)
-    {
-        ArgumentNullException.ThrowIfNull(coordinator);
-        while (_roots.TryGetValue(runId.Value, out var existing))
-        {
-            if (_roots.TryUpdate(
-                    runId.Value,
-                    existing with { Coordinator = coordinator },
-                    existing))
-            {
-                return;
-            }
-        }
-    }
-
-    public bool TryGetCoordinator(RunId runId, out AgentRunCoordinator? coordinator)
-    {
-        if (_roots.TryGetValue(runId.Value, out var registration)
-            && registration.Coordinator is { } value)
-        {
-            coordinator = value;
-            return true;
-        }
-
-        coordinator = null;
-        return false;
-    }
-
-    public async Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken)
-    {
-        if (_roots.TryGetValue(runId.Value, out var registration)
-            && registration.Coordinator is { } coordinator)
-        {
-            await coordinator.CancelRunningToolsAsync(runId, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    public void Remove(RunId runId) => _roots.TryRemove(runId.Value, out _);
-
-    public IReadOnlyList<(string RunId, string WorkspaceRoot)> Snapshot() =>
-        _roots.Select(pair => (pair.Key, pair.Value.WorkspaceRoot)).ToArray();
-}
-
-/// <summary>
-/// Creates one coordinator (and therefore one tool gateway authority) per run, rooted at
-/// that run's trusted workspace instead of a process-wide directory.
-/// </summary>
-public interface IAgentRuntimeCoordinatorFactory
-{
-    /// <summary>
-    /// Creates a coordinator with the compaction budget policy resolved from
-    /// the current settings snapshot (fail-closed to policy defaults). The
-    /// gateway factory's authority open is awaited, so cancellation of the
-    /// creating run propagates.
-    /// </summary>
-    Task<AgentRunCoordinator> CreateAsync(
-        string workspaceRoot,
-        PolicySnapshot? policySnapshot = null,
-        RunId? runId = null,
-        string? agentSessionId = null,
-        CancellationToken cancellationToken = default);
-
-    void DropRetainedApproval(RunId runId);
-}
-
-public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFactory
-{
-    private readonly IModelStepRunner _model;
-    private readonly IHarnessEventStore _store;
-    private readonly HarnessSqliteOptions _sqliteOptions;
-    private readonly HarnessPayloadStore _payloadStore;
-    private readonly SessionWorkStateStore? _workStates;
-    private readonly ReconciliationInspectionGate _inspectionGate;
-    private readonly ITransientContentRedactor? _transientRedactor;
-    private readonly HarnessLiveEventHub? _liveEvents;
-    private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
-    private readonly IAgentReplyPolicy? _replyPolicy;
-    private readonly IAgentReplyEffectSink? _replyEffects;
-    private readonly RuInstructionLoader _instructionLoader;
-    private readonly ISettingsStore _settings;
-    private readonly ITimeProvider _time;
-    private readonly IModelContextLimitProvider _contextLimit;
-    private readonly Prompting.AgentToolRuntimeAvailability _runtimeAvailability;
-    private readonly WorkspaceCoordinatorStore _workspaceCoordinatorStore;
-    private readonly Broker.IToolGatewayFactory _brokerGateways;
-    private readonly InMemoryRetainedApprovalStash _retainedStash;
-    private readonly IAgentRunModelMetadataResolver? _runModelMetadataResolver;
-    private readonly Subagents.SubagentRuntimeBinder _subagentBinder;
-    private readonly RuAgent.Harness.Core.Subagents.IAgentFamilyBudget _familyBudget;
-    private readonly RuAgent.Harness.Core.Subagents.ISubagentInbox _subagentInbox;
-    private readonly ILogger<AgentRuntimeCoordinatorFactory>? _budgetLogger;
-    private readonly RuAgent.Broker.Tools.Mcp.McpServerHost? _mcpServers;
-
-    public AgentRuntimeCoordinatorFactory(
-        IModelStepRunner model,
-        IHarnessEventStore store,
-        HarnessSqliteOptions sqliteOptions,
-        HarnessPayloadStore payloadStore,
-        ReconciliationInspectionGate inspectionGate,
-        WorkspaceCoordinatorStore workspaceCoordinatorStore,
-        Broker.IToolGatewayFactory brokerGateways,
-        Subagents.SubagentRuntimeBinder subagentBinder,
-        RuAgent.Harness.Core.Subagents.IAgentFamilyBudget familyBudget,
-        RuAgent.Harness.Core.Subagents.ISubagentInbox subagentInbox,
-        ISettingsStore settings,
-        ITimeProvider time,
-        ITransientContentRedactor transientRedactor,
-        HarnessLiveEventHub? liveEvents = null,
-        AgentRunSummaryLivePublisher? summaryPublisher = null,
-        IAgentReplyPolicy? replyPolicy = null,
-        IAgentReplyEffectSink? replyEffects = null,
-        RuInstructionLoader? instructionLoader = null,
-        IModelContextLimitProvider? contextLimit = null,
-        Prompting.AgentToolRuntimeAvailability? runtimeAvailability = null,
-        IAgentRunModelMetadataResolver? runModelMetadataResolver = null,
-        SessionWorkStateStore? workStates = null,
-        ILogger<AgentRuntimeCoordinatorFactory>? logger = null,
-        RuAgent.Broker.Tools.Mcp.McpServerHost? mcpServers = null)
-    {
-        _mcpServers = mcpServers;
-        _budgetLogger = logger;
-        _familyBudget = familyBudget ?? throw new ArgumentNullException(nameof(familyBudget));
-        _subagentInbox = subagentInbox ?? throw new ArgumentNullException(nameof(subagentInbox));
-        _subagentBinder = subagentBinder ?? throw new ArgumentNullException(nameof(subagentBinder));
-        _model = model ?? throw new ArgumentNullException(nameof(model));
-        _store = store ?? throw new ArgumentNullException(nameof(store));
-        _sqliteOptions = sqliteOptions ?? throw new ArgumentNullException(nameof(sqliteOptions));
-        _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
-        _workStates = workStates;
-        _inspectionGate = inspectionGate ?? throw new ArgumentNullException(nameof(inspectionGate));
-        _transientRedactor = transientRedactor ?? throw new ArgumentNullException(nameof(transientRedactor));
-        _liveEvents = liveEvents;
-        _summaryPublisher = summaryPublisher;
-        _replyPolicy = replyPolicy;
-        _replyEffects = replyEffects;
-        _instructionLoader = instructionLoader ?? new RuInstructionLoader();
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _time = time ?? throw new ArgumentNullException(nameof(time));
-        var pinnedModelMetadataResolver = model is IProviderBackedModelStepRunner
-            ? runModelMetadataResolver
-                ?? throw new InvalidOperationException("provider_model_metadata_unavailable")
-            : null;
-        _contextLimit = contextLimit
-            ?? (pinnedModelMetadataResolver is null
-                ? new DynamicModelContextLimitProvider(_settings)
-                : new DynamicModelContextLimitProvider(pinnedModelMetadataResolver));
-        // The execution authority is in-process now, but the model is still
-        // told about web tools from the same configuration the authority
-        // parses: managed startup enables them, so the availability stays
-        // pinned to that composition.
-        _runtimeAvailability = runtimeAvailability ?? new Prompting.AgentToolRuntimeAvailability(
-            WebSearchEnabled: true,
-            WebFetchEnabled: true);
-        _workspaceCoordinatorStore = workspaceCoordinatorStore ?? throw new ArgumentNullException(nameof(workspaceCoordinatorStore));
-        _brokerGateways = brokerGateways ?? throw new ArgumentNullException(nameof(brokerGateways));
-        _runModelMetadataResolver = pinnedModelMetadataResolver;
-        _retainedStash = new InMemoryRetainedApprovalStash(_time);
-    }
-
-    public void DropRetainedApproval(RunId runId) => _retainedStash.Drop(runId);
-
-    public async Task<AgentRunCoordinator> CreateAsync(
-        string workspaceRoot,
-        PolicySnapshot? policySnapshot = null,
-        RunId? runId = null,
-        string? agentSessionId = null,
-        CancellationToken cancellationToken = default)
-    {
-        var contextBudgetPolicy = await ResolveBudgetPolicyAsync(_settings, cancellationToken, _budgetLogger).ConfigureAwait(false);
-        var availability = _runtimeAvailability with
-        {
-            ChildRole = null,
-            McpEnabled = _mcpServers?.Configuration.IsEmpty == false,
-        };
-        if (_brokerGateways is not { IsConfigured: true }
-            || policySnapshot is null
-            || runId is not { } brokerRunId)
-        {
-            throw new InvalidOperationException(
-                "broker_gateway_unavailable: every tool call must execute inside the Broker");
-        }
-
-        var storedRun = await _store.GetRunAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
-        if (_runModelMetadataResolver is not null)
-        {
-            var metadata = await _runModelMetadataResolver.ResolveAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
-            availability = availability with { ToolProfile = metadata.ToolProfile };
-        }
-        var subagentStore = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(_sqliteOptions, _payloadStore);
-        var internalRun = storedRun is not null && await subagentStore.IsInternalSessionAsync(storedRun.SessionId, cancellationToken).ConfigureAwait(false);
-        if (internalRun && agentSessionId != storedRun!.SessionId.Value)
-            throw new HarnessStoreException("subagent_runtime_unavailable");
-        if (internalRun)
-        {
-            var owner = await subagentStore.FindOwnerAsync(storedRun!.SessionId, cancellationToken).ConfigureAwait(false)
-                ?? throw new HarnessStoreException("subagent_scope_missing");
-            if (!Enum.IsDefined(owner.Role)) throw new HarnessStoreException("subagent_role_invalid");
-            availability = availability with { ChildRole = owner.Role };
-        }
-        IToolGateway gateway = await _brokerGateways
-            .CreateAsync(workspaceRoot, policySnapshot, brokerRunId, agentSessionId, cancellationToken)
-            .ConfigureAwait(false);
-        if (internalRun)
-        {
-            try
-            {
-                if (!await _subagentBinder.BindAsync(brokerRunId, workspaceRoot, policySnapshot, cancellationToken).ConfigureAwait(false))
-                    throw new HarnessStoreException("subagent_scope_missing");
-            }
-            catch
-            {
-                await _brokerGateways.CloseRunAsync(brokerRunId.Value).ConfigureAwait(false);
-                throw;
-            }
-        }
-        var frames = new TransientFrameBuffer(
-            64 * 1024,
-            _liveEvents is null ? null : frame => PublishLiveFrame(_liveEvents, frame));
-        IAgentActivitySink? activitySink = _summaryPublisher is not null
-            ? _summaryPublisher
-            : _liveEvents is null
-                ? null
-                : new AgentActivityLivePublisher(_liveEvents);
-        var backgroundTaskNotes = new BackgroundTaskNoteTracker(
-            ct => _brokerGateways.ListSessionTasksAsync(brokerRunId.Value, killExecutionId: null, ct));
-        var promptContextProvider = new RuPromptContextProvider(
-            workspaceRoot,
-            _instructionLoader,
-            _settings,
-            _time,
-            availability,
-            _workspaceCoordinatorStore,
-            _runModelMetadataResolver)
-        {
-            BackgroundTaskNotes = backgroundTaskNotes.ProbeAsync,
-        };
-        return new AgentRunCoordinator(
-            _model,
-            gateway,
-            _store,
-            new AgentContextAssembler(new SqliteModelContextSource(_sqliteOptions, _payloadStore, _workStates)),
-            new CryptographicIdGenerator(),
-            _time,
-            new ToolCallScheduler(),
-            frames,
-            _transientRedactor,
-            _contextLimit,
-            _inspectionGate,
-            activitySink,
-            internalRun ? null : _replyPolicy,
-            internalRun ? null : _replyEffects,
-            promptContextProvider,
-            contextBudgetPolicy,
-            retainedStash: _retainedStash,
-            internalRun: internalRun,
-            familyBudget: _familyBudget,
-            subagentInbox: _subagentInbox);
-    }
-
-    /// <summary>
-    /// Reads the compaction ratios from settings into a budget policy.
-    /// Expected storage/format failures use policy defaults with a safe warning.
-    /// Cancellation and unexpected programming failures remain observable.
-    /// </summary>
-    internal static async Task<ContextBudgetPolicy> ResolveBudgetPolicyAsync(
-        ISettingsStore settings,
-        CancellationToken cancellationToken,
-        ILogger? logger = null)
-    {
-        try
-        {
-            var snapshot = await settings.ReadAsync(cancellationToken).ConfigureAwait(false);
-            return AgentRunCoordinator.CreateBudgetPolicy(
-                snapshot.CompactionTriggerRatio,
-                snapshot.CompactionTargetRatio);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException
-            or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
-        {
-            // Exception messages may contain persisted settings or credentials.
-            logger?.LogWarning("Context budget settings unavailable; using policy defaults. ErrorType={ErrorType}",
-                error.GetType().Name);
-            return AgentRunCoordinator.CreateBudgetPolicy();
-        }
-    }
-
-    internal static void PublishLiveFrame(HarnessLiveEventHub hub, HarnessTransientFrame frame)
-    {
-        if (frame.Kind == TransientFrameKind.UsageEstimate)
-        {
-            // The content is already the wire payload: the measured request size for the
-            // step about to run, published so a client's context meter moves before the
-            // provider's usage report lands at step end.
-            hub.TryPublish(frame.RunId, "agent.usage_estimate", frame.Content);
-            return;
-        }
-
-        var kind = frame.Kind == TransientFrameKind.AssistantDelta
-            ? "assistant.delta"
-            : "tool.output.delta";
-        var data = JsonSerializer.Serialize(new
-        {
-            text = frame.Content,
-            model_step_id = frame.ModelStepId?.Value,
-            execution_id = frame.ExecutionId?.Value,
-            // Emitted only for a superseded attempt: the desktop client's delta
-            // parser rejects unknown fields, so an ordinary frame must keep the
-            // exact shape it has always had.
-            reset = frame.IsReset ? true : (bool?)null,
-        });
-        hub.TryPublish(frame.RunId, kind, data);
-    }
-}
-
-/// <summary>
 /// The runtime-owned cleanup one deleted session's non-terminal runs need:
 /// stop each run's in-flight tools through its per-run coordinator, then drop
 /// the registration along with its Broker gateway and retained approvals.
@@ -480,19 +69,8 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     private readonly Dictionary<string, Task> _workers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CancellationTokenSource> _workerCancellation = new(StringComparer.Ordinal);
     private readonly object _workerLock = new();
-    private readonly ConcurrentDictionary<string, string> _recoveredApprovalIds =
-        new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, long> _parkedApprovalVersions =
-        new(StringComparer.Ordinal);
-
-    /// <summary>
-    /// Runs the last pass found waiting for a client: on an approval, a question, workspace
-    /// trust or reconciliation. Only a client request moves them on, and that request
-    /// wakes the loop, so a host whose runs all wait here polls at the idle rate.
-    /// </summary>
-    private readonly ConcurrentDictionary<string, byte> _waitingOnClient =
-        new(StringComparer.Ordinal);
-
+    private readonly AgentRuntimeParkingState _parkingState = new();
+    private readonly AgentRuntimeRunLifecycle _runLifecycle;
     private readonly WorkspaceWatchRegistry? _workspaceWatches;
     private readonly Broker.IToolGatewayFactory _brokerGateways;
     private readonly RetainedApprovalRehydrator? _retainedApprovalRehydrator;
@@ -548,6 +126,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         _subagentContinuations = subagentContinuations;
         _userApplies = userApplies;
         _subagentLive = subagentLive;
+        _runLifecycle = new(_roots, _brokerGateways, _coordinatorFactory, _parkingState, _subagentLive);
     }
 
     /// <summary>Registered runs the loop is driving; surfaced to the idle-shutdown probe.</summary>
@@ -671,7 +250,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         // active rate for every registered run.
         return _wake is null
             ? registrations.Count > 0
-            : registrations.Any(registration => !_waitingOnClient.ContainsKey(registration.RunId));
+            : registrations.Any(registration => !_parkingState.IsWaitingOnClient(registration.RunId));
     }
 
     private async Task DriveRunIfRunningAsync(
@@ -730,17 +309,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             if (run.State != HarnessRunState.Running
                 && run.State != HarnessRunState.WaitingApproval)
             {
-                if (run.State is HarnessRunState.WaitingUser
-                    or HarnessRunState.WaitingWorkspaceTrust
-                    or HarnessRunState.ReconciliationRequired)
-                {
-                    _waitingOnClient.TryAdd(runIdValue, 0);
-                }
-                else
-                {
-                    _waitingOnClient.TryRemove(runIdValue, out _);
-                }
-
+                _parkingState.ObserveClientWaitState(runIdValue, run.State);
                 return;
             }
 
@@ -750,15 +319,13 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             // workspace lease on every tick for as long as the card stayed open. The
             // expiry checks above still run each tick.
             if (run.State == HarnessRunState.WaitingApproval
-                && _parkedApprovalVersions.TryGetValue(runIdValue, out var parkedVersion)
-                && parkedVersion == run.Version)
+                && _parkingState.IsParkedApprovalVersion(runIdValue, run.Version))
             {
-                _waitingOnClient.TryAdd(runIdValue, 0);
+                _parkingState.MarkWaitingOnClient(runIdValue);
                 return;
             }
 
-            _waitingOnClient.TryRemove(runIdValue, out _);
-            _parkedApprovalVersions.TryRemove(runIdValue, out _);
+            _parkingState.MarkRunnable(runIdValue);
 
             // The run this pass already read is handed to the drive, which would otherwise
             // read the same row again a few lines later. The loop runs every 250 ms per
@@ -766,10 +333,9 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             // cost: two reads per tick where one is enough.
             await DriveRunAsync(runIdValue, workspaceRoot, policySnapshot, run, cancellationToken).ConfigureAwait(false);
             var driven = await LoadRunAsync(runIdValue, cancellationToken).ConfigureAwait(false);
-            if (_recoveredApprovalIds.ContainsKey(runIdValue)
-                && driven is { State: HarnessRunState.WaitingApproval })
+            if (driven is { State: HarnessRunState.WaitingApproval })
             {
-                _parkedApprovalVersions[runIdValue] = driven.Version;
+                _parkingState.RecordParkedApprovalVersion(runIdValue, driven.Version);
             }
 
             // A pass that moved the run on usually leaves outbox work (the history row
@@ -807,15 +373,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         if (_userApplies is not null) await _userApplies.CancelPendingAsync(runId, CancellationToken.None).ConfigureAwait(false);
         if (_subagents is not null)
             await _subagents.CancelChildrenBeforeReleaseAsync(runId, this, CancellationToken.None).ConfigureAwait(false);
-        _subagentLive?.Forget(runId);
-        _parkedApprovalVersions.TryRemove(runId.Value, out _);
-        _waitingOnClient.TryRemove(runId.Value, out _);
-        _roots.Remove(runId);
-        if (_brokerGateways is { } gateways)
-        {
-            await gateways.CloseRunAsync(runId.Value).ConfigureAwait(false);
-        }
-        _coordinatorFactory.DropRetainedApproval(runId);
+        await _runLifecycle.ReleaseRegistrationAsync(runId).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1015,11 +573,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                     return;
                 }
 
-                if (_recoveredApprovalIds.TryGetValue(runIdValue, out var recoveredApprovalId)
-                    && string.Equals(
-                        recoveredApprovalId,
-                        retained.ApprovalId.Value,
-                        StringComparison.Ordinal))
+                if (_parkingState.IsRecoveredApproval(runIdValue, retained.ApprovalId.Value))
                 {
                     return;
                 }
@@ -1080,7 +634,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                         return;
                     }
 
-                    _recoveredApprovalIds[runIdValue] = current.ApprovalId.Value;
+                    _parkingState.RecordRecoveredApproval(runIdValue, current.ApprovalId.Value);
                     return;
                 }
             }
@@ -1090,7 +644,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                 coordinator.RestoreRetainedApproval(runId, retained);
             }
 
-            _recoveredApprovalIds.TryRemove(runIdValue, out _);
+            _parkingState.ClearRecoveredApproval(runIdValue);
             // A previous drive may have parked proposals in an approval wait.
             // Resume them before the model steps: the receipts land in durable
             // state, so the next model step continues naturally. Null or stale
@@ -1181,7 +735,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                         .ConfigureAwait(false);
                     if (current is not null)
                     {
-                        _recoveredApprovalIds[runIdValue] = current.ApprovalId.Value;
+                        _parkingState.RecordRecoveredApproval(runIdValue, current.ApprovalId.Value);
                     }
                 }
 

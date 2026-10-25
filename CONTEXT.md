@@ -171,12 +171,14 @@ _Avoid_: fallback answer, substitute model, retry on another backend
 **Receipt-backed Verification**:
 A bounded projection of original run-local terminal proposals and execution receipts.
 Declared required checks remain outstanding through unrelated reads, compaction
-and restart. Exploratory failures remain failed receipts without becoming mandatory
-checks; known run-local mutations invalidate passed required checks
+and restart. Exploratory failures remain bounded diagnostics without consuming required-check
+capacity; known run-local mutations invalidate passed required checks
 and pending checks that would certify older code. New terminal receipts identify
 the canonical executable/argv/cwd; this fingerprint never grants authority. Explicit
 expected nonzero exits can satisfy a negative test without rewriting its failed
-receipt. Intent metadata grants no authority and does not prove complete correctness.
+receipt. Authority-derived read-only completion metadata can preserve prior checks;
+unknown effects remain conservative. Intent metadata grants no authority and
+does not prove complete correctness.
 Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
 _Avoid_: treating a successful inspection, summary or model claim as a passed check
 

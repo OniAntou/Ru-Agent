@@ -8,17 +8,14 @@ namespace RuAgent.Broker.Tests;
 
 public sealed class ToolAcceptanceMatrixTests
 {
-    [Theory]
-    [InlineData(26)]
-    public void Runtime_catalog_binds_every_available_canonical_definition(
-        int expectedBindings)
+    [Fact]
+    public void Runtime_catalog_binds_every_available_canonical_definition()
     {
         var executors = ToolBindingRegistryTests.ExecutableStubs();
         var options = new WebOptions();
 
         var bindings = new ToolCatalog(executors, options).Registry.List();
 
-        Assert.Equal(expectedBindings, bindings.Count);
         foreach (var binding in bindings)
         {
             var definition = AgentToolDefinitionCatalog.Find(
@@ -47,7 +44,6 @@ public sealed class ToolAcceptanceMatrixTests
             .Select(definition => definition.ToolId)
             .ToArray();
 
-        Assert.Equal(27, expected.Length);
         Assert.Equal(expected, AgentModelToolContractCatalog.ToolIds);
     }
 

@@ -34,7 +34,7 @@ never wider than the reviewed shape:
 
 - A terminal `mode=run` call stores the resolved executable plus at most two
   leading non-flag argv tokens (`git status`, `npm run build`) with the exact
-  canonical launch directory. Flag-first invocations (`node -e ...`) and
+  canonical launch directory. Flag-first invocations (`node -e ...`, Windows `cmd /c ...`) and
   `mode=shell` scripts stay exact: a prefix of arbitrary shell text is not a
   safe pattern, and the runtime keeps the same fail-closed habit that made
   Claude Code repair its compound-command handling instead of copying it.

@@ -38,6 +38,8 @@ public sealed partial class PolicyContextFactory
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
         ArgumentNullException.ThrowIfNull(arguments);
+        if (toolId is "powershell" or "run_process" && !TerminalWorkflowIntent.HasValidExpectedExitCode(arguments))
+            throw new PolicyContextException("invalid_arguments", hint: "expected_failure requires a nonzero signed 32-bit expected_exit_code.");
         if (toolId == "apply_patch") return CreatePatchContext(toolVersion, arguments);
         if (toolId == "run_code")
         {

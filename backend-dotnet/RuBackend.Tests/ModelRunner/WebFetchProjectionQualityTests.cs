@@ -18,8 +18,10 @@ public sealed class WebFetchProjectionQualityTests
         var root = parsed.RootElement;
         var wrapped = root.GetProperty("content").GetString()!;
         var visible = wrapped.Split("\ncontent: ", 2)[1].Split("...[truncated]", 2)[0];
-        Assert.Equal(32000 + visible.Length, root.GetProperty("projection_next_offset").GetInt32());
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(32000 + visible.Length, root.GetProperty("next_offset").GetInt32());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
+        Assert.False(root.TryGetProperty("projection_next_offset", out _));
+        Assert.False(root.TryGetProperty("projection_has_more", out _));
         Assert.StartsWith("[untrusted_web_reference]", wrapped);
         Assert.EndsWith("[/untrusted_web_reference]", wrapped);
         Assert.True(output.Length <= 2000);
@@ -33,9 +35,11 @@ public sealed class WebFetchProjectionQualityTests
         var output = StructuredToolOutputProjector.Project("web_fetch", null, source, 2000,
             ToolOutputProjectionUnit.Utf16Characters, (_, _) => throw new InvalidOperationException());
         using var parsed = JsonDocument.Parse(output);
-        Assert.Equal(32016, parsed.RootElement.GetProperty("projection_next_offset").GetInt32());
+        Assert.Equal(32016, parsed.RootElement.GetProperty("next_offset").GetInt32());
         Assert.Contains("    Task<T>\nnext", parsed.RootElement.GetProperty("content").GetString());
-        Assert.True(parsed.RootElement.GetProperty("projection_has_more").GetBoolean());
+        Assert.True(parsed.RootElement.GetProperty("has_more").GetBoolean());
+        Assert.False(parsed.RootElement.TryGetProperty("projection_next_offset", out _));
+        Assert.False(parsed.RootElement.TryGetProperty("projection_has_more", out _));
     }
 
     private static string Page(string content, int offset, int? nextOffset) => new JsonObject

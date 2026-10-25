@@ -105,6 +105,64 @@ public sealed class ApprovalPatternTests
     }
 
     [Fact]
+    public void Modern_run_process_remembers_the_same_bounded_command_prefix()
+    {
+        var matcher = AgentV1Service.BuildAllowAlwaysMatcher(
+            Binding(
+                "run_process",
+                resolvedExecutable: "git",
+                argv: new[] { "status", "--porcelain", "--branch" },
+                cwd: @"C:\work\repo"),
+            "terminal_timeout_requires_approval",
+            externalDirectoryRequested: false);
+
+        Assert.NotNull(matcher);
+        Assert.Equal("run_process", matcher!.ToolId);
+        Assert.Equal("git", matcher.ResolvedExecutable);
+        Assert.Equal(new[] { "status" }, matcher.ArgvPattern);
+        Assert.Equal(@"C:\work\repo", matcher.CwdPattern);
+    }
+
+    [Fact]
+    public void Modern_run_process_keeps_flag_first_invocations_exact()
+    {
+        var argv = new[] { "-e", "console.log('hi')" };
+        var matcher = AgentV1Service.BuildAllowAlwaysMatcher(
+            Binding("run_process", resolvedExecutable: "node", argv: argv),
+            "terminal_timeout_requires_approval",
+            externalDirectoryRequested: false);
+
+        Assert.NotNull(matcher);
+        Assert.Equal(argv, matcher!.ArgvPattern);
+    }
+
+    [Fact]
+    public void Modern_run_process_keeps_windows_slash_flag_invocations_exact()
+    {
+        var argv = new[] { "/d", "/c", "echo", "fixture" };
+        var matcher = AgentV1Service.BuildAllowAlwaysMatcher(
+            Binding("run_process", resolvedExecutable: "cmd.exe", argv: argv),
+            "terminal_timeout_requires_approval",
+            externalDirectoryRequested: false);
+
+        Assert.NotNull(matcher);
+        Assert.Equal(argv, matcher!.ArgvPattern);
+    }
+
+    [Fact]
+    public void Modern_run_process_keeps_powershell_script_wrappers_exact()
+    {
+        var argv = new[] { "-NoProfile", "-NonInteractive", "-Command", "Get-ChildItem | Select-String TODO" };
+        var matcher = AgentV1Service.BuildAllowAlwaysMatcher(
+            Binding("run_process", resolvedExecutable: "pwsh.exe", argv: argv),
+            "terminal_timeout_requires_approval",
+            externalDirectoryRequested: false);
+
+        Assert.NotNull(matcher);
+        Assert.Equal(argv, matcher!.ArgvPattern);
+    }
+
+    [Fact]
     public void Flag_first_invocations_stay_exact()
     {
         var matcher = AgentV1Service.BuildAllowAlwaysMatcher(

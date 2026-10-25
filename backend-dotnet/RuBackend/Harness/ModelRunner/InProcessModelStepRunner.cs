@@ -28,7 +28,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
     private const int MaxConversationBlockChars = ModelInputLimits.MaxToolResultChars;
     private const string DurableToolContinuationPrompt = "Continue from the durable tool results.";
     private const string ConversationTruncationNote =
-        "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
+        "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at next_offset or next_line when present)";
 
     private readonly ModelStepService _stepService;
 

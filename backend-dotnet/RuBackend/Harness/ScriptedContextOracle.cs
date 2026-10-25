@@ -131,7 +131,7 @@ internal sealed record ScriptedContextOracle(
             var sourceText = sourceRoot.GetProperty(ProjectionField!).GetString();
             var projectedText = projectedRoot.GetProperty(ProjectionField!).GetString();
             var sourceOffset = sourceRoot.GetProperty("offset").GetInt32();
-            var projectedOffset = projectedRoot.GetProperty("projection_next_offset").GetInt32();
+            var projectedOffset = projectedRoot.GetProperty("next_offset").GetInt32();
             var expectedOffset = checked(sourceOffset + System.Text.Encoding.UTF8.GetByteCount(projectedText!));
             return sourceText is not null
                 && projectedText is not null

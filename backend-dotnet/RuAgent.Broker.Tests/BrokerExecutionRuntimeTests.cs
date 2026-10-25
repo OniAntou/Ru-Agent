@@ -22,6 +22,41 @@ namespace RuAgent.Broker.Tests;
 public sealed class BrokerExecutionRuntimeTests
 {
     [Fact]
+    public async Task Expected_failure_with_zero_exit_is_rejected_before_authorization()
+    {
+        using var fixture = new RuntimeFixture();
+        const string session = "invalid-expected-exit";
+        const string run = "invalid-expected-exit-run";
+        Assert.Null((await fixture.Runtime.OpenRunAsync(
+            RunOpen(run, session, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default)).Error);
+        var args = new JsonObject { ["executable"] = "dotnet", ["arguments"] = new JsonArray("--version"),
+            ["purpose"] = "expected_failure", ["expected_exit_code"] = 0 };
+        var result = await fixture.Runtime.EvaluateAsync(Evaluate("invalid-expected", session, run, "run_process", args), default);
+        Assert.Equal("deny", result.Decision!.Decision);
+        Assert.Null(result.Decision.AuthorizationToken);
+    }
+
+    [Theory]
+    [InlineData("dotnet", true)]
+    [InlineData("cmd.exe", false)]
+    public async Task Terminal_read_only_effect_metadata_is_derived_by_execution_authority(string executable, bool readOnly)
+    {
+        using var fixture = new RuntimeFixture();
+        const string session = "terminal-effects";
+        const string run = "terminal-effects-run";
+        Assert.Null((await fixture.Runtime.OpenRunAsync(
+            RunOpen(run, session, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default)).Error);
+        var args = new JsonObject { ["executable"] = executable,
+            ["arguments"] = readOnly ? new JsonArray("--version") : new JsonArray("/d", "/c", "echo", "fixture") };
+        var decision = await fixture.Runtime.EvaluateAsync(Evaluate("evaluate-effects", session, run, "run_process", args), default);
+        Assert.Equal("allow", decision.Decision!.Decision);
+        var result = await fixture.Runtime.ExecuteAuthorizedAsync(Execute("execute-effects", session, run,
+            "run_process", decision.Decision.AuthorizationToken!, args), default);
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Receipt!.Status);
+        Assert.Equal(readOnly ? "read_only" : "unknown", result.Receipt.Output["terminal_effect"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Terminal_verification_fingerprint_uses_resolved_cwd_and_survives_failure()
     {
         using var fixture = new RuntimeFixture();
@@ -294,7 +329,8 @@ public sealed class BrokerExecutionRuntimeTests
             default);
         Assert.Null(opened.Error);
         Assert.Equal(
-            new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "apply_patch", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp", "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write_file" },
+            AgentToolDefinitionCatalog.Get().Where(d => d.ToolId != "ask_user")
+                .Select(d => d.ToolId).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             opened.AdvertisedCapabilities!.OrderBy(capability => capability, StringComparer.Ordinal).ToArray());
 
         var tamperedPayload = EnvelopeTestSnapshots.RunOpenPayload(

@@ -37,18 +37,17 @@ public sealed class AboutUpdatesUiContractTests
     }
 
     [Fact]
-    public void Automatic_checks_are_bounded_and_stop_with_the_settings_lifetime()
+    public void Automatic_update_monitor_is_started_for_installed_releases_and_stopped_on_dispose()
     {
         var code = GuiSource.ViewText("SettingsView");
         var start = GuiSource.MethodBody(code, "StartUpdateAvailabilityChecks");
         Assert.Contains("_installedRelease is null", start, StringComparison.Ordinal);
-        Assert.Contains("TimeSpan.FromMinutes(30)", start, StringComparison.Ordinal);
-        Assert.Contains("CheckForUpdates", start, StringComparison.Ordinal);
+        Assert.Contains("ObserveUpdateMonitorAsync(_updateMonitor.Start())", start, StringComparison.Ordinal);
         Assert.Contains("StopUpdateAvailabilityChecks", GuiSource.MethodBody(code, "Dispose"), StringComparison.Ordinal);
-        var check = GuiSource.MethodBody(code, "OnCheckUpdatesClick");
-        Assert.Contains("CancelAfter(TimeSpan.FromSeconds(30))", check, StringComparison.Ordinal);
-        Assert.Contains("UpdateChannelCombo.SelectedIndex", check, StringComparison.Ordinal);
+        Assert.Contains("_updateMonitor?.Stop", GuiSource.MethodBody(code, "StopUpdateAvailabilityChecks"), StringComparison.Ordinal);
+        var check = GuiSource.MethodBody(code, "CheckUpdateAvailabilityAsync");
         Assert.DoesNotContain("UpdateLauncher", check, StringComparison.Ordinal);
         Assert.DoesNotContain("UpdateMaintenance", check, StringComparison.Ordinal);
     }
+
 }

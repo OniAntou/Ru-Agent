@@ -90,14 +90,10 @@ explicit file and Windows-terminal operations, reads/search, Web, questions,
 MCP and subagent control. File mutations remain hash-guarded; delete recovery
 is bounded and one-time (`recovery_too_large` beyond 4 MiB,
 `recovery_consumed` on replay). Terminal output can be paged without rerunning.
-Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` is
-read-only: workspace read and Web auto while terminal and mutation deny outright
-and external structured access asks. `standard`
-auto-allows workspace mutation and executable/shell launches from a workspace cwd;
-external structured paths and external launch directories ask. `full_access` is the skip-all mode: external structured
-files, arbitrary terminal, and structured protected paths (harness key/database
-files and runtime descriptors) are allowed automatically, while hard-invalid
-requests remain denied. Repository cleanliness and prompt text never change this matrix.
+The [canonical tool policy](../docs/operations/agent-tools.md#current-capability-matrix)
+owns preset decisions and approval reasons; Protocol owns the executable catalog.
+Terminal children run as the current Windows user without an OS filesystem or
+network sandbox. Hard timeout, output, cancellation and process-tree bounds apply.
 
 Workspace trust is explicit once per canonical `WorkspaceIdentity`, independent
 of the session-scoped preset. The Host requires a challenge-bound decision; a

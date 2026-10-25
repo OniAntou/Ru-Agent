@@ -6,6 +6,27 @@ namespace RuApp.Tests;
 public sealed class AgentRunDeltaDeduplicatorTests
 {
     [Fact]
+    public void Feed_state_resets_frame_identity_but_keeps_lifetime_drop_counts()
+    {
+        var state = new AgentRunFeedState { TerminalStatus = "completed" };
+        state.RecordIngressDrop();
+        state.RecordUiGateDrop();
+        state.RecordDuplicateDrop();
+        state.RecordCancelDrop();
+
+        Assert.Equal(new AgentTransientDropReport(1, 1, 1, 1), state.Drops);
+        Assert.Equal(2, state.Drops.Lost);
+        Assert.True(state.TryAcceptAssistant("run-a", "step-a", 1));
+
+        state.ResetForRun();
+
+        Assert.Equal(new AgentTransientDropReport(1, 1, 1, 1), state.Drops);
+        Assert.Equal(2, state.Drops.Lost);
+        Assert.Null(state.TerminalStatus);
+        Assert.True(state.TryAcceptAssistant("run-a", "step-a", 1));
+    }
+
+    [Fact]
     public void Assistant_delta_identity_is_run_step_and_sequence()
     {
         var deduplicator = new AgentRunDeltaDeduplicator();

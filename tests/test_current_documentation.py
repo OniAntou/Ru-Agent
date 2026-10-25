@@ -28,27 +28,10 @@ CURRENT_RULE_DOCS = [
     ROOT / "AGENTS.md",
     ROOT / "CONTRIBUTING.md",
 ]
-# Docs whose subject *is* the permission contract must carry the canonical
-# matrix and trust vocabulary. A blanket requirement over every current doc
-# only forced each one to restate CONTEXT.md verbatim; the remaining docs are
-# held by the ban-list tests below, which is where drift in a passing
-# reference actually shows up.
-CURRENT_MATRIX_OWNING_DOCS = [
-    ROOT / "docs/architecture/broker.md",
-    ROOT / "docs/operations/agent-tools.md",
-    ROOT / "docs/operations/runtime-behavior.md",
-    ROOT / "backend-dotnet/README.md",
-    ROOT / "backend-dotnet/RuAgent.Cli/README.md",
-    ROOT / "docs/adr/0011-model-autonomy-and-workspace-trust-boundary.md",
-]
 CURRENT_DOCS = list(dict.fromkeys([*CURRENT_CONTRACT_DOCS, *CURRENT_COMPONENT_DOCS, *CURRENT_OPERATIONS_DOCS, *CURRENT_RULE_DOCS]))
-CURRENT_REASON_DOCS = [
-    ROOT / "docs/README.md",
-    ROOT / "docs/architecture/broker.md",
-    ROOT / "docs/operations/agent-tools.md",
-    ROOT / "backend-dotnet/RuAgent.Cli/README.md",
-    ROOT / "docs/adr/0017-workspace-terminal-policy.md",
-]
+POLICY_OWNER = ROOT / "docs/operations/agent-tools.md"
+POLICY_ENTRYPOINTS = [ROOT / "README.md", ROOT / "docs/architecture.md",
+                      ROOT / "backend-dotnet/README.md", ROOT / "backend-dotnet/RuAgent.Cli/README.md"]
 CURRENT_SECTION_BOUNDARIES = {
     ROOT / "docs/operations/agent-tools.md": ("## Current capability matrix", None),
 }
@@ -124,110 +107,16 @@ def test_completed_implementation_archives_are_not_kept_in_the_checkout() -> Non
         )
 
 
-def test_current_docs_describe_session_scoped_agent_permissions() -> None:
-    missing: list[str] = []
-    for path in CURRENT_REASON_DOCS:
-        text = _read(path)
-        for phrase in (
-            "session-scoped",
-            "external_directory_required",
-            "terminal_external_cwd_requires_approval",
-            "rule_asks",
-            "terminal_timeout_requires_approval",
-            "web_approval_required",
-        ):
-            if phrase not in text:
-                missing.append(f"{path.relative_to(ROOT)} missing {phrase!r}")
-    assert missing == [], missing
+def test_permission_documentation_links_to_one_contract_and_its_runtime_catalog() -> None:
+    def targets(path: Path) -> set[Path]:
+        links = re.findall(r"\[[^\]\n]*\]\(([^)\s]+)\)", _read(path))
+        return {(path.parent / unquote(urlsplit(link).path)).resolve()
+                for link in links if not urlsplit(link).scheme and urlsplit(link).path}
 
-
-def test_current_contract_uses_canonical_matrix_trust_and_terminal_warning() -> None:
-    matrix_vocabulary = {
-        "plan": (
-            r"\bplan\b",
-            r"\bworkspace reads?\b",
-            r"\bweb\b",
-            r"\bauto\w*\b",
-            r"\bterminal\b",
-            r"\bmutation\b",
-            r"\bden(?:y|ied|ies)\b",
-        ),
-        "standard": (
-            r"\bstandard\b",
-            r"\bworkspace (?:cwd|working directory)\b",
-            r"\b(?:in[- ]workspace|workspace) mutations?\b",
-            r"\bauto\w*\b",
-            r"\bexternal\b",
-            r"\bask(?:s|ed)?\b",
-        ),
-        "full_access": (
-            r"\bfull_access\b",
-            r"\bexternal structured files?\b",
-            r"\barbitrary terminal\b",
-            r"\bauto\w*\b",
-            r"\bstructured protected paths?\b",
-            r"\bden(?:y|ied|ies)\b",
-        ),
-    }
-    common = (
-        "session-scoped",
-        "workspace trust",
-        "canonical",
-        "identity",
-        "explicit",
-        "--trust-workspace",
-        "--confirm-full-access",
-        "current windows user",
-        "outside the workspace",
-        "sandbox",
-        "timeout",
-        "output",
-        "cancellation",
-        "process-tree",
-    )
-    missing: list[str] = []
-    aggregate: list[str] = []
-    for path in CURRENT_MATRIX_OWNING_DOCS:
-        text = " ".join(_current_text(path).lower().split())
-        aggregate.append(text)
-        for preset, patterns in matrix_vocabulary.items():
-            for pattern in patterns:
-                if re.search(pattern, text) is None:
-                    missing.append(f"{path.relative_to(ROOT)} missing {preset} pattern {pattern!r}")
-        for term in common:
-            if term not in text:
-                missing.append(f"{path.relative_to(ROOT)} missing {term!r}")
-    combined = "\n".join(aggregate)
-    assert re.search(r"\b(?:gui|winui)\b[^.\n]{0,160}\b(?:confirm|trust)\b", combined) is not None
-    assert missing == [], missing
-    _assert_contract_docs_restate_canonical_policy()
-
-
-# A doc that only mentions a preset in passing still cannot contradict the
-# canonical matrix. Requiring the full vocabulary there was the duplication
-# force; this keeps the drift guard where it belongs.
-def _assert_contract_docs_restate_canonical_policy() -> None:
-    required = (
-        # Full Access is literally full: the catalog-protected set joins the
-        # skip-all preset, so every doc naming it must say protected paths are
-        # allowed rather than denied. The read-only intent of plan and the
-        # external-ask intent of standard are pinned by the ban-lists below and
-        # by the owning-doc vocabulary above.
-        (
-            r"\bfull_access\b[^.\n]{0,400}\bprotected paths?\b[^.\n]{0,200}\b"
-            r"(?:allowed|ordinary|auto\w*|open\w*|no longer)\b",
-            "full_access opens protected paths",
-        ),
-    )
-    stale: list[str] = []
-    for path in CURRENT_CONTRACT_DOCS:
-        text = " ".join(_current_text(path).lower().split())
-        if "full_access" not in text:
-            continue
-        for pattern, what in required:
-            if re.search(pattern, text) is None:
-                stale.append(f"{path.relative_to(ROOT)} names full_access without {what!r}")
-    assert stale == [], stale
+    catalog = ROOT / "backend-dotnet/RuAgent.Protocol/Harness/AgentPolicyProfileContracts.cs"
+    assert catalog.resolve() in targets(POLICY_OWNER), "Canonical policy documentation must link to its executable catalog"
+    for path in POLICY_ENTRYPOINTS:
+        assert POLICY_OWNER.resolve() in targets(path), f"{path.relative_to(ROOT)} must link to the canonical tool policy"
 
 
 def test_current_sections_do_not_claim_stale_worker_or_permission_models() -> None:

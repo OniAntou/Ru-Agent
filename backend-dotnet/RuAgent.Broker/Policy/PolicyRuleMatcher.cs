@@ -29,6 +29,12 @@ public sealed record PolicyRuleSpec(
 
 public static class PolicyRuleMatcher
 {
+    private enum ArgvMatchSemantics
+    {
+        Prefix,
+        Exact,
+    }
+
     /// <summary>
     /// Parses a wire rule into a spec. Structural validation already happened at snapshot
     /// validation; this compiles matcher patterns and throws on any malformed value.
@@ -49,14 +55,14 @@ public static class PolicyRuleMatcher
             return false;
         }
 
-        return MatchesMatcher(rule.Matcher, context, exactShellInvocation: rule.Decision == "allow",
+        return MatchesMatcher(rule.Matcher, context, isAllowRule: rule.Decision == "allow",
             includeRequestedExecutable: rule.Decision != "allow");
     }
 
     public static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context)
-        => MatchesMatcher(matcher, context, exactShellInvocation: false);
+        => MatchesMatcher(matcher, context, isAllowRule: false);
 
-    private static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context, bool exactShellInvocation,
+    private static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context, bool isAllowRule,
         bool includeRequestedExecutable = false)
     {
         if (matcher.ToolId is not null && !ToolIdMatches(matcher.ToolId, context))
@@ -102,12 +108,14 @@ public static class PolicyRuleMatcher
             if (!matches) return false;
         }
 
-        // A shell allow binds program text, not a glob or a command prefix.
-        // Deny/ask rules retain pattern matching so a broad restriction wins.
+        // Allow rules derived from terminal calls distinguish reviewed exact
+        // invocations from normal command prefixes. Restrictions intentionally
+        // keep glob/prefix matching so a broad deny or ask still wins.
         if (matcher.ArgvPattern.Count > 0
-            && !(context.BashMode == "shell" && exactShellInvocation
-                ? matcher.ArgvPattern.SequenceEqual(context.Argv, StringComparer.Ordinal)
-                : ArgvMatches(matcher.ArgvPattern, context.Argv)))
+            && !ArgvMatches(
+                matcher.ArgvPattern,
+                context.Argv,
+                GetArgvMatchSemantics(isAllowRule, matcher, context)))
         {
             return false;
         }
@@ -255,8 +263,61 @@ public static class PolicyRuleMatcher
         return string.Equals(pattern, baseName, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool ArgvMatches(IReadOnlyList<string> pattern, IReadOnlyList<string> argv)
+    private static ArgvMatchSemantics GetArgvMatchSemantics(
+        bool isAllowRule,
+        MatcherSpec matcher,
+        PolicyContext context)
     {
+        if (isAllowRule && context.OperationClass == PolicyOperationClasses.Terminal)
+        {
+            if (context.BashMode == "shell" || IsPowerShellCommandInvocation(context))
+            {
+                return ArgvMatchSemantics.Exact;
+            }
+
+            if (IsLeadingFlag(matcher.ArgvPattern[0]))
+            {
+                return ArgvMatchSemantics.Exact;
+            }
+        }
+
+        return ArgvMatchSemantics.Prefix;
+    }
+
+    private static bool IsLeadingFlag(string argument) =>
+        argument.StartsWith("-", StringComparison.Ordinal)
+        || argument.StartsWith("/", StringComparison.Ordinal);
+
+    private static bool IsPowerShellCommandInvocation(PolicyContext context)
+    {
+        var executable = context.ResolvedExecutable;
+        if (executable is null || context.Argv.Count < 4)
+        {
+            return false;
+        }
+
+        var executableName = Path.GetFileName(executable);
+        var isPowerShell = string.Equals(executableName, "powershell", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(executableName, "powershell.exe", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(executableName, "pwsh", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(executableName, "pwsh.exe", StringComparison.OrdinalIgnoreCase);
+
+        return isPowerShell
+            && string.Equals(context.Argv[0], "-NoProfile", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(context.Argv[1], "-NonInteractive", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(context.Argv[2], "-Command", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ArgvMatches(
+        IReadOnlyList<string> pattern,
+        IReadOnlyList<string> argv,
+        ArgvMatchSemantics semantics)
+    {
+        if (semantics == ArgvMatchSemantics.Exact)
+        {
+            return pattern.SequenceEqual(argv, StringComparer.Ordinal);
+        }
+
         if (pattern.Count > argv.Count)
         {
             return false;

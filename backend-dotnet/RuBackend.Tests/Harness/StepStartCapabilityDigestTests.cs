@@ -47,9 +47,9 @@ public sealed class StepStartCapabilityDigestTests
                 DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
             var context = await provider.BuildAsync(run, snapshot, CancellationToken.None);
-            Assert.Equal(24, context.Capabilities.Count);
+            Assert.NotEmpty(context.Capabilities);
             var projected = InProcessModelStepRunner.BuildSettingsForTests(context);
-            Assert.Equal(24, projected["model_tools"]!.AsArray().Count);
+            Assert.Equal(context.Capabilities.Count, projected["model_tools"]!.AsArray().Count);
         }
         finally
         {

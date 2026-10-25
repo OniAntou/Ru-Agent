@@ -78,6 +78,7 @@ public static class AgentRecoveryNotes
         "edit_not_unique" => "Re-read the same file and narrow old_string or set expected_occurrences to the observed match count.",
         "workspace_changed" => "Inspect the current workspace and reconcile the change; do not overwrite stale content.",
         "process_exit_nonzero" => "For a declared required check, inspect the verification diagnostics, fix the cause and rerun that check. For exploratory work, repair the command or use an alternative relevant source; do not claim the failed command succeeded.",
+        "expected_exit_mismatch" => "Report the observed exit code and the unmet expectation. Do not retry a deliberately failing command merely to force the expected code, or claim a different invocation cleared it. Use run_process when a native process's exact exit code matters; PowerShell wrappers can return 1 instead.",
         "verification_stale" => "Code changed after a successful check. Rerun that same verification against the current changes.",
         "verification_pending" => "The required check is still running. Read its terminal output until its real exit is known; starting it is not a pass.",
         "verification_result_missing" => "The check has no confirmed terminal exit. Inspect its retained output or rerun it; do not infer success.",

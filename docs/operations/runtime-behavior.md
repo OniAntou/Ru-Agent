@@ -424,19 +424,9 @@ successfully, the UI creates one fresh session.
 The typed model-step settings advertise the run's supported pinned tool profile,
 with explicit file creation, editing, deletion/restoration and Windows terminal
 operations. [The tool contract](agent-tools.md#coding-profiles) owns inventories,
-arguments and availability; old or unversioned pins cannot resume execution. The canonical matrix is: `plan` allows workspace
-read and Web but denies terminal and mutation outright (read-only, no
-per-change asks) and asks for external structured access; `standard`
-auto-allows workspace mutation and executable/shell launches from a workspace cwd;
-external structured paths and external launch directories ask; `full_access` is the skip-all mode — external
-structured files, arbitrary terminal, and structured protected paths (harness
-key/database files, runtime descriptors and Ru hook and MCP configuration files) are
-automatic, while hard-invalid
-requests remain denied.
-These defaults do not bypass explicit deny or ask rules: an external folder
-grant or Full Access fallback cannot override a matched ask. Hard invariants,
-including Plan's read-only gate, are evaluated first.
-Repository cleanliness never changes the decision.
+arguments and availability; old or unversioned pins cannot resume execution. The [canonical permission matrix](agent-tools.md#current-capability-matrix)
+owns preset behavior, explicit-rule precedence and approval reasons. The Host
+projects that contract; documentation never grants the run additional authority.
 
 Standard structured-file access outside the trusted root may create a
 session-scoped canonical folder grant; it is not shared with a new

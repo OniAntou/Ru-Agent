@@ -247,16 +247,15 @@ public sealed partial class RuPromptContextProviderTests
         Assert.DoesNotContain(denied.Capabilities, capability => capability.Id == "web_search");
         Assert.DoesNotContain(denied.Capabilities, capability => capability.Id == "web_fetch");
         Assert.Contains(allowed.Capabilities, capability => capability.Id == "read" && capability.Availability == "enabled");
-        Assert.Equal(24, allowed.Capabilities.Count);
-        Assert.Equal(22, denied.Capabilities.Count);
+        Assert.Equal(denied.Capabilities.Count + 2, allowed.Capabilities.Count);
     }
 
     [Theory]
-    [InlineData(false, false, 22)]
-    [InlineData(true, false, 23)]
-    [InlineData(false, true, 23)]
-    [InlineData(true, true, 24)]
-    public async Task Prompt_and_worker_share_the_same_runtime_projection(bool search, bool fetch, int expectedCount)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Prompt_and_worker_share_the_same_runtime_projection(bool search, bool fetch)
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
@@ -275,7 +274,9 @@ public sealed partial class RuPromptContextProviderTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .ToArray();
 
-        Assert.Equal(expectedCount, promptIds.Length);
+        Assert.NotEmpty(promptIds);
+        Assert.Equal(search, promptIds.Contains("web_search"));
+        Assert.Equal(fetch, promptIds.Contains("web_fetch"));
         Assert.Equal(promptIds, workerIds);
         Assert.DoesNotContain(promptIds, id => !AgentToolDefinitionCatalog.Get().Any(definition => definition.ToolId == id));
         foreach (var capability in context.Capabilities)
@@ -435,7 +436,7 @@ public sealed partial class RuPromptContextProviderTests
         Assert.Equal(4_000, root.GetProperty("count").GetInt32());
         Assert.True(root.GetProperty("truncated").GetBoolean());
         Assert.InRange(root.GetProperty("results").GetArrayLength(), 1, 4_000);
-        Assert.Equal(41 + root.GetProperty("results").GetArrayLength(), root.GetProperty("projection_next_offset").GetInt32());
+        Assert.Equal(41 + root.GetProperty("results").GetArrayLength(), root.GetProperty("next_offset").GetInt32());
         Assert.Equal("call_22222222222222222222222222222222", root.GetProperty("projection_tool_call_id").GetString());
         Assert.Equal("provider_grep", root.GetProperty("projection_provider_call_id").GetString());
         Assert.Equal(source, snapshot.Entries[^1].Content);

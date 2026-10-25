@@ -220,19 +220,11 @@ remain sequential. Durable approval resume re-evaluates retained proposals
 without a new model proposal, and an `ask_user` park resumes the same way once
 `ru agent answer` completes the asked call.
 
-Canonical `plan` is read-only: workspace read/Web auto, terminal/mutation denied
-outright, external structured access asks.
-`standard` auto-allows workspace mutation and executable/shell launches from a workspace cwd;
-external structured paths and external launch directories ask. Terminal children
-in both execution presets run as the current Windows user without OS filesystem
-or network confinement; obsolete sandbox arguments are rejected by schema.
-`full_access` (the skip-all mode) allows external
-structured files, arbitrary terminal, and structured protected paths
-(harness key/database files and runtime descriptors) automatically, while
-hard-invalid requests remain denied. Web is
-automatic in all profiles; `web_approval_required` is only an explicit-rule
-compatibility reason. Full-access terminal runs as the current Windows user and
-has no OS filesystem/network confinement. Time, machine status, app discovery,
+The [canonical tool policy](../../docs/operations/agent-tools.md#current-capability-matrix)
+owns preset decisions, explicit-rule precedence and session/project approval scope.
+Terminal children run as the current Windows user without an OS filesystem or
+network sandbox. Timeout, output, cancellation and process-tree bounds remain.
+Time, machine status, app discovery,
 and optional volume commands use the terminal; notes use `write_file`.
 `apply_patch` is available in the patch and programmatic profiles; `app.open`
 is not model-usable. Managed

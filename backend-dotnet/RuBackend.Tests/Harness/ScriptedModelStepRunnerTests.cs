@@ -119,13 +119,13 @@ public sealed class ScriptedModelStepRunnerTests
     public async Task Paging_cursor_uses_the_exact_preceding_call_reference()
     {
         var runner = ScriptedModelStepRunner.FromJsonForTests(
-            """[{"tool":{"id":"read","arguments":{"path":"first.txt","offset":0}}},{"tool":{"id":"read","arguments":{"path":"second.txt","offset":"$projection_next_offset"}}}]""");
+            """[{"tool":{"id":"read","arguments":{"path":"first.txt","offset":0}}},{"tool":{"id":"read","arguments":{"path":"second.txt","offset":"$next_offset"}}}]""");
         var context = new ModelContextSnapshot(
         [ModelContextEntry.ToolResult("tool:previous", 1, Receipt("ru_call_script_1", "call_11111111111111111111111111111111"), "{}")],
         ReadOnlyMemory<byte>.Empty);
         var references = new PromptRuntimeContext([
-            new PromptReference("tool_result", "older", "{\"projection_tool_call_id\":\"call_22222222222222222222222222222222\",\"projection_provider_call_id\":\"ru_call_script_old\",\"projection_next_offset\":111,\"projection_has_more\":true}"),
-            new PromptReference("tool_result", "previous", "{\"projection_tool_call_id\":\"call_11111111111111111111111111111111\",\"projection_provider_call_id\":\"ru_call_script_1\",\"projection_next_offset\":222,\"projection_has_more\":true}"),
+            new PromptReference("tool_result", "older", "{\"projection_tool_call_id\":\"call_22222222222222222222222222222222\",\"projection_provider_call_id\":\"ru_call_script_old\",\"next_offset\":111,\"has_more\":true}"),
+            new PromptReference("tool_result", "previous", "{\"projection_tool_call_id\":\"call_11111111111111111111111111111111\",\"projection_provider_call_id\":\"ru_call_script_1\",\"next_offset\":222,\"has_more\":true}"),
         ]);
         var promptContext = new SystemPromptContext(
             SystemPromptContext.PromptContextSchemaVersion,
@@ -165,10 +165,10 @@ public sealed class ScriptedModelStepRunnerTests
     {
         const string firstProviderCall = "ru_call_script_1";
         const string nextProviderCall = "ru_call_script_2";
-        const string projected = "{\"projection_provider_call_id\":\"ru_call_script_1\",\"projection_tool_call_id\":\"call_11111111111111111111111111111111\",\"content\":\"VISIBLE-\",\"projection_next_offset\":18,\"projection_has_more\":true}";
+        const string projected = "{\"projection_provider_call_id\":\"ru_call_script_1\",\"projection_tool_call_id\":\"call_11111111111111111111111111111111\",\"content\":\"VISIBLE-\",\"next_offset\":18,\"has_more\":true}";
         const string source = "{\"path\":\"x.txt\",\"offset\":10,\"content\":\"VISIBLE-END\"}";
         var runner = ScriptedModelStepRunner.FromJsonForTests(
-            """[{"tool":{"id":"read","arguments":{"path":"x.txt","offset":10}}},{"cursor_from_call_id":"ru_call_script_1","context_oracle":{"projection_source_call_id":"ru_call_script_1","projection_field":"content","projection_excludes":"END","projection_cursor_matches_visible_bytes":true},"tool":{"id":"read","arguments":{"path":"x.txt","offset":"$projection_next_offset"}}},{"text":"done","context_oracle":{"projection_source_call_id":"ru_call_script_1","projection_result_call_id":"ru_call_script_2","projection_field":"content","projection_excludes":"END","projection_cursor_matches_visible_bytes":true}}]""");
+            """[{"tool":{"id":"read","arguments":{"path":"x.txt","offset":10}}},{"cursor_from_call_id":"ru_call_script_1","context_oracle":{"projection_source_call_id":"ru_call_script_1","projection_field":"content","projection_excludes":"END","projection_cursor_matches_visible_bytes":true},"tool":{"id":"read","arguments":{"path":"x.txt","offset":"$next_offset"}}},{"text":"done","context_oracle":{"projection_source_call_id":"ru_call_script_1","projection_result_call_id":"ru_call_script_2","projection_field":"content","projection_excludes":"END","projection_cursor_matches_visible_bytes":true}}]""");
         var firstReceipt = Receipt(firstProviderCall, "call_11111111111111111111111111111111");
         var firstContext = new ModelContextSnapshot(
             [ModelContextEntry.ToolResult("tool:first", 1, firstReceipt, source)],
@@ -196,12 +196,12 @@ public sealed class ScriptedModelStepRunnerTests
     public async Task Paging_cursor_rejects_a_reference_with_mismatched_persisted_call_identity()
     {
         var runner = ScriptedModelStepRunner.FromJsonForTests(
-            """[{"tool":{"id":"read","arguments":{"path":"first.txt","offset":0}}},{"tool":{"id":"read","arguments":{"path":"second.txt","offset":"$projection_next_offset"}}}]""");
+            """[{"tool":{"id":"read","arguments":{"path":"first.txt","offset":0}}},{"tool":{"id":"read","arguments":{"path":"second.txt","offset":"$next_offset"}}}]""");
         var context = new ModelContextSnapshot(
         [ModelContextEntry.ToolResult("tool:previous", 1, Receipt("ru_call_script_1", "call_11111111111111111111111111111111"), "{}")],
         ReadOnlyMemory<byte>.Empty);
         var promptContext = PromptContextWithReference(
-            "{\"projection_tool_call_id\":\"call_22222222222222222222222222222222\",\"projection_provider_call_id\":\"ru_call_script_1\",\"projection_next_offset\":222,\"projection_has_more\":true}");
+            "{\"projection_tool_call_id\":\"call_22222222222222222222222222222222\",\"projection_provider_call_id\":\"ru_call_script_1\",\"next_offset\":222,\"has_more\":true}");
         var request = CreateRequest(context, promptContext);
 
         await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
@@ -215,12 +215,12 @@ public sealed class ScriptedModelStepRunnerTests
     public async Task Paging_cursor_rejects_a_reference_with_mismatched_provider_call_identity()
     {
         var runner = ScriptedModelStepRunner.FromJsonForTests(
-            """[{"tool":{"id":"read","arguments":{"path":"first.txt","offset":0}}},{"tool":{"id":"read","arguments":{"path":"second.txt","offset":"$projection_next_offset"}}}]""");
+            """[{"tool":{"id":"read","arguments":{"path":"first.txt","offset":0}}},{"tool":{"id":"read","arguments":{"path":"second.txt","offset":"$next_offset"}}}]""");
         var context = new ModelContextSnapshot(
         [ModelContextEntry.ToolResult("tool:previous", 1, Receipt("ru_call_script_1", "call_11111111111111111111111111111111"), "{}")],
         ReadOnlyMemory<byte>.Empty);
         var promptContext = PromptContextWithReference(
-            "{\"projection_tool_call_id\":\"call_11111111111111111111111111111111\",\"projection_provider_call_id\":\"ru_call_script_other\",\"projection_next_offset\":222,\"projection_has_more\":true}");
+            "{\"projection_tool_call_id\":\"call_11111111111111111111111111111111\",\"projection_provider_call_id\":\"ru_call_script_other\",\"next_offset\":222,\"has_more\":true}");
         var request = CreateRequest(context, promptContext);
 
         await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);

@@ -5,6 +5,10 @@ session policy and headless Agent surfaces, updated 2026-10-25.
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
+This page owns the operating permission matrix; the executable source is the
+[Protocol policy catalog](../../backend-dotnet/RuAgent.Protocol/Harness/AgentPolicyProfileContracts.cs).
+Other guides link here instead of maintaining a separate preset matrix.
+
 This checkpoint includes declarative Skills, bounded headless terminal execution
 (`powershell` and `run_process`), session rewind, managed Git commit workflow,
 and dynamic model context compaction. MCP servers the user
@@ -124,8 +128,8 @@ optional `offset`/`limit` (source bytes, default 1 MiB, maximum 4 MiB) and reads
 one file. A `.png`, `.jpg`, `.jpeg` or `.webp` file is returned as an image
 when the run's model accepts image input (see [Image reads](#image-reads)).
 Returned JSON is fitted into 4 MiB, including escaping and metadata;
-`offset + bytes_read` continues a truncated Broker page, while
-`projection_next_offset` takes precedence when model projection clips it.
+`offset + bytes_read` continues a truncated Broker page. The Host adjusts
+`next_offset` to the visible page when model context clips it.
 `list` takes `path` with optional
 `max_entries` (1–512); `help` takes `query` (1–256) with optional `max_results`
 (1–5) and searches the five bundled offline documents; `todo_write` replaces the
@@ -235,8 +239,8 @@ they do not make a retired public identity executable.
 
 Large structured tool results are projected into bounded prompt references while
 their durable Broker receipts stay unchanged. When a reference carries
-`projection_has_more: true`, continue the same source using
-`projection_next_offset`: `read` cursors count UTF-8 bytes, `grep` cursors count
+`has_more: true`, continue the same source using
+`next_offset`: `read` cursors count UTF-8 bytes, `grep` cursors count
 matches from the original query offset (an omitted `offset` means zero),
 `web_fetch` cursors count UTF-16 characters in extracted content (excluding
 the untrusted wrapper/truncation marker), and `terminal_read` cursors count UTF-16 characters within the same
@@ -284,8 +288,7 @@ page exists. Narrow the path/query in that case. Each page re-scans files;
 changing files or hitting discovery bounds can change the ordered result set.
 The 50000-offset ceiling can prevent continuation even when more matches are
 known; narrow the query/path rather than exceeding it. If prompt projection
-clips the returned page, prefer its `projection_next_offset` over the receipt's
-`next_offset`.
+clips the returned page, use the adjusted `next_offset` in the model-visible page.
 
 Each candidate's opened file handle must still match its previously authorized
 canonical path before content is read; a junction swap is skipped instead of
@@ -948,12 +951,47 @@ Its result stays outstanding across unrelated reads, restart and compaction, and
 must be rerun after later known mutations, including edits while a check runs in
 the background. Authenticated receipts identify the actual resolved invocation,
 so cwd aliases do not create unrelated checks. `purpose=inspection` declares read-only intent;
-it is not enforced filesystem confinement. The default `command` remains compatible
-with earlier calls. Exploratory/default failures remain failed receipts and do
-not create mandatory test obligations; declare required build/test checks with
+it is not enforced filesystem confinement. A completed default `command`
+preserves earlier checks only when Broker's resolved executable/argv
+classification marks it read-only and the receipt
+confirms exit zero. Shell scripts, unclassified commands, failures and uncertain
+effects remain conservative. This metadata is derived by the authority and
+cannot be supplied as a model argument; it grants no execution permission.
+Exploratory/default failures remain failed receipts and do not create mandatory
+test obligations; declare required build/test checks with
 `purpose=verification`. A later alternative source does not certify the failed
 command, but can supply the requested information.
 For a task explicitly testing failure, declare `purpose=expected_failure` and the
-exact `expected_exit_code` (1-255) before execution. This satisfies only that negative
-check, preserves its failed receipt, and never accepts denial, timeout, cancellation
-or unknown outcome. See [receipt-backed verification](../architecture/harness.md#receipt-backed-verification).
+exact signed 32-bit nonzero `expected_exit_code` before execution. This satisfies
+only that negative check, preserves its failed receipt, and never accepts denial,
+timeout, cancellation or unknown outcome. See
+[receipt-backed verification](../architecture/harness.md#receipt-backed-verification).
+
+Prefer `run_process` for literal executable/argv launches, including Python, Git
+and test runners. It returns the native process exit code. `powershell` uses
+Windows PowerShell 5.1: Bash heredocs and `&&` are not supported, and the wrapper
+can return 1 when its native child returned a different nonzero code. If shell
+execution is necessary and the native exit is required, explicitly propagate
+`$LASTEXITCODE`; never replace an observed exit with the expected value.
+
+Do not retry a matching negative test to obtain zero. An expected-exit mismatch
+remains a failed check even when a different invocation subsequently passes. At
+final prose, the Host emits one report with the observed and expected exits and
+ends the run unsuccessfully, rather than repeating completion recovery.
+
+### Evidence retention and model continuation
+
+Verification retains at most 256 required checks independently from 64 recent
+diagnostic checks. Passed negative tests are diagnostics; unresolved declared
+checks are never evicted to admit optional failures. Recent expected-failure
+receipt identities are retained for the latest bounded tool batch without
+turning successful negative tests into a tracking-limit failure. Exhausting
+required evidence still reports `verification_tracking_limit`.
+
+The model receives one effective continuation per pageable result:
+`next_offset` with `has_more`, or `next_line` with `has_more` for line reads.
+The Host adjusts it when fitting context and preserves provenance; original
+Broker receipt bytes are unchanged. A truncated incomplete scan with no source
+cursor has no invented continuation: narrow the query. Offset units remain
+UTF-8 bytes for read, UTF-16 characters for web/terminal output, and match indices
+for grep. Raw SDK results retain their native receipt metadata.

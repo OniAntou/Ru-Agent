@@ -237,6 +237,29 @@ public sealed partial class HarnessSessionDeletionCoordinatorTests
     }
 
     [Fact]
+    public async Task Runtime_run_cleanup_cancels_tools_before_releasing_registration_and_gateway()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var seeded = await fixture.SeedRunAsync(new HarnessRunStatus(HarnessRunState.WaitingUser));
+        var trace = new List<string>();
+        var registry = new RecordingRootRegistry(trace);
+        registry.Register(seeded.Run.RunId, fixture.RootPath);
+        var loop = NewRuntimeLoop(fixture, registry, trace);
+
+        await loop.CancelAndRemoveRunAsync(seeded.Run.RunId, CancellationToken.None);
+
+        Assert.Equal(
+            [
+                "cancel_tools:" + seeded.Run.RunId.Value,
+                "remove_root:" + seeded.Run.RunId.Value,
+                "close_run:" + seeded.Run.RunId.Value,
+                "drop_retained:" + seeded.Run.RunId.Value,
+            ],
+            trace);
+        Assert.False(registry.TryGetRoot(seeded.Run.RunId, out _));
+    }
+
+    [Fact]
     public async Task Deleted_run_drive_pass_removes_the_registration()
     {
         var fixture = await BackendHarnessTestFixture.CreateAsync();
@@ -263,8 +286,10 @@ public sealed partial class HarnessSessionDeletionCoordinatorTests
 
     private static AgentRuntimeLoopService NewRuntimeLoop(
         BackendHarnessTestFixture fixture,
-        IAgentRuntimeRootRegistry roots)
+        IAgentRuntimeRootRegistry roots,
+        List<string>? trace = null)
     {
+        var coordinatorFactory = new UnusedCoordinatorFactory(trace);
         var sessions = new SessionStore(
             new DataPaths(
                 Path.Combine(fixture.RootPath, "settings.json"),
@@ -280,22 +305,26 @@ public sealed partial class HarnessSessionDeletionCoordinatorTests
                 fixture.PayloadStore,
                 new CryptographicIdGenerator(),
                 TimeProvider.System),
-            new AgentRunHistoryTransitionSink(new UnusedCoordinatorFactory(), roots),
+            new AgentRunHistoryTransitionSink(coordinatorFactory, roots),
             TimeProvider.System);
         return new AgentRuntimeLoopService(
             dispatcher,
             fixture.EventStore,
-            new UnusedCoordinatorFactory(),
+            coordinatorFactory,
             roots,
             NullLogger<AgentRuntimeLoopService>.Instance,
             new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
             new RuAgent.Harness.Persistence.WorkspaceJournalProtector(fixture.KeyStore),
-            new UnavailableToolGatewayFactory());
+            trace is null ? new UnavailableToolGatewayFactory() : new StubGatewayFactory(trace, revokeResult: true));
     }
 
     private sealed class RecordingRootRegistry : IAgentRuntimeRootRegistry
     {
         private readonly Dictionary<string, string> _roots = new(StringComparer.Ordinal);
+
+        private readonly List<string>? _trace;
+
+        public RecordingRootRegistry(List<string>? trace = null) => _trace = trace;
 
         public List<string> CancelledRunIds { get; } = [];
 
@@ -329,12 +358,14 @@ public sealed partial class HarnessSessionDeletionCoordinatorTests
         public Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken)
         {
             CancelledRunIds.Add(runId.Value);
+            _trace?.Add("cancel_tools:" + runId.Value);
             return Task.CompletedTask;
         }
 
         public void Remove(RunId runId)
         {
             RemovedRunIds.Add(runId.Value);
+            _trace?.Add("remove_root:" + runId.Value);
             _roots.Remove(runId.Value);
         }
 
@@ -342,7 +373,7 @@ public sealed partial class HarnessSessionDeletionCoordinatorTests
             _roots.Select(pair => (pair.Key, pair.Value)).ToArray();
     }
 
-    private sealed class UnusedCoordinatorFactory : IAgentRuntimeCoordinatorFactory
+    private sealed class UnusedCoordinatorFactory(List<string>? trace = null) : IAgentRuntimeCoordinatorFactory
     {
         public Task<AgentRunCoordinator> CreateAsync(
             string workspaceRoot,
@@ -352,9 +383,7 @@ public sealed partial class HarnessSessionDeletionCoordinatorTests
             CancellationToken cancellationToken = default) =>
             Task.FromException<AgentRunCoordinator>(new NotSupportedException());
 
-        public void DropRetainedApproval(RunId runId)
-        {
-        }
+        public void DropRetainedApproval(RunId runId) => trace?.Add("drop_retained:" + runId.Value);
     }
 
     private sealed class StubGatewayFactory(List<string> trace, bool revokeResult)
@@ -395,7 +424,11 @@ public sealed partial class HarnessSessionDeletionCoordinatorTests
             return Task.CompletedTask;
         }
 
-        public Task CloseRunAsync(string runId) => throw new NotSupportedException();
+        public Task CloseRunAsync(string runId)
+        {
+            trace.Add("close_run:" + runId);
+            return Task.CompletedTask;
+        }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

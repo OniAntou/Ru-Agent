@@ -150,7 +150,7 @@ internal static class BrokerGatewayContracts
         }
 
         if (output is not null)
-            foreach (var field in new[] { "verification_identity", "verification_cwd" })
+            foreach (var field in new[] { "verification_identity", "verification_cwd", "terminal_effect" })
                 if (output[field] is JsonValue value && value.TryGetValue<string>(out var metadata)
                     && metadata.Length <= 4096 && !metadata.Contains('\0')) content[field] = metadata;
 

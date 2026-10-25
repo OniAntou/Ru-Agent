@@ -59,6 +59,11 @@ internal sealed partial class AgentRunStepHandlers
         string? reasoningText = null)
     {
         const string stepErrorCode = "unverified_after_tool_failure";
+        // A confirmed mismatch cannot be repaired by regenerating final prose.
+        // Keep the failed evidence and publish its observed outcome exactly once.
+        if (context.VerificationEvidence.DescribeExitMismatch() is { } mismatchReport)
+            return await HandleBlockedReportAsync(run, modelStepId, step, mismatchReport, errorCode,
+                droppedCount, promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText).ConfigureAwait(false);
         var reportsBlocker = AgentRecoveryNotes.TryReadBlockedReply(step, out var blockerReport);
         if (reportsBlocker)
             return await HandleBlockedReportAsync(run, modelStepId, step, blockerReport, errorCode,

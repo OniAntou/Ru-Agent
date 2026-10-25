@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: Stop final-prose retry loops for confirmed expected-exit
+  mismatches and publish the observed failure without clearing required checks.
+  Clarify native argv/exit handling and multiline JSON edit/write arguments.
+- **fix(history)**: Commit failed-run reports and their final history outbox
+  atomically; delivery retains the failed state instead of rejecting the report
+  with a runtime driver error.
+- **fix(gui)**: Use the desktop workspace folder picker, prevent duplicate
+  dialogs and treat native Cancel/close as an ordinary no-selection outcome.
+
+- **fix(agent)**: Keep optional diagnostics and successful negative tests out of
+  required verification limits; preserve checks after authority-identified
+  read-only terminal completion and accept nonzero Windows signed exit codes.
+- **fix(policy)**: Apply remembered command-prefix rules to current terminal
+  tools; flag-first and shell-wrapper allows match complete argv, while deny/ask
+  restrictions retain their broad matching and precedence.
+- **refactor(runtime)**: Separate run parking/cleanup and GUI feed lifecycle
+  ownership; test update scheduling/cancellation through behavior.
+- **refactor(context)**: Give model output one effective paging cursor and
+  align guidance with current tool identities; keep original Broker receipts.
+- **test(docs)**: Link one canonical policy contract and retain semantic/link
+  guards instead of requiring repeated policy wording in every guide.
+
 - **refactor(tools)!**: Retire the legacy tool profile and public `write`, `edit`,
   `bash` bindings. Existing provider selections require an explicit supported
   profile pin; old pins fail with a named error instead of silently switching.

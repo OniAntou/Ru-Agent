@@ -20,5 +20,7 @@ public sealed partial class ToolExecutionService
         });
         output["verification_identity"] = Convert.ToHexString(SHA256.HashData(bytes));
         output["verification_cwd"] = intent.CanonicalWorkingDirectory;
+        output["terminal_effect"] = intent.OperationClass == RuAgent.Protocol.TerminalOperationClass.ReadOnly
+            ? "read_only" : "unknown";
     }
 }

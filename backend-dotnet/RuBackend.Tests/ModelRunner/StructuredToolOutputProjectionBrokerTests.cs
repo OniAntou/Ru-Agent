@@ -40,9 +40,12 @@ public sealed class StructuredToolOutputProjectionBrokerTests
             Assert.Contains("CURSOR-MIDDLE-MARKER", firstPage.Output["page"]!.GetValue<string>(), StringComparison.Ordinal);
             var conversation = ProjectReadOutput(executionId, firstRequestId, source);
             using var projected = JsonDocument.Parse(conversation.Content);
-            var cursor = projected.RootElement.GetProperty("projection_next_offset").GetInt32();
+            var cursor = projected.RootElement.GetProperty("next_offset").GetInt32();
             Assert.True(cursor > 0);
             Assert.True(cursor < brokerPageLimit);
+            Assert.True(projected.RootElement.GetProperty("has_more").GetBoolean());
+            Assert.False(projected.RootElement.TryGetProperty("projection_next_offset", out _));
+            Assert.False(projected.RootElement.TryGetProperty("projection_has_more", out _));
             Assert.DoesNotContain("CURSOR-MIDDLE-MARKER", conversation.Content, StringComparison.Ordinal);
             Assert.Equal(source, firstPage.Output.ToJsonString());
 
@@ -82,7 +85,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
         var projected = ProjectResult("read", providerCallId, "{\"path\":\"large.txt\",\"offset\":0,\"limit\":262144}", source);
         using var view = JsonDocument.Parse(projected.Content);
         var visible = view.RootElement.GetProperty("content").GetString()!;
-        var cursor = view.RootElement.GetProperty("projection_next_offset").GetInt32();
+        var cursor = view.RootElement.GetProperty("next_offset").GetInt32();
         Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
         Assert.True(cursor < System.Text.Encoding.UTF8.GetByteCount("\uFEFF" + string.Concat(Enumerable.Repeat("Tiáº¿ngðŸ™‚", 3_000))));
         Assert.Equal(originalBytes, first.Output["bytes_read"]!.GetValue<int>());
@@ -127,9 +130,12 @@ public sealed class StructuredToolOutputProjectionBrokerTests
         var visible = view.RootElement.GetProperty("results").EnumerateArray()
             .Select(result => result.GetProperty("preview").GetString()!)
             .ToArray();
-        var cursor = view.RootElement.GetProperty("projection_next_offset").GetInt32();
+        var cursor = view.RootElement.GetProperty("next_offset").GetInt32();
         Assert.DoesNotContain(visible, result => result.Contains(hiddenMarker, StringComparison.Ordinal));
         Assert.Equal(originalOffset + visible.Length, cursor);
+        Assert.True(view.RootElement.GetProperty("has_more").GetBoolean());
+        Assert.False(view.RootElement.TryGetProperty("projection_next_offset", out _));
+        Assert.False(view.RootElement.TryGetProperty("projection_has_more", out _));
         Assert.Equal(64, view.RootElement.GetProperty("count").GetInt32());
         Assert.Equal(source, first.Output.ToJsonString());
 

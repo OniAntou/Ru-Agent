@@ -65,6 +65,83 @@ public sealed class TerminalIntentClassifierTests
         Assert.True(PolicyRuleMatcher.Matches(restriction with { Decision = "ask" }, context, now));
     }
 
+    [Fact]
+    public void Remembered_flag_first_run_process_allow_rejects_appended_arguments()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var context = Terminal(CreateFactory(workspace.Root), "node", "-e", "console.log('reviewed')");
+        var now = DateTimeOffset.UtcNow;
+        var rule = new PolicyRuleSpec("rule_" + new string('2', 32), "project", "allow",
+            new MatcherSpec("run_process", "1.0.0", null, context.ResolvedExecutable,
+                context.Argv, context.CanonicalCwd, "terminal", "none"), 1, null);
+
+        Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
+        Assert.False(PolicyRuleMatcher.Matches(
+            rule,
+            context with { Argv = [.. context.Argv, "--require", "unexpected.js"] },
+            now));
+    }
+
+    [Fact]
+    public void Remembered_windows_slash_flag_run_process_allow_rejects_appended_arguments()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var context = Terminal(CreateFactory(workspace.Root), "cmd.exe", "/d", "/c", "echo", "fixture");
+        var now = DateTimeOffset.UtcNow;
+        var rule = new PolicyRuleSpec("rule_" + new string('5', 32), "project", "allow",
+            new MatcherSpec("run_process", "1.0.0", null, context.ResolvedExecutable,
+                context.Argv, context.CanonicalCwd, "terminal", "none"), 1, null);
+
+        Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
+        Assert.False(PolicyRuleMatcher.Matches(
+            rule,
+            context with { Argv = [.. context.Argv, "&", "whoami"] },
+            now));
+    }
+
+    [Fact]
+    public void Remembered_run_process_shell_wrapper_allow_rejects_appended_arguments()
+    {
+        using var workspace = new TemporaryWorkspace();
+        const string script = "Write-Output 'reviewed script'";
+        var context = Terminal(
+            CreateFactory(workspace.Root),
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            script);
+        var now = DateTimeOffset.UtcNow;
+        var rule = new PolicyRuleSpec("rule_" + new string('3', 32), "project", "allow",
+            new MatcherSpec("run_process", "1.0.0", null, context.ResolvedExecutable,
+                context.Argv, context.CanonicalCwd, "terminal", "none"), 1, null);
+
+        Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
+        Assert.False(PolicyRuleMatcher.Matches(
+            rule,
+            context with { Argv = [.. context.Argv, "-EncodedCommand", "unexpected"] },
+            now));
+    }
+
+    [Fact]
+    public void Deny_and_ask_rules_keep_broad_argv_matching_for_executable_aliases()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var context = Terminal(CreateFactory(workspace.Root), "node", "-e", "console.log('reviewed')");
+        var now = DateTimeOffset.UtcNow;
+        var appended = context with { Argv = [.. context.Argv, "--require", "unexpected.js"] };
+
+        foreach (var executableAlias in new[] { "node", context.ResolvedExecutable! })
+        {
+            var restriction = new PolicyRuleSpec("rule_" + new string('4', 32), "project", "deny",
+                new MatcherSpec("run_process", "1.0.0", null, executableAlias,
+                    ["-e", "**"], context.CanonicalCwd, "terminal", "none"), 1, null);
+
+            Assert.True(PolicyRuleMatcher.Matches(restriction, appended, now));
+            Assert.True(PolicyRuleMatcher.Matches(restriction with { Decision = "ask" }, appended, now));
+        }
+    }
+
     [Theory]
     [InlineData("git", "push")]
     [InlineData("python", "-c", "print('a;b|c')")]

@@ -75,7 +75,7 @@ explicit denial. They invoke the actual CLI and managed Host with a temporary wo
 use the real Broker, and check bounded event counts, receipt identities, and file oracles.
 Approval-gated cases drive the existing explicit `agent approve`/`deny` commands and read
 only public SSE history; the restart case restarts the managed Host against the
-same data root. Paging scripts resolve `$projection_next_offset` and `$projection_spool_id`
+same data root. Paging scripts resolve `$next_offset` and `$projection_spool_id`
 from the exact preceding tool call, and context oracles can require a marker to be present
 or absent in the assembled model context. These predetermined steps verify wiring and
 effects; they do not measure provider behavior or prove that a real model would find a

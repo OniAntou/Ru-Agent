@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(tools)!**: Retire the legacy tool profile and public `write`, `edit`,
+  `bash` bindings. Existing provider selections require an explicit supported
+  profile pin; old pins fail with a named error instead of silently switching.
+  Modern tools retain existing policy-family rules and the same Broker authority.
+
+
 - **feat(tools)**: Pin simpler coding tool profiles per run, with explicit
   Windows terminal operations, atomic same-file multi-edit, line-based reads,
   and policy-checked multi-file unified patches. Preserve legacy run tools.

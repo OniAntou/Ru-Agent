@@ -4,7 +4,6 @@ namespace RuAgent.Protocol;
 
 public static class AgentToolProfiles
 {
-    public const string Legacy = "legacy_v1";
     public const string Minimal = "coding_v2";
     public const string Patch = "patch_v2";
     public const string Programmatic = "coding_code_v1";
@@ -20,15 +19,20 @@ public static class AgentToolProfiles
 
     public static string ReadPin(JsonObject options)
     {
-        if (!options.ContainsKey(PinField)) return Legacy;
+        if (!options.ContainsKey(PinField)) throw new AgentProtocolException("tool_profile_required");
         if (options[PinField] is JsonValue value && value.TryGetValue<string>(out var profile)
-            && profile is Legacy or Minimal or Patch or Programmatic) return profile;
+            && profile is Minimal or Patch or Programmatic) return profile;
         throw new AgentProtocolException("tool_profile_invalid");
     }
 
+    // Querying an unsupported historical record must not create executable
+    // metadata or invent a replacement pin. Execution always uses ReadPin.
+    public static string? ReadSupportedLabel(JsonObject options) =>
+        options[PinField] is JsonValue value && value.TryGetValue<string>(out var profile)
+            && profile is Minimal or Patch or Programmatic ? profile : null;
+
     public static bool Includes(string profile, string toolId) => profile switch
     {
-        Legacy => Common.Contains(toolId) || toolId is "write" or "edit" or "bash",
         Minimal => Common.Contains(toolId) || Coding.Contains(toolId),
         Programmatic => Common.Contains(toolId) || Coding.Contains(toolId) || toolId is "run_code" or "apply_patch",
         Patch => Common.Contains(toolId) || toolId == "apply_patch"

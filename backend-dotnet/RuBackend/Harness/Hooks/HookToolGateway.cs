@@ -127,8 +127,8 @@ public sealed class HookToolGateway : IToolGateway, IToolRunCancellation, IAppro
 
     private static ToolAccessKind AccessKindOf(string toolId) => toolId switch
     {
-        "bash" => ToolAccessKind.Terminal,
-        "write" or "edit" or "delete" or "restore" => ToolAccessKind.Mutation,
+        "powershell" or "run_process" => ToolAccessKind.Terminal,
+        "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "run_code" => ToolAccessKind.Mutation,
         _ => ToolAccessKind.ReadOnly,
     };
 }

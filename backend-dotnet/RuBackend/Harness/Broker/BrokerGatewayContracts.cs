@@ -35,9 +35,9 @@ internal static class BrokerGatewayContracts
     internal static ToolAccessKind AccessKindForTool(string toolId, JsonObject? arguments = null) =>
         toolId switch
         {
-            "write" or "edit" or "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "todo_write" or "agent_spawn" or "agent_send" or "agent_cancel" or "agent_apply" => ToolAccessKind.Mutation,
+            "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "todo_write" or "agent_spawn" or "agent_send" or "agent_cancel" or "agent_apply" => ToolAccessKind.Mutation,
             "agent_wait" => ToolAccessKind.ReadOnly,
-            "bash" or "powershell" or "run_process" => ToolAccessKind.Terminal,
+            "powershell" or "run_process" => ToolAccessKind.Terminal,
             _ when BrokerPolicyContracts.IsReadOnlyTool(toolId) => ToolAccessKind.ReadOnly,
             _ => ToolAccessKind.Terminal,
         };

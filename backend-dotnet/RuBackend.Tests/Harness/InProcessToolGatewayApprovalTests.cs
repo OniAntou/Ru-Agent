@@ -166,13 +166,16 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
                 new ToolCallId("call_" + new string('1', 32)),
                 "provider_call_1",
                 modelOrder: 1,
-                "edit",
+                "edit_file",
                 "1.0.0",
                 JsonSerializer.SerializeToElement(new JsonObject
                 {
                     ["path"] = editPath,
-                    ["old_string"] = "factory-edit-pre",
-                    ["new_string"] = "factory-edit-post",
+                    ["edits"] = new JsonArray(new JsonObject
+                    {
+                        ["old_string"] = "factory-edit-pre",
+                        ["new_string"] = "factory-edit-post",
+                    }),
                 }));
             var editAsk = await gateway.EvaluateAsync(editProposal, CancellationToken.None);
             Assert.Equal(PolicyDecision.Ask, editAsk.Decision);
@@ -184,11 +187,10 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
                 new ToolCallId("call_" + new string('2', 32)),
                 "provider_call_1",
                 modelOrder: 1,
-                "write",
+                "write_file",
                 "1.0.0",
                 JsonSerializer.SerializeToElement(new JsonObject
                 {
-                    ["op"] = "write",
                     ["path"] = notePath,
                     ["content"] = "external-note-content",
                     ["overwrite"] = false,
@@ -209,13 +211,16 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
                 new ToolCallId("call_" + new string('1', 32)),
                 "provider_call_1",
                 modelOrder: 1,
-                "edit",
+                "edit_file",
                 "1.0.0",
                 JsonSerializer.SerializeToElement(new JsonObject
                 {
                     ["path"] = editPath,
-                    ["old_string"] = "factory-edit-pre",
-                    ["new_string"] = "factory-edit-post",
+                    ["edits"] = new JsonArray(new JsonObject
+                    {
+                        ["old_string"] = "factory-edit-pre",
+                        ["new_string"] = "factory-edit-post",
+                    }),
                 }));
             var editAllow = await gateway.EvaluateAsync(editResumed, CancellationToken.None);
             Assert.Equal(PolicyDecision.Allow, editAllow.Decision);
@@ -230,11 +235,10 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
                 new ToolCallId("call_" + new string('2', 32)),
                 "provider_call_1",
                 modelOrder: 1,
-                "write",
+                "write_file",
                 "1.0.0",
                 JsonSerializer.SerializeToElement(new JsonObject
                 {
-                    ["op"] = "write",
                     ["path"] = notePath,
                     ["content"] = "external-note-content",
                     ["overwrite"] = false,

@@ -193,23 +193,20 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
                     token).ConfigureAwait(false),
                 ToolVerificationStates.NotRequired,
                 "Workspace glob completed."),
-            ["write"] = ExecuteWriteOpAsync,
             ["apply_patch"] = ExecutePatchAsync,
-            ["edit"] = (context, arguments, _) => ExecuteFileEdit(context, arguments),
-            ["bash"] = ExecuteBashAsync,
+            ["read_file"] = ExecuteLineReadAsync,
+            ["write_file"] = (context, arguments, _) => Succeeded(ExecuteFileWrite(context, arguments), "Workspace file written."),
+            ["edit_file"] = ExecuteMultiEditAsync,
+            ["file_delete"] = (context, arguments, _) => Succeeded(ExecuteDelete(context, arguments), "Workspace file deleted."),
+            ["file_restore"] = (context, arguments, _) => ExecuteRestore(context, arguments),
+            ["powershell"] = ExecuteTerminalShellAsync,
+            ["run_process"] = ExecuteTerminalRunAsync,
+            ["terminal_read"] = (context, arguments, _) => ValueTask.FromResult(ExecuteTerminalReadOutput(context, arguments)),
+            ["terminal_stop"] = (context, arguments, _) => ValueTask.FromResult(ExecuteTerminalKill(context, arguments)),
             ["web_search"] = ExecuteWebSearchAsync,
             ["web_fetch"] = ExecuteWebFetchAsync,
             ["mcp"] = ExecuteMcpAsync,
         };
-
-        foreach (var definition in AgentToolDefinitionCatalog.Get().Where(definition => CodingToolArguments.AdapterToolId(definition.ToolId) is not null))
-        {
-            var id = definition.ToolId;
-            executors[id] = id == "read_file" ? ExecuteLineReadAsync : id == "edit_file"
-                ? ExecuteMultiEditAsync
-                : (context, arguments, token) => executors[CodingToolArguments.AdapterToolId(id)!](
-                    context, CodingToolArguments.ToAdapterArguments(id, arguments), token);
-        }
 
         // Native orchestration consumes exact authorization through Runtime callbacks.
         // Ordinary/legacy dispatch must never substitute an execution adapter for it.
@@ -279,10 +276,10 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private static string IoRepairHint(string? code) => code switch
     {
         "is_directory" => "target is a directory, and file tools address files: list it and act on the files inside, or remove it with an approved terminal command.",
-        "file_not_found" => "file does not exist: list the directory to check the path. Create it with an advertised write_file, apply_patch add-file diff, or legacy write with op=write, path and content. An edit cannot create files.",
+        "file_not_found" => "file does not exist: list the directory to check the path. Create it with an advertised write_file or apply_patch add-file diff. An edit cannot create files.",
         "read_line_too_long" => "A line exceeds the line-read output limit. Use read with byte paging and its returned cursor instead.",
         "read_line_scan_limit" => "The file exceeds the 4 MiB line snapshot limit. Use read with bounded byte paging instead.",
-        "file_exists" => "file already exists: read it, then use the advertised file tool for a partial change, or retry with the same path and content and overwrite=true for deliberate replacement (legacy write also requires op=write).",
+        "file_exists" => "file already exists: read it, then use the advertised file tool for a partial change, or retry write_file with the same path and content and overwrite=true for deliberate replacement.",
         _ => "Tool input or output failed.",
     };
 

@@ -5,6 +5,9 @@ date: 2026-10-24
 
 # Pin coding tool profiles and reuse Broker adapters
 
+> Legacy compatibility clauses below are superseded by [ADR 0029](0029-retire-legacy-tool-surface.md).
+> Supported profiles retain their run-pinned inventories and shared Broker authority.
+
 ## Context
 
 The multiplexed `write` and historically named `bash` tools require the model

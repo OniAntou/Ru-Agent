@@ -102,9 +102,10 @@ _Avoid_: treating a Broker manifest or adapter list as the model contract
 
 **Tool Profile**:
 The run-pinned selection of Protocol tool definitions shown to the model.
-Legacy runs keep their original surface; new coding profiles select simple
-file/Windows-terminal operations or unified patches. This does not select an
-execution authority or grant permission. See [ADR 0027](docs/adr/0027-pinned-coding-tool-profiles.md).
+Supported profiles select simple file/Windows-terminal operations, unified
+patches or bounded programs. Persisted provider selections require an explicit
+supported pin; retired surfaces are not executable. This does not select an
+execution authority or grant permission. See [ADR 0029](docs/adr/0029-retire-legacy-tool-surface.md).
 
 **Program Invocation**:
 A run-bound `run_code` invocation in the experimental coding profile. Pure

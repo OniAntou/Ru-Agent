@@ -96,7 +96,7 @@ from the session database there were **0 tool activity records and 0
 `model_tool_call_invalid` events**. Eliminated as causes at the time:
 
 - **Not a missing tool.** Every step sends the full manifest
-  (`read`/`list`/`grep`/`glob`/`write`/`edit`/`bash`, …).
+  (`read_file`/`list`/`grep`/`glob`/`write_file`/`edit_file`/`powershell`, …).
 - **Not a permission denial.** With preset `standard`, reads inside the
   workspace are auto-allowed by `PolicySnapshotEvaluator`'s effective fallback,
   so a `read` would not have been blocked.

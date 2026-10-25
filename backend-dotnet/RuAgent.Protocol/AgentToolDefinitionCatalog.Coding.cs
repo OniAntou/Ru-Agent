@@ -41,8 +41,20 @@ public static partial class AgentToolDefinitionCatalog
 
     private static JsonObject TerminalCommandSchema(bool shell)
     {
-        var fields = BashSchemaProperties().Where(field => field.Name is not ("mode" or "shell" or "execution_id" or "offset" or "limit")
-            && (shell ? field.Name is not ("executable" or "arguments") : field.Name != "script")).ToArray();
+        (string Name, JsonObject Schema)[] fields =
+        [
+            .. shell
+                ? new[] { ("script", WithDescription(StringSchema(TerminalLimits.MaxScriptChars), "Windows PowerShell 5.1 command text, for example dotnet test. Use run_process for literal argv.")) }
+                : new[] { ("executable", WithDescription(StringSchema(TerminalLimits.MaxExecutableChars), "Program name or path, without command arguments.")),
+                    ("arguments", WithDescription(ArraySchema(TerminalLimits.MaxArguments, TerminalLimits.MaxArgumentChars), "Literal argv array. Use powershell for pipes, redirection or command text.")) },
+            ("working_directory", WithDescription(StringSchema(TerminalLimits.MaxWorkingDirectoryChars), "Optional: omit for the workspace. Relative directories resolve against that workspace.")),
+            ("timeout_ms", IntegerSchema(1, TerminalLimits.BackgroundMaxLifetimeMs)),
+            ("network_intent", BooleanSchema()),
+            ("purpose", WithDescription(EnumSchema(["command", "inspection", "verification", "expected_failure"]), "Workflow intent only; never changes execution permission or the actual outcome. verification declares a required check; inspection is diagnostic.")),
+            ("expected_exit_code", WithDescription(IntegerSchema(1, 255), "Only for purpose=expected_failure: exact anticipated nonzero exit. Denial, cancellation, timeout and unknown effects are not expected success.")),
+            .. TerminalWriteSetProperties(),
+            ("background", BooleanSchema()),
+        ];
         return ObjectSchema([shell ? "script" : "executable"], fields);
     }
 }

@@ -67,7 +67,7 @@ public sealed class AgentRunQueryService
             ContextWindowVersion = providerSelection?.Selection?.ContextWindowVersion,
             OutputTokenReserve = providerSelection?.Selection?.OutputTokenReserve,
             ToolProfile = providerSelection?.Selection is { } pinnedSelection
-                ? RuAgent.Protocol.AgentToolProfiles.ReadPin(System.Text.Json.Nodes.JsonNode.Parse(pinnedSelection.RequestOptionsJson)!.AsObject())
+                ? RuAgent.Protocol.AgentToolProfiles.ReadSupportedLabel(System.Text.Json.Nodes.JsonNode.Parse(pinnedSelection.RequestOptionsJson)!.AsObject())
                 : null,
         };
         return new AgentServiceResult(200, response);

@@ -6,20 +6,22 @@ It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
 This checkpoint includes declarative Skills, bounded headless terminal execution
-(`powershell` and `run_process`, or legacy `bash` run/shell modes), session rewind, managed
-Git commit workflow, and dynamic model context compaction. MCP servers the user
+(`powershell` and `run_process`), session rewind, managed Git commit workflow,
+and dynamic model context compaction. MCP servers the user
 declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 [MCP servers](#mcp-servers)); connector libraries are not advertised Agent tools.
 
 ## Coding profiles
 
-New runs pin `coding_v2`. The experimental `patch_v2` is explicitly selected
-for matched evaluation; model names do not silently select it. Existing pins
-without metadata use `legacy_v1`. Set
-`RU_AGENT_TOOL_PROFILE=legacy_v1|coding_v2|patch_v2|coding_code_v1` in a dedicated Host process
-before starting new runs to compare profiles; changing the environment does not
-alter a running Host or an existing run. Run status reports the actual
-`tool_profile`. A profile changes tool presentation, never permissions.
+New runs default to `coding_v2` (25 definitions). `patch_v2` (24) and
+`coding_code_v1` (27) are also supported, and must be selected explicitly for a
+new run; changing the Host setting does not alter an existing run. Set
+`RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1` in a dedicated Host
+process to choose the profile for new runs. Persisted provider selections must
+include a valid profile pin: a missing pin fails as `tool_profile_required`, and
+an explicit retired or unknown profile fails as `tool_profile_invalid`. Run
+status reports the actual `tool_profile`. A profile changes tool presentation,
+never permissions.
 
 Use `write_file` to create, `edit_file` with an `edits` array to modify an existing
 file atomically, or `apply_patch` in the patch profile for unified diffs. Keep
@@ -102,11 +104,22 @@ current user's explicit instructions or the system execution contract.
 
 ## Current capability matrix
 
-The Protocol catalog contains 30 definitions, including `web_search` and `web_fetch`.
-Run-pinned inventories contain
-19 in `legacy_v1`, 25 in `coding_v2`, 24 in `patch_v2` and 27 in
-`coding_code_v1`, before availability/role filtering. Details below retain
-legacy IDs for old runs and replay; modern schemas appear above. `read` takes `path` with
+Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`,
+`write_file`, `edit_file`, `file_delete`, `file_restore`, `apply_patch`,
+`powershell`, `run_process`, `terminal_read`, `terminal_stop`,
+`web_search` and `web_fetch`. Profile and availability filters apply below.
+
+The Protocol catalog contains 27 definitions; the Broker has 26 executable
+bindings because `ask_user` is intercepted by the Host. Run-pinned inventories
+contain 25 definitions in `coding_v2`, 24 in `patch_v2` and 27 in
+`coding_code_v1`, before availability/role filtering. There is no selectable
+legacy profile. The model-facing file mutation and terminal tools are
+`write_file`, `edit_file`, `file_delete`, `file_restore`, `powershell`,
+`run_process`, `terminal_read` and `terminal_stop`; `apply_patch` is available
+in `patch_v2` and `coding_code_v1`. Internal adapter reuse does not expose a
+retired tool identity. Persisted deny/ask matchers for old tool families remain
+effective for policy preservation, but do not restore those tools as callable
+identities. Profiles do not widen authority. `read` takes `path` with
 optional `offset`/`limit` (source bytes, default 1 MiB, maximum 4 MiB) and reads
 one file. A `.png`, `.jpg`, `.jpeg` or `.webp` file is returned as an image
 when the run's model accepts image input (see [Image reads](#image-reads)).
@@ -124,12 +137,11 @@ stable sorted relative paths without content access; `grep` takes `query`
 (1–2048 chars, required) plus optional `path`, `file_glob`, `case_sensitive`
 (default false), `is_regex` (default false), `max_results` (1–128, default
 128) and `offset` (0–50000, default 0) for paging the ordinal results,
-and returns bounded match locations with previews up to 512 characters. `write`
-carries `op=write`, `op=delete` or `op=restore`; `bash` carries `mode=run`,
-`mode=shell`, `mode=read_output`, or `mode=kill`, plus an optional `background`
-flag on `run`/`shell`. `mode=shell` accepts `shell=powershell` (default Windows
-PowerShell 5.1) or `shell=pwsh` (requires PowerShell 7 installed). The schema has no sandbox selector; obsolete sandbox
-arguments are rejected.
+and returns bounded match locations with previews up to 512 characters.
+`run_process` takes an executable, an `arguments` array and an optional working
+directory; `powershell` takes a script. Both use the same Broker terminal
+policy and bounded process lifecycle. `terminal_read` pages retained output and
+`terminal_stop` stops a running task.
 
 Every running terminal task reserves a per-session slot when launched, including
 foreground tasks that may later move to background. Promotion keeps that slot;
@@ -201,21 +213,19 @@ the extracted document fail as `web_offset_out_of_range`. Recognized challenge
 forms fail as `web_page_blocked`; empty JavaScript-only shells fail as
 `web_content_empty`. Authentication, JavaScript execution and binary/PDF text
 extraction are not provided by these tools (`web_content_type_not_supported`).
-The `network_intent`
-argument on a bash request is descriptive input metadata, not a security
-boundary.
-
 Model exposure in this table applies only to profiles containing the named ID.
-The `write`, `edit` and `bash` rows describe `legacy_v1`; modern replacements
-follow the same policy families with their explicit schemas above.
+Modern file and terminal tools use the existing policy families and Broker
+authority. Retained rules matching old tool-family names can still deny or ask;
+they do not make a retired public identity executable.
 
 | Capability family | Model exposure | Broker behavior |
 | --- | --- | --- |
 | `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external ask; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, protected paths allowed |
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator. An image read also needs the run's pinned model to accept image input, otherwise `image_unsupported_by_model` |
-| `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, protected paths allowed; preimage mismatch returns `workspace_changed` |
-| `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
-| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: workspace cwd executable/shell auto, external cwd asks; explicit ask/deny and long foreground rules apply; `full_access`: arbitrary current-Windows-user terminal auto. Both presets run children as the current user without OS filesystem/network confinement; obsolete sandbox arguments are rejected by schema. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed. Output past the 256K-character in-memory window spills to a session-scoped spool file under the Ru data directory (1 GiB UTF-8 byte retention per call, 2 GiB per-session spool quota); the receipt and read pages name `spool_path`, and output past the ceiling reports `spool_truncated`. `background: true` starts the command as a session-scoped background task: the call returns immediately with `execution_id` and `state=running`, `mode=read_output` pages live text plus `state`/`exit_code`, and `mode=kill` stops it by `execution_id` (`unknown_background_task`, `background_task_not_running`, and `background_task_limit_reached` fail closed). Background tasks skip the standard-window approval gate — they do not block the turn — and are bounded by a lifetime (30-minute default, 2-hour ceiling). A foreground command that outlives its approved window is moved to the background instead of being killed (`moved_to_background` with its `execution_id`) and then runs to the same lifetime. |
+| `write_file`, `edit_file`, `file_delete`, `file_restore` | present in supported coding profiles | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, protected paths allowed; preimage mismatch returns `workspace_changed` |
+| `apply_patch` | `patch_v2`, `coding_code_v1` | workspace-scoped unified patches; all targets are checked under the same policy, approval is one-time, and patch rollback preserves intervening edits |
+| `powershell`, `run_process` | present in supported coding profiles | `plan`: deny; `standard`: workspace cwd executable/shell auto, external cwd asks; explicit ask/deny and long foreground rules apply; `full_access`: arbitrary current-Windows-user terminal auto. Children run as the current user without an OS filesystem/network sandbox. Obsolete sandbox arguments are rejected. Output, timeout, cancellation and process-tree bounds apply. |
+| `terminal_read`, `terminal_stop` | present in supported coding profiles | read retained terminal output or stop a running task by its opaque execution ID; session ownership and existing approval rules apply |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
@@ -229,7 +239,7 @@ their durable Broker receipts stay unchanged. When a reference carries
 `projection_next_offset`: `read` cursors count UTF-8 bytes, `grep` cursors count
 matches from the original query offset (an omitted `offset` means zero),
 `web_fetch` cursors count UTF-16 characters in extracted content (excluding
-the untrusted wrapper/truncation marker), and `bash` `read_output` cursors count UTF-16 characters within the same
+the untrusted wrapper/truncation marker), and `terminal_read` cursors count UTF-16 characters within the same
 `execution_id`/spool. The projection names its visible unit and retains source,
 receipt, and spool metadata; it does not claim older output exchanges remain in
 the bounded model history. Missing call context fails closed if clipping needs
@@ -237,13 +247,11 @@ a cursor. Paging does not authorize a new operation or bypass Broker approval.
 
 ### File creation versus editing
 
-Create a new file with `write` and all three fields: `op="write"`, `path`,
-and `content`. `edit` never creates files: it requires an existing target and
-non-empty `old_string` copied from a fresh read. Empty/missing `old_string`
-receives explicit creation guidance without rewriting the call. Missing-target
-errors explain the same `write` operation; permissions and overwrite checks remain
-in force. Activity rows keep the actual `write` identity even if its `op` is
-missing or invalid; a rejected write is not presented as an `edit` attempt.
+Create a new file with `write_file` and its `path` and `content` fields.
+`edit_file` never creates files: it requires an existing target and an `edits`
+array whose replacements are exact, non-overlapping and resolved against the
+original file. Missing-target errors direct the caller to `write_file`;
+permissions and overwrite checks remain in force.
 
 ### File discovery output
 
@@ -326,7 +334,21 @@ length. An offset inside a pair fails as `web_offset_invalid_boundary`; a
 limit of 1 at an emoji fails as `web_limit_too_small` (retry with at least 2).
 Follow returned cursors rather than adding the requested limit to the offset.
 
-### Session folder grants and bash approval
+### Retained terminal output and background tasks
+
+`terminal_read` pages retained output in the same session, using `execution_id`
+from a launch receipt or failure `spool_id` with an `offset`/`limit` window.
+Unknown or foreign-session IDs fail closed. Output beyond the 256K-character
+in-memory window spills into the session spool (1 GiB UTF-8 bytes per call,
+2 GiB per session); `spool_path` and `spool_truncated` describe retention.
+`background=true` returns an execution ID and `state=running` immediately;
+`terminal_read` also reports live state/exit code, and `terminal_stop` stops it.
+Background launches skip the foreground-window approval gate, but retain all
+other policy checks and a bounded lifetime (30-minute default, 2-hour ceiling).
+A foreground command exceeding its approved window moves to the background
+with `moved_to_background` and the same execution ID/lifetime.
+
+### Session folder grants and terminal approval
 
 Terminal launch resolves the executable or shell runtime before registering a
 foreground or background task. Resolution errors such as `executable_not_found`
@@ -338,18 +360,16 @@ immediate exit still yields its actual exit code.
 Failed terminal starts, nonzero exits and timeouts retain `exit_code` when
 available and already-redacted stdout/stderr head/tail excerpts, each bounded
 to 2,048 characters, in the private model-visible receipt. Failure status and
-code remain unchanged. The bounded `spool_id` supports `mode=read_output` for
-more detail; public SSE summaries do not expose these diagnostic excerpts.
+code remain unchanged. `terminal_read` retrieves retained output for the same
+session; public SSE summaries do not expose these diagnostic excerpts.
 
-On Windows, `bash` with `mode=shell` defaults to Windows PowerShell 5.1
-(`powershell.exe`); scripts use PowerShell syntax. `mode=run` takes a separate
-executable and an optional argument vector (omission means no arguments).
-Missing mode-specific fields such as `executable` or `script` return
-`invalid_arguments` rather than `adapter_error`. The tool description states this explicitly so
-the model does not assume Unix `head`/`tail` commands are available.
+On Windows, `powershell` takes a PowerShell script, while `run_process` takes a
+separate executable and an `arguments` array (an omitted array means no
+arguments). The explicit forms avoid relying on Unix shell commands or
+implicit shell parsing.
 
 Canonical `plan` denies terminal and mutation. Profile version 2 makes Standard
-launch-directory based: both `run` and `shell` are automatic with a canonical cwd
+launch-directory based: both `run_process` and `powershell` are automatic with a canonical cwd
 inside the trusted workspace. External launch directories ask; explicit ask/deny
 rules and long foreground approval still apply. Argument literals, inline code,
 package installation, executable install location and network metadata are not
@@ -377,9 +397,8 @@ plus user-added `RU_PROTECTED_PATHS` entries) are denied in `plan` and
 hard-link checks stay active. An ambiguous
 mutation pauses for inspection until explicit Continue.
 
-`files.apply_patch` is intentionally absent from the runtime capability catalog
-and is not model-usable at this checkpoint. Any internal adapter or test fixture
-for patch application does not create a public model capability.
+`apply_patch` is advertised only by `patch_v2` and `coding_code_v1`. Internal
+adapter names do not create additional public model capabilities.
 
 ## Model-first selection and native batches
 
@@ -524,7 +543,7 @@ into desktop side effects; structured selection is the only action channel.
 File and terminal bindings use the canonical matrix above. `plan` terminal
 authority is denied. `standard` permits executable and shell launches from a canonical workspace cwd
 and asks for external cwd or explicit ask rules. `full_access` may run
-arbitrary `bash` as the current Windows user against any path and may open
+arbitrary terminal commands as the current Windows user against any path and may open
 sockets, including outside the workspace; terminal execution has no OS
 filesystem/network confinement. Repository
 cleanliness is irrelevant. Full Access still has hard timeout, output cap,
@@ -535,7 +554,7 @@ confinement.
 
 Background terminal tasks are session-scoped and owned by the execution authority: at most
 `TerminalLimits.MaxBackgroundTasksPerSession` run at once, a task that reaches
-its lifetime is killed (`expired`), `mode=kill` stops it (`killed`), and a
+its lifetime is killed (`expired`), `terminal_stop` stops it (`killed`), and a
 host restart drops every task (a stale id fails closed). The kill path kills
 the process tree by parentage first and then the Job Object, so a descendant
 created before the job assignment landed cannot survive. The model context
@@ -560,8 +579,8 @@ that bound), write in place and flush. This does not provide crash-atomic
 replacement. Missing-target creation remains staged with no overwrite.
 Patch rollback restores only an applied target whose current hash still
 matches that patch's result; it preserves intervening editor changes.
-`write` with `op=delete` keeps its bounded recovery cap and opaque recovery ID.
-Bash children receive redirected stdin that is closed immediately; TTY/editor
+`file_delete` keeps its bounded recovery cap and opaque recovery ID.
+Terminal children receive redirected stdin that is closed immediately; TTY/editor
 requests cannot receive interactive input. Literal argv is not rejected by a
 global flag list; noninteractive operation and timeout/cancellation remain.
 
@@ -613,7 +632,7 @@ are not read automatically; copy the ones you want into `~/.ru/skills`. A minima
 ---
 name: pdf-analyzer
 description: Analyze and summarize PDF files
-allowed-tools: read, bash
+allowed-tools: read, powershell
 ---
 
 # PDF Analyzer
@@ -859,7 +878,7 @@ invalidates the ephemeral decision and causes safe re-evaluation, never
 adapter invocation. File tools follow the same ordering with `tool.execution_requested`
 persisted before dispatch and `FileRecoveryStore` for
 recoverable deletes. The deterministic Broker approval probe uses
-`write` with `op=write` (and file delete/restore ops) only inside a fresh temporary
+`write_file` (and `file_delete`/`file_restore`) only inside a fresh temporary
 workspace, approves once, expects the replay to be denied as `approval_stale`,
 closes the private session, and removes the workspace. Production WinUI
 approval-card behavior remains covered independently by its UI contract tests.
@@ -912,7 +931,7 @@ marked `untrusted`; other content types are counted, not returned. Failures are 
 `~/.ru/hooks.json` and `<workspace>/.ru/hooks.json` can bind shell commands to tool calls:
 
 ```json
-{"hooks":{"PreToolUse":[{"matcher":"bash|edit","command":"scripts\\check.cmd","timeout_seconds":30}],
+{"hooks":{"PreToolUse":[{"matcher":"powershell|run_process|edit_file","command":"scripts\\check.cmd","timeout_seconds":30}],
           "PostToolUse":[{"matcher":"write|edit","command":"scripts\\after-edit.cmd"}]}}
 ```
 
@@ -920,7 +939,7 @@ marked `untrusted`; other content types are counted, not returned. Failures are 
 
 Two run-level events use the same file. **UserPromptSubmit** runs when a run is created, before anything of it is written; exit code `2` refuses the prompt with HTTP 422 `prompt_blocked_by_hook` and the hook's stderr (first 200 characters) as the message, so no run exists. Its stdin carries `event`, `session_id`, `workspace`, `workspace_trusted` and `prompt` (null with `prompt_omitted: true` above 32 KB). Until the workspace is trusted only the user's own `~/.ru/hooks.json` prompt hooks run, and they start in the user's profile folder so `cmd.exe` cannot resolve a bare program name against workspace files. **Stop** runs once when a run finishes, without being waited for, with `event`, `run_id`, `session_id`, `workspace`, `workspace_trusted`, `status` and `terminal_error_code`; it cannot change the run. Trust is checked when the hook fires: a run that finished because trust was declined or expired, or whose trust cannot be read, runs only the user's own Stop hooks, from the profile folder. Both ignore `matcher`.
 
-The hook runs through `cmd.exe` in the workspace root with the same credential-stripped environment as agent terminal children plus `RU_HOOK_EVENT`; it receives one JSON object on stdin (`event`, `tool_id`, `tool_call_id`, `run_id`, `workspace`, `arguments` unless larger than 32 KB, and for PostToolUse `outcome` and `code`). Files over 64 KB, links and malformed JSON are ignored; at most 32 hooks per event are read. A workspace `hooks.json` is workspace-supplied code that runs as your Windows user once tools are evaluated, so open only workspaces you trust. Hooks are loaded when a run's gateway is created, apply to subagents, and are not a security boundary. Because a hook's command runs outside terminal policy, `.ru\hooks.json` (in the workspace or the user profile) is a structured protected path: the model's `write`/`edit` are denied in `plan` and `standard`. A terminal command in `standard` can still write the file; that residual is the terminal launch authority `standard` already grants.
+The hook runs through `cmd.exe` in the workspace root with the same credential-stripped environment as agent terminal children plus `RU_HOOK_EVENT`; it receives one JSON object on stdin (`event`, `tool_id`, `tool_call_id`, `run_id`, `workspace`, `arguments` unless larger than 32 KB, and for PostToolUse `outcome` and `code`). Files over 64 KB, links and malformed JSON are ignored; at most 32 hooks per event are read. A workspace `hooks.json` is workspace-supplied code that runs as your Windows user once tools are evaluated, so open only workspaces you trust. Hooks are loaded when a run's gateway is created, apply to subagents, and are not a security boundary. Because a hook's command runs outside terminal policy, `.ru\hooks.json` (in the workspace or the user profile) is a structured protected path: the model's `write_file`/`edit_file` are denied in `plan` and `standard`. A terminal command in `standard` can still write the file; that residual is the terminal launch authority `standard` already grants.
 
 ### Declaring terminal checks
 

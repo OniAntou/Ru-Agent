@@ -158,9 +158,11 @@ messages; clock, mood, and references are not appended as separate system
 messages.
 
 Host capabilities are the runtime projection of the Protocol-owned tool
-definitions: `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`,
-`edit`, `bash`, `web_search`, `web_fetch`, `skill`, and Host-intercepted
-`ask_user`. `ask_user` never dispatches to the Broker: it parks the run in
+definitions selected by the run-pinned `coding_v2`, `patch_v2` or `coding_code_v1`
+profile. File tools use explicit identities such as `write_file`/`edit_file`;
+terminal tools are `powershell`, `run_process`, `terminal_read`, `terminal_stop`.
+See the [tool inventory](agent-tools.md#current-capability-matrix).
+`ask_user` is Host-intercepted. `ask_user` never dispatches to the Broker: it parks the run in
 `WaitingUser` with a durable `input.requested` event until the client posts the
 answer, which arrives as that call's durable tool result. The execution contract
 also states that the run's current permission mode is described only by the
@@ -417,13 +419,12 @@ after `status: "ok"`, and shows a bounded error without silently replacing the
 conversation when deletion fails. If the last session was deleted
 successfully, the UI creates one fresh session.
 
-## Action execution kernel v1
+## Action execution kernel
 
-The typed model-step settings advertise these tools, one purpose each:
-`read`, `list`,
-`grep`, `glob`, `help`, `todo_write`, `skill`, `write` with
-`op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
-`web_search`, `web_fetch`, and Host-intercepted `ask_user`. The canonical matrix is: `plan` allows workspace
+The typed model-step settings advertise the run's supported pinned tool profile,
+with explicit file creation, editing, deletion/restoration and Windows terminal
+operations. [The tool contract](agent-tools.md#coding-profiles) owns inventories,
+arguments and availability; old or unversioned pins cannot resume execution. The canonical matrix is: `plan` allows workspace
 read and Web but denies terminal and mutation outright (read-only, no
 per-change asks) and asks for external structured access; `standard`
 auto-allows workspace mutation and executable/shell launches from a workspace cwd;
@@ -448,7 +449,7 @@ and `full_access` run as the current Windows user without OS filesystem or
 network confinement, including outside the workspace (ADR-0015). Standard
 uses launch-directory permission under ADR-0017, with explicit ask/deny rules;
 Full Access also permits external launch directories. The
-`bash` schema has no sandbox selector and rejects obsolete sandbox arguments.
+terminal tool schemas have no sandbox selector and rejects obsolete sandbox arguments.
 Hard timeout, output cap, cancellation, redaction, and process-tree cleanup
 remain. Structured file tools retain their independent path protections: the
 protected-path denial holds in `plan` and `standard`, and `full_access` is
@@ -536,8 +537,8 @@ run state. Raw tool receipts never cross into the visible transcript, history,
 reviewed examples, or public payload metadata.
 
 The tools above are the model surface. `read`, `list`, `grep`,
-`glob`, and `help` are separate definitions; `write`, `edit`, and `bash` expose
-their own schemas, alongside `todo_write`, `skill`, `web_search`,
+`glob`, and `help` are separate definitions. Modern file and terminal operations
+have their own schemas, alongside `todo_write`, `skill`, `web_search`,
 `web_fetch`, and the Host-intercepted `ask_user`. Managed startup constructs an enabled WebOptions instance with
 Google HTML as the primary search engine `https://www.google.com/search`, raced
 against the fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek); the bounded

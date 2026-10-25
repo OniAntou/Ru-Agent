@@ -126,11 +126,10 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
             new ToolCallId("call_" + new string('0', 32)),
             "provider_call_1",
             modelOrder: 1,
-            "write",
+            "write_file",
             "1.0.0",
             JsonSerializer.SerializeToElement(new JsonObject
             {
-                ["op"] = "write",
                 ["path"] = writePath,
                 ["content"] = "after",
                 ["overwrite"] = true,
@@ -254,11 +253,10 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
             new ToolCallId("call_" + new string('0', 32)),
             "provider_call_1",
             modelOrder: 1,
-            "write",
+            "write_file",
             "1.0.0",
             JsonSerializer.SerializeToElement(new JsonObject
             {
-                ["op"] = "write",
                 ["path"] = writePath,
                 ["content"] = "after",
                 ["overwrite"] = true,

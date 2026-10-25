@@ -11,13 +11,12 @@ namespace RuAgent.Broker.Tests;
 public sealed class ModelToolHeadroomRegressionTests
 {
     [Fact]
-    public void Advertised_pwsh_shell_is_accepted_but_unknown_shell_is_rejected()
+    public void PowerShell_contract_uses_script_without_a_shell_selector()
     {
-        var schema = AgentToolDefinitionCatalog.Get().Single(d => d.ToolId == "bash").InputSchema;
-        var args = new JsonObject { ["mode"] = "shell", ["script"] = "Write-Output hi", ["shell"] = "pwsh" };
-        ToolSchemaValidator.Validate(schema, args);
-        args["shell"] = "cmd /c anything";
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(schema, args));
+        var schema = AgentToolDefinitionCatalog.Get().Single(d => d.ToolId == "powershell").InputSchema;
+        ToolSchemaValidator.Validate(schema, new JsonObject { ["script"] = "Write-Output hi" });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(schema,
+            new JsonObject { ["script"] = "Write-Output hi", ["shell"] = "cmd /c anything" }));
     }
 
     [Theory]

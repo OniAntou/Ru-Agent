@@ -42,8 +42,8 @@ public sealed partial class SubagentPolicyTests
             "child", null, 10000, new JsonObject { ["run_id"] = "run_child" }), default);
         Assert.True(closed.Closed);
         await Open("child", "parent", EnvelopeTestSnapshots.FullAccessEmpty());
-        var decision = await Evaluate("child", "write", new JsonObject
-            { ["op"] = "write", ["path"] = "x.txt", ["content"] = "x" });
+        var decision = await Evaluate("child", "write_file", new JsonObject
+            { ["path"] = "x.txt", ["content"] = "x" });
         Assert.Equal("deny", decision.Decision!.Decision);
         Assert.False(File.Exists(Path.Combine(_root, "parent", "x.txt")));
     }
@@ -96,8 +96,8 @@ public sealed partial class SubagentPolicyTests
             _runtime.BindDelegationAsync("run_parent", "run_overflow", SubagentRole.Review, default));
         Assert.Equal("subagent_delegation_capacity", error.Code);
         Assert.Equal(1024, RetainedBindings());
-        var stillReview = await Evaluate("review_0", "write", new JsonObject
-            { ["op"] = "write", ["path"] = "x.txt", ["content"] = "x" });
+        var stillReview = await Evaluate("review_0", "write_file", new JsonObject
+            { ["path"] = "x.txt", ["content"] = "x" });
         Assert.Equal("subagent_role_denied", stillReview.Decision!.ReasonCode);
         await _runtime.CloseSessionAsync("review_0", default);
         await _runtime.BindDelegationAsync("run_parent", "run_overflow", SubagentRole.Review, default);

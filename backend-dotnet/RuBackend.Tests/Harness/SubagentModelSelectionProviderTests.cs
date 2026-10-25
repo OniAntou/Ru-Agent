@@ -26,7 +26,7 @@ public sealed class SubagentModelSelectionProviderTests
             HarnessPayloadEncoding.Utf8Text, bytes.Length, bytes)]);
         var pins = new SqliteAgentRunProviderSelectionStore(fixture.Options);
         var parent = new AgentRunProviderSelection("Custom OpenAI", "custom", "chat_completions",
-            "https://fixture.invalid/v1/", "main-model", "custom_api_key", "{}", 1024, ModelLabel: "main-model", CallingMode: "native");
+            "https://fixture.invalid/v1/", "main-model", "custom_api_key", "{\"ru_tool_profile\":\"coding_v2\"}", 1024, ModelLabel: "main-model", CallingMode: "native");
         await pins.PinAsync(run.Run.RunId, parent, default);
         var settings = new SettingsStore(DataPaths.Resolve(fixture.RootPath, fixture.RootPath, fixture.RootPath, fixture.RootPath));
         var current = (await settings.ReadAsync(default)) with { Backend = "Custom OpenAI", CustomModel = "main-model", CustomUrl = "https://fixture.invalid/v1" };

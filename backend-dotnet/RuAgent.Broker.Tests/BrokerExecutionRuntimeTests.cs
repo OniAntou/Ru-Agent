@@ -32,12 +32,12 @@ public sealed class BrokerExecutionRuntimeTests
         string? fingerprint = null;
         foreach (var cwd in new[] { ".", fixture.Root })
         {
-            var arguments = new JsonObject { ["mode"] = "run", ["executable"] = "cmd.exe",
+            var arguments = new JsonObject { ["executable"] = "cmd.exe",
                 ["arguments"] = new JsonArray("/d", "/c", "exit", "1"), ["working_directory"] = cwd };
-            var decision = await fixture.Runtime.EvaluateAsync(Evaluate("eval-" + Guid.NewGuid().ToString("N"), session, run, "bash", arguments), default);
+            var decision = await fixture.Runtime.EvaluateAsync(Evaluate("eval-" + Guid.NewGuid().ToString("N"), session, run, "run_process", arguments), default);
             Assert.Equal("allow", decision.Decision!.Decision);
             var result = await fixture.Runtime.ExecuteAuthorizedAsync(Execute("exec-" + Guid.NewGuid().ToString("N"),
-                session, run, "bash", decision.Decision.AuthorizationToken!, arguments), default);
+                session, run, "run_process", decision.Decision.AuthorizationToken!, arguments), default);
             Assert.Equal(ToolResultStatuses.Failed, result.Receipt!.Status);
             var observed = result.Receipt.Output["verification_identity"]!.GetValue<string>();
             Assert.Equal(64, observed.Length);
@@ -47,9 +47,9 @@ public sealed class BrokerExecutionRuntimeTests
     }
 
     [Theory]
-    [InlineData("run")]
-    [InlineData("shell")]
-    public async Task Standard_workspace_terminal_authorization_runs_both_modes_without_user_approval(string mode)
+    [InlineData("run_process")]
+    [InlineData("powershell")]
+    public async Task Standard_workspace_terminal_authorization_runs_both_tools_without_user_approval(string toolId)
     {
         using var fixture = new RuntimeFixture();
         const string sessionId = "standard-terminal-autonomy";
@@ -57,24 +57,24 @@ public sealed class BrokerExecutionRuntimeTests
         var opened = await fixture.Runtime.OpenRunAsync(
             RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default);
         Assert.Null(opened.Error);
-        var arguments = new JsonObject { ["mode"] = mode, ["working_directory"] = ".", ["network_intent"] = true };
-        if (mode == "shell") arguments["script"] = "Write-Output 'autonomy;|&'";
+        var arguments = new JsonObject { ["working_directory"] = ".", ["network_intent"] = true };
+        if (toolId == "powershell") arguments["script"] = "Write-Output 'autonomy;|&'";
         else
         {
             arguments["executable"] = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
             arguments["arguments"] = new JsonArray("-NoProfile", "-NonInteractive", "-Command", "Write-Output 'autonomy;|&'");
         }
-        var decision = await fixture.Runtime.EvaluateAsync(Evaluate("evaluate-autonomy", sessionId, runId, "bash", arguments), default);
+        var decision = await fixture.Runtime.EvaluateAsync(Evaluate("evaluate-autonomy", sessionId, runId, toolId, arguments), default);
         Assert.Equal("allow", decision.Decision!.Decision);
         Assert.Equal("workspace_terminal_allow", decision.Decision.ReasonCode);
         Assert.Null(decision.Decision.ApprovalId);
         Assert.False(decision.Decision.AnalyzerRiskPending);
         var execution = await fixture.Runtime.ExecuteAuthorizedAsync(
-            Execute("execute-autonomy", sessionId, runId, "bash", decision.Decision.AuthorizationToken!, arguments), default);
+            Execute("execute-autonomy", sessionId, runId, toolId, decision.Decision.AuthorizationToken!, arguments), default);
         Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
         Assert.Contains("autonomy;|&", execution.Receipt.Output["stdout_head"]!.GetValue<string>(), StringComparison.Ordinal);
         var replay = await fixture.Runtime.ExecuteAuthorizedAsync(
-            Execute("replay-autonomy", sessionId, runId, "bash", decision.Decision.AuthorizationToken!, arguments), default);
+            Execute("replay-autonomy", sessionId, runId, toolId, decision.Decision.AuthorizationToken!, arguments), default);
         Assert.Equal("decision_stale", replay.ErrorCode);
     }
 
@@ -125,13 +125,12 @@ public sealed class BrokerExecutionRuntimeTests
 
         var arguments = new JsonObject
         {
-            ["mode"] = "run",
             ["executable"] = "where.exe",
             ["arguments"] = new JsonArray("dotnet"),
             ["working_directory"] = ".",
         };
         var decision = await fixture.Runtime.EvaluateAsync(
-            Evaluate("evaluate-runtime-approval", sessionId, runId, "bash", arguments),
+            Evaluate("evaluate-runtime-approval", sessionId, runId, "run_process", arguments),
             default);
         Assert.Null(decision.Error);
         Assert.NotNull(decision.Decision);
@@ -147,7 +146,7 @@ public sealed class BrokerExecutionRuntimeTests
         Assert.False(string.IsNullOrWhiteSpace(approval.AuthorizationToken));
 
         var execution = await fixture.Runtime.ExecuteAuthorizedAsync(
-            Execute("execute-runtime-approval", sessionId, runId, "bash", approval.AuthorizationToken!, arguments),
+            Execute("execute-runtime-approval", sessionId, runId, "run_process", approval.AuthorizationToken!, arguments),
             default);
         Assert.NotNull(execution.Receipt);
         Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
@@ -156,7 +155,7 @@ public sealed class BrokerExecutionRuntimeTests
         // The authorization token is one-time: the replay fails exactly like the
         // wire path's decision_stale, before any adapter work.
         var replay = await fixture.Runtime.ExecuteAuthorizedAsync(
-            Execute("execute-runtime-replay", sessionId, runId, "bash", approval.AuthorizationToken!, arguments),
+            Execute("execute-runtime-replay", sessionId, runId, "run_process", approval.AuthorizationToken!, arguments),
             default);
         Assert.Null(replay.Receipt);
         Assert.Equal("decision_stale", replay.ErrorCode);
@@ -295,7 +294,7 @@ public sealed class BrokerExecutionRuntimeTests
             default);
         Assert.Null(opened.Error);
         Assert.Equal(
-            new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "apply_patch", "bash", "edit", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp", "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write", "write_file" },
+            new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "apply_patch", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp", "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write_file" },
             opened.AdvertisedCapabilities!.OrderBy(capability => capability, StringComparer.Ordinal).ToArray());
 
         var tamperedPayload = EnvelopeTestSnapshots.RunOpenPayload(
@@ -336,6 +335,29 @@ public sealed class BrokerExecutionRuntimeTests
         Assert.Equal("standard_web_allow", web.Decision.ReasonCode);
     }
 
+    [Theory]
+    [InlineData("write")]
+    [InlineData("edit")]
+    [InlineData("bash")]
+    public async Task Evaluate_rejects_retired_public_tools(string retiredToolId)
+    {
+        using var fixture = new RuntimeFixture();
+        const string sessionId = "session-runtime-retired-tools";
+        const string runId = "run_retired_tools111111111111111111";
+        var opened = await fixture.Runtime.OpenRunAsync(
+            RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty()),
+            default);
+        Assert.Null(opened.Error);
+
+        var rejected = await fixture.Runtime.EvaluateAsync(
+            Evaluate("evaluate-retired-" + retiredToolId, sessionId, runId, retiredToolId, new JsonObject()),
+            default);
+
+        Assert.NotNull(rejected.Error);
+        Assert.Equal("phase_not_available", rejected.Error!.ErrorCode);
+        Assert.Null(rejected.Decision);
+    }
+
     [Fact]
     public async Task Full_access_external_read_and_terminal_execute_without_approval()
     {
@@ -366,19 +388,18 @@ public sealed class BrokerExecutionRuntimeTests
 
             var terminalArguments = new JsonObject
             {
-                ["mode"] = "run",
                 ["executable"] = "dotnet",
                 ["arguments"] = new JsonArray("--version"),
                 ["working_directory"] = external,
                 ["network_intent"] = true,
             };
             var terminalDecision = await fixture.Runtime.EvaluateAsync(
-                Evaluate("evaluate-full-terminal", sessionId, runId, "bash", terminalArguments),
+                Evaluate("evaluate-full-terminal", sessionId, runId, "run_process", terminalArguments),
                 default);
             Assert.Equal("allow", terminalDecision.Decision!.Decision);
             Assert.Null(terminalDecision.Decision.ApprovalId);
             var terminal = await fixture.Runtime.ExecuteAuthorizedAsync(
-                Execute("execute-full-terminal", sessionId, runId, "bash", terminalDecision.Decision.AuthorizationToken!, terminalArguments),
+                Execute("execute-full-terminal", sessionId, runId, "run_process", terminalDecision.Decision.AuthorizationToken!, terminalArguments),
                 default);
             Assert.Equal(ToolResultStatuses.Succeeded, terminal.Receipt!.Status);
             Assert.Equal(0, terminal.Receipt.Output["exit_code"]!.GetValue<int>());
@@ -423,20 +444,19 @@ public sealed class BrokerExecutionRuntimeTests
                 "$stream = $client.GetStream(); $stream.Write($bytes, 0, $bytes.Length); $client.Close(); 'PROBE_DONE'";
             var arguments = new JsonObject
             {
-                ["mode"] = "shell",
                 ["script"] = script,
                 ["working_directory"] = ".",
                 ["timeout_ms"] = 30_000,
             };
 
             var ask = await fixture.Runtime.EvaluateAsync(
-                Evaluate("standard-shell-evaluate", sessionId, runId, "bash", arguments),
+                Evaluate("standard-shell-evaluate", sessionId, runId, "powershell", arguments),
                 default);
             Assert.Equal("allow", ask.Decision!.Decision);
             Assert.Null(ask.Decision.ApprovalId);
 
             var execution = await fixture.Runtime.ExecuteAuthorizedAsync(
-                Execute("standard-shell-execute", sessionId, runId, "bash", ask.Decision.AuthorizationToken!, arguments),
+                Execute("standard-shell-execute", sessionId, runId, "powershell", ask.Decision.AuthorizationToken!, arguments),
                 default);
             Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
             Assert.Contains("PROBE_DONE", execution.Receipt.Output["stdout_head"]!.GetValue<string>(), StringComparison.Ordinal);
@@ -481,18 +501,17 @@ public sealed class BrokerExecutionRuntimeTests
 
         var arguments = new JsonObject
         {
-            ["mode"] = "run",
             ["executable"] = "git",
             ["arguments"] = new JsonArray("commit", "-m", "terminal commit"),
             ["working_directory"] = "repo",
         };
         var decision = await fixture.Runtime.EvaluateAsync(
-            Evaluate("commit-evaluate", sessionId, runId, "bash", arguments),
+            Evaluate("commit-evaluate", sessionId, runId, "run_process", arguments),
             default);
         Assert.Equal("allow", decision.Decision!.Decision);
 
         var execution = await fixture.Runtime.ExecuteAuthorizedAsync(
-            Execute("commit-execute", sessionId, runId, "bash", decision.Decision.AuthorizationToken!, arguments),
+            Execute("commit-execute", sessionId, runId, "run_process", decision.Decision.AuthorizationToken!, arguments),
             default);
         Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
         Assert.Contains(
@@ -540,7 +559,7 @@ public sealed class BrokerExecutionRuntimeTests
         JsonObject arguments)
     {
         var decision = await fixture.Runtime.EvaluateAsync(
-            Evaluate(prefix + "-evaluate", sessionId, runId, "bash", arguments),
+            Evaluate(prefix + "-evaluate", sessionId, runId, "run_process", arguments),
             default);
         Assert.Null(decision.Error);
         Assert.Equal("ask", decision.Decision!.Decision);
@@ -550,7 +569,7 @@ public sealed class BrokerExecutionRuntimeTests
             default);
         Assert.Equal("authorized", approved.Status);
         return await fixture.Runtime.ExecuteAuthorizedAsync(
-            Execute(prefix + "-execute", sessionId, runId, "bash", approved.AuthorizationToken!, arguments),
+            Execute(prefix + "-execute", sessionId, runId, "run_process", approved.AuthorizationToken!, arguments),
             default);
     }
 
@@ -602,13 +621,12 @@ public sealed class BrokerExecutionRuntimeTests
 
         var arguments = new JsonObject
         {
-            ["mode"] = "run",
             ["executable"] = "where.exe",
             ["arguments"] = new JsonArray("dotnet"),
             ["working_directory"] = ".",
         };
         var ask = await fixture.Runtime.EvaluateAsync(
-            Evaluate("evaluate-always-1", sessionId, runId, "bash", arguments),
+            Evaluate("evaluate-always-1", sessionId, runId, "run_process", arguments),
             default);
         Assert.Equal("ask", ask.Decision!.Decision);
         Assert.Equal("rule_asks", ask.Decision.ReasonCode);
@@ -619,7 +637,7 @@ public sealed class BrokerExecutionRuntimeTests
         Assert.Equal("authorized", approved.Status);
 
         var execution = await fixture.Runtime.ExecuteAuthorizedAsync(
-            Execute("execute-always", sessionId, runId, "bash", approved.AuthorizationToken!, arguments),
+            Execute("execute-always", sessionId, runId, "run_process", approved.AuthorizationToken!, arguments),
             default);
         Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
         Assert.Equal(0, execution.Receipt.Output["exit_code"]!.GetValue<int>());
@@ -627,7 +645,7 @@ public sealed class BrokerExecutionRuntimeTests
         // allow_always consumes the pending approval but adds no reusable grant:
         // the identical call asks again.
         var again = await fixture.Runtime.EvaluateAsync(
-            Evaluate("evaluate-always-2", sessionId, runId, "bash", arguments),
+            Evaluate("evaluate-always-2", sessionId, runId, "run_process", arguments),
             default);
         Assert.Equal("ask", again.Decision!.Decision);
         Assert.Equal("rule_asks", again.Decision.ReasonCode);
@@ -663,9 +681,8 @@ public sealed class BrokerExecutionRuntimeTests
             // A different tool targeting the same granted directory now allows
             // without a second ask.
             var write = await fixture.Runtime.EvaluateAsync(
-                Evaluate("evaluate-grant-write", sessionId, runId, "write", new JsonObject
+                Evaluate("evaluate-grant-write", sessionId, runId, "write_file", new JsonObject
                 {
-                    ["op"] = "write",
                     ["path"] = Path.Combine(external, "next.txt"),
                     ["content"] = "next",
                 }),
@@ -824,12 +841,11 @@ public sealed class BrokerExecutionRuntimeTests
 
         var arguments = new JsonObject
         {
-            ["mode"] = "shell",
             ["script"] = "Get-Date",
             ["working_directory"] = Path.GetTempPath(),
         };
         var ask = await fixture.Runtime.EvaluateAsync(
-            Evaluate("evaluate-shell", sessionId, runId, "bash", arguments),
+            Evaluate("evaluate-shell", sessionId, runId, "powershell", arguments),
             default);
         Assert.Equal("ask", ask.Decision!.Decision);
         Assert.Equal("terminal_external_cwd_requires_approval", ask.Decision.ReasonCode);
@@ -840,7 +856,7 @@ public sealed class BrokerExecutionRuntimeTests
         Assert.Equal("authorized", approved.Status);
 
         var execution = await fixture.Runtime.ExecuteAuthorizedAsync(
-            Execute("execute-shell", sessionId, runId, "bash", approved.AuthorizationToken!, arguments),
+            Execute("execute-shell", sessionId, runId, "powershell", approved.AuthorizationToken!, arguments),
             default);
         Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
         Assert.True(execution.Receipt.AdapterInvoked);
@@ -862,14 +878,13 @@ public sealed class BrokerExecutionRuntimeTests
 
         JsonObject DeleteArguments() => new()
         {
-            ["mode"] = "run",
             ["executable"] = executable,
             ["arguments"] = new JsonArray("target.txt"),
             ["working_directory"] = ".",
         };
 
         var ask = await fixture.Runtime.EvaluateAsync(
-            Evaluate("evaluate-terminal-delete", sessionId, runId, "bash", DeleteArguments()),
+            Evaluate("evaluate-terminal-delete", sessionId, runId, "run_process", DeleteArguments()),
             default);
         Assert.Equal("ask", ask.Decision!.Decision);
         Assert.Equal("rule_asks", ask.Decision.ReasonCode);
@@ -880,7 +895,7 @@ public sealed class BrokerExecutionRuntimeTests
         Assert.Equal("authorized", approved.Status);
 
         var again = await fixture.Runtime.EvaluateAsync(
-            Evaluate("evaluate-terminal-again", sessionId, runId, "bash", DeleteArguments()),
+            Evaluate("evaluate-terminal-again", sessionId, runId, "run_process", DeleteArguments()),
             default);
         Assert.Equal("ask", again.Decision!.Decision);
         Assert.Equal("rule_asks", again.Decision.ReasonCode);
@@ -921,19 +936,18 @@ public sealed class BrokerExecutionRuntimeTests
 
         var arguments = new JsonObject
         {
-            ["mode"] = "run",
             ["executable"] = "cmd.exe",
             ["arguments"] = new JsonArray("/c", "ping -n 30 127.0.0.1 > nul"),
             ["working_directory"] = fixture.Root,
             ["background"] = true,
         };
         var decision = await fixture.Runtime.EvaluateAsync(
-            Evaluate("evaluate-tasks", sessionId, runId, "bash", arguments),
+            Evaluate("evaluate-tasks", sessionId, runId, "run_process", arguments),
             default);
         Assert.Equal("allow", decision.Decision!.Decision);
 
         var execution = await fixture.Runtime.ExecuteAuthorizedAsync(
-            Execute("execute-tasks", sessionId, runId, "bash", decision.Decision.AuthorizationToken!, arguments),
+            Execute("execute-tasks", sessionId, runId, "run_process", decision.Decision.AuthorizationToken!, arguments),
             default);
         Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
         var executionId = execution.Receipt.Output["execution_id"]!.GetValue<string>();
@@ -1004,19 +1018,18 @@ public sealed class BrokerExecutionRuntimeTests
 
         var arguments = new JsonObject
         {
-            ["mode"] = "run",
             ["executable"] = "ping",
             ["arguments"] = new JsonArray("-n", "61", "127.0.0.1"),
             ["working_directory"] = fixture.Root,
             ["timeout_ms"] = 600_000,
         };
         var decision = await fixture.Runtime.EvaluateAsync(
-            Evaluate("evaluate-cancel", sessionId, runId, "bash", arguments),
+            Evaluate("evaluate-cancel", sessionId, runId, "run_process", arguments),
             default);
         Assert.Equal("allow", decision.Decision!.Decision);
 
         var execution = fixture.Runtime.ExecuteAuthorizedAsync(
-            Execute("execute-cancel", sessionId, runId, "bash", decision.Decision.AuthorizationToken!, arguments),
+            Execute("execute-cancel", sessionId, runId, "run_process", decision.Decision.AuthorizationToken!, arguments),
             default);
         await Task.Delay(2_000);
 

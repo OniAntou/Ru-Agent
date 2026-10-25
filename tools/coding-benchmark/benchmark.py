@@ -217,7 +217,7 @@ def main():
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--trust-workspace", action="store_true")
     parser.add_argument("--ru-executable", type=Path)
-    parser.add_argument("--tool-profile", choices=["legacy_v1", "coding_v2", "patch_v2", "coding_code_v1"])
+    parser.add_argument("--tool-profile", choices=["coding_v2", "patch_v2", "coding_code_v1"])
     args = parser.parse_args()
     try:
         if args.task_root is not None and args.suite == "all":

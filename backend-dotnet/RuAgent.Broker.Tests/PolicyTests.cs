@@ -78,7 +78,7 @@ public sealed class PolicyTests
     {
         var decision = new ToolPolicyEngine().Evaluate(
             MakeGrant(ToolScope.TerminalExecute),
-            TerminalManifests.Bash);
+            new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs()).Registry.Get("run_process", "1.0.0").Manifest);
 
         Assert.True(decision.Allowed);
         Assert.True(decision.RequiresApproval);
@@ -89,7 +89,7 @@ public sealed class PolicyTests
     {
         var decision = new ToolPolicyEngine().Evaluate(
             MakeGrant(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
-            TerminalManifests.Bash);
+            new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs()).Registry.Get("run_process", "1.0.0").Manifest);
 
         Assert.True(decision.Allowed);
         Assert.True(decision.RequiresApproval);
@@ -716,8 +716,8 @@ public sealed partial class PolicyEvaluationTests
             ("glob", new JsonObject { ["pattern"] = "*.txt", ["path"] = "." }),
             ("grep", new JsonObject { ["query"] = "x", ["path"] = "." }),
             ("read", new JsonObject { ["path"] = "src/read.txt" }),
-            ("write", new JsonObject { ["op"] = "write", ["path"] = "src/write.txt" }),
-            ("edit", new JsonObject { ["path"] = "src/edit.txt", ["old_string"] = "a" }),
+            ("write_file", new JsonObject { ["path"] = "src/write.txt", ["content"] = "x" }),
+            ("edit_file", new JsonObject { ["path"] = "src/edit.txt", ["edits"] = new JsonArray(new JsonObject { ["old_string"] = "a", ["new_string"] = "b" }) }),
         };
         foreach (var (piId, args) in cases)
         {
@@ -795,9 +795,9 @@ public sealed partial class PolicyEvaluationTests
             }
 
             var arguments = write
-                ? new JsonObject { ["op"] = "write", ["path"] = path, ["content"] = "synthetic" }
+                ? new JsonObject { ["path"] = path, ["content"] = "synthetic" }
                 : new JsonObject { ["path"] = path };
-            var context = factory.Create(write ? "write" : "read", "1.0.0", arguments);
+            var context = factory.Create(write ? "write_file" : "read", "1.0.0", arguments);
             var evaluation = new PolicySnapshotEvaluator(grants).Evaluate(
                 lease.Snapshot,
                 context,
@@ -912,11 +912,10 @@ public sealed partial class PolicyEvaluationTests
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
             factory.Create(
-                "write",
+                "write_file",
                 "1.0.0",
                 new JsonObject
                 {
-                    ["op"] = "write",
                     ["path"] = @"C:\SharedWork\notes.txt",
                     ["content"] = "x",
                 }),
@@ -957,16 +956,10 @@ public sealed partial class PolicyEvaluationTests
     {
         var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
 
-        // read no longer takes an op, so the malformed case is write without one.
-        var writeWithoutOp = Assert.Throws<PolicyContextException>(
-            () => factory.Create("write", "1.0.0", new JsonObject { ["path"] = "notes/a.txt", ["content"] = "x" }));
-        Assert.Equal("malformed_call", writeWithoutOp.Code);
-        Assert.Contains("write requires op", writeWithoutOp.Hint);
-
-        var bashWithoutExecutable = Assert.Throws<PolicyContextException>(
-            () => factory.Create("bash", "1.0.0", new JsonObject { ["working_directory"] = "." }));
-        Assert.Equal("malformed_call", bashWithoutExecutable.Code);
-        Assert.Contains("executable", bashWithoutExecutable.Hint);
+        var missingExecutable = Assert.Throws<PolicyContextException>(
+            () => factory.Create("run_process", "1.0.0", new JsonObject { ["working_directory"] = "." }));
+        Assert.Equal("malformed_call", missingExecutable.Code);
+        Assert.Contains("executable", missingExecutable.Hint);
 
         Assert.Null(new PolicyContextException("invalid_path").Hint);
     }
@@ -987,17 +980,17 @@ public sealed partial class PolicyEvaluationTests
             Now);
         var delete = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
-            factory.Create("write", "1.0.0", new JsonObject { ["op"] = "delete", ["path"] = "src/old.txt" }),
+            factory.Create("file_delete", "1.0.0", new JsonObject { ["path"] = "src/old.txt" }),
             PolicyRequestInvariants.Valid,
             Now);
         var restore = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
-            factory.Create("write", "1.0.0", new JsonObject { ["op"] = "restore", ["path"] = "src/old.txt" }),
+            factory.Create("file_restore", "1.0.0", new JsonObject { ["recovery_id"] = "recovery-1" }),
             PolicyRequestInvariants.Valid,
             Now);
         var networked = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
-            factory.Create("write", "1.0.0", new JsonObject { ["op"] = "write", ["path"] = "out.txt", ["network"] = true }),
+            factory.Create("write_file", "1.0.0", new JsonObject { ["path"] = "out.txt", ["content"] = "x", ["network"] = true }),
             PolicyRequestInvariants.Valid,
             Now);
 
@@ -1500,9 +1493,9 @@ public sealed partial class PolicyEvaluationTests
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var context = factory.Create(
-            "bash",
+            "terminal_read",
             "1.0.0",
-            new JsonObject { ["mode"] = "read_output", ["execution_id"] = "req-1" });
+            new JsonObject { ["execution_id"] = "req-1" });
 
         Assert.Equal(PolicyOperationClasses.Read, context.OperationClass);
         Assert.Null(context.Target);
@@ -1515,9 +1508,9 @@ public sealed partial class PolicyEvaluationTests
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
             factory.Create(
-                "bash",
+                "terminal_read",
                 "1.0.0",
-                new JsonObject { ["mode"] = "read_output", ["execution_id"] = "req-1" }),
+                new JsonObject { ["execution_id"] = "req-1" }),
             PolicyRequestInvariants.Valid,
             Now);
 
@@ -1535,9 +1528,9 @@ public sealed partial class PolicyEvaluationTests
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
             factory.Create(
-                "bash",
+                "terminal_read",
                 "1.0.0",
-                new JsonObject { ["mode"] = "read_output", ["execution_id"] = "req-1" }),
+                new JsonObject { ["execution_id"] = "req-1" }),
             PolicyRequestInvariants.Valid,
             Now);
 
@@ -1558,16 +1551,16 @@ public sealed partial class PolicyEvaluationTests
             "1.0.0",
             new JsonObject { ["query"] = "ru" }),
         AgentPolicySubject.WorkspaceMutation => factory.Create(
-            "write",
+            "write_file",
             "1.0.0",
-            new JsonObject { ["op"] = "write", ["path"] = "src/write.txt" }),
+            new JsonObject { ["path"] = "src/write.txt", ["content"] = "x" }),
         AgentPolicySubject.WorkspaceTerminal => Terminal(factory, "git", "status"),
         AgentPolicySubject.ExternalStructuredFile => factory.Create(
             "read",
             "1.0.0",
             new JsonObject { ["path"] = Path.Combine(Path.GetTempPath(), "ru-policy-outside.txt") }),
-        AgentPolicySubject.ExternalTerminal => factory.Create("bash", "1.0.0", new JsonObject
-        { ["mode"] = "run", ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = Path.GetTempPath() }),
+        AgentPolicySubject.ExternalTerminal => factory.Create("run_process", "1.0.0", new JsonObject
+        { ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = Path.GetTempPath() }),
         AgentPolicySubject.StructuredProtectedPath => factory.Create(
             "read",
             "1.0.0",
@@ -1675,7 +1668,6 @@ public sealed partial class PolicyEvaluationTests
 
         var arguments = new JsonObject
         {
-            ["mode"] = "run",
             ["executable"] = executable,
             ["arguments"] = new JsonArray(argvList.Select(a => JsonValue.Create(a)).ToArray()),
             ["working_directory"] = ".",
@@ -1685,13 +1677,12 @@ public sealed partial class PolicyEvaluationTests
             arguments["timeout_ms"] = timeoutMs.Value;
         }
 
-        return factory.Create("bash", "1.0.0", arguments);    }
+        return factory.Create("run_process", "1.0.0", arguments);    }
 
     private static PolicyContext Shell(PolicyContextFactory factory, string script, int? timeoutMs = null)
     {
         var arguments = new JsonObject
         {
-            ["mode"] = "shell",
             ["script"] = script,
             ["working_directory"] = ".",
         };
@@ -1700,7 +1691,7 @@ public sealed partial class PolicyEvaluationTests
             arguments["timeout_ms"] = timeoutMs.Value;
         }
 
-        return factory.Create("bash", "1.0.0", arguments);
+        return factory.Create("powershell", "1.0.0", arguments);
     }
 
     private static void AssertDeny(PolicyEvaluation evaluation, string reasonCode)

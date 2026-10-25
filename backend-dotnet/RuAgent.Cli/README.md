@@ -208,11 +208,11 @@ agent rpc
 - `output` wraps `GET /agent/v1/runs/{runId}/payloads/{payloadId}` — the explicit user action that fetches final head/tail tool output bytes. Nothing in the tracer fetches private payloads implicitly; the event stream only references payloads by opaque `payload_ref`. The command prints the payload's `content` field just as the host returned it: UTF-8 text for `utf8text`/`json` payloads, and the base64 wire form for `opaque` payloads (it does not decode them); `--json` is accepted for symmetry with the other commands but adds no envelope, because the payload is already the answer.
 ## Current model tool surface
 
-The Agent model-step advertisement contains the thirteen Protocol definitions:
-`read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write` with
-`op=write|delete|restore`, `edit`, `bash` with `mode=run|shell|read_output|kill`
-plus a `background` flag on run/shell, standalone
-`web_search`/`web_fetch`, `skill`, and Host-intercepted `ask_user`. A provider-native model step may return
+The Agent model-step advertisement selects Protocol definitions from its pinned
+`coding_v2`, `patch_v2` or `coding_code_v1` profile. See the
+[current tool inventory](../../docs/operations/agent-tools.md#current-capability-matrix)
+for explicit file, Windows terminal, Web, question and orchestration tools.
+A provider-native model step may return
 optional narration and one or more ordered calls; the compatibility text path
 still emits exactly one JSON selection. The shared budget is 256 tool calls per
 window, read-only concurrency is capped at eight, and mutation/terminal calls
@@ -233,9 +233,9 @@ hard-invalid requests remain denied. Web is
 automatic in all profiles; `web_approval_required` is only an explicit-rule
 compatibility reason. Full-access terminal runs as the current Windows user and
 has no OS filesystem/network confinement. Time, machine status, app discovery,
-and optional volume commands use the terminal; notes use `write` with
-`op=write`.
-`files.apply_patch` and `app.open` are not model-usable. Managed
+and optional volume commands use the terminal; notes use `write_file`.
+`apply_patch` is available in the patch and programmatic profiles; `app.open`
+is not model-usable. Managed
 Web results are bounded and marked untrusted. Workspace SKILL.md bodies are
 prompt guidance only and grant nothing; a `requires: python` frontmatter entry
 fails the model's `skill` load closed with `python_unavailable` when Python is

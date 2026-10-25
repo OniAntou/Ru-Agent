@@ -55,6 +55,10 @@ Task-oriented pages for people using Ru; start here before the reference materia
 
 ## Decisions
 
+- [Retire the legacy tool surface](adr/0029-retire-legacy-tool-surface.md)
+- [Bounded programmatic coding tools](adr/0028-bounded-programmatic-coding-tools.md)
+- [Pinned coding tool profiles](adr/0027-pinned-coding-tool-profiles.md) (legacy compatibility superseded by 0029)
+
 - [`read` returns workspace images to vision models](adr/0026-read-returns-workspace-images.md) (proposed)
 - [MCP servers through the Broker behind one `mcp` tool](adr/0025-mcp-servers-through-the-broker.md)
 - [Bounded session-run handoff across model changes](adr/0023-bounded-session-run-handoff.md)

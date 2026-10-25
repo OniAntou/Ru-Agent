@@ -83,7 +83,7 @@ billing ledger, and does not survive Host restart.
 ## Nested workspace instructions
 
 The fixed root/user instruction sources remain system-prompt blocks. Successful
-structured `read`, `write` and `edit` receipts discover nested `AGENTS.md` along
+structured `read`/`read_file`, `write_file` and `edit_file` receipts discover nested `AGENTS.md` along
 the touched file's directory chain. Failed calls, shell text and arbitrary
 model-selected instructions do not discover scopes. Lexical and resolved final
 paths must remain within the trusted workspace root. Discovery is bounded to

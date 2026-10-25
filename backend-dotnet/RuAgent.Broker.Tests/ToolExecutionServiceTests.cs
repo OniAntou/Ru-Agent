@@ -298,14 +298,13 @@ public sealed partial class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "bash",
+                        ["tool_id"] = "run_process",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
                         ["run_id"] = fixture.RunId,
                         ["authorization_token"] = "forged-token",
                         ["arguments"] = new JsonObject
                         {
-                            ["mode"] = "run",
                             ["executable"] = "dotnet",
                             ["arguments"] = new JsonArray("--version"),
                             ["working_directory"] = external,
@@ -340,13 +339,12 @@ public sealed partial class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "bash",
+                        ["tool_id"] = "run_process",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
                         ["run_id"] = fixture.RunId,
                         ["arguments"] = new JsonObject
                         {
-                            ["mode"] = "run",
                             ["executable"] = "dotnet",
                             ["arguments"] = new JsonArray("--version"),
                             ["working_directory"] = external,
@@ -397,14 +395,13 @@ public sealed partial class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "bash",
+                        ["tool_id"] = "run_process",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
                         ["run_id"] = fixture.RunId,
                         ["authorization_token"] = "forged-token",
                         ["arguments"] = new JsonObject
                         {
-                            ["mode"] = "run",
                             ["executable"] = "dotnet",
                             ["arguments"] = new JsonArray("--version"),
                             ["working_directory"] = external,
@@ -446,14 +443,13 @@ public sealed partial class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "bash",
+                        ["tool_id"] = "run_process",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
                         ["run_id"] = "forged-run",
                         ["authorization_token"] = "forged-token",
                         ["arguments"] = new JsonObject
                         {
-                            ["mode"] = "run",
                             ["executable"] = "dotnet",
                             ["arguments"] = new JsonArray("--version"),
                             ["working_directory"] = external,
@@ -501,10 +497,10 @@ public sealed partial class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "bash",
+                        ["tool_id"] = "run_process",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
-                        ["arguments"] = new JsonObject { ["mode"] = "run", ["network"] = true },
+                        ["arguments"] = new JsonObject { ["network"] = true },
                     }),
                 CancellationToken.None);
             Assert.Equal(ToolResultStatuses.Failed, malformed.Status);
@@ -521,14 +517,13 @@ public sealed partial class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "bash",
+                    ["tool_id"] = "run_process",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "internal",
                     ["arguments"] = new JsonObject
                     {
-                        ["mode"] = "run",
-                        ["executable"] = "python",
-                        ["arguments"] = new JsonArray("-c", "print(1)"),
+                        ["executable"] = "cmd.exe",
+                        ["arguments"] = new JsonArray("/d", "/c", "echo", "1"),
                         ["working_directory"] = outsideDirectory,
                         ["network_intent"] = true,
                     },
@@ -554,7 +549,7 @@ public sealed partial class ToolExecutionServiceTests
                     }),
                 CancellationToken.None);
 
-            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+            Assert.True(result.Status == ToolResultStatuses.Succeeded, result.ErrorCode + ": " + result.SafeSummary);
             Assert.True(result.AdapterInvoked);
             Assert.True(
                 result.Output["working_directory"]!.GetValue<string>() is "."
@@ -596,12 +591,11 @@ public sealed partial class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "bash",
+                    ["tool_id"] = "run_process",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "internal",
                     ["arguments"] = new JsonObject
                     {
-                        ["mode"] = "run",
                         ["executable"] = "dotnet",
                         ["arguments"] = new JsonArray("--version"),
                         ["working_directory"] = outsideDirectory,
@@ -662,12 +656,11 @@ public sealed partial class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "bash",
+                    ["tool_id"] = "powershell",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "internal",
                     ["arguments"] = new JsonObject
                     {
-                        ["mode"] = "shell",
                         ["script"] = "Get-Date",
                         ["working_directory"] = outsideDirectory,
                     },
@@ -709,12 +702,11 @@ public sealed partial class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "bash",
+                    ["tool_id"] = "powershell",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "internal",
                     ["arguments"] = new JsonObject
                     {
-                        ["mode"] = "shell",
                         ["script"] = "Get-Date",
                         ["working_directory"] = ".",
                     },
@@ -756,14 +748,13 @@ public sealed partial class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "edit",
+                    ["tool_id"] = "edit_file",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "tool",
                     ["arguments"] = new JsonObject
                     {
                         ["path"] = "a.txt",
-                        ["old_string"] = "world",
-                        ["new_string"] = "Ru",
+                        ["edits"] = new JsonArray(new JsonObject { ["old_string"] = "world", ["new_string"] = "Ru" }),
                     },
                 });
 
@@ -816,14 +807,13 @@ public sealed partial class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "edit",
+                    ["tool_id"] = "edit_file",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "tool",
                     ["arguments"] = new JsonObject
                     {
                         ["path"] = "leak.txt",
-                        ["old_string"] = "old",
-                        ["new_string"] = "new",
+                        ["edits"] = new JsonArray(new JsonObject { ["old_string"] = "old", ["new_string"] = "new" }),
                     },
                 });
 
@@ -970,7 +960,6 @@ public sealed partial class ToolExecutionServiceTests
             var pending = await service.ExecuteAsync(
                 TerminalRequest("session-terminal-recognized", new JsonObject
                 {
-                    ["mode"] = "run",
                     ["executable"] = "rg",
                     ["arguments"] = new JsonArray("--files"),
                 }),
@@ -1026,7 +1015,6 @@ public sealed partial class ToolExecutionServiceTests
             var result = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, runRequestId, new JsonObject
                 {
-                    ["mode"] = "run",
                     ["executable"] = "cmd.exe",
                     ["arguments"] = new JsonArray("/c", "for /L %i in (1,1,3000) do @echo output-line-padding-0123456789"),
                 }),
@@ -1041,11 +1029,10 @@ public sealed partial class ToolExecutionServiceTests
             var page = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-page-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
-                    ["mode"] = "read_output",
                     ["execution_id"] = runRequestId,
                     ["offset"] = 9000,
                     ["limit"] = 100,
-                }),
+                }, toolId: "terminal_read"),
                 CancellationToken.None);
 
             Assert.Equal(ToolResultStatuses.Succeeded, page.Status);
@@ -1056,9 +1043,8 @@ public sealed partial class ToolExecutionServiceTests
             var missing = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-missing-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
-                    ["mode"] = "read_output",
                     ["execution_id"] = "req-no-such-spool",
-                }),
+                }, toolId: "terminal_read"),
                 CancellationToken.None);
 
             Assert.Equal(ToolResultStatuses.Failed, missing.Status);
@@ -1088,7 +1074,6 @@ public sealed partial class ToolExecutionServiceTests
             var result = await service.ExecuteAsync(
                 TerminalRequest("session-terminal-max", new JsonObject
                 {
-                    ["mode"] = "run",
                     ["executable"] = "rg",
                     ["arguments"] = new JsonArray("--files"),
                     ["timeout_ms"] = 1_900_000,
@@ -1132,7 +1117,6 @@ public sealed partial class ToolExecutionServiceTests
             var started = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, runRequestId, new JsonObject
                 {
-                    ["mode"] = "run",
                     ["executable"] = "cmd.exe",
                     ["arguments"] = new JsonArray("/c", "echo bg-hello & ping -n 30 127.0.0.1 > nul"),
                     ["background"] = true,
@@ -1153,9 +1137,8 @@ public sealed partial class ToolExecutionServiceTests
             var live = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-live-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
-                    ["mode"] = "read_output",
                     ["execution_id"] = runRequestId,
-                }),
+                }, toolId: "terminal_read"),
                 CancellationToken.None);
             Assert.Equal(ToolResultStatuses.Succeeded, live.Status);
             Assert.Equal("running", live.Output["state"]!.GetValue<string>());
@@ -1163,9 +1146,8 @@ public sealed partial class ToolExecutionServiceTests
             var killed = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-kill-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
-                    ["mode"] = "kill",
                     ["execution_id"] = runRequestId,
-                }),
+                }, toolId: "terminal_stop"),
                 CancellationToken.None);
 
             Assert.Equal(ToolResultStatuses.Succeeded, killed.Status);
@@ -1195,7 +1177,6 @@ public sealed partial class ToolExecutionServiceTests
             var started = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-close-background", new JsonObject
                 {
-                    ["mode"] = "run",
                     ["executable"] = TerminalTestSupport.PowerShellExecutable,
                     ["arguments"] = new JsonArray(TerminalTestSupport.PowerShellArgs(
                         $"[IO.File]::WriteAllText('{pidFile.Replace("'", "''")}', [string]$PID); Start-Sleep -Seconds 60")
@@ -1247,7 +1228,6 @@ public sealed partial class ToolExecutionServiceTests
             var started = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, runRequestId, new JsonObject
                 {
-                    ["mode"] = "run",
                     ["executable"] = "cmd.exe",
                     ["arguments"] = new JsonArray("/c", "echo bg-done"),
                     ["background"] = true,
@@ -1294,7 +1274,6 @@ public sealed partial class ToolExecutionServiceTests
                 var started = await service.ExecuteAuthenticatedV2Async(
                     TerminalV2Request(sessionId, id, new JsonObject
                     {
-                        ["mode"] = "run",
                         ["executable"] = "cmd.exe",
                         ["arguments"] = new JsonArray("/c", "ping -n 30 127.0.0.1 > nul"),
                         ["background"] = true,
@@ -1306,7 +1285,6 @@ public sealed partial class ToolExecutionServiceTests
             var over = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-bg-over-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
-                    ["mode"] = "run",
                     ["executable"] = "cmd.exe",
                     ["arguments"] = new JsonArray("/c", "ping -n 30 127.0.0.1 > nul"),
                     // Foreground launches reserve the same slot because they
@@ -1320,9 +1298,8 @@ public sealed partial class ToolExecutionServiceTests
             var unknown = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-kill-unknown-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
-                    ["mode"] = "kill",
                     ["execution_id"] = "req-no-such-task",
-                }),
+                }, toolId: "terminal_stop"),
                 CancellationToken.None);
             Assert.Equal(ToolResultStatuses.Failed, unknown.Status);
             Assert.Equal("unknown_background_task", unknown.ErrorCode);
@@ -1332,9 +1309,8 @@ public sealed partial class ToolExecutionServiceTests
                 var kill = await service.ExecuteAuthenticatedV2Async(
                     TerminalV2Request(sessionId, "req-kill-" + Guid.NewGuid().ToString("N"), new JsonObject
                     {
-                        ["mode"] = "kill",
                         ["execution_id"] = id,
-                    }),
+                    }, toolId: "terminal_stop"),
                     CancellationToken.None);
                 Assert.Equal(ToolResultStatuses.Succeeded, kill.Status);
             }
@@ -1343,9 +1319,8 @@ public sealed partial class ToolExecutionServiceTests
             var notRunning = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-kill-again-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
-                    ["mode"] = "kill",
                     ["execution_id"] = ids[0],
-                }),
+                }, toolId: "terminal_stop"),
                 CancellationToken.None);
             Assert.Equal(ToolResultStatuses.Failed, notRunning.Status);
             Assert.Equal("background_task_not_running", notRunning.ErrorCode);
@@ -1382,7 +1357,6 @@ public sealed partial class ToolExecutionServiceTests
             var started = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, runRequestId, new JsonObject
                 {
-                    ["mode"] = "run",
                     ["executable"] = "cmd.exe",
                     ["arguments"] = new JsonArray("/c", "ping -n 30 127.0.0.1 > nul"),
                     ["timeout_ms"] = 1_000,
@@ -1397,9 +1371,8 @@ public sealed partial class ToolExecutionServiceTests
             var killed = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-kill-move-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
-                    ["mode"] = "kill",
                     ["execution_id"] = runRequestId,
-                }),
+                }, toolId: "terminal_stop"),
                 CancellationToken.None);
             Assert.Equal(ToolResultStatuses.Succeeded, killed.Status);
 
@@ -1442,13 +1415,12 @@ public sealed partial class ToolExecutionServiceTests
                 2_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "bash",
+                    ["tool_id"] = "run_process",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "internal",
                     ["run_id"] = "run_" + Guid.NewGuid().ToString("N"),
                     ["arguments"] = new JsonObject
                     {
-                        ["mode"] = "run",
                         ["executable"] = "cmd.exe",
                         ["arguments"] = new JsonArray("/c", "ping -n 4 127.0.0.1 > nul"),
                         ["timeout_ms"] = 120_000,
@@ -1509,9 +1481,8 @@ public sealed partial class ToolExecutionServiceTests
             var page = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-state-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
-                    ["mode"] = "read_output",
                     ["execution_id"] = executionId,
-                }),
+                }, toolId: "terminal_read"),
                 CancellationToken.None);
             last = page;
             if (page.Status == ToolResultStatuses.Succeeded
@@ -1537,7 +1508,7 @@ public sealed partial class ToolExecutionServiceTests
         30_000,
         new JsonObject
         {
-            ["tool_id"] = "bash",
+            ["tool_id"] = "run_process",
             ["tool_version"] = "1.0.0",
             ["capability_class"] = "internal",
             ["arguments"] = arguments,
@@ -1547,7 +1518,7 @@ public sealed partial class ToolExecutionServiceTests
     /// The product path: V2 lease-authorized calls skip the manifest approval
     /// gate because the connection leg already evaluated policy.
     /// </summary>
-    private static AgentEnvelope TerminalV2Request(string sessionId, string requestId, JsonObject arguments) => new(
+    private static AgentEnvelope TerminalV2Request(string sessionId, string requestId, JsonObject arguments, string toolId = "run_process") => new(
         AgentEnvelopeCodec.ProtocolVersionV2,
         requestId,
         AgentMessageTypes.ToolExecute,
@@ -1556,7 +1527,7 @@ public sealed partial class ToolExecutionServiceTests
         30_000,
         new JsonObject
         {
-            ["tool_id"] = "bash",
+            ["tool_id"] = toolId,
             ["tool_version"] = "1.0.0",
             ["capability_class"] = "internal",
             ["run_id"] = "run_" + Guid.NewGuid().ToString("N"),
@@ -1759,9 +1730,8 @@ public sealed partial class ToolExecutionServiceTests
             File.WriteAllText(Path.Combine(workspace, "taken.txt"), "x");
 
             var deleted = await fixture.Service.ExecuteAuthenticatedV2Async(
-                WriteEnvelope(fixture, "ru-io-1", new JsonObject
+                CodingToolEnvelope(fixture, "ru-io-1", "file_delete", new JsonObject
                 {
-                    ["op"] = "delete",
                     ["path"] = "adir",
                 }),
                 CancellationToken.None);
@@ -1771,9 +1741,8 @@ public sealed partial class ToolExecutionServiceTests
             Assert.Contains("directory", deleted.SafeSummary, StringComparison.OrdinalIgnoreCase);
 
             var missing = await fixture.Service.ExecuteAuthenticatedV2Async(
-                WriteEnvelope(fixture, "ru-io-2", new JsonObject
+                CodingToolEnvelope(fixture, "ru-io-2", "file_delete", new JsonObject
                 {
-                    ["op"] = "delete",
                     ["path"] = "nope.txt",
                 }),
                 CancellationToken.None);
@@ -1783,9 +1752,8 @@ public sealed partial class ToolExecutionServiceTests
             Assert.Contains("does not exist", missing.SafeSummary, StringComparison.OrdinalIgnoreCase);
 
             var exists = await fixture.Service.ExecuteAuthenticatedV2Async(
-                WriteEnvelope(fixture, "ru-io-3", new JsonObject
+                CodingToolEnvelope(fixture, "ru-io-3", "write_file", new JsonObject
                 {
-                    ["op"] = "write",
                     ["path"] = "taken.txt",
                     ["content"] = "new",
                 }),
@@ -1793,7 +1761,7 @@ public sealed partial class ToolExecutionServiceTests
 
             Assert.Equal(ToolResultStatuses.Failed, exists.Status);
             Assert.Equal("file_exists", exists.ErrorCode);
-            Assert.Contains("op=write", exists.SafeSummary, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("write_file", exists.SafeSummary, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("overwrite", exists.SafeSummary, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("same path and content", exists.SafeSummary, StringComparison.OrdinalIgnoreCase);
         }
@@ -1824,13 +1792,12 @@ public sealed partial class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "bash",
+                        ["tool_id"] = "run_process",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
                         ["run_id"] = fixture.RunId,
                         ["arguments"] = new JsonObject
                         {
-                            ["mode"] = "run",
                             ["executable"] = "python",
                             ["arguments"] = new JsonArray(
                                 "-c",
@@ -1852,13 +1819,12 @@ public sealed partial class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "bash",
+                        ["tool_id"] = "terminal_read",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
                         ["run_id"] = fixture.RunId,
                         ["arguments"] = new JsonObject
                         {
-                            ["mode"] = "read_output",
                             ["execution_id"] = "spill-run",
                             ["offset"] = 400_000,
                             ["limit"] = 1000,
@@ -1877,9 +1843,10 @@ public sealed partial class ToolExecutionServiceTests
         }
     }
 
-    private static AgentEnvelope WriteEnvelope(
+    private static AgentEnvelope CodingToolEnvelope(
         (string Root, string SessionId, string RunId, BrokerSession Session, ToolExecutionService Service) fixture,
         string requestId,
+        string toolId,
         JsonObject arguments) => new(
             AgentEnvelopeCodec.ProtocolVersionV2,
             requestId,
@@ -1889,7 +1856,7 @@ public sealed partial class ToolExecutionServiceTests
             30_000,
             new JsonObject
             {
-                ["tool_id"] = "write",
+                ["tool_id"] = toolId,
                 ["tool_version"] = "1.0.0",
                 ["capability_class"] = "internal",
                 ["run_id"] = fixture.RunId,
@@ -1914,15 +1881,14 @@ public sealed partial class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "edit",
+                        ["tool_id"] = "edit_file",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
                         ["run_id"] = fixture.RunId,
                         ["arguments"] = new JsonObject
                         {
                             ["path"] = "dup.txt",
-                            ["old_string"] = "val = 1",
-                            ["new_string"] = "val = 2",
+                            ["edits"] = new JsonArray(new JsonObject { ["old_string"] = "val = 1", ["new_string"] = "val = 2" }),
                         },
                     }),
                 CancellationToken.None);
@@ -1956,15 +1922,14 @@ public sealed partial class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "edit",
+                        ["tool_id"] = "edit_file",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
                         ["run_id"] = fixture.RunId,
                         ["arguments"] = new JsonObject
                         {
                             ["path"] = "one.txt",
-                            ["old_string"] = "absent",
-                            ["new_string"] = "x",
+                            ["edits"] = new JsonArray(new JsonObject { ["old_string"] = "absent", ["new_string"] = "x" }),
                         },
                     }),
                 CancellationToken.None);

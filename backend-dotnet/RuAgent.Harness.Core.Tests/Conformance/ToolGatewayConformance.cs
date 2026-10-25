@@ -11,8 +11,8 @@ namespace RuAgent.Harness.Core.Tests.Conformance;
 /// Shared conformance contract for <see cref="IToolGateway"/> adapters. Every
 /// production adapter (current in-process gateway, future Broker-backed
 /// adapter) subclasses this with its own gateway configuration so the same
-/// seam contract runs against each of them. Read-only tool semantics only;
-/// mutation and terminal facts are added when their adapters migrate.
+/// seam contract runs against each of them, including file mutations and
+/// bounded Windows terminal execution.
 /// </summary>
 public abstract class ToolGatewayConformance : IDisposable
 {
@@ -36,9 +36,9 @@ public abstract class ToolGatewayConformance : IDisposable
     protected virtual IReadOnlyList<string> AdvertisedCapabilities { get; } =
     [
         "read",
-        "write",
-        "edit",
-        "bash",
+        "write_file",
+        "edit_file",
+        "run_process",
     ];
 
     protected virtual string ToolVersion => "1.0.0";
@@ -102,9 +102,8 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task Delete_rejects_preimage_hash_in_model_arguments()
     {
         var decision = await Gateway.EvaluateAsync(
-            Proposal("write", new JsonObject
+            Proposal("file_delete", new JsonObject
             {
-                ["op"] = "delete",
                 ["path"] = "notes/a.txt",
                 ["expected_sha256"] = new string('a', 64),
             }),
@@ -131,17 +130,16 @@ public abstract class ToolGatewayConformance : IDisposable
     }
 
     [Fact]
-    public async Task Malformed_read_call_is_denied_with_a_repair_hint()
+    public async Task Malformed_write_call_is_denied_with_a_repair_hint()
     {
-        // read no longer takes an op, so it has no malformed-call shape left; write
-        // is the tool that still requires a discriminator.
+        // A missing required field must produce repair guidance before dispatch.
         var decision = await Gateway.EvaluateAsync(
-            Proposal("write", new JsonObject { ["path"] = "notes/a.txt", ["content"] = "x" }),
+            Proposal("write_file", new JsonObject { ["content"] = "x" }),
             CancellationToken.None);
 
         Assert.Equal(PolicyDecision.Deny, decision.Decision);
         Assert.Equal("malformed_call", decision.SafeCode);
-        Assert.Contains("write requires op", decision.DenyHint);
+        Assert.Contains("path", decision.DenyHint);
     }
 
     [Fact]
@@ -383,9 +381,8 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task FilesWrite_creates_file_with_preimage_and_after_hash()
     {
-        var receipt = await ExecuteAllowedAsync("write", new JsonObject
+        var receipt = await ExecuteAllowedAsync("write_file", new JsonObject
         {
-            ["op"] = "write",
             ["path"] = "notes/created.txt",
             ["content"] = "fresh",
         });
@@ -406,9 +403,8 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task FilesWrite_existing_without_overwrite_fails_file_exists()
     {
-        var receipt = await ExecuteAllowedAsync("write", new JsonObject
+        var receipt = await ExecuteAllowedAsync("write_file", new JsonObject
         {
-            ["op"] = "write",
             ["path"] = "notes/a.txt",
             ["content"] = "clash",
         });
@@ -421,12 +417,13 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task FilesEdit_replaces_expected_occurrences()
     {
-        var receipt = await ExecuteAllowedAsync("edit", new JsonObject
+        var receipt = await ExecuteAllowedAsync("edit_file", new JsonObject
         {
             ["path"] = "notes/b.txt",
-            ["old_string"] = "beta",
-            ["new_string"] = "gamma",
-            ["expected_occurrences"] = 2,
+            ["edits"] = new JsonArray(new JsonObject
+            {
+                ["old_string"] = "beta", ["new_string"] = "gamma", ["expected_occurrences"] = 2,
+            }),
         });
 
         Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
@@ -440,7 +437,7 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task FilesDelete_allows_inside_workspace_in_standard()
     {
         var decision = await Gateway.EvaluateAsync(
-            Proposal("write", new JsonObject { ["op"] = "delete", ["path"] = "notes/a.txt" }),
+            Proposal("file_delete", new JsonObject { ["path"] = "notes/a.txt" }),
             CancellationToken.None);
 
         Assert.Equal(PolicyDecision.Allow, decision.Decision);
@@ -453,14 +450,14 @@ public abstract class ToolGatewayConformance : IDisposable
 
         var created = await ExecuteOnAsync(
             gateway,
-            "write",
-            new JsonObject { ["op"] = "write", ["path"] = "doomed.txt", ["content"] = "doomed" });
+            "write_file",
+            new JsonObject { ["path"] = "doomed.txt", ["content"] = "doomed" });
         Assert.Equal(ToolExecutionOutcome.Succeeded, created.Outcome);
 
         var deleted = await ExecuteOnAsync(
             gateway,
-            "write",
-            new JsonObject { ["op"] = "delete", ["path"] = "doomed.txt" });
+            "file_delete",
+            new JsonObject { ["path"] = "doomed.txt" });
         Assert.Equal(ToolExecutionOutcome.Succeeded, deleted.Outcome);
         var deleteOutput = ParseModelContent(deleted);
         Assert.Equal("doomed.txt", deleteOutput["path"]!.GetValue<string>());
@@ -473,8 +470,8 @@ public abstract class ToolGatewayConformance : IDisposable
 
         var restored = await ExecuteOnAsync(
             gateway,
-            "write",
-            new JsonObject { ["op"] = "restore", ["recovery_id"] = recoveryId });
+            "file_restore",
+            new JsonObject { ["recovery_id"] = recoveryId });
         Assert.Equal(ToolExecutionOutcome.Succeeded, restored.Outcome);
         Assert.Equal("doomed.txt", ParseModelContent(restored)["path"]!.GetValue<string>());
 
@@ -483,8 +480,8 @@ public abstract class ToolGatewayConformance : IDisposable
 
         var replay = await ExecuteOnAsync(
             gateway,
-            "write",
-            new JsonObject { ["op"] = "restore", ["recovery_id"] = recoveryId });
+            "file_restore",
+            new JsonObject { ["recovery_id"] = recoveryId });
         Assert.Equal(ToolExecutionOutcome.Failed, replay.Outcome);
         Assert.Equal("recovery_unavailable", replay.Code);
     }
@@ -494,9 +491,8 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task Terminal_run_standard_workspace_form_is_allowed_and_executes()
     {
-        var receipt = await ExecuteAllowedAsync("bash", new JsonObject
+        var receipt = await ExecuteAllowedAsync("run_process", new JsonObject
         {
-            ["mode"] = "run",
             ["executable"] = "dotnet",
             ["arguments"] = new JsonArray("--version"),
         });
@@ -510,9 +506,8 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task Terminal_external_working_directory_requires_approval_in_standard()
     {
         var decision = await Gateway.EvaluateAsync(
-            Proposal("bash", new JsonObject
+            Proposal("run_process", new JsonObject
             {
-                ["mode"] = "run",
                 ["executable"] = "cmd.exe",
                 ["arguments"] = new JsonArray("/c", "echo", "conformance"),
                 ["working_directory"] = Path.GetTempPath(),
@@ -526,9 +521,9 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task Standard_workspace_command_does_not_require_a_recognized_analyzer_form()
     {
-        var receipt = await ExecuteAllowedAsync("bash", new JsonObject
+        var receipt = await ExecuteAllowedAsync("run_process", new JsonObject
         {
-            ["mode"] = "run", ["executable"] = "cmd.exe",
+            ["executable"] = "cmd.exe",
             ["arguments"] = new JsonArray("/c", "echo", "conformance"),
         });
         Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);

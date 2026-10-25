@@ -104,7 +104,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
 
     private static AgentRunProviderSelection CustomPin(string baseUri, string model) => new(
         "Custom OpenAI", "custom", ProviderProtocols.ChatCompletions, baseUri, model, "custom_api_key",
-        "{}", null, model, "native");
+        "{\"ru_tool_profile\":\"coding_v2\"}", null, model, "native");
 
     [Fact]
     public async Task Same_run_keeps_model_key_and_effort_after_settings_change()

@@ -370,8 +370,8 @@ public sealed class InProcessModelConversationTests
         }.ToJsonString();
         var context = Snapshot(
             ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Find the middle output marker."),
-            AssistantStepEntry("src-output", 2, "provider_output_1", "bash",
-                "{\"mode\":\"read_output\",\"execution_id\":\"execution_0123456789abcdef0123456789abcdef\",\"offset\":120,\"limit\":7000}"),
+            AssistantStepEntry("src-output", 2, "provider_output_1", "terminal_read",
+                "{\"execution_id\":\"execution_0123456789abcdef0123456789abcdef\",\"offset\":120,\"limit\":7000}"),
             ToolResultEntry("src-result", 3, "internal_output_1", "provider_output_1", source));
 
         var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
@@ -396,7 +396,7 @@ public sealed class InProcessModelConversationTests
     {
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "Tao file robots.txt."),
-            AssistantStepEntry("src-2", 2, "provider_write_1", "write", "{\"op\":\"write\",\"path\":\"robots.txt\"}"),
+            AssistantStepEntry("src-2", 2, "provider_write_1", "write_file", "{\"path\":\"robots.txt\"}"),
             ToolResultEntry("src-3", 3, "internal_call_1", "provider_write_1", "{\"status\":\"ok\",\"path\":\"robots.txt\",\"bytes\":40}"));
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
@@ -409,7 +409,7 @@ public sealed class InProcessModelConversationTests
         Assert.Equal("assistant", assistant.Role);
         var call = Assert.Single(assistant.ToolCalls);
         Assert.Equal("provider_write_1", call.Id);
-        Assert.Equal("write", call.Name);
+        Assert.Equal("write_file", call.Name);
         Assert.Equal("robots.txt", call.Arguments.GetProperty("path").GetString());
         var tool = messages[2];
         Assert.Equal("tool", tool.Role);

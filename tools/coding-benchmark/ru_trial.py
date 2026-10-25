@@ -19,7 +19,7 @@ from rpc_process import (
 from trajectory_metrics import measure_events
 
 MAX_PROVIDER_LABEL_CHARS = 256
-TOOL_PROFILES = ("legacy_v1", "coding_v2", "patch_v2", "coding_code_v1")
+TOOL_PROFILES = ("coding_v2", "patch_v2", "coding_code_v1")
 STARTUP_TIMEOUT_SECONDS = 30
 POLL_INTERVAL_SECONDS = 1
 TERMINAL_STATUSES = {"completed", "failed", "cancelled", "interrupted"}

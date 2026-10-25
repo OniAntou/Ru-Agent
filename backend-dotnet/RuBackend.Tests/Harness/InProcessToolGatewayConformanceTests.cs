@@ -15,7 +15,7 @@ namespace RuBackend.Tests.Harness;
 /// session, a real tool service over the base suite's workspace, and the
 /// transport-neutral runtime, all inside the test process. No process-global
 /// environment mutation and no loopback sockets. Every case still spawns real
-/// terminal processes for the bash cases, so it shares the non-parallel
+/// terminal processes, so it shares the non-parallel
 /// process-heavy collection.
 /// </summary>
 [Collection(nameof(TerminalProcessHeavyCollection))]
@@ -29,9 +29,8 @@ public sealed class InProcessToolGatewayConformanceTests : ToolGatewayConformanc
     public async Task Failed_terminal_command_delivers_diagnostics_to_the_model()
     {
         var gateway = await CreatePresetGatewayAsync(FullAccessPreset);
-        var receipt = await ExecuteOnAsync(gateway, "bash", new JsonObject
+        var receipt = await ExecuteOnAsync(gateway, "powershell", new JsonObject
         {
-            ["mode"] = "shell",
             ["script"] = "[Console]::Error.WriteLine('compiler: missing semicolon'); exit 1",
             ["working_directory"] = ".",
         });

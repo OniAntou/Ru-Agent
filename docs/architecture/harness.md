@@ -711,7 +711,7 @@ history; summaries, session handoffs and model claims cannot clear them. The
 projection travels as private context metadata, outside canonical provider history,
 and outstanding commands are supplied in bounded runtime context guidance.
 
-For `bash`, optional `purpose=verification` declares a check requiring observed
+For `powershell` and `run_process`, optional `purpose=verification` declares a check requiring observed
 exit zero. Reading another file or passing a different command cannot resolve
 that required check. Unannotated or `purpose=inspection` process failures remain
 failed diagnostic receipts, not new mandatory checks: a failed optional lookup

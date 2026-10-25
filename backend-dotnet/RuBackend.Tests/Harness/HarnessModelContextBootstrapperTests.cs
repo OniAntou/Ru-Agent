@@ -27,8 +27,8 @@ public sealed class HarnessModelContextBootstrapperTests
             "https://provider.invalid/v1", "model-a", "custom_api_key", "{}", 8192);
         await selections.PinAsync(previous.Run.RunId, modelA, default);
         var step = new AssistantStep("Updated parser.cs; now checking the tests.",
-            [new ModelToolCall("old-call", "bash", "1",
-                System.Text.Json.JsonDocument.Parse("{\"command\":\"dotnet test Parser.Tests\"}").RootElement)],
+            [new ModelToolCall("old-call", "powershell", "1",
+                System.Text.Json.JsonDocument.Parse("{\"script\":\"dotnet test Parser.Tests\"}").RootElement)],
             AssistantFinishReason.ToolCalls, 1);
         var assistant = new HarnessPayloadIntent(new PayloadId("payload_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
             HarnessPayloadKind.AssistantStep, HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,

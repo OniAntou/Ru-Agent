@@ -13,7 +13,7 @@ public sealed class MarkdownSkillLoaderTests
         using var fixture = TempRoot.Create();
         var root = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills")).FullName;
         var body = "# PDF Analyzer\n\nUse the existing file tool.";
-        WriteSkill(root, "pdf", $"---\nname: PDF Analyzer\ndescription: Analyze and summarize PDF files\nallowed-tools: files.read, terminal.run\nlicense: MIT\n---\n{body}");
+        WriteSkill(root, "pdf", $"---\nname: PDF Analyzer\ndescription: Analyze and summarize PDF files\nallowed-tools: read_file, run_process\nlicense: MIT\n---\n{body}");
 
         var result = new MarkdownSkillLoader().Load(new[] { root });
 

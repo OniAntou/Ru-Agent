@@ -7,9 +7,7 @@ namespace RuAgent.Protocol;
 public sealed record ToolArgumentIssue(string Field, string Expected, string Received, string Signature)
 {
     public string Hint => $"Invalid argument {Field}: expected {Expected}; received {Received}. "
-        + (Field == "old_string"
-            ? "edit requires existing file text from a fresh read. To create a new file, use write with op=write, path and content; do not use empty old_string."
-            : "Send the exact schema value without added quotes or whitespace; changing the path/content does not repair this field.");
+        + "Send the exact schema value without added quotes or whitespace; changing the path/content does not repair this field.";
 }
 
 public static class ToolArgumentDiagnostics

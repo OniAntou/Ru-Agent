@@ -24,7 +24,6 @@ public sealed class StructuredToolOutputProjectionBrokerTests
             var execution = await service.ExecuteAuthenticatedV2Async(
                 TerminalRequest(sessionId, executionId, new JsonObject
                 {
-                    ["mode"] = "run",
                     ["executable"] = "powershell.exe",
                     ["arguments"] = new JsonArray("-NoProfile", "-NonInteractive", "-Command", "Add-Content -LiteralPath ran.txt -Value once; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::Write(('界' * 29900) + 'CURSOR-MIDDLE-MARKER' + ('界' * 10000))"),
                 }),
@@ -156,7 +155,6 @@ public sealed class StructuredToolOutputProjectionBrokerTests
         await service.ExecuteAuthenticatedV2Async(
             TerminalRequest(sessionId, requestId, new JsonObject
             {
-                ["mode"] = "read_output",
                 ["execution_id"] = executionId,
                 ["offset"] = offset,
                 ["limit"] = limit,
@@ -196,7 +194,6 @@ public sealed class StructuredToolOutputProjectionBrokerTests
     {
         using var arguments = JsonDocument.Parse(JsonSerializer.Serialize(new
         {
-            mode = "read_output",
             execution_id = executionId,
             offset = 0,
             limit = 7_000,
@@ -204,7 +201,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
         var context = new ModelContextSnapshot(
         [
             ModelContextEntry.Assistant("assistant", 1, new AssistantStep(null,
-            [new ModelToolCall(providerCallId, "bash", "1.0.0", arguments.RootElement)], AssistantFinishReason.ToolCalls, 1)),
+            [new ModelToolCall(providerCallId, "terminal_read", "1.0.0", arguments.RootElement)], AssistantFinishReason.ToolCalls, 1)),
             ModelContextEntry.ToolResult(
                 "result",
                 2,
@@ -231,7 +228,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
         30_000,
         new JsonObject
         {
-            ["tool_id"] = "bash",
+            ["tool_id"] = arguments.ContainsKey("executable") ? "run_process" : "terminal_read",
             ["tool_version"] = "1.0.0",
             ["capability_class"] = "internal",
             ["run_id"] = "run_" + Guid.NewGuid().ToString("N"),

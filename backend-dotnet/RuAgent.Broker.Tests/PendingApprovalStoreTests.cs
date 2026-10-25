@@ -14,7 +14,7 @@ public sealed class PendingApprovalStoreTests
         var store = new PendingApprovalStore();
         var request = Request("request-1", "session-1");
         var manifest = new ToolManifest(
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "terminal",
             RiskClass.Destructive,

@@ -8,18 +8,14 @@ public sealed class HelpDocsTests
 {
     private static readonly string[] CurrentToolIds =
     [
-        "read", "list", "help", "grep", "glob",
-        "write", "edit", "bash", "web_search", "web_fetch",
-    ];
-
-    // read and list carry no discriminator since the split; only write and bash do.
-    private static readonly string[] CurrentOps =
-    [
-        "op=write", "mode=run", "mode=shell",
+        "read", "read_file", "list", "help", "grep", "glob",
+        "write_file", "edit_file", "file_delete", "file_restore", "apply_patch",
+        "powershell", "run_process", "terminal_read", "terminal_stop", "web_search", "web_fetch",
     ];
 
     private static readonly string[] RetiredToolIds =
     [
+        "write", "edit", "bash",
         "system.time", "system.status", "app.list", "notes.create", "system.volume",
     ];
 
@@ -59,7 +55,7 @@ public sealed class HelpDocsTests
     [Fact]
     public void Heading_phrase_excerpt_keeps_section_opening_when_query_token_is_late()
     {
-        const string opening = "read list help write";
+        const string opening = "read list help write_file powershell run_process";
         var documents = BundledHelpDocsCatalog.DefaultSources
             .Select((source, index) => (source, index == 0
                 ? $"# Tools\n\n## Current capability matrix\n\n{opening} {new string('x', 2_100)} capability matrix {new string('y', 2_100)}\nlate line"
@@ -79,7 +75,7 @@ public sealed class HelpDocsTests
     public void Excerpt_limit_does_not_split_surrogate_pairs()
     {
         const string heading = "Current capability matrix";
-        const string opening = "read list help write ";
+        const string opening = "read list help write_file powershell run_process ";
         var body = opening + new string('x', 1_998 - opening.Length) + "😀" + new string('y', 100);
         var documents = BundledHelpDocsCatalog.DefaultSources
             .Select((source, index) => (source, index == 0
@@ -137,8 +133,7 @@ public sealed class HelpDocsTests
         var excerpts = string.Join("\n", output["results"]!.AsArray()
             .Select(item => item!["excerpt"]!.GetValue<string>()));
         Assert.All(CurrentToolIds, toolId => Assert.Contains(toolId, excerpts, StringComparison.Ordinal));
-        Assert.All(CurrentOps, op => Assert.Contains(op, excerpts, StringComparison.Ordinal));
-        Assert.All(RetiredToolIds, toolId => Assert.DoesNotContain(toolId, excerpts, StringComparison.Ordinal));
+        Assert.All(RetiredToolIds, toolId => Assert.DoesNotContain($"`{toolId}`", excerpts, StringComparison.Ordinal));
     }
 
     [Fact]

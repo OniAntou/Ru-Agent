@@ -290,7 +290,7 @@ public sealed class SkillBodyToolTests
             var skills = Directory.CreateDirectory(Path.Combine(root, "skills", "pdf.analyzer")).FullName;
             File.WriteAllText(
                 Path.Combine(skills, "SKILL.md"),
-                "---\nname: pdf.analyzer\ndescription: Analyze PDF files\nallowed-tools: read, bash\n---\n\n# PDF Analyzer\n\nRead the PDF with the read tool.",
+                "---\nname: pdf.analyzer\ndescription: Analyze PDF files\nallowed-tools: read, powershell\n---\n\n# PDF Analyzer\n\nRead the PDF with the read tool.",
                 new System.Text.UTF8Encoding(false));
             var sessionRoot = Path.Combine(root, "session");
             Directory.CreateDirectory(sessionRoot);

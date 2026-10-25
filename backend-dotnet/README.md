@@ -84,16 +84,13 @@ and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 and encrypted policy snapshots) is the current path. A model step performs
 exactly one provider generation per typed request and returns provider-neutral
 `AssistantStep(text, tool_calls, finish_reason)`. Its model-visible surface is
-the same thirteen tools in the single Agent profile: `read`, `list`, `grep`, `glob`,
-`help`, `todo_write` and `skill` (one purpose each; `read` takes `offset`/`limit` and
-returns a bounded `truncated` flag; `skill` takes `name` and loads one SKILL.md body),
-`write` with `op=write|delete|restore` plus `edit` (hash-guarded, one-time recoverable,
-`recovery_too_large` beyond 4 MiB,
-`recovery_consumed` on replay), `bash` with `mode=run|shell|read_output|kill`
-plus a `background` flag on run/shell, standalone
-`web_search` (`query`, optional `max_results` 1–10) and `web_fetch` (`url`) backed by
-the configured Google HTML engine raced against fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek), and
-`ask_user` (Host-intercepted: it parks the run on a user question and never reaches the Broker). Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` is
+selected by its pinned `coding_v2`, `patch_v2` or `coding_code_v1` inventory.
+The [tool contract](../docs/operations/agent-tools.md#coding-profiles) defines
+explicit file and Windows-terminal operations, reads/search, Web, questions,
+MCP and subagent control. File mutations remain hash-guarded; delete recovery
+is bounded and one-time (`recovery_too_large` beyond 4 MiB,
+`recovery_consumed` on replay). Terminal output can be paged without rerunning.
+Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` is
 read-only: workspace read and Web auto while terminal and mutation deny outright
 and external structured access asks. `standard`
 auto-allows workspace mutation and executable/shell launches from a workspace cwd;

@@ -126,7 +126,7 @@ Cold initialize/run-start RPCs get up to 30 seconds inside the task deadline;
 ordinary RPC calls keep their 10-second bound. Preserve startup failures with no
 model steps as infrastructure evidence rather than model-quality outcomes.
 
-Use `--tool-profile legacy_v1|coding_v2|patch_v2|coding_code_v1` to pin a trial's
+Use `--tool-profile coding_v2|patch_v2|coding_code_v1` to pin a trial's
 new Host process. A requested/actual pin mismatch fails explicitly. For matched
 tool comparisons, run the same task, model, effort, protocol and deadline with
 fresh destinations for each profile; compare externally graded success before
@@ -159,7 +159,7 @@ a coincidentally correct final workspace.
 
 `trajectory.json` records bounded safe events and run/session IDs. The
 `tool_profile` field records the actual run pin when the Host supplies it; older
-Hosts return null. To compare `legacy_v1`, `coding_v2`, `patch_v2`, and
+Hosts return null. To compare `coding_v2`, `patch_v2`, and
 `coding_code_v1`, start a dedicated Host with `RU_AGENT_TOOL_PROFILE` set before its
 new runs, use fresh identical fixture copies, and hold the runtime, model,
 effort, task deadlines and toolchains fixed. Do not infer the active profile

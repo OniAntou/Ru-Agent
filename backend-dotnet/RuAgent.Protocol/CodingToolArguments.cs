@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 
 namespace RuAgent.Protocol;
 
-/// <summary>Explicit adapter reuse. The advertised identity and original arguments remain on every proposal/receipt.</summary>
+/// <summary>Internal operation-family normalization for policy and receipt projections, never execution dispatch. Proposals and receipts retain their advertised identity and original arguments.</summary>
 public static class CodingToolArguments
 {
     public static string? AdapterToolId(string toolId) => toolId switch

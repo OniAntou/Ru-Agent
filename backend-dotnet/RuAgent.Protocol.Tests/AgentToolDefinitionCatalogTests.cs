@@ -14,9 +14,6 @@ public sealed class AgentToolDefinitionCatalogTests
         "todo_write",
         "grep",
         "glob",
-        "write",
-        "edit",
-        "bash",
         "web_search",
         "web_fetch",
         "skill",
@@ -46,7 +43,8 @@ public sealed class AgentToolDefinitionCatalogTests
         "system.status",
         "app.list",
         "notes.create",
-        "system.volume",        "files.list",
+        "system.volume",
+        "files.list",
         "files.glob",
         "files.search",
         "files.read",
@@ -59,18 +57,21 @@ public sealed class AgentToolDefinitionCatalogTests
         "web.search",
         "web.fetch",
         "help.docs",
+        "write",
+        "edit",
+        "bash",
     ];
 
     [Fact]
-    public void Bash_verification_metadata_is_optional_and_expected_exit_is_bounded()
+    public void Terminal_verification_metadata_is_optional_and_expected_exit_is_bounded()
     {
-        var properties = Properties("bash");
+        var properties = Properties("powershell");
         Assert.Equal(new[] { "command", "inspection", "verification", "expected_failure" },
             properties["purpose"]!["enum"]!.AsArray().Select(value => value!.GetValue<string>()));
         Assert.Equal(1, properties["expected_exit_code"]!["minimum"]!.GetValue<int>());
         Assert.Equal(255, properties["expected_exit_code"]!["maximum"]!.GetValue<int>());
-        Assert.DoesNotContain("purpose", Required("bash"));
-        Assert.DoesNotContain("expected_exit_code", Required("bash"));
+        Assert.DoesNotContain("purpose", Required("powershell"));
+        Assert.DoesNotContain("expected_exit_code", Required("powershell"));
     }
 
     [Fact]
@@ -79,7 +80,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(30, definitions.Count);
+        Assert.Equal(27, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }
@@ -101,12 +102,6 @@ public sealed class AgentToolDefinitionCatalogTests
     [Fact]
     public void Read_list_and_help_are_single_purpose_schemas_without_a_discriminator()
     {
-        foreach (var op in new[] { "write", "delete", "restore" })
-        {
-            var write = Properties("write");
-            Assert.False(write.ContainsKey("expected_sha256"));
-        }
-
         // read carries no discriminator and none of the operations that moved out.
         var read = Properties("read");
         Assert.Equal(["path"], Required("read"));
@@ -137,8 +132,6 @@ public sealed class AgentToolDefinitionCatalogTests
         Assert.Equal(1, help["max_results"]!["minimum"]!.GetValue<int>());
         Assert.Equal(5, help["max_results"]!["maximum"]!.GetValue<int>());
 
-        Assert.Equal(["op"], Required("write"));
-
         var grep = Properties("grep");
         Assert.True(grep.ContainsKey("is_regex"));
         Assert.False(grep.ContainsKey("regex"));
@@ -153,22 +146,56 @@ public sealed class AgentToolDefinitionCatalogTests
     }
 
     [Fact]
-    public void Bash_tool_exposes_optional_read_only_and_write_set_contract()
+    public void Terminal_tools_expose_optional_write_claims_without_granting_permissions()
     {
-        var properties = Properties("bash");
-        Assert.Equal("boolean", properties["read_only"]!["type"]!.GetValue<string>());
-        Assert.Equal("array", properties["write_set"]!["type"]!.GetValue<string>());
-        Assert.Equal("string", properties["write_set"]!["items"]!["type"]!.GetValue<string>());
-        Assert.DoesNotContain("read_only", Required("bash"));
-        Assert.DoesNotContain("write_set", Required("bash"));
+        foreach (var toolId in new[] { "powershell", "run_process" })
+        {
+            var properties = Properties(toolId);
+            Assert.Equal("boolean", properties["read_only"]!["type"]!.GetValue<string>());
+            Assert.Equal("array", properties["write_set"]!["type"]!.GetValue<string>());
+            Assert.Equal("string", properties["write_set"]!["items"]!["type"]!.GetValue<string>());
+            Assert.DoesNotContain("read_only", Required(toolId));
+            Assert.DoesNotContain("write_set", Required(toolId));
+            Assert.DoesNotContain("sandbox", properties.Select(property => property.Key));
+        }
     }
 
     [Fact]
-    public void Bash_tool_does_not_expose_a_sandbox_override()
+    public void File_mutation_schemas_are_explicit_and_bounded()
     {
-        var properties = Properties("bash");
-        Assert.DoesNotContain("sandbox", Required("bash"));
-        Assert.DoesNotContain("sandbox", properties.Select(property => property.Key));
+        var write = Properties("write_file");
+        Assert.Equal(["path", "content"], Required("write_file"));
+        Assert.Equal(4 * 1024 * 1024, write["content"]!["maxLength"]!.GetValue<int>());
+        Assert.Equal("boolean", write["overwrite"]!["type"]!.GetValue<string>());
+
+        var edit = Properties("edit_file");
+        Assert.Equal(["path", "edits"], Required("edit_file"));
+        Assert.Equal(1, edit["edits"]!["minItems"]!.GetValue<int>());
+        Assert.Equal(64, edit["edits"]!["maxItems"]!.GetValue<int>());
+        Assert.Equal(["old_string", "new_string"], edit["edits"]!["items"]!["required"]!.AsArray()
+            .Select(item => item!.GetValue<string>()));
+        Assert.Equal(1, edit["edits"]!["items"]!["properties"]!["old_string"]!["minLength"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void Terminal_command_schemas_have_distinct_public_shapes_and_bounded_arguments()
+    {
+        var powershell = Properties("powershell");
+        Assert.Equal(["script"], Required("powershell"));
+        Assert.True(powershell.ContainsKey("script"));
+        Assert.False(powershell.ContainsKey("mode"));
+        Assert.False(powershell.ContainsKey("shell"));
+
+        var process = Properties("run_process");
+        Assert.Equal(["executable"], Required("run_process"));
+        Assert.True(process.ContainsKey("arguments"));
+        Assert.Equal(128, process["arguments"]!["maxItems"]!.GetValue<int>());
+        Assert.Equal(4096, process["arguments"]!["items"]!["maxLength"]!.GetValue<int>());
+        Assert.False(process.ContainsKey("script"));
+
+        Assert.Equal(["execution_id"], Required("terminal_read"));
+        Assert.Equal(["execution_id"], Required("terminal_stop"));
+        Assert.Equal(0, Properties("terminal_read")["offset"]!["minimum"]!.GetValue<int>());
     }
 
     [Fact]
@@ -207,9 +234,9 @@ public sealed class AgentToolDefinitionCatalogTests
     [InlineData("web_search", true)]
     [InlineData("web_fetch", true)]
     [InlineData("todo_write", false)]
-    [InlineData("write", false)]
-    [InlineData("edit", false)]
-    [InlineData("bash", false)]
+    [InlineData("write_file", false)]
+    [InlineData("edit_file", false)]
+    [InlineData("powershell", false)]
     [InlineData("future_tool", false)]
     public void Broker_access_catalog_is_conservative_for_parallel_reads(
         string toolId,
@@ -236,7 +263,7 @@ public sealed class AgentToolDefinitionCatalogTests
     public void Read_write_descriptions_preserve_user_supplied_absolute_paths()
     {
         foreach (var definition in AgentToolDefinitionCatalog.Get()
-            .Where(definition => definition.ToolId is "read" or "list" or "write" or "edit" or "grep" or "glob"))
+            .Where(definition => definition.ToolId is "read" or "list" or "write_file" or "edit_file" or "grep" or "glob"))
         {
             Assert.Contains("workspace-relative", definition.Description, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("absolute", definition.Description, StringComparison.OrdinalIgnoreCase);
@@ -249,32 +276,27 @@ public sealed class AgentToolDefinitionCatalogTests
     }
 
     [Fact]
-    public void File_mutation_guidance_names_the_required_operation_and_exact_edit_source()
+    public void File_mutation_guidance_names_overwrite_and_exact_edit_source()
     {
-        var write = AgentToolDefinitionCatalog.Find("write", "1.0.0")!;
-        Assert.Contains("op=write", write.Description);
+        var write = AgentToolDefinitionCatalog.Find("write_file", "1.0.0")!;
         Assert.Contains("overwrite=true", write.Description);
-        Assert.Equal("src\\notes.txt", write.ExampleArguments!["path"]!.GetValue<string>());
+        Assert.Contains("path", write.InputSchema["required"]!.AsArray().Select(item => item!.GetValue<string>()));
 
-        var edit = AgentToolDefinitionCatalog.Find("edit", "1.0.0")!;
+        var edit = AgentToolDefinitionCatalog.Find("edit_file", "1.0.0")!;
         Assert.Contains("exact", edit.Description, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("copied from a fresh read", edit.Description, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("whitespace must match", edit.Description, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("src\\notes.txt", edit.ExampleArguments!["path"]!.GetValue<string>());
+        Assert.Contains("path", edit.InputSchema["required"]!.AsArray().Select(item => item!.GetValue<string>()));
     }
 
     [Fact]
-    public void Bash_example_keeps_executable_out_of_the_argument_vector()
+    public void Run_process_description_keeps_executable_separate_from_literal_arguments()
     {
-        var bash = AgentToolDefinitionCatalog.Find("bash", "1.0.0")!;
-        var example = bash.ExampleArguments!;
+        var process = AgentToolDefinitionCatalog.Find("run_process", "1.0.0")!;
 
-        Assert.Contains("separate from arguments", bash.Description, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("mode=shell with script", bash.Description, StringComparison.Ordinal);
-        Assert.Contains("default shell is powershell.exe", bash.Description, StringComparison.Ordinal);
-        Assert.Equal("node", example["executable"]!.GetValue<string>());
-        Assert.Equal(new[] { "-e", "console.log('hi')" }, example["arguments"]!.AsArray().Select(item => item!.GetValue<string>()));
-        Assert.DoesNotContain("node", example["arguments"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Contains("literal arguments", process.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("without shell parsing", process.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(["executable"], Required("run_process"));
+        Assert.Contains("arguments", Properties("run_process").Select(property => property.Key));
     }
 
     [Fact]

@@ -17,6 +17,7 @@ public sealed partial class FileEditAdapter
         var resolved = _resolver.Resolve(path);
         if (resolved.IsProtected) throw new UnauthorizedAccessException("protected_path");
         if (resolved.IsOutsideWorkspace) throw new UnauthorizedAccessException("outside_workspace");
+        if (!File.Exists(resolved.CanonicalPath)) throw new FileNotFoundException("file_not_found");
         if (!string.Equals(FileHashService.GetCurrentHash(resolved.CanonicalPath), expected, StringComparison.Ordinal))
             throw new UnauthorizedAccessException("workspace_changed");
         var original = ReadBoundedText(resolved.CanonicalPath);

@@ -60,7 +60,7 @@ public sealed partial class SubagentNativeControlTests
         var prepared = await gateway.PrepareAsync(new(read, new("exec_" + new string('7', 32)), allowed.CanonicalIntentToken!, allowed.GatewayGeneration), default);
         Assert.Equal(ToolExecutionOutcome.Succeeded, (await gateway.ExecuteAsync(prepared, _ => ValueTask.CompletedTask, default)).Outcome);
         var write = new ToolProposal(read.RunId, read.ModelStepId, new("call_" + new string('8', 32)), "fixture_review_denied", 1,
-            "write", "1.0.0", JsonSerializer.SerializeToElement(new { op = "write", path = "a.txt", content = "must not write", overwrite = true }));
+            "write_file", "1.0.0", JsonSerializer.SerializeToElement(new { path = "a.txt", content = "must not write", overwrite = true }));
         Assert.Equal(PolicyDecision.Deny, (await gateway.EvaluateAsync(write, default)).Decision);
         await CompleteReviewFixtureAsync(storage, reviewAttempt.Run.RunId);
         await execution.Factory.CloseSessionAsync(reviewAttempt.Run.SessionId.Value, default);

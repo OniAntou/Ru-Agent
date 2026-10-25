@@ -123,11 +123,11 @@ public sealed partial class HeadlessCodingLoopTests
     {
         using var workspace = GitWorkspace.Create();
         var runner = new ScriptedRunner();
-        runner.Enqueue(ToolCall("files.list", """{"path":"."}"""));
-        runner.Enqueue(ToolCall("files.edit", $$"""{"path":"seed.txt","old_string":"seed","new_string":"repaired"}"""));
-        runner.Enqueue(ToolCall("terminal.run", """{"executable":"rg","arguments":["--files"]}"""));
-        runner.Enqueue(ToolCall("terminal.run", """{"executable":"git","arguments":["status","--porcelain=v2"]}"""));
-        runner.Enqueue(ToolCall("terminal.run", JsonSerializer.Serialize(new
+        runner.Enqueue(ToolCall("list", """{"path":"."}"""));
+        runner.Enqueue(ToolCall("edit_file", $$"""{"path":"seed.txt","edits":[{"old_string":"seed","new_string":"repaired"}]}"""));
+        runner.Enqueue(ToolCall("run_process", """{"executable":"rg","arguments":["--files"]}"""));
+        runner.Enqueue(ToolCall("run_process", """{"executable":"git","arguments":["status","--porcelain=v2"]}"""));
+        runner.Enqueue(ToolCall("run_process", JsonSerializer.Serialize(new
         {
             executable = "cmd.exe", arguments = new[] { "/d", "/c", "exit", "7" },
             purpose = "expected_failure", expected_exit_code = 7,
@@ -182,8 +182,8 @@ public sealed partial class HeadlessCodingLoopTests
     {
         using var workspace = GitWorkspace.Create();
         var runner = new ScriptedRunner();
-        runner.Enqueue(ToolCall("terminal.run", """{"executable":"cmd.exe","arguments":["/d","/c","exit","1"],"purpose":"inspection"}"""));
-        runner.Enqueue(ToolCall("files.read", """{"path":"seed.txt"}"""));
+        runner.Enqueue(ToolCall("run_process", """{"executable":"cmd.exe","arguments":["/d","/c","exit","1"],"purpose":"inspection"}"""));
+        runner.Enqueue(ToolCall("read", """{"path":"seed.txt"}"""));
         runner.Enqueue(FinalStep("The alternative evidence is seed.txt; the exploratory command failed."));
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
         using var client = factory.CreateAuthenticatedClient();
@@ -208,14 +208,14 @@ public sealed partial class HeadlessCodingLoopTests
         var verification = JsonSerializer.Serialize(new {
             executable = "cmd.exe", arguments = new[] { "/d", "/c", "findstr", "repaired", "seed.txt" },
             purpose = "verification", working_directory = useCwdAlias ? "." : workspace.Path });
-        runner.Enqueue(ToolCall("terminal.run", verification));
+        runner.Enqueue(ToolCall("run_process", verification));
         runner.Enqueue(FinalStep("premature completion"));
-        runner.Enqueue(ToolCall("files.read", """{"path":"seed.txt"}"""));
+        runner.Enqueue(ToolCall("read", """{"path":"seed.txt"}"""));
         runner.Enqueue(FinalStep("still premature"));
-        runner.Enqueue(ToolCall("files.edit", """{"path":"seed.txt","old_string":"seed","new_string":"repaired"}"""));
+        runner.Enqueue(ToolCall("edit_file", """{"path":"seed.txt","edits":[{"old_string":"seed","new_string":"repaired"}]}"""));
         var rerun = JsonNode.Parse(verification)!.AsObject();
         rerun["working_directory"] = workspace.Path;
-        runner.Enqueue(ToolCall("terminal.run", rerun.ToJsonString()));
+        runner.Enqueue(ToolCall("run_process", rerun.ToJsonString()));
         runner.Enqueue(FinalStep("verified repair"));
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
         using var client = factory.CreateAuthenticatedClient();
@@ -240,8 +240,8 @@ public sealed partial class HeadlessCodingLoopTests
         using var workspace = GitWorkspace.Create();
         var runner = new ScriptedRunner();
         runner.Enqueue(ToolCall(
-            "files.edit",
-            """{"path":"seed.txt","old_string":"text-not-in-the-file","new_string":"replacement"}"""));
+            "edit_file",
+            """{"path":"seed.txt","edits":[{"old_string":"text-not-in-the-file","new_string":"replacement"}]}"""));
 
         using var factory = new BackendWebApplicationFactory(
             dataPaths: workspace.DataPaths,
@@ -293,11 +293,11 @@ public sealed partial class HeadlessCodingLoopTests
         using var workspace = GitWorkspace.Create();
         var runner = new ScriptedRunner();
         var failedA = ToolCall(
-            "files.edit",
-            """{"path":"seed.txt","old_string":"missing-a","new_string":"replacement-a"}""");
+            "edit_file",
+            """{"path":"seed.txt","edits":[{"old_string":"missing-a","new_string":"replacement-a"}]}""");
         var failedB = ToolCall(
-            "files.edit",
-            """{"path":"seed.txt","old_string":"missing-b","new_string":"replacement-b"}""");
+            "edit_file",
+            """{"path":"seed.txt","edits":[{"old_string":"missing-b","new_string":"replacement-b"}]}""");
         runner.Enqueue(failedA);
         runner.Enqueue(failedB);
         runner.Enqueue(failedA);
@@ -338,7 +338,7 @@ public sealed partial class HeadlessCodingLoopTests
         try
         {
             var runner = new ScriptedRunner();
-            runner.Enqueue(ToolCall("files.read", $$"""{"path":{{JsonSerializer.Serialize(outside)}}}"""));
+            runner.Enqueue(ToolCall("read", $$"""{"path":{{JsonSerializer.Serialize(outside)}}}"""));
 
             using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
             using var client = factory.CreateAuthenticatedClient();
@@ -381,7 +381,7 @@ public sealed partial class HeadlessCodingLoopTests
         // The approved command runs long enough that the cancels below find the run still
         // working; an approval resumes the run at once, so a command that ends at launch
         // would finish (or fail) before any client could cancel it.
-        runner.Enqueue(ToolCall("terminal.run", JsonSerializer.Serialize(new
+        runner.Enqueue(ToolCall("run_process", JsonSerializer.Serialize(new
         {
             executable = "ping.exe",
             arguments = new[] { "-n", "30", "127.0.0.1" },
@@ -590,44 +590,18 @@ public sealed partial class HeadlessCodingLoopTests
 
     private static AssistantStep ToolCall(string toolId, string argumentsJson)
     {
-        var (mappedId, mappedJson) = MapToPi(toolId, argumentsJson);
         return new(
             null,
             new[]
             {
                 new ModelToolCall(
                     "provider_call_1",
-                    mappedId,
+                    toolId,
                     "1.0.0",
-                    JsonDocument.Parse(mappedJson).RootElement.Clone()),
+                    JsonDocument.Parse(argumentsJson).RootElement.Clone()),
             },
             AssistantFinishReason.ToolCalls,
             0);
-    }
-
-    private static (string Id, string Json) MapToPi(string toolId, string argumentsJson)
-    {
-        var node = JsonNode.Parse(argumentsJson) as JsonObject ?? new JsonObject();
-        var id = toolId;
-        switch (toolId)
-        {
-            case "files.list": id = "list"; node.Remove("op"); break;
-            case "files.glob": id = "glob"; node.Remove("op"); break;
-            case "files.search": id = "grep"; node.Remove("op"); break;
-            case "files.read": id = "read"; node.Remove("op"); break;
-            case "files.write": id = "write"; node["op"] = "write"; break;
-            case "files.edit": id = "edit"; break;
-            case "files.delete": id = "write"; node["op"] = "delete"; break;
-            case "files.restore": id = "write"; node["op"] = "restore"; break;
-            case "terminal.run":
-                id = "bash"; node["mode"] = "run";
-                break;
-            case "terminal.shell": id = "bash"; node["mode"] = "shell"; break;
-            case "web.search": id = "web_search"; node.Remove("op"); break;
-            case "web.fetch": id = "web_fetch"; node.Remove("op"); break;
-            case "help.docs": id = "help"; node.Remove("op"); break;
-        }
-        return (id, node.ToJsonString());
     }
 
     private static AssistantStep FinalStep(string text) =>

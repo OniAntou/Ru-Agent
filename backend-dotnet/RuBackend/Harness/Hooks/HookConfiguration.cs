@@ -33,7 +33,7 @@ public sealed record HookDefinition(HookEvent Event, string? ToolPattern, string
 
 /// <summary>
 /// Hooks from <c>~/.ru/hooks.json</c> then <c>&lt;workspace&gt;/.ru/hooks.json</c>:
-/// <code>{"hooks":{"PreToolUse":[{"matcher":"bash|edit","command":"...","timeout_seconds":30}]}}</code>
+/// <code>{"hooks":{"PreToolUse":[{"matcher":"powershell|run_process|edit_file","command":"...","timeout_seconds":30}]}}</code>
 /// Unreadable, oversized or malformed files contribute nothing; individual invalid entries are skipped.
 /// </summary>
 public sealed class HookConfiguration

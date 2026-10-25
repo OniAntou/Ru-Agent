@@ -12,7 +12,7 @@ public sealed record AgentRunModelMetadata(
     string ContextWindowSource,
     string ContextWindowVersion,
     int OutputTokenReserve,
-    string ToolProfile = RuAgent.Protocol.AgentToolProfiles.Legacy);
+    string ToolProfile = RuAgent.Protocol.AgentToolProfiles.Minimal);
 
 public interface IAgentRunModelMetadataResolver
 {

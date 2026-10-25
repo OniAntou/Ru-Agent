@@ -33,17 +33,17 @@ public sealed class CodingToolContractTests
     }
 
     [Fact]
-    public void Profiles_are_explicit_and_missing_pin_keeps_legacy_runs_unchanged()
+    public void Profiles_require_an_explicit_supported_pin_and_retired_tools_are_absent()
     {
-        Assert.Equal(AgentToolProfiles.Legacy, AgentToolProfiles.ReadPin(new JsonObject()));
+        Assert.Equal("tool_profile_required", Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ReadPin(new JsonObject())).Code);
         Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ReadPin(new JsonObject { [AgentToolProfiles.PinField] = "unknown" }));
-        Assert.True(AgentToolProfiles.Includes(AgentToolProfiles.Legacy, "write"));
-        Assert.False(AgentToolProfiles.Includes(AgentToolProfiles.Legacy, "write_file"));
+        Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ReadPin(new JsonObject { [AgentToolProfiles.PinField] = "legacy_v1" }));
+        foreach (var tool in new[] { "write", "edit", "bash" }) Assert.Null(AgentToolDefinitionCatalog.Find(tool, "1.0.0"));
         Assert.False(AgentToolProfiles.Includes(AgentToolProfiles.Minimal, "write"));
         Assert.True(AgentToolProfiles.Includes(AgentToolProfiles.Minimal, "write_file"));
         Assert.False(AgentToolProfiles.Includes(AgentToolProfiles.Minimal, "bash"));
         Assert.True(AgentToolProfiles.Includes(AgentToolProfiles.Minimal, "powershell"));
-        foreach (var profile in new[] { AgentToolProfiles.Legacy, AgentToolProfiles.Minimal, AgentToolProfiles.Patch })
+        foreach (var profile in new[] { AgentToolProfiles.Minimal, AgentToolProfiles.Patch })
         {
             Assert.False(AgentToolProfiles.Includes(profile, "future_catalog_tool"));
             Assert.False(AgentToolProfiles.Includes(profile, "run_code"));

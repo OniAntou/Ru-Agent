@@ -12,14 +12,14 @@ public sealed class HookConfigurationTests
     {
         var hooks = HookConfiguration.Parse("""
             {"hooks":{
-              "PreToolUse":[{"matcher":"bash|edit","command":"a"},{"command":""},{"command":"b","timeout_seconds":9999},{"command":"c","timeout_seconds":0}],
+              "PreToolUse":[{"matcher":"run_process|edit_file","command":"a"},{"command":""},{"command":"b","timeout_seconds":9999},{"command":"c","timeout_seconds":0}],
               "PostToolUse":[{"command":"d"}],
               "Unknown":[{"command":"e"}]}}
             """);
 
         Assert.Equal(["a", "b", "d"], hooks.Select(hook => hook.Command));
         Assert.Equal(HookConfiguration.MaxTimeout, hooks[1].Timeout);
-        Assert.True(hooks[0].Matches("EDIT"));
+        Assert.True(hooks[0].Matches("EDIT_FILE"));
         Assert.False(hooks[0].Matches("read"));
         Assert.True(hooks[1].Matches("anything"));
     }
@@ -29,7 +29,7 @@ public sealed class HookConfigurationTests
     {
         var hook = new HookDefinition(HookEvent.PreToolUse, "(", "x", TimeSpan.FromSeconds(1));
 
-        Assert.False(hook.Matches("bash"));
+        Assert.False(hook.Matches("run_process"));
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public sealed class HookConfigurationTests
 
             var loaded = HookConfiguration.Load(workspace, home);
 
-            Assert.Equal("user", Assert.Single(loaded.For(HookEvent.PreToolUse, "bash")).Command);
+            Assert.Equal("user", Assert.Single(loaded.For(HookEvent.PreToolUse, "run_process")).Command);
             Assert.True(HookConfiguration.Load(workspace, null).IsEmpty);
         }
         finally
@@ -79,11 +79,11 @@ public sealed class HookProcessRunnerTests
         try
         {
             var result = await new HookProcessRunner().RunAsync(
-                Hook($"findstr \"^\" > \"{output}\" & exit /b 1"), """{"tool_id":"bash"}""", Path.GetTempPath(), CancellationToken.None);
+                Hook($"findstr \"^\" > \"{output}\" & exit /b 1"), """{"tool_id":"run_process"}""", Path.GetTempPath(), CancellationToken.None);
 
             Assert.False(result.Blocks);
             Assert.Equal(1, result.ExitCode);
-            Assert.Contains("\"tool_id\":\"bash\"", File.ReadAllText(output));
+            Assert.Contains("\"tool_id\":\"run_process\"", File.ReadAllText(output));
         }
         finally { File.Delete(output); }
     }
@@ -140,9 +140,9 @@ public sealed class HookToolGatewayTests
     {
         var inner = new FakeGateway();
         var runner = new FakeRunner(new HookResult(2, "no edits on main", false));
-        var gateway = Gateway(inner, runner, """{"hooks":{"PreToolUse":[{"matcher":"edit","command":"x"}]}}""");
+        var gateway = Gateway(inner, runner, """{"hooks":{"PreToolUse":[{"matcher":"edit_file","command":"x"}]}}""");
 
-        var decision = await gateway.EvaluateAsync(Proposal("edit"), CancellationToken.None);
+        var decision = await gateway.EvaluateAsync(Proposal("edit_file"), CancellationToken.None);
 
         Assert.Equal(RuAgent.Harness.Core.Policy.PolicyDecision.Deny, decision.Decision);
         Assert.Equal(HookToolGateway.BlockedCode, decision.SafeCode);
@@ -155,10 +155,10 @@ public sealed class HookToolGatewayTests
     {
         var inner = new FakeGateway();
         var runner = new FakeRunner(new HookResult(1, "warn", false));
-        var gateway = Gateway(inner, runner, """{"hooks":{"PreToolUse":[{"matcher":"edit","command":"x"}]}}""");
+        var gateway = Gateway(inner, runner, """{"hooks":{"PreToolUse":[{"matcher":"edit_file","command":"x"}]}}""");
 
         await gateway.EvaluateAsync(Proposal("read"), CancellationToken.None);
-        await gateway.EvaluateAsync(Proposal("edit"), CancellationToken.None);
+        await gateway.EvaluateAsync(Proposal("edit_file"), CancellationToken.None);
 
         Assert.Equal(2, inner.Evaluations);
         Assert.Single(runner.Calls);
@@ -170,7 +170,7 @@ public sealed class HookToolGatewayTests
         var inner = new FakeGateway();
         var runner = new FakeRunner(new HookResult(0, string.Empty, false));
         var gateway = Gateway(inner, runner, """{"hooks":{"PostToolUse":[{"command":"fmt"}]}}""");
-        var proposal = Proposal("write");
+        var proposal = Proposal("write_file");
         await gateway.EvaluateAsync(proposal, CancellationToken.None);
         var prepared = new PreparedToolExecution(
             new ExecutionId("exec_" + new string('c', 32)), proposal.ToolCallId, 1, ToolAccessKind.Mutation, "token", []);
@@ -191,7 +191,7 @@ public sealed class HookToolGatewayTests
         var inner = new FakeGateway();
         var gateway = Gateway(inner, new FakeRunner(null), """{"hooks":{"PreToolUse":[{"command":"x"}]}}""");
 
-        var decision = await gateway.EvaluateAsync(Proposal("bash"), CancellationToken.None);
+        var decision = await gateway.EvaluateAsync(Proposal("run_process"), CancellationToken.None);
 
         Assert.Equal(RuAgent.Harness.Core.Policy.PolicyDecision.Allow, decision.Decision);
     }

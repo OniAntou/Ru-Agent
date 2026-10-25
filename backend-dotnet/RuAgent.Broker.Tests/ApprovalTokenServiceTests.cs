@@ -12,7 +12,7 @@ public sealed class ApprovalTokenServiceTests
         var token = service.Issue(
             "request-1",
             "session-1",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "arguments-hash",
             TimeSpan.FromSeconds(30));
@@ -20,7 +20,7 @@ public sealed class ApprovalTokenServiceTests
         var expected = new ApprovalBinding(
             "request-1",
             "session-1",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "arguments-hash",
             DateTimeOffset.UtcNow.AddMinutes(5));
@@ -37,7 +37,7 @@ public sealed class ApprovalTokenServiceTests
         var token = service.Issue(
             "request-1",
             "session-1",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "arguments-hash",
             TimeSpan.FromSeconds(30));
@@ -45,7 +45,7 @@ public sealed class ApprovalTokenServiceTests
         var wrongArguments = new ApprovalBinding(
             "request-1",
             "session-1",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "different-hash",
             DateTimeOffset.UtcNow);
@@ -114,7 +114,7 @@ public sealed class ApprovalTokenServiceTests
         var token = service.Issue(
             "request-2",
             "session-2",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "hash2",
             TimeSpan.FromSeconds(30));
@@ -122,7 +122,7 @@ public sealed class ApprovalTokenServiceTests
         var expected = new ApprovalBinding(
             "request-2",
             "session-2",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "hash2",
             DateTimeOffset.UtcNow.AddMinutes(5),

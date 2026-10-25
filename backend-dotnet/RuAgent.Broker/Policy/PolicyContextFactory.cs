@@ -82,7 +82,7 @@ public sealed partial class PolicyContextFactory
         {
             throw new PolicyContextException(
                 "malformed_call",
-                hint: "background is only valid with bash mode \"run\" or \"shell\".");
+                hint: "background is only valid for powershell or run_process launches.");
         }
 
         var networkDeclared = IsTrue(arguments, "network_intent") || IsTrue(arguments, "network");
@@ -119,7 +119,7 @@ public sealed partial class PolicyContextFactory
             {
                 throw new PolicyContextException(
                     "malformed_call",
-                    hint: "bash mode must be \"run\" (executable plus arguments) or \"shell\" (script).");
+                    hint: "Use run_process with executable/arguments or powershell with script.");
             }
 
             var workingDirectory = OptionalText(arguments, "working_directory") ?? ".";
@@ -144,14 +144,14 @@ public sealed partial class PolicyContextFactory
                 resolvedExecutable = OptionalText(arguments, "executable")
                     ?? throw new PolicyContextException(
                         "malformed_call",
-                        hint: "bash mode \"run\" requires executable (and optional string arguments); use mode \"shell\" with a script for pipelines.");
+                        hint: "run_process requires executable (and optional arguments); use powershell with script for pipelines.");
             }
             else
             {
                 var script = OptionalText(arguments, "script")
                     ?? throw new PolicyContextException(
                         "malformed_call",
-                        hint: "bash mode \"shell\" requires script as a single string.");
+                        hint: "powershell requires script as a single string.");
                 _ = OptionalText(arguments, "shell");
                 // Shell text is bound verbatim; the installed shell owns syntax validation.
                 shellScript = script;
@@ -262,12 +262,12 @@ public sealed partial class PolicyContextFactory
                     var writeOp = OptionalText(arguments, "op")
                         ?? throw new PolicyContextException(
                             "malformed_call",
-                            hint: "write requires op: \"write\", \"delete\", or \"restore\".");
+                            hint: "Use write_file, file_delete or file_restore with their own schemas.");
                     if (writeOp is not ("write" or "delete" or "restore"))
                     {
                         throw new PolicyContextException(
                             "malformed_call",
-                            hint: "write op must be write|delete|restore.");
+                            hint: "Use write_file, file_delete or file_restore with their own schemas.");
                     }
 
                     op = writeOp;
@@ -291,7 +291,7 @@ public sealed partial class PolicyContextFactory
                     {
                         throw new PolicyContextException(
                             "malformed_call",
-                            hint: "bash mode must be \"run\" (executable plus arguments), \"shell\" (script), \"read_output\" (execution_id), or \"kill\" (execution_id).");
+                            hint: "Use the advertised terminal launch, read or stop tool with its own schema.");
                     }
 
                     break;
@@ -348,13 +348,14 @@ public sealed partial class PolicyContextFactory
                         }
                     }
 
-                    break;                case var control when SubagentContractValidator.IsControlTool(control):
+                    break;
+                case var control when SubagentContractValidator.IsControlTool(control):
                     op = control;
                     break;
                 default:
                     throw new PolicyContextException(
                         "malformed_call",
-                        hint: "unknown tool id; use read, list, help, todo_write, grep, glob, write, edit, bash, web_search, or web_fetch.");
+                        hint: "unknown tool id; select an advertised tool and follow its schema.");
             }
 
             if (IsTargetFreeOp(toolId, op!))
@@ -374,7 +375,7 @@ public sealed partial class PolicyContextFactory
                 {
                     throw new PolicyContextException(
                         "malformed_call",
-                        hint: "write op \"restore\" requires recovery_id or path.");
+                        hint: "file_restore requires recovery_id.");
                 }
 
                 if (pathInput is not null)

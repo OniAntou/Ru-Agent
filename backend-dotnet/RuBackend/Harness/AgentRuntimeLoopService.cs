@@ -334,7 +334,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
                 ? null
                 : new AgentActivityLivePublisher(_liveEvents);
         var backgroundTaskNotes = new BackgroundTaskNoteTracker(
-            ct => _brokerGateways.ListSessionTasksAsync(brokerRunId.Value, killExecutionId: null, ct), availability.ToolProfile);
+            ct => _brokerGateways.ListSessionTasksAsync(brokerRunId.Value, killExecutionId: null, ct));
         var promptContextProvider = new RuPromptContextProvider(
             workspaceRoot,
             _instructionLoader,

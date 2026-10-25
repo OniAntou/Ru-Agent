@@ -157,26 +157,16 @@ public sealed class TerminalAdapter
 
                 if (string.IsNullOrWhiteSpace(request.RequestId)
                     || string.IsNullOrWhiteSpace(request.SessionId)
-                    || (!_approvalTokens.TryConsume(
+                    || !_approvalTokens.TryConsume(
                         request.ApprovalToken,
                         new ApprovalBinding(
                             request.RequestId,
                             request.SessionId,
-                            "terminal.run",
+                            "run_process",
                             "1.0.0",
                             intent.IntentHash,
                             DateTimeOffset.UtcNow),
-                        out _)
-                        && !_approvalTokens.TryConsume(
-                        request.ApprovalToken,
-                        new ApprovalBinding(
-                            request.RequestId,
-                            request.SessionId,
-                            "bash",
-                            "1.0.0",
-                            intent.IntentHash,
-                            DateTimeOffset.UtcNow),
-                        out _)))
+                        out _))
                 {
                     throw new UnauthorizedAccessException("terminal_approval_invalid");
                 }
@@ -480,26 +470,16 @@ public sealed class TerminalAdapter
         if (_approvalTokens is null
             || string.IsNullOrWhiteSpace(request.RequestId)
             || string.IsNullOrWhiteSpace(request.SessionId)
-            || (!_approvalTokens.TryConsume(
+            || !_approvalTokens.TryConsume(
                 request.ApprovalToken,
                 new ApprovalBinding(
                     request.RequestId,
                     request.SessionId,
-                    "terminal.shell",
+                    "powershell",
                     "1.0.0",
                     intent.IntentHash,
                     DateTimeOffset.UtcNow),
-                out _)
-                && !_approvalTokens.TryConsume(
-                request.ApprovalToken,
-                new ApprovalBinding(
-                    request.RequestId,
-                    request.SessionId,
-                    "bash",
-                    "1.0.0",
-                    intent.IntentHash,
-                    DateTimeOffset.UtcNow),
-                out _)))
+                out _))
         {
             throw new UnauthorizedAccessException("terminal_shell_approval_invalid");
         }

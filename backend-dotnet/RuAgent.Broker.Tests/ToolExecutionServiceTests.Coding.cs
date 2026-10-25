@@ -80,4 +80,43 @@ public sealed partial class ToolExecutionServiceTests
                 ["capability_class"] = "internal", ["arguments"] = arguments,
             }), default);
     }
+
+    [Theory]
+    [InlineData("write")]
+    [InlineData("edit")]
+    [InlineData("bash")]
+    public async Task Retired_public_tool_ids_fail_without_side_effects(string retiredToolId)
+    {
+        var fixture = CreateFullAccessService("ru-retired-tool-");
+        var target = Path.Combine(fixture.Root, "workspace", "retired-marker.txt");
+        File.WriteAllText(target, "before");
+        try
+        {
+            var arguments = retiredToolId switch
+            {
+                "write" => new JsonObject { ["op"] = "write", ["path"] = "retired-marker.txt", ["content"] = "after", ["overwrite"] = true },
+                "edit" => new JsonObject
+                {
+                    ["path"] = "retired-marker.txt",
+                    ["old_string"] = "before", ["new_string"] = "after",
+                },
+                _ => new JsonObject { ["mode"] = "shell", ["script"] = $"Set-Content -LiteralPath '{target.Replace("'", "''")}' -Value 'must not run'" },
+            };
+
+            var result = await Call(retiredToolId, arguments);
+
+            Assert.Equal("tool_not_found", result.ErrorCode);
+            Assert.False(result.AdapterInvoked);
+            Assert.Equal("before", File.ReadAllText(target));
+        }
+        finally { await fixture.Service.DisposeAsync(); Directory.Delete(fixture.Root, recursive: true); }
+
+        Task<ToolResult> Call(string toolId, JsonObject callArguments) => fixture.Service.ExecuteAuthenticatedV2Async(new AgentEnvelope(
+            AgentEnvelopeCodec.ProtocolVersionV2, "retired-" + Guid.NewGuid().ToString("N"), AgentMessageTypes.ToolExecute,
+            fixture.SessionId, null, 30_000, new JsonObject
+            {
+                ["tool_id"] = toolId, ["tool_version"] = "1.0.0", ["run_id"] = fixture.RunId,
+                ["capability_class"] = "internal", ["arguments"] = callArguments,
+            }), default);
+    }
 }

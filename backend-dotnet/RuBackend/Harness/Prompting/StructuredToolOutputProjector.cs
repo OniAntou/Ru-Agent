@@ -136,7 +136,7 @@ internal static class StructuredToolOutputProjector
                 throw ProjectionFailure();
             }
 
-            if ((toolId == "terminal_read" || toolId is "bash" or "terminal.exec" && IsReadOutput(arguments))
+            if (toolId == "terminal_read"
                 && root["page"] is JsonValue outputPage
                 && outputPage.TryGetValue<string>(out var page)
                 && root["spool_id"] is JsonValue spoolId
@@ -199,12 +199,6 @@ internal static class StructuredToolOutputProjector
         ToolOutputProjectionUnit.Utf16Characters => value.Length,
         _ => throw new ArgumentOutOfRangeException(nameof(unit)),
     };
-
-    private static bool IsReadOutput(JsonElement? arguments) =>
-        arguments is { ValueKind: JsonValueKind.Object } value
-        && value.TryGetProperty("mode", out var mode)
-        && mode.ValueKind == JsonValueKind.String
-        && string.Equals(mode.GetString(), "read_output", StringComparison.Ordinal);
 
     private static bool ReadOriginalOffset(JsonElement? arguments, out int offset)
     {

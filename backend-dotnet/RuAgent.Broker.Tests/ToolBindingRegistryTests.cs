@@ -76,12 +76,13 @@ public sealed class ToolBindingRegistryTests
         var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Contains("write", ids);
-        Assert.Contains("edit", ids);
+        Assert.Contains("write_file", ids);
+        Assert.Contains("edit_file", ids);
         Assert.Contains("read", ids);
         Assert.Contains("grep", ids);
         Assert.Contains("glob", ids);
-        Assert.Contains("bash", ids);
+        Assert.Contains("powershell", ids);
+        Assert.Contains("run_process", ids);
         Assert.DoesNotContain("system.volume", ids);
         Assert.DoesNotContain("app.list", ids);
     }
@@ -92,7 +93,8 @@ public sealed class ToolBindingRegistryTests
         var agent = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Contains("bash", agent);
+        Assert.Contains("powershell", agent);
+        Assert.Contains("run_process", agent);
     }
 
     [Fact]
@@ -136,8 +138,8 @@ public sealed class ToolBindingRegistryTests
             new[]
             {
                   "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "apply_patch",
-                  "bash", "edit", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp",
-                  "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write", "write_file",
+                "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp",
+                "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write_file",
             },
             bound);
         Assert.DoesNotContain("app.open", bound);
@@ -163,9 +165,6 @@ public sealed class ToolBindingRegistryTests
         ["todo_write"] = Succeeded,
         ["grep"] = Succeeded,
         ["glob"] = Succeeded,
-        ["write"] = Succeeded,
-        ["edit"] = Succeeded,
-        ["bash"] = Succeeded,
         ["web_search"] = Succeeded,
         ["web_fetch"] = Succeeded,
         ["skill"] = Succeeded,

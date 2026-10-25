@@ -202,10 +202,6 @@ public sealed class AgentProviderSnapshotFactory(
         CancellationToken ct)
     {
         var selected = ReadSelection(pin);
-        var key = await ReadCredentialAsync(selected, ct).ConfigureAwait(false);
-        var models = await catalog.GetAsync(selected, current, false, ct).ConfigureAwait(false);
-        ValidateCredentialRevision(key, models);
-        _ = ProviderReasoningPreferences.Resolve(models, selected.Model, "default");
         JsonObject options;
         try
         {
@@ -225,6 +221,10 @@ public sealed class AgentProviderSnapshotFactory(
         // The image-input decision gates the read tool, not the provider request (ADR 0026).
         _ = ImageInputPolicy.TakePinnedCapability(options);
         AgentToolProfilePin.ValidateAndRemove(options);
+        var key = await ReadCredentialAsync(selected, ct).ConfigureAwait(false);
+        var models = await catalog.GetAsync(selected, current, false, ct).ConfigureAwait(false);
+        ValidateCredentialRevision(key, models);
+        _ = ProviderReasoningPreferences.Resolve(models, selected.Model, "default");
         return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens ?? pin.OutputTokenReserve, toolCallingMode,
             allowNativeResponses: true,
             allowNativeAnthropic: true,

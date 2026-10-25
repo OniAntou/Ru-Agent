@@ -26,30 +26,6 @@ public sealed partial class ToolExecutionService
 
     private readonly TerminalOutputSpool _spools;
 
-    private async ValueTask<ToolExecutionOutcome> ExecuteBashAsync(
-        ToolExecutionContext context,
-        JsonObject arguments,
-        CancellationToken cancellationToken)
-    {
-        var mode = ReadOptionalString(arguments, "mode") ?? "run";
-        if (string.Equals(mode, "read_output", StringComparison.Ordinal))
-        {
-            return ExecuteTerminalReadOutput(context, arguments);
-        }
-
-        if (string.Equals(mode, "kill", StringComparison.Ordinal))
-        {
-            return ExecuteTerminalKill(context, arguments);
-        }
-
-        if (string.Equals(mode, "shell", StringComparison.Ordinal))
-        {
-            return await ExecuteTerminalShellAsync(context, arguments, cancellationToken).ConfigureAwait(false);
-        }
-
-        return await ExecuteTerminalRunAsync(context, arguments, cancellationToken).ConfigureAwait(false);
-    }
-
     /// <summary>
     /// Pages back full retained output of an earlier terminal call in the same
     /// session. Fail-closed value lookup: unknown, expired, or foreign-session
@@ -455,7 +431,7 @@ public sealed partial class ToolExecutionService
             ? optionalMs ?? TerminalLimits.BackgroundDefaultLifetimeMs
             : BackgroundLifetimeFor(requestedMs);
         var request = new TerminalRunRequest(
-            ReadOptionalString(arguments, "shell") ?? "powershell",
+            "powershell",
             workingDirectory,
             ReadString(arguments, "executable"),
             ReadArguments(arguments["arguments"]),
@@ -524,7 +500,7 @@ public sealed partial class ToolExecutionService
             ? optionalMs ?? TerminalLimits.BackgroundDefaultLifetimeMs
             : BackgroundLifetimeFor(requestedMs);
         var shellRequest = new TerminalShellRequest(
-            ReadOptionalString(arguments, "shell") ?? "powershell",
+            "powershell",
             workingDirectory,
             ReadString(arguments, "script"),
             requestedMs,
@@ -606,24 +582,17 @@ public sealed partial class ToolExecutionService
     {
         try
         {
-            if (CodingToolArguments.AdapterToolId(toolId) == "bash")
-            {
-                arguments = CodingToolArguments.ToAdapterArguments(toolId, arguments);
-                toolId = "bash";
-            }
-            var mode = ReadOptionalString(arguments, "mode")
-                ?? (toolId == "bash" ? "run" : null);
-            if (string.Equals(mode, "shell", StringComparison.Ordinal) || toolId == "terminal.shell")
+            if (toolId == "powershell")
             {
                 return tools.Terminal.CanonicalizeShell(new TerminalShellRequest(
-                    ReadOptionalString(arguments, "shell") ?? "powershell",
+                    "powershell",
                     ReadOptionalString(arguments, "working_directory") ?? ".",
                     ReadString(arguments, "script"),
                     ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
                     string.Empty)).IntentHash;
             }
 
-            return toolId is "terminal.run" or "bash"
+            return toolId == "run_process"
                 ? tools.Terminal.CanonicalizeRun(new TerminalRunRequest(
                     "powershell",
                     ReadOptionalString(arguments, "working_directory") ?? ".",
@@ -643,13 +612,6 @@ public sealed partial class ToolExecutionService
 
     private static string TerminalRunPreview(JsonObject arguments)
     {
-        // A spool read names retained output, not a command: the preview says
-        // so instead of rendering an empty command line.
-        if (string.Equals(ReadOptionalString(arguments, "mode"), "read_output", StringComparison.Ordinal))
-        {
-            return "Read retained terminal output.";
-        }
-
         var executable = ReadOptionalString(arguments, "executable");
         if (string.IsNullOrWhiteSpace(executable))
         {

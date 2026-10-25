@@ -68,7 +68,7 @@ def test_explicit_profile_is_process_scoped_and_mismatch_is_not_silent(tmp_path)
 
     def factory(command, cwd, *, environment):
         captured.update(environment)
-        return FakeRpc(command, cwd, statuses=[{"run_id": RUN_ID, "status": "completed", "tool_profile": "legacy_v1"}])
+        return FakeRpc(command, cwd, statuses=[{"run_id": RUN_ID, "status": "completed", "tool_profile": "patch_v2"}])
 
     result = ru_trial.run_ru(executable, make_task(), workspace, tmp_path / "trial",
                              trust_workspace=True, tool_profile="coding_v2", bridge_factory=factory)

@@ -26,6 +26,7 @@ public static partial class BusinessEndpoints
         app.MapPost("/settings/provider/remove", RemoveProviderAsync);
         app.MapGet("/settings/models-dev-keys", GetModelsDevKeysAsync);
         app.MapGet("/sessions", ListSessionsAsync);
+        MapSessionHistory(app);
         app.MapPost("/sessions/new", CreateSessionAsync);
         app.MapPost("/sessions/{sessionId}/activate", ActivateSessionAsync);
         app.MapPost("/sessions/{sessionId}/rewind", RewindSessionAsync);
@@ -214,48 +215,9 @@ public static partial class BusinessEndpoints
                 .Take(SessionWorkspaceResolver.MaximumRequestedSessions)
                 .ToArray();
             var isTruncated = listing.IsTruncated || listing.Sessions.Count > values.Length;
-            var runningSessions = await SessionRunActivityResolver.ResolveAsync(
-                values.Select(value => value.Id).ToArray(), sqliteOptions, cancellationToken).ConfigureAwait(false);
-            var workspaces = await SessionWorkspaceResolver.ResolveAsync(
-                    values.Select(value => value.Id).ToArray(),
-                    sqliteOptions,
-                    workspaceStore,
-                    trustService,
-                    cancellationToken).ConfigureAwait(false);
-            return Results.Ok(new
-            {
-                status = "ok",
-                sessions_truncated = isTruncated,
-                sessions = values.Select(value =>
-                {
-                    if (workspaces.TryGetValue(value.Id, out var workspace))
-                    {
-                        value = value with
-                        {
-                            WorkspaceId = workspace.WorkspaceId,
-                            WorkspaceLabel = workspace.Label,
-                            WorkspacePath = workspace.Path,
-                        };
-                    }
-
-                    return new
-                    {
-                        id = value.Id,
-                        title = value.Title,
-                        created_at = value.CreatedAt.ToUniversalTime().ToString("O"),
-                        updated_at = value.UpdatedAt.ToUniversalTime().ToString("O"),
-                        last_agent_activity_at = value.LastAgentActivityAt?.ToUniversalTime().ToString("O"),
-                        message_count = value.MessageCount,
-                        parent_session_id = value.ParentSessionId,
-                        forked_from_message_id = value.ForkedFromMessageId,
-                        workspace_id = value.WorkspaceId,
-                        workspace_label = value.WorkspaceLabel,
-                        workspace_path = value.WorkspacePath,
-                        client_source = value.ClientSource,
-                        is_agent_running = runningSessions.Contains(value.Id),
-                    };
-                }).ToArray(),
-            });
+            var rows = await ProjectSessionSummariesAsync(values, sqliteOptions, workspaceStore,
+                trustService, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(new { status = "ok", sessions_truncated = isTruncated, sessions = rows });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -330,6 +292,9 @@ public static partial class BusinessEndpoints
                         id = document.Id,
                         title = document.Title,
                         messages = document.Messages,
+                        message_offset = document.MessageOffset,
+                        total_message_count = document.TotalMessageCount ?? document.Messages.Count,
+                        history_epoch = document.HistoryEpoch,
                     },
                 });
         }

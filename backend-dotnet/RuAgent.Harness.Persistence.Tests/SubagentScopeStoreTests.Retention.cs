@@ -56,6 +56,7 @@ public sealed partial class SubagentScopeStoreTests
         var encrypted = await command.ExecuteScalarAsync();
         if (migrateFrom24)
         {
+            await fixture.ResetSessionHistorySchemaToV29Async();
             // Recreate the actual old FK shape rather than only relabeling a new database.
             command.CommandText = """
                 PRAGMA foreign_keys=OFF;

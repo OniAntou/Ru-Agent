@@ -56,6 +56,15 @@ Implementation: [gui](docs/architecture/gui.md#conversation-session).
 _Avoid_: treating an HTTP 200 response as a successful delete
 
 
+**Conversation History**:
+Retained, ordered message rows belonging to one Conversation Session. Source
+receipts preserve delivery idempotency even after a rewind removes visible rows.
+Bounded model/UI windows do not define retention. A history cursor binds its
+session and rewind epoch; an append preserves older-page navigation.
+Implementation: [Harness persistence](docs/architecture/harness.md#data-ownership).
+_Avoid_: treating the newest display window as complete durable history
+
+
 **Session Work State**:
 A bounded encrypted workflow record for one conversation and canonical workspace identity, linking intent, tasks and receipt-backed observations. It supplies context, never authority or proof of current file state.
 Implementation: [harness](docs/architecture/harness.md#session-work-state).

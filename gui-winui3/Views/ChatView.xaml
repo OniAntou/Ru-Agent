@@ -665,6 +665,17 @@
                           ScrollViewer.VerticalScrollBarVisibility="Auto"
                           ScrollViewer.VerticalScrollMode="Auto"
                           ScrollViewer.IsVerticalRailEnabled="True">
+                    <ListView.Header>
+                        <Button x:Name="LoadEarlierHistoryButton"
+                                Click="OnLoadEarlierHistoryClick"
+                                HorizontalAlignment="Center"
+                                Margin="0,0,0,12"
+                                Padding="12,6"
+                                Visibility="Collapsed"
+                                AutomationProperties.Name="Load earlier messages">
+                            <TextBlock Text="Load earlier messages" />
+                        </Button>
+                    </ListView.Header>
                     <ListView.ItemContainerTransitions>
                         <!-- History resets are a single replacement, not animated row removals. -->
                         <TransitionCollection />

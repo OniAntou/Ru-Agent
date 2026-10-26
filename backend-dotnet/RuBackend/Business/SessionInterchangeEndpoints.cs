@@ -28,9 +28,9 @@ namespace RuBackend.Business;
 /// The request body bounds are layered (Kestrel above the route's declared bound, the
 /// route above the endpoint's reader), and <see cref="SessionInterchangeLimits.MaxImportBodyBytes"/>
 /// is sized for the worst case of the JSON encoder — non-ASCII and HTML-sensitive
-/// characters travel as six-byte <c>\uXXXX</c> escapes. A session longer than the 16 MiB
-/// content cap is refused as <c>import_too_large</c>: before parsing when the body is
-/// over the transport bound, and after parsing when the decoded content is over the cap.
+/// characters travel as six-byte <c>\uXXXX</c> escapes. Imports retain their 16 MiB
+/// decoded-content cap. Exports walk the complete retained history through bounded pages
+/// and refuse an encoded envelope over 128 MiB.
 /// </remarks>
 public static class SessionInterchangeEndpoints
 {
@@ -78,8 +78,17 @@ public static class SessionInterchangeEndpoints
                 return Results.Ok(new { status = "error", message = "Không tìm thấy session để export." });
             }
 
+            var history = await ReadFullHistoryAsync(sessions, document, cancellationToken).ConfigureAwait(false);
+            document = history.Metadata;
+            var messages = history.Messages;
+            var exportDocument = document with
+            {
+                Messages = messages,
+                MessageOffset = 0,
+                TotalMessageCount = messages.Count,
+            };
             var transcript = ToTranscript(
-                document,
+                exportDocument,
                 await WorkingDirectoryForAsync(sessionId, sqliteOptions, workspaceStore, trustService, cancellationToken).ConfigureAwait(false));
             var files = format.Write(transcript);
 
@@ -92,7 +101,9 @@ public static class SessionInterchangeEndpoints
                 {
                     id = document.Id,
                     title = document.Title,
-                    messages = document.Messages.Count,
+                    messages = messages.Count,
+                    parent_session_id = document.ParentSessionId,
+                    forked_from_message_id = document.ForkedFromMessageId,
                     // Claude Code files a transcript under a directory named after the
                     // project and Codex files by date, so the caller cannot place the files
                     // without these two.
@@ -117,6 +128,23 @@ public static class SessionInterchangeEndpoints
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (SessionHistoryException error)
+        {
+            if (error.Code == "export_too_large")
+            {
+                return Results.Json(new
+                {
+                    status = "error",
+                    error_code = "export_too_large",
+                    message = $"export_too_large: export envelopes are limited to {SessionInterchangeLimits.MaxExportBodyBytes / (1024 * 1024)} MiB.",
+                }, statusCode: StatusCodes.Status413PayloadTooLarge);
+            }
+
+            var statusCode = error.Code == "session_history_message_exceeds_page_limit"
+                ? StatusCodes.Status413PayloadTooLarge
+                : StatusCodes.Status409Conflict;
+            return Results.Json(new { status = "error", error_code = error.Code }, statusCode: statusCode);
         }
         catch (Exception error)
         {
@@ -232,7 +260,7 @@ public static class SessionInterchangeEndpoints
                 });
             }
 
-            var persistedMessages = document.Messages.Count;
+            var persistedMessages = document.TotalMessageCount ?? document.Messages.Count;
             var droppedEntries = Math.Max(0, transcript.Entries.Count - persistedMessages);
             if (persistedMessages == 0)
             {
@@ -319,6 +347,79 @@ public static class SessionInterchangeEndpoints
         return workspaces.TryGetValue(sessionId, out var workspace) ? workspace.Path : null;
     }
 
+    private static async Task<(IReadOnlyList<SessionMessage> Messages, SessionDocument Metadata)> ReadFullHistoryAsync(
+        ISessionStore sessions,
+        SessionDocument metadata,
+        CancellationToken cancellationToken)
+    {
+        const int pageSize = 200;
+        var first = await sessions.GetMessagePageAsync(metadata.Id, null, pageSize, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new SessionHistoryException("session_not_found");
+        if (first.HistoryEpoch != metadata.HistoryEpoch)
+            throw new SessionHistoryException("session_history_cursor_stale");
+
+        var total = first.TotalMessages;
+        var pages = new List<IReadOnlyList<SessionMessage>>();
+        var collected = 0;
+        long serializedMessageBytes = 0;
+        ValidateHistoryPage(first, total, total, first.HistoryEpoch);
+        serializedMessageBytes = AddWithinExportBudget(first.Messages, serializedMessageBytes);
+        pages.Add(first.Messages);
+        collected += first.Messages.Count;
+        var expectedBefore = first.StartIndex;
+        var cursor = first.NextCursor;
+
+        while (cursor is not null)
+        {
+            var page = await sessions.GetMessagePageAsync(metadata.Id, cursor, pageSize, cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new SessionHistoryException("session_not_found");
+            ValidateHistoryPage(page, expectedBefore, total, first.HistoryEpoch);
+            serializedMessageBytes = AddWithinExportBudget(page.Messages, serializedMessageBytes);
+            pages.Add(page.Messages);
+            collected = checked(collected + page.Messages.Count);
+            expectedBefore = page.StartIndex;
+            cursor = page.NextCursor;
+        }
+
+        if (expectedBefore != 0 || collected != total)
+            throw new SessionHistoryException("session_history_inconsistent");
+
+        var current = await sessions.GetAsync(metadata.Id, cancellationToken).ConfigureAwait(false);
+        if (current is null || current.HistoryEpoch != first.HistoryEpoch
+            || (current.TotalMessageCount ?? current.Messages.Count) < total)
+            throw new SessionHistoryException("session_history_cursor_stale");
+
+        return (pages.AsEnumerable().Reverse().SelectMany(page => page).ToArray(), current);
+    }
+
+    private static long AddWithinExportBudget(IReadOnlyList<SessionMessage> messages, long totalBytes)
+    {
+        foreach (var message in messages)
+        {
+            totalBytes = checked(totalBytes + JsonSerializer.SerializeToUtf8Bytes(message, JsonSerializerOptions.Web).Length);
+            if (totalBytes > SessionInterchangeLimits.MaxExportBodyBytes)
+            {
+                throw new SessionHistoryException("export_too_large");
+            }
+        }
+
+        return totalBytes;
+    }
+
+    private static void ValidateHistoryPage(
+        SessionMessagePage page, int expectedEnd, int total, long epoch)
+    {
+        if (page.HistoryEpoch != epoch || page.TotalMessages != total
+            || page.Messages.Count == 0 && total > 0
+            || page.StartIndex < 0
+            || page.StartIndex + page.Messages.Count != expectedEnd
+            || page.NextCursor is null && page.StartIndex != 0
+            || page.NextCursor is not null && page.StartIndex == 0)
+            throw new SessionHistoryException("session_history_inconsistent");
+    }
+
     /// <summary>
     /// A session's message log as a neutral transcript.
     /// </summary>
@@ -361,8 +462,7 @@ public static class SessionInterchangeEndpoints
         {
             var role = entry.Kind switch
             {
-                // "ai", not "assistant": the store validates the role against its own
-                // vocabulary and drops anything else without saying so.
+                // Normalize the partner role before validating the stored message.
                 TranscriptEntryKind.AssistantMessage => "ai",
                 TranscriptEntryKind.UserMessage => "user",
                 _ => null,
@@ -373,7 +473,8 @@ public static class SessionInterchangeEndpoints
                 continue;
             }
 
-            messages.Add(new SessionMessage(role, entry.Text));
+            var message = new SessionMessage(role, entry.Text);
+            if (SessionStore.IsValidMessage(message)) messages.Add(message);
         }
 
         return messages;

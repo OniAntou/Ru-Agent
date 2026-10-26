@@ -14,7 +14,7 @@ using Xunit;
 
 namespace RuBackend.Tests.Business;
 
-public sealed class BusinessEndpointTests
+public sealed partial class BusinessEndpointTests
 {
     [Fact]
     public async Task Session_create_accepts_optional_source_and_lists_it_durably()
@@ -832,7 +832,7 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
-    public async Task Session_import_reports_retention_drops_and_persists_only_the_retained_messages()
+    public async Task Session_import_retains_all_messages_beyond_the_initial_display_window()
     {
         using var data = TemporaryBusinessData.Create();
         using var factory = CreateAspNetFactory(data.Paths);
@@ -849,9 +849,9 @@ public sealed class BusinessEndpointTests
             .GetAsync(session.GetProperty("id").GetString()!, CancellationToken.None);
 
         Assert.Equal("ok", payload.GetProperty("status").GetString());
-        Assert.Equal(200, session.GetProperty("messages").GetInt32());
-        Assert.Equal(2, payload.GetProperty("dropped_entries").GetInt32());
-        Assert.True(payload.GetProperty("partial_import").GetBoolean());
+        Assert.Equal(202, session.GetProperty("messages").GetInt32());
+        Assert.Equal(0, payload.GetProperty("dropped_entries").GetInt32());
+        Assert.False(payload.GetProperty("partial_import").GetBoolean());
         Assert.NotNull(document);
         Assert.Equal(200, document!.Messages.Count);
         Assert.Equal("message-2", document.Messages[0].Content);

@@ -9,6 +9,40 @@ namespace RuBackend.Tests.Business;
 
 public sealed class SessionExportRoundTripTests
 {
+    [Fact]
+    public async Task Export_and_import_cover_the_full_history_beyond_GetAsync_window()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var http = factory.CreateClient();
+        var store = factory.Services.GetRequiredService<ISessionStore>();
+        var id = (await store.CreateAsync(CancellationToken.None))!;
+        var messages = Enumerable.Range(0, 450)
+            .Select(index => new SessionMessage(index % 2 == 0 ? "user" : "ai", $"message-{index:D3}"))
+            .ToArray();
+        Assert.True(await store.AppendAsync(id, messages, CancellationToken.None));
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        var session = PublicHostSession.FromDescriptor(new RuntimeDescriptor(1, http.BaseAddress!.AbsoluteUri,
+            "test-secret", process.Id, process.StartTime.ToUniversalTime().ToString("O"),
+            new string('a', 32), DateTimeOffset.UtcNow.ToString("O")));
+        var api = new SessionInterchangeApiClient(session, http);
+
+        var exported = await api.ExportAsync(id, "claude-code");
+        var content = Assert.Single(exported.Files).Content;
+        var transcript = SessionFormatCatalog.Find("claude-code")!.Read(content);
+        Assert.Equal(450, transcript.Entries.Count);
+        Assert.Equal("message-000", transcript.Entries[0].Text);
+        Assert.Equal("message-449", transcript.Entries[^1].Text);
+
+        var imported = await api.ImportAsync("claude-code", content);
+
+        Assert.Equal(450, imported.Messages);
+        Assert.Equal(0, imported.DroppedEntries);
+        var importedDocument = await store.GetAsync(imported.SessionId, CancellationToken.None);
+        Assert.Equal(450, importedDocument!.TotalMessageCount);
+        Assert.Equal(250, importedDocument.MessageOffset);
+        Assert.Equal("message-449", importedDocument.Messages[^1].Content);
+    }
+
     [Theory]
     [InlineData("claude-code")]
     [InlineData("codex")]

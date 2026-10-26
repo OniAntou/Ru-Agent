@@ -24,9 +24,12 @@ public sealed record HarnessSqliteOptions
 
     public int BusyTimeoutMilliseconds { get; }
 
+    public int DefaultTimeoutSeconds => (BusyTimeoutMilliseconds + 999) / 1000;
+
     public async Task<SqliteConnection> OpenConnectionAsync(
         CancellationToken cancellationToken,
-        SqliteOpenMode mode = SqliteOpenMode.ReadWriteCreate)
+        SqliteOpenMode mode = SqliteOpenMode.ReadWriteCreate,
+        bool pooling = true)
     {
         // Private per-connection caches only: a shared cache makes table-level
         // locks fail immediately with SQLITE_LOCKED (bypassing busy_timeout)
@@ -36,8 +39,9 @@ public sealed record HarnessSqliteOptions
         {
             DataSource = DatabasePath,
             Mode = mode,
-            Pooling = true,
+            Pooling = pooling,
             Cache = SqliteCacheMode.Private,
+            DefaultTimeout = DefaultTimeoutSeconds,
         }.ToString();
         var connection = new SqliteConnection(connectionString);
         try

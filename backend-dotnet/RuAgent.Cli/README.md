@@ -4,6 +4,20 @@ Interactive and headless client for Ru's coding loop. It delegates runs to the
 Public Host over authenticated HTTP/SSE; model execution and policy remain
 Harness/Broker owned.
 
+## Durable history and database maintenance
+
+`ru session list --limit 100 --query TEXT` pages summaries; add `--cursor TOKEN`
+to continue. `ru session history SESSION_ID --limit 200 --json` returns the
+newest chronological message page and an older-page cursor. `ru session search
+TEXT --limit 50` searches retained messages. The existing `agent session ...`
+spelling remains supported. Plain history output is a bounded preview; JSON
+contains the complete returned page. Rewind uses absolute zero-based indices.
+
+`ru database status|backup|verify|restore|compact|prune` uses the matching Backend
+binary directly without starting a model run. See [database maintenance](../../docs/operations/database-maintenance.md)
+for bundle paths, the same-Windows-identity key constraint, offline operations
+and explicit pruning. No automatic conversation deletion is enabled.
+
 ## Transcript and command navigation
 
 Terminal.Gui is the default interactive surface on supported terminals. Ctrl+P

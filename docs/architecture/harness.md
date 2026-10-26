@@ -48,12 +48,12 @@ transaction; any late statement failure rolls back the entire upgrade. This
 explicit drain is needed because the pinned [Microsoft.Data.Sqlite 10.0.11
 implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Data.Sqlite.Core/SqliteCommand.cs)
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
-batch statements. Migration tests build the original released v18 DDL and frozen
-development DDL independently of current schema creation; they never relabel a
-current database as an older one. The selected upgrade suffix commits atomically
-at v29, which consolidates the unreleased changes. Versions below v18 fail with
+batch statements. Release migration tests build the original released v18 DDL and frozen
+development DDL independently of current schema creation. The selected upgrade suffix commits atomically
+at v30. Version 29 consolidated the earlier development changes; v30
+normalizes retained conversation history and source receipts. Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
-v19-v28 databases remain eligible sources; adding a migration extends one ordered
+v19-v29 databases remain eligible sources; adding a migration extends one ordered
 catalog instead of every historical branch. Fresh installs use the same released
 baseline and upgrade batch. Tests cover every retained source, identical schema,
 rollback/retry, restored FKs and two simultaneous initializer processes.
@@ -422,9 +422,11 @@ membership defaults to 32 slots; the existing concurrency API accepts shared
 mode with 2–32 slots and cannot disable parallel sessions. Extra runnable work
 waits for available membership/worker capacity; one session still owns at most
 one active run. GUI and CLI use the same admission policy.
-Session documents retain their message/source-ledger representation, with
-separately indexed summary metadata; settings and activity keep bounded JSON
-payloads inside SQLite rows. No new ORM or second database is introduced.
+Schema v30 stores messages in `business_session_messages` with absolute per-session
+indices, source fingerprints in `business_session_source_receipts`, and small
+metadata/summary rows in `business_sessions`. FTS5 is a transactional message-search
+projection. Settings and activity keep bounded JSON payloads inside SQLite rows.
+No new ORM or second database is introduced.
 Windows Credential Manager remains the API-key store.
 
 Each store imports its legacy `settings.json`, `sessions/*.json` or
@@ -452,7 +454,7 @@ can group the sidebar by workspace without a second round trip.
 
 Session creation and import accept optional `X-Ru-Client-Source: gui|cli`; unknown values
 return HTTP 400. The source is durable session metadata in the existing SQLite
-document/summary JSON and is returned as `client_source` by `/sessions`.
+metadata/summary rows and is returned as `client_source` by session listings.
 It is a presentation label, never execution authority. GUI and CLI creation
 paths label their own sessions; resuming a session does not change its source.
 Older sessions and callers omitting the header retain a null source.
@@ -461,16 +463,38 @@ sessions grouped by source independently of their working directory. CLI rows
 can be reordered within their section; GUI rows keep existing workspace/Recents
 placement. Sidebar organization never changes execution cwd or session source.
 
-Listing queries indexed metadata across all stored sessions, returning the
-newest 500 summaries ordered by UTC update time with session ID as the tie
-breaker. `sessions_truncated` reports additional stored sessions. It does not
-scan transcript files or maintain a filesystem-summary cache. Workspace metadata
-is queried only for the returned session IDs using the v13
-`(session_id, created_at_utc DESC, run_id DESC)` index.
-Import keeps the 200-message retention limit and reports the persisted count
-in `session.messages`, all omitted transcript entries in `dropped_entries`, and
-`partial_import` when any entry was omitted. An import with no persistable
-message fails without retaining an empty session.
+`GET /sessions` retains its bounded newest-500 summary response. New callers use
+`GET /sessions/page?limit=100&cursor=...&query=...` to reach older summaries;
+message-content filtering uses FTS5 and title filtering uses literal text. Pages
+carry the same workspace, source and running-state enrichment as the original
+listing. List cursors are keyset positions, not a frozen database snapshot:
+sessions updated while paging can move to the refreshed first page.
+
+`GET /sessions/{sessionId}/messages` returns the newest page in chronological
+order, with `start_index`, `total_messages`, `history_epoch` and `next_cursor`.
+The cursor moves toward older messages and binds the session, captured count
+and rewind epoch. Appends do not shift previous indices; rewind makes earlier
+cursors return `session_history_cursor_stale` (HTTP 409). Malformed cursors return
+HTTP 400. Limit is 1–200; the normal serialized message budget is 4 MiB. A
+single valid 1 MiB UTF-8 message may expand under JSON escaping and is returned
+alone (at most roughly 6 MiB plus metadata), within the 8 MiB Client response cap.
+Reads and model context remain bounded; retained history
+is no longer deleted after 200 messages. `GetAsync`/activate return a bounded tail
+and explicit offset/count/epoch metadata. `GET /sessions/search?query=...` returns
+bounded literal-phrase FTS hits with absolute message indices.
+
+Export walks all retained pages in chronological order and refuses a concurrent
+rewind or an oversized output instead of silently exporting a tail. Import reports
+the complete persisted count in `session.messages`, omitted transcript entries in
+`dropped_entries`, and `partial_import` when any entry was omitted. An import with
+no persistable message fails without retaining an empty session. Migration cannot
+recover messages that older builds already pruned. Rewind deletes visible tail
+rows but retains source receipts, preventing late outbox delivery from re-adding
+them. No automatic conversation/run retention policy is enabled.
+
+Operational backup, verification, offline restore/compaction and opt-in pruning
+are documented in [database maintenance](../operations/database-maintenance.md)
+and [ADR 0030](../adr/0030-relational-history-and-database-maintenance.md).
 
 Interrupted imports attempt bounded compensation with a cleanup token independent
 of the request. The Session Store checks emptiness and deletes in one immediate

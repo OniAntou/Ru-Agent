@@ -2,7 +2,7 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-46 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
+49 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
 public owner, and every entry is `aspnet-direct`. The 25 Agent v1 routes under
 `/agent/v1/*` and the `POST /host/shutdown` route are active alongside the
 settings, session rewind, activity, status, and model routes. They cover
@@ -13,6 +13,11 @@ replay, and reconciliation; this is not a read-only tracer surface.
 committing it, preserving an existing key on rejection or unavailable validation.
 It shares the normal loopback/bearer boundary and settings transaction gate. GUI
 does not fall back to `POST /settings` when an older Host lacks this route.
+
+Session history adds `/sessions/page` for paged summaries,
+`/sessions/{sessionId}/messages` for bounded retained-message pages and
+`/sessions/search` for literal full-text hits. These share bearer/loopback checks
+and do not expose database maintenance over HTTP.
 
 Each entry contains:
 
@@ -32,7 +37,8 @@ or alternate host mode. Unknown public paths are never sent to Python.
 
 ## Reserved routes
 
-22 entries intentionally have empty `winui_callers`: the two session
+23 entries intentionally have empty `winui_callers`: the message search route
+`GET /sessions/search` driven by the CLI; the two session
 interchange routes (`GET /sessions/{sessionId}/export` and `POST /sessions/import`),
 which the CLI and session flows drive; 15 additive `/agent/v1/*` routes —
 the 12 run routes (creation, run read, event stream, payload read, approvals,

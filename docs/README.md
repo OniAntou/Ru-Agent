@@ -32,6 +32,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
   [Providers](architecture/providers.md)
 - [Domain language](../CONTEXT.md)
 - [Context management and checkpoints](architecture/context-management.md)
+- [Database history, backup and maintenance](operations/database-maintenance.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
 - [Agent performance diagnostics and offline benchmark](operations/agent-performance.md)
 - [The stdio RPC bridge](operations/rpc.md)
@@ -84,7 +85,9 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Standard workspace Python files](adr/0016-standard-workspace-python-files.md)
 - [Workspace terminal policy](adr/0017-workspace-terminal-policy.md)
 - [Approval patterns and durable folder grants](adr/0018-approval-patterns-and-durable-folder-grants.md)
-- [Delegated subagent runs (implementation in progress)](adr/0022-delegated-subagent-runs.md)
+- [Delegated subagent runs](adr/0022-delegated-subagent-runs.md)
+
+- [Relational history and database maintenance](adr/0030-relational-history-and-database-maintenance.md)
 
 Git history is the recovery source for removed dated plans, specifications,
 reviews and verification records.

@@ -41,13 +41,12 @@ public sealed class SessionStoreTests
     }
 
     [Fact]
-    public async Task Append_filters_invalid_messages_generates_title_and_retains_last_200()
+    public async Task Get_returns_a_200_message_window_while_history_remains_durable()
     {
         var (store, _) = CreateStore();
         var sessionId = (await store.CreateAsync(CancellationToken.None))!;
         var messages = new List<SessionMessage>
         {
-            new("invalid", "must be filtered"),
             new("user", "   "),
             new("user", "  " + new string('a', 60) + "  "),
             new("ai", "first answer"),
@@ -60,8 +59,9 @@ public sealed class SessionStoreTests
 
         Assert.NotNull(session);
         Assert.Equal(new string('a', 50), session!.Title);
+        Assert.Equal(208, session.TotalMessageCount);
+        Assert.Equal(8, session.MessageOffset);
         Assert.Equal(200, session.Messages.Count);
-        Assert.DoesNotContain(session.Messages, message => message.Role == "invalid");
         Assert.Equal("message-5", session.Messages[0].Content);
         Assert.Equal("message-204", session.Messages[^1].Content);
     }
@@ -498,7 +498,7 @@ public sealed class SessionStoreTests
     }
 
     [Fact]
-    public async Task Append_rejects_a_merged_session_document_that_exceeds_the_file_cap()
+    public async Task Append_keeps_all_durable_messages_without_an_aggregate_file_cap()
     {
         var (store, _) = CreateStore();
         var sessionId = (await store.CreateAsync(CancellationToken.None))!;
@@ -506,8 +506,27 @@ public sealed class SessionStoreTests
             .Select(index => new SessionMessage("user", new string((char)('a' + index % 26), 1024 * 1024)))
             .ToArray();
 
-        Assert.False(await store.AppendAsync(sessionId, messages, CancellationToken.None));
-        Assert.Empty((await store.GetAsync(sessionId, CancellationToken.None))!.Messages);
+        Assert.True(await store.AppendAsync(sessionId, messages, CancellationToken.None));
+        var loaded = await store.GetAsync(sessionId, CancellationToken.None);
+        Assert.Equal(17, loaded!.TotalMessageCount);
+        Assert.True(loaded.Messages.Count is > 0 and < 17);
+        Assert.Equal(17, loaded.MessageOffset + loaded.Messages.Count);
+    }
+
+    [Fact]
+    public async Task Append_rejects_deterministically_invalid_messages_without_partial_writes()
+    {
+        var (store, _) = CreateStore();
+        var sessionId = (await store.CreateAsync(CancellationToken.None))!;
+
+        var appended = await store.AppendAsync(sessionId,
+        [
+            new SessionMessage("user", "valid"),
+            new SessionMessage("system", "invalid role"),
+        ], CancellationToken.None);
+
+        Assert.False(appended);
+        Assert.Equal(0, (await store.GetAsync(sessionId, CancellationToken.None))!.TotalMessageCount);
     }
 
     [Fact]
@@ -538,7 +557,7 @@ public sealed class SessionStoreTests
     }
 
     [Fact]
-    public async Task Stable_source_dedupe_survives_message_retention_trimming()
+    public async Task Stable_source_dedupe_survives_the_bounded_compatibility_window()
     {
         var (store, _) = CreateStore();
         var sessionId = (await store.CreateAsync(CancellationToken.None))!;
@@ -567,7 +586,9 @@ public sealed class SessionStoreTests
 
         Assert.Equal(SessionAppendOutcome.AlreadyPresent, replayed);
         Assert.Equal(SessionAppendOutcome.InvalidMessage, conflict);
-        Assert.Equal(200, loaded!.Messages.Count);
+        Assert.Equal(202, loaded!.TotalMessageCount);
+        Assert.Equal(200, loaded.Messages.Count);
+        Assert.Equal(2, loaded.MessageOffset);
         Assert.DoesNotContain(loaded.Messages, message => message == original);
     }
 

@@ -156,11 +156,12 @@ namespace RuApp.Views
             string? streamedReply = _activeAgentAssistantMessage is { Content: { } content }
                 ? StripDisplayMarkers(content)
                 : null;
-            var history = await _apiService.GetSessionHistoryAsync(sessionId, cancellationToken);
-            if (history is null || !OwnsReload())
+            var pages = await FetchLoadedHistoryPagesAsync(sessionId, sessionGeneration, cancellationToken);
+            if (pages is null || !OwnsReload())
             {
                 return null;
             }
+            var history = FlattenHistoryPages(pages);
 
             var projectedHistory = SessionHistoryProjection.Project(history.Select(row => (row.Role, row.Content)));
             var normalizedHistory = projectedHistory
@@ -180,9 +181,15 @@ namespace RuApp.Views
                 ? await AgentActivityReplayLoader.LoadAsync(
                     sessionId, replayApi.ListSessionRunIdsAsync, replayApi.ListRunActivitiesAsync, cancellationToken)
                 : Array.Empty<SessionRunReplay>();
+            if (!OwnsReload()) return null;
 
+            bool appliedHistory = false;
             void Apply()
             {
+                if (!TryApplyHistoryPages(pages, sessionId, sessionGeneration)) return;
+                appliedHistory = true;
+                _historyReplay = replayedRuns;
+                UpdateLoadEarlierHistoryButton();
                 _suppressContextUsageUpdate = true;
                 try
                 {
@@ -208,7 +215,11 @@ namespace RuApp.Views
                     }
 
                     DetachAgentActivitiesFromMessages();
-                    var restored = SessionTranscriptBuilder.Build(history, replayedRuns, sessionId);
+                    var restored = SessionTranscriptBuilder.Build(
+                        history,
+                        replayedRuns,
+                        sessionId,
+                        completeHistory: IsCompleteHistory(pages));
                     if (preserveLiveTurn && runId is not null && AgentActivities.Count > 0)
                     {
                         var current = restored.LastOrDefault(item => item.Role == "assistant"
@@ -269,7 +280,9 @@ namespace RuApp.Views
                 OwnsReload,
                 Apply);
 
-            return didApply ? (preserveStreamedReply ? streamedReply : latestAssistant) : null;
+            return didApply && appliedHistory
+                ? (preserveStreamedReply ? streamedReply : latestAssistant)
+                : null;
         }
 
         private async void OnImageAttachmentClick(object sender, RoutedEventArgs e)
@@ -456,6 +469,11 @@ namespace RuApp.Views
                 generation = open.Generation;
                 _isSessionHistoryLoading = true;
                 var openToken = open.Cancellation;
+                _historyOpenCancellation = openToken;
+                _isLoadingEarlierHistory = false;
+                _historyPageCursor.Reset(sessionId, generation);
+                _historyReplay = Array.Empty<SessionRunReplay>();
+                UpdateLoadEarlierHistoryButton();
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 _agentWorkspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
                     ?? _agentWorkspace;
@@ -481,10 +499,17 @@ namespace RuApp.Views
                 // session out of order used to paint its history under the newer session's
                 // title, and the backend's active session (activation is a POST) could end
                 // up on a different session than the one on screen.
-                var history = await _apiService.GetSessionHistoryAsync(sessionId, openToken);
+                if (!await _apiService.ActivateSessionAsync(sessionId, openToken))
+                    throw new InvalidOperationException("Session activation is unavailable.");
                 if (!IsCurrentOpen(generation)) return;
-                if (history is null)
+                var historyPage = await _apiService.GetSessionHistoryPageAsync(
+                    sessionId,
+                    cancellationToken: openToken);
+                if (!IsCurrentOpen(generation)) return;
+                if (historyPage is null
+                    || !_historyPageCursor.TrySetNewest(historyPage, sessionId, generation))
                     throw new InvalidOperationException("Session history is unavailable.");
+                var history = historyPage.Messages;
                 // Durable replay: messages carry source_run_id, while a session
                 // opened fresh would show a transcript of prose with every tool row missing.
                 // Rebuild the settled rows from each terminal run's durable events. This is
@@ -494,13 +519,19 @@ namespace RuApp.Views
                 var replayedRuns = await AgentActivityReplayLoader.LoadAsync(
                     sessionId, _apiService.ListSessionRunIdsAsync, _apiService.ListRunActivitiesAsync, openToken);
                 if (!IsCurrentOpen(generation)) return;
+                _historyReplay = replayedRuns;
                 _sidePanelTasksRunId = replayedRuns.LastOrDefault()?.RunId;
                 UpdateAgentInlineState();
                 _ = RefreshAgentTasksAsync();
 
                 if (history != null)
                 {
-                    opened = SessionTranscriptBuilder.Build(history, replayedRuns, sessionId);
+                    opened = SessionTranscriptBuilder.Build(
+                        history,
+                        replayedRuns,
+                        sessionId,
+                        completeHistory: historyPage.StartIndex == 0
+                            && historyPage.RawMessageCount == historyPage.TotalMessages);
                     // No await between clearing the old feed and replacing its rows:
                     // the outgoing transcript remains intact throughout history I/O.
                     ClearAgentActivities();
@@ -515,6 +546,7 @@ namespace RuApp.Views
                         PositionOpenedTranscript();
                     }
                 }
+                UpdateLoadEarlierHistoryButton();
 
                 // Restore the latest step's report and optional request breakdown,
                 // not cumulative session billing. The forced repaint below adopts

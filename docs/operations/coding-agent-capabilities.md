@@ -61,7 +61,7 @@ and scripted workflows do not measure model quality; native live trials provide
 condition-specific evidence with pinned runtime, model and policy. Candidate
 grader correctness and unattended run completion must be reported separately.
 
-Session listing queries indexed SQLite summaries across all stored sessions and returns the newest 500, ordered by UTC update time and then session ID. More rows set `sessions_truncated`; there is no filesystem scan, byte-budget or summary-cache deadline. The one-time legacy import validates transcript files separately.
+Session listing queries indexed SQLite summaries. The original `/sessions` route returns the newest 500; `/sessions/page` reaches older sessions and filters titles or retained message content. `/sessions/{sessionId}/messages` pages retained history with absolute indices and rewind-bound cursors; `/sessions/search` provides literal FTS hits. GUI and CLI keep bounded read windows; stored history is no longer pruned at 200 messages. The one-time legacy import validates transcript files separately. See [database maintenance](database-maintenance.md).
 
 Project-file discovery inspects at most 5,000 entries for two seconds and presents at most 50 matches. Selection is explicit; pending context is capped at eight attachments and 32 MiB of source bytes. Prompt submissions retain their own copies, with eight queued entries and a 32 MiB aggregate estimate of retained content. A refused submission preserves the draft and attachments. A failed submission holds the queue until `/retry`; configuration/help commands remain available while it is paused.
 

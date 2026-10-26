@@ -10,7 +10,6 @@ public sealed partial class SessionStore
     public async Task<SessionDeleteOutcome> DeleteWithOutcomeAsync(string sessionId, CancellationToken cancellationToken)
     {
         if (!IsValidSessionId(sessionId)) return SessionDeleteOutcome.Failed;
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
@@ -27,6 +26,5 @@ public sealed partial class SessionStore
         {
             return SessionDeleteOutcome.Failed;
         }
-        finally { _gate.Release(); }
     }
 }

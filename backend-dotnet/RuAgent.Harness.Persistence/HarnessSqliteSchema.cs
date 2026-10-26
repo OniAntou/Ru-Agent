@@ -133,6 +133,11 @@ public static partial class HarnessSqliteSchema
         {
             throw;
         }
+        catch (SqliteException error) when (
+            error.Message.Contains("session_history_migration_invalid", StringComparison.Ordinal))
+        {
+            return HarnessStoreHealth.Unavailable("harness_session_history_migration_invalid");
+        }
         catch (Exception exception) when (IsExpectedStorageFailure(exception))
         {
             return HarnessStoreHealth.Unavailable("harness_store_unavailable");

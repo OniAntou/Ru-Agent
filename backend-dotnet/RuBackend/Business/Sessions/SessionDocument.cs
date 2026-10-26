@@ -33,7 +33,10 @@ public sealed record SessionDocument(
     string? ForkedFromMessageId = null,
     [property: JsonPropertyName("last_agent_activity_at")]
     DateTimeOffset? LastAgentActivityAt = null,
-    [property: JsonPropertyName("client_source")] string? ClientSource = null);
+    [property: JsonPropertyName("client_source")] string? ClientSource = null,
+    [property: JsonPropertyName("message_offset")] int MessageOffset = 0,
+    [property: JsonPropertyName("total_message_count")] int? TotalMessageCount = null,
+    [property: JsonPropertyName("history_epoch")] long HistoryEpoch = 0);
 
 public sealed record SessionSummary(
     string Id,
@@ -53,6 +56,28 @@ public sealed record SessionListResult(
     IReadOnlyList<SessionSummary> Sessions,
     bool IsTruncated);
 
+public sealed record SessionMessagePage(
+    IReadOnlyList<SessionMessage> Messages,
+    int StartIndex,
+    int TotalMessages,
+    string? NextCursor,
+    long HistoryEpoch);
+
+public sealed record SessionSummaryPage(
+    IReadOnlyList<SessionSummary> Sessions,
+    string? NextCursor);
+
+public sealed record SessionMessageSearchHit(
+    string SessionId,
+    int MessageIndex,
+    string Role,
+    string Snippet);
+
+public sealed class SessionHistoryException(string code) : Exception(code)
+{
+    public string Code { get; } = code;
+}
+
 public sealed record ConversationTurn(string Prompt, string Response);
 
 public interface ISessionStore
@@ -65,7 +90,32 @@ public interface ISessionStore
         return new SessionListResult(sessions, IsTruncated: false);
     }
 
+    async Task<SessionSummaryPage> ListPageAsync(
+        string? cursor, int limit, string? query, CancellationToken cancellationToken)
+    {
+        if (cursor is not null) throw new SessionHistoryException("session_history_cursor_unsupported");
+        var result = await ListWithMetadataAsync(cancellationToken).ConfigureAwait(false);
+        return new(result.Sessions.Take(limit).ToArray(), null);
+    }
+
     Task<SessionDocument?> GetAsync(string sessionId, CancellationToken cancellationToken);
+
+    async Task<SessionMessagePage?> GetMessagePageAsync(
+        string sessionId, string? cursor, int limit, CancellationToken cancellationToken)
+    {
+        if (cursor is not null) throw new SessionHistoryException("session_history_cursor_unsupported");
+        var document = await GetAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (document is null) return null;
+        if (limit < 1) throw new SessionHistoryException("session_history_limit_invalid");
+        var messages = document.Messages.TakeLast(limit).ToArray();
+        var start = document.MessageOffset + document.Messages.Count - messages.Length;
+        return new(messages, start, document.TotalMessageCount ?? document.Messages.Count,
+            null, document.HistoryEpoch);
+    }
+
+    Task<IReadOnlyList<SessionMessageSearchHit>> SearchMessagesAsync(
+        string query, int limit, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<SessionMessageSearchHit>>([]);
 
     Task<string?> CreateAsync(CancellationToken cancellationToken);
 

@@ -22,10 +22,17 @@ using RuAgent.Hosting;
 using RuAgent.Broker.Configuration;
 using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
+using RuAgent.Harness.Persistence.Maintenance;
+using RuBackend.DatabaseMaintenance;
 using System.Diagnostics;
 using System.Net;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+
+if (DatabaseCommandMode.IsRequested(args))
+{
+    return await DatabaseCommandMode.RunAsync(args).ConfigureAwait(false);
+}
 
 var isManagedRuntime = args.Contains("--managed-runtime", StringComparer.Ordinal);
 
@@ -110,6 +117,31 @@ static bool IsLoopbackBindUrl(string value)
 }
 
 await using var app = builder.Build();
+
+// A profile-level file lease covers managed and standalone hosts alike. It is
+// acquired before hosted services can initialize SQLite and held until process
+// shutdown; Windows releases it automatically if the process crashes.
+DatabaseOwnerLease profileLease;
+try
+{
+    var databasePath = app.Services.GetRequiredService<DataPaths>().AgentHarnessDatabase;
+    profileLease = DatabaseOwnerLease.Acquire(databasePath);
+    using var startupDatabaseOperation = DatabaseOperationLease.Acquire(databasePath, exclusive: true);
+    await DatabaseMaintenanceService.RecoverRestoreIfNeededAsync(databasePath, CancellationToken.None)
+        .ConfigureAwait(false);
+}
+catch (DatabaseMaintenanceException exception)
+{
+    Console.Error.WriteLine($"{{\"error_code\":\"{exception.ErrorCode}\"}}");
+    if (bootstrap is not null)
+    {
+        try { bootstrap.DescriptorWriter.Cleanup(); } catch { }
+        try { await bootstrap.SingleInstance.DisposeAsync().ConfigureAwait(false); } catch { }
+    }
+    return 5;
+}
+using var heldProfileLease = profileLease;
+using var releaseProfileOnStop = app.Lifetime.ApplicationStopped.Register(profileLease.Dispose);
 
 // Never HTML: without this any unhandled exception becomes a 500 text/html
 // page, which the GUI and TUI cannot parse. Every failure below this point
@@ -286,5 +318,7 @@ finally
         catch (Exception ex) { app.Logger.LogWarning(ex, "Single-instance release failed during shutdown."); }
     }
 }
+
+return 0;
 
 public partial class Program { }

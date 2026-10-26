@@ -3,7 +3,96 @@ using RuApp.Models;
 
 namespace RuApp.Services;
 
-public sealed record SessionHistoryEntry(string Role, string Content, string? SourceRunId, int? MessageIndex = null);
+public sealed record SessionHistoryEntry(
+    string Role,
+    string Content,
+    string? SourceRunId,
+    int? MessageIndex = null,
+    string? SourceMessageId = null);
+
+public sealed record SessionHistoryPage(
+    string SessionId,
+    IReadOnlyList<SessionHistoryEntry> Messages,
+    int StartIndex,
+    int TotalMessages,
+    string? NextCursor,
+    long HistoryEpoch,
+    int RawMessageCount);
+
+internal sealed class SessionHistoryPageCursor
+{
+    internal string? SessionId { get; private set; }
+    internal long Generation { get; private set; }
+    internal long HistoryEpoch { get; private set; }
+    internal int StartIndex { get; private set; }
+    internal int TotalMessages { get; private set; }
+    internal int LoadedPageCount { get; private set; }
+    internal string? NextCursor { get; private set; }
+    internal bool IsInitialized { get; private set; }
+    internal bool CanLoadEarlier => IsInitialized && NextCursor is not null;
+
+    internal void Reset(string sessionId, long generation)
+    {
+        SessionId = sessionId;
+        Generation = generation;
+        HistoryEpoch = 0;
+        StartIndex = 0;
+        TotalMessages = 0;
+        LoadedPageCount = 0;
+        NextCursor = null;
+        IsInitialized = false;
+    }
+
+    internal bool Owns(string sessionId, long generation) => IsInitialized
+        && string.Equals(SessionId, sessionId, StringComparison.Ordinal)
+        && Generation == generation;
+
+    internal bool TrySetNewest(SessionHistoryPage page, string sessionId, long generation)
+    {
+        if (!IsValidPage(page, sessionId)
+            || page.StartIndex + page.RawMessageCount != page.TotalMessages)
+        {
+            return false;
+        }
+
+        SessionId = sessionId;
+        Generation = generation;
+        HistoryEpoch = page.HistoryEpoch;
+        StartIndex = page.StartIndex;
+        TotalMessages = page.TotalMessages;
+        LoadedPageCount = 1;
+        NextCursor = page.NextCursor;
+        IsInitialized = true;
+        return true;
+    }
+
+    internal bool TryPrepend(SessionHistoryPage page, string sessionId, long generation)
+    {
+        if (!Owns(sessionId, generation)
+            || page.HistoryEpoch != HistoryEpoch
+            || page.TotalMessages != TotalMessages
+            || !IsValidPage(page, sessionId)
+            || page.StartIndex >= StartIndex
+            || page.StartIndex + page.RawMessageCount != StartIndex)
+        {
+            return false;
+        }
+
+        StartIndex = page.StartIndex;
+        NextCursor = page.NextCursor;
+        TotalMessages = page.TotalMessages;
+        LoadedPageCount++;
+        return true;
+    }
+
+    private static bool IsValidPage(SessionHistoryPage page, string sessionId) =>
+        string.Equals(page.SessionId, sessionId, StringComparison.Ordinal)
+        && page.StartIndex >= 0
+        && page.TotalMessages >= page.StartIndex
+        && page.RawMessageCount >= page.Messages.Count
+        && page.RawMessageCount >= 0
+        && page.RawMessageCount <= page.TotalMessages - page.StartIndex;
+}
 
 internal sealed record SessionRunReplay(
     string RunId,
@@ -30,7 +119,10 @@ internal static class SessionTranscriptBuilder
     }
 
     public static List<ChatMessageItem> Build(
-        IReadOnlyList<SessionHistoryEntry> history, IReadOnlyList<SessionRunReplay> runs, string? sessionId = null)
+        IReadOnlyList<SessionHistoryEntry> history,
+        IReadOnlyList<SessionRunReplay> runs,
+        string? sessionId = null,
+        bool completeHistory = true)
     {
         var byId = runs.ToDictionary(run => run.RunId, StringComparer.Ordinal);
         var projected = SessionHistoryProjection.Project(history.Select(row => (row.Role, row.Content)));
@@ -59,7 +151,7 @@ internal static class SessionTranscriptBuilder
         // assistant permits ordinal matching; unmatched runs must not steal an
         // older bubble. Modern/mixed histories always use explicit identities.
         var flags = projected.Select(row => row.Role == "assistant" && row.Render).ToArray();
-        var legacy = history.All(row => string.IsNullOrEmpty(row.SourceRunId))
+        var legacy = completeHistory && history.All(row => string.IsNullOrEmpty(row.SourceRunId))
             && flags.Count(flag => flag) == runs.Count
             && history.LastOrDefault()?.Role == "assistant"
             ? ReloadActivitiesPolicy.PlaceReplayedRuns(runs.Count, flags) : null;
@@ -92,7 +184,7 @@ internal static class SessionTranscriptBuilder
             }
             messages.Add(item);
         }
-        AppendUnansweredRun();
+        if (completeHistory) AppendUnansweredRun();
         return messages;
     }
 

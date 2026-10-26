@@ -413,6 +413,12 @@ The WinUI 3 desktop client connects to the shared local Public Host via loopback
 
 ## Session and history lifecycle
 
+Conversation history is retained as indexed message rows; GUI and CLI read bounded
+pages with absolute indices. Rewind invalidates older history cursors, while append
+preserves older-page navigation. The initial display window is not a retention
+policy. See [database maintenance](database-maintenance.md) for full-history export,
+backup/restore and opt-in pruning.
+
 ASP.NET Core is authoritative for persisted conversation sessions, history, and
 the Harness records owned by a session. `DELETE /sessions/{sessionId}` keeps a
 stable HTTP 200 response envelope: `status: "ok"` is returned only after the

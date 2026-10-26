@@ -16,18 +16,71 @@ public static partial class AgentCliParser
     private static AgentCliParseResult ParseSession(string[] args, int startIndex)
     {
         if (args.Length <= startIndex)
-            return Fail("missing_subcommand", "Missing session subcommand. Expected list|rewind|delete.");
+            return Fail("missing_subcommand", "Missing session subcommand. Expected list|history|search|rewind|delete.");
 
         var sub = args[startIndex];
         return sub switch
         {
             "list" => ParseSessionList(args, startIndex + 1),
+            "history" => ParseSessionHistory(args, startIndex + 1),
+            "search" => ParseSessionSearch(args, startIndex + 1),
             "rewind" => ParseSessionRewind(args, startIndex + 1),
             "delete" => ParseSessionDelete(args, startIndex + 1),
             "export" => ParseSessionExport(args, startIndex + 1),
             "import" => ParseSessionImport(args, startIndex + 1),
-            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|rewind|delete|export|import.")
+            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|history|search|rewind|delete|export|import.")
         };
+    }
+
+    private static AgentCliParseResult ParseSessionHistory(string[] args, int startIndex)
+    {
+        string? sessionId = null;
+        string? cursor = null;
+        var limit = 200;
+        var json = false;
+        var cursorSeen = false;
+        var limitSeen = false;
+        var jsonSeen = false;
+        for (var i = startIndex; i < args.Length; i++)
+        {
+            var token = args[i];
+            switch (token)
+            {
+                case "--json":
+                    if (jsonSeen) return Fail("duplicate_switch", "Duplicate --json.");
+                    json = true;
+                    jsonSeen = true;
+                    continue;
+                case "--cursor":
+                    if (cursorSeen) return Fail("duplicate_switch", "Duplicate --cursor.");
+                    if (++i >= args.Length) return Fail("missing_value", "Missing value for --cursor.");
+                    cursor = args[i];
+                    cursorSeen = true;
+                    if (string.IsNullOrWhiteSpace(cursor) || cursor.Length > 2048 || cursor.Any(char.IsControl))
+                        return Fail("invalid_cursor", "History cursor must be 1..2048 printable characters.");
+                    continue;
+                case "--limit":
+                    if (limitSeen) return Fail("duplicate_switch", "Duplicate --limit.");
+                    if (++i >= args.Length || !int.TryParse(args[i], System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out limit)
+                        || limit is < 1 or > 200)
+                        return Fail("invalid_limit", "--limit must be an integer from 1 to 200.");
+                    limitSeen = true;
+                    continue;
+            }
+
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for session history.");
+            if (sessionId is not null)
+                return Fail("too_many_arguments", "session history takes one <session-id>.");
+            if (!SessionIdLooseRegex.IsMatch(token))
+                return Fail("invalid_session_id", "Session id contains invalid characters.");
+            sessionId = token;
+        }
+
+        if (sessionId is null)
+            return Fail("missing_session_id", "Missing required <session-id> for session history.");
+        return Success(new SessionHistoryCommand(sessionId, cursor, limit, json));
     }
 
     private static AgentCliParseResult ParseSessionDelete(string[] args, int startIndex)
@@ -66,7 +119,61 @@ public static partial class AgentCliParser
     {
         bool json = false;
         bool jsonSeen = false;
+        bool cursorSeen = false;
+        bool limitSeen = false;
+        bool querySeen = false;
+        string? cursor = null;
+        string? query = null;
+        var limit = 100;
         for (int i = startIndex; i < args.Length; i++)
+        {
+            var token = args[i];
+            switch (token)
+            {
+                case "--json":
+                    if (jsonSeen) return Fail("duplicate_switch", "Duplicate --json.");
+                    json = true;
+                    jsonSeen = true;
+                    continue;
+                case "--cursor":
+                    if (cursorSeen) return Fail("duplicate_switch", "Duplicate --cursor.");
+                    if (++i >= args.Length) return Fail("missing_value", "Missing value for --cursor.");
+                    cursor = args[i];
+                    cursorSeen = true;
+                    if (string.IsNullOrWhiteSpace(cursor) || cursor.Length > 2048 || cursor.Any(char.IsControl))
+                        return Fail("invalid_cursor", "Session cursor must be 1..2048 printable characters.");
+                    continue;
+                case "--limit":
+                    if (limitSeen) return Fail("duplicate_switch", "Duplicate --limit.");
+                    if (++i >= args.Length || !int.TryParse(args[i], System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out limit))
+                        return Fail("invalid_limit", "--limit must be an integer from 1 to 200.");
+                    limitSeen = true;
+                    if (limit is < 1 or > 200) return Fail("invalid_limit", "--limit must be an integer from 1 to 200.");
+                    continue;
+                case "--query":
+                    if (querySeen) return Fail("duplicate_switch", "Duplicate --query.");
+                    if (++i >= args.Length) return Fail("missing_value", "Missing value for --query.");
+                    query = args[i].Trim();
+                    querySeen = true;
+                    if (query.Length > 512 || query.Any(char.IsControl))
+                        return Fail("invalid_query", "Session query must be at most 512 printable characters.");
+                    if (query.Length == 0) query = null;
+                    continue;
+            }
+            return Fail("unknown_switch", $"Unknown switch '{token}' for session list.");
+        }
+        return Success(new SessionListCommand(json, cursor, limit, query));
+    }
+
+    private static AgentCliParseResult ParseSessionSearch(string[] args, int startIndex)
+    {
+        var json = false;
+        var jsonSeen = false;
+        var limitSeen = false;
+        var limit = 50;
+        var queryParts = new List<string>();
+        for (var i = startIndex; i < args.Length; i++)
         {
             var token = args[i];
             if (token == "--json")
@@ -76,9 +183,26 @@ public static partial class AgentCliParser
                 jsonSeen = true;
                 continue;
             }
-            return Fail("unknown_switch", $"Unknown switch '{token}' for session list.");
+            if (token == "--limit")
+            {
+                if (limitSeen) return Fail("duplicate_switch", "Duplicate --limit.");
+                if (++i >= args.Length || !int.TryParse(args[i], System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture, out limit)
+                    || limit is < 1 or > 200)
+                    return Fail("invalid_limit", "--limit must be an integer from 1 to 200.");
+                limitSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for session search.");
+            queryParts.Add(token);
         }
-        return Success(new SessionListCommand(json));
+
+        var query = string.Join(" ", queryParts).Trim();
+        if (query.Length == 0) return Fail("missing_query", "Missing required <query> for session search.");
+        if (query.Length > 512 || query.Any(char.IsControl))
+            return Fail("invalid_query", "Session query must be at most 512 printable characters.");
+        return Success(new SessionSearchCommand(query, limit, json));
     }
 
     private static AgentCliParseResult ParseSessionExport(string[] args, int startIndex)

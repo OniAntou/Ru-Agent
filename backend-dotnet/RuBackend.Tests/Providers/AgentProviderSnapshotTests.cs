@@ -464,6 +464,8 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
                 Assert.Equal(1, await command.ExecuteNonQueryAsync());
             }
 
+            // A restart releases the profile owner before the replacement Host opens it.
+            restartedHost.Dispose();
             using var legacyHost = new BackendWebApplicationFactory(dataPaths: paths, settingsStore: settings);
             var legacyError = await Assert.ThrowsAsync<ProviderCatalogException>(() =>
                 legacyHost.Services.GetRequiredService<AgentProviderSnapshotFactory>().GetAsync(runId, default));

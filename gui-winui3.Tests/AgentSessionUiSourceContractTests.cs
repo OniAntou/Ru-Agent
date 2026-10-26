@@ -388,7 +388,9 @@ public sealed class AgentSessionUiSourceContractTests
         var document = GuiSource.Xml("MainWindow.xaml");
         var warning = GuiSource.Require(document, "SidebarSessionTruncationWarning");
         Assert.Equal("Collapsed", GuiSource.AttributeValue(warning, "Visibility"));
-        Assert.Contains("some sessions are hidden", GuiSource.AttributeValue(warning, "Text"), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("More sessions are available", GuiSource.AttributeValue(warning, "Text"), StringComparison.OrdinalIgnoreCase);
+        var more = GuiSource.Require(document, "SidebarLoadMoreButton");
+        Assert.Equal("OnSidebarLoadMoreClick", GuiSource.AttributeValue(more, "Click"));
     }
 
     [Fact]

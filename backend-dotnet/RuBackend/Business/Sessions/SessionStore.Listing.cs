@@ -26,6 +26,7 @@ public sealed partial class SessionStore
     }
 
     private static SessionSummary ToSummary(SessionDocument document) => new(
-        document.Id, document.Title, document.CreatedAt, document.UpdatedAt, document.Messages.Count,
+        document.Id, document.Title, document.CreatedAt, document.UpdatedAt,
+        document.TotalMessageCount ?? document.Messages.Count,
         document.ParentSessionId, document.ForkedFromMessageId, LastAgentActivityAt: document.LastAgentActivityAt, ClientSource: document.ClientSource);
 }

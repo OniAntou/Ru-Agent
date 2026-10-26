@@ -29,6 +29,32 @@ namespace RuApp.Services
             }
         }
 
+        public async Task<SessionListPageResponse?> GetSessionsPageAsync(
+            string? cursor = null,
+            int limit = 100,
+            string? query = null,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var parameters = new List<string> { $"limit={limit}" };
+                if (!string.IsNullOrEmpty(cursor)) parameters.Add($"cursor={Uri.EscapeDataString(cursor)}");
+                if (!string.IsNullOrWhiteSpace(query)) parameters.Add($"query={Uri.EscapeDataString(query.Trim())}");
+                var url = $"{_baseUrl}/sessions/page?{string.Join("&", parameters)}";
+                var response = await _httpClient.GetFromJsonAsync<SessionListPageResponse>(url, cancellationToken);
+                return response?.Status == "ok" ? response : null;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("GetSessionsPageAsync", ex);
+                return null;
+            }
+        }
+
         public async Task<SessionInfo?> CreateSessionAsync()
         {
             try
@@ -69,12 +95,21 @@ namespace RuApp.Services
             return null;
         }
 
-        public async Task<bool> ActivateSessionAsync(string sessionId)
+        public async Task<bool> ActivateSessionAsync(
+            string sessionId,
+            CancellationToken cancellationToken = default)
         {
             try
             {
-                using var response = await _httpClient.PostAsync($"{_baseUrl}/sessions/{sessionId}/activate", null);
+                using var response = await _httpClient.PostAsync(
+                    $"{_baseUrl}/sessions/{Uri.EscapeDataString(sessionId)}/activate",
+                    null,
+                    cancellationToken);
                 return response.IsSuccessStatusCode;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -95,39 +130,54 @@ namespace RuApp.Services
             string sessionId,
             CancellationToken cancellationToken = default)
         {
+            var page = await GetSessionHistoryPageAsync(sessionId, null, cancellationToken: cancellationToken);
+            return page?.Messages.ToList();
+        }
+
+        public async Task<SessionHistoryPage?> GetSessionHistoryPageAsync(
+            string sessionId,
+            string? cursor = null,
+            int limit = 200,
+            CancellationToken cancellationToken = default)
+        {
             try
             {
-                using var response = await _httpClient.PostAsync(
-                    $"{_baseUrl}/sessions/{sessionId}/activate",
-                    null,
-                    cancellationToken);
-                if (response.IsSuccessStatusCode)
+                var url = $"{_baseUrl}/sessions/{Uri.EscapeDataString(sessionId)}/messages?limit={limit}";
+                if (!string.IsNullOrEmpty(cursor)) url += $"&cursor={Uri.EscapeDataString(cursor)}";
+                var response = await _httpClient.GetFromJsonAsync<SessionMessagesPageResponse>(url, cancellationToken);
+                if (response is { Status: "ok" }
+                    && string.Equals(response.SessionId, sessionId, StringComparison.Ordinal))
                 {
-                    var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
-                    if (result.TryGetProperty("session", out var sessionProp) &&
-                        sessionProp.TryGetProperty("messages", out var messagesProp))
+                    var entries = new List<SessionHistoryEntry>(response.Messages.Count);
+                    for (int index = 0; index < response.Messages.Count; index++)
                     {
-                        var list = new List<SessionHistoryEntry>();
-                        int messageIndex = -1;
-                        foreach (var item in messagesProp.EnumerateArray())
-                        {
-                            messageIndex++;
-                            string role = item.TryGetProperty("role", out var roleProp) ? roleProp.GetString() ?? "" : "";
-                            string content = item.TryGetProperty("content", out var contentProp) ? contentProp.GetString() ?? "" : "";
-                            if (role == "user" || role == "ai" || role == "assistant")
-                            {
-                                string? runId = item.TryGetProperty("source_run_id", out var runProp)
-                                    && runProp.ValueKind == JsonValueKind.String ? runProp.GetString() : null;
-                                list.Add(new SessionHistoryEntry(role == "user" ? "user" : "assistant", content, runId, messageIndex));
-                            }
-                        }
-                        return list;
+                        var item = response.Messages[index];
+                        if (item.Role is not ("user" or "ai" or "assistant")) continue;
+                        entries.Add(new SessionHistoryEntry(
+                            item.Role == "user" ? "user" : "assistant",
+                            item.Content,
+                            item.SourceRunId,
+                            checked(response.StartIndex + index),
+                            item.SourceMessageId));
                     }
+
+                    return new SessionHistoryPage(
+                        response.SessionId,
+                        entries,
+                        response.StartIndex,
+                        response.TotalMessages,
+                        response.NextCursor,
+                        response.HistoryEpoch,
+                        response.Messages.Count);
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                LogApiError("GetSessionHistoryAsync", ex);
+                LogApiError("GetSessionHistoryPageAsync", ex);
             }
             return null;
         }

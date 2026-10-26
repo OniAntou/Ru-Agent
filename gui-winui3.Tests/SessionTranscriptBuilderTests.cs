@@ -90,7 +90,7 @@ public sealed class SessionTranscriptBuilderTests
     {
         using var handler = new HistoryHandler();
         using var api = new ApiService(new BackendSession(new Uri("http://127.0.0.1:59999/"), "synthetic"), handler);
-        var history = await api.GetSessionHistoryAsync("session");
+        var history = await api.GetSessionHistoryAsync("session-a");
         Assert.NotNull(history);
         Assert.Equal("r1", history![0].SourceRunId);
         Assert.Equal("assistant", history[1].Role);
@@ -102,8 +102,9 @@ public sealed class SessionTranscriptBuilderTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""
-                {"session":{"messages":[{"role":"user","content":"hi","source_run_id":"r1"},
-                {"role":"ai","content":"hello","source_run_id":"r1"}, {"role":"user","content":"legacy"}]}}
+                {"status":"ok","session_id":"session-a","start_index":0,"total_messages":3,"next_cursor":null,"history_epoch":0,
+                "messages":[{"role":"user","content":"hi","source_run_id":"r1"},
+                {"role":"ai","content":"hello","source_run_id":"r1"}, {"role":"user","content":"legacy"}]}
                 """) });
     }
 }

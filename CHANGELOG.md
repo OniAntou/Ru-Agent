@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(database)**: Normalize retained conversation messages and delivery receipts
+  in schema v30; add paged history, session paging and FTS search without the old
+  200-message retention limit. Preserve rewind indices, full-history export and
+  bounded model context; migration cannot recover previously pruned messages.
+- **feat(database)**: Add status, online SQLite backup with opaque key/manifest,
+  verification, journaled offline restore, compaction and explicit dry-run/apply
+  pruning. A profile lease prevents maintenance from racing the running Host.
+- **perf(database)**: Use indexed same-run context event joins, align SQLite command
+  timeouts with configured lock budgets, and remove global session read blocking.
+
 - **fix(providers)**: Preserve Responses assistant message phases through streaming,
   durable context and native replay; continue commentary-only replies with bounded
   recovery instead of completing the task, and avoid duplicate narration.

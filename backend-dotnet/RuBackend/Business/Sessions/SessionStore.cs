@@ -2,7 +2,6 @@ using Microsoft.Data.Sqlite;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace RuBackend.Business.Sessions;
@@ -10,10 +9,15 @@ namespace RuBackend.Business.Sessions;
 public sealed partial class SessionStore : ISessionStore
 {
     private const string DefaultTitle = "Cuộc trò chuyện mới";
-    private const int MaximumMessages = 200;
     private const int MaximumTitleCharacters = 50;
     private const int MaximumMessageBytes = 1024 * 1024;
     private const long MaximumSessionFileBytes = 16 * 1024 * 1024;
+    private const int MaximumGetMessages = 200;
+    private const int MaximumPageMessages = 200;
+    // Normal pages stay within 4 MiB of JSON. A single valid 1 MiB UTF-8
+    // message can expand to about 6 MiB plus fixed JSON fields.
+    private const int MaximumPageBytes = 4 * 1024 * 1024;
+    private const int MaximumContextMessages = 256;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -22,8 +26,6 @@ public sealed partial class SessionStore : ISessionStore
 
     private readonly string _sessionDirectory;
     private readonly TimeProvider _clock;
-    private readonly SemaphoreSlim _gate = new(1, 1);
-
     private readonly BusinessSqliteDatabase _database;
     private volatile bool _isMigrated;
 
@@ -44,15 +46,15 @@ public sealed partial class SessionStore : ISessionStore
             return null;
         }
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            return await LoadUnlockedAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction(deferred: true);
+        var metadata = await LoadUnlockedAsync(sessionId, cancellationToken, connection, transaction).ConfigureAwait(false);
+        if (metadata is null) return null;
+        var count = metadata.TotalMessageCount ?? 0;
+        var tail = await ReadMessagesBeforeAsync(connection, sessionId, count, MaximumGetMessages,
+            MaximumPageBytes, cancellationToken, transaction, allowSingleOverLimit: true).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return metadata with { Messages = tail.Messages, MessageOffset = tail.StartIndex };
     }
 
     public Task<string?> CreateAsync(CancellationToken cancellationToken) =>
@@ -62,7 +64,6 @@ public sealed partial class SessionStore : ISessionStore
     {
         if (clientSource is not (null or "gui" or "cli"))
             throw new ArgumentException("Unknown session client source.", nameof(clientSource));
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
@@ -91,10 +92,6 @@ public sealed partial class SessionStore : ISessionStore
         {
             return null;
         }
-        finally
-        {
-            _gate.Release();
-        }
     }
 
     public async Task<bool> AppendAsync(
@@ -108,14 +105,13 @@ public sealed partial class SessionStore : ISessionStore
             return false;
         }
 
-        if (messages.Any(message =>
-                message?.SourceMessageId is not null
+        if (messages.Any(message => !IsValidMessage(message)
+                || message?.SourceMessageId is not null
                 || message?.SourceRunId is not null))
         {
             return false;
         }
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
@@ -127,9 +123,7 @@ public sealed partial class SessionStore : ISessionStore
                 return false;
             }
 
-            var validNewMessages = messages.Where(IsValidMessage).ToArray();
-            await AppendUnlockedAsync(current, validNewMessages, connection, transaction, cancellationToken)
-                .ConfigureAwait(false);
+            await AppendUnlockedAsync(current, messages, connection, transaction, cancellationToken).ConfigureAwait(false);
             transaction.Commit();
             return true;
         }
@@ -149,10 +143,6 @@ public sealed partial class SessionStore : ISessionStore
         {
             return false;
         }
-        finally
-        {
-            _gate.Release();
-        }
     }
 
     public async Task<IReadOnlyList<ConversationTurn>> GetContextTurnsAsync(
@@ -165,22 +155,16 @@ public sealed partial class SessionStore : ISessionStore
             return [];
         }
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var document = await LoadUnlockedAsync(sessionId, cancellationToken)
-                .ConfigureAwait(false);
-            if (document is null)
-            {
-                return [];
-            }
-
-            return SessionContextTurns.Select(document.Messages, maxTurns);
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction(deferred: true);
+        var metadata = await LoadUnlockedAsync(sessionId, cancellationToken, connection, transaction).ConfigureAwait(false);
+        if (metadata is null) return [];
+        var count = metadata.TotalMessageCount ?? 0;
+        var take = (int)Math.Clamp((long)maxTurns * 2 + 4, 2L, MaximumContextMessages);
+        var tail = await ReadMessagesBeforeAsync(connection, sessionId, count, take,
+            MaximumPageBytes, cancellationToken, transaction, allowSingleOverLimit: true).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return SessionContextTurns.Select(tail.Messages, maxTurns);
     }
 
     public async Task<SessionDocument?> RewindAsync(
@@ -193,7 +177,6 @@ public sealed partial class SessionStore : ISessionStore
             return null;
         }
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
@@ -204,19 +187,27 @@ public sealed partial class SessionStore : ISessionStore
                 return null;
             }
 
-            var count = Math.Clamp(toMessageIndex + 1, 0, original.Messages.Count);
-            var rewoundMessages = original.Messages.Take(count).ToList();
+            var count = Math.Clamp((long)toMessageIndex + 1, 0L, original.TotalMessageCount ?? 0);
+            await using (var delete = connection.CreateCommand())
+            {
+                delete.Transaction = transaction;
+                delete.CommandText = "DELETE FROM business_session_messages WHERE session_id = $id AND message_index >= $index;";
+                delete.Parameters.AddWithValue("$id", sessionId);
+                delete.Parameters.AddWithValue("$index", count);
+                await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
             var now = _clock.GetUtcNow().ToUniversalTime();
 
             var rewoundDoc = original with
             {
-                Messages = rewoundMessages,
                 UpdatedAt = now,
+                TotalMessageCount = checked((int)count),
+                HistoryEpoch = checked(original.HistoryEpoch + 1),
             };
 
-            await WriteUnlockedAsync(rewoundDoc, connection, transaction, cancellationToken).ConfigureAwait(false);
+            await UpdateMetadataUnlockedAsync(rewoundDoc, connection, transaction, cancellationToken).ConfigureAwait(false);
             transaction.Commit();
-            return rewoundDoc;
+            return await GetAsync(sessionId, cancellationToken).ConfigureAwait(false);
         }
         catch (SqliteException)
         {
@@ -229,10 +220,6 @@ public sealed partial class SessionStore : ISessionStore
         catch (UnauthorizedAccessException)
         {
             return null;
-        }
-        finally
-        {
-            _gate.Release();
         }
     }
 
@@ -248,106 +235,131 @@ public sealed partial class SessionStore : ISessionStore
         }
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT document FROM business_sessions WHERE session_id = $id;";
+        command.CommandText = """
+            SELECT title, created_at_utc, updated_at_utc, parent_session_id,
+                forked_from_message_id, last_agent_activity_at_utc, client_source,
+                total_message_count, history_epoch
+            FROM business_sessions WHERE session_id = $id;
+            """;
         command.Parameters.AddWithValue("$id", sessionId);
-        var bytes = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as byte[];
-        return bytes is null ? null : ParseDocument(bytes, sessionId);
-    }
-
-    private static SessionDocument? ParseDocument(byte[] bytes, string sessionId)
-    {
-        try
-        {
-            var root = JsonNode.Parse(bytes) as JsonObject;
-            if (root is null || root["messages"] is not JsonArray messagesNode)
-            {
-                return null;
-            }
-
-            var storedId = ReadString(root, "id", sessionId);
-            if (!IsValidSessionId(storedId) || !string.Equals(storedId, sessionId, StringComparison.Ordinal))
-            {
-                return null;
-            }
-
-            var messages = new List<SessionMessage>();
-            foreach (var node in messagesNode)
-            {
-                if (node is not JsonObject messageNode)
-                {
-                    continue;
-                }
-
-                var role = ReadString(messageNode, "role", string.Empty);
-                var content = ReadNullableString(messageNode, "content");
-                if ((role == "user" || role == "ai") && content is not null)
-                {
-                    var message = new SessionMessage(
-                        role,
-                        content,
-                        ReadNullableString(messageNode, "source_message_id"),
-                        ReadNullableString(messageNode, "source_run_id"));
-                    if (IsValidMessage(message))
-                    {
-                        messages.Add(message);
-                    }
-                }
-            }
-
-            if (!TryReadSourceLedger(root, messages, out var ledger))
-            {
-                return null;
-            }
-
-            var storedTitle = ReadString(root, "title", DefaultTitle);
-            if (storedTitle.Length is 0 or > MaximumTitleCharacters
-                || storedTitle.Any(char.IsControl))
-            {
-                storedTitle = DefaultTitle;
-            }
-
-            var parentSessionId = ReadNullableString(root, "parent_session_id");
-            var forkedFromMessageId = ReadNullableString(root, "forked_from_message_id");
-            var clientSource = ReadNullableString(root, "client_source");
-
-            return new SessionDocument(
-                storedId,
-                storedTitle,
-                ReadTimestamp(root, "created_at"),
-                ReadTimestamp(root, "updated_at"),
-                messages,
-                ledger.Count == 0 ? null : ledger,
-                parentSessionId,
-                forkedFromMessageId,
-                TryReadTimestamp(root, "last_agent_activity_at"),
-                clientSource is "gui" or "cli" ? clientSource : null);
-        }
-        catch (JsonException) { return null; }
-        catch (InvalidDataException) { return null; }
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) return null;
+        var count = reader.GetInt32(7);
+        return new SessionDocument(
+            sessionId,
+            reader.GetString(0),
+            ParseDatabaseTimestamp(reader.GetString(1)),
+            ParseDatabaseTimestamp(reader.GetString(2)),
+            [],
+            ParentSessionId: reader.IsDBNull(3) ? null : reader.GetString(3),
+            ForkedFromMessageId: reader.IsDBNull(4) ? null : reader.GetString(4),
+            LastAgentActivityAt: reader.IsDBNull(5) ? null : ParseDatabaseTimestamp(reader.GetString(5)),
+            ClientSource: reader.IsDBNull(6) ? null : reader.GetString(6),
+            MessageOffset: Math.Max(0, count - MaximumGetMessages),
+            TotalMessageCount: count,
+            HistoryEpoch: reader.GetInt64(8));
     }
 
     private static async Task WriteUnlockedAsync(
         SessionDocument document, SqliteConnection connection,
         SqliteTransaction transaction, CancellationToken cancellationToken)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(document, JsonOptions);
-        if (bytes.Length > MaximumSessionFileBytes) throw new InvalidDataException("session_file_too_large");
+        var now = document.UpdatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+        var created = document.CreatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+        var metadata = document with { Messages = [], SourceMessageLedger = null,
+            TotalMessageCount = document.TotalMessageCount ?? document.Messages.Count };
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(metadata, JsonOptions);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO business_sessions(session_id, document, summary, updated_at_utc)
-            VALUES ($id, $document, $summary, $updated)
-            ON CONFLICT(session_id) DO UPDATE SET document = excluded.document,
-                summary = excluded.summary, updated_at_utc = excluded.updated_at_utc;
+            INSERT INTO business_sessions(session_id, document, summary, updated_at_utc,
+                title, created_at_utc, parent_session_id, forked_from_message_id,
+                last_agent_activity_at_utc, client_source, total_message_count, history_epoch)
+            VALUES ($id, $document, $summary, $updated, $title, $created, $parent,
+                $forked, $activity, $client, $count, $epoch)
+            ON CONFLICT(session_id) DO UPDATE SET summary = excluded.summary,
+                updated_at_utc = excluded.updated_at_utc, title = excluded.title,
+                created_at_utc = excluded.created_at_utc, parent_session_id = excluded.parent_session_id,
+                forked_from_message_id = excluded.forked_from_message_id,
+                last_agent_activity_at_utc = excluded.last_agent_activity_at_utc,
+                client_source = excluded.client_source, total_message_count = excluded.total_message_count,
+                history_epoch = excluded.history_epoch;
             """;
         command.Parameters.AddWithValue("$id", document.Id);
         command.Parameters.AddWithValue("$document", bytes);
-        command.Parameters.AddWithValue("$summary", JsonSerializer.Serialize(ToSummary(document)));
-        command.Parameters.AddWithValue("$updated", document.UpdatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$summary", JsonSerializer.Serialize(ToSummary(metadata)));
+        command.Parameters.AddWithValue("$updated", now);
+        command.Parameters.AddWithValue("$title", metadata.Title);
+        command.Parameters.AddWithValue("$created", created);
+        command.Parameters.AddWithValue("$parent", DbValue(metadata.ParentSessionId));
+        command.Parameters.AddWithValue("$forked", DbValue(metadata.ForkedFromMessageId));
+        command.Parameters.AddWithValue("$activity", DbValue(metadata.LastAgentActivityAt?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)));
+        command.Parameters.AddWithValue("$client", DbValue(metadata.ClientSource));
+        command.Parameters.AddWithValue("$count", metadata.TotalMessageCount!.Value);
+        command.Parameters.AddWithValue("$epoch", metadata.HistoryEpoch);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static bool IsValidMessage(SessionMessage? message) =>
+    private static async Task InsertMessagesAsync(
+        IReadOnlyList<SessionMessage> messages, string sessionId, int startIndex,
+        SqliteConnection connection, SqliteTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO business_session_messages(session_id, message_index, role, content, source_message_id, source_run_id)
+            VALUES ($id, $index, $role, CAST($content AS TEXT), $source, $run);
+            """;
+        var id = command.Parameters.Add("$id", SqliteType.Text);
+        var index = command.Parameters.Add("$index", SqliteType.Integer);
+        var role = command.Parameters.Add("$role", SqliteType.Text);
+        var content = command.Parameters.Add("$content", SqliteType.Blob);
+        var source = command.Parameters.Add("$source", SqliteType.Text);
+        var run = command.Parameters.Add("$run", SqliteType.Text);
+        for (var offset = 0; offset < messages.Count; offset++)
+        {
+            var message = messages[offset];
+            id.Value = sessionId;
+            index.Value = checked(startIndex + offset);
+            role.Value = message.Role;
+            // Bind explicit UTF-8 bytes so embedded NULs are not truncated by native text marshalling.
+            content.Value = Encoding.UTF8.GetBytes(message.Content);
+            source.Value = DbValue(message.SourceMessageId);
+            run.Value = DbValue(message.SourceRunId);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task UpdateMetadataUnlockedAsync(
+        SessionDocument document, SqliteConnection connection, SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var metadata = document with { Messages = [], SourceMessageLedger = null };
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE business_sessions SET title = $title, updated_at_utc = $updated,
+                last_agent_activity_at_utc = $activity, total_message_count = $count,
+                history_epoch = $epoch, summary = $summary
+            WHERE session_id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", metadata.Id);
+        command.Parameters.AddWithValue("$title", metadata.Title);
+        command.Parameters.AddWithValue("$updated", metadata.UpdatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$activity", DbValue(metadata.LastAgentActivityAt?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)));
+        command.Parameters.AddWithValue("$count", metadata.TotalMessageCount ?? 0);
+        command.Parameters.AddWithValue("$epoch", metadata.HistoryEpoch);
+        command.Parameters.AddWithValue("$summary", JsonSerializer.Serialize(ToSummary(metadata)));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static object DbValue(object? value) => value ?? DBNull.Value;
+
+    private static DateTimeOffset ParseDatabaseTimestamp(string value) =>
+        DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
+            ? parsed.ToUniversalTime() : DateTimeOffset.UnixEpoch;
+
+    internal static bool IsValidMessage(SessionMessage? message) =>
         message is not null &&
         (message.Role == "user" || message.Role == "ai") &&
         message.Content is not null &&
@@ -375,38 +387,6 @@ public sealed partial class SessionStore : ISessionStore
         }
 
         return DefaultTitle;
-    }
-
-    private static string ReadString(JsonObject node, string key, string fallback) =>
-        ReadNullableString(node, key) ?? fallback;
-
-    private static string? ReadNullableString(JsonObject node, string key) =>
-        node[key] is JsonValue value && value.TryGetValue<string>(out var result)
-            ? result
-            : null;
-
-    private static DateTimeOffset ReadTimestamp(JsonObject node, string key)
-    {
-        var raw = ReadNullableString(node, key);
-        return DateTimeOffset.TryParse(
-            raw,
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.RoundtripKind,
-            out var parsed)
-            ? parsed.ToUniversalTime()
-            : DateTimeOffset.UnixEpoch;
-    }
-
-    private static DateTimeOffset? TryReadTimestamp(JsonObject node, string key)
-    {
-        var raw = ReadNullableString(node, key);
-        return DateTimeOffset.TryParse(
-            raw,
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.RoundtripKind,
-            out var parsed)
-            ? parsed.ToUniversalTime()
-            : null;
     }
 
     private static bool IsValidSessionId(string? sessionId) =>

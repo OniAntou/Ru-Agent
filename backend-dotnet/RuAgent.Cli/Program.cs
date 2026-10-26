@@ -17,6 +17,18 @@ public static class Program
             // Best effort when redirected
         }
 
+        if (args.Length > 0 && args[0] == "database")
+        {
+            using var databaseCts = new CancellationTokenSource();
+            ConsoleCancelEventHandler databaseCancel = (_, e) => { e.Cancel = true; databaseCts.Cancel(); };
+            Console.CancelKeyPress += databaseCancel;
+            try
+            {
+                return await DatabaseCommands.RunAsync(args[1..], databaseCts.Token).ConfigureAwait(false);
+            }
+            finally { Console.CancelKeyPress -= databaseCancel; }
+        }
+
         if (args.Length > 0 && args[0] is "update" or "uninstall")
         {
             using var updateCts = new CancellationTokenSource();
@@ -108,6 +120,8 @@ public static class Program
                 ChatCommand chat => await commands.ChatAsync(chat, cts.Token).ConfigureAwait(false),
                 RpcCommand rpc => await commands.RpcAsync(rpc, cts.Token).ConfigureAwait(false),
                 SessionListCommand slist => await commands.SessionListAsync(slist, cts.Token).ConfigureAwait(false),
+                SessionHistoryCommand shistory => await commands.SessionHistoryAsync(shistory, cts.Token).ConfigureAwait(false),
+                SessionSearchCommand ssearch => await commands.SessionSearchAsync(ssearch, cts.Token).ConfigureAwait(false),
                 SessionRewindCommand srewind => await commands.SessionRewindAsync(srewind, cts.Token).ConfigureAwait(false),
                 SessionDeleteCommand sdelete => await commands.SessionDeleteAsync(sdelete, cts.Token).ConfigureAwait(false),
                 SessionExportCommand sexport => await commands.SessionExportAsync(sexport, cts.Token).ConfigureAwait(false),
@@ -181,7 +195,9 @@ public static class Program
         Console.Error.WriteLine("  --confirm-full-access: terminal runs as the current Windows user and may access data outside the workspace.");
         Console.Error.WriteLine("  --trust-workspace: explicitly approve the returned workspace identity; failed rollback stops before streaming.");
         Console.Error.WriteLine("  --json: NDJSON on stdout; requires --trust-workspace or --confirm-full-access.");
-        Console.Error.WriteLine("  agent session list [--json]");
+        Console.Error.WriteLine("  agent session list [--cursor TOKEN] [--limit N] [--query TEXT] [--json]");
+        Console.Error.WriteLine("  agent session history <session-id> [--cursor TOKEN] [--limit N] [--json]");
+        Console.Error.WriteLine("  agent session search <query> [--limit N] [--json]");
         Console.Error.WriteLine("  agent session rewind <session-id> --index <n> [--json]");
         Console.Error.WriteLine("  agent session delete <session-id> [--yes]");
         Console.Error.WriteLine("  agent session export <session-id> --harness <claude-code|codex> [--out <dir>] [--json]");

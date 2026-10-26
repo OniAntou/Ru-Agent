@@ -67,12 +67,14 @@ public static class SessionWorkspaceResolver
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 latestBySession[reader.GetString(0)] = reader.GetString(1);
             }
 
             var roots = new Dictionary<string, (string Label, string Path)>(StringComparer.Ordinal);
             foreach (var workspaceId in latestBySession.Values.Distinct(StringComparer.Ordinal))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
                     var stored = await workspaceStore.GetAsync(new WorkspaceId(workspaceId), cancellationToken).ConfigureAwait(false);
@@ -93,6 +95,7 @@ public static class SessionWorkspaceResolver
             var result = new Dictionary<string, (string WorkspaceId, string Label, string Path)>(StringComparer.Ordinal);
             foreach (var (sessionId, workspaceId) in latestBySession)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (roots.TryGetValue(workspaceId, out var root))
                 {
                     result[sessionId] = (workspaceId, root.Label, root.Path);
@@ -111,25 +114,13 @@ public static class SessionWorkspaceResolver
         HarnessSqliteOptions sqliteOptions,
         CancellationToken cancellationToken)
     {
-        // No pooling: the handle must be fully closed on dispose so test and
-        // host data directories can be cleaned up deterministically. Shared by the
-        // workspace and run-activity resolvers so both reads obey the same
-        // busy_timeout before the sidebar query runs.
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = sqliteOptions.DatabasePath,
-            Mode = SqliteOpenMode.ReadOnly,
-            Pooling = false,
-        }.ToString();
-        var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = $"PRAGMA foreign_keys = ON; PRAGMA busy_timeout = {sqliteOptions.BusyTimeoutMilliseconds};";
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        return connection;
+        // Read-only and unpooled: this resolver must not create the database, and
+        // disposed handles must not keep test or host data directories open.
+        return await sqliteOptions.OpenConnectionAsync(
+                cancellationToken,
+                SqliteOpenMode.ReadOnly,
+                pooling: false)
+            .ConfigureAwait(false);
     }
 
 }

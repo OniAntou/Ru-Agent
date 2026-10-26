@@ -21,6 +21,7 @@ namespace RuApp
     public sealed partial class MainWindow
     {
         private bool _suppressSidebarSelection;
+        private CancellationTokenSource? _sidebarSearchCancellation;
 
         /// <summary>
         /// The view model rebuilt the rows: put the native list selection back on the
@@ -52,9 +53,60 @@ namespace RuApp
             {
                 SidebarSessionTruncationWarning.Visibility = truncation;
             }
+            SidebarLoadMoreButton.Visibility = Sidebar.CanLoadMore ? Visibility.Visible : Visibility.Collapsed;
+            SidebarLoadMoreButton.IsEnabled = !Sidebar.IsLoadingMore;
+            SidebarLoadMoreButton.Content = Sidebar.IsLoadingMore ? "Loading sessions…" : "Load more sessions";
 
             _sessionWaveAnimationsEnabled = UiTiming.AnimationsEnabled;
             RefreshSessionTitleWaves();
+        }
+
+        private async void OnSidebarSessionSearchTextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (sender is not TextBox searchBox) return;
+            var request = new CancellationTokenSource();
+            var previous = _sidebarSearchCancellation;
+            _sidebarSearchCancellation = request;
+            previous?.Cancel();
+            try
+            {
+                await Task.Delay(250, request.Token);
+                if (!ReferenceEquals(_sidebarSearchCancellation, request)) return;
+                Sidebar.SetSearchQuery(searchBox.Text);
+                await Sidebar.RefreshLatestAsync();
+            }
+            catch (OperationCanceledException) when (request.IsCancellationRequested)
+            {
+            }
+            catch (Exception exception)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Session search failed: {exception.Message}");
+            }
+            finally
+            {
+                if (ReferenceEquals(_sidebarSearchCancellation, request)) _sidebarSearchCancellation = null;
+                request.Dispose();
+            }
+        }
+
+        private async void OnSidebarLoadMoreClick(object sender, RoutedEventArgs e)
+        {
+            if (!Sidebar.CanLoadMore || Sidebar.IsLoadingMore) return;
+            SidebarLoadMoreButton.IsEnabled = false;
+            SidebarLoadMoreButton.Content = "Loading sessions…";
+            try
+            {
+                await Sidebar.LoadMoreAsync();
+            }
+            catch (Exception exception)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Session page load failed: {exception.Message}");
+            }
+            finally
+            {
+                SidebarLoadMoreButton.IsEnabled = Sidebar.CanLoadMore && !Sidebar.IsLoadingMore;
+                SidebarLoadMoreButton.Content = Sidebar.IsLoadingMore ? "Loading sessions…" : "Load more sessions";
+            }
         }
 
         private void OnWorkspaceGroupClick(object sender, RoutedEventArgs e)

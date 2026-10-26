@@ -13,12 +13,12 @@ public sealed class GuiReviewRegressionTests
             Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
             {
                 Content = new StringContent("""
-                    {"session":{"messages":[
+                    {"status":"ok","session_id":"session-a","start_index":10,"total_messages":14,"next_cursor":"older-token","history_epoch":3,"messages":[
                       {"role":"system","content":"hidden"},
-                      {"role":"user","content":"ask"},
+                      {"role":"user","content":"ask","source_message_id":"msg-ask","source_run_id":"run-a"},
                       {"role":"tool","content":"hidden"},
-                      {"role":"assistant","content":"reply"}
-                    ]}}
+                      {"role":"assistant","content":"reply","source_message_id":"msg-reply","source_run_id":"run-a"}
+                    ]}
                     """, System.Text.Encoding.UTF8, "application/json"),
             });
     }
@@ -30,7 +30,24 @@ public sealed class GuiReviewRegressionTests
         using var api = new ApiService(new BackendSession(new Uri("http://127.0.0.1:59999/"), "synthetic-token"), handler);
         var history = await api.GetSessionHistoryAsync("session-a");
         Assert.NotNull(history);
-        Assert.Equal(new int?[] { 1, 3 }, history.Select(row => row.MessageIndex));
+        Assert.Equal(new int?[] { 11, 13 }, history.Select(row => row.MessageIndex));
+        Assert.Equal("msg-ask", history[0].SourceMessageId);
+    }
+
+    [Fact]
+    public async Task History_page_retains_cursor_epoch_and_absolute_indices()
+    {
+        using var handler = new HistoryHandler();
+        using var api = new ApiService(new BackendSession(new Uri("http://127.0.0.1:59999/"), "synthetic-token"), handler);
+
+        var page = await api.GetSessionHistoryPageAsync("session-a");
+
+        Assert.NotNull(page);
+        Assert.Equal("older-token", page.NextCursor);
+        Assert.Equal(3, page.HistoryEpoch);
+        Assert.Equal(10, page.StartIndex);
+        Assert.Equal(14, page.TotalMessages);
+        Assert.Equal(new int?[] { 11, 13 }, page.Messages.Select(row => row.MessageIndex));
     }
 
     [Fact]

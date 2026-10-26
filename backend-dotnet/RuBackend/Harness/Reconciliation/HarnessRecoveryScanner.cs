@@ -683,23 +683,18 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
 
     private async Task<IReadOnlyList<RunId>> ListNonTerminalRunIdsAsync(CancellationToken cancellationToken)
     {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = _sqliteOptions.DatabasePath,
-            Mode = SqliteOpenMode.ReadOnly,
-
-            // No pooling: a pooled handle would keep the database file locked and break
-            // temporary-data cleanup in tests and shutdown paths.
-            Pooling = false,
-        }.ToString();
         var ids = new List<RunId>();
-        await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _sqliteOptions.OpenConnectionAsync(
+                cancellationToken,
+                SqliteOpenMode.ReadOnly,
+                pooling: false)
+            .ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT run_id FROM agent_runs WHERE terminal_at_utc IS NULL";
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             ids.Add(new RunId(reader.GetString(0)));
         }
 

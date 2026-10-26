@@ -9,6 +9,38 @@ namespace RuAgent.Harness.Persistence.Context;
 
 public sealed partial class SqliteModelContextSource : IModelContextSource
 {
+    internal const string ContextEntriesSql = """
+        SELECT p.payload_id,
+               p.kind,
+               p.audience,
+               p.encoding,
+               p.byte_cap,
+               p.protected_content,
+               p.protection_version,
+               p.nonce,
+               p.authentication_tag,
+               p.context_scope,
+               p.context_source_id,
+               p.context_sequence,
+               p.context_role,
+               p.context_entry_kind,
+               e.tool_call_id,
+               e.provider_call_id,
+               e.execution_id,
+               e.safe_code,
+               e.tool_outcome,
+               e.side_effects_possible
+        FROM agent_payloads AS p
+        LEFT JOIN agent_events AS e
+          ON p.context_scope = 1
+         AND e.event_id = substr(p.context_source_id, 7)
+         AND e.run_id = p.run_id
+         AND substr(p.context_source_id, 1, 6) = 'event:'
+        WHERE p.run_id = $run_id
+          AND p.context_scope IS NOT NULL
+        ORDER BY p.context_scope, p.context_sequence
+        """;
+
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly HarnessSqliteOptions _options;
     private readonly HarnessPayloadStore _payloadStore;
@@ -44,42 +76,14 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
         var sessionBase = new List<ModelContextEntry>();
         var runLocal = new List<ModelContextEntry>();
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT p.payload_id,
-                   p.kind,
-                   p.audience,
-                   p.encoding,
-                   p.byte_cap,
-                   p.protected_content,
-                   p.protection_version,
-                   p.nonce,
-                   p.authentication_tag,
-                   p.context_scope,
-                   p.context_source_id,
-                   p.context_sequence,
-                   p.context_role,
-                   p.context_entry_kind,
-                   e.tool_call_id,
-                   e.provider_call_id,
-                   e.execution_id,
-                   e.safe_code,
-                   e.tool_outcome,
-                   e.side_effects_possible
-            FROM agent_payloads AS p
-            LEFT JOIN agent_events AS e
-              ON p.context_scope = 1
-             AND e.run_id = p.run_id
-             AND ('event:' || e.event_id) = p.context_source_id
-            WHERE p.run_id = $run_id
-              AND p.context_scope IS NOT NULL
-            ORDER BY p.context_scope, p.context_sequence
-            """;
+        command.CommandText = ContextEntriesSql;
         command.Parameters.AddWithValue("$run_id", runId.Value);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken)
             .ConfigureAwait(false);
         string? keyStamp = null;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (_entryCache is not null && keyStamp is null)
             {
                 try { keyStamp = await _payloadStore.ReadModelCacheKeyStampAsync(cancellationToken).ConfigureAwait(false); }

@@ -1,4 +1,5 @@
 using System.Globalization;
+using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
@@ -270,11 +271,14 @@ public static class PolicyRuleMatcher
     {
         if (isAllowRule && context.OperationClass == PolicyOperationClasses.Terminal)
         {
-            if (context.BashMode == "shell" || IsPowerShellCommandInvocation(context))
+            if (context.BashMode == "shell"
+                || CommandIntentResolver.IsPowerShellCommandInvocation(context.ResolvedExecutable, context.Argv))
             {
                 return ArgvMatchSemantics.Exact;
             }
 
+            // Flag-first native invocations include PowerShell wrappers. This does
+            // not depend on the resolver's current shell startup flag sequence.
             if (IsLeadingFlag(matcher.ArgvPattern[0]))
             {
                 return ArgvMatchSemantics.Exact;
@@ -287,26 +291,6 @@ public static class PolicyRuleMatcher
     private static bool IsLeadingFlag(string argument) =>
         argument.StartsWith("-", StringComparison.Ordinal)
         || argument.StartsWith("/", StringComparison.Ordinal);
-
-    private static bool IsPowerShellCommandInvocation(PolicyContext context)
-    {
-        var executable = context.ResolvedExecutable;
-        if (executable is null || context.Argv.Count < 4)
-        {
-            return false;
-        }
-
-        var executableName = Path.GetFileName(executable);
-        var isPowerShell = string.Equals(executableName, "powershell", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(executableName, "powershell.exe", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(executableName, "pwsh", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(executableName, "pwsh.exe", StringComparison.OrdinalIgnoreCase);
-
-        return isPowerShell
-            && string.Equals(context.Argv[0], "-NoProfile", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(context.Argv[1], "-NonInteractive", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(context.Argv[2], "-Command", StringComparison.OrdinalIgnoreCase);
-    }
 
     private static bool ArgvMatches(
         IReadOnlyList<string> pattern,

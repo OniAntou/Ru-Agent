@@ -749,8 +749,11 @@ session identity, same-write-set references and assistant-payload checks remain.
 Outbox delivery is fenced and idempotent; its terminal-run acknowledgement does
 not move the failed run to Completed, including after restart.
 `purpose=inspection` declares read-only intent and does not invalidate earlier
-checks, but is not OS-enforced proof of absence of side effects. These labels
-change completion bookkeeping only, never tool authority or approval.
+checks, but is not OS-enforced proof of absence of side effects. Set it explicitly
+for exploratory shell reads: arbitrary PowerShell scripts have unknown effects,
+and omitted `purpose` defaults to `command`, which invalidates earlier checks
+unless authority-derived metadata identifies a completed read-only operation.
+These labels change completion bookkeeping only, never tool authority or approval.
 
 Tracking retains 256 required checks independently from 64 recent diagnostics
 and fails closed if required capacity is exceeded. Except for confirmed negative
@@ -802,6 +805,9 @@ The separation preserves the recovered-approval version race and cleanup order.
 
 `VerificationEvidenceBuffer` retains required checks separately from bounded
 recent diagnostics. Authority-derived `terminal_effect` metadata can identify a
-completed read-only command; it does not change policy, and failures/unknown
-commands remain conservative. Check overflow applies to required evidence,
+completed read-only command. A consistent observed normal exit preserves unrelated
+checks even when its exit code is nonzero; the failed diagnostic or required check
+remains failed. Missing/malformed metadata, inconsistent outcome/exit pairs,
+timeout, cancellation and unknown effects remain conservative. This metadata
+does not change execution policy. Check overflow applies to required evidence,
 not the number of optional lookups or already-satisfied negative tests.

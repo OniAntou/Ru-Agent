@@ -176,8 +176,9 @@ capacity; known run-local mutations invalidate passed required checks
 and pending checks that would certify older code. New terminal receipts identify
 the canonical executable/argv/cwd; this fingerprint never grants authority. Explicit
 expected nonzero exits can satisfy a negative test without rewriting its failed
-receipt. Authority-derived read-only completion metadata can preserve prior checks;
-unknown effects remain conservative. Intent metadata grants no authority and
+receipt. Authority-derived read-only completion metadata preserves prior checks
+for observed normal exits, including nonzero exits; a failed lookup or required
+check still retains its own failure. Unknown effects remain conservative. Intent metadata grants no authority and
 does not prove complete correctness.
 Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
 _Avoid_: treating a successful inspection, summary or model claim as a passed check

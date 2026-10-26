@@ -340,6 +340,13 @@ a 4 MiB snapshot scan cap and 32 KiB serialized output cap. `read` retains byte
 paging and image input. A line too large for the output budget returns
 `read_line_too_long` rather than an advancing cursor that skips unseen text.
 
+Multi-edit approval previews name the total edit count and show up to four
+numbered excerpts within the shared 512-character preview bound. Omitted edits
+are counted explicitly; approval still binds every original edit argument.
+Excerpts retain both replacement sides and avoid splitting UTF-16 surrogate
+pairs. Context slicing allocates only the bounded excerpt, not copies of the
+whole file for each edit.
+
 ## Skill Manifest
 
 The declarative, bounded description of an allowed workflow, its named tools,

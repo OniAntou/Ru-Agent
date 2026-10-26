@@ -5,22 +5,25 @@ date: 2026-10-24
 
 # Pin coding tool profiles and reuse Broker adapters
 
-> Legacy compatibility clauses below are superseded by [ADR 0029](0029-retire-legacy-tool-surface.md).
-> Supported profiles retain their run-pinned inventories and shared Broker authority.
+> Partially superseded by [ADR 0029](0029-retire-legacy-tool-surface.md): legacy
+> execution and implicit legacy selection are retired. The effective decisions
+> below retain supported run-pinned inventories and shared Broker authority.
 
 ## Context
 
-The multiplexed `write` and historically named `bash` tools require the model
-to infer conditional arguments and Windows shell behavior. One file edit per
-call also adds unnecessary steps. Changing a tool surface during recovery would
+The previous multiplexed `write` and historically named `bash` tools required the
+model to infer conditional arguments and Windows shell behavior. One file edit
+per call also added unnecessary steps. Changing a tool surface during recovery would
 make durable proposals ambiguous.
 
 ## Decision
 
-Keep released tool identities executable. Store a `ru_tool_profile` decision in
-each run's provider-selection options, removing it before provider transport.
-Missing metadata means `legacy_v1`; invalid metadata fails with
-`tool_profile_invalid`. Selection is immutable for the run, including restart.
+Store an explicit supported `ru_tool_profile` decision in each run's
+provider-selection options, removing it before provider transport. Selection
+is immutable for the run, including restart. Under ADR 0029, missing metadata
+fails with `tool_profile_required`; retired or unknown profiles fail with
+`tool_profile_invalid`. Released legacy identities are not executable and no
+implicit legacy profile is inferred.
 Each version has an explicit inventory; future catalog additions require a new
 profile revision rather than appearing in a previously pinned run.
 
@@ -52,8 +55,8 @@ intervening editor changes; crash atomicity across files is not claimed and
 ambiguous execution uses the existing reconciliation path. Interactive patch
 approval is one-time; it cannot create an unbounded remembered patch rule.
 Recovery IDs and terminal lifecycle execution IDs also remain single-use rather
-than becoming broad session matchers. Background-task advice follows the pinned
-tool surface, including legacy runs.
+than becoming broad session matchers. Background-task advice follows the run's
+pinned supported tool surface; retired legacy runs cannot resume.
 
 The existing execution authority remains the only effect owner. Host approval,
 verification, activity and persisted work-state projections recognize the new
@@ -67,6 +70,7 @@ this decision does not claim support for provider-specific freeform calls.
 Line reads return whole lines with a 1-based cursor and bounded snapshots;
 byte reads remain available for large files and exceptionally long lines.
 
-This ADR does not establish programmatic tool calling. That work still needs
-durable nested proposals, receipts, approval/cancellation and unknown-effect
-recovery; executing a JavaScript loop around adapters would not satisfy it.
+Programmatic tool calling is specified separately in
+[ADR 0028](0028-bounded-programmatic-coding-tools.md), which adds the supported
+`coding_code_v1` profile. It retains durable nested proposals, receipts,
+approval/cancellation and unknown-effect recovery through the same authority.

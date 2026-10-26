@@ -10,6 +10,8 @@ internal sealed class StreamingParagraphParser
     private readonly List<TranscriptLine> _settled = [];
     private IReadOnlyList<TranscriptLine>? _preview;
     private int _settledColumn;
+    // Source characters submitted across parse calls, including checkpoint
+    // reparsing of prefix and suffix; not a count of unique streamed characters.
     internal long ParsedCharacters { get; private set; }
     internal int SettledChunkCount => _settled.Count;
     internal bool HasContent => _tail.Length > 0 || _settled.Count > 0;

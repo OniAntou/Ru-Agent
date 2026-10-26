@@ -10,6 +10,59 @@ public sealed class PendingApprovalPreviewTests
     private const int MaxPreviewLength = ApprovalPreviewFields.MaxLength;
 
     [Fact]
+    public void Multi_edit_excerpts_do_not_split_unicode_surrogate_pairs()
+    {
+        var text = string.Concat(Enumerable.Repeat("😀", 400));
+        var edits = new JsonArray(Enumerable.Range(0, 4).Select(_ => (JsonNode)new JsonObject
+            { ["old_string"] = text, ["new_string"] = text }).ToArray());
+
+        var preview = ToolExecutionService.BuildPreview("edit_file", new JsonObject { ["edits"] = edits });
+
+        Assert.Equal(preview, System.Text.Encoding.UTF8.GetString(System.Text.Encoding.UTF8.GetBytes(preview)));
+        Assert.Contains("4 edits", preview, StringComparison.Ordinal);
+        Assert.InRange(preview.Length, 1, MaxPreviewLength);
+    }
+
+    [Fact]
+    public void Multi_edit_preview_names_the_count_and_each_small_replacement()
+    {
+        var args = new JsonObject { ["path"] = "demo.txt", ["edits"] = new JsonArray(
+            new JsonObject { ["old_string"] = "first", ["new_string"] = "FIRST" },
+            new JsonObject { ["old_string"] = "second", ["new_string"] = "SECOND" }) };
+
+        var preview = ToolExecutionService.BuildPreview("edit_file", args, "first and second");
+
+        Assert.Contains("2 edits", preview, StringComparison.Ordinal);
+        Assert.Contains("[-first-][+FIRST+]", preview, StringComparison.Ordinal);
+        Assert.Contains("[-second-][+SECOND+]", preview, StringComparison.Ordinal);
+        Assert.InRange(preview.Length, 1, MaxPreviewLength);
+    }
+
+    [Fact]
+    public void Large_multi_edit_preview_discloses_omitted_edits_within_the_existing_bound()
+    {
+        var edits = new JsonArray(Enumerable.Range(1, 64).Select(index => (JsonNode)new JsonObject
+        {
+            ["old_string"] = $"old{index}:" + new string('a', 2000),
+            ["new_string"] = $"new{index}:" + new string('b', 2000),
+        }).ToArray());
+        var args = new JsonObject { ["path"] = "demo.txt", ["edits"] = edits };
+        var original = args.ToJsonString();
+
+        var preview = ToolExecutionService.BuildPreview("edit_file", args);
+
+        Assert.Contains("64 edits", preview, StringComparison.Ordinal);
+        Assert.Contains("not shown", preview, StringComparison.Ordinal);
+        Assert.Contains("all 64 edits", preview, StringComparison.Ordinal);
+        Assert.Contains("old1:", preview, StringComparison.Ordinal);
+        Assert.Contains("new1:", preview, StringComparison.Ordinal);
+        Assert.Contains("old2:", preview, StringComparison.Ordinal);
+        Assert.Contains("new2:", preview, StringComparison.Ordinal);
+        Assert.InRange(preview.Length, 1, MaxPreviewLength);
+        Assert.Equal(original, args.ToJsonString());
+    }
+
+    [Fact]
     public void Write_preview_is_the_first_512_chars_of_content()
     {
         var content = new string('a', 700);

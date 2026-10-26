@@ -37,7 +37,7 @@ public sealed partial class ToolExecutionService
             }
 
             if (toolId == "edit_file")
-                return EditPreview(arguments["edits"]?.AsArray().FirstOrDefault()?.AsObject() ?? new JsonObject(), fileText);
+                return BuildEditPreview(arguments["edits"]?.AsArray(), fileText);
             if (toolId == "apply_patch") return Bound(ReadOptionalString(arguments, "patch") ?? string.Empty);
             var preview = toolId switch
             {

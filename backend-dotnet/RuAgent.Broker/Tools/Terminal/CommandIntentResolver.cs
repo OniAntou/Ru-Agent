@@ -22,6 +22,19 @@ public sealed class CommandIntentResolver
     // command line that will execute.
     private static readonly string[] ShellPrefixArguments = ["-NoProfile", "-NonInteractive", "-Command"];
 
+    // Policy must recognize the same wrapper shape resolution emits, including
+    // when a remembered rule uses a wildcard instead of a literal leading flag.
+    internal static bool IsPowerShellCommandInvocation(string? executable, IReadOnlyList<string> arguments)
+    {
+        if (executable is null || arguments.Count <= ShellPrefixArguments.Length) return false;
+        var name = Path.GetFileName(executable);
+        if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
+        if (!ShellRuntimeAllowlist.Contains(name)) return false;
+        for (var index = 0; index < ShellPrefixArguments.Length; index++)
+            if (!string.Equals(arguments[index], ShellPrefixArguments[index], StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
+    }
+
     private static readonly string[] WindowsExecutableExtensions = [".com", ".exe", ".bat", ".cmd"];
 
     private readonly CanonicalPathResolver _paths;

@@ -124,8 +124,11 @@ public sealed partial class RunVerificationEvidence
                 continue;
             }
             var metadata = ReadTerminalMetadata(entry.Content);
-            var completedRead = receipt.Outcome == ToolExecutionOutcome.Succeeded && receipt.Code == "ok"
-                && metadata.IsReadOnlyCompleted;
+            // A failed lookup is still read-only. Only a consistent, observed normal
+            // exit can preserve prior checks; uncertain effects remain conservative.
+            var completedRead = metadata.CompletedReadExitCode is { } observedExit
+                && (receipt.Outcome == ToolExecutionOutcome.Succeeded && receipt.Code == "ok" && observedExit == 0
+                    || receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero" && observedExit != 0);
             if (purpose == "command" && effect && !completedRead)
             {
                 hasMutations = true;

@@ -13,6 +13,44 @@ public sealed class TerminalIntentClassifierTests
 {
     private readonly TerminalIntentClassifier _classifier = new();
 
+    [Theory]
+    [InlineData("*")]
+    [InlineData("**")]
+    public void Native_powershell_wrapper_does_not_widen_wildcard_allow_rules(string wildcard)
+    {
+        using var workspace = new TemporaryWorkspace();
+        var context = Terminal(CreateFactory(workspace.Root), "powershell",
+            "-NoProfile", "-NonInteractive", "-Command", "Write-Output reviewed");
+        var rule = new PolicyRuleSpec("rule_" + new string('7', 32), "project", "allow",
+            new MatcherSpec("run_process", "1.0.0", null, context.ResolvedExecutable,
+                [wildcard], context.CanonicalCwd, "terminal", "none"), 1, null);
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.False(PolicyRuleMatcher.Matches(rule, context, now));
+        Assert.True(PolicyRuleMatcher.Matches(rule with { Decision = "deny" }, context, now));
+        Assert.True(PolicyRuleMatcher.Matches(rule with { Decision = "ask" }, context, now));
+    }
+
+    [Theory]
+    [InlineData("powershell", "-NoProfile")]
+    [InlineData("powershell", "-NoLogo")]
+    [InlineData("pwsh", "-Command")]
+    public void Native_shell_allow_uses_exact_argv_independently_of_its_flag_prefix(string executable, string firstFlag)
+    {
+        using var workspace = new TemporaryWorkspace();
+        var context = Terminal(CreateFactory(workspace.Root), executable, firstFlag, "Write-Output ok");
+        var rule = new PolicyRuleSpec("rule_" + new string('6', 32), "project", "allow",
+            new MatcherSpec("run_process", "1.0.0", null, context.ResolvedExecutable,
+                context.Argv, context.CanonicalCwd, "terminal", "none"), 1, null);
+        var appended = context with { Argv = [.. context.Argv, "extra"] };
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
+        Assert.False(PolicyRuleMatcher.Matches(rule, appended, now));
+        Assert.True(PolicyRuleMatcher.Matches(rule with { Decision = "deny" }, appended, now));
+        Assert.True(PolicyRuleMatcher.Matches(rule with { Decision = "ask" }, appended, now));
+    }
+
     [Fact]
     public void Remembered_shell_intent_matches_powerShell_identity_without_allowing_changed_calls()
     {

@@ -304,40 +304,6 @@ public sealed partial class ToolExecutionService
         }
     }
 
-    private static string EditPreview(JsonObject arguments, string? fileText)
-    {
-        var oldString = ReadOptionalString(arguments, "old_string") ?? string.Empty;
-        var newString = ReadOptionalString(arguments, "new_string") ?? string.Empty;
-        if (oldString.Length == 0 && newString.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        var matchIndex = oldString.Length > 0 && fileText is not null
-            ? fileText.IndexOf(oldString, StringComparison.Ordinal)
-            : -1;
-        if (matchIndex < 0)
-        {
-            var headLength = (ApprovalPreviewFields.MaxLength - 8) / 2;
-            return $"[-{oldString[..Math.Min(oldString.Length, headLength)]}-][+{newString[..Math.Min(newString.Length, headLength)]}+]";
-        }
-
-        var before = fileText![..matchIndex];
-        var after = fileText[(matchIndex + oldString.Length)..];
-        var maxHeadLength = (ApprovalPreviewFields.MaxLength - 8) / 2;
-        var core = $"[-{oldString[..Math.Min(oldString.Length, maxHeadLength)]}-][+{newString[..Math.Min(newString.Length, maxHeadLength)]}+]";
-        var budget = ApprovalPreviewFields.MaxLength - core.Length;
-        if (budget <= 0)
-        {
-            return core;
-        }
-
-        var afterCount = Math.Min(after.Length, budget / 2);
-        var beforeCount = Math.Min(before.Length, budget - afterCount);
-        afterCount = Math.Min(after.Length, budget - beforeCount);
-        return $"{before[^beforeCount..]}{core}{after[..afterCount]}";
-    }
-
     private string? ReadTargetFileText(JsonObject arguments)
     {
         try

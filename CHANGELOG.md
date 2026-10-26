@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(verification)**: Preserve prior checks after authority-identified read-only
+  commands exit nonzero; retain the original failed diagnostic or required check.
+  Clarify explicit inspection intent for PowerShell reads.
+- **fix(approvals)**: Show the total multi-edit count, bounded numbered excerpts
+  and omitted-edit notice; preserve Unicode boundaries and full-argument binding.
+- **refactor(policy)**: Share PowerShell wrapper recognition with the resolver,
+  preserving exact allows, including wildcard rules, and broad deny/ask matching.
+- **docs(adr)**: Reconcile ADR 0027's effective profile rules with ADRs 0028/0029.
+
 - **fix(tui)**: Reflow long-paragraph storage segments continuously across terminal
   widths, preserving whitespace, inline styles and quote/list indentation.
 

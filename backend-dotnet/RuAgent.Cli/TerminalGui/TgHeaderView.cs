@@ -15,6 +15,8 @@ public sealed class TgHeaderView : View
     public long TotalTokens { get; private set; }
     public double? ContextPercent { get; private set; }
     public decimal? SessionCost { get; private set; }
+    public string Preset { get; private set; } = string.Empty;
+    internal bool ShowSessionDetails { get; set; } = true;
     private string _workspace = string.Empty;
     private IReadOnlyList<SubagentChip> _subagents = [];
 
@@ -27,6 +29,14 @@ public sealed class TgHeaderView : View
     public void SetTitle(string title)
     {
         SessionTitle = string.IsNullOrWhiteSpace(title) ? "session" : ChatDisplayText.Sanitize(title, 256);
+        SetNeedsDraw();
+    }
+
+    public void SetPreset(string preset)
+    {
+        var safe = ChatDisplayText.Sanitize(preset, 32);
+        if (Preset == safe) return;
+        Preset = safe;
         SetNeedsDraw();
     }
 
@@ -72,10 +82,28 @@ public sealed class TgHeaderView : View
         }
 
         var usageWidth = parts is not null ? TuiUsageMeter.VisibleWidth(parts) : TuiText.VisibleWidth(tokensOnly);
-        var heading = TuiText.Truncate(SessionTitle, Math.Max(0, width - usageWidth - (usageWidth > 0 ? 2 : 0)));
+        var preset = TuiText.Truncate(Preset, Math.Min(12, width));
+        var presetWidth = TuiText.VisibleWidth(preset);
+        var presetGap = presetWidth > 0 && usageWidth > 0 ? 2 : 0;
+        if (usageWidth + presetWidth + presetGap > width)
+        {
+            parts = null;
+            tokensOnly = width >= 32 && TotalTokens > 0
+                ? TuiText.Truncate(TuiStatusLine.FormatTokens(TotalTokens), Math.Max(0, width - presetWidth - presetGap)) : string.Empty;
+            usageWidth = TuiText.VisibleWidth(tokensOnly);
+            presetGap = presetWidth > 0 && usageWidth > 0 ? 2 : 0;
+        }
+        var rightWidth = presetWidth + presetGap + usageWidth;
+        var heading = ShowSessionDetails ? TuiText.Truncate(SessionTitle, Math.Max(0, width - rightWidth - (rightWidth > 0 ? 2 : 0))) : string.Empty;
         SetAttribute(TgPalette.Attr(TuiToken.Bright));
         Move(0, 0);
         AddStr(heading);
+        if (presetWidth > 0)
+        {
+            SetAttribute(TgPalette.Attr(TuiToken.Ok));
+            Move(Math.Max(0, width - rightWidth), 0);
+            AddStr(preset);
+        }
         if (parts is not null)
         {
             DrawUsageParts(parts, Math.Max(0, width - usageWidth));
@@ -86,7 +114,7 @@ public sealed class TgHeaderView : View
             Move(Math.Max(0, width - usageWidth), 0);
             AddStr(tokensOnly);
         }
-        if (Viewport.Height >= 2)
+        if (Viewport.Height >= 2 && ShowSessionDetails)
         {
             var spans = SubagentLiveTracker.Fit(_subagents, Math.Max(0, width / 2));
             var chipWidth = spans.Sum(span => TuiText.VisibleWidth(span.Text));

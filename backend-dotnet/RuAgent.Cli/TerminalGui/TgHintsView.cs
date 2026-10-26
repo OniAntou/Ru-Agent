@@ -13,7 +13,7 @@ public sealed class TgHintsView : View
     private double _waveSeconds;
     private const int BusyBarCells = 5;
     private const string BusyBarGlyph = "▬";
-    private string _idleLabel = "Ready";
+    private string _idleLabel = string.Empty;
     private string? _busyHint;
     private string? _feedbackMessage;
     private bool _feedbackIsError;

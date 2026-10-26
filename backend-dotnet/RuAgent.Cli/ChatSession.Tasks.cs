@@ -9,6 +9,7 @@ public sealed partial class AgentCommands
     {
         private async Task ShowTasksAsync(string? argument, CancellationToken ct)
         {
+            if (!await RequireSavedSessionAsync().ConfigureAwait(false)) return;
             // Capture identity before the first await; task control does not follow a later session/run selection.
             var owner = sessionId;
             var run = runSession.ActiveRunId ?? runSession.ParkedRunId ?? runSession.FollowableRunId;

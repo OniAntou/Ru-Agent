@@ -432,7 +432,8 @@ public sealed class TuiInteractiveTests
     {
         var commands = ChatCommandCatalog.KnownCommands.Select(command => command.Command);
         Assert.Null(ChatCommandCatalog.AutoComplete("/cont", commands));
-        Assert.Null(ChatCommandCatalog.AutoComplete("/re", commands)); // resume, reasoning, retry
+        Assert.Equal("/reasoning", ChatCommandCatalog.AutoComplete("/re", commands)); // /rewind is now a hidden history alias
+        Assert.Equal("/history", ChatCommandCatalog.AutoComplete("/hist", commands));
         Assert.Equal("/status", ChatCommandCatalog.AutoComplete("/stat", commands));
         Assert.Null(ChatCommandCatalog.AutoComplete("/attach", commands));
         Assert.Equal("/update", ChatCommandCatalog.AutoComplete("/upd", commands));

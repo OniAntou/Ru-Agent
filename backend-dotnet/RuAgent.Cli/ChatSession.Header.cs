@@ -54,7 +54,12 @@ public sealed partial class AgentCommands
                 string.IsNullOrWhiteSpace(run.ProviderProtocol) ? "protocol unknown" : run.ProviderProtocol,
                 string.IsNullOrWhiteSpace(run.ProviderCallingMode) ? "mode unknown" : run.ProviderCallingMode,
             });
-            RunOnTgUi(() => tgWindow!.Composer.SetMeta(run.Preset, retainedModel, retainedProvider));
+            RunOnTgUi(() =>
+            {
+                tgWindow!.Composer.SetMeta(run.Preset, retainedModel, retainedProvider);
+                // Retained run summaries do not expose their pinned reasoning level.
+                tgWindow.Composer.SetReasoningEffort(null);
+            });
             await RefreshModelUsageInfoAsync(
                 cancellationToken,
                 run.ProviderBackend,
@@ -69,7 +74,7 @@ public sealed partial class AgentCommands
         // only runs where the header exists and has its own short HTTP deadline.
         async Task RefreshSessionTitleAsync()
         {
-            if (!tgMode || !string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
+            if (!tgMode || string.IsNullOrEmpty(sessionId) || !string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
             {
                 return;
             }
@@ -149,6 +154,7 @@ public sealed partial class AgentCommands
                     && !string.Equals(bName, backendName, StringComparison.Ordinal);
                 var modelChanged = !string.IsNullOrWhiteSpace(curModel)
                     && !string.Equals(curModel, activeModel, StringComparison.Ordinal);
+                activeReasoningEffort = ReadReasoningEffort(s);
                 if (backendChanged)
                 {
                     backendName = bName;
@@ -175,7 +181,11 @@ public sealed partial class AgentCommands
             if (tgMode)
             {
                 // A /model or /backend switch must land on the TG composer meta row too.
-                RunOnTgUi(() => tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName));
+                RunOnTgUi(() =>
+                {
+                    tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName);
+                    tgWindow.Composer.SetReasoningEffort(activeReasoningEffort);
+                });
             }
         }
     }

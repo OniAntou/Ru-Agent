@@ -94,6 +94,23 @@ public sealed class SessionApiClient
         }
     }
 
+    public async Task<JsonElement> ForkAsync(string sessionId, int keepMessages, string historyRevision, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_session.BaseUri, $"sessions/{Uri.EscapeDataString(sessionId)}/fork"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        request.Content = new StringContent(JsonSerializer.Serialize(new { keep_messages = keepMessages, history_revision = historyRevision }),
+            System.Text.Encoding.UTF8, "application/json");
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(content);
+        var root = doc.RootElement.Clone();
+        EnsureOkEnvelope(root, "session_fork_failed");
+        if (!response.IsSuccessStatusCode) throw new AgentApiException("session_fork_failed", $"HTTP {(int)response.StatusCode}");
+        return root;
+    }
+
     public async Task<JsonElement> ListAsync(CancellationToken cancellationToken = default)
     {
         var url = new Uri(_session.BaseUri, "sessions");

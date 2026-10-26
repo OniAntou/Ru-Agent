@@ -64,6 +64,16 @@ public static class TgPanelRequests
     /// the transcript, so nothing is lost when it closes.
     /// </summary>
     public static async Task RequestDocumentAsync(
+        TgChatWindow window, string title, IReadOnlyList<string> body, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        try { await window.ModalRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+        try { await RequestDocumentCoreAsync(window, title, body, cancellationToken).ConfigureAwait(false); }
+        finally { window.ModalRequestGate.Release(); }
+    }
+
+    private static async Task RequestDocumentCoreAsync(
         TgChatWindow window,
         string title,
         IReadOnlyList<string> body,
@@ -78,6 +88,7 @@ public static class TgPanelRequests
         {
             window.App!.Invoke(() =>
             {
+                if (closed.Task.IsCompleted) return;
                 window.DocumentClosed += OnClosed;
                 window.ShowDocument(title, body);
             });

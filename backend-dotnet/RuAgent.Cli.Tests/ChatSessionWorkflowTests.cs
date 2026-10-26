@@ -131,7 +131,7 @@ public sealed class ChatSessionWorkflowTests
             })),
             output,
             errors,
-            new StringReader("/resume sess_missing\n/status\n/exit\n"));
+            new StringReader("/sessions id:sess_missing\n/status\n/exit\n"));
 
         var exit = await commands.ChatAsync(
             new ChatCommand("C:\\workspace", CurrentSession, "standard", Json: true),
@@ -184,7 +184,7 @@ public sealed class ChatSessionWorkflowTests
             })),
             new StringWriter(),
             errors,
-            new StringReader($"/resume {targetSession}\n/follow\n/exit\n"));
+            new StringReader($"/sessions id:{targetSession}\n/follow\n/exit\n"));
 
         var exit = await commands.ChatAsync(
             new ChatCommand("C:\\workspace", CurrentSession, "standard", Json: true),

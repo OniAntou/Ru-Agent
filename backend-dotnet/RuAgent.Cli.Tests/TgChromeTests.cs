@@ -283,7 +283,8 @@ public sealed class TgChromeTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
         {
-            Assert.Contains("Ready", TgSnapshot.Capture(app)[^1]);
+            Assert.DoesNotContain("Ready", TgSnapshot.Capture(app)[^1]);
+            Assert.DoesNotContain("Working", TgSnapshot.Capture(app)[^1]);
             app.RequestStop();
             return false;
         });
@@ -498,7 +499,7 @@ public sealed class TgChromeTests
         {
             var row = TgSnapshot.Capture(app)[0];
             Assert.Equal("C:/Users/USER", hints.Workspace);
-            Assert.Contains("Ready", row);
+            Assert.DoesNotContain("Ready", row);
             Assert.Contains("ctrl+p commands", row);
             var words = row.IndexOf("ctrl+p commands", StringComparison.Ordinal);
             Assert.Equal(

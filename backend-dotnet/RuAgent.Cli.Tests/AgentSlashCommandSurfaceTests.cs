@@ -121,14 +121,16 @@ public sealed class AgentSlashCommandSurfaceTests
     [Theory]
     [InlineData("/activity")]
     [InlineData("/todos")]
-    [InlineData("/changes")]
     [InlineData("/files")]
     [InlineData("/tree")]
     [InlineData("/stats")]
     [InlineData("/tokens")]
     [InlineData("/export")]
-    [InlineData("/rewind")]
-    [InlineData("/history")]
+    [InlineData("/delete")]
+    [InlineData("/resume")]
+    [InlineData("/retry")]
+    [InlineData("/release")]
+    [InlineData("/clear")]
     public async Task RemovedCommands_AreAbsentFromHelpAndDoNotCallTheHost(string command)
     {
         var output = new StringWriter();
@@ -139,6 +141,24 @@ public sealed class AgentSlashCommandSurfaceTests
         Assert.Equal(0, requests);
         Assert.Empty(ChatCommandCatalog.FindMatches(command));
         Assert.DoesNotContain(command, string.Join('\n', TuiSurfaces.Help(120)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Changes_is_available_in_help_and_completion_with_an_optional_run_target()
+    {
+        var command = Assert.Single(ChatCommandCatalog.FindMatches("/changes"));
+        Assert.Equal("/changes [run-id]", command.Syntax);
+        Assert.Contains("/changes", string.Join('\n', TuiSurfaces.Help(120)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void History_has_turn_actions_and_replaces_destructive_rewind_in_help()
+    {
+        var command = Assert.Single(ChatCommandCatalog.FindMatches("/history"));
+        Assert.Contains("edit|continue", command.Syntax);
+        Assert.Contains("branch", command.Description);
+        Assert.Contains("/history", string.Join('\n', TuiSurfaces.Help(120)), StringComparison.Ordinal);
+        Assert.Empty(ChatCommandCatalog.FindMatches("/rewind"));
     }
 
     [Fact]
@@ -634,7 +654,7 @@ public sealed class AgentSlashCommandSurfaceTests
         var text = output.ToString();
         Assert.Contains("models.dev:opencode", text, StringComparison.Ordinal);
         Assert.Contains("glm-5.3-flash", text, StringComparison.Ordinal);
-        Assert.Contains("/key", text, StringComparison.Ordinal);
+        Assert.Contains("/provider", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -876,82 +896,6 @@ public sealed class AgentSlashCommandSurfaceTests
         var body = Assert.Single(posted);
         Assert.Contains("backend_choice", body, StringComparison.Ordinal);
         Assert.Contains("Signed out.", output.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Delete_RefusesTheCurrentSession()
-    {
-        var output = new StringWriter();
-        var deletes = new List<string>();
-        var commands = CreateWithSessions(output, request =>
-        {
-            if (request.Method == HttpMethod.Delete)
-            {
-                deletes.Add(request.RequestUri!.AbsolutePath);
-            }
-
-            return Json("{\"status\":\"ok\"}");
-        });
-        commands.Picker = (_, _) => Task.FromResult<string?>("delete");
-
-        // The bare form targets the current session, and so does the explicit id.
-        Assert.True(await commands.TryHandleAsync("/delete", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
-        Assert.True(await commands.TryHandleAsync("/delete", "sess_1", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
-
-        Assert.Empty(deletes);
-        Assert.Contains("current session", output.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Delete_ConfirmsBeforeDeletingAnotherSession()
-    {
-        var output = new StringWriter();
-        var deletes = new List<string>();
-        var commands = CreateWithSessions(output, request =>
-        {
-            if (request.Method == HttpMethod.Delete)
-            {
-                deletes.Add(request.RequestUri!.AbsolutePath);
-            }
-
-            return Json("{\"status\":\"ok\"}");
-        });
-        ChoiceList? offered = null;
-        commands.Picker = (list, _) =>
-        {
-            offered = list;
-            return Task.FromResult<string?>("delete");
-        };
-
-        Assert.True(await commands.TryHandleAsync("/delete", "sess_2", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
-
-        Assert.NotNull(offered);
-        // Enter or Escape on the untouched confirm list must keep the session.
-        Assert.Equal("keep", offered!.Items[offered.Selected].Value);
-        Assert.Equal("/sessions/sess_2", Assert.Single(deletes));
-        Assert.Contains("Deleted session sess_2", output.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Delete_DeclinedConfirm_DeletesNothing()
-    {
-        var output = new StringWriter();
-        var deletes = new List<string>();
-        var commands = CreateWithSessions(output, request =>
-        {
-            if (request.Method == HttpMethod.Delete)
-            {
-                deletes.Add(request.RequestUri!.AbsolutePath);
-            }
-
-            return Json("{\"status\":\"ok\"}");
-        });
-        commands.Picker = (_, _) => Task.FromResult<string?>(null);
-
-        Assert.True(await commands.TryHandleAsync("/delete", "sess_2", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
-
-        Assert.Empty(deletes);
-        Assert.Contains("not deleted", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

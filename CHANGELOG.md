@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Replace destructive chat rewind with `/history` turn browsing,
+  recorded evidence previews and staged edit/continue branches. Create the child
+  only on send, preserve the original conversation and current files, and guard
+  creation with a transactional history revision check. No old permissions or
+  attachments are restored; ambiguous acknowledgements never auto-start a run.
+
+- **ui(tui)**: Show the selected reasoning effort beside the model in composer
+  metadata. Refresh from existing settings reads after selection changes, clear
+  stale levels when model/provider identity changes and mark unknown retained-run
+  effort without changing model requests or permission behavior.
+
+- **ui(tui)**: Add a compact `ctrl+o thinking` hint to completed native turn
+  summaries when the retained detail is model reasoning. Keep reasoning collapsed
+  and omit the hint when absent, replaced by diff details, or from an earlier turn.
+
+- **ui(tui)**: Remove idle `Ready` text and hide the permission header on the
+  empty welcome screen. Keep permission beside tokens during chat and preserve
+  error, approval, queued-work and pending-attachment feedback.
+
+- **ui(tui)**: Move the green permission preset from composer metadata to the top
+  header beside token usage. Keep it visible on the welcome screen and compact
+  layouts, preserve model/provider metadata and draw header chrome above meteors.
+
+- **fix(tui)**: Keep new chat as an unsaved draft until the first real prompt or
+  explicit `/new`. Local slash commands no longer create empty sessions, echo as
+  user messages or show model-working status. Preserve queued submission identity
+  when the first prompt materializes the draft, and refuse automatic create retries.
+
+- **refactor(tui)**: Remove `/delete`, `/resume`, `/retry`, `/release` and `/clear`
+  from terminal command dispatch, help and completion. Refuse retired commands
+  before queue/attachment admission or custom command lookup. Keep history recovery
+  reachable through `/sessions id:<id>` and replace obsolete recovery hints.
+
+- **feat(tui)**: Combine provider selection and masked API-key entry under
+  `/provider`. Confirm both in one settings request; Escape preserves selection,
+  and empty input keeps a known saved key. Help/completion show one command while
+  `/backend` and `/key` retain their legacy behavior as hidden aliases.
+
+- **feat(tui)**: Add `/changes [run-id]` to summarize available completed edit
+  activities and inspect bounded historical before/after previews. Preserve unknown
+  counts, deduplicate replayed edits, and label filename-only/limited-history scope.
+  Inspection works during streaming without claiming attachments or cancelling the run.
+
 - **feat(tui)**: Add `/tasks` to inspect and stop session background terminal tasks,
   including while a model turn streams. Keep attachment drafts and queued prompts,
   confirm interactive stops, recheck task ownership/state, and serialize task panels

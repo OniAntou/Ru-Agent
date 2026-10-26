@@ -24,6 +24,12 @@ public sealed partial class AgentCommands
             CancellationToken ct,
             ChatSubmissionSnapshot? submission = null)
         {
+            if (historyReloadRequired)
+            {
+                await WriteDiagnosticLineAsync(_err, $"history_reload_required: use /sessions id:{sessionId} before sending.");
+                return;
+            }
+            submission = submission?.BindInitialDraft(sessionId, initialDraftSessionId);
             var submissionSessionId = submission?.SessionId ?? sessionId;
             var submissionWorkspace = submission?.WorkspacePath ?? canonicalWorkspace;
             var submissionPreset = submission?.Preset ?? cmd.Preset;
@@ -37,7 +43,7 @@ public sealed partial class AgentCommands
                 && !submission.MatchesContext(sessionId, canonicalWorkspace, cmd.Preset, backendName ?? string.Empty, activeModel))
             {
                 HoldSubmissionForRetry(submission);
-                await WriteDiagnosticLineAsync(_err, "submission_context_changed: queued prompt is held; restore its session/model selection and use /retry").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, "submission_context_changed: queued prompt is held; use /exit, reopen the session and submit the task again").ConfigureAwait(false);
                 return;
             }
 
@@ -49,7 +55,7 @@ public sealed partial class AgentCommands
                     if (!submission.MatchesSelection(liveSettings))
                     {
                         HoldSubmissionForRetry(submission);
-                        await WriteDiagnosticLineAsync(_err, "submission_context_changed: backend/model settings changed; restore the admitted selection and use /retry").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(_err, "submission_context_changed: backend/model settings changed; use /exit, reopen the session and submit the task again").ConfigureAwait(false);
                         return;
                     }
                 }
@@ -60,7 +66,37 @@ public sealed partial class AgentCommands
                 catch (Exception)
                 {
                     HoldSubmissionForRetry(submission);
-                    await WriteDiagnosticLineAsync(_err, "submission_settings_unavailable: queued prompt is held; restore settings access and use /retry").ConfigureAwait(false);
+                    await WriteDiagnosticLineAsync(_err, "submission_settings_unavailable: queued prompt is held; restore settings access, then /exit and reopen the session").ConfigureAwait(false);
+                    return;
+                }
+            }
+
+            if (pendingHistoryBranch is { } branch)
+            {
+                if (branch.SourceId != sessionId)
+                {
+                    pendingHistoryBranch = null;
+                    HoldSubmissionForRetry(submission);
+                    await WriteDiagnosticLineAsync(_err, "history_context_changed: select history again.");
+                    return;
+                }
+                try
+                {
+                    var root = await new ChatHistoryWorkflow(_sessionClient, _agentClient).CommitAsync(branch, ct);
+                    sessionId = root.GetProperty("session").GetProperty("id").GetString()!;
+                    submission = submission is null ? null : submission with { SessionId = sessionId };
+                    submissionSessionId = sessionId;
+                    ApplyRewoundHistory(root);
+                    if (!cmd.Json) await WriteDiagnosticLineAsync(humanOut, "new chat branch · original: " + branch.SourceId + " · current files unchanged");
+                    if (tgMode) sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.Format(promptLine));
+                }
+                catch (Exception ex)
+                {
+                    pendingHistoryBranch = null;
+                    historyReloadRequired = true;
+                    HoldSubmissionForRetry(submission);
+                    var message = ex is AgentApiException api ? CliErrorText.Format(api) : CliErrorText.ShortMessage(ex.Message);
+                    await WriteDiagnosticLineAsync(_err, "history_branch_error: " + ChatDisplayText.Sanitize(message, 256) + $" · reload /sessions id:{sessionId} before selecting history again");
                     return;
                 }
             }
@@ -89,12 +125,43 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            if (sessionId.Length == 0)
+            {
+                if (draftCreationFailed)
+                {
+                    HoldSubmissionForRetry(submission);
+                    await WriteDiagnosticLineAsync(_err, "session_create_failed: reopen chat or explicitly choose a session before sending.").ConfigureAwait(false);
+                    return;
+                }
+                try
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var created = await _sessionClient.CreateAsync(ct).ConfigureAwait(false);
+                    if (!ChatSessionWorkflow.IsValidSessionId(created)) throw new InvalidOperationException("invalid_session_id");
+                    sessionId = initialDraftSessionId = created;
+                    submission = submission?.BindInitialDraft(sessionId, initialDraftSessionId);
+                    submissionSessionId = sessionId;
+                }
+                catch (Exception)
+                {
+                    // A lost create acknowledgement may follow a committed POST. Never auto-repeat it.
+                    draftCreationFailed = true;
+                    HoldSubmissionForRetry(submission);
+                    await WriteDiagnosticLineAsync(_err, "session_create_failed: no run was started; reopen chat or choose a session.").ConfigureAwait(false);
+                    return;
+                }
+            }
+
             // A new turn uses the current selection, not the provider pinned by a run that
             // was followed or continued earlier. Reset the composer meta before the run
             // starts; a Continue returned above and keeps the retained run's identity.
             if (tgMode)
             {
-                RunOnTgUi(() => tgWindow!.Composer.SetMeta(submissionPreset, activeModel, backendName ?? "(provider unknown)"));
+                RunOnTgUi(() =>
+                {
+                    tgWindow!.Composer.SetMeta(submissionPreset, activeModel, backendName ?? "(provider unknown)");
+                    tgWindow.Composer.SetReasoningEffort(activeReasoningEffort);
+                });
             }
 
             // The usage envelope's input/output counters restart with every run, so the
@@ -110,7 +177,7 @@ public sealed partial class AgentCommands
             if (presetUpdate is null)
             {
                 // A retryable preset conflict is not a reason to end the operator's
-                // session: the submission is held for /retry and the composer stays live.
+                // session: the submission is held while the queue is paused and the composer stays live.
                 // The fail-closed restore paths below still exit when state is unsafe.
                 HoldSubmissionForRetry(submission);
                 return;
@@ -145,7 +212,7 @@ public sealed partial class AgentCommands
                 HoldSubmissionForRetry(submission);
                 await WriteDiagnosticLineAsync(
                     _err,
-                    $"prompt_too_large: the composed prompt is {promptText.Length} chars (limit {ChatSubmissionState.MaxComposedPromptChars}); detach or shorten attachments; prompt held for /retry").ConfigureAwait(false);
+                    $"prompt_too_large: the composed prompt is {promptText.Length} chars (limit {ChatSubmissionState.MaxComposedPromptChars}); detach or shorten attachments; queued work paused; /exit and reopen the session").ConfigureAwait(false);
                 return;
             }
             var presetCommitted = false;
@@ -316,7 +383,7 @@ public sealed partial class AgentCommands
                 {
                     // A queued submission was already claimed from the pending attachment
                     // list; hold it (and release its temp files) like every other
-                    // pre-accept failure so /retry can resubmit it intact.
+                    // pre-accept failure without automatically resubmitting it.
                     HoldSubmissionForRetry(submission);
                 }
 
@@ -406,10 +473,31 @@ public sealed partial class AgentCommands
             var parts = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
             var slashCmd = parts[0].ToLowerInvariant();
             var arg = parts.Length > 1 ? parts[1].Trim() : null;
+            if (Tui.ChatCommandCatalog.IsRemovedCommand(slashLine))
+            {
+                await WriteDiagnosticLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
+                return true;
+            }
+            if (slashCmd is "/follow" or "/subagents" && !await RequireSavedSessionAsync().ConfigureAwait(false)) return true;
+            if (RewindSubmissionGuard(slashLine) is { } guardMessage)
+            {
+                await WriteDiagnosticLineAsync(_err, guardMessage).ConfigureAwait(false);
+                return true;
+            }
 
             if (slashCmd == "/tasks")
             {
                 await ShowTasksAsync(arg, cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+            if (slashCmd == "/changes")
+            {
+                await ShowChangesAsync(arg, cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+            if (slashCmd is "/rewind" or "/history")
+            {
+                await RewindHistoryAsync(arg, cancellationToken).ConfigureAwait(false);
                 return true;
             }
 
@@ -442,57 +530,14 @@ public sealed partial class AgentCommands
                 if (result == 10) dispatcherExitCode = 0;
                 return true;
             }
-            if (slashCmd == "/retry")
-            {
-                if (submissions.Retryable is null)
-                {
-                    await WriteDiagnosticLineAsync(humanOut, "no held submission to retry").ConfigureAwait(false);
-                    return true;
-                }
-
-                var retry = submissions.Retryable;
-                await HandlePromptLineAsync(retry.Prompt, cancellationToken, retry).ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/clear")
-            {
-                turn = 0;
-
-                lastTotalTokens = null;
-                usage.BeginTurn();
-                if (tgMode)
-                {
-                    // Clear the TG transcript and its header usage cluster in place; the
-                    // logical renderer keeps tool counters and retained details of its own,
-                    // so reset it too instead of only the painted view.
-                    RunOnTgUi(() => tgWindow!.ResetTranscript());
-                }
-                else if (!cmd.Json)
-                {
-                    await humanOut.WriteLineAsync("transcript reset").ConfigureAwait(false);
-                }
-
-                sessionRenderer.Transcript.ClearView();
-                await humanOut.FlushAsync().ConfigureAwait(false);
-                return true;
-            }
             if (await HandleSessionWorkflowAsync(slashCmd, arg).ConfigureAwait(false))
             {
                 await RefreshModelSelectionAsync().ConfigureAwait(false);
                 return true;
             }
-            if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
+            if (await _slashCommands.TryHandleAsync(slashCmd, arg, string.IsNullOrEmpty(sessionId) ? null : sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
             {
                 await RefreshModelSelectionAsync().ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/release")
-            {
-                var result = await ChatRunRelease.ReleaseAsync(
-                    _agentClient, runSession, sessionId, arg, cancellationToken).ConfigureAwait(false);
-                if (result.ReleasedRunId is { } released)
-                    sessionRenderer.Transcript.ForgetParkHistory(released);
-                await WriteDiagnosticLineAsync(result.IsError ? _err : humanOut, result.Message).ConfigureAwait(false);
                 return true;
             }
             if (slashCmd is "/follow")

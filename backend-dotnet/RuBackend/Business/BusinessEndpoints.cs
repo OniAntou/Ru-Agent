@@ -29,6 +29,7 @@ public static partial class BusinessEndpoints
         app.MapPost("/sessions/new", CreateSessionAsync);
         app.MapPost("/sessions/{sessionId}/activate", ActivateSessionAsync);
         app.MapPost("/sessions/{sessionId}/rewind", RewindSessionAsync);
+        app.MapPost("/sessions/{sessionId}/fork", ForkSessionAsync);
         app.MapDelete("/sessions/{sessionId}", DeleteSessionAsync);
         app.MapGet("/activity-log", GetActivityAsync);
         app.MapDelete("/activity-log", ClearActivityAsync);
@@ -329,6 +330,7 @@ public static partial class BusinessEndpoints
                     {
                         id = document.Id,
                         title = document.Title,
+                        history_revision = SessionStore.HistoryRevision(document),
                         messages = document.Messages,
                     },
                 });

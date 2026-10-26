@@ -1,5 +1,104 @@
 # MEMORY — Ru-Agent (máy của anh steal)
 
+## 2026-10-26 — TUI: thay rewind bằng history theo lượt và nhánh chat
+
+- Anh yêu cầu commit lên branch hiện tại. Gom các thay đổi TUI liên quan đang tích lũy kể từ commit trước (changes/provider, command/session lifecycle, metadata/thinking và history branches), kèm tests/docs; không đưa tài liệu phân tích/thuyết trình ngoài phạm vi vào commit. Không push hoặc cập nhật bản cài trong thao tác commit này.
+
+- Anh chốt bước 1: `/history` chọn lượt user (up to 100), View xem prompt/reply và linked run activity/file summary; Edit khôi phục prompt và chuẩn bị prefix trước lượt; Continue giữ cả lượt. Chỉ gửi yêu cầu mới mới tạo nhánh, Escape không tạo session, `/history cancel` bỏ plan và giữ input. `/rewind` là alias ẩn của workflow mới, cú pháp cắt lịch sử `--yes` bị từ chối; headless `agent session rewind` không đổi. File checkpoint/undo/redo chưa thuộc bước này.
+- Thêm `history_revision` ở activate và `POST /sessions/{sessionId}/fork`. SessionStore kiểm tra SHA256 messages và whole-turn boundary, đọc/ghi trong gate + immediate SQLite transaction. Child có ID mới, parent metadata và ledger chỉ cho prefix giữ lại; source không đổi. Không copy grants/approval/run/work state, không khôi phục file hoặc ảnh cũ. Run mới vẫn dùng selection/preset và Broker checks hiện có.
+- TUI không ghi đè draft đang gõ; block overlap trước snapshot khi xem history hoặc đang tạo branch. Kiểm tra exact child prefix + parent + different valid ID trước chạy model. Failed/unknown branch không tự retry; reload đúng `/sessions id:<id>` phục hồi held prompt/attachments và chỉ unpause queue rỗng, không phát lại queued task. Branch dùng mã nguồn hiện tại; reattach ảnh cũ nếu cần. Bounded evidence chỉ đọc theo yêu cầu, không thêm model call/polling.
+- **34 test case mới** (19 workflow/chat + 4 ANSI native + 11 Host/SQLite). Final CLI **1879 pass**, full Host **1417 pass**, GUI **1833 pass**; tổng **8111 / 13 project** ở các lượt cuối, không fail/skip. **24 docs/route guards pass**; contract từ 46 lên 47 route. Không chạy provider thật hoặc manual Windows Terminal acceptance.
+- Ghi nhận thất bại ban đầu: expectation `/history` removed, autocomplete `/re`, route count docs cũ đã sửa theo phạm vi. Matrix sau đó có 1 test trust nhận 503 `agent_store_unavailable` trước history/fork; đọc health initializer/fixture, không sửa permission/assertion. Isolated trust + fork/contract **14 pass**, full Host chạy lại **1417 pass**; nguyên nhân gốc chưa xác định. Giữ logs `work/tui-history/matrix.log`, `matrix-final.log`, `store-health-investigation.trx`, `host-full-investigated.log`, `gui-full.log`. Không gọi đây là một matrix xanh liên tục.
+- Build staging Release win-x64 self-contained CLI + Host thành công; CLI smoke `--version` = `0.1.2-preview.1`. CLI SHA256 `30641671E5794B3FF4FA5D9F331223DF2E8AC10382003BB1034FF1B12058BAA9`, Host SHA256 `39CFF3BBCB58C847DB2655EC35EA7609FA1DAEE3BC1A2E5252350ABFC7C7CA32`; thư mục `work/tui-history/publish` và `work/tui-history/host`. Theo lựa chọn cập nhật sau trước đó, chưa thay bản lệnh Ru sử dụng; chưa commit/push. Báo cáo `outputs/TUI-HISTORY-2026-10-26.md` trong task workspace.
+
+## 2026-10-26 — TUI: hiện reasoning effort cạnh model
+
+- Anh yêu cầu thêm reasoning effort bên cạnh chat. Thêm label `reasoning: high/default/...` giữa model và provider ở metadata dưới input; dùng `/reasoning` hiện có để đổi. Lấy giá trị từ bootstrap/settings GET vốn đã có và refresh sau lệnh đổi model/provider/reasoning; không thêm catalog fetch, polling, model/tool call hay đổi payload.
+- Composer xóa effort cũ khi model/provider đổi; preset-only vẫn giữ. Retained run summary chưa cung cấp pinned effort nên khi hiển thị metadata run đó gán `—`; giá trị thiếu cũng là `—`, không tự suy ra level/support. Đây là cấu hình đang chọn, không phải bảo đảm effort được provider áp dụng cho run cũ. Cửa sổ hẹp ưu tiên input, rút gọn model/provider và ẩn effort ở kích thước nhỏ nhất.
+- **100 test liên quan pass**, gồm 8 case mới cho default/high/xhigh/unknown, đổi effort/model/provider, preset giữ effort, Unicode/control stripping và các width 20/34/80. Không chạy lại full CLI cho thay đổi hiển thị cục bộ. **8 docs guards pass**, `git diff --check` pass. Build Release win-x64 self-contained và smoke `--version` thành công (`0.1.2-preview.1`), staging `work/tui-reasoning-meta/publish`, DLL SHA256 `27E5365C2ABC48CDA4B7E1FA1332F1CDE522AD05FF77FA4C3253D451ACD676A8`.
+- Phiên Ru PID 8480 vẫn mở, đúng lựa chọn trước của anh giữ phiên và cập nhật sau; không hỏi lại/không đóng phiên/không ghi đè bản đang dùng. Bản staging mới chứa cả hint `ctrl+o thinking` đang chờ trước đó; chưa cập nhật bản lệnh Ru đang sử dụng. Chưa commit/push.
+
+## 2026-10-26 — TUI: hướng dẫn Ctrl+O xem thinking
+
+- Thêm gợi ý ngắn `ctrl+o thinking` ở cuối footer thành công của native TUI, ví dụ `✓ 18.2s · 0 tools · ctrl+o thinking`.
+- Chỉ hiện khi retained detail hiện tại là reasoning không rỗng do model báo về; reset ở đầu lượt/clear view và khi chi tiết diff thay thế. Không quảng cáo reasoning cũ hoặc khi model không cung cấp; không gọi model/tool/backend mới, không đổi cơ chế Ctrl+O hay in reasoning inline. Dùng lại giới hạn lưu giữ hiện có, chỉ thêm flag loại nội dung.
+- **155 test liên quan pass**, gồm 3 case mới kiểm tra có/không reasoning, diff thay thế, mở block và không mang hint sang lượt sau. **8 docs guards pass**, diff check pass. Không chạy lại toàn bộ CLI cho thay đổi hiển thị nhỏ này.
+- Build staging Release win-x64 self-contained thành công tại `work/tui-thinking-hint/publish`, version `0.1.2-preview.1`, DLL SHA256 `D8AAA30706D1EC65748DB7E6EC7E19F6131AF1115226C3788DA4E548BDF5946D`. Ru đang mở giữ file; đã đề nghị anh thoát để cập nhật. Chưa thay bản đang chạy, chưa commit/push.
+
+## 2026-10-26 — TUI: bỏ Ready và ẩn permission ở welcome
+
+- Theo ảnh anh gửi: bỏ chữ `Ready` ở footer cả lúc khởi tạo và trở về idle. Giữ hint phím, thông báo lỗi/feedback, queue, approval, trạng thái chạy và label file đính kèm; feedback idle không có dấu phân cách thừa.
+- Welcome chưa có hội thoại ẩn toàn bộ header nên không hiện `standard` hoặc preset khác ở trên. Bắt đầu có nội dung chat thì permission vẫn hiện cạnh token; reset về welcome lại ẩn. Sao băng/logo và state permission không thay đổi.
+- Cập nhật test vị trí/Ready cũ theo yêu cầu mới; thêm test idle silence + error không prefix thừa và native welcome → đổi preset → chat → reset welcome. Full CLI **1847 pass / 0 fail / 0 skip**; docs **8 pass**; diff check pass. Native dùng ANSI driver và HTTP giả, không thao tác session thật.
+- Anh xác nhận đã thoát cả 2 phiên Ru. Đã publish Release win-x64 self-contained trực tiếp vào bản CLI mà `bin/ru.cmd` chạy; smoke chính launcher version `0.1.2-preview.1`. DLL SHA256 `FB9B73670E924DBE394B146563260D4AAEC428134EE603180BA16EDC7BD4CDB5`, khớp staging `work/tui-quiet-welcome/publish`. Lệnh Ru đã được cập nhật, không còn chờ triển khai. Chưa commit/push.
+
+## 2026-10-26 — Đã cập nhật bản mới vào lệnh Ru
+
+- Anh yêu cầu build bản mới nhất; kiểm tra không còn process giữ thư mục CLI publish. Đã publish Release win-x64 self-contained trực tiếp vào `backend-dotnet/RuAgent.Cli/bin/Release/net10.0-windows/win-x64/publish`, bản `bin/ru.cmd` ưu tiên chạy.
+- Smoke qua chính `ru.cmd --version` thành công: `0.1.2-preview.1`. DLL SHA256 `8234BE9FE0D5CC7ECDBF24507A1748052872C405149A17BB08F00C9D2530BAF8`, khớp staging đã test. Bao gồm permission trên header cạnh token, lazy session, bỏ 5 lệnh và gộp `/provider`.
+- Ghi chú này thay trạng thái chờ cập nhật ở các mục trước: lệnh Ru hiện đã dùng build mới. Không chạy lại test vì mã không đổi từ lượt 1845 pass/8 docs pass. Chưa commit/push.
+
+## 2026-10-26 — TUI: đưa permission lên gần token
+
+- Anh muốn chuyển nhãn `standard` ở composer lên trên gần token. Đã bỏ nhãn khỏi dòng metadata dưới input (chỉ còn model/provider), vẽ nhãn xanh ngay trước usage cluster bên phải header.
+- Composer giữ giá trị Preset cho state nhưng phát event khi preset thay đổi; window chuyển sang Header.SetPreset. Mọi luồng SetMeta hiện có dùng chung nên startup, `/preset`, session replay và retained run không cần thêm API/timer hay đổi policy.
+- Header trên welcome hiện 1 dòng chỉ chứa permission/usage, không hiện title/workspace như có session. Header nằm trên lớp sao băng để không bị vẽ đè; sao băng/logo và vùng composer vẫn giữ. Active chat giữ 2 dòng header và subagent strip. Cửa sổ hẹp dùng token compact (ví dụ `39.4K`) để giữ permission, giảm phần trăm/chi phí khi cần.
+- Các test vị trí/màu cũ được đổi sang header và kiểm tra không lặp nhãn dưới input; thêm đổi cả 3 preset ở header hẹp. Lượt đầu: subset 60 pass/6 fail gồm expectation vị trí cũ, token compact và header bị hidden trên welcome. Full trung gian 1836 pass/9 fail xác nhận thêm các fixture metadata/home cũ; đã cập nhật theo hành vi mới và sửa lớp vẽ. Giữ log fail trong workspace `work/tui-preset-header`.
+- Lượt layout tiếp 62 pass/1 fail: fixture mong thấy header khi dropdown ở 20×12 đang phủ lên nó; sửa kiểm tra state được giữ dưới overlay, vẫn giữ test hiển thị/màu/vị trí bình thường và narrow-header. Full cuối **1845 pass / 0 fail / 0 skip**; docs **8 pass**; diff check pass. Native ANSI test driver, chưa xác nhận trực tiếp trên Windows Terminal của anh.
+- Build staging Release win-x64 self-contained thành công tại `work/tui-preset-header/publish`, version `0.1.2-preview.1`, DLL SHA256 `8234BE9FE0D5CC7ECDBF24507A1748052872C405149A17BB08F00C9D2530BAF8`. Đây là staging mới nhất, chứa toàn bộ thay đổi TUI trước. Vẫn giữ quyết định không thay bản Ru đang mở, chưa commit/push.
+
+## 2026-10-26 — TUI: lệnh cấu hình không tự tạo session
+
+- Anh báo mở `/model` ngay khi vào Ru làm tạo phiên mới. Tìm thấy 2 nguyên nhân: bootstrap luôn POST `/sessions/new`, và native loop echo slash thành user card + bật Working, làm ẩn welcome.
+- Bỏ tạo session ở bootstrap. Khi chưa gửi thật, sessionId là draft rỗng, `/status` hiện `not started`. Chỉ tin nhắn thật đầu tiên hoặc `/new` mới gọi CreateAsync; `--session` và chọn session cũ giữ nguyên. Native local controls không echo user card/Working nhưng vẫn giữ busy lifetime, cancellation và admission guard; `/follow` và custom prompt commands giữ hành vi run.
+- Tin nhắn queued trước khi phiên đầu được tạo chỉ bind draft rỗng về đúng phiên vừa materialize; không rebind session có sẵn/phiên khác và giữ idempotency, model/provider/preset/workspace, images/texts. Create lỗi/mất phản hồi không tự lặp POST hoặc tạo run; chọn session hay đóng/mở lại. Các lệnh tasks/changes/rewind/follow/subagents khi chưa có phiên báo rõ và không gọi API ID rỗng; bỏ title probe khi chưa có phiên.
+- Test ban đầu có 2 fail: status chưa dùng snapshot `not started` (đã sửa), fixture kiểm tra session trong URL policy thay vì JSON body (đã sửa theo wire). Giữ log fail. Full CLI cuối **1842 pass / 0 fail / 0 skip**; docs **8 pass**; diff check pass. Test native dùng ANSI driver, HTTP synthetic; không tạo/xóa phiên người dùng thật.
+- Build staging Release win-x64 self-contained thành công trong workspace `work/tui-draft-session/publish`, version `0.1.2-preview.1`, DLL SHA256 `602C98D91672190FC1CDE5575B420A88471E1E07261C602762BC8C7FA28898A9`. Bản này chứa toàn bộ sửa `/provider`, bỏ 5 lệnh và lazy session. Chưa cập nhật bản Ru đang chạy (anh đã chọn giữ phiên mở), chưa commit/push.
+
+## 2026-10-26 — TUI: bỏ 5 lệnh không dùng
+
+- Anh yêu cầu bỏ `/delete`, `/resume`, `/retry`, `/release`, `/clear`. Đã bỏ khỏi catalog/help/palette/completion và xử lý slash; native chặn sớm trước snapshot/claim attachment/queue, sequential chặn trước custom prompt commands. Lệnh cũ báo unknown, không còn alias ẩn cho 5 tên này.
+- Bỏ handler xóa phiên trực tiếp, retry submission, release run và clear transcript qua slash. Các API/headless CLI/GUI và hành vi có sẵn trong browser `/sessions` giữ nguyên. Reset transcript nội bộ khi đổi session vẫn hoạt động.
+- Để không phá `/rewind` khi POST mất phản hồi, mở/tải lại bằng `/sessions id:<id>`; prefix `id:` phân biệt với truy vấn tiêu đề. Vẫn chặn busy, kiểm tra ID, validate session trước khi bỏ history guard, giữ pending attachment khi tải lại cùng phiên.
+- Bỏ đặc cách `/retry` trong paused queue và đổi label ảnh held thành `held:`. Khi gửi lỗi, queue vẫn paused, không tự resend hay đổi idempotency; hướng dẫn đóng/mở lại phiên. Parked-run hướng dẫn hủy bằng CLI ngoài thay vì lệnh `/release` đã bỏ.
+- Test cũ cho các lệnh bị bỏ được thay bằng kiểm tra từ chối/không mutation; giữ test session browser delete, paused-control ordering, recovery/rewind và run API. Subset **159 pass**; full CLI **1834 pass / 0 fail / 0 skip**; docs guards **8 pass**, `git diff --check` pass. Native dùng ANSI test driver và Host giả, không thay đổi dữ liệu phiên thật.
+- Đã build staging Release win-x64 self-contained `work/tui-remove-commands/publish`, version `0.1.2-preview.1`; DLL SHA256 `6D290EBF79B63EC3C3FC42B1F16B6A23480938B909A1AF5AB2E98842E24B5FF3`. Đây là staging mới nhất, đã bao gồm gộp `/provider` và bỏ 5 lệnh; bản `work/tui-provider/publish` của lượt trước đã cũ hơn.
+- Giữ quyết định trước của anh: không đóng/cập nhật phiên Ru đang mở; build staging riêng. Chưa commit/push; giữ các thay đổi đang có và tài liệu local-only.
+
+## 2026-10-26 — TUI: gộp chọn provider và nhập API key
+
+- Theo yêu cầu anh: thêm `/provider [name]`, chọn provider trước rồi mở box API key che ký tự. Help, palette và completion chỉ hiện lệnh chung; `/backend` và `/key` vẫn gọi được với hành vi cũ để tương thích. Alias `/provider` cũ cho `/model` đổi sang luồng thiết lập provider; chọn model dùng `/model`.
+- Dùng catalog/provider choices cũ và `ProviderCredential` chung với GUI. Chỉ POST settings một lần sau khi xác nhận, gồm backend và key payload. Esc ở bất kỳ bước nào không lưu/đổi provider. Enter trống giữ key đã biết là có; provider cần key nhưng chưa có thì từ chối, custom cho phép key trống. `/provider remove <name>` dùng signout endpoint cũ.
+- Không kiểm tra key với provider ở bước lưu, không đổi backend/GUI/policy. Lỗi save không in exception có thể chứa secret, không tự POST lại. Secret chỉ vào box và request body, không transcript/history. Provider/model của run đang tồn tại vẫn được pin theo cơ chế cũ.
+- Thêm `/provider` vào nhóm repair command cho queue paused; không claim file/ảnh pending. Native test kiểm tra picker → masked input, paste, Enter/Esc và giữ draft. Test nghiệp vụ kiểm tra combined payload, cancel/empty, saved key, JSON, invalid choice, cancellation, lỗi save và không rò key.
+- Test đầu có fixture kỳ vọng display name thay canonical alias (3 fail); sửa fixture theo `ProviderCredential.Choice`. Một lần compile test lỗi namespace attachment, đã sửa tên đầy đủ. Full CLI lượt đầu thực thi 1827 pass/1 fail do test `/changes` đọc screen trước frame paint; đã sửa đồng bộ test, giữ assertion và timeout, không đổi chức năng `/changes`. Logs fail được giữ trong workspace `work/tui-provider`.
+- Verify cuối: **1828/1828 CLI pass**, **8/8 docs guards pass**, `git diff --check` pass. Native test dùng ANSI driver và Host HTTP giả; chưa dùng key/provider thật.
+- Đã build Release win-x64 self-contained vào workspace `work/tui-provider/publish`, version `0.1.2-preview.1`, DLL SHA256 `D4453A04B29EE8187BD05BA53F5596F916D2C9D81974841E600043377EE78219`. Phiên `RuAgent.Cli.exe` đang mở giữ bản publish hiện hành. Anh chọn **Giữ phiên đang mở, cập nhật sau**: KHÔNG thay lệnh Ru đang dùng và KHÔNG đóng phiên. Bản staging sẵn cho lượt cập nhật sau khi anh yêu cầu. Chưa commit/push; giữ các thay đổi `/changes`, `/rewind` và tài liệu local-only từ trước.
+
+## 2026-10-25 — TUI: rewind lịch sử hội thoại
+
+- Thêm `/rewind [message-number [--yes]]` vào chat, help và completion. Native picker chọn trong 100 mốc user/assistant gần nhất, thứ tự mới trước; xác nhận mặc định **Keep history**, Esc hủy. Giữ bao gồm tin nhắn được chọn, xóa phần sau. Đây là rewind hội thoại; không khôi phục file/Git, dừng process hay xóa durable run receipts.
+- Đánh số từ 1 trên toàn bộ messages gốc của server, bao gồm system/tool bị ẩn; chuyển sang index 0-based khi POST. Không dùng chỉ số replay đã lọc/giới hạn 20 tin. Lịch sử trên 10.000 dòng bị từ chối; sequential/JSON chỉ liệt kê khi không có mốc, mutation cần số và `--yes`.
+- Dùng API session activate/rewind có sẵn, không đổi GUI/backend/protocol hay policy. Chặn khi TUI busy, queue còn phần tử hoặc đang paused; kiểm tra cả run được API phát hiện và run TUI đang giữ, yêu cầu trạng thái terminal. Trước POST đọc lại và so sánh nguyên messages để tránh mốc cũ. Không claim ảnh/file pending; chặn submission khác trong thời gian rewind.
+- POST chỉ gửi một lần. Mất/hỏng phản hồi (kể cả sau server commit) chuyển sang `rewind_outcome_unknown`, chặn gửi mới đến khi `/resume <cùng-session-id>` xác thực identity/shape và reload. Reload lỗi giữ chặn; pending attachments vẫn còn, idempotency retry cũ bị bỏ sau khi reload thành công. Khi rewind thành công reset follower/question/usage/transcript rồi replay phần còn lại, không adopt run cũ.
+- Giới hạn backend: endpoint chưa có conditional revision/active-run guard nguyên tử; run discovery chỉ bao phủ trang trả về (ngoài các run local được kiểm tra thêm). Không cam kết chống thay đổi đồng thời từ client khác; nên dùng một cửa sổ cho session khi rewind.
+- Test native phát hiện mô tả dài che nhãn **Keep history**; đã rút gọn description để nhãn hủy luôn hiện. Các lỗi fixture ban đầu (using và chờ paint) được sửa; giữ log fail, không giảm kiểm tra business behavior.
+- Verify cuối: full CLI **1810 pass / 0 fail / 0 skip** (lượt trước 1807 pass trước khi bổ sung 3 case); docs guards **8 pass**; `git diff --check` pass. Native tests dùng ANSI driver + Host giả, chưa kiểm chứng phiên model thật. Logs/TRX trong workspace `work/tui-rewind`.
+- Đã publish CLI Release win-x64 self-contained vào bản lệnh `Ru` sử dụng (`C:\Users\steal\Ru-Agent\bin\ru.cmd`); smoke version `0.1.2-preview.1`. DLL SHA256 `5C83B427E1F18D00F55FA81FA55F85BD1144DBE4084B5BB1A0327BC881CFB3CB`. Chưa commit/push; giữ nguyên tài liệu/presentation local-only và các thay đổi `/changes` chưa commit của lượt trước.
+
+## 2026-10-25 — TUI: tổng hợp thay đổi bằng /changes
+
+- Thêm `/changes [run-id]`: xem các edit đã hoàn tất của run hiện tại/được giữ, hoặc run mới nhất trong session khi không giữ target. Run chỉ định phải thuộc session hiện tại; không tạo prompt/model call hay sửa tệp.
+- Dùng `GetRunAsync` + `ListRunActivitiesAsync`, không đổi GUI/backend/protocol. Activity trùng ID lấy trạng thái mới nhất trước khi lọc success; sequence cũ không làm sống lại edit đã thất bại. Gộp tên file không phân biệt hoa/thường, cộng số dòng thêm/xóa theo các lần edit; giá trị thiếu vẫn là unknown (`+?`/`−?`, JSON null).
+- Giới hạn dữ liệu cần nhớ: activity API hiện chỉ trả basename, không full path, và cap replay 200 activity. Nhóm cùng tên có thể chứa các đường dẫn khác nhau; số nhóm không phải số file vật lý duy nhất và lịch sử có thể thiếu. UI/JSON ghi rõ giới hạn, không giả đường dẫn/độ đầy đủ. Đây không phải Git diff hiện tại; mutation qua terminal/bên ngoài có thể không có trong danh sách.
+- Chọn nhóm tên để xem từng preview trước/sau từ `AgentEditPreviewCodec`; giữ activity ID và dòng bắt đầu nếu có. Preview là excerpt lịch sử có giới hạn, không đọc file hiện tại để lấp chỗ thiếu. Picker tối đa 100 nhóm; preview tối đa 2000 dòng + thông báo bỏ bớt; projection từ chối trên 4096 activity.
+- Dùng chung inspection lane với `/tasks`, chạy được khi model streaming, không claim ảnh/file đang chờ, không đổi queue/model/preset. Refresh khi người dùng yêu cầu hoặc quay lại danh sách, không polling. Document preview cùng modal gate với picker/ask_user/approval để tránh thay thế panel hoặc nhận nhầm câu trả lời. Esc đóng panel; Esc lúc fetch hủy inspection thay vì model.
+- Sequential/JSON xuất summary text/structured và không mở panel. Lỗi history/khác session báo rõ, không biến thành danh sách rỗng thành công.
+- Trong kiểm tra toàn bộ CLI, test cũ liệt kê `/changes` là lệnh đã bỏ bị fail đúng do chức năng được đưa lại. Đã thay riêng case đó bằng test `/changes` xuất hiện trong help/completion; các lệnh vẫn bị loại bỏ giữ nguyên kiểm tra.
+- Verify cuối: full CLI **1779 pass / 0 fail / 0 skip**; subset changes/document/task/question **29 pass**; documentation guards **8 pass**; `git diff --check` pass. Native test dùng ANSI driver và HTTP Host giả; chưa chạy phiên model thật cho tính năng này.
+- Đã publish CLI Release win-x64 self-contained vào bản `Ru` sử dụng; smoke `--version` = `0.1.2-preview.1`. DLL SHA256: `C76F9CB4D6FEDB9FBED119E0BA408A18B061694826077A27D61D01D45414E944`.
+- Chưa commit/push ở lượt yêu cầu chức năng này. Giữ nguyên `TONG-KET-CONG-VIEC.md` và `docs/presentation/` local-only.
+
 ## 2026-10-25 — TUI: trả lời ask_user và quản lý background task
 
 - Branch: `casluminous/fix-tui-long-paragraph`, tiếp sau commit `581fc73e` (giữ paragraph dài và parser streaming chỉ xử lý đuôi thay đổi).

@@ -83,18 +83,8 @@ public sealed partial class AgentCommands
         }
 
         string sessionId = cmd.SessionId ?? string.Empty;
-        if (string.IsNullOrEmpty(sessionId))
-        {
-            try
-            {
-                sessionId = await _sessionClient.CreateAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                await _err.WriteLineAsync($"session_create_failed: {ex.Message}").ConfigureAwait(false);
-                return null;
-            }
-        }
+        // No durable session for an unused welcome screen or local slash commands.
+        // The first real prompt materializes it; /new remains an explicit creation.
 
         // The TUI header reports the provider the run is using. When settings cannot
         // be read the header says so rather than naming a provider the run never

@@ -69,7 +69,9 @@ public sealed class TgImagePreviewTests
                 var screen = TgSnapshot.Capture(app);
                 Assert.Contains("[image 1]", PreviewRow(app, window));
                 Assert.Contains("third line", screen[window.Composer.Frame.Y + window.Composer.InputHeight]);
-                Assert.Contains("standard", screen[window.Composer.Frame.Y + window.Composer.InputHeight + 2]);
+                Assert.Contains("standard", screen[window.Header.Frame.Y]);
+                Assert.DoesNotContain("standard", screen[window.Composer.Frame.Y + window.Composer.InputHeight + 2]);
+                Assert.Contains("vision-model", screen[window.Composer.Frame.Y + window.Composer.InputHeight + 2]);
                 Assert.Equal(3, window.Composer.InputHeight);
                 Assert.Equal(7, window.Composer.LayoutHeight);
                 if (width == 80) Assert.Contains("[image 4]", PreviewRow(app, window));
@@ -188,7 +190,7 @@ public sealed class TgImagePreviewTests
             },
             (app, _, loop) =>
             {
-                Assert.Contains("/retry: [image 1]", string.Join('\n', TgSnapshot.Capture(app)));
+                Assert.Contains("held: [image 1]", string.Join('\n', TgSnapshot.Capture(app)));
                 Assert.Equal(ImageDataUrl, Assert.Single(state.Retryable!.Images).ToDataUrl());
                 state.Add(Image("new.png"));
                 state.Accept();

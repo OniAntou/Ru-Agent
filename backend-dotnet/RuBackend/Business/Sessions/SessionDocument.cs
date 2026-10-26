@@ -57,6 +57,9 @@ public sealed record ConversationTurn(string Prompt, string Response);
 
 public interface ISessionStore
 {
+    Task<SessionForkResult> ForkAsync(string sourceId, int keepMessages, string revision, CancellationToken cancellationToken) =>
+        Task.FromResult(new SessionForkResult(null, "session_fork_unsupported"));
+
     Task<IReadOnlyList<SessionSummary>> ListAsync(CancellationToken cancellationToken);
 
     async Task<SessionListResult> ListWithMetadataAsync(CancellationToken cancellationToken)

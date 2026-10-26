@@ -20,7 +20,9 @@ public sealed class TgOpenCodeLayoutTests
             var rows = TgSnapshot.Capture(app);
             var top = window.Composer.Frame.Y;
             Assert.Contains("Ask anything…", rows[top + 1]);
-            Assert.Contains("Standard", rows[top + TgComposerView.MetadataRow]);
+            Assert.False(window.Header.Visible);
+            Assert.DoesNotContain("Standard", string.Join('\n', rows));
+            Assert.DoesNotContain("Standard", rows[top + TgComposerView.MetadataRow]);
             Assert.DoesNotContain("Standard", rows[top + TgComposerView.RowCount - 1]);
             Assert.EndsWith("ctrl+p commands", rows[window.Hints.Frame.Y]);
             Assert.DoesNotContain("tab complete", rows[window.Hints.Frame.Y]);
@@ -66,7 +68,8 @@ public sealed class TgOpenCodeLayoutTests
             var top = w.Composer.Frame.Y;
             var left = w.Composer.Frame.X;
             var surface = TgPalette.Attr(TuiToken.Ink, TuiPalette.SurfaceRgb()).Background;
-            Assert.Contains("Standard", rows[top + TgComposerView.MetadataRow], StringComparison.Ordinal);
+            Assert.Contains("Standard", rows[w.Header.Frame.Y], StringComparison.Ordinal);
+            Assert.DoesNotContain("Standard", rows[top + TgComposerView.MetadataRow], StringComparison.Ordinal);
             Assert.DoesNotContain("┌", rows[top], StringComparison.Ordinal);
             Assert.Equal(surface, TgSnapshot.CellAttribute(app, top + 1, left + 20).Background);
             // The boundary is the fill itself: no frame column at the left edge.
@@ -164,6 +167,7 @@ public sealed class TgOpenCodeLayoutTests
             Assert.InRange(Math.Abs(w.Composer.Frame.X - (columns - w.Composer.Frame.Right)), 0, 1);
             Assert.True(w.Composer.Frame.Bottom < rows - 2);
             Assert.False(w.Header.Visible);
+            Assert.False(w.Header.ShowSessionDetails);
         });
     }
 
@@ -186,7 +190,10 @@ public sealed class TgOpenCodeLayoutTests
                 Assert.Equal(
                     TgPalette.Attr(TuiToken.Ink, TuiPalette.SurfaceRgb()).Background,
                     TgSnapshot.CellAttribute(app, w.Composer.Frame.Y, w.Composer.Frame.X + 1).Background);
-                Assert.Contains("Standard", rows[w.Composer.Frame.Y + TgComposerView.MetadataRow]);
+                // At 20x12 the open command list owns the cells above the composer,
+                // including the header. Permission state survives that temporary overlay.
+                Assert.Equal("Standard", w.Header.Preset);
+                Assert.DoesNotContain("Standard", rows[w.Composer.Frame.Y + TgComposerView.MetadataRow]);
             }
             else
             {
@@ -211,7 +218,8 @@ public sealed class TgOpenCodeLayoutTests
         }, (app, w, rows) =>
         {
             Assert.Contains("Giữ nguyên câu đang gõ", rows[w.Composer.Frame.Y + 1]);
-            Assert.Contains("Standard", rows[w.Composer.Frame.Y + TgComposerView.MetadataRow]);
+            Assert.Contains("Standard", rows[w.Header.Frame.Y]);
+                Assert.DoesNotContain("Standard", rows[w.Composer.Frame.Y + TgComposerView.MetadataRow]);
             // The bottom of the block is still the filled surface.
             Assert.Equal(TgPalette.Attr(TuiToken.Ink, TuiPalette.SurfaceRgb()).Background,
                 TgSnapshot.CellAttribute(app, w.Composer.Frame.Bottom - 1, w.Composer.Frame.X + 1).Background);

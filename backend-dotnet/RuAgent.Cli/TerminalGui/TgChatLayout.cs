@@ -10,9 +10,10 @@ internal static class TgChatLayout
     {
         var home = window.Landing.Visible;
         window.Header.Visible = !home;
+        window.Header.ShowSessionDetails = !home;
         window.Header.X = 2;
         window.Header.Width = Dim.Fill(2);
-        window.Header.Height = rows >= 20 ? 2 : 1;
+        window.Header.Height = !home && rows >= 20 ? 2 : 1;
         window.HeaderDivider.Visible = !home;
         window.HeaderDivider.X = 2;
         window.HeaderDivider.Width = Dim.Fill(2);

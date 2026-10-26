@@ -8,25 +8,27 @@ public static class ChatCommandCatalog
     public static readonly SlashCommandInfo[] KnownCommands =
     [
         new("/model", "Switch or show the active model", "/model [name]"),
-        new("/key", "Show or update provider API keys", "/key [provider]"),
-        new("/backend", "Switch provider backend (openai, anthropic, custom...)", "/backend <name>"),
+        new("/provider", "Choose a provider, then enter its API key", "/provider [name] | /provider remove <name>"),
         new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
         new("/status", "Show session status and preset", "/status"),
         new("/preset", "Choose permissions for new turns", "/preset [plan|standard|full_access]"),
-        new("/release", "Cancel a parked run in this session", "/release [run-id]"),
         new("/new", "Start a new session", "/new"),
-        new("/sessions", "Switch or delete sessions", "/sessions [query]"),
-        new("/resume", "Resume a session", "/resume [session-id]"),
+        new("/sessions", "Browse sessions or reopen by id", "/sessions [query|id:<session-id>]"),
         new("/subagents", "View child tasks and results", "/subagents [run-id] [agent result [version]]"),
         new("/tasks", "View and stop background terminal tasks", "/tasks [run-id] | /tasks kill <execution-id>"),
+        new("/changes", "Summarize recorded file edits and previews", "/changes [run-id]"),
+        new("/history", "Browse turns; edit or continue in a new chat branch", "/history [turn [view|edit|continue]] | /history cancel"),
         new("/follow", "Follow a retained run", "/follow [run-id]"),
-        new("/retry", "Retry the last held submission", "/retry"),
-        new("/delete", "Delete another session", "/delete [session-id]"),
-        new("/clear", "Reset the transcript view", "/clear"),
         new("/help", "Show every command", "/help"),
         new("/update", "Check or install a Ru update", "/update [--yes] [--channel stable|preview]"),
         new("/exit", "Quit", "/exit"),
     ];
+
+    private static readonly HashSet<string> RemovedCommands = new(StringComparer.OrdinalIgnoreCase)
+        { "/delete", "/resume", "/retry", "/release", "/clear" };
+
+    internal static bool IsRemovedCommand(string line) => RemovedCommands.Contains(
+        line.TrimStart().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "");
 
     private static readonly HashSet<string> ReportCommands =
         new(StringComparer.OrdinalIgnoreCase)

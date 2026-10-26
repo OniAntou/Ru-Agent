@@ -25,7 +25,7 @@ public sealed class TuiParkReasonTests
             transcript.ApplyDurable(Frame("continue.requested", reason, 6));
             var detail = TuiText.Strip(status.Compose(220));
             Assert.Contains(turn == 0 ? "wait before Continue" : "still blocked after Continue", detail);
-            Assert.Contains("/release", detail);
+            Assert.Contains("cancel the run from CLI", detail);
         }
         var rows = TuiText.Strip(output.ToString()).Split('\n');
         Assert.Equal(2, rows.Count(row => row.Contains("reason:") && row.Contains(reason)));

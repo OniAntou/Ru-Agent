@@ -3,50 +3,80 @@ namespace RuAgent.Cli.TerminalGui;
 public sealed partial class TgChatLoop
 {
     private Func<string?, CancellationToken, Task>? _taskCommandHandler;
+    private Func<string?, CancellationToken, Task>? _changesCommandHandler;
+    private Func<string?, CancellationToken, Task>? _rewindCommandHandler;
     private CancellationTokenSource? _taskControlCancellation;
     private TaskCompletionSource? _taskControlDone;
+    private bool _historyControlActive;
+    private Func<bool>? _historyBranchPending;
+    private Func<string, bool>? _historyRecoveryCommand;
+
+    internal void SetHistoryStateProviders(Func<bool> pending, Func<string, bool> recoveryCommand)
+    { _historyBranchPending = pending; _historyRecoveryCommand = recoveryCommand; }
+
+    internal void FinishHistoryReload()
+    {
+        lock (_queueGate)
+        {
+            // Reload authorizes no queued replay. Only an empty queue can leave recovery.
+            if (_queued.Count == 0) _queuePaused = false;
+        }
+        Dispatch(RefreshRunStatus);
+    }
 
     internal void SetTaskCommandHandler(Func<string?, CancellationToken, Task> handler) => _taskCommandHandler = handler;
+    internal void SetChangesCommandHandler(Func<string?, CancellationToken, Task> handler) => _changesCommandHandler = handler;
+    internal void SetRewindCommandHandler(Func<string?, CancellationToken, Task> handler) => _rewindCommandHandler = handler;
 
     private bool TrySubmitTaskControl(string line)
     {
-        if (_taskCommandHandler is null) return false;
+        if (_taskCommandHandler is null && _changesCommandHandler is null && _rewindCommandHandler is null) return false;
         var parts = line.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var isTasks = parts.Length > 0 && parts[0].Equals("/tasks", StringComparison.OrdinalIgnoreCase);
+        var isChanges = parts.Length > 0 && parts[0].Equals("/changes", StringComparison.OrdinalIgnoreCase);
+        var isRewind = parts.Length > 0 && (parts[0].Equals("/rewind", StringComparison.OrdinalIgnoreCase) || parts[0].Equals("/history", StringComparison.OrdinalIgnoreCase));
+        var handler = isTasks ? _taskCommandHandler : isChanges ? _changesCommandHandler : isRewind ? _rewindCommandHandler : null;
         TaskCompletionSource done;
         CancellationTokenSource cancellation;
         lock (_queueGate)
         {
             if (_stopped) return true;
-            if (_taskControlDone is { Task.IsCompleted: false })
+            if (isRewind && (_busy || _queuePaused || _queued.Count > 0))
             {
-                _window.Hints.ShowFeedback("finish background task control first · esc closes the panel", true);
+                _window.Hints.ShowFeedback("finish pending/queued work before rewinding history", true);
                 return true;
             }
-            if (!isTasks) return false;
+            if (_taskControlDone is { Task.IsCompleted: false })
+            {
+                _window.Hints.ShowFeedback("finish the current inspection first · esc closes the panel", true);
+                return true;
+            }
+            if (handler is null) return false;
             _taskControlDone = done = new(TaskCreationOptions.RunContinuationsAsynchronously);
             _taskControlCancellation = cancellation = CancellationTokenSource.CreateLinkedTokenSource(_outerToken);
+            _historyControlActive = isRewind;
         }
         // No submission snapshot/admission: pending attachments and the model turn are untouched.
         _window.Composer.Input.Text = "";
         Remember(line);
-        _ = RunTaskControlAsync(parts.Length == 2 ? parts[1].Trim() : null, cancellation, done);
+        _ = RunTaskControlAsync(handler, parts.Length == 2 ? parts[1].Trim() : null, cancellation, done);
         return true;
     }
 
-    private async Task RunTaskControlAsync(string? argument, CancellationTokenSource cancellation, TaskCompletionSource done)
+    private async Task RunTaskControlAsync(Func<string?, CancellationToken, Task> handler, string? argument, CancellationTokenSource cancellation, TaskCompletionSource done)
     {
-        try { await _taskCommandHandler!(argument, cancellation.Token).ConfigureAwait(false); }
+        try { await handler(argument, cancellation.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            Dispatch(() => _window.Hints.ShowFeedback("tasks_error: " + CliErrorText.ShortMessage(ex.Message), true));
+            Dispatch(() => _window.Hints.ShowFeedback("inspection_error: " + CliErrorText.ShortMessage(ex.Message), true));
         }
         finally
         {
             lock (_queueGate)
             {
                 if (ReferenceEquals(_taskControlCancellation, cancellation)) _taskControlCancellation = null;
+                _historyControlActive = false;
             }
             cancellation.Dispose();
             done.TrySetResult();

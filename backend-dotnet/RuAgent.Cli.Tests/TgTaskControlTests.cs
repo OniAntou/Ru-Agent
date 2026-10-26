@@ -74,8 +74,10 @@ public sealed class TgTaskControlTests
         Assert.Equal(3, step);
     }
 
-    [Fact]
-    public async Task Escape_during_task_fetch_cancels_only_task_control_and_stop_drains_its_lifetime()
+    [Theory]
+    [InlineData("/tasks")]
+    [InlineData("/changes")]
+    public async Task Escape_during_inspection_fetch_cancels_only_inspection_and_stop_drains_its_lifetime(string command)
     {
         using IApplication app = Application.Create(); app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
@@ -86,11 +88,13 @@ public sealed class TgTaskControlTests
         { try { await release.Task.WaitAsync(ct); } catch (OperationCanceledException) { turnCancelled = true; } });
         loop.SetTaskCommandHandler(async (_, ct) =>
         { try { await Task.Delay(System.Threading.Timeout.Infinite, ct); } catch (OperationCanceledException) { taskCancelled = true; } });
+        loop.SetChangesCommandHandler(async (_, ct) =>
+        { try { await Task.Delay(System.Threading.Timeout.Infinite, ct); } catch (OperationCanceledException) { taskCancelled = true; } });
         var checkedState = false;
         app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
         {
             window.Composer.Input.Text = "active"; loop.Submit();
-            window.Composer.Input.Text = "/tasks"; loop.Submit();
+            window.Composer.Input.Text = command; loop.Submit();
             loop.Cancel();
             return false;
         });

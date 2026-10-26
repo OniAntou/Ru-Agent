@@ -454,7 +454,7 @@ public sealed partial class AgentCommands
             if (!string.Equals(run.SessionId, sessionId, StringComparison.Ordinal))
             {
                 await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
-                    $"run_session_mismatch: run belongs to {run.SessionId}; resume that session with /resume {run.SessionId} before continuing it.")).ConfigureAwait(false);
+                    $"run_session_mismatch: run belongs to {run.SessionId}; resume that session with /sessions id:{run.SessionId} before continuing it.")).ConfigureAwait(false);
                 await _out.FlushAsync().ConfigureAwait(false);
                 return;
             }
@@ -568,7 +568,7 @@ public sealed partial class AgentCommands
             {
                 await WriteDiagnosticLineAsync(
                     _err,
-                    $"run_session_mismatch: run belongs to {run.SessionId}; resume that session with /resume {run.SessionId} before following it").ConfigureAwait(false);
+                    $"run_session_mismatch: run belongs to {run.SessionId}; resume that session with /sessions id:{run.SessionId} before following it").ConfigureAwait(false);
                 return;
             }
 

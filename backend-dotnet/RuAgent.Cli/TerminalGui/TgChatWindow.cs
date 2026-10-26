@@ -48,11 +48,12 @@ public sealed partial class TgChatWindow : Window
         HeaderDivider = new TgRuleView();
         Transcript = new TgTranscriptView { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(TgComposerView.RowCount + 2) };
         Composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(TgComposerView.RowCount + 1), Width = Dim.Fill(), Height = TgComposerView.RowCount };
+        Composer.PresetChanged += preset => { Header.SetPreset(preset); Relayout(); };
         Hints = new TgHintsView { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
         Landing = new TgLandingView();
         Hints.WorkspaceChanged += () => Header.SetWorkspace(Hints.Workspace);
 
-        Add(Header, HeaderDivider, Transcript, Landing, Composer, Hints);
+        Add(Transcript, Landing, Header, HeaderDivider, Composer, Hints);
         CanFocus = true;
 
         // The pre-chat wordmark owns the transcript region only while it is empty; the

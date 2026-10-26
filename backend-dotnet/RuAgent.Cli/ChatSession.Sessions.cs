@@ -178,7 +178,7 @@ public sealed partial class AgentCommands
                 SwitchSessionAsync,
                 _slashCommands.Picker,
                 // The session card (switch + delete) and the delete call exist only where a panel
-                // can be drawn; the sequential engine keeps the plain list and /resume <id>.
+                // can be drawn; the sequential engine keeps the plain list and /sessions id:<id>.
                 tgMode ? (list, ct) => TgPanelRequests.RequestSessionChoiceAsync(tgWindow!, list, ct) : null,
                 tgMode ? DeleteSessionAsync : null,
                 WriteDiagnosticLineAsync,
@@ -197,9 +197,15 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            if (string.Equals(targetSessionId, sessionId, StringComparison.Ordinal))
+            var sameSession = string.Equals(targetSessionId, sessionId, StringComparison.Ordinal);
+            if (sameSession && !historyReloadRequired)
             {
                 await WriteDiagnosticLineAsync(humanOut, $"already in session {sessionId}").ConfigureAwait(false);
+                return;
+            }
+            if (sameSession && historyReloadRequired)
+            {
+                await ReloadUncertainHistoryAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -210,6 +216,9 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            historyReloadRequired = false;
+
+            pendingHistoryBranch = null;
             sessionId = targetSessionId;
             sessionTitle = replay.Title;
             runSession.ResetSession();

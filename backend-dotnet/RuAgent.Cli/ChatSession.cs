@@ -41,9 +41,12 @@ public sealed partial class AgentCommands
         private ChatSubmissionState submissions = default!;
         private string canonicalWorkspace = default!;
         private string sessionId = default!;
+        private string? initialDraftSessionId;
+        private bool draftCreationFailed;
         private string workspaceLabel = default!;
         private string backendName = default!;
         private string activeModel = default!;
+        private string activeReasoningEffort = string.Empty;
         private string? modelWarning = default!;
         private IReadOnlyList<Images.CliImageAttachment> pendingImages = default!;
         private IReadOnlyList<CliTextAttachment> pendingTexts = default!;
@@ -89,6 +92,7 @@ public sealed partial class AgentCommands
             workspaceLabel = bootstrap.WorkspaceLabel;
             backendName = bootstrap.BackendName;
             activeModel = bootstrap.ActiveModel;
+            activeReasoningEffort = bootstrap.ReasoningEffort;
             modelWarning = bootstrap.ModelWarning;
             pendingImages = submissions.Images;
             pendingTexts = submissions.Texts;
@@ -147,7 +151,7 @@ public sealed partial class AgentCommands
                     : Tui.ConsoleSecretInput.ReadAsync(_out, $"API key for {ChatDisplayText.Sanitize(providerDisplay, 64)}: ", ct);
 
             _slashCommands.SnapshotProvider = () => new Tui.TuiStatusSnapshot(
-                SessionId: sessionId,
+                SessionId: string.IsNullOrEmpty(sessionId) ? "not started" : sessionId,
                 Preset: cmd.Preset,
                 Backend: backendName,
                 Model: activeModel,

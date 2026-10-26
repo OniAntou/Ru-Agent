@@ -21,13 +21,14 @@ public static class TgStatusPresentation
         string? feedback = null,
         bool isError = false,
         string? action = null,
-        string idleLabel = "Ready")
+        string idleLabel = "")
     {
         var queueSuffix = queuedCount > 0 ? $" · {queuedCount} queued" : string.Empty;
         if (!string.IsNullOrWhiteSpace(feedback))
         {
             var stateText = StateLabel(state, queuedCount);
-            return stateText + queueSuffix + " · " + (isError ? "✗ " : string.Empty) + feedback;
+            var prefix = stateText + queueSuffix;
+            return (prefix.Length > 0 ? prefix + " · " : string.Empty) + (isError ? "✗ " : string.Empty) + feedback;
         }
 
         if (state == TgHintsState.Running && queuedCount > 0)
@@ -53,7 +54,7 @@ public static class TgStatusPresentation
         return bracket > 1
             && safeWorkspace[1..bracket].Contains("attachment", StringComparison.OrdinalIgnoreCase)
                 ? safeWorkspace
-                : "Ready";
+                : string.Empty;
     }
 
     private static string StateLabel(TgHintsState state, int queuedCount) => state switch
@@ -62,7 +63,7 @@ public static class TgStatusPresentation
         TgHintsState.WaitingForApproval => "Approval needed",
         TgHintsState.Paused => "Paused",
         _ when queuedCount > 0 => "Queue waiting",
-        _ => "Ready",
+        _ => string.Empty,
     };
 
     /// <summary>

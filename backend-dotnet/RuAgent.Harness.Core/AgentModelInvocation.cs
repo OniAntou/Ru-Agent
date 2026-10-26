@@ -260,7 +260,7 @@ internal sealed class AgentModelInvocation
                 step.ToolCalls,
                 step.FinishReason,
                 step.EstimatedInputTokens,
-                modelResult.Usage);
+                modelResult.Usage, step.ResponsesMessages);
         }
         assistantStream.Complete();
         AgentActivityProjector.PublishSafe(

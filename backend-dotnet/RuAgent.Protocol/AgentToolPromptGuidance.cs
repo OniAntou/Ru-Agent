@@ -3,8 +3,16 @@ namespace RuAgent.Protocol;
 /// <summary>Workflow hints live beside tool contracts; availability never grants execution permission.</summary>
 public static class AgentToolPromptGuidance
 {
-    public static IReadOnlyList<string> ForTools(IEnumerable<string> toolIds)
+    public static IReadOnlyList<string> ForTools(IEnumerable<string> toolIds, bool nativeToolCalling = false)
     {
+        // Native function declarations already carry their per-tool descriptions and
+        // schemas. Keep this supplemental field-specific guidance for text selection,
+        // where those declarations are unavailable to the model.
+        if (nativeToolCalling)
+        {
+            return Array.Empty<string>();
+        }
+
         var tools = toolIds.ToHashSet(StringComparer.Ordinal);
         var lines = new List<string>();
         if (tools.Contains("read_file"))

@@ -87,12 +87,12 @@ public static class ConsecutiveToolCallGuard
         }
 
         var index = context.Entries.Count - 1;
-        // Advice replaces a suppressed call in model context. Look through our
-        // trailing advice to the original result, without crossing a user turn.
-        while (index >= 0
-            && context.Entries[index].Kind == ModelContextEntryKind.Text
+        // Progress and advice are not tool actions. Look through them to the
+        // original result without crossing a user turn.
+        while (index >= 0 && (AgentRecoveryNotes.IsCommentaryProgress(context.Entries[index])
+            || context.Entries[index].Kind == ModelContextEntryKind.Text
             && context.Entries[index].Role == ModelContextRole.System
-            && context.Entries[index].Content?.StartsWith(RepairNotePrefix, StringComparison.Ordinal) == true)
+            && context.Entries[index].Content?.StartsWith(RepairNotePrefix, StringComparison.Ordinal) == true))
         {
             index--;
         }
@@ -170,6 +170,7 @@ public static class ConsecutiveToolCallGuard
         IReadOnlyList<ModelToolCall> proposed)
     {
         var index = assistantIndex - 1;
+        while (index >= 0 && AgentRecoveryNotes.IsCommentaryProgress(context.Entries[index])) index--;
         var receipts = new List<ToolExecutionReceipt>();
         while (index >= 0 && context.Entries[index].Kind == ModelContextEntryKind.ToolResult)
         {

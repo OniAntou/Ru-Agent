@@ -335,6 +335,11 @@ public sealed record ModelRequest
         for (var index = 0; index < messages.Count; index++)
         {
             bytes = checked(bytes + Encoding.UTF8.GetByteCount(messages[index].ToJsonObject().ToJsonString()));
+            // The neutral wire shape intentionally omits Responses-only metadata.
+            // Include it in admission bounds even for direct adapter projection.
+            if (messages[index].ResponsesMessages is { } responseMessages)
+                bytes = checked(bytes + Encoding.UTF8.GetByteCount(new JsonArray(
+                    responseMessages.Messages.Select(message => message.DeepClone()).ToArray()).ToJsonString()));
             if (index > 0)
             {
                 bytes = checked(bytes + 1);

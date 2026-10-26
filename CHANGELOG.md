@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(providers)**: Preserve Responses assistant message phases through streaming,
+  durable context and native replay; continue commentary-only replies with bounded
+  recovery instead of completing the task, and avoid duplicate narration.
+- **perf(prompt)**: Load root domain context as digest-bound references, remove
+  repeated native tool field hints, and add a concise coding quality contract.
+  Apply a narrow Codex recipe only to its confirmed official native route;
+  custom endpoints and unknown models retain neutral guidance.
+
 - **fix(verification)**: Preserve prior checks after authority-identified read-only
   commands exit nonzero; retain the original failed diagnostic or required check.
   Clarify explicit inspection intent for PowerShell reads.

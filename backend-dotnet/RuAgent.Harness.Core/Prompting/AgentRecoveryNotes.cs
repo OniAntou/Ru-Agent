@@ -14,6 +14,7 @@ public enum AgentRecoveryKind
     EmptyModelReply,
     ModelRepairable,
     OutputTruncated,
+    CommentaryOnly,
 }
 
 /// <summary>
@@ -58,6 +59,7 @@ public static class AgentRecoveryNotes
     // Global cap across every recovery case, counted from the context for the
     // whole run. This bounds recovery across all cases, including truncation.
     public const int MaximumNotesPerRun = 24;
+    public const int MaximumCommentaryNotes = 3;
 
     /// <summary>
     /// Names the failed receipt and gives recovery guidance for known effect codes.
@@ -92,6 +94,16 @@ public static class AgentRecoveryNotes
     public static string BuildEmptyNote() =>
         $"{NotePrefix} {KindMarker(AgentRecoveryKind.EmptyModelReply)} - the last model "
         + "reply was empty. Answer with text or a valid tool call.";
+
+    public static string BuildCommentaryNote() =>
+        $"{NotePrefix} {KindMarker(AgentRecoveryKind.CommentaryOnly)} - the provider marked its last reply as commentary, not a final answer. "
+        + "Continue the requested work with advertised tools when needed, or supply the final closeout when done. Do not repeat the progress message.";
+
+    /// <summary>Progress is retained for replay but cannot reset tool failure/repetition evidence.</summary>
+    public static bool IsCommentaryProgress(ModelContextEntry entry) =>
+        entry.AssistantStep?.ResponsesMessages?.IsCommentaryOnly == true
+        || entry.Kind == ModelContextEntryKind.Text && entry.Role == ModelContextRole.System
+            && entry.Content?.StartsWith(NotePrefix + " model_commentary_only -", StringComparison.Ordinal) == true;
 
     public static string BuildTruncatedNote() =>
         $"{NotePrefix} {KindMarker(AgentRecoveryKind.OutputTruncated)} - the provider "
@@ -128,6 +140,7 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.EmptyModelReply => "empty_model_reply",
         AgentRecoveryKind.ModelRepairable => "model_repairable",
         AgentRecoveryKind.OutputTruncated => "model_output_truncated",
+        AgentRecoveryKind.CommentaryOnly => "model_commentary_only",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -137,6 +150,7 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.EmptyModelReply => MaximumEmptyNotes,
         AgentRecoveryKind.ModelRepairable => MaximumModelRepairableNotes,
         AgentRecoveryKind.OutputTruncated => MaximumTruncatedNotes,
+        AgentRecoveryKind.CommentaryOnly => MaximumCommentaryNotes,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

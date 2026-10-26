@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using System.Diagnostics;
 using RuAgent.Harness.Core.Diagnostics;
@@ -19,7 +19,8 @@ public sealed record ModelStepServiceResult(
     SystemPromptReceipt PromptReceipt,
     ModelUsage? Usage,
     string? ReasoningText = null,
-    ProviderContinuation? ProviderContinuation = null);
+    ProviderContinuation? ProviderContinuation = null,
+    ResponsesAssistantMessages? ResponsesMessages = null);
 
 public sealed class PreparedModelStep
 {
@@ -241,7 +242,7 @@ public sealed class ModelStepService
             var nativeResultIds = request.ModelMessages.Where(turn => turn.Role == "tool" && turn.ToolCallId is not null)
                 .Select(turn => turn.ToolCallId!).ToHashSet(StringComparer.Ordinal);
             snapshot = SystemPromptComposer.Compose(request.SystemPromptContext, nativeToolCalling, nativeResultIds,
-                deferRuntimeContext: nativeToolCalling);
+                deferRuntimeContext: nativeToolCalling, recipe: SelectPromptRecipe(providerBootstrap, nativeToolCalling));
             snapshot.Receipt.ValidateAgainst(request.SystemPromptContext, snapshot.Text);
             settings = BuildWireSettings(request.Settings);
             var requestTurns = nativeToolCalling
@@ -338,6 +339,7 @@ public sealed class ModelStepService
             var replayReasoningBytes = 0;
             var toolFragments = new List<ModelToolFragment>();
             ProviderContinuation? providerContinuation = null;
+            ResponsesAssistantMessages? responsesMessages = null;
             string? finishReason = null;
             ModelUsage? usage = null;
             try
@@ -386,6 +388,14 @@ public sealed class ModelStepService
                         await holdback.ForwardAsync(delta.Text).ConfigureAwait(false);
                     }
 
+                    if (delta.ResponsesMessages is { } messages)
+                    {
+                        if (responsesMessages is not null || !delta.Completed
+                            || providerBootstrap.Protocol != ProviderProtocols.OpenAiResponses
+                            || providerBootstrap.ToolCallingMode != ProviderToolCallingMode.Native)
+                            throw new ModelStepException("protocol_failure", false);
+                        responsesMessages = messages;
+                    }
                     toolFragments.AddRange(delta.ToolFragments);
                     if (delta.ProviderContinuation is { } continuation)
                     {
@@ -472,6 +482,8 @@ public sealed class ModelStepService
                 throw new ModelStepException("provider_continuation_too_large", false, error);
             }
         }
+        if (responsesMessages is not null && responsesMessages.Text != (visibleText ?? string.Empty))
+            throw new ModelStepException("protocol_failure", false);
         ValidateProviderContinuation(providerBootstrap, providerContinuation, calls);
         if (calls.Count == 0)
         {
@@ -487,7 +499,7 @@ public sealed class ModelStepService
             _tokenAnchors.Observe(scope, body, providerBootstrap.Protocol + "|" + providerBootstrap.Endpoint.AbsoluteUri,
                 providerBootstrap.Model, usage);
         if (usage is not null) usage = usage with { ContextTokens = prepared.ContextTokens };
-        return new ModelStepServiceResult(visibleText, calls, finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text), providerContinuation);
+        return new ModelStepServiceResult(visibleText, calls, finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text), providerContinuation, responsesMessages);
         }
         catch (OperationCanceledException)
         {
@@ -531,6 +543,13 @@ public sealed class ModelStepService
         var maxPromptTokens = Math.Max(1, windowTokens - bootstrap.OutputTokenReserve);
         return (inputTokens, maxPromptTokens);
     }
+
+    private static PromptRecipe SelectPromptRecipe(ProviderBootstrapData bootstrap, bool nativeToolCalling) =>
+        nativeToolCalling && bootstrap.Protocol == ProviderProtocols.OpenAiResponses
+        && bootstrap.Endpoint.Scheme == "https" && bootstrap.Endpoint.Port == 443
+        && string.Equals(bootstrap.Endpoint.Host, "api.openai.com", StringComparison.OrdinalIgnoreCase)
+        && bootstrap.Model == "gpt-5.3-codex"
+            ? PromptRecipe.CodexNative : PromptRecipe.Neutral;
 
     private static void ValidateProviderContinuation(
         ProviderBootstrapData bootstrap,
@@ -1078,6 +1097,7 @@ public sealed class ModelStepService
         // right response. A response that is simply too large is a ceiling --
         // retrying spends the attempt budget to reach the same ceiling.
         "malformed_payload" => new ModelStepException("protocol_failure", retryable: true, error),
+        "provider_continuation_too_large" => new ModelStepException(error.Code, false, error),
         "response_too_large" => new ModelStepException("protocol_failure", retryable: false, error),
         "http_error" or "redirect_rejected" or "vision_unsupported" or "empty_model_reply" => new ModelStepException(error.Code, error.Retryable, error),
         _ => new ModelStepException("generation_failed", error.Retryable, error),

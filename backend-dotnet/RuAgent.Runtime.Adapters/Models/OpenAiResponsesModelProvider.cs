@@ -7,7 +7,7 @@ using RuAgent.Harness.Core;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
-public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequestBodyProjector
+public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IModelRequestBodyProjector
 {
     private readonly HttpClient _http;
     private readonly TimeSpan? _requestTimeout;
@@ -47,6 +47,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
             using (stream)
             {
                 ModelDelta? terminal = null;
+                var streamedText = new StringBuilder();
                 var functionCalls = new Dictionary<int, FunctionCallStream>();
                 await foreach (var evt in BoundedSseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
                 {
@@ -78,6 +79,12 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
                     {
                         var t = ReadString(data["delta"]);
                         if (t is null) throw new ModelProviderException("malformed_payload", false);
+                        if (request.NativeToolCalling)
+                        {
+                            if (streamedText.Length + (long)t.Length > RuAgent.Harness.Core.Prompting.ResponsesAssistantMessages.MaximumTextCharacters)
+                                throw new ModelProviderException("malformed_payload", false);
+                            streamedText.Append(t);
+                        }
                         yield return new ModelDelta(t, [], false, null);
                         continue;
                     }
@@ -110,8 +117,22 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
 
                         var output = ReadArray(responseData["output"]);
                         var calls = AssembleFunctionCalls(functionCalls, output);
+                        var messages = ReadAssistantMessages(request, output);
+                        if (messages is not null)
+                        {
+                            if (!messages.Text.StartsWith(streamedText.ToString(), StringComparison.Ordinal))
+                                throw new ModelProviderException("malformed_payload", false);
+                            for (var offset = streamedText.Length; offset < messages.Text.Length;)
+                            {
+                                var count = Math.Min(32 * 1024, messages.Text.Length - offset);
+                                if (offset + count < messages.Text.Length && char.IsHighSurrogate(messages.Text[offset + count - 1])) count--;
+                                yield return new ModelDelta(messages.Text.Substring(offset, count), [], false, null);
+                                offset += count;
+                            }
+                        }
                         var continuation = BuildContinuation(request, output, calls.Count > 0);
-                        terminal = new ModelDelta(null, calls, true, calls.Count > 0 ? "tool_calls" : "stop", usage, providerContinuation: continuation);
+                        terminal = new ModelDelta(null, calls, true, calls.Count > 0 ? "tool_calls" : "stop", usage,
+                            providerContinuation: continuation, responsesMessages: messages);
                         continue;
                     }
                     if (evt.Event == "error" || type == "error")
@@ -188,14 +209,18 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
             }
             if (nativeToolsEnabled && turn.Role == "assistant" && turn.ToolCalls.Count > 0)
             {
-                if (!string.IsNullOrWhiteSpace(turn.Content)) input.Add(new JsonObject { ["role"] = "assistant", ["content"] = turn.Content });
+                if (turn.ResponsesMessages is { } toolMessages)
+                    foreach (var message in toolMessages.Messages) input.Add(message.DeepClone());
+                else if (!string.IsNullOrWhiteSpace(turn.Content)) input.Add(new JsonObject { ["role"] = "assistant", ["content"] = turn.Content });
                 foreach (var call in turn.ToolCalls)
                     input.Add(new JsonObject { ["type"] = "function_call", ["call_id"] = call.Id, ["name"] = call.Name, ["arguments"] = call.Arguments.GetRawText() });
                 continue;
             }
             if (turn.Role is not ("user" or "assistant"))
                 throw new ModelProviderException("malformed_payload", false);
-            input.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
+            if (nativeToolsEnabled && turn.ResponsesMessages is { } messages)
+                foreach (var message in messages.Messages) input.Add(message.DeepClone());
+            else input.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
         }
 
         if (!string.IsNullOrEmpty(request.RuntimeContext))
@@ -272,12 +297,23 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
     private static RuAgent.Harness.Core.Prompting.ProviderContinuation? BuildContinuation(ModelRequest request, JsonArray? output, bool hasCalls)
     {
         if (!hasCalls || request.Settings["model_tools"] is not JsonArray || output is null) return null;
+        var preserveMessages = output.OfType<JsonObject>().Any(item => ReadString(item["type"]) == "message" && item.ContainsKey("phase"));
         var continuationItems = output.OfType<JsonObject>()
-            .Where(item => ReadString(item["type"]) is "reasoning" or "function_call")
+            .Where(item => ReadString(item["type"]) is "reasoning" or "function_call"
+                || preserveMessages && ReadString(item["type"]) == "message")
             .ToArray();
-        return continuationItems.Length == 0
-            ? null
-            : new RuAgent.Harness.Core.Prompting.ProviderContinuation("openai", "openai_responses", request.Model, 1, continuationItems);
+        if (continuationItems.Length == 0) return null;
+        if (Encoding.UTF8.GetByteCount(new JsonArray(continuationItems.Select(item => item.DeepClone()).ToArray()).ToJsonString())
+            > RuAgent.Harness.Core.Prompting.ProviderContinuation.MaximumBytes)
+            throw new ModelProviderException("provider_continuation_too_large", false);
+        try
+        {
+            return new RuAgent.Harness.Core.Prompting.ProviderContinuation("openai", "openai_responses", request.Model, 1, continuationItems);
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException)
+        {
+            throw new ModelProviderException("malformed_payload", false, error);
+        }
     }
 
     private static void AddFunctionCall(Dictionary<int, FunctionCallStream> calls, JsonObject data)

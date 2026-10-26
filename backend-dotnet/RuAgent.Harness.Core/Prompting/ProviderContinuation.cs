@@ -75,6 +75,7 @@ public sealed record ProviderContinuation
             {
                 "reasoning" => new[] { "type", "id", "encrypted_content", "summary", "status" },
                 "function_call" => new[] { "type", "id", "call_id", "name", "arguments", "status" },
+                "message" => new[] { "type", "id", "role", "content", "phase", "status" },
                 _ => Array.Empty<string>(),
             };
             if (allowed.Length == 0 || item.Any(property => !allowed.Contains(property.Key, StringComparer.Ordinal)))
@@ -82,6 +83,11 @@ public sealed record ProviderContinuation
             var id = item["id"]?.GetValue<string>();
             if (id is null || id.Length > MaximumIdentityChars || !itemIds.Add(id))
                 throw new ArgumentException("Provider continuation item identity is invalid.", nameof(items));
+            if (type == "message")
+            {
+                ResponsesAssistantMessages.ValidateMessage(item);
+                continue;
+            }
             if (type == "reasoning")
             {
                 if (item["encrypted_content"]?.GetValueKind() is not (JsonValueKind.String or JsonValueKind.Null))

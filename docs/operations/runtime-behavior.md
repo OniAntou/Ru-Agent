@@ -171,8 +171,10 @@ and never the run's own mode, so a model cannot mistake a mode described in
 CONTEXT.md for the mode it is in. On provider-native
 paths, one generation may return optional narration and one or more ordered
 calls. The Host persists the assistant batch and matching durable tool results;
-it does not flatten native calls into prose. Compatibility text selection emits
-exactly one JSON object. The model makes no success claim before durable
+it does not flatten native calls into prose. Responses assistant message phases survive native replay: `commentary` is
+progress rather than a completed answer. A commentary-only response continues
+with bounded recovery, and `final_answer` can finish normally. Compatibility
+text selection emits exactly one JSON object. The model makes no success claim before durable
 results. If a batch asks, no call executes; after approval the runtime
 re-evaluates the retained durable proposals without a new model proposal.
 Read-only calls may overlap up to eight at a time while mutation/terminal
@@ -182,10 +184,14 @@ duplicate, malformed, or digest-mismatched contracts fail before provider
 execution; wire and invariant violations remain terminal.
 
 The Host reads the fixed `AGENTS.md`, `CONTEXT.md`, `.ru/AGENTS.md`, and
-`.ru/CONTEXT.md` candidates below the selected run root, then discovers
-direct-child skill directories from
-`<workspace-root>/skills`, `<workspace-root>/.ru/skills`, and
-`%LOCALAPPDATA%\Ru\skills`, in that order. A directory is a skill
+`.ru/CONTEXT.md` candidates below the selected run root. `AGENTS.md` is loaded
+as workflow guidance; each `CONTEXT.md` body is represented by a short relative
+path and normalized content hash, with relevant sections read on demand.
+The optional user-wide `~/.ru/AGENTS.md` comes first, so workspace instructions
+take precedence. Skill directories follow the shared `RuAgent.Protocol.SkillRoots`
+order: `<workspace-root>/skills`, `<workspace-root>/.ru/skills`,
+`<workspace-root>/.agents/skills`, `RU_SKILLS_ROOT` when set, `~/.ru/skills`, and
+`%LOCALAPPDATA%\Ru\skills`. A directory is a skill
 only when it contains a case-insensitive `SKILL.md`. For example:
 
 ```markdown

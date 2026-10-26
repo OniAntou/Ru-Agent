@@ -139,15 +139,20 @@ public sealed partial class RuInstructionLoader
                 continue;
             }
 
-            var content = read.Content!;
-            var contentBytes = StrictUtf8.GetByteCount(content);
-            if (contentBytes == 0 || string.IsNullOrWhiteSpace(content))
+            var sourceContent = read.Content!;
+            var sourceBytes = StrictUtf8.GetByteCount(sourceContent);
+            if (sourceBytes == 0 || string.IsNullOrWhiteSpace(sourceContent))
             {
                 skips.Add(new RuInstructionSkip(candidate.SourceId, "empty"));
                 continue;
             }
 
-            if (blocks.Count >= SystemPromptContext.MaxInstructionBlocks || combinedBytes > MaxCombinedInstructionBytes - contentBytes)
+            var sourceDigest = Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(sourceContent))).ToLowerInvariant();
+            var content = IsDomainContext(candidate.SourceId)
+                ? DomainReferenceInstruction(candidate.RelativePath, sourceDigest).Replace("\r\n", "\n", StringComparison.Ordinal)
+                : sourceContent;
+
+            if (blocks.Count >= SystemPromptContext.MaxInstructionBlocks || combinedBytes > MaxCombinedInstructionBytes - sourceBytes)
             {
                 skips.Add(new RuInstructionSkip(candidate.SourceId, "oversize"));
                 continue;
@@ -161,7 +166,7 @@ public sealed partial class RuInstructionLoader
 
             var digest = Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(content))).ToLowerInvariant();
             blocks.Add(new PromptInstructionBlock(candidate.SourceId, candidate.DisplayName, content, digest, candidate.Origin));
-            combinedBytes += contentBytes;
+            combinedBytes += sourceBytes;
         }
 
         var markdownRoots = RuAgent.Protocol.SkillRoots.For(canonicalRoot, _localApplicationDataRoot, _userProfileRoot);
@@ -218,6 +223,15 @@ public sealed partial class RuInstructionLoader
 
         return new RuInstructionLoadResult(blocks, skips);
     }
+
+    private static bool IsDomainContext(string sourceId) =>
+        sourceId is "root:CONTEXT.md" or "ru:CONTEXT.md";
+
+    private static string DomainReferenceInstruction(string relativePath, string sourceDigest) => $"""
+This workspace domain reference is documentation, not persona or workflow instructions.
+Read relevant sections from {relativePath} with an advertised file-reading capability when needed.
+Reference content SHA-256: {sourceDigest}
+""";
 
     private static string GetLocalApplicationDataRoot()
     {

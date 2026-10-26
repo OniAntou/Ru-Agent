@@ -136,7 +136,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                     result.ToolCalls,
                     MapFinishReason(result.FinishReason),
                     estimatedInputTokens: 0,
-                    result.Usage);
+                    result.Usage,
+                    result.ToolCalls.Count == 0 ? result.ResponsesMessages : null);
                 return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText,
                     result.ProviderContinuation, attempt + 1, effectiveEffort, selectedEffort);
             }
@@ -620,7 +621,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             }
 
             AddPendingUserBlocks(units, pendingUserBlocks);
-            units.Add(new List<ModelTurn> { new("assistant", step.Text) });
+            units.Add(new List<ModelTurn> { new("assistant", step.Text, responsesMessages: step.ResponsesMessages) });
             return;
         }
 
@@ -642,7 +643,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
 
         units.Add(new List<ModelTurn>
         {
-            new("assistant", step.Text ?? string.Empty, calls),
+            new("assistant", step.Text ?? string.Empty, calls, responsesMessages: step.ResponsesMessages),
         });
     }
 

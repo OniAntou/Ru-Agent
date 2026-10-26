@@ -220,6 +220,15 @@ Implementation: [providers](docs/architecture/providers.md#provider-continuation
 _Avoid_: hidden reasoning in chat history or reconstructed prose
 
 
+**Responses Assistant Phase**:
+The provider's public per-message distinction between commentary and final_answer,
+with null retaining ordinary assistant-message semantics. Retained native history
+preserves this metadata; commentary alone does not complete an Agent Run. Private
+reasoning remains in Provider Continuation.
+Implementation: [providers](docs/architecture/providers.md#provider-continuation).
+_Avoid_: treating progress text as a final answer or adding phase to user messages
+
+
 **Runtime Context Snapshot**:
 A bounded, encrypted model-only record of current runtime and workflow context, admitted before a prepared native text model step. Retained snapshots preserve their historical position; new or cleared state is appended and never grants authority.
 Implementation: [providers](docs/architecture/providers.md#runtime-context-snapshots).

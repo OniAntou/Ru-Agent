@@ -241,14 +241,40 @@ _Avoid_: current settings as restart fallback
 The bounded, typed, encrypted `InternalOnly` payload holding exact provider
 items required to continue a successful native Responses, Anthropic Messages or
 explicitly supported Chat tool step, bound to the run, provider, protocol, model, and model-step ID. For
-Anthropic this preserves ordered text, signed thinking, redacted thinking, and
-tool-use blocks exactly. It remains outside the
+Responses this also retains the original ordered assistant messages when a
+message carries `phase` (including explicit null), alongside reasoning and
+function-call items. The history projector emits this native text once, without
+also adding a flattened copy. For Anthropic this preserves ordered text, signed
+thinking, redacted thinking, and tool-use blocks exactly. It remains outside the
 visible AssistantStep, canonical model context, client payload reads, and
 telemetry; rehydration pairs it with the exact ordered normalized tool-call
 batch before dispatch. Native calling follows the selected supported protocol;
 no model-name guess or alternate protocol substitutes for a provider failure. Broker remains the
 sole tool Execution Authority.
 _Avoid_: hidden reasoning in chat history or reconstructed prose
+
+Responses text-only steps store their public assistant messages in the optional
+`responses_messages` field of `AssistantStep`. Per-message `phase` remains
+`commentary`, `final_answer` or null; legacy unphased messages keep their old
+shape. The metadata holds no private reasoning. SQLite reconstruction, canonical
+context and retained native history preserve it. Compacted-away messages are
+replaced by the ordinary summary rather than replayed with invented phases.
+The adapter validates completed message text against streamed text and emits any
+unstreamed suffix once. Commentary-only replies do not complete a run: they are
+model-only context followed by bounded `model_commentary_only` recovery.
+Progress commentary and its recovery note cannot clear a preceding failed tool
+receipt, repetition evidence or required verification. The single permitted
+infrastructure retry remains bounded across progress messages.
+
+Public message metadata is bounded to 32 messages and 512 KiB serialized JSON
+(the existing stricter SSE event/stream bounds still apply),
+leaving room for its duplicated display text within the existing 2 MiB
+AssistantStep payload limit. The private tool-batch continuation keeps its
+128 KiB cap; exceeding it yields non-retryable
+`provider_continuation_too_large` before dispatch. Oversized public messages
+are non-retryable `protocol_failure`; invalid message shapes use the existing
+bounded malformed-response recovery. No storage migration or provider fallback
+is introduced.
 
 New selections for HTTPS `api.deepseek.com:443` Chat Completions pin
 `_ru_chat_reasoning_content_v1` in their secret-free request-option record. The

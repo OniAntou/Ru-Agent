@@ -26,13 +26,56 @@ public sealed class RuInstructionLoaderTests
             new[] { "root:AGENTS.md", "root:CONTEXT.md", "ru:AGENTS.md", "ru:CONTEXT.md" },
             result.Blocks.Select(block => block.SourceId));
         Assert.Equal("root guidance", result.Blocks[0].Content);
-        Assert.Equal("workflow context", result.Blocks[1].Content);
+        Assert.DoesNotContain("workflow context", result.Blocks[1].Content, StringComparison.Ordinal);
+        Assert.Contains("CONTEXT.md", result.Blocks[1].Content, StringComparison.Ordinal);
+        Assert.Contains(
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("workflow context"))).ToLowerInvariant(),
+            result.Blocks[1].Content,
+            StringComparison.Ordinal);
         Assert.Equal(PromptInstructionOrigin.Workspace, result.Blocks[1].Origin);
         Assert.Equal(
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("root guidance"))).ToLowerInvariant(),
             result.Blocks[0].ContentSha256);
         Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("parent", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("arbitrary", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("context guidance", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Root_domain_context_files_are_bounded_references_not_inlined_instructions()
+    {
+        using var fixture = TempRoot.Create();
+        const string rootContext = "# Ru domain language\n\nLong root domain text.";
+        const string ruContext = "# Local domain notes\n\nLong local domain text.";
+        Directory.CreateDirectory(Path.Combine(fixture.Root, ".ru"));
+        File.WriteAllText(Path.Combine(fixture.Root, "CONTEXT.md"), rootContext, new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(fixture.Root, ".ru", "CONTEXT.md"), ruContext, new UTF8Encoding(false));
+
+        var result = new RuInstructionLoader().Load(fixture.Root);
+        var root = result.Blocks.Single(block => block.SourceId == "root:CONTEXT.md");
+        var local = result.Blocks.Single(block => block.SourceId == "ru:CONTEXT.md");
+
+        Assert.DoesNotContain("Long root domain text", root.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("Long local domain text", local.Content, StringComparison.Ordinal);
+        Assert.Contains(Path.Combine(".ru", "CONTEXT.md"), local.Content, StringComparison.Ordinal);
+        Assert.Contains(
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rootContext))).ToLowerInvariant(),
+            root.Content,
+            StringComparison.Ordinal);
+
+        var context = new SystemPromptContext(
+            SystemPromptContext.PromptContextSchemaVersion,
+            SystemPromptContext.RequiredAgentProfile,
+            "standard",
+            new PromptEnvironment("model", "windows", "en-US", "UTC", "2026-10-26", "workspace"),
+            result.Blocks,
+            Array.Empty<PromptCapability>(),
+            new PromptRuntimeContext(Array.Empty<PromptReference>()));
+        var prompt = SystemPromptComposer.Compose(context);
+        prompt.Receipt.ValidateAgainst(context, prompt.Text);
+        Assert.Contains(SystemPromptComposer.DomainReferenceBoundary, prompt.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Long root domain text", prompt.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Long local domain text", prompt.Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -118,6 +161,7 @@ public sealed class RuInstructionLoaderTests
         var prompt = SystemPromptComposer.Compose(context);
         prompt.Receipt.ValidateAgainst(context, prompt.Text);
         Assert.Contains(SystemPromptComposer.ExternalSkillInstructionBoundary, prompt.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Workspace alpha.", prompt.Text, StringComparison.Ordinal);
     }
 
     [Fact]

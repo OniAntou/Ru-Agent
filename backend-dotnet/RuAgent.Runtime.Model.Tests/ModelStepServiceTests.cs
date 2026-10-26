@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text;
 using System.Net;
@@ -12,7 +12,7 @@ using Xunit;
 
 namespace RuAgent.Runtime.Model.Tests;
 
-public sealed class ModelStepServiceTests
+public sealed partial class ModelStepServiceTests
 {
     [Fact]
     public async Task Measured_request_parts_attach_to_usage_without_replacing_provider_counts()

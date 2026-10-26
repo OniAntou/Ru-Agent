@@ -172,7 +172,8 @@ internal sealed partial class AgentRunStepHandlers
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken,
-        string? reasoningText)
+        string? reasoningText,
+        bool retainAssistantContext = false)
     {
         var advisedCode = noteCode + "_advised";
         var assistantPayloadId = _ids.NewPayloadId();
@@ -180,9 +181,9 @@ internal sealed partial class AgentRunStepHandlers
         var assistantPayload = new HarnessPayloadIntent(
             assistantPayloadId,
             HarnessPayloadKind.AssistantStep,
-            // The dead-end reply is audit-only: the recovery note replaces it in
-            // the model context, and the user never sees the suppressed prose.
-            HarnessPayloadAudience.InternalOnly,
+            // Commentary remains in model history with its original phase, but never
+            // becomes a final conversation reply. Other unusable output is audit-only.
+            retainAssistantContext ? HarnessPayloadAudience.ModelContext : HarnessPayloadAudience.InternalOnly,
             HarnessPayloadEncoding.Json,
             Math.Max(assistantBytes.Length, 1),
             assistantBytes);

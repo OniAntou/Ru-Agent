@@ -125,6 +125,11 @@ public sealed record ModelContextSnapshot
         writer.WriteEndArray();
         writer.WriteString("finish_reason", FinishReasonName(step.FinishReason));
         writer.WriteNumber("estimated_input_tokens", step.EstimatedInputTokens);
+        if (step.ResponsesMessages is { } messages)
+        {
+            writer.WritePropertyName("responses_messages");
+            messages.WriteTo(writer);
+        }
         if (step.Usage is not null)
         {
             writer.WritePropertyName("usage");

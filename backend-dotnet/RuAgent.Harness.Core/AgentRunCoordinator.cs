@@ -381,6 +381,10 @@ public sealed class AgentRunCoordinator
                 .ConfigureAwait(false);
         }
 
+        if (step.ResponsesMessages?.IsCommentaryOnly == true)
+            return await _steps.HandleCommentaryStepAsync(run, modelStepId, step, modelDroppedCount,
+                context, promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText).ConfigureAwait(false);
+
         if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode)
             || AgentRecoveryNotes.TryReadBlockedReply(step, out _))
         {

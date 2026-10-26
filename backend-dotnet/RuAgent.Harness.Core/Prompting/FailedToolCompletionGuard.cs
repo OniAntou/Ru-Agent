@@ -20,11 +20,11 @@ public static class FailedToolCompletionGuard
         }
 
         var lastIndex = context.Entries.Count - 1;
-        // A recovery note committed after the failed receipt is feedback about
-        // that receipt, not a new model action. Skip trailing notes so the
+        // Recovery notes and phased commentary after a failed receipt are
+        // feedback/progress, not a new tool action. Skip them so the
         // failure stays visible to the next final-prose step and the bounded
         // note budget remains reachable in the real flow.
-        while (lastIndex >= 0 && IsTrailingRecoveryNote(context.Entries[lastIndex]))
+        while (lastIndex >= 0 && IsTrailingRecoveryContext(context.Entries[lastIndex]))
         {
             lastIndex--;
         }
@@ -98,8 +98,9 @@ public static class FailedToolCompletionGuard
         return readable && empty;
     }
 
-    private static bool IsTrailingRecoveryNote(ModelContextEntry entry) =>
-        entry.Kind == ModelContextEntryKind.Text
+    private static bool IsTrailingRecoveryContext(ModelContextEntry entry) =>
+        AgentRecoveryNotes.IsCommentaryProgress(entry)
+        || entry.Kind == ModelContextEntryKind.Text
         && entry.Role == ModelContextRole.System
         && entry.Content is { } content
         && (content.StartsWith(AgentRecoveryNotes.NotePrefix, StringComparison.Ordinal)

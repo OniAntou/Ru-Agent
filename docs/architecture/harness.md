@@ -91,7 +91,19 @@ For every accepted model step, the Host rebuilds a bounded context and the
 in-process step service composes exactly one `system` message. The seven ordered
 blocks are the neutral Ru Agent runtime contract, Agent execution contract,
 environment, profile plus canonical effective policy, root-selected Ru/skill
-instruction blocks, host-derived capabilities, and runtime context.
+instruction blocks, host-derived capabilities, and runtime context. The neutral
+coding contract covers reuse, preserving unrelated edits, root-cause repair,
+honest error reporting and focused behavioral verification. Native requests use
+Protocol tool descriptions/schemas without repeating the field-specific text
+selection hints; batching, ordering and approval barriers remain in the system
+contract. Text selection retains those supplemental hints.
+
+A small prompt recipe may specialize the execution block only for native
+`openai_responses` with the pinned exact model `gpt-5.3-codex` at HTTPS
+`api.openai.com:443`. It requests concise, evidence-backed closeout text. Custom
+endpoints, unknown model aliases and other protocols keep the neutral recipe;
+selection never changes provider, model, protocol, tools or policy.
+
 For system prompt composition the Host persists receipt digest metadata in an `InternalOnly`
 `PromptReceipt` payload referenced by `model.prompt_composed`; the raw prompt,
 instruction text, tool results, arguments, paths, and provider data do
@@ -105,7 +117,13 @@ note above).
 The bounded instruction loader first reads the optional user-wide `~/.ru/AGENTS.md` (origin `User`,
 followed by the workspace guidance), then the fixed `AGENTS.md`, `CONTEXT.md`,
 `.ru/AGENTS.md`, and `.ru/CONTEXT.md` candidates below the selected run root,
-then discovers direct-child skill directories from `RuAgent.Protocol.SkillRoots` in precedence order:
+with `AGENTS.md` content inlined as workflow guidance. The two `CONTEXT.md`
+files become short workspace-relative documentation references containing the
+normalized source SHA-256; their bodies are read through advertised file tools
+when relevant. The receipt binds the normalized reference text, including that
+source hash. Source-file containment, decoding and size checks still apply.
+The loader then discovers direct-child skill directories from
+`RuAgent.Protocol.SkillRoots` in precedence order:
 `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, `<workspace-root>/.agents/skills`,
 `RU_SKILLS_ROOT` when set, `~/.ru/skills`, and
 `%LOCALAPPDATA%\Ru\skills`. The prompt listing, the `skill` tool and `/skills` share that one list. A package is recognized only when it contains a
@@ -668,12 +686,15 @@ the `ModelContext` audience, that answers a dead-end model step instead of
 failing the run; the same model takes the next step with that feedback in
 context. Bounds are per kind — 4 `unverified_after_tool_failure` notes, 4
 `model_repairable` notes, 3 `empty_model_reply` notes and 3 consecutive
-`model_output_truncated` notes — under a global cap of
+`model_output_truncated` notes, plus 3 `model_commentary_only` notes — under a global cap of
 24 notes per run, measured over the recovery notes visible in the assembled
 context. A note is persisted with the system role and is therefore never folded
 away by compaction, so the cap is cumulative for the whole run rather than
 per budget window. Every note is
-same-model bounded self-correction, never provider/model/tool substitution;
+same-model bounded self-correction, never provider/model/tool substitution.
+Responses commentary-only text stays in model context with its original phase,
+without a final conversation outbox entry; the next step receives a recovery
+note asking it to continue or close out. Other unusable replies remain audit-only;
 when a bound is spent the run fails closed with the original code. A model
 may instead emit a final `[BLOCKED]` report describing the incomplete/partial
 outcome. The marker is removed from durable visible history, and the run ends

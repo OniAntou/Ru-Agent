@@ -185,7 +185,8 @@ internal static class FailedToolCycleGuard
     }
 
     private static bool IsGuardNote(ModelContextEntry entry) =>
-        entry.Kind == ModelContextEntryKind.Text
+        AgentRecoveryNotes.IsCommentaryProgress(entry)
+        || entry.Kind == ModelContextEntryKind.Text
         && entry.Content is { } content
         && (content.StartsWith(ConsecutiveToolCallGuard.RepairNotePrefix, StringComparison.Ordinal)
             || content.StartsWith(AgentRecoveryNotes.NotePrefix, StringComparison.Ordinal));

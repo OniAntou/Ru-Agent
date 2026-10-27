@@ -732,7 +732,7 @@ public sealed partial class ModelStepServiceTests
     [Fact]
     public async Task Step_service_executes_mangled_embedded_call_and_keeps_prose()
     {
-        const string prose = "Xin chÃ o! TÃ´i sáº½ thá»­ truy cáº­p vÃ o folder.";
+        const string prose = "Xin chào! Tôi sẽ thử truy cập vào folder.";
         const string mangled =
             "<tool_call>\n<(\n\"tool_id\":\"files.read\",\n\"tool_version\":\"1.0.0\",\n\"arguments\":{\"path\":\"D:\\\\Test Agent\"}\n}\n}>";
         var provider = new FakeModelProvider(
@@ -817,11 +817,11 @@ public sealed partial class ModelStepServiceTests
     public async Task Step_service_keeps_ordinary_prose_visible_when_tools_are_advertised()
     {
         var provider = new FakeModelProvider(
-            new ModelDelta("Äang kiá»ƒm tra cho anh.", Array.Empty<ModelToolFragment>(), true, "stop"));
+            new ModelDelta("Đang kiểm tra cho anh.", Array.Empty<ModelToolFragment>(), true, "stop"));
 
         var result = await new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None);
 
-        Assert.Equal("Äang kiá»ƒm tra cho anh.", result.Text);
+        Assert.Equal("Đang kiểm tra cho anh.", result.Text);
         Assert.Empty(result.ToolCalls);
         Assert.Equal("stop", result.FinishReason);
     }
@@ -1191,7 +1191,7 @@ public sealed partial class ModelStepServiceTests
     private static ModelGenerationRequest Request(
         bool includeTool = false,
         string toolId = "files.read",
-        string prompt = "xin chÃ o",
+        string prompt = "xin chào",
         ModelGenerationSettings? settings = null,
         ProviderBootstrapData? bootstrap = null,
         IReadOnlyList<ModelImage>? images = null,

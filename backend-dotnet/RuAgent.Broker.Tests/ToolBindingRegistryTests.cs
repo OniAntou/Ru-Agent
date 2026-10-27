@@ -25,7 +25,7 @@ public sealed class ToolBindingRegistryTests
     /// <c>ask_user</c> (which deliberately has no Broker binding). This is the structural
     /// half of the <c>incomplete_tool_catalog</c> guard in the constructor: the guard
     /// fails closed at runtime, this fails loudly in the suite and names the tool that
-    /// went missing. Order is not compared here â€” <see cref="ToolBindingRegistry.List"/>
+    /// went missing. Order is not compared here — <see cref="ToolBindingRegistry.List"/>
     /// sorts by id (ordinal), which is deliberately independent of the catalog's prompt
     /// ordinal.
     /// </summary>
@@ -121,7 +121,7 @@ public sealed class ToolBindingRegistryTests
 
     /// <summary>
     /// The manifest declarations themselves must stay in the catalog's ordinal order.
-    /// The registry cannot observe this â€” it sorts by id â€” so this compares the declared
+    /// The registry cannot observe this — it sorts by id — so this compares the declared
     /// order through the catalog, which is what the prompt ordinal depends on. A tool
     /// declared out of order still binds and still executes, but it silently moves in the
     /// model-facing tool list.

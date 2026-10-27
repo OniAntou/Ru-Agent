@@ -219,7 +219,7 @@ public sealed class InProcessModelConversationTests
     {
         const int sourceOffset = 17;
         const string hiddenMarker = "READ-CURSOR-MARKER-INSIDE-BROKER-PAGE";
-        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiáº¿ngðŸ™‚", 14_000)) + hiddenMarker;
+        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 14_000)) + hiddenMarker;
         var bytesRead = Encoding.UTF8.GetByteCount(content);
         var source = new JsonObject
         {
@@ -358,7 +358,7 @@ public sealed class InProcessModelConversationTests
     {
         const int sourceOffset = 120;
         const string hiddenMarker = "SPOOL-CURSOR-MARKER-INSIDE-BROKER-PAGE";
-        var page = new string('s', ModelInputLimits.MaxToolResultChars - 120) + "ðŸ™‚" + new string('t', 300) + hiddenMarker;
+        var page = new string('s', ModelInputLimits.MaxToolResultChars - 120) + "🙂" + new string('t', 300) + hiddenMarker;
         var source = new JsonObject
         {
             ["spool_id"] = "execution_0123456789abcdef0123456789abcdef",
@@ -555,7 +555,7 @@ public sealed class InProcessModelConversationTests
     public void Oversized_unknown_tool_history_keeps_the_full_block_cap_and_truthful_omission_count()
     {
         const string prefix = "{\"unknown\":\"";
-        var source = prefix + string.Concat(Enumerable.Repeat("ðŸ™‚", 100_000));
+        var source = prefix + string.Concat(Enumerable.Repeat("🙂", 100_000));
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "inspect output"),
             AssistantStepEntry("src-2", 2, "provider_unknown_1", "unknown_tool", "{}"),
@@ -564,7 +564,7 @@ public sealed class InProcessModelConversationTests
         var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         var visible = Assert.Single(messages!, message => message.Role == "tool").Content;
-        const string note = "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at next_offset or next_line when present)";
+        const string note = "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at next_offset or next_line when present)";
         Assert.InRange(visible.Length, 1, ModelInputLimits.MaxToolResultChars);
         var noteOffset = visible.IndexOf(note, StringComparison.Ordinal);
         Assert.True(noteOffset >= 0);

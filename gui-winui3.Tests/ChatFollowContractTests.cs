@@ -94,13 +94,65 @@ public sealed class ChatFollowContractTests
         Assert.DoesNotContain("RunAfterLayout(ScrollToLatestAfterLayout)", open, StringComparison.Ordinal);
         Assert.DoesNotContain("ScrollChatToBottom()", open, StringComparison.Ordinal);
 
+        // A turn-end reload merges rows instead of resetting the list: the Reset
+        // painted the top of the transcript before its scroll came back.
         var reload = GuiSource.MethodBody(code, "ReloadSessionHistoryAsync");
-        Assert.Contains("preservedOffset", reload, StringComparison.Ordinal);
-        Assert.Contains("Messages.ReplaceAll(restored)", reload, StringComparison.Ordinal);
-        Assert.Contains("CaptureTranscriptAnchor", reload, StringComparison.Ordinal);
-        Assert.Contains("RestoreTranscriptAnchor", reload, StringComparison.Ordinal);
+        Assert.DoesNotContain("Messages.ReplaceAll(", reload, StringComparison.Ordinal);
+        Assert.Contains("TranscriptReconciler.Apply(", reload, StringComparison.Ordinal);
         Assert.Contains("wasFollowing", reload, StringComparison.Ordinal);
-        Assert.DoesNotContain("ScrollChatToBottom()", reload[reload.IndexOf("Messages.ReplaceAll(restored)", StringComparison.Ordinal)..], StringComparison.Ordinal);
+        Assert.Contains("RunAfterLayout(ScrollToLatestAfterLayout)", reload, StringComparison.Ordinal);
+        // Kept rows must leave the run's live collection, and only after the merge
+        // decided which rows stay.
+        Assert.True(reload.IndexOf("TranscriptReconciler.Apply(", StringComparison.Ordinal)
+            < reload.LastIndexOf("DetachAgentActivitiesFromMessages()", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("AgentActivitySegments")]
+    [InlineData("AgentActivityFeed")]
+    public void Lists_inside_a_transcript_row_measure_in_one_pass(string automationId)
+    {
+        // The ListView virtualizes rows; a virtualizing panel nested in one waits for the
+        // outer viewport before realizing its slices, so the row would measure late.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var list = document.Descendants().Single(element => element.Name.LocalName == "ItemsControl"
+            && (string?)element.Attribute("AutomationProperties.AutomationId") == automationId);
+        var panel = list.Descendants().Single(element => element.Parent?.Name.LocalName == "ItemsPanelTemplate");
+        Assert.Equal("StackPanel", panel.Name.LocalName);
+    }
+
+    [Fact]
+    public void Transcript_rows_expand_their_templates_when_realized()
+    {
+        // Scrolling placeholders let a reset paint empty minimum-height rows and fill
+        // them on later frames, which made an opened session grow under the reader.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var list = GuiSource.NamedElements(document)["ChatListView"];
+        Assert.Equal("False", (string?)list.Attribute("ShowsScrollingPlaceholders"));
+    }
+
+    [Fact]
+    public void Session_open_lays_out_the_side_panel_with_the_incoming_transcript()
+    {
+        var code = GuiSource.ViewText("ChatView");
+        var open = GuiSource.MethodBody(code, "OpenSessionAsync");
+        int defer = open.IndexOf("DeferSidePanelLayout()", StringComparison.Ordinal);
+        int firstAwait = open.IndexOf("await _apiService.ActivateSessionAsync", StringComparison.Ordinal);
+        int replace = open.IndexOf("Messages.ReplaceAll(opened)", StringComparison.Ordinal);
+        int end = open.IndexOf("EndSidePanelLayoutDeferral()", replace, StringComparison.Ordinal);
+        int position = open.IndexOf("PositionOpenedTranscript()", StringComparison.Ordinal);
+        Assert.True(defer >= 0 && defer < firstAwait);
+        Assert.True(end > replace && end < position);
+        // Every exit of a current open ends the deferral, failures included.
+        var final = open[open.IndexOf("finally", StringComparison.Ordinal)..];
+        Assert.Contains("EndSidePanelLayoutDeferral()", final, StringComparison.Ordinal);
+        var layout = GuiSource.MethodBody(code, "UpdateSidePanelLayout");
+        Assert.Contains("IsSidePanelLayoutDeferred", layout, StringComparison.Ordinal);
+        // A panel the incoming session hides leaves at once: its exit fade would keep
+        // the width reserved and widen the new rows after they painted.
+        var ending = GuiSource.MethodBody(code, "EndSidePanelLayoutDeferral");
+        Assert.Contains("CancelVisibilityAnimations()", ending, StringComparison.Ordinal);
+        Assert.DoesNotContain("PlayVisibilityExit", ending, StringComparison.Ordinal);
     }
 
     [Fact]

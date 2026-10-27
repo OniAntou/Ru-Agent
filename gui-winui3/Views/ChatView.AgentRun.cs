@@ -339,7 +339,10 @@ namespace RuApp.Views
                 SuspendAgentFeedUpdates();
             else
                 ClearAgentActivities();
-            ClearTodoPanel();
+            // An opening session keeps the outgoing shelf until its own transcript
+            // replaces the rows: hiding it now resized the transcript under the old rows.
+            if (!preserveTranscript)
+                ClearTodoPanel();
             // The queue belongs to the session that was on screen; a queue that
             // followed the user into another conversation would send a turn into the
             // wrong transcript.

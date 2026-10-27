@@ -214,7 +214,6 @@ namespace RuApp.Views
                         return;
                     }
 
-                    DetachAgentActivitiesFromMessages();
                     var restored = SessionTranscriptBuilder.Build(
                         history,
                         replayedRuns,
@@ -236,34 +235,24 @@ namespace RuApp.Views
                         RebuildMessageSegments(current);
                     }
                     _sidePanelEditsDirty = true;
-                    UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(restored));
 
-                    var scroller = ChatScrollViewer;
-                    double? preservedOffset = scroller is not null && scroller.ScrollableHeight > 0
-                        ? scroller.VerticalOffset
-                        : null;
+                    // Merged, not reset: a Reset dropped every container and painted the
+                    // top of the transcript before the scroll position came back, so the
+                    // chat blinked at the end of every reply. Unchanged rows keep their
+                    // containers and the reader keeps their place.
                     bool wasFollowing = _followOutput;
-                    var preservedAnchor = CaptureTranscriptAnchor();
-                    Messages.ReplaceAll(restored);
+                    var merge = TranscriptReconciler.Apply(
+                        Messages, restored, preserveLiveTurn ? assistant : null, runId);
+                    if (merge.KeptLiveReply) UpdateLiveTailText(assistant);
+                    // A kept row must not keep sharing the run's live collection, which
+                    // the next turn clears.
+                    DetachAgentActivitiesFromMessages();
+                    UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(Messages));
                     RefreshSidePanelEdits();
 
-                    if (history.Count > 0)
+                    if (history.Count > 0 && wasFollowing)
                     {
-                        // The reset above drops the virtualized panel to its top:
-                        // a reader parked mid-history keeps their place once layout
-                        // has run, while a following reader still lands latest.
-                        double restore = preservedOffset ?? 0;
-                        RunAfterLayout(() =>
-                        {
-                            if (wasFollowing)
-                            {
-                                ScrollToLatestAfterLayout();
-                                return;
-                            }
-
-                            RestoreTranscriptAnchor(preservedAnchor, restore);
-                            _followOutput = false;
-                        });
+                        RunAfterLayout(ScrollToLatestAfterLayout);
                     }
 
                     UpdateViewMode();
@@ -479,6 +468,10 @@ namespace RuApp.Views
                     ?? _agentWorkspace;
                 ResetAgentState(preserveTranscript: true);
                 _sidePanelRunRunning = null;
+                // The outgoing rows stay on screen until the history arrives; laying
+                // the incoming session's side panel out over them would reflow them
+                // to its width first, so the switch would paint twice.
+                DeferSidePanelLayout();
                 UpdateSidePanel(false);
                 // A preset belongs to the session it was set for. The send path
                 // pushes the composer's preset onto whichever session is open,
@@ -536,9 +529,11 @@ namespace RuApp.Views
                     // the outgoing transcript remains intact throughout history I/O.
                     ClearAgentActivities();
                     _sidePanelEditsDirty = true;
+                    ClearTodoPanel();
                     UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(opened));
                     JumpToLatestForNewTurn();
                     Messages.ReplaceAll(opened);
+                    EndSidePanelLayoutDeferral();
                     RefreshSidePanelEdits();
 
                     if (history.Count > 0)
@@ -597,6 +592,7 @@ namespace RuApp.Views
                 }
 
                 ClearAgentActivities();
+                ClearTodoPanel();
                 Messages.ReplaceAll(new[] { new ChatMessageItem
                 {
                     Role = "assistant",
@@ -609,6 +605,7 @@ namespace RuApp.Views
                 if (IsCurrentOpen(generation))
                 {
                     _isSessionHistoryLoading = false;
+                    EndSidePanelLayoutDeferral();
                     UpdateContextUsage(force: true);
                 }
             }

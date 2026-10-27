@@ -367,6 +367,19 @@ saved assistant message gets its own bubble after its user turn, never an older
 turn's bubble. Replay preserves the saved final answer when payload reads omit
 it. Legacy messages without run identities permit ordinal replay only when the
 message/run counts match; unbalanced histories retain prose without guessing.
+A same-session reload (end of turn, rewind, paging refresh) merges the rebuilt rows
+into the bound transcript with `TranscriptReconciler` instead of a reset: a row that
+renders the same keeps its instance and container, a locally sent row adopts its
+durable identity, the streamed reply keeps its segments when the history holds the
+same text, and only changed rows are replaced. A reset re-created every container and
+painted the transcript's top before its scroll returned. Opening another session still
+replaces the list in one reset. The transcript ListView sets
+`ShowsScrollingPlaceholders="False"`: with placeholders, a reset prepared empty rows at
+the item minimum height and expanded their templates on later frames, so the opened
+session grew and jumped under the reader. Lists inside a row use a plain `StackPanel`
+rather than a nested virtualizing panel. The side panel and task shelf of the incoming
+session are laid out in the dispatcher turn that replaces the rows, so the outgoing rows
+never reflow first.
 Persisted transcript rows retain their raw server message index independently
 of hidden or synthetic display rows. Rewind uses that index, then reloads only
 while the requesting session still owns the view, without restoring live text

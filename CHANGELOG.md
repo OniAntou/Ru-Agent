@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: The chat no longer blinks when a reply finishes or a session opens.
+  The end-of-turn reload merges changed rows into the transcript instead of rebuilding
+  it, so unchanged rows, the scroll position and expanded rows stay put. An opened
+  session paints its rows at full height in the first frame instead of growing them
+  over several (the transcript no longer uses scrolling placeholders), and the side
+  panel and task shelf no longer reflow the outgoing transcript first.
 - **feat(agent)**: The `computer` tool gains `action=focus`: bring a granted app's
   window to the front, restoring it when minimized, without sending input to the window
   it replaces. Protected apps stay unreachable; failures are named

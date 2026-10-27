@@ -451,9 +451,14 @@
                                   ItemsSource="{x:Bind DisplayedSegments, Mode=OneWay}"
                                   ItemTemplateSelector="{StaticResource AssistantSegmentSelector}"
                                   Visibility="{x:Bind HasSegments, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <!--
+                          A plain StackPanel: the transcript ListView already virtualizes rows,
+                          and a virtualizing panel nested inside one waits for the outer
+                          viewport before it realizes its slices, so the row measures late.
+                        -->
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <ItemsStackPanel Orientation="Vertical" />
+                                <StackPanel Orientation="Vertical" />
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
@@ -474,7 +479,7 @@
                                   Visibility="{x:Bind ShowLegacyActivityFeed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <ItemsStackPanel Orientation="Vertical" />
+                                <StackPanel Orientation="Vertical" />
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
@@ -647,7 +652,10 @@
             </StackPanel>
 
             <!-- Virtualized history: the ListView owns its scroll host so long
-                 conversations realize only visible rows instead of the whole feed. -->
+                 conversations realize only visible rows instead of the whole feed.
+                 No scrolling placeholders: with them a reset prepared empty rows at their
+                 minimum height and expanded the templates on later frames, so an opened
+                 session painted short rows that then grew under the reader. -->
             <Grid x:Name="ChatContentGrid"
                   HorizontalAlignment="Stretch"
                   VerticalAlignment="Stretch"
@@ -661,6 +669,7 @@
                           Background="Transparent"
                           BorderThickness="0"
                           ItemTemplateSelector="{StaticResource ChatTemplateSelector}"
+                          ShowsScrollingPlaceholders="False"
                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                           ScrollViewer.HorizontalScrollMode="Disabled"
                           ScrollViewer.VerticalScrollBarVisibility="Auto"

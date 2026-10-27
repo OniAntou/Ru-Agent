@@ -979,6 +979,12 @@ remains a failed check even when a different invocation subsequently passes. At
 final prose, the Host emits one report with the observed and expected exits and
 ends the run unsuccessfully, rather than repeating completion recovery.
 
+A declared check whose launch was rejected before any process ran (for example
+`malformed_call`, a policy denial or an unresolvable executable) observed no
+result. It stays outstanding, but because the identical rejected call can never
+pass, a later passing check of the same kind (verification or expected failure)
+resolves it. A rejected rerun never replaces evidence from a check that ran.
+
 ### Evidence retention and model continuation
 
 Verification retains at most 256 required checks independently from 64 recent

@@ -8,7 +8,7 @@ public enum VerificationCheckStatus { Pending, Passed, Failed, Stale }
 public sealed record VerificationCheckEvidence(string Identity, string ProviderCallId,
     string? ExecutionId, int ExpectedExitCode, bool IsVerification,
     VerificationCheckStatus Status, string Code, string Command, bool InvalidatedDuringExecution = false,
-    int? ObservedExitCode = null);
+    int? ObservedExitCode = null, bool RejectedBeforeLaunch = false);
 
 /// <summary>Host-derived original receipt evidence; survives compaction, grants no authority.</summary>
 public sealed partial class RunVerificationEvidence
@@ -74,6 +74,9 @@ public sealed partial class RunVerificationEvidence
             .Select(check => $"{check.ProviderCallId} ({check.Code}): {check.Command}"))
             + (pending.Length > 8 ? $"; {pending.Length - 8} more" : "")
             + (Overflowed ? "; verification_tracking_limit" : "")
+            + (pending.Any(check => check.RejectedBeforeLaunch)
+                ? ". A check rejected before launch never ran; a corrected check of the same kind that passes resolves it"
+                : "")
             + (pending.Any(check => check.Code == "expected_exit_mismatch")
                 ? ". An expected-exit mismatch is an observed result, not a transient tool error. Do not keep rerunning a deliberately failing command to force its expected code. A different invocation does not clear the original check. Report the actual exit and use [BLOCKED] for the incomplete outcome."
                 : ". Inspecting logs does not satisfy a check. Rerun the same check after repairs or report [BLOCKED].");
@@ -147,11 +150,21 @@ public sealed partial class RunVerificationEvidence
             var tracked = evidence.Find(identity);
             bool actualProcessFailure = receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
             if (tracked is null && purpose != "verification" && !negative && !actualProcessFailure) continue;
+            // A launch rejected before any process started (malformed arguments,
+            // policy or resolution failure) observed nothing. Its declared intent
+            // stays outstanding, but the identical rejected call can never pass,
+            // so a later passing check of the same kind resolves it. It never
+            // replaces evidence from an invocation that actually ran.
+            bool rejectedBeforeLaunch = receipt.Outcome == ToolExecutionOutcome.Failed
+                && !receipt.SideEffectsPossible && !actualProcessFailure;
+            if (rejectedBeforeLaunch && tracked is { RejectedBeforeLaunch: false }) continue;
             var initial = new VerificationCheckEvidence(identity, providerId, null, expectedExit,
                 purpose == "verification" || tracked?.IsVerification == true,
                 VerificationCheckStatus.Pending, "verification_pending", DescribeCommand(args));
             var assessed = Assess(initial, receipt, entry.Content, providerId, false);
+            if (rejectedBeforeLaunch) assessed = assessed with { RejectedBeforeLaunch = true };
             evidence.Store(assessed);
+            if (assessed.Status == VerificationCheckStatus.Passed) evidence.ResolveRejectedBy(assessed);
             if (negative && assessed.Status == VerificationCheckStatus.Passed
                 && receipt.Outcome == ToolExecutionOutcome.Failed)
             {

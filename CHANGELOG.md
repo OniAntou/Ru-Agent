@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: A declared verification whose launch was rejected before any
+  process ran (`malformed_call`, policy or resolution failure) no longer blocks
+  the run forever: it stays outstanding until a corrected check of the same kind
+  passes, instead of failing the run after the recovery-note budget. A rejected
+  rerun never replaces evidence from a check that actually ran, and the recovery
+  note for `malformed_call`/`invalid_arguments` tells the model to keep the
+  declared purpose on the corrected call.
+
 - **fix(context)**: Compact historical exchanges while protecting instructions and
   current requests; enforce the 256-range cap and bounded checkpoint chunks.
 - **fix(context)**: Recover provider context-window rejection using the same pin,

@@ -57,6 +57,20 @@ internal sealed class VerificationEvidenceBuffer(int requiredLimit)
                 : check with { Status = VerificationCheckStatus.Stale, Code = "verification_stale" };
     }
 
+    /// <summary>
+    /// Clears earlier checks whose launch was rejected before running, once a
+    /// check of the same kind (verification or expected failure) has passed.
+    /// Removal rather than a Passed status keeps a later edit from reviving them.
+    /// </summary>
+    internal void ResolveRejectedBy(VerificationCheckEvidence passed)
+    {
+        var negative = passed.ExpectedExitCode != 0;
+        foreach (var check in _checks.Values.Where(c => c.RejectedBeforeLaunch
+            && c.Status != VerificationCheckStatus.Passed && c.Identity != passed.Identity
+            && (c.ExpectedExitCode != 0) == negative).ToArray())
+            Remove(check.Identity);
+    }
+
     internal VerificationCheckEvidence[] Pending(string executionId) => _checks.Values
         .Where(c => c.ExecutionId == executionId && c.Status == VerificationCheckStatus.Pending).ToArray();
 

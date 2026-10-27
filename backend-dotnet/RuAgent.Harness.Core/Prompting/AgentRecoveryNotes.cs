@@ -91,6 +91,8 @@ public static class AgentRecoveryNotes
         "verification_pending" => "The required check is still running. Read its terminal output until its real exit is known; starting it is not a pass.",
         "verification_result_missing" => "The check has no confirmed terminal exit. Inspect its retained output or rerun it; do not infer success.",
         "process_start_failed" => "Inspect the executable and invocation error, then retry only after correcting it.",
+        "malformed_call" or "invalid_arguments" =>
+            "The call was rejected before anything ran. Follow the receipt's hint to correct the arguments and run it again; when it declared purpose verification or expected_failure, keep that purpose on the corrected call so its passing result resolves the check.",
         "side_effects_possible" => "Inspect the affected state before deciding whether any retry is safe.",
         "approval_denied" or "access_denied" or "rule_denied" or "workspace_path_outside_root" =>
             "The action was denied; report the blocker and do not route around the same restriction.",

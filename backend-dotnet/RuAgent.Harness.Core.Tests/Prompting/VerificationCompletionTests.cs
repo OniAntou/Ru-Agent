@@ -195,6 +195,49 @@ public sealed class VerificationCompletionTests
         Assert.Single(Snapshot(entries).VerificationEvidence.Checks);
     }
 
+    [Fact]
+    public void A_check_rejected_before_launch_stays_outstanding_until_a_corrected_check_passes()
+    {
+        var rejected = Batch(1, "malformed", "run_process", """{"executable":"python","purpose":"verification"}""",
+            ToolExecutionOutcome.Failed, "malformed_call", "{}");
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(rejected), out var code));
+        Assert.Equal("malformed_call", code);
+        Assert.Contains("rejected before launch", Snapshot(rejected).VerificationEvidence.DescribePending());
+        Assert.Contains("keep that purpose", AgentRecoveryNotes.BuildUnverifiedNote(code));
+
+        var corrected = rejected
+            .Concat(Batch(3, "write", "write_file", "{}", ToolExecutionOutcome.Succeeded, "ok", "{}"))
+            .Concat(Batch(5, "run", "powershell", """{"script":"python gen_docs.py","purpose":"verification"}""",
+                ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""))
+            .Concat(Batch(7, "list", "list", "{}", ToolExecutionOutcome.Succeeded, "ok", "{}"));
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(corrected), out _));
+        Assert.Null(Snapshot(corrected).VerificationEvidence.BlockingCode);
+    }
+
+    [Fact]
+    public void A_passing_negative_check_does_not_resolve_a_rejected_verification()
+    {
+        var entries = Batch(1, "malformed", "run_process", """{"executable":"python","purpose":"verification"}""",
+                ToolExecutionOutcome.Failed, "malformed_call", "{}")
+            .Concat(Batch(3, "negative", "bash",
+                """{"mode":"shell","script":"exit 1","purpose":"expected_failure","expected_exit_code":1}""",
+                ToolExecutionOutcome.Failed, "process_exit_nonzero", """{"exit_code":1}"""));
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out var code));
+        Assert.Equal("malformed_call", code);
+    }
+
+    [Fact]
+    public void A_rejected_rerun_does_not_replace_a_check_that_actually_failed()
+    {
+        var entries = Batch(1, "test", "bash", Verification,
+                ToolExecutionOutcome.Failed, "process_exit_nonzero", """{"exit_code":1}""")
+            .Concat(Batch(3, "rerun", "bash", Verification, ToolExecutionOutcome.Failed, "malformed_call", "{}"))
+            .Concat(Batch(5, "lint", "bash", Verification.Replace("dotnet test", "dotnet format"),
+                ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""));
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out var code));
+        Assert.Equal("process_exit_nonzero", code);
+    }
+
     private const string Verification = """{"mode":"shell","script":"dotnet test","purpose":"verification"}""";
 
     internal static ModelContextSnapshot Snapshot(IEnumerable<ModelContextEntry> entries) => new(entries.ToArray(), Array.Empty<byte>());

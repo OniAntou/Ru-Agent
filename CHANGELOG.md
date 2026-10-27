@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(policy)**: Pending approvals and authorization tokens bind the policy
+  snapshot's canonical SHA-256 as well as its version, because session approval
+  memory can derive the same version for a different rule set. The session
+  approval ledger uses one lock, so pruning an empty session can no longer drop a
+  concurrently remembered approval.
+
 - **fix(harness)**: A declared verification whose launch was rejected before any
   process ran (`malformed_call`, policy or resolution failure) no longer blocks
   the run forever: it stays outstanding until a corrected check of the same kind

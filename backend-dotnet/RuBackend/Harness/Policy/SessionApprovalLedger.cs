@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -21,8 +20,11 @@ internal static class SessionApprovalLedger
 
     internal sealed record Entry(string Key, PolicyMatcher Matcher, DateTimeOffset ExpiresAt);
 
-    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, Entry>> Sessions =
-        new(StringComparer.Ordinal);
+    // One lock guards the whole ledger. Sessions hold at most 64 entries, and a
+    // single owner removes the race in which pruning an empty session dropped an
+    // entry another thread was adding to it.
+    private static readonly object Gate = new();
+    private static readonly Dictionary<string, Dictionary<string, Entry>> Sessions = new(StringComparer.Ordinal);
 
     internal static void Remember(string sessionId, PolicyMatcher matcher, DateTimeOffset now)
     {
@@ -30,49 +32,59 @@ internal static class SessionApprovalLedger
         ArgumentNullException.ThrowIfNull(matcher);
 
         var key = ComputeKey(matcher);
-        Prune(now);
-        var entries = Sessions.GetOrAdd(
-            sessionId,
-            _ => new ConcurrentDictionary<string, Entry>(StringComparer.Ordinal));
-        entries[key] = new Entry(key, matcher, now + EntryLifetime);
-        while (entries.Count > MaxEntriesPerSession)
+        lock (Gate)
         {
-            var oldest = entries.Values
-                .OrderBy(item => item.ExpiresAt)
-                .ThenBy(item => item.Key, StringComparer.Ordinal)
-                .First();
-            entries.TryRemove(oldest.Key, out _);
+            Prune(now);
+            if (!Sessions.TryGetValue(sessionId, out var entries))
+            {
+                entries = new Dictionary<string, Entry>(StringComparer.Ordinal);
+                Sessions[sessionId] = entries;
+            }
+
+            entries[key] = new Entry(key, matcher, now + EntryLifetime);
+            while (entries.Count > MaxEntriesPerSession)
+            {
+                var oldest = entries.Values
+                    .OrderBy(item => item.ExpiresAt)
+                    .ThenBy(item => item.Key, StringComparer.Ordinal)
+                    .First();
+                entries.Remove(oldest.Key);
+            }
         }
     }
 
     internal static IReadOnlyList<Entry> Entries(string sessionId, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
-        if (!Sessions.TryGetValue(sessionId, out var entries))
+        lock (Gate)
         {
-            return Array.Empty<Entry>();
-        }
+            if (!Sessions.TryGetValue(sessionId, out var entries))
+            {
+                return Array.Empty<Entry>();
+            }
 
-        foreach (var expired in entries.Values.Where(item => item.ExpiresAt <= now).ToArray())
-        {
-            entries.TryRemove(expired.Key, out _);
-        }
+            foreach (var expired in entries.Values.Where(item => item.ExpiresAt <= now).ToArray())
+            {
+                entries.Remove(expired.Key);
+            }
 
-        if (entries.IsEmpty)
-        {
-            Sessions.TryRemove(sessionId, out _);
-            return Array.Empty<Entry>();
-        }
+            if (entries.Count == 0)
+            {
+                Sessions.Remove(sessionId);
+                return Array.Empty<Entry>();
+            }
 
-        return entries.Values.OrderBy(item => item.Key, StringComparer.Ordinal).ToArray();
+            return entries.Values.OrderBy(item => item.Key, StringComparer.Ordinal).ToArray();
+        }
     }
 
     /// <summary>
     /// Materializes the session's remembered intents as run-scope allow rules
     /// on top of a durable snapshot. The returned snapshot is deterministic for
     /// the same ledger contents, so repeated per-drive builds keep one identity
-    /// until the ledger changes. The version is strictly above the durable one
-    /// so a changed rule set can never reuse an older pending approval's version.
+    /// until the ledger changes. The version is strictly above the durable one,
+    /// but two different ledgers of the same size can derive the same version,
+    /// so pending approvals and authorization tokens also bind the snapshot hash.
     /// </summary>
     internal static PolicySnapshot? Apply(PolicySnapshot? snapshot, string sessionId, DateTimeOffset now)
     {
@@ -105,22 +117,29 @@ internal static class SessionApprovalLedger
         return PolicySnapshotCanonicalizer.Create(version, snapshot.Preset, snapshot.Workspace, rules, now);
     }
 
-    internal static void ClearSession(string sessionId) => Sessions.TryRemove(sessionId, out _);
+    internal static void ClearSession(string sessionId)
+    {
+        lock (Gate) Sessions.Remove(sessionId);
+    }
 
-    internal static void ClearForTests() => Sessions.Clear();
+    internal static void ClearForTests()
+    {
+        lock (Gate) Sessions.Clear();
+    }
 
+    // Callers hold Gate.
     private static void Prune(DateTimeOffset now)
     {
-        foreach (var session in Sessions.ToArray())
+        foreach (var (sessionId, entries) in Sessions.ToArray())
         {
-            foreach (var expired in session.Value.Values.Where(item => item.ExpiresAt <= now).ToArray())
+            foreach (var expired in entries.Values.Where(item => item.ExpiresAt <= now).ToArray())
             {
-                session.Value.TryRemove(expired.Key, out _);
+                entries.Remove(expired.Key);
             }
 
-            if (session.Value.IsEmpty)
+            if (entries.Count == 0)
             {
-                Sessions.TryRemove(session.Key, out _);
+                Sessions.Remove(sessionId);
             }
         }
     }

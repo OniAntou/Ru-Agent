@@ -12,7 +12,8 @@ public sealed record ApprovalBinding(
     string ArgumentsHash,
     DateTimeOffset ExpiresAt,
     long SnapshotVersion = 0,
-    string IntentHash = "");
+    string IntentHash = "",
+    string SnapshotSha256 = "");
 
 public sealed class ApprovalTokenService
 {
@@ -26,7 +27,8 @@ public sealed class ApprovalTokenService
         string argumentsHash,
         TimeSpan lifetime,
         long snapshotVersion = 0,
-        string intentHash = "")
+        string intentHash = "",
+        string snapshotSha256 = "")
     {
         if (lifetime <= TimeSpan.Zero || lifetime > TimeSpan.FromSeconds(60))
         {
@@ -44,7 +46,8 @@ public sealed class ApprovalTokenService
             argumentsHash,
             DateTimeOffset.UtcNow.Add(lifetime),
             snapshotVersion,
-            intentHash ?? string.Empty);
+            intentHash ?? string.Empty,
+            snapshotSha256 ?? string.Empty);
         return token;
     }
 
@@ -104,7 +107,10 @@ public sealed class ApprovalTokenService
             return false;
         }
 
-        if (left.SnapshotVersion != right.SnapshotVersion)
+        // Session-remembered approvals derive snapshot versions, so two different
+        // rule sets can share a version; the canonical hash tells them apart.
+        if (left.SnapshotVersion != right.SnapshotVersion
+            || !string.Equals(left.SnapshotSha256 ?? string.Empty, right.SnapshotSha256 ?? string.Empty, StringComparison.Ordinal))
         {
             return false;
         }

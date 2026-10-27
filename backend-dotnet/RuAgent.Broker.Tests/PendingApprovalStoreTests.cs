@@ -163,6 +163,7 @@ public sealed class PendingApprovalStoreTests
     [InlineData("operation_class")]
     [InlineData("network_intent")]
     [InlineData("snapshot_version")]
+    [InlineData("snapshot_sha256")]
     [InlineData("intent_hash")]
     public void V2_any_changed_binding_field_returns_stale(string changedField)
     {
@@ -183,6 +184,7 @@ public sealed class PendingApprovalStoreTests
             "operation_class" => baseBinding with { OperationClass = "edit" },
             "network_intent" => baseBinding with { NetworkIntent = "declared" },
             "snapshot_version" => baseBinding with { SnapshotVersion = baseBinding.SnapshotVersion + 1 },
+            "snapshot_sha256" => baseBinding with { SnapshotSha256 = new string('f', 64) },
             _ => baseBinding with { IntentHash = new string('1', 64) },
         };
 

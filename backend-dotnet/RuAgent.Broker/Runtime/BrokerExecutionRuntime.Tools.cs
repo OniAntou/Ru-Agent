@@ -190,7 +190,8 @@ public sealed partial class BrokerExecutionRuntime
                     argumentsHash: context.IntentHash,
                     lifetime: TimeSpan.FromSeconds(60),
                     snapshotVersion: lease.Snapshot.Version,
-                    intentHash: context.IntentHash);
+                    intentHash: context.IntentHash,
+                    snapshotSha256: lease.Snapshot.Sha256);
             }
             catch (ArgumentOutOfRangeException)
             {
@@ -219,7 +220,8 @@ public sealed partial class BrokerExecutionRuntime
                 SnapshotVersion: snapshotVersion,
                 IntentHash: context.IntentHash,
                 ApprovalKind: approvalKind,
-                BoundaryDirectory: approvalKind == "external_directory" ? DeriveGrantDirectory(context) : null);
+                BoundaryDirectory: approvalKind == "external_directory" ? DeriveGrantDirectory(context) : null,
+                SnapshotSha256: lease.Snapshot.Sha256);
             var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
             approvalId = _pendingV2.IssueV2(binding, expiresAt);
             approvalExpiresAt = expiresAt;
@@ -343,7 +345,8 @@ public sealed partial class BrokerExecutionRuntime
             ArgumentsHash: authContext.IntentHash,
             ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5),
             SnapshotVersion: lease.Snapshot.Version,
-            IntentHash: authContext.IntentHash);
+            IntentHash: authContext.IntentHash,
+            SnapshotSha256: lease.Snapshot.Sha256);
 
         if (!_authTokens.TryConsume(authorizationToken!, expected, out _))
         {

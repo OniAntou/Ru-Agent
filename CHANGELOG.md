@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Remove the sidebar search box, Load more sessions button and
+  pagination notice, retaining backend search and paging support.
 - **fix(policy)**: Pending approvals and authorization tokens bind the policy
   snapshot's canonical SHA-256 as well as its version, because session approval
   memory can derive the same version for a different rule set. The session

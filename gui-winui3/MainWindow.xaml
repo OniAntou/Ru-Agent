@@ -490,7 +490,6 @@
                     <Grid Grid.Row="0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
@@ -522,33 +521,8 @@
                         </StackPanel>
 
 
-                        <!-- Workspaces Header -->
-                        <Grid x:Name="WorkspaceHeaderPanel" Grid.Row="1" Margin="14,0,14,0">
-                            <StackPanel Spacing="4">
-                                <TextBox x:Name="SidebarSessionSearchBox"
-                                         TextChanged="OnSidebarSessionSearchTextChanged"
-                                         PlaceholderText="Search chats and messages"
-                                         FontFamily="{StaticResource RuUiFontFamily}"
-                                         FontSize="12.5"
-                                         Padding="8,5"
-                                         AutomationProperties.Name="Search chats and messages" />
-                                <Button x:Name="SidebarLoadMoreButton"
-                                        Click="OnSidebarLoadMoreClick"
-                                        HorizontalAlignment="Stretch"
-                                        Padding="8,5"
-                                        Content="Load more sessions"
-                                        Visibility="Collapsed"
-                                        AutomationProperties.Name="Load more sessions" />
-                                <TextBlock x:Name="SidebarSessionTruncationWarning" Margin="2,0,0,0"
-                                           Text="More sessions are available."
-                                           FontFamily="{StaticResource RuUiFontFamily}" FontSize="11"
-                                           Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap"
-                                           Visibility="Collapsed"/>
-                            </StackPanel>
-                        </Grid>
-
                         <!-- Sessions List -->
-                        <Grid x:Name="SidebarListOverlay" Grid.Row="2">
+                        <Grid x:Name="SidebarListOverlay" Grid.Row="1">
                         <ListView x:Name="SidebarSessionList" SelectionMode="Single"
                                   CanDragItems="True" AllowDrop="True" CanReorderItems="False"
                                   DragItemsStarting="OnSidebarDragItemsStarting" DragItemsCompleted="OnSidebarDragItemsCompleted"

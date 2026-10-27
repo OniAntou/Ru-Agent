@@ -383,14 +383,16 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
-    public void Sidebar_shows_a_persistent_notice_when_the_session_list_is_truncated()
+    public void Sidebar_omits_the_session_search_and_paging_header()
     {
         var document = GuiSource.Xml("MainWindow.xaml");
-        var warning = GuiSource.Require(document, "SidebarSessionTruncationWarning");
-        Assert.Equal("Collapsed", GuiSource.AttributeValue(warning, "Visibility"));
-        Assert.Contains("More sessions are available", GuiSource.AttributeValue(warning, "Text"), StringComparison.OrdinalIgnoreCase);
-        var more = GuiSource.Require(document, "SidebarLoadMoreButton");
-        Assert.Equal("OnSidebarLoadMoreClick", GuiSource.AttributeValue(more, "Click"));
+        var names = GuiSource.NamedElements(document).Keys;
+        Assert.DoesNotContain("SidebarSessionSearchBox", names);
+        Assert.DoesNotContain("SidebarLoadMoreButton", names);
+        Assert.DoesNotContain("SidebarSessionTruncationWarning", names);
+        Assert.DoesNotContain("WorkspaceHeaderPanel", names);
+        Assert.Contains("SidebarSessionList", names);
+        Assert.Contains("WorkspaceGroupToggle", names);
     }
 
     [Fact]

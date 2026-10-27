@@ -129,12 +129,12 @@ list selection, drag visuals, title waves and dialogs; it re-syncs selection on
 `Rendered` and supplies the delete confirmations through `ISessionDeletionPrompts`.
 A delete removes the row as soon as the Host confirms it, then refreshes with
 `RefreshLatestAsync`, which supersedes a poll that may hold the pre-delete list.
-The workspace sidebar searches titles and retained message content through the
-paged Host listing. Load more sessions follows a keyset cursor; a new query or
-refresh supersedes pending older results. Group expansion, pins, drag ordering
-and active-session visibility stay in its projection. There is no separate
-current-workspace filter. Chat history opens at a bounded newest page; Load
-earlier messages prepends older rows with absolute indices and preserves the
+The workspace sidebar uses the paged Host listing without a dedicated search box,
+Load more sessions button or pagination notice. Host title/message search and
+cursor-based pagination remain available through the backend. Group expansion,
+pins, drag ordering and active-session visibility stay in its projection. There
+is no separate current-workspace filter. Chat history opens at a bounded newest
+page; Load earlier messages prepends older rows with absolute indices and preserves the
 visible scroll anchor. Generation/session checks reject late responses after
 switching chats, and rewind invalidates obsolete history cursors.
 Workspaces, Recents and CLI Sessions headings pair their labels with decorative

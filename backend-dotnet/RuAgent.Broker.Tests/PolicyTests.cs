@@ -1005,6 +1005,76 @@ public sealed partial class PolicyEvaluationTests
     }
 
     [Theory]
+    [InlineData("plan", "list", "deny", "plan_preset_read_only")]
+    [InlineData("plan", "screenshot", "deny", "plan_preset_read_only")]
+    [InlineData("plan", "request_access", "deny", "plan_preset_read_only")]
+    [InlineData("standard", "request_access", "ask", "computer_access_requires_approval")]
+    [InlineData("standard", "screenshot", "allow", "computer_action_grant_checked")]
+    [InlineData("standard", "click", "allow", "computer_action_grant_checked")]
+    [InlineData("full_access", "request_access", "allow", "full_access_allow")]
+    public void Computer_actions_follow_the_preset(string preset, string action, string decision, string reason)
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
+        var arguments = new JsonObject { ["action"] = action };
+        if (action == "request_access") arguments["apps"] = new JsonArray("notepad.exe");
+        if (action == "click") { arguments["x"] = 1; arguments["y"] = 1; }
+
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot, factory.Create("computer", "1.0.0", arguments), PolicyRequestInvariants.Valid, Now);
+
+        Assert.Equal(decision, evaluation.Decision);
+        Assert.Equal(reason, evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void Computer_access_to_a_protected_app_is_denied_even_in_full_access_with_an_allow_rule()
+    {
+        var snapshot = PolicyEvalSnapshots.SnapshotWith(PolicyEvalSnapshots.AllowAllRule()) with { Preset = "full_access" };
+        var (lease, factory) = Bind(snapshot);
+        var context = factory.Create("computer", "1.0.0", new JsonObject
+        {
+            ["action"] = "request_access",
+            ["apps"] = new JsonArray("Notepad", "ruapp.exe"),
+        });
+
+        Assert.Equal(new[] { "notepad.exe", "ruapp.exe" }, context.Argv);
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("computer_app_protected", evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void A_remembered_computer_grant_never_covers_a_request_for_more_apps()
+    {
+        var rule = PolicyEvalSnapshots.Rule("r-notepad", "allow", PolicyEvalSnapshots.Matcher(
+            toolId: "computer", resolvedExecutable: "computer:request_access", argvPattern: ["notepad.exe"]));
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(rule));
+        PolicyEvaluation Request(params string[] apps) => new PolicySnapshotEvaluator().Evaluate(lease.Snapshot,
+            factory.Create("computer", "1.0.0", new JsonObject
+            {
+                ["action"] = "request_access",
+                ["apps"] = new JsonArray(apps.Select(app => (JsonNode?)app).ToArray()),
+            }),
+            PolicyRequestInvariants.Valid, Now);
+
+        Assert.Equal("allow", Request("notepad.exe").Decision);
+        Assert.Equal("ask", Request("notepad.exe", "chrome.exe").Decision);
+    }
+
+    [Theory]
+    [InlineData("{\"action\":\"fly\"}")]
+    [InlineData("{\"action\":\"request_access\"}")]
+    [InlineData("{\"action\":\"request_access\",\"apps\":[\"bad/name?\"]}")]
+    [InlineData("{\"action\":\"click\",\"apps\":[\"notepad.exe\"]}")]
+    public void Malformed_computer_calls_are_rejected(string json)
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var error = Assert.Throws<PolicyContextException>(
+            () => factory.Create("computer", "1.0.0", JsonNode.Parse(json)!.AsObject()));
+        Assert.Equal("malformed_call", error.Code);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("allow")]
     [InlineData("ask")]

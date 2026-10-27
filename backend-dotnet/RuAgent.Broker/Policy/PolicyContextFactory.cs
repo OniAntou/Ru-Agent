@@ -351,6 +351,29 @@ public sealed partial class PolicyContextFactory
                     }
 
                     break;
+                case "computer":
+                    // Computer actions carry no path. request_access binds its exact
+                    // app list as argv so an approval or an "always" rule covers only
+                    // those apps; protected apps are refused by the evaluator (ADR 0031).
+                    op = OptionalText(arguments, "action");
+                    if (op is null || !ComputerActions.All.Contains(op))
+                    {
+                        throw new PolicyContextException(
+                            "malformed_call",
+                            hint: "computer action must be one of: " + string.Join(", ", ComputerActions.All) + ".");
+                    }
+
+                    resolvedExecutable = "computer:" + op;
+                    if (op == ComputerActions.RequestAccess)
+                    {
+                        argv = ReadComputerApps(arguments);
+                    }
+                    else if (arguments.ContainsKey("apps"))
+                    {
+                        throw new PolicyContextException("malformed_call", hint: "apps is only valid with action=request_access.");
+                    }
+
+                    break;
                 case var control when SubagentContractValidator.IsControlTool(control):
                     op = control;
                     break;
@@ -438,7 +461,7 @@ public sealed partial class PolicyContextFactory
             SessionId: _sessionId,
             WorkingDirectory: terminalWorkingDirectory,
             TerminalAnalysis: terminalAnalysis,
-            ToolOp: toolId is "read" or "write" or "mcp" ? ReadOpOf(toolId, arguments) : null,
+            ToolOp: toolId is "read" or "write" or "mcp" ? ReadOpOf(toolId, arguments) : toolId == "computer" ? OptionalText(arguments, "action") : null,
             BashMode: toolId == "bash" ? OptionalText(arguments, "mode") : null,
             Background: background)
         {
@@ -500,9 +523,40 @@ public sealed partial class PolicyContextFactory
         // Listing declared servers reads the user's own file; starting a server or calling
         // a tool runs a program, which plan denies like any mutation.
         "mcp" => OptionalText(arguments, "op") == "list_servers" ? PolicyOperationClasses.Read : PolicyOperationClasses.Mutation,
+        // Every computer action, including a screenshot, reaches outside the workspace:
+        // plan denies them all through its read-only gate (ADR 0031).
+        "computer" => PolicyOperationClasses.Mutation,
         _ when SubagentContractValidator.IsControlTool(toolId) => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
+
+    private static string[] ReadComputerApps(JsonObject arguments)
+    {
+        if (arguments["apps"] is not JsonArray apps || apps.Count is 0 or > ComputerLimits.MaxRequestedApps)
+        {
+            throw new PolicyContextException(
+                "malformed_call",
+                hint: $"request_access needs apps: 1 to {ComputerLimits.MaxRequestedApps} executable names such as notepad.exe.");
+        }
+
+        var names = new List<string>(apps.Count);
+        foreach (var item in apps)
+        {
+            var name = item is JsonValue value && value.TryGetValue<string>(out var text)
+                ? ComputerProtectedApps.Normalize(text)
+                : null;
+            if (name is null)
+            {
+                throw new PolicyContextException("malformed_call", hint: "each app must be an executable file name such as notepad.exe.");
+            }
+
+            if (!names.Contains(name, StringComparer.Ordinal)) names.Add(name);
+        }
+
+        // One canonical order, so the same apps always bind the same approval and rule.
+        names.Sort(StringComparer.Ordinal);
+        return names.ToArray();
+    }
 
     private static bool IsSpoolRead(JsonObject arguments) =>
         string.Equals(OptionalText(arguments, "mode"), "read_output", StringComparison.Ordinal);
@@ -521,7 +575,7 @@ public sealed partial class PolicyContextFactory
     private static bool IsTargetFreeOp(string toolId, string op) =>
         toolId is "help" or "run_code"
         || toolId == "todo_write"
-        || toolId is "web_search" or "web_fetch" or "mcp"
+        || toolId is "web_search" or "web_fetch" or "mcp" or "computer"
         || SubagentContractValidator.IsControlTool(toolId)
         // A spool read names a session-scoped output id, not a path; a task
         // kill names a session-scoped task id. The execution leg still fails

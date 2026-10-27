@@ -41,6 +41,8 @@ public static class AgentToolPromptGuidance
             lines.Add("Delegate with agent_spawn when work splits into independent parts or needs a long read-only investigation: give each child a self-contained task (goal, files, what to return) and the context it needs, start independent children in one batch. Do small edits yourself.");
         if (tools.Contains("agent_wait"))
             lines.Add("Use agent_wait to collect delegated results before relying on them; child claims require verification appropriate to the task.");
+        if (tools.Contains("computer"))
+            lines.Add("For desktop work use computer: list, then request_access with executable names, then screenshot before every pointer action; x and y are pixels of that monitor's latest screenshot. Prefer files and terminal tools when they can do the job; black areas are apps without access.");
         if (tools.Overlaps(["read", "read_file", "write_file", "edit_file", "grep", "glob", "powershell", "run_process"]))
             lines.Add("Use workspace-relative paths; absolute outside-root paths may need a session grant or approval.");
         return lines;

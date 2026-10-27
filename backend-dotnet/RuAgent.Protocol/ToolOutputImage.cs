@@ -17,7 +17,7 @@ public sealed record ToolOutputImage
     public const int MaximumInContext = 4;
 
     /// <summary>Text appended to a tool result whose image was left out of the request.</summary>
-    public const string OmittedNote = "[image omitted from this request; read the file again to view it]";
+    public const string OmittedNote = "[image omitted from this request; read the file or take the screenshot again to view it]";
 
     public ToolOutputImage(string mediaType, ReadOnlyMemory<byte> bytes)
     {

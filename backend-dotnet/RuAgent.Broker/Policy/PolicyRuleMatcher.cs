@@ -269,6 +269,13 @@ public static class PolicyRuleMatcher
         MatcherSpec matcher,
         PolicyContext context)
     {
+        // An app list is a grant, not a command prefix: a remembered [notepad.exe]
+        // must never cover a later request that adds another app (ADR 0031).
+        if (isAllowRule && string.Equals(context.ToolId, "computer", StringComparison.Ordinal))
+        {
+            return ArgvMatchSemantics.Exact;
+        }
+
         if (isAllowRule && context.OperationClass == PolicyOperationClasses.Terminal)
         {
             if (context.BashMode == "shell"

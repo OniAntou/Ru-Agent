@@ -171,6 +171,11 @@ public sealed partial class BrokerExecutionRuntime
             evaluation = new PolicyEvaluation("deny", "subagent_parent_action_required", null);
         if (evaluation.Decision == "ask" && payload["program_nested"]?.GetValue<bool>() == true)
             evaluation = new PolicyEvaluation("deny", "program_requires_direct_call", null);
+        // Computer use belongs to the root run's direct calls only (ADR 0031): a child or a
+        // program never controls the desktop, even where its policy would allow the action.
+        if (string.Equals(toolId, "computer", StringComparison.Ordinal)
+            && (delegation is not null || _delegations.ContainsKey(runId) || payload["program_nested"]?.GetValue<bool>() == true))
+            evaluation = new PolicyEvaluation("deny", "computer_root_run_required", null);
 
         string? authorizationToken = null;
         string? approvalId = null;

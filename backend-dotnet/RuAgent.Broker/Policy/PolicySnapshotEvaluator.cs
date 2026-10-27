@@ -141,6 +141,14 @@ public sealed class PolicySnapshotEvaluator
             return Deny("timeout_exceeds_hard_max");
         }
 
+        // Ru's own windows, terminal hosts and credential UI are never computer-use
+        // targets, in any preset: input there could answer Ru's own approval
+        // prompts, so no rule or preset may grant them (ADR 0031).
+        if (IsComputer(context) && context.Argv.Any(ComputerProtectedApps.IsProtected))
+        {
+            return Deny("computer_app_protected");
+        }
+
         var structuredTarget = context.Target;
         // Catalog-protected targets (harness key/database files, runtime
         // descriptors, user-added RU_PROTECTED_PATHS entries) are a preset-level
@@ -290,6 +298,17 @@ public sealed class PolicySnapshotEvaluator
                 : ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "mcp_call_requires_approval");
         }
 
+        // ADR 0031: granting an app control runs input with the user's rights, the same
+        // authority as an external terminal launch (plan deny, standard ask, full_access
+        // allow). Other actions are checked against the session's app grants when they
+        // execute, because their target window is only known at that moment.
+        if (IsComputer(context))
+        {
+            return string.Equals(context.ToolOp, ComputerActions.RequestAccess, StringComparison.Ordinal)
+                ? ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "computer_access_requires_approval")
+                : ProfileDecision(snapshot, AgentPolicySubject.WorkspaceTerminal, "computer_action_grant_checked");
+        }
+
         if (IsTerminal(context))
         {
             var classification = _terminalClassifier.Classify(context);
@@ -348,6 +367,9 @@ public sealed class PolicySnapshotEvaluator
     private static bool IsWebTool(PolicyContext context) =>
         string.Equals(context.ToolId, "web_search", StringComparison.Ordinal)
         || string.Equals(context.ToolId, "web_fetch", StringComparison.Ordinal);
+
+    private static bool IsComputer(PolicyContext context) =>
+        string.Equals(context.ToolId, "computer", StringComparison.Ordinal);
 
     private static bool IsTerminal(PolicyContext context) =>
         string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal);

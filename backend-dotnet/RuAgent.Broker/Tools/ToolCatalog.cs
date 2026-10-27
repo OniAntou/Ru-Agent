@@ -101,6 +101,8 @@ public sealed class ToolCatalog
         yield return Manifest("run_code", ToolScope.SystemRead, RiskClass.Reversible, "builtin", workspace: false);
         // An MCP server is a user-chosen program run with the user's rights (ADR 0025).
         yield return Manifest("mcp", ToolScope.TerminalExecute, RiskClass.External, "connector", workspace: false, requiresApproval: true);
+        // Computer use sends input as the user to granted apps (ADR 0031).
+        yield return Manifest("computer", ToolScope.TerminalExecute, RiskClass.External, "desktop", workspace: false, requiresApproval: true);
         foreach (var definition in RuAgent.Protocol.Subagents.SubagentToolDefinitions.Get())
             yield return Manifest(definition.ToolId,
                 definition.ToolId == "agent_apply" ? ToolScope.WorkspaceWrite : ToolScope.SystemRead,

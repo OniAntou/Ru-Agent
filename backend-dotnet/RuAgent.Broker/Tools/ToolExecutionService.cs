@@ -152,6 +152,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         // spool id must never resolve to another session's text, and a spilled
         // spool file must never outlive it.
         _spools.RemoveSession(sessionId);
+        // App grants for computer use end with the Agent session (ADR 0031).
+        _computer?.RemoveSession(sessionId);
     }
 
     /// <summary>
@@ -205,6 +207,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ["web_search"] = ExecuteWebSearchAsync,
             ["web_fetch"] = ExecuteWebFetchAsync,
             ["mcp"] = ExecuteMcpAsync,
+            ["computer"] = ExecuteComputerAsync,
         };
 
         // Native orchestration consumes exact authorization through Runtime callbacks.

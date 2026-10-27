@@ -133,6 +133,13 @@ public static class ConsecutiveToolCallGuard
             && wait.ProviderCallId == prior[0].ProviderCallId)
             return false;
 
+        // The desktop changes between calls: a second screenshot, or the same key or
+        // click on the next screen, is progress (ADR 0031). Only successful computer
+        // calls are exempt; a repeated failure stays guarded.
+        if (prior.All(call => call.ToolId == "computer" && call.ToolVersion == "1.0.0")
+            && receipts.All(receipt => receipt.Outcome == ToolExecutionOutcome.Succeeded))
+            return false;
+
         // A single retry after an infrastructure failure that never executed
         // the tool is allowed through; a second consecutive identical
         // infra-failure still fails (bounded further by the step/call

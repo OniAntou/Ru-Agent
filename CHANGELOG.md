@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declared purpose on the corrected call.
 - **fix(policy)**: Plan's read-only gate now covers `file_restore`, so a remembered
   allow or ask rule can no longer restore files or prompt in `plan`.
+- **fix(web)**: Only 192.0.0.0/24 and 192.0.2.0/24 are treated as reserved;
+  public hosts elsewhere in 192.0.0.0/16 (for example WordPress.com) are reachable.
 
 - **fix(context)**: Compact historical exchanges while protecting instructions and
   current requests; enforce the 256-range cap and bounded checkpoint chunks.

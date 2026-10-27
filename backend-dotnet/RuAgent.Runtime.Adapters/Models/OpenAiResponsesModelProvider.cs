@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 
+using RuAgent.Harness.Core.Prompting;
+
 namespace RuAgent.Runtime.Adapters.Models;
 
 public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IModelRequestBodyProjector
@@ -40,9 +42,7 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
             if (!response.IsSuccessStatusCode)
                 throw response.StatusCode == HttpStatusCode.TooManyRequests
                     ? await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                    : await ModelContextOverflowError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                        ? new ModelProviderException(ModelContextOverflowError.Code, false)
-                        : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
+                    : await ReadStatusErrorAsync(request, response, cancellationToken).ConfigureAwait(false);
             Stream stream;
             try { stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { throw new ModelProviderException("timeout", true); }
@@ -132,6 +132,10 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
                                 offset += count;
                             }
                         }
+                        // Answers that cite web results show their sources (ADR 0033).
+                        if (calls.Count == 0 && request.ProviderWebSearch
+                            && ProviderSearchContent.FormatSources(CitedSources(output)) is { Length: > 0 } sources)
+                            yield return new ModelDelta(sources, [], false, null);
                         var continuation = BuildContinuation(request, output, calls.Count > 0);
                         terminal = new ModelDelta(null, calls, true, calls.Count > 0 ? "tool_calls" : "stop", usage,
                             providerContinuation: continuation, responsesMessages: messages);
@@ -275,6 +279,14 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
                     ["parameters"] = schema.DeepClone(), ["strict"] = false });
             }
 
+            if (request.ProviderWebSearch)
+            {
+                // The provider's hosted search replaces Ru's web_search for this run (ADR 0033).
+                if (tools.OfType<JsonObject>().Any(tool => ReadString(tool["name"]) == "web_search"))
+                    throw new ModelProviderException("malformed_payload", false);
+                tools.Add(new JsonObject { ["type"] = "web_search" });
+            }
+
             // An empty list omits the key rather than declaring no tools, the
             // same rule the other two protocol adapters follow.
             if (tools.Count > 0)
@@ -298,12 +310,41 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
 
     public string ProjectRequestBody(ModelRequest request) => BuildBody(request);
 
+    private static async Task<ModelProviderException> ReadStatusErrorAsync(
+        ModelRequest request, HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var error = await ModelContextOverflowError.ReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+        if (ModelContextOverflowError.IsError(error)) return new ModelProviderException(ModelContextOverflowError.Code, false);
+        if (request.ProviderWebSearch && ModelContextOverflowError.IsWebSearchUnavailable(error))
+            return new ModelProviderException(ModelContextOverflowError.WebSearchUnavailableCode, false);
+        return MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
+    }
+
+    /// <summary>The url_citation annotations of the response's messages, in order.</summary>
+    private static IReadOnlyList<(string Url, string Title)> CitedSources(JsonArray? output)
+    {
+        var citations = new List<JsonObject>();
+        foreach (var message in output?.OfType<JsonObject>().Where(item => ReadString(item["type"]) == "message") ?? [])
+        {
+            if (message["content"] is not JsonArray parts) continue;
+            foreach (var part in parts.OfType<JsonObject>())
+            {
+                if (part["annotations"] is not JsonArray annotations) continue;
+                citations.AddRange(annotations.OfType<JsonObject>().Where(annotation => ReadString(annotation["type"]) == "url_citation"));
+            }
+        }
+        return ProviderSearchContent.CitedSources(citations);
+    }
+
     private static RuAgent.Harness.Core.Prompting.ProviderContinuation? BuildContinuation(ModelRequest request, JsonArray? output, bool hasCalls)
     {
         if (!hasCalls || request.Settings["model_tools"] is not JsonArray || output is null) return null;
         var preserveMessages = output.OfType<JsonObject>().Any(item => ReadString(item["type"]) == "message" && item.ContainsKey("phase"));
         var continuationItems = output.OfType<JsonObject>()
+            // A hosted search call stays in order: a reasoning item must keep the item that
+            // followed it (ADR 0033).
             .Where(item => ReadString(item["type"]) is "reasoning" or "function_call"
+                || request.ProviderWebSearch && ReadString(item["type"]) == "web_search_call"
                 || preserveMessages && ReadString(item["type"]) == "message")
             .ToArray();
         if (continuationItems.Length == 0) return null;

@@ -285,6 +285,7 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
 
         var raw = current.Raw.DeepClone().AsObject();
         Providers.ComputerUsePolicy.Apply(payload, raw);
+        Providers.ProviderWebSearchPolicy.Apply(payload, raw);
         if (payload.ContainsKey("subagents")) throw new SettingsPayloadException();
         raw.Remove("subagents");
         return new SettingsSnapshot(

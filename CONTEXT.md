@@ -145,6 +145,11 @@ The Broker session's record that the user approved computer use for an applicati
 Implementation: [ADR 0031](docs/adr/0031-computer-use-through-the-broker.md).
 _Avoid_: a durable grant, a grant by window title, or a grant implied by `full_access` for protected apps
 
+**Provider Web Search**:
+The model provider's own hosted web search, used instead of the Broker's `web_search` by a root run that pinned `_ru_provider_web_search_v1` on first-party Anthropic or OpenAI and whose policy allows `web_search` without an approval. The provider runs the query and bills it to the user's account; answers that cite results end with a Sources list.
+Implementation: [agent tools](docs/operations/agent-tools.md#provider-web-search), [ADR 0033](docs/adr/0033-provider-hosted-web-search.md).
+_Avoid_: calling it a Broker tool, using it where a rule asks for `web_search` approval, or routing `web_fetch` through the provider
+
 **Subagent**:
 A delegated internal run owned and controlled by the main agent, with bounded family resources and isolated child-private history. Users can observe/export it; only the main agent sends work, cancels or applies results.
 Implementation: [harness](docs/architecture/harness.md#subagent).

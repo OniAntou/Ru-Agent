@@ -25,7 +25,7 @@ public sealed record ModelGenerationSettings
 {
     private const int MaxModelTools = RuAgent.Protocol.AgentToolDefinitionCatalog.MaximumModelTools;
 
-    public ModelGenerationSettings(JsonArray? modelTools = null, int? maxOutputTokens = null)
+    public ModelGenerationSettings(JsonArray? modelTools = null, int? maxOutputTokens = null, bool providerWebSearch = false)
     {
         if (modelTools is not null)
         {
@@ -47,7 +47,15 @@ public sealed record ModelGenerationSettings
 
         ModelTools = modelTools is null ? null : (JsonArray)modelTools.DeepClone();
         MaxOutputTokens = maxOutputTokens;
+        ProviderWebSearch = providerWebSearch;
     }
+
+    /// <summary>
+    /// Whether the request declares the provider's hosted web search instead of the
+    /// Broker's <c>web_search</c> (ADR 0033). Only the Anthropic Messages and OpenAI
+    /// Responses adapters read it.
+    /// </summary>
+    public bool ProviderWebSearch { get; }
 
     public JsonArray? ModelTools { get; }
 

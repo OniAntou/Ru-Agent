@@ -31,9 +31,12 @@ public sealed partial class ModelStepService
         "malformed_payload" => new ModelStepException("protocol_failure", retryable: true, error),
         "provider_continuation_too_large" => new ModelStepException(error.Code, false, error),
         "response_too_large" => new ModelStepException("protocol_failure", retryable: false, error),
-        "http_error" or "redirect_rejected" or "vision_unsupported" or "empty_model_reply" => new ModelStepException(error.Code, error.Retryable, error),
+        "http_error" or "redirect_rejected" or "vision_unsupported" or "empty_model_reply"
+            or "provider_web_search_unavailable" or "provider_search_paused" => new ModelStepException(error.Code, error.Retryable, error),
         _ => new ModelStepException("generation_failed", error.Retryable, error),
     };
+
+    internal const string ProviderWebSearchSetting = RuAgent.Runtime.Adapters.Models.ModelRequest.ProviderWebSearchSetting;
 
     private static JsonObject BuildWireSettings(ModelGenerationSettings settings)
     {
@@ -46,6 +49,11 @@ public sealed partial class ModelStepService
         if (settings.MaxOutputTokens is not null)
         {
             wire["max_tokens"] = settings.MaxOutputTokens.Value;
+        }
+
+        if (settings.ProviderWebSearch)
+        {
+            wire[ProviderWebSearchSetting] = true;
         }
 
         return wire;

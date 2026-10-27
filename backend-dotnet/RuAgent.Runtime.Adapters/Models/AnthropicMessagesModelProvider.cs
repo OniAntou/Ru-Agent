@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Prompting;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
@@ -33,6 +34,12 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
         ArgumentNullException.ThrowIfNull(request);
         if (request.MaximumOutputTokens is null or <= 0 or > MaximumSupportedOutputTokens) throw new ModelProviderException("malformed_payload", false);
         var body = request.PreparedBodyJson ?? BuildBody(request);
+        var nativeContent = new AnthropicNativeContentAssembly();
+        ModelUsage? usage = null;
+        // A provider-hosted search may pause a long turn (ADR 0033); the paused content is
+        // sent back and the same model step continues, a bounded number of times.
+        for (var pauses = 0; ; pauses++)
+        {
         using var message = new HttpRequestMessage(HttpMethod.Post, request.Endpoint)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
@@ -45,9 +52,14 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
 
         using (response)
         {
-            if (!response.IsSuccessStatusCode) throw await ModelContextOverflowError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                ? new ModelProviderException(ModelContextOverflowError.Code, false)
-                : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await ModelContextOverflowError.ReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+                if (ModelContextOverflowError.IsError(error)) throw new ModelProviderException(ModelContextOverflowError.Code, false);
+                if (request.ProviderWebSearch && ModelContextOverflowError.IsWebSearchUnavailable(error))
+                    throw new ModelProviderException(ModelContextOverflowError.WebSearchUnavailableCode, false);
+                throw MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
+            }
             Stream stream;
             try { stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { throw new ModelProviderException("timeout", true); }
@@ -58,8 +70,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                 int? blockIndex = null;
                 var nextBlockIndex = 0;
                 string blockType = string.Empty;
-                var nativeContent = new AnthropicNativeContentAssembly();
-                ModelUsage? usage = null;
+                var paused = false;
 
                 await foreach (var evt in BoundedSseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
                 {
@@ -92,7 +103,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                                 ?? throw new ModelProviderException("malformed_payload", false);
                             var model = ReadString(messageData["model"]);
                             if (model is null || model != request.Model) throw new ModelProviderException("malformed_payload", false);
-                            usage = ReadUsage(messageData["usage"], request.Model);
+                            usage = MergeUsage(usage, ReadUsage(messageData["usage"], request.Model));
                             var content = ReadArray(messageData["content"]);
                             if (content is not null)
                                 foreach (var block in content)
@@ -114,7 +125,9 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                             var block = data["content_block"] as JsonObject ?? throw new ModelProviderException("malformed_payload", false);
                             var t = ReadString(block["type"]) ?? throw new ModelProviderException("malformed_payload", false);
                             if (t == "fallback" || (!request.NativeToolCalling && t is "tool_use" or "redacted_thinking")) throw new ModelProviderException("malformed_payload", false);
-                            if (t is not ("text" or "thinking" or "redacted_thinking" or "tool_use")) throw new ModelProviderException("malformed_payload", false);
+                            var searchBlock = t is "server_tool_use" or "web_search_tool_result";
+                            if (searchBlock && !request.ProviderWebSearch) throw new ModelProviderException("malformed_payload", false);
+                            if (!searchBlock && t is not ("text" or "thinking" or "redacted_thinking" or "tool_use")) throw new ModelProviderException("malformed_payload", false);
                             nativeContent.BeginBlock(block, t, request.NativeToolCalling);
                             if (t == "text")
                             {
@@ -166,9 +179,15 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                                     nativeContent.AppendSignature(signature, isNative: true);
                                 }
                             }
+                            else if (deltaType == "citations_delta")
+                            {
+                                if (blockType != "text" || !request.ProviderWebSearch) throw new ModelProviderException("malformed_payload", false);
+                                var citation = delta["citation"] as JsonObject ?? throw new ModelProviderException("malformed_payload", false);
+                                nativeContent.AppendCitation(citation, request.NativeToolCalling);
+                            }
                             else if (deltaType == "input_json_delta")
                             {
-                                if (blockType != "tool_use" || !request.NativeToolCalling) throw new ModelProviderException("malformed_payload", false);
+                                if (blockType is not ("tool_use" or "server_tool_use") || !request.NativeToolCalling) throw new ModelProviderException("malformed_payload", false);
                                 var partial = ReadString(delta["partial_json"]) ?? throw new ModelProviderException("malformed_payload", false);
                                 nativeContent.AppendInputJson(partial);
                             }
@@ -199,7 +218,8 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                             var reason = ReadString(delta["stop_reason"]);
                             if (reason is null) throw new ModelProviderException("malformed_payload", false);
                             if (reason == "tool_use" && (!request.NativeToolCalling || !nativeContent.HasTools)) throw new ModelProviderException("malformed_payload", false);
-                            if (reason is not ("end_turn" or "stop_sequence" or "max_tokens" or "tool_use")) throw new ModelProviderException("malformed_payload", false);
+                            paused = reason == "pause_turn" && request.ProviderWebSearch && !nativeContent.HasTools;
+                            if (!paused && reason is not ("end_turn" or "stop_sequence" or "max_tokens" or "tool_use")) throw new ModelProviderException("malformed_payload", false);
                             if (nativeContent.HasTools && reason != "tool_use") throw new ModelProviderException("malformed_payload", false);
                             usage = MergeUsage(usage, ReadUsage(data["usage"], request.Model));
                             stopReason = reason == "max_tokens" ? "length" : reason == "tool_use" ? "tool_calls" : "stop";
@@ -209,7 +229,17 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                         case "message_stop":
                         {
                             if (phase != Phase.GotDelta) throw new ModelProviderException("malformed_payload", false);
+                            if (paused)
+                            {
+                                phase = Phase.Paused;
+                                break;
+                            }
                             var continuation = request.NativeToolCalling ? nativeContent.CreateContinuation(request.Model) : null;
+                            // Answers that cite web results show their sources (ADR 0033); the
+                            // provider requires it, and the list survives into later history.
+                            var sources = nativeContent.HasTools ? string.Empty
+                                : ProviderSearchContent.FormatSources(ProviderSearchContent.CitedSources(nativeContent.Citations));
+                            if (sources.Length > 0) yield return new ModelDelta(sources, [], false, null);
                             yield return new ModelDelta(null, [], true, stopReason ?? "stop", usage, providerContinuation: continuation);
                             yield break;
                         }
@@ -234,13 +264,34 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                         }
                         default: continue;
                     }
+                    if (phase == Phase.Paused) break;
                 }
-                throw new ModelProviderException("malformed_payload", false);
+                if (phase != Phase.Paused) throw new ModelProviderException("malformed_payload", false);
             }
+        }
+        if (pauses >= MaximumPausedTurnContinuations) throw new ModelProviderException("provider_search_paused", false);
+        body = AppendPausedTurn(body, nativeContent.ContentForResend());
         }
     }
 
-    private enum Phase { ExpectMessageStart, InMessage, InBlock, GotDelta }
+    /// <summary>How often one model step resends a turn paused by a provider-hosted search.</summary>
+    public const int MaximumPausedTurnContinuations = 3;
+
+    private static string AppendPausedTurn(string body, JsonArray content)
+    {
+        var request = JsonNode.Parse(body) as JsonObject ?? throw new ModelProviderException("malformed_payload", false);
+        if (request["messages"] is not JsonArray messages) throw new ModelProviderException("malformed_payload", false);
+        // The whole turn so far, unchanged: the API continues it from there.
+        if (messages.Count > 0 && messages[^1] is JsonObject last && last["role"]?.GetValue<string>() == "assistant")
+            messages.RemoveAt(messages.Count - 1);
+        messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = content });
+        var resent = request.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+        if (Encoding.UTF8.GetByteCount(resent) > ModelRequest.MaximumSerializedBodyBytes)
+            throw new ModelProviderException("response_too_large", false);
+        return resent;
+    }
+
+    private enum Phase { ExpectMessageStart, InMessage, InBlock, GotDelta, Paused }
 
     private static bool IsKnownEvent(string value) => value is
         "message_start" or "content_block_start" or "content_block_delta" or
@@ -379,6 +430,18 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
         if (request.NativeToolCalling)
         {
             var tools = BuildTools(request.Settings["model_tools"] as JsonArray);
+            if (request.ProviderWebSearch)
+            {
+                // The provider's hosted search replaces Ru's web_search for this run (ADR 0033).
+                if (tools.OfType<JsonObject>().Any(tool => tool["name"]?.GetValue<string>() == ProviderSearchContent.AnthropicToolName))
+                    throw new ModelProviderException("malformed_payload", false);
+                tools.Add(new JsonObject
+                {
+                    ["type"] = WebSearchToolType,
+                    ["name"] = ProviderSearchContent.AnthropicToolName,
+                    ["max_uses"] = WebSearchMaxUses,
+                });
+            }
             if (tools.Count > 0)
             {
                 body["tools"] = tools;
@@ -389,6 +452,10 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
     }
 
     public string ProjectRequestBody(ModelRequest request) => BuildBody(request);
+
+    /// <summary>The basic hosted search: direct calls, no code-execution step (ADR 0033).</summary>
+    internal const string WebSearchToolType = "web_search_20250305";
+    internal const int WebSearchMaxUses = 5;
 
     /// <summary>
     /// Anthropic caches a prompt only when the request asks for it. Agent requests keep

@@ -295,8 +295,9 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         }
         foreach (var property in request.Settings)
         {
+            // provider_web_search is a Ru request field (ADR 0033), never a provider option.
             if (property.Key is not ("model" or "messages" or "stream" or "stream_options" or "model_tools"
-                or "max_tokens" or "max_completion_tokens" or "max_output_tokens"))
+                or "max_tokens" or "max_completion_tokens" or "max_output_tokens" or ModelRequest.ProviderWebSearchSetting))
             {
                 body[property.Key] = property.Value?.DeepClone();
             }

@@ -180,6 +180,9 @@ public sealed class AgentProviderSnapshotFactory(
             // Computer use needs screenshots, so it is pinned only with image input (ADR 0031).
             if (ComputerUsePolicy.IsEnabled(current)) options[ComputerUsePolicy.PinField] = true;
         }
+        // Eligibility only; the run's policy decides whether it is used (ADR 0033).
+        if (ProviderWebSearchPolicy.IsEnabled(current) && ProviderWebSearchPolicy.Supports(selected, options))
+            options[ProviderWebSearchPolicy.PinField] = true;
         var proposed = new AgentRunProviderSelection(
             selected.Backend,
             selected.Alias,
@@ -225,6 +228,7 @@ public sealed class AgentProviderSnapshotFactory(
         // The image-input decision gates the read tool, not the provider request (ADR 0026).
         _ = ImageInputPolicy.TakePinnedCapability(options);
         _ = ComputerUsePolicy.TakePinnedCapability(options);
+        _ = ProviderWebSearchPolicy.TakePinnedCapability(options);
         AgentToolProfilePin.ValidateAndRemove(options);
         var key = await ReadCredentialAsync(selected, ct).ConfigureAwait(false);
         var models = await catalog.GetAsync(selected, current, false, ct).ConfigureAwait(false);

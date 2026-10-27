@@ -269,7 +269,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         try
         {
             return new ModelGenerationRequest(prompt, modelMessages!, request.PromptContext,
-                new ModelGenerationSettings(settings["model_tools"] as JsonArray), bootstrap,
+                new ModelGenerationSettings(settings["model_tools"] as JsonArray,
+                    providerWebSearch: request.PromptContext.ProviderWebSearch), bootstrap,
                 ParseRunImages(images), history.Responses, history.Anthropic,
                 promptInHistory: nativeText, pendingRuntimeSnapshot: pendingSnapshot);
         }
@@ -306,9 +307,11 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             : await LoadProviderContinuationsAsync(request.RunId, bootstrap,
                 RetainedAssistantEventIds(request.Context, modelMessages), cancellationToken).ConfigureAwait(false);
         return bootstrap.Protocol == ProviderProtocols.OpenAiResponses
-            ? new NativeHistory(OpenAiResponsesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model), empty.Anthropic)
+            ? new NativeHistory(OpenAiResponsesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model,
+                request.PromptContext.ProviderWebSearch), empty.Anthropic)
             : new NativeHistory(empty.Responses,
-                AnthropicMessagesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model));
+                AnthropicMessagesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model,
+                    request.PromptContext.ProviderWebSearch));
     }
 
     private async Task<ProviderBootstrapData> LoadProviderBootstrapAsync(

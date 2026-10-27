@@ -656,6 +656,26 @@ explicitly untrusted. These are bounded Web-tool controls: web tools run
 Host-side. Terminal children also run as the current user without OS-level
 filesystem/network confinement (ADR-0015).
 
+### Provider web search
+
+A root run on first-party Anthropic (`api.anthropic.com`) or OpenAI
+(`api.openai.com`) with an eligible model searches through the provider instead
+([ADR 0033](../adr/0033-provider-hosted-web-search.md)). The decision is pinned
+when the run's selection is pinned (`_ru_provider_web_search_v1`, removed before
+any option reaches the provider) and used only when the Broker would allow
+`web_search` without an approval under the run's policy; a rule that asks for or
+denies `web_search` keeps the Broker tool. Such a run advertises no Broker
+`web_search`: Anthropic requests declare `web_search_20250305` with `max_uses: 5`,
+OpenAI requests declare `{"type": "web_search"}`. `web_fetch` stays a Broker tool.
+The provider runs the query, outside the Broker and `WebPolicy`, and bills it on
+the user's account. Answers that cite results end with a `Sources:` list.
+Anthropic `pause_turn` responses are continued in the same step at most three
+times (`provider_search_paused` after that), and a provider refusal of the tool
+fails as `provider_web_search_unavailable`. Tool steps replay their search
+blocks to later requests that declare the tool; any other request receives none.
+Set `provider_web_search_enabled` to `false` in settings to keep the Broker
+search for new runs.
+
 ## Agent activity shown in WinUI
 
 Agent is the only supported generation path. The desktop composer uses the

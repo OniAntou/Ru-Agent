@@ -9,7 +9,8 @@ internal static class OpenAiResponsesHistoryProjector
     public static IReadOnlyList<JsonObject> Project(
         IReadOnlyList<ModelTurn> turns,
         IReadOnlyList<ProviderContinuation> continuations,
-        string model)
+        string model,
+        bool providerWebSearch = false)
     {
         var used = new HashSet<ProviderContinuation>();
         var items = new List<JsonObject>();
@@ -33,7 +34,9 @@ internal static class OpenAiResponsesHistoryProjector
                     else if (!string.IsNullOrWhiteSpace(turn.Content))
                         items.Add(new JsonObject { ["role"] = "assistant", ["content"] = turn.Content });
                 }
-                foreach (var output in continuation.OutputItems) items.Add((JsonObject)output.DeepClone());
+                // Search calls replay only to a request that declares the hosted search (ADR 0033).
+                var outputs = providerWebSearch ? continuation.OutputItems : ProviderSearchContent.StripResponses(continuation.OutputItems);
+                foreach (var output in outputs) items.Add((JsonObject)output.DeepClone());
                 continue;
             }
             if (turn.Role == "assistant" && turn.ResponsesMessages is { } responseMessages)

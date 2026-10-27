@@ -28,10 +28,28 @@ internal static class ModelContextOverflowError
             || message.StartsWith("maximum context length", StringComparison.OrdinalIgnoreCase)
             || message.StartsWith("this model's maximum context length", StringComparison.OrdinalIgnoreCase));
 
-    internal static async Task<bool> ReadAsync(HttpResponseMessage response, CancellationToken ct)
+    internal static async Task<bool> ReadAsync(HttpResponseMessage response, CancellationToken ct) =>
+        IsError(await ReadErrorAsync(response, ct).ConfigureAwait(false));
+
+    /// <summary>
+    /// A provider's hosted web search (ADR 0033) refused for this request: turned off for
+    /// the organization or not offered for the model. Matched only for a request that
+    /// declared the tool, from the error message the provider returns with a 400.
+    /// </summary>
+    internal static bool IsWebSearchUnavailable(JsonNode? error)
     {
-        if (response.StatusCode is not (HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge)) return false;
-        if (response.Content.Headers.ContentLength > MaximumBytes) return false;
+        if (error is not JsonObject body || Text(body["message"]) is not { } message) return false;
+        return message.Contains("web search", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("web_search", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal const string WebSearchUnavailableCode = "provider_web_search_unavailable";
+
+    /// <summary>The bounded <c>error</c> object of a 400 or 413 body, or null.</summary>
+    internal static async Task<JsonNode?> ReadErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.StatusCode is not (HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge)) return null;
+        if (response.Content.Headers.ContentLength > MaximumBytes) return null;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(2));
         try
@@ -45,7 +63,7 @@ internal static class ModelContextOverflowError
                 if (read == 0)
                 {
                     var root = JsonNode.Parse(bytes.AsSpan(0, used), documentOptions: new JsonDocumentOptions { MaxDepth = 8 });
-                    return IsError(root?["error"]);
+                    return root?["error"];
                 }
                 used += read;
             }
@@ -53,6 +71,6 @@ internal static class ModelContextOverflowError
         catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
         catch (Exception error) when (error is JsonException or IOException or HttpRequestException or InvalidOperationException) { }
         ct.ThrowIfCancellationRequested();
-        return false;
+        return null;
     }
 }

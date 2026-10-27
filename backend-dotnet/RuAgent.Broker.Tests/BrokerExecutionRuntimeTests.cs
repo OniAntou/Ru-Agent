@@ -371,6 +371,28 @@ public sealed class BrokerExecutionRuntimeTests
         Assert.Equal("standard_web_allow", web.Decision.ReasonCode);
     }
 
+    [Fact]
+    public async Task Unattended_check_follows_the_run_policy()
+    {
+        // Provider-hosted search is used only where the Broker's web_search would run
+        // without an approval (ADR 0033).
+        using var fixture = new RuntimeFixture();
+        const string sessionId = "session-unattended";
+        const string standardRun = "run_unattended_standard111111111111";
+        const string askRun = "run_unattended_ask11111111111111111";
+        Assert.Null((await fixture.Runtime.OpenRunAsync(
+            RunOpen(standardRun, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default)).Error);
+        Assert.Null((await fixture.Runtime.OpenRunAsync(
+            RunOpen(askRun, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardWithRules(
+                PolicyEvalSnapshots.Rule("ask-search", "ask", PolicyEvalSnapshots.Matcher(toolId: "web_search")))), default)).Error);
+        var query = new JsonObject { ["query"] = "ru" };
+
+        Assert.True(fixture.Runtime.AllowsWithoutApproval(sessionId, standardRun, "web_search", "1.0.0", query));
+        Assert.False(fixture.Runtime.AllowsWithoutApproval(sessionId, askRun, "web_search", "1.0.0", query));
+        Assert.False(fixture.Runtime.AllowsWithoutApproval("another-session", standardRun, "web_search", "1.0.0", query));
+        Assert.False(fixture.Runtime.AllowsWithoutApproval(sessionId, standardRun, "totally.unknown", "1.0.0", query));
+    }
+
     [Theory]
     [InlineData("write")]
     [InlineData("edit")]

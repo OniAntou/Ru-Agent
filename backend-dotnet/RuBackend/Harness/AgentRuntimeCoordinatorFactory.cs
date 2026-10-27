@@ -156,10 +156,12 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         }
 
         var storedRun = await _store.GetRunAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
+        var providerWebSearchPinned = false;
         if (_runModelMetadataResolver is not null)
         {
             var metadata = await _runModelMetadataResolver.ResolveAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
             availability = availability with { ToolProfile = metadata.ToolProfile, ComputerUseEnabled = metadata.ComputerUse };
+            providerWebSearchPinned = metadata.ProviderWebSearch;
         }
         var subagentStore = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(_sqliteOptions, _payloadStore);
         var internalRun = storedRun is not null && await subagentStore.IsInternalSessionAsync(storedRun.SessionId, cancellationToken).ConfigureAwait(false);
@@ -175,6 +177,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         IToolGateway gateway = await _brokerGateways
             .CreateAsync(workspaceRoot, policySnapshot, brokerRunId, agentSessionId, cancellationToken)
             .ConfigureAwait(false);
+        availability = availability with { ProviderWebSearch = UsesProviderWebSearch(availability, providerWebSearchPinned, gateway) };
         if (internalRun)
         {
             try
@@ -289,4 +292,17 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         });
         hub.TryPublish(frame.RunId, kind, data);
     }
+
+    /// <summary>
+    /// A root run whose selection pinned provider search uses it only when the Broker
+    /// would run its own <c>web_search</c> without an approval (ADR 0033): a search the
+    /// provider runs cannot stop for one.
+    /// </summary>
+    private static bool UsesProviderWebSearch(AgentToolRuntimeAvailability availability, bool pinned, IToolGateway gateway) =>
+        pinned
+        && availability.WebSearchEnabled
+        && availability.ChildRole is null
+        && RuAgent.Protocol.AgentToolProfiles.Includes(availability.ToolProfile, "web_search")
+        && gateway is RuBackend.Harness.Broker.IUnattendedToolPolicy policy
+        && policy.AllowsWithoutApproval("web_search", "1.0.0", new System.Text.Json.Nodes.JsonObject { ["query"] = "ru" });
 }

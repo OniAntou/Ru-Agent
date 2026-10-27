@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(web)**: Runs on first-party Anthropic and OpenAI models now search through the
+  provider's own hosted web search, as Claude Code and Codex do, instead of scraping
+  search-engine pages (ADR 0033). It needs no extra key; each search is billed on the
+  provider account. It applies only where the run's policy allows `web_search` without
+  an approval, cited answers end with a Sources list, and `provider_web_search_enabled`
+  set to `false` keeps the old search for new runs. Other providers are unchanged.
+
+- **feat(skills)**: Automatically discover the shared user library at
+  `~/.agents/skills` in every workspace. Existing project and `~/.ru/skills`
+  packages retain priority when skill IDs collide.
+
 - **fix(web)**: `web_fetch` now names itself (`RuAgent/<version>`), sends `Accept` and
   `Accept-Language` and decodes compressed responses, so sites such as Wikipedia and
   VnExpress that refused the bare request now answer. Repeated URLs, same-page anchors
@@ -14,9 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text. `web_fetch` also reads PDF text (papers, specifications, reports). Web failures
   now tell the model what to try next, and the `web_search` and `web_fetch`
   descriptions explain how to query and page instead of engine internals.
-- **feat(skills)**: Automatically discover the shared user library at
-  `~/.agents/skills` in every workspace. Existing project and `~/.ru/skills`
-  packages retain priority when skill IDs collide.
 
 - **feat(skills)**: Unify YAML parsing and skill IDs, return resource bases and
   versioned bodies, and make `/skill <id> [arguments]` activate a workflow in chat.

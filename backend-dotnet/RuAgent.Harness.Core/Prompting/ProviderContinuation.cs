@@ -71,6 +71,14 @@ public sealed record ProviderContinuation
         foreach (var item in items)
         {
             var type = item["type"]?.GetValue<string>();
+            // A hosted web search keeps its call item in order (ADR 0033): a reasoning
+            // item must stay followed by the item that followed it.
+            if (type == "web_search_call")
+            {
+                if (!ProviderSearchContent.IsValidResponsesSearchCall(item) || !itemIds.Add(item["id"]!.GetValue<string>()))
+                    throw new ArgumentException("Provider web search continuation is invalid.", nameof(items));
+                continue;
+            }
             var allowed = type switch
             {
                 "reasoning" => new[] { "type", "id", "encrypted_content", "summary", "status" },
@@ -118,8 +126,19 @@ public sealed record ProviderContinuation
         foreach (var item in items)
         {
             var type = item["type"]?.GetValue<string>();
+            if (ProviderSearchContent.IsAnthropicSearchBlock(item))
+            {
+                if (!ProviderSearchContent.IsValidAnthropicSearchBlock(item))
+                    throw new ArgumentException("Anthropic web search block is invalid.", nameof(items));
+                continue;
+            }
+            // Citations point into this continuation's search results and travel unchanged.
+            var cited = type == "text" && item.ContainsKey("citations");
+            if (cited && !ProviderSearchContent.IsValidCitations(item["citations"]))
+                throw new ArgumentException("Anthropic citations are invalid.", nameof(items));
             var expected = type switch
             {
+                "text" when cited => new[] { "type", "text", "citations" },
                 "text" => new[] { "type", "text" },
                 "thinking" => new[] { "type", "thinking", "signature" },
                 "redacted_thinking" => new[] { "type", "data" },

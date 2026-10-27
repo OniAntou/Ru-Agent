@@ -422,6 +422,7 @@ public static partial class BusinessEndpoints
         result.Remove("reasoning_preferences");
         result["reasoning_effort"] = reasoningEffort;
         result[RuBackend.Providers.ComputerUsePolicy.SettingField] = RuBackend.Providers.ComputerUsePolicy.IsEnabled(value);
+        result[RuBackend.Providers.ProviderWebSearchPolicy.SettingField] = RuBackend.Providers.ProviderWebSearchPolicy.IsEnabled(value);
         foreach (var key in new[]
                  {
                      "api_key",

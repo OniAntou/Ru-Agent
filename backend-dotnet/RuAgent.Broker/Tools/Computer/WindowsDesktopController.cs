@@ -127,6 +127,56 @@ public sealed partial class WindowsDesktopController : IDesktopController
         return handle == 0 ? null : Describe(GetAncestor(handle, 2), new());
     }
 
+    public DesktopWindow? TopWindowOf(string appName)
+    {
+        using var dpi = DpiScope.Enter();
+        var handles = new List<nint>();
+        EnumWindows((handle, _) =>
+        {
+            handles.Add(handle);
+            return true;
+        }, 0);
+        var processes = new Dictionary<int, (string App, string? Path)>();
+        foreach (var handle in handles)
+        {
+            // Minimized windows count here: focusing restores them. Owned popups and
+            // tool windows are not the app's main window.
+            if (!IsWindowVisible(handle) || IsCloaked(handle) && !IsIconic(handle) || GetWindow(handle, 4) != 0) continue;
+            if ((GetWindowLongPtr(handle, -20) & 0x80) != 0) continue;
+            if (Describe(handle, processes) is { } window && window.AppName == appName) return window;
+        }
+
+        return null;
+    }
+
+    public bool BringToForeground(nint handle)
+    {
+        using var dpi = DpiScope.Enter();
+        if (IsIconic(handle)) ShowWindow(handle, 9);
+        // A background process may not take the foreground by itself. Sharing the current
+        // foreground thread's input state for this one call allows it without sending any
+        // input that would reach the window being replaced.
+        var foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out _);
+        var self = GetCurrentThreadId();
+        var attached = foregroundThread != 0 && foregroundThread != self && AttachThreadInput(self, foregroundThread, true);
+        try
+        {
+            BringWindowToTop(handle);
+            SetForegroundWindow(handle);
+        }
+        finally
+        {
+            if (attached) AttachThreadInput(self, foregroundThread, false);
+        }
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            if (GetAncestor(GetForegroundWindow(), 2) == handle) return true;
+            Thread.Sleep(30);
+        }
+
+        return false;
+    }
+
     public bool IsShieldedFromInput(int processId)
     {
         var target = IntegrityLevel(processId);
@@ -523,6 +573,12 @@ public sealed partial class WindowsDesktopController : IDesktopController
     [DllImport("advapi32.dll", SetLastError = true)] private static extern bool GetTokenInformation(nint token, int infoClass, nint info, int length, out int needed);
     [DllImport("advapi32.dll")] private static extern nint GetSidSubAuthorityCount(nint sid);
     [DllImport("advapi32.dll")] private static extern nint GetSidSubAuthority(nint sid, uint index);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint handle);
+    [DllImport("user32.dll")] private static extern bool BringWindowToTop(nint handle);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint attachTo, bool join);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] private static extern bool ShowWindow(nint handle, int command);
+    [DllImport("user32.dll")] private static extern nint GetWindow(nint handle, uint command);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint FindWindowEx(nint parent, nint after, string? className, string? title);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern nint CreateToolhelp32Snapshot(uint flags, uint processId);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern bool Process32First(nint snapshot, ref PROCESSENTRY32 entry);

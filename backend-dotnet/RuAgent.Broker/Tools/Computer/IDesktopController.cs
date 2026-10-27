@@ -29,6 +29,12 @@ public interface IDesktopController
 
     DesktopWindow? ForegroundWindow();
 
+    /// <summary>The topmost window of an app in z-order, minimized windows included.</summary>
+    DesktopWindow? TopWindowOf(string appName);
+
+    /// <summary>Restores and activates a window; true when it is the foreground window afterwards.</summary>
+    bool BringToForeground(nint handle);
+
     /// <summary>True when the process runs at a higher integrity than Ru, which Windows silently shields from input.</summary>
     bool IsShieldedFromInput(int processId);
 

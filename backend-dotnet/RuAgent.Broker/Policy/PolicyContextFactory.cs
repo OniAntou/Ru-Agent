@@ -372,6 +372,12 @@ public sealed partial class PolicyContextFactory
                     {
                         throw new PolicyContextException("malformed_call", hint: "apps is only valid with action=request_access.");
                     }
+                    else if (op == ComputerActions.Focus)
+                    {
+                        // The app travels as argv so the protected-app invariant denies it before execution.
+                        argv = [ComputerProtectedApps.Normalize(OptionalText(arguments, "app"))
+                            ?? throw new PolicyContextException("malformed_call", hint: "focus needs app, an executable name such as notepad.exe.")];
+                    }
 
                     break;
                 case var control when SubagentContractValidator.IsControlTool(control):

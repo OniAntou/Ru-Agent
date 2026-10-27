@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)**: The `computer` tool gains `action=focus`: bring a granted app's
+  window to the front, restoring it when minimized, without sending input to the window
+  it replaces. Protected apps stay unreachable; failures are named
+  (`computer_app_not_running`, `computer_focus_refused`).
 - **feat(agent)**: Computer use (ADR 0031), off by default. Turn it on in Settings or
   with `/computer on`; new turns with an image-capable model get one `computer` tool to
   list monitors and apps, request access to apps, take screenshots of any monitor, and

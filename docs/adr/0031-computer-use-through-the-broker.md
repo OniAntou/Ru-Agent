@@ -37,8 +37,11 @@ invariants:
    new runs only. With the setting on and a model without image input, the tool
    is not advertised and the run's selection records no marker.
 2. **One `computer` tool.** `RuAgent.Protocol` gains one definition, `computer`,
-   with an `action` of `list`, `request_access`, `screenshot`, `click`, `move`,
-   `drag`, `scroll`, `type` or `key`. It belongs to every coding profile but is
+   with an `action` of `list`, `request_access`, `focus`, `screenshot`, `click`,
+   `move`, `drag`, `scroll`, `type` or `key`. `focus` (amended 2026-10-27) brings a
+   granted app's topmost window to the front, so the model is not stuck when
+   another window covers the app; it shares the foreground thread's input state
+   for that one call instead of sending input to the window it replaces. It belongs to every coding profile but is
    advertised only for a run that carries the marker. Subagents and `run_code`
    programs never receive it.
 3. **Policy.** Every action is classified as a mutation, so `plan` denies all of

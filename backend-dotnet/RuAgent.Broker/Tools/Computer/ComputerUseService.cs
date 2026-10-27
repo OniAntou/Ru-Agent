@@ -180,6 +180,7 @@ public sealed class ComputerUseService
         {
             ComputerActions.List => List(sessionId, fullAccess),
             ComputerActions.RequestAccess => RequestAccess(sessionId, arguments),
+            ComputerActions.Focus => Focus(sessionId, fullAccess, arguments),
             ComputerActions.Screenshot => Screenshot(sessionId, fullAccess, imageInputAccepted, arguments),
             ComputerActions.Click or ComputerActions.Move or ComputerActions.Scroll or ComputerActions.Drag =>
                 Pointer(action, sessionId, fullAccess, arguments, cancellationToken),
@@ -256,6 +257,26 @@ public sealed class ComputerUseService
             },
             ToolVerificationStates.NotRequired,
             "Computer access granted for this session.");
+    }
+
+    private ToolExecutionOutcome Focus(string sessionId, bool fullAccess, JsonObject arguments)
+    {
+        var app = ComputerProtectedApps.Normalize(Text(arguments, "app"))
+            ?? throw new ComputerUseException("computer_arguments_invalid", "focus needs app, an executable name such as notepad.exe.");
+        if (ComputerProtectedApps.IsProtected(app))
+            throw new ComputerUseException("computer_app_protected", $"{app} can never be controlled.");
+        if (!fullAccess && !Grants(sessionId).Contains(app))
+            throw new ComputerUseException("computer_app_not_granted", $"{app} has no access in this session; call request_access with it first.");
+        var window = _desktop.TopWindowOf(app)
+            ?? throw new ComputerUseException("computer_app_not_running", $"{app} has no window to bring to the front.");
+        var target = RequireTarget(window, Grants(sessionId), fullAccess);
+        if (!_desktop.BringToForeground(target.Handle))
+            throw new ComputerUseException("computer_focus_refused", $"Windows did not bring {app} to the front; ask the user to switch to it.");
+        Thread.Sleep(SettleDelay);
+        return ToolExecutionOutcome.Succeeded(
+            new JsonObject { ["action"] = ComputerActions.Focus, ["app"] = app, ["title"] = Bound(target.Title, 120) },
+            ToolVerificationStates.NotRequired,
+            $"Brought {app} to the front.");
     }
 
     private ToolExecutionOutcome Screenshot(string sessionId, bool fullAccess, bool imageInputAccepted, JsonObject arguments)

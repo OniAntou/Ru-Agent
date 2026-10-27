@@ -143,6 +143,7 @@ public static class AgentActivityProjector
                 "request_access " + string.Join(", ", apps.EnumerateArray()
                     .Where(app => app.ValueKind == JsonValueKind.String).Select(app => app.GetString()).Take(8)),
             "key" => "key " + Text("keys"),
+            "focus" => "focus " + Text("app"),
             "type" => $"type ({Text("text")?.Length ?? 0} characters)",
             _ => action,
         };

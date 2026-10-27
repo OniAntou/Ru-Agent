@@ -215,6 +215,40 @@ public sealed class ComputerUseTests
     }
 
     [Fact]
+    public async Task Focus_brings_a_granted_app_forward_even_when_minimized()
+    {
+        var desktop = new FakeDesktop(Window("claude.exe", Primary)) { Foreground = Window("claude.exe", Primary) };
+        desktop.Minimized.Add(Window("notepad.exe", new PixelRect(100, 100, 600, 500), "Notes"));
+        var service = Service(desktop);
+        var focus = Args("focus", new JsonObject { ["app"] = "Notepad" });
+
+        Assert.Equal("computer_app_not_granted", (await service.ExecuteAsync(Run, Session, false, true, focus, CancellationToken.None)).ErrorCode);
+        await Grant(service, "notepad.exe");
+        var result = await service.ExecuteAsync(Run, Session, false, true, Args("focus", new JsonObject { ["app"] = "Notepad" }), CancellationToken.None);
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal("notepad.exe", desktop.Foreground!.AppName);
+        Assert.Equal("Notes", result.Output["title"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("windowsterminal.exe", true, true, "computer_app_protected")]
+    [InlineData("paint.exe", true, true, "computer_app_not_running")]
+    [InlineData("notepad.exe", false, true, "computer_focus_refused")]
+    [InlineData("notepad.exe", true, false, "computer_target_elevated")]
+    public async Task Focus_fails_by_name(string app, bool focusSucceeds, bool notShielded, string code)
+    {
+        var desktop = new FakeDesktop(Window("notepad.exe", Primary), Window("windowsterminal.exe", Primary))
+        {
+            FocusSucceeds = focusSucceeds,
+            Shielded = !notShielded,
+        };
+        var result = await Service(desktop).ExecuteAsync(Run, Session, true, true,
+            Args("focus", new JsonObject { ["app"] = app }), CancellationToken.None);
+        Assert.Equal(code, result.ErrorCode);
+    }
+
+    [Fact]
     public async Task A_changed_monitor_layout_requires_a_new_screenshot()
     {
         var desktop = new FakeDesktop(Window("notepad.exe", Primary)) { WindowAtPoint = Window("notepad.exe", Primary) };
@@ -328,6 +362,19 @@ public sealed class ComputerUseTests
 
         public DesktopWindow? RootWindowAt(int x, int y) => WindowAtPoint;
         public DesktopWindow? ForegroundWindow() => Foreground;
+
+        public List<DesktopWindow> Minimized { get; } = [];
+        public bool FocusSucceeds { get; set; } = true;
+
+        public DesktopWindow? TopWindowOf(string appName) =>
+            windows.Concat(Minimized).FirstOrDefault(window => window.AppName == appName);
+
+        public bool BringToForeground(nint handle)
+        {
+            if (!FocusSucceeds) return false;
+            Foreground = windows.Concat(Minimized).First(window => window.Handle == handle);
+            return true;
+        }
         public bool IsShieldedFromInput(int processId) => Shielded;
         public void MovePointer(int x, int y) { }
         public void Click(int x, int y, PointerButton button, int count, nint expectedRoot) => LastClick = (x, y, button, count);

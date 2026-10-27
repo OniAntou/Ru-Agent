@@ -235,7 +235,7 @@ they do not make a retired public identity executable.
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | `ask_user` | always advertised (`user.input`) | Host-intercepted: the Broker never receives the call. Parks the run in `WaitingUser` with a durable `input.requested` event; the client answers through `POST /agent/v1/runs/{runId}/inputs/{inputId}`, a replayed or foreign id fails as `input_stale`, and the answer completes the parked call durably before the run resumes |
 | `mcp` (`op=list_servers`, `list_tools`, `call`) | advertised while `~/.ru/mcp.json` declares an enabled server; never to subagents | `list_servers` reads the user's file and is automatic; `list_tools` and `call` start or call a server and take the `ExternalTerminal` decision: `plan` deny, `standard` ask (`mcp_call_requires_approval`), `full_access` automatic; "Always allow" remembers one server and op/tool, never a whole server; the card names the server and tool. See [MCP servers](#mcp-servers) |
-| `computer` (`action=list`, `request_access`, `screenshot`, `click`, `move`, `drag`, `scroll`, `type`, `key`) | advertised only to a root run that pinned the computer-use opt-in with image input; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `request_access` takes the `ExternalTerminal` decision: `standard` ask (`computer_access_requires_approval`), `full_access` automatic; other actions are allowed by policy and checked against the session's app grants when they run. Protected apps are refused in every preset (`computer_app_protected`). See [Computer use](#computer-use) |
+| `computer` (`action=list`, `request_access`, `focus`, `screenshot`, `click`, `move`, `drag`, `scroll`, `type`, `key`) | advertised only to a root run that pinned the computer-use opt-in with image input; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `request_access` takes the `ExternalTerminal` decision: `standard` ask (`computer_access_requires_approval`), `full_access` automatic; other actions are allowed by policy and checked against the session's app grants when they run. Protected apps are refused in every preset (`computer_app_protected`). See [Computer use](#computer-use) |
 | connector libraries | not advertised | experimental/unwired |
 
 Large structured tool results are projected into bounded prompt references while
@@ -943,6 +943,9 @@ accepts images gets the tool, so a run never changes mid-way.
 - `request_access` takes 1 to 8 executable names (`notepad.exe`; a bare name gains `.exe`)
   in canonical order. In `standard` it asks once; approving records an **app grant** for the
   rest of the Agent session. "Always allow" saves a project rule for exactly that app list.
+- `focus` takes one `app` and brings its topmost window to the front, restoring it when
+  minimized. In `standard` the app needs a grant. Ru activates the window without sending
+  any input to the window it replaces. Use it when another window covers the app.
 - `screenshot` returns a PNG of one monitor, at most 1,280 px on the long edge, through the
   [image read](#image-reads) path, so only a model that accepts images receives it and only
   the newest four images reach a request. In `standard` every pixel outside a granted app's
@@ -962,7 +965,8 @@ CLI, such as an editor's terminal, in every preset), `computer_target_changed` (
 under the pointer or in front changed during a click or while typing),
 `computer_target_elevated`, `computer_key_not_allowed` (the Windows key without
 `explorer.exe` access), `computer_screenshot_required`, `computer_display_changed`,
-`computer_point_outside_screenshot`, `computer_busy` (another run holds the desktop until it
+`computer_point_outside_screenshot`, `computer_app_not_running` and `computer_focus_refused`
+(focus found no window, or Windows kept another window in front), `computer_busy` (another run holds the desktop until it
 ends or is idle for two minutes), `computer_desktop_unavailable` (locked or secure desktop),
 `computer_stop_unavailable` (the stop hotkey could not be registered),
 `computer_stopped_by_user`, `computer_root_run_required` (a subagent or program) and

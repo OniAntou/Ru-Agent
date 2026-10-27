@@ -12,9 +12,10 @@ public static class ComputerActions
     public const string Scroll = "scroll";
     public const string Type = "type";
     public const string Key = "key";
+    public const string Focus = "focus";
 
     public static IReadOnlyList<string> All { get; } =
-        [List, RequestAccess, Screenshot, Click, Move, Drag, Scroll, Type, Key];
+        [List, RequestAccess, Focus, Screenshot, Click, Move, Drag, Scroll, Type, Key];
 
     /// <summary>Actions that only observe; they never send input.</summary>
     public static bool IsObservation(string? action) => action is List or Screenshot;

@@ -273,6 +273,7 @@ public sealed class PolicySnapshotEvaluator
         || string.Equals(context.OperationClass, PolicyOperationClasses.Edit, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Delete, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Patch, StringComparison.Ordinal)
+        || string.Equals(context.OperationClass, PolicyOperationClasses.Restore, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Mutation, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal);
 

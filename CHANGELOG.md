@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rerun never replaces evidence from a check that actually ran, and the recovery
   note for `malformed_call`/`invalid_arguments` tells the model to keep the
   declared purpose on the corrected call.
+- **fix(policy)**: Plan's read-only gate now covers `file_restore`, so a remembered
+  allow or ask rule can no longer restore files or prompt in `plan`.
 
 - **fix(context)**: Compact historical exchanges while protecting instructions and
   current requests; enforce the 256-range cap and bounded checkpoint chunks.

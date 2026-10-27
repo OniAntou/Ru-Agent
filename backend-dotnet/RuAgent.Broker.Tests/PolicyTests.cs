@@ -1004,6 +1004,30 @@ public sealed partial class PolicyEvaluationTests
         Assert.Equal("allow", networked.Decision);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("allow")]
+    [InlineData("ask")]
+    public void Plan_denies_file_restore_even_when_a_rule_would_allow_or_ask(string? ruleDecision)
+    {
+        // Restoring a recovery copy writes the workspace, so Plan's read-only gate
+        // applies ahead of any remembered allow or ask rule, like any other mutation.
+        var snapshot = ruleDecision is null
+            ? PolicyEvalSnapshots.Empty("plan")
+            : PolicyEvalSnapshots.SnapshotWith(
+                PolicyEvalSnapshots.Rule("r-restore", ruleDecision, PolicyEvalSnapshots.Matcher())) with { Preset = "plan" };
+        var (lease, factory) = Bind(snapshot);
+
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create("file_restore", "1.0.0", new JsonObject { ["recovery_id"] = "recovery-1" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("plan_preset_read_only", evaluation.ReasonCode);
+    }
+
     [Fact]
     public void Standard_terminal_classification_covers_recognized_and_unknown_forms()
     {

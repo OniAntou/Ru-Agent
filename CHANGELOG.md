@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **fix(broker)**: Canonical path resolution opens a query-only handle, so locked or
   unreadable files resolve through the OS final-path API instead of the managed
   link walk.
+- **refactor**: Split `ModelStepService`, `AgentToolExecutionPipeline`,
+  `AgentApiClient`, `TuiTranscript` and `ChatView.AgentRun` into partial files by
+  responsibility; move the test-only desktop `FileTools` facade into the Broker
+  tests and make `FileReadAdapter.Execute` an internal test convenience.
 
 - **fix(harness)**: A declared verification whose launch was rejected before any
   process ran (`malformed_call`, policy or resolution failure) no longer blocks

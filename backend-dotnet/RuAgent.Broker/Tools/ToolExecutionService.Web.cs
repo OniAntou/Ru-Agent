@@ -6,7 +6,6 @@ using System.Text.RegularExpressions;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
-using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;

@@ -1,7 +1,7 @@
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
-using RuAgent.Broker.Tools.Desktop;
+using RuAgent.Broker.Tests.Support;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using Xunit;

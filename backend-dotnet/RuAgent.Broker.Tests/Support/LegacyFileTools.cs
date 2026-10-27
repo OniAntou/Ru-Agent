@@ -1,9 +1,10 @@
 using System.Text;
 using System.Text.Json.Nodes;
+using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Paths;
 
-namespace RuAgent.Broker.Tools.Desktop;
+namespace RuAgent.Broker.Tests.Support;
 
 public sealed class FileEditException : Exception
 {
@@ -20,6 +21,10 @@ public sealed class FileEditException : Exception
     public JsonObject? Details { get; }
 }
 
+/// <summary>
+/// Synchronous file facade from the retired desktop tool surface. No production
+/// path dispatches through it; it stays as a test fixture for the adapters it wraps.
+/// </summary>
 public sealed class FileTools
 {
     private const long MaxEditBytes = 4 * 1024 * 1024;

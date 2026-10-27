@@ -1,6 +1,6 @@
 using System.Text;
 using RuAgent.Broker.Tools;
-using RuAgent.Broker.Tools.Desktop;
+using RuAgent.Broker.Tests.Support;
 using Xunit;
 
 namespace RuAgent.Broker.Tests;

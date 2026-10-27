@@ -24,7 +24,7 @@ public static class TuiSurfaces
     /// <summary>Groups used by both the help panel and the slash dropdown's vocabulary.</summary>
     private static readonly (string Title, string[] Commands)[] HelpGroups =
     [
-        ("session", ["/new", "/sessions", "/resume", "/delete", "/status", "/preset"]),
+        ("session", ["/new", "/sessions", "/resume", "/delete", "/status", "/preset", "/computer"]),
         ("run", ["/follow", "/retry", "/release"]),
         ("model & backend", ["/model", "/backend", "/key", "/reasoning"]),
         ("terminal", ["/clear", "/help", "/update", "/exit"]),

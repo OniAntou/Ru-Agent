@@ -54,6 +54,22 @@ namespace RuApp.Services
             }
         }
 
+        /// <summary>Saves only the computer-use opt-in; it applies to new runs (ADR 0031).</summary>
+        public async Task<bool> SaveComputerUseAsync(bool enabled)
+        {
+            try
+            {
+                var payload = new System.Text.Json.Nodes.JsonObject { ["computer_use_enabled"] = enabled };
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
+                return await HasOkEnvelopeAsync(response);
+            }
+            catch (Exception ex)
+            {
+                LogApiError("SaveComputerUseAsync", ex);
+                return false;
+            }
+        }
+
         public async Task<bool> SaveReasoningSettingsAsync(
             string effort,
             string model,

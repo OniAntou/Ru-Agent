@@ -11,6 +11,7 @@ public static class ChatCommandCatalog
         new("/key", "Show or update provider API keys", "/key [provider]"),
         new("/backend", "Switch provider backend (openai, anthropic, custom...)", "/backend <name>"),
         new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
+        new("/computer", "Show or set computer use for new turns", "/computer [on|off]"),
         new("/status", "Show session status and preset", "/status"),
         new("/preset", "Choose permissions for new turns", "/preset [plan|standard|full_access]"),
         new("/release", "Cancel a parked run in this session", "/release [run-id]"),

@@ -8,7 +8,7 @@ namespace RuAgent.Cli;
 /// Slash handlers extracted from AgentCommands.ChatAsync (slice 1).
 /// Owns /backend + /model display/update. Business logic unchanged.
 /// </summary>
-public sealed class AgentSlashCommands
+public sealed partial class AgentSlashCommands
 {
     private readonly SettingsApiClient _settingsClient;
     private TextWriter _humanOut;
@@ -106,6 +106,12 @@ public sealed class AgentSlashCommands
         if (slashCmd is "/reasoning")
         {
             await HandleReasoningAsync(arg, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        if (slashCmd is "/computer")
+        {
+            await HandleComputerUseAsync(arg, cancellationToken).ConfigureAwait(false);
             return true;
         }
 

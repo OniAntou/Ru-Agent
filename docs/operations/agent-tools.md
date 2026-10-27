@@ -202,11 +202,24 @@ HTTP failures surface as `web_http_<status>` (for example 403, 404, 429) and
 connection failures as `web_network_error`, rather than generic `adapter_error`.
 Use another source or report unavailable evidence; do not bypass an access error
 by terminal scraping. Once a relevant source answers the question, finish.
+Each web failure code carries its own next step in the result summary: a
+search with no readable or relevant results suggests one retry with fewer
+keywords or fetching a known authoritative URL, 401/403 says the site refuses
+automated clients, 404 suggests checking the address, 429 a different source,
+and an unsupported content type points to an HTML version of the document.
 
 Web downloads default to 4 MiB, with the existing configurable 4 MiB ceiling.
+Compressed responses are decoded before that bound is counted. `web_fetch`
+identifies itself as `RuAgent/<version> (+https://github.com/OniAntou/Ru-Agent)`
+and sends `Accept` and `Accept-Language`; without them ordinary sites such as
+Wikipedia refused the request. It never presents a browser user agent, so a site
+that turns away automated clients still fails with its HTTP status.
 Fetch parses HTML locally through AngleSharp without loading resources or
 executing scripts, prefers main/article content, removes navigation/scripts,
-and preserves paragraphs, preformatted code and HTTP links. Markdown, JSON
+and preserves paragraphs, preformatted code and HTTP links. Each destination
+is written as a link once; anchors into the same page, repeated URLs and
+footnote markers keep their text only, since URLs took about half of an
+article's extracted text. Markdown, JSON
 and source text preserve newlines and indentation. HTTP charset and BOM are
 honored; invalid encodings fail as `web_encoding_invalid`. Returned content
 is explicitly untrusted and limited to 32000 extracted UTF-16 characters per
@@ -215,8 +228,12 @@ and `truncated`; pass `next_offset` as the next request's `offset`. Each page
 fetches the source again, so a changed page can shift offsets. Offsets beyond
 the extracted document fail as `web_offset_out_of_range`. Recognized challenge
 forms fail as `web_page_blocked`; empty JavaScript-only shells fail as
-`web_content_empty`. Authentication, JavaScript execution and binary/PDF text
-extraction are not provided by these tools (`web_content_type_not_supported`).
+`web_content_empty`. A PDF (`application/pdf`) is parsed with PdfPig, which
+renders and executes nothing: up to 500 pages are read in content order, and the
+text pages like any other document. Scanned or malformed PDFs fail as
+`web_pdf_unreadable`, password-protected ones as `web_pdf_encrypted`.
+Authentication, JavaScript execution and other binary formats are not provided
+by these tools (`web_content_type_not_supported`).
 Model exposure in this table applies only to profiles containing the named ID.
 Modern file and terminal tools use the existing policy families and Broker
 authority. Retained rules matching old tool-family names can still deny or ask;

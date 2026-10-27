@@ -202,8 +202,10 @@ settings field controls their exposure. Returned web text is bounded,
 sanitized, and wrapped with the `[untrusted_web_reference]` marker. Search uses
 engine-specific DOM result selectors; known-engine challenge/navigation links
 are rejected and Bing redirect links are decoded. Fetch uses an in-process
-AngleSharp parser with no resource loader or JavaScript execution, preserves
-code and plain text, and pages extracted text through optional `offset`/`limit`.
+AngleSharp parser with no resource loader or JavaScript execution, reads PDF
+text through PdfPig (parse only, at most 500 pages), preserves code and plain
+text, and pages extracted text through optional `offset`/`limit`. Requests name
+Ru in the User-Agent rather than posing as a browser.
 The default download bound is 4 MiB; output defaults to 32000 UTF-16 characters
 with `next_offset`/`truncated` metadata. Pages refetch the source rather than
 retaining a snapshot. Structured Host projection retains the untrusted web

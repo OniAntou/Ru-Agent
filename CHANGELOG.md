@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(web)**: `web_fetch` now names itself (`RuAgent/<version>`), sends `Accept` and
+  `Accept-Language` and decodes compressed responses, so sites such as Wikipedia and
+  VnExpress that refused the bare request now answer. Repeated URLs, same-page anchors
+  and footnote markers no longer repeat their URL, cutting about a fifth of an article's
+  text. `web_fetch` also reads PDF text (papers, specifications, reports). Web failures
+  now tell the model what to try next, and the `web_search` and `web_fetch`
+  descriptions explain how to query and page instead of engine internals.
 - **feat(skills)**: Automatically discover the shared user library at
   `~/.agents/skills` in every workspace. Existing project and `~/.ru/skills`
   packages retain priority when skill IDs collide.

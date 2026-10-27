@@ -311,17 +311,24 @@ public sealed class AgentToolDefinitionCatalogTests
     }
 
     [Fact]
-    public void Web_search_description_matches_the_raced_fallback_chain()
+    public void Web_descriptions_teach_querying_paging_and_recovery_not_engine_internals()
     {
-        // The Broker races the configured primary against WebOptions'
-        // DefaultFallbackEndpoints, so a description claiming one engine or
-        // no fallback tells the model a behavior the adapter does not have.
+        // Models struggled with the web tools: the search description explained the
+        // engine race instead of how to query, and the fetch one told them to page
+        // "while has_more=true", a field web_fetch never returns.
         var search = AgentToolDefinitionCatalog.Find("web_search", "1.0.0")!.Description;
-
-        Assert.Contains("fallback", search, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("keyword query", search, StringComparison.Ordinal);
+        Assert.Contains("web_fetch", search, StringComparison.Ordinal);
+        Assert.Contains("web_search_parse_failed", search, StringComparison.Ordinal);
+        Assert.Contains("do not repeat an identical query", search, StringComparison.Ordinal);
         Assert.DoesNotContain("only configured engine", search, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("rather than being retried elsewhere", search, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("bounded", search, StringComparison.OrdinalIgnoreCase);
+
+        var fetch = AgentToolDefinitionCatalog.Find("web_fetch", "1.0.0")!.Description;
+        Assert.DoesNotContain("has_more", fetch, StringComparison.Ordinal);
+        Assert.Contains("truncated=true", fetch, StringComparison.Ordinal);
+        Assert.Contains("next_offset", fetch, StringComparison.Ordinal);
+        Assert.Contains("web_content_type_not_supported", fetch, StringComparison.Ordinal);
     }
 
     [Fact]

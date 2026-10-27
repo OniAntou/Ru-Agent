@@ -8,6 +8,7 @@
     <PackageReference Include="AngleSharp" />
     <PackageReference Include="Jint" />
     <PackageReference Include="Acornima" />
+    <PackageReference Include="PdfPig" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <EmbeddedResource Include="..\..\README.md" LogicalName="RuAgent.Broker.HelpDocs.ru-overview.md" />
     <EmbeddedResource Include="..\..\docs\architecture.md" LogicalName="RuAgent.Broker.HelpDocs.architecture.md" />

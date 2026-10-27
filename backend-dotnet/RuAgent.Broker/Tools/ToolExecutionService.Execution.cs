@@ -507,6 +507,11 @@ public sealed partial class ToolExecutionService
                 IoRepairHint(error.Message),
                 VerificationFailure(binding));
         }
+        catch (InvalidDataException error) when (binding.Manifest.Id is "web_search" or "web_fetch")
+        {
+            var code = StableCode(error.Message, "invalid_data");
+            outcome = ToolExecutionOutcome.Failed(code, WebFailureHints.For(code), ToolVerificationStates.NotRequired);
+        }
         catch (InvalidDataException error)
         {
             outcome = ToolExecutionOutcome.Failed(
@@ -530,8 +535,7 @@ public sealed partial class ToolExecutionService
         {
             var code = error.StatusCode is { } status ? $"web_http_{(int)status}" : "web_network_error";
             outcome = ToolExecutionOutcome.Failed(code,
-                "The web request failed. Use another relevant public source or explain the missing evidence; "
-                + "do not retry this URL unchanged or bypass an access restriction through terminal scraping.",
+                WebFailureHints.ForHttpStatus(error.StatusCode is { } known ? (int)known : null),
                 ToolVerificationStates.NotRequired);
         }
         catch (Exception error)

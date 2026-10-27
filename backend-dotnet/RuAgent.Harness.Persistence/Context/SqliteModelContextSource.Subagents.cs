@@ -14,11 +14,12 @@ public sealed partial class SqliteModelContextSource
         return snapshot;
     }
 
-    private async Task<IReadOnlyList<string>> InheritSubagentContextAsync(SqliteConnection connection, RunId runId,
+    private async Task<IReadOnlyList<string>> InheritSubagentContextAsync(SqliteConnection connection, SqliteTransaction transaction, RunId runId,
         List<ModelContextEntry> sessionBase, int depth, CancellationToken ct)
     {
         if (depth > 2) throw new HarnessStoreException("subagent_context_depth_invalid");
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.Parameters.AddWithValue("$run", runId.Value);
         command.CommandText = """
             SELECT own.attempt_number,previous.run_id FROM agent_subagent_attempts own
@@ -32,8 +33,8 @@ public sealed partial class SqliteModelContextSource
             if (reader.IsDBNull(1)) throw new HarnessStoreException("subagent_context_predecessor_missing");
             previousId = new(reader.GetString(1));
         }
-        var previous = await HarnessSqliteQueries.GetRunAsync(connection, null, previousId, ct).ConfigureAwait(false);
-        var current = await HarnessSqliteQueries.GetRunAsync(connection, null, runId, ct).ConfigureAwait(false);
+        var previous = await HarnessSqliteQueries.GetRunAsync(connection, transaction, previousId, ct).ConfigureAwait(false);
+        var current = await HarnessSqliteQueries.GetRunAsync(connection, transaction, runId, ct).ConfigureAwait(false);
         if (previous is null || current is null || previous.State is not (HarnessRunState.Completed or HarnessRunState.Failed)
             || current.SessionId != previous.SessionId || current.WorkspaceId != previous.WorkspaceId
             || current.PolicySnapshotSha256 != previous.PolicySnapshotSha256 || current.Preset != previous.Preset

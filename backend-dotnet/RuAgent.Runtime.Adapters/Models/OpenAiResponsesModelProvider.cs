@@ -40,7 +40,9 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
             if (!response.IsSuccessStatusCode)
                 throw response.StatusCode == HttpStatusCode.TooManyRequests
                     ? await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                    : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
+                    : await ModelContextOverflowError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
+                        ? new ModelProviderException(ModelContextOverflowError.Code, false)
+                        : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
             Stream stream;
             try { stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { throw new ModelProviderException("timeout", true); }
@@ -145,6 +147,8 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
                     {
                         var failed = ReadObject(data["response"]);
                         var error = ReadObject(failed?["error"]);
+                        if (ModelContextOverflowError.IsError(error))
+                            throw new ModelProviderException(ModelContextOverflowError.Code, false);
                         if (ModelRateLimitError.IsQuotaCode(ReadString(error?["code"])))
                             throw new ModelProviderException("quota_exhausted", false);
                         throw new ModelProviderException("http_error", false);
@@ -398,6 +402,7 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
     /// </summary>
     private static ModelProviderException MapError(string code) => code switch
     {
+        _ when ModelContextOverflowError.IsCode(code) => new(ModelContextOverflowError.Code, false),
         _ when ModelRateLimitError.IsQuotaCode(code) => new("quota_exhausted", false),
         "unauthorized" or "authentication_error" => new("auth_failed", false),
         "permission_error" or "forbidden" => new("forbidden", false),

@@ -41,7 +41,8 @@ public sealed partial class InProcessModelStepRunner
         catch (OperationCanceledException error) when (!cancellationToken.IsCancellationRequested)
         { throw new ContextCheckpointException(timeout.IsCancellationRequested ? "checkpoint_timeout" : "checkpoint_provider_transient", error); }
         catch (ModelStepException error)
-        { throw new ContextCheckpointException(ProviderTransientPauseException.RequiresExplicitContinue(error.Code)
+        { throw new ContextCheckpointException(error.Code == "context_window_exceeded" ? "checkpoint_context_overflow"
+            : ProviderTransientPauseException.RequiresExplicitContinue(error.Code)
             ? "checkpoint_provider_transient" : "checkpoint_provider_failed", error); }
         catch (ModelRunnerProtocolException error)
         { throw new ContextCheckpointException("checkpoint_input_invalid", error); }

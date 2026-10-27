@@ -15,6 +15,7 @@ public enum AgentRecoveryKind
     ModelRepairable,
     OutputTruncated,
     CommentaryOnly,
+    ContextOverflow,
 }
 
 /// <summary>
@@ -60,6 +61,11 @@ public static class AgentRecoveryNotes
     // whole run. This bounds recovery across all cases, including truncation.
     public const int MaximumNotesPerRun = 24;
     public const int MaximumCommentaryNotes = 3;
+    public const int MaximumContextOverflowNotes = 2;
+
+    public static string BuildContextOverflowNote() =>
+        $"{NotePrefix} {KindMarker(AgentRecoveryKind.ContextOverflow)} - the provider rejected the previous context. "
+        + "The harness reduced older history; no proposed tools from the rejected reply executed. Continue the current request using this checkpoint and retained evidence.";
 
     /// <summary>
     /// Names the failed receipt and gives recovery guidance for known effect codes.
@@ -141,6 +147,7 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.ModelRepairable => "model_repairable",
         AgentRecoveryKind.OutputTruncated => "model_output_truncated",
         AgentRecoveryKind.CommentaryOnly => "model_commentary_only",
+        AgentRecoveryKind.ContextOverflow => "context_window_exceeded",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -151,6 +158,7 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.ModelRepairable => MaximumModelRepairableNotes,
         AgentRecoveryKind.OutputTruncated => MaximumTruncatedNotes,
         AgentRecoveryKind.CommentaryOnly => MaximumCommentaryNotes,
+        AgentRecoveryKind.ContextOverflow => MaximumContextOverflowNotes,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

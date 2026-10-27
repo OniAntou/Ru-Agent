@@ -21,10 +21,13 @@ rewound/pruned runs and legacy unattributed messages cannot introduce a handoff.
 A SQLite read snapshot binds the source runs, model-visible payloads and receipts;
 the rendered handoff is encrypted with the new run's once-only base context.
 It is a separate, charged history turn and cannot silently fall out of native
-history fitting. At most 48 recent entries per source plus its original request
-are read, with a 128 KiB per-payload and 2 MiB aggregate read cap; the final
+history fitting. At most 48 recent entries per source plus its original request and bounded
+applicable summaries are read, with a 128 KiB per-payload and 2 MiB aggregate read cap; the final
 portable text is capped at 16,000 characters. Excerpts and omissions are explicit.
-Only root run-local evidence is eligible: completed conversation turns remain
+Up to four recent compaction records per source supply applicable summaries,
+prioritizing newer summaries and reporting omitted older coverage. Separate
+Host-authored directory hints preserve instruction discovery; quoted text cannot
+supply them. Only root run-local evidence is eligible: completed conversation turns remain
 in the existing 32-turn base, and old base snapshots are never copied recursively.
 Assistant statements/proposals remain untrusted quoted text. Receipt outcomes
 retain provenance; missing receipts or interrupted effects must be checked before
@@ -50,10 +53,11 @@ implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Dat
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
 batch statements. Release migration tests build the original released v18 DDL and frozen
 development DDL independently of current schema creation. The selected upgrade suffix commits atomically
-at v30. Version 29 consolidated the earlier development changes; v30
-normalizes retained conversation history and source receipts. Versions below v18 fail with
+at v31. Version 29 consolidated earlier development changes; v30
+normalizes retained conversation history and source receipts. Version 31 adds
+context mutation fences and indexed compaction/intent lookup. Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
-v19-v29 databases remain eligible sources; adding a migration extends one ordered
+v19-v30 databases remain eligible sources; adding a migration extends one ordered
 catalog instead of every historical branch. Fresh installs use the same released
 baseline and upgrade batch. Tests cover every retained source, identical schema,
 rollback/retry, restored FKs and two simultaneous initializer processes.
@@ -67,7 +71,11 @@ Encrypted `SessionWorkState` rows are keyed by session and workspace.
 AES-GCM associated data binds the source run/event and version to the current
 workspace display-identity hash; a changed workspace identity fails closed.
 Run creation writes the bounded user-goal snapshot in the same transaction as
-its source prompt event. A successful durable `todo_write` receipt updates only
+its source prompt event. A narrow English/Vietnamese imperative/correction screen
+retains bounded constraints with provenance; this is not general semantic
+extraction. Model-facing user intent follows visible message sources after
+rewind. Receipt-observed effects remain evidence because chat rewind does not
+undo files. A successful durable `todo_write` receipt updates only
 untrusted model task candidates in the same receipt transaction. Every fact
 retains its own source run/event provenance, and session deletion removes the
 state in the artifact deletion transaction. The state is projected as untrusted
@@ -79,10 +87,12 @@ provider continuation data.
 Long-session checkpoint generation, tool excerpts, usage-anchored estimates and
 nested instruction discovery are described in [context management](context-management.md).
 
-Context sources may reuse bounded parsed encrypted rows in source-local memory.
-The current key and complete row fingerprint are checked before reuse; the
-database remains authoritative for membership, receipts, compactions and current
-work state. No plaintext cache is persisted. Phase timing distinguishes context,
+Context sources reuse a bounded active projection with append watermarks and
+incremental receipt evidence. Current key identity and mutation revisions fence
+reuse; updates/deletes invalidate it. Cold rebuilds still validate encrypted rows,
+audiences and receipt identities. Parsed-row fingerprints are checked on decode;
+the database owns originals, compactions and current Work State. No plaintext
+cache is persisted. Phase timing distinguishes context,
 preparation, provider output and tool work without recording content or ids.
 See [performance diagnostics](../operations/agent-performance.md) for bounds,
 measurement definitions and the synthetic CI workload.
@@ -422,7 +432,7 @@ membership defaults to 32 slots; the existing concurrency API accepts shared
 mode with 2–32 slots and cannot disable parallel sessions. Extra runnable work
 waits for available membership/worker capacity; one session still owns at most
 one active run. GUI and CLI use the same admission policy.
-Schema v30 stores messages in `business_session_messages` with absolute per-session
+Since schema v30, messages live in `business_session_messages` with absolute per-session
 indices, source fingerprints in `business_session_source_receipts`, and small
 metadata/summary rows in `business_sessions`. FTS5 is a transactional message-search
 projection. Settings and activity keep bounded JSON payloads inside SQLite rows.
@@ -539,8 +549,8 @@ A bounded, encrypted base-context snapshot of model-visible evidence from up to
 four earlier terminal root runs in the same Conversation Session and workspace.
 Only runs whose user messages remain attributed in the loaded conversation
 snapshot are eligible; rewind/pruning cannot restore removed run details.
-It carries recorded requests, assistant statements/proposals, tool-result excerpts
-and receipt outcomes with run/event provenance, including work stopped before a
+It carries applicable checkpoint excerpts, recorded requests, assistant statements/
+proposals, tool-result excerpts and receipt outcomes with run/event provenance, including work stopped before a
 final reply. It is captured once for a new root run, alongside the existing
 32 completed conversation turns and Session Work State. Historical proposals are
 quoted context, never executable native calls; missing receipts and omitted

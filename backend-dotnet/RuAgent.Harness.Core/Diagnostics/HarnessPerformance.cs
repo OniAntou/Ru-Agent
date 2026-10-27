@@ -16,6 +16,7 @@ public static class HarnessPerformance
     private static readonly Meter Meter = new(MeterName);
     private static readonly Histogram<double> Duration = Meter.CreateHistogram<double>("ru.agent.phase.duration", "ms");
     private static readonly Counter<long> ContextCache = Meter.CreateCounter<long>("ru.agent.context.cache.lookups");
+    private static readonly Counter<long> ContextProjection = Meter.CreateCounter<long>("ru.agent.context.projection.lookups");
     private static readonly string[] Names = Enum.GetNames<HarnessPhase>();
 
     public static Measurement Measure(HarnessPhase phase) => new(phase, Duration.Enabled ? Stopwatch.GetTimestamp() : 0);
@@ -23,6 +24,12 @@ public static class HarnessPerformance
     public static void RecordContextCache(bool hit)
     {
         try { ContextCache.Add(1, new KeyValuePair<string, object?>("result", hit ? "hit" : "miss")); }
+        catch { }
+    }
+
+    public static void RecordContextProjection(bool hit)
+    {
+        try { ContextProjection.Add(1, new KeyValuePair<string, object?>("result", hit ? "hit" : "miss")); }
         catch { }
     }
 

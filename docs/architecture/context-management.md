@@ -6,8 +6,9 @@ and snapshots cannot grant paths, tools, approval or a different provider/model.
 
 ## Structured checkpoints
 
-Provider-backed compaction uses one auxiliary request, plus at most one format
-repair, to the run's pinned provider/model. It reuses protocol-specific history projection and opaque
+Provider-backed compaction normally uses one auxiliary request plus one optional
+format repair to the run's pinned provider/model. It reuses protocol-specific
+history projection and opaque
 continuations. Its final user message requests eight ordered sections: request
 and intent, decisions and constraints, files and changes, results and failures,
 pending work, current work, next step, and critical context. Previous checkpoints
@@ -18,14 +19,21 @@ contain no NUL, and fit 8,000 UTF-16 characters. There is no silent truncation.
 Both checkpoint and deterministic summaries are wrapped by `ContextCompactionFrame`
 in a `[context_compaction … untrusted=true]` frame; frame markers inside the body
 are neutralized so summarized history cannot close or reopen its own frame.
+The auxiliary prompt keeps only pinned tool definitions referenced by selected
+native call/result history, omitting unrelated schemas and duplicate tool-result
+references. Only current nested instruction references may remain beside the source.
 The auxiliary request has a 60-second deadline and an output cap of at most
 4,096 tokens (never above the pinned cap). Exact request preflight still applies.
 It uses the model's declared lowest reasoning effort when available for this
 auxiliary request; ordinary task requests retain their selected effort.
 Empty, malformed, truncated, filtered or tool-producing responses return named
 `checkpoint_*` failures; no returned tool is dispatched. A malformed format gets
-one repair using the original covered history and at most 4,000 characters of
-the rejected candidate as untrusted data. Other failures are not format-retried. Production does not
+one repair per source span using the original covered history and at most 4,000 characters of
+the rejected candidate as untrusted data. Input-window rejection can select a
+smaller complete source span: at most three
+spans and four admitted calls total per compaction, including format repairs.
+An unchanged or irreducible span is not retried. Other failures are not
+format-retried. Production does not
 substitute deterministic excerpts after a failed provider summary. Test/scripted
 runners without the summarizer interface retain deterministic compaction.
 
@@ -48,10 +56,49 @@ compaction transaction. Concurrent run changes cause a commit conflict rather
 than landing stale text. Full receipts remain available in durable storage.
 Automatic compaction targets a recent tail priced at 16% of available prompt
 tokens, extending protection to whole call/result groups while leaving at least
-one eligible old unit available to compact. System/base context,
-the latest user request, unresolved calls and the latest Host instruction-scope
-snapshot are protected. The fully prepared request is measured again after
+one eligible old unit available to compact. System instructions, non-dialogue
+base context,
+the latest actual user request, unresolved calls and the latest Host instruction-scope
+snapshot are protected. Complete historical `base:turn:*` user/assistant exchanges
+may be summarized; encrypted originals remain unchanged. Selection and replay use
+snapshot order because base and run-local sequence numbers may overlap. The
+fully prepared request is measured again after
 compaction; fixed prompt overhead can still leave a request too large.
+
+## Bounded admission and overflow recovery
+
+Planning prices units once and constructs one final plan, capped at 256 distinct
+source ranges before checkpoint dispatch. Provider-backed selection targets a
+source span around half the available prompt budget; an indivisible larger unit
+still faces exact request preflight. Automatic preflight may commit at most 16
+shrinking compactions, reassembling and remeasuring after each. Unavailable or
+nonshrinking plans stop the loop; irreducible input fails by name.
+
+Recognized HTTP/SSE provider context errors carry `context_window_exceeded`.
+Invocation retracts partial text, the compaction owner reduces context and a new
+budgeted step prepares again with the same provider/model/protocol/tool pin.
+At most two durable overflow recovery notes are admitted per run, also subject
+to shared recovery and model-call budgets. This is not a transport retry of the
+same oversized request. Rejected tool proposals never execute.
+
+## Active context projection
+
+A source-local cache retains active base/run entries, the latest call association,
+bounded directory hints and verification evidence. Warm loads seek new context
+rows and newer compactions in one read transaction; they do not read all covered
+ciphertexts. Images are queried only for active receipts; current Work State is
+refreshed separately. Restart, eviction or invalidation rebuilds from originals.
+
+The cache admits at most eight runs, 32 MiB estimated weight per run and 64 MiB
+total, with two-minute access validity. Native Responses public-message metadata
+reserves its full envelope bound in that estimate, including annotations beside
+small visible text, without traversing its JSON on each warm load. Native-heavy
+contexts may therefore bypass the cache conservatively. Every load checks key identity, base count,
+run version/sequence and mutation revision. Schema v31 triggers advance the
+revision when existing payload/event/compaction rows are changed or deleted,
+including updates outside the write set. Invalidated projections rebuild with
+existing audience/authentication checks; parsed-row fingerprints remain checked
+when decoding rows. No plaintext cache or duplicate original log is persisted.
 
 ## Tool excerpts
 
@@ -113,6 +160,14 @@ instruction files on each build. This metadata grants no authority and undergoes
 the same containment and protected-path checks as newly observed scopes.
 Sibling file reads reuse one directory hint; root-only file reads add no nested
 baseline, avoiding redundant per-file context snapshots.
+
+New root runs capture private hints from eligible visible source runs. Recent
+paired successful receipts take priority; if fewer than 16 hints are found, a
+bounded scan examines at most 64 older assistant steps and 128 receipt lookups
+per run. IDs match within that step's sequence interval. Host-authored
+`base:session-scope-hints` metadata is capped at 16 KiB and excluded from canonical
+model history. Quoted markers cannot create private hints. Normal containment and
+instruction refresh checks apply before use; see [handoff](harness.md#session-run-handoff).
 
 ## Prompt ownership and verification
 

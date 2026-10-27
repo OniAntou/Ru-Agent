@@ -10,8 +10,10 @@ namespace RuAgent.Harness.Persistence.Tests;
 
 public sealed partial class ModelContextSourceTests
 {
-    [Fact]
-    public async Task Restart_keeps_failed_verification_even_when_compaction_claims_success()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Restart_keeps_failed_verification_even_when_compaction_claims_success(bool incremental)
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
@@ -19,6 +21,11 @@ public sealed partial class ModelContextSourceTests
         var request = fixture.NewRun(1, 1, 1);
         await store.TryCreateRunAsync(request, default);
         await fixture.PayloadStore.CaptureBaseContextAsync(request.Run.RunId, [], HarnessStoreTestFixture.Timestamp, default);
+        var active = new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore));
+        if (incremental) await active.AssembleAsync(request.Run.RunId, default);
+        Task<ModelContextSnapshot> ContextAsync() => (incremental ? active
+            : new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore)))
+            .AssembleAsync(request.Run.RunId, default);
         using var args = JsonDocument.Parse("""{"mode":"shell","script":"dotnet test","purpose":"verification"}""");
         var step = new AssistantStep(null, [new ModelToolCall("verify", "bash", "1.0.0", args.RootElement)],
             AssistantFinishReason.ToolCalls, 1);
@@ -30,6 +37,7 @@ public sealed partial class ModelContextSourceTests
                 modelStepId: new ModelStepId("step_11111111111111111111111111111111"), payloadId: proposal.PayloadId)],
             [proposal], []), default);
         Assert.Equal(HarnessCommitOutcome.Committed, proposalCommit.Outcome);
+        if (incremental) await ContextAsync();
         var result = TextPayload(21, HarnessPayloadKind.ToolOutput, JsonSerializer.Serialize(
             new { exit_code = 1, verification_identity = new string('a', 64) }));
         var failedRun = NextRun(proposedRun, 2, 3);
@@ -39,8 +47,7 @@ public sealed partial class ModelContextSourceTests
                 executionId: new ExecutionId("exec_11111111111111111111111111111111"), payloadId: result.PayloadId,
                 safeCode: "process_exit_nonzero", toolOutcome: ToolExecutionOutcome.Failed, sideEffectsPossible: false)], [result], []), default);
         Assert.Equal(HarnessCommitOutcome.Committed, resultCommit.Outcome);
-        var original = await new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
-            .AssembleAsync(request.Run.RunId, default);
+        var original = await ContextAsync();
         var proposalSequence = original.Entries.Single(entry => entry.Kind == ModelContextEntryKind.AssistantStep).Sequence;
         var resultSequence = original.Entries.Single(entry => entry.Kind == ModelContextEntryKind.ToolResult).Sequence;
         // Hide each original entry behind a summary; a fabricated success cannot replace receipts.
@@ -50,8 +57,7 @@ public sealed partial class ModelContextSourceTests
         var compactedResult = NextRun(compactedProposal, 4, 5);
         await CommitCompactionAsync(store, request.Run.RunId, compactedResult, 3, 23, "result-summary",
             "All checks passed", $"event:{HarnessStoreTestFixture.Event(21).Value}", compactedResult.UpdatedAt, resultSequence);
-        var restored = await new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
-            .AssembleAsync(request.Run.RunId, default);
+        var restored = await ContextAsync();
         Assert.DoesNotContain(restored.Entries, entry => entry.Kind == ModelContextEntryKind.ToolResult);
         Assert.Equal("process_exit_nonzero", restored.VerificationEvidence.BlockingCode);
         Assert.True(FailedToolCompletionGuard.TryGetFailure(restored, out _));
@@ -67,6 +73,7 @@ public sealed partial class ModelContextSourceTests
             [new HarnessEventIntent(HarnessStoreTestFixture.Event(24), HarnessEventKind.ModelStepCompleted,
                 modelStepId: new ModelStepId("step_22222222222222222222222222222222"), payloadId: retest.PayloadId)], [retest], []), default);
         Assert.Equal(HarnessCommitOutcome.Committed, retestCommit.Outcome);
+        if (incremental) await ContextAsync();
         var passing = TextPayload(25, HarnessPayloadKind.ToolOutput, JsonSerializer.Serialize(
             new { exit_code = 0, verification_identity = new string('a', 64) }));
         var passingCommit = await store.CommitAsync(new HarnessCommit(request.Run.RunId, 5, NextRun(retestRun, 6, 7),
@@ -75,9 +82,12 @@ public sealed partial class ModelContextSourceTests
                 executionId: new ExecutionId("exec_22222222222222222222222222222222"), payloadId: passing.PayloadId,
                 safeCode: "ok", toolOutcome: ToolExecutionOutcome.Succeeded, sideEffectsPossible: false)], [passing], []), default);
         Assert.Equal(HarnessCommitOutcome.Committed, passingCommit.Outcome);
-        var afterRetest = await new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
-            .AssembleAsync(request.Run.RunId, default);
+        var afterRetest = await ContextAsync();
         Assert.False(FailedToolCompletionGuard.TryGetFailure(afterRetest, out _));
+        var cold = await new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore, enableEntryCache: false))
+            .AssembleAsync(request.Run.RunId, default);
+        Assert.Equal(cold.VerificationEvidence.Checks, afterRetest.VerificationEvidence.Checks);
+        Assert.Equal(cold.ObservedFilePaths, afterRetest.ObservedFilePaths);
 
     }
 }

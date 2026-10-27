@@ -98,6 +98,110 @@ public sealed class SessionWorkStateTests
     }
 
     [Fact]
+    public void Run_reducer_carries_explicit_english_and_vietnamese_constraints_with_provenance()
+    {
+        var firstRun = new RunId("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        var firstEvent = new EventId("evt_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        var state = SessionWorkStateReducer.StartRun(null, Sample.SessionId, Sample.WorkspaceId,
+            Sample.WorkspaceIdentitySha256, firstRun, firstEvent,
+            "Keep the public API unchanged.\nĐừng thay đổi schema JSON.\nThe parser is in Parser.cs.");
+
+        var nextRun = new RunId("run_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        var nextEvent = new EventId("evt_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        state = SessionWorkStateReducer.StartRun(state, Sample.SessionId, Sample.WorkspaceId,
+            Sample.WorkspaceIdentitySha256, nextRun, nextEvent, "Continue the parser fix.");
+
+        Assert.Contains(state.UserConstraints, fact => fact.Text == "Keep the public API unchanged."
+            && fact.SourceRunId == firstRun.Value && fact.SourceEventId == firstEvent.Value);
+        Assert.Contains(state.UserConstraints, fact => fact.Text == "Đừng thay đổi schema JSON."
+            && fact.SourceRunId == firstRun.Value && fact.SourceEventId == firstEvent.Value);
+        Assert.DoesNotContain(state.UserConstraints, fact => fact.Text == "The parser is in Parser.cs.");
+    }
+
+    [Fact]
+    public void Run_reducer_bounds_constraint_capture_while_preserving_an_anchor_and_recent_rules()
+    {
+        SessionWorkState? state = null;
+        for (var turn = 1; turn <= 20; turn++)
+        {
+            var runId = new RunId("run_" + turn.ToString("x32"));
+            var eventId = new EventId("evt_" + turn.ToString("x32"));
+            state = SessionWorkStateReducer.StartRun(state, Sample.SessionId, Sample.WorkspaceId,
+                Sample.WorkspaceIdentitySha256, runId, eventId, $"Keep change-{turn} stable.");
+        }
+
+        Assert.InRange(state!.UserConstraints.Count, 1, SessionWorkState.MaximumItems);
+        Assert.Contains(state.UserConstraints, fact => fact.Text == "Keep change-1 stable."
+            && fact.SourceRunId == "run_00000000000000000000000000000001");
+        Assert.Contains(state.UserConstraints, fact => fact.Text == "Keep change-20 stable."
+            && fact.SourceEventId == "evt_00000000000000000000000000000014");
+    }
+
+    [Fact]
+    public void Constraint_overflow_announces_partial_intent_even_without_earlier_turns()
+    {
+        var prompt = string.Join('\n', Enumerable.Range(0, 17).Select(i => $"Never change contract-{i}."));
+        var state = SessionWorkStateReducer.StartRun(null, Sample.SessionId, Sample.WorkspaceId,
+            Sample.WorkspaceIdentitySha256, Sample.SourceRunId, new EventId(Sample.SourceEventId), prompt);
+        Assert.Empty(state.EarlierUserIntent);
+        Assert.Equal(16, state.UserConstraints.Count);
+        Assert.True(state.EarlierUserIntentOmitted);
+        Assert.Contains("constraints", SessionWorkStateRenderer.Render(state), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("omitted", SessionWorkStateRenderer.Render(state), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("CRITICAL: never edit generated files")]
+    [InlineData("Always preserve public signatures")]
+    [InlineData("Nhớ giữ nguyên API hiện tại")]
+    [InlineData("Lưu ý: không được sửa file generated")]
+    public void Labelled_imperative_constraints_survive_beyond_the_raw_intent_tail(string constraint)
+    {
+        var state = SessionWorkStateReducer.StartRun(null, Sample.SessionId, Sample.WorkspaceId,
+            Sample.WorkspaceIdentitySha256, Sample.SourceRunId, new EventId(Sample.SourceEventId), "initial task");
+        for (var turn = 1; turn <= 40; turn++)
+            state = SessionWorkStateReducer.StartRun(state, Sample.SessionId, Sample.WorkspaceId,
+                Sample.WorkspaceIdentitySha256, new RunId("run_" + turn.ToString("x32")),
+                new EventId("evt_" + turn.ToString("x32")), turn == 1 ? constraint : "continue " + turn);
+        Assert.Contains(state.UserConstraints, fact => fact.Text == constraint);
+        Assert.DoesNotContain(state.EarlierUserIntent, fact => fact.Text == constraint);
+    }
+
+    [Fact]
+    public void Run_reducer_falls_back_within_the_work_state_byte_cap_for_many_long_constraints()
+    {
+        var prompt = string.Join('\n', Enumerable.Range(1, 8)
+            .Select(number => $"Keep requirement-{number} stable: {new string('x', 950)}."));
+        var state = SessionWorkStateReducer.StartRun(null, Sample.SessionId, Sample.WorkspaceId,
+            Sample.WorkspaceIdentitySha256, Sample.SourceRunId, new EventId("evt_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), prompt);
+
+        Assert.Contains(state.UserConstraints, fact => fact.Text.StartsWith("Keep requirement-8 stable:", StringComparison.Ordinal));
+        Assert.True(SessionWorkStateCodec.Serialize(state).Length <= SessionWorkState.MaximumUtf8Bytes);
+    }
+
+    [Fact]
+    public void Work_state_renderer_hides_intent_from_rewound_runs_but_keeps_receipt_observations()
+    {
+        var hiddenRun = new RunId("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        var hiddenEvent = new EventId("evt_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        var state = SessionWorkStateReducer.StartRun(Sample, Sample.SessionId, Sample.WorkspaceId,
+            Sample.WorkspaceIdentitySha256, hiddenRun, hiddenEvent, "Keep hidden contract unchanged.");
+        var visibleRun = new RunId("run_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        var visibleEvent = new EventId("evt_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        state = SessionWorkStateReducer.StartRun(state, Sample.SessionId, Sample.WorkspaceId,
+            Sample.WorkspaceIdentitySha256, visibleRun, visibleEvent, "Keep visible contract unchanged.");
+
+        var rendered = SessionWorkStateRenderer.Render(state,
+            visibleIntentRunIds: new HashSet<string>(StringComparer.Ordinal) { visibleRun.Value });
+
+        Assert.Contains("Keep visible contract unchanged.", rendered);
+        Assert.DoesNotContain("Keep hidden contract unchanged.", rendered);
+        Assert.DoesNotContain(Sample.UserGoal.Text, rendered);
+        Assert.Contains("hidden by the current visible conversation", rendered);
+        Assert.Contains("Receipt-observed file: src/parser.cs", rendered);
+    }
+
+    [Fact]
     public void Run_reducer_bounds_multibyte_intent_history_and_marks_omissions()
     {
         var state = Sample;

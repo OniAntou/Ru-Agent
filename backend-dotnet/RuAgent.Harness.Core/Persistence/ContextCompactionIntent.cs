@@ -4,6 +4,8 @@ namespace RuAgent.Harness.Core.Persistence;
 
 public sealed record ContextCompactionIntent
 {
+    public const int MaxCoveredRanges = 256;
+
     public ContextCompactionIntent(
         RunId runId,
         string compactionId,
@@ -33,7 +35,9 @@ public sealed record ContextCompactionIntent
         }
 
         ArgumentNullException.ThrowIfNull(coveredRanges);
-        if (coveredRanges.Count == 0 || coveredRanges.Count > 256 || coveredRanges.Any(range => range is null))
+        if (coveredRanges.Count == 0
+            || coveredRanges.Count > MaxCoveredRanges
+            || coveredRanges.Any(range => range is null))
         {
             throw new ArgumentException("Compaction must contain bounded ranges.", nameof(coveredRanges));
         }

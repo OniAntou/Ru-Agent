@@ -15,6 +15,13 @@ internal sealed class VerificationEvidenceBuffer(int requiredLimit)
     internal bool Overflowed { get; private set; }
     internal VerificationCheckEvidence? Find(string identity) => _checks.GetValueOrDefault(identity);
 
+    internal void Seed(IEnumerable<VerificationCheckEvidence> checks, IEnumerable<string> expectedFailures, bool overflowed)
+    {
+        foreach (var check in checks) Store(check);
+        foreach (var receiptId in expectedFailures) RememberExpectedFailure(receiptId);
+        Overflowed |= overflowed;
+    }
+
     private static bool Required(VerificationCheckEvidence check) => check.IsVerification
         || check.ExpectedExitCode != 0 && check.Status != VerificationCheckStatus.Passed;
 

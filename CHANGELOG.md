@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(context)**: Compact historical exchanges while protecting instructions and
+  current requests; enforce the 256-range cap and bounded checkpoint chunks.
+- **fix(context)**: Recover provider context-window rejection using the same pin,
+  finite retries and partial-text reset. Checkpoints keep referenced pinned tool
+  definitions, omit unused schemas/duplicate references and shrink rejected spans.
+- **perf(context)**: Remove repeated candidate rebuilding and retain bounded
+  incremental active context/receipt projections. Schema v31 adds mutation fences
+  and indexed lookups; encrypted originals and the v18 upgrade floor remain.
+- **fix(context)**: Carry applicable checkpoints and private directory hints
+  between visible root runs; retain bounded explicit English/Vietnamese user
+  constraints with provenance and hide rewound intent.
+
 - **feat(database)**: Normalize retained conversation messages and delivery receipts
   in schema v30; add paged history, session paging and FTS search without the old
   200-message retention limit. Preserve rewind indices, full-history export and

@@ -148,6 +148,12 @@ internal sealed class AgentModelInvocation
             // reader at the wrong subsystem. The code is classified from the exception rather
             // than forwarded, because a message can quote user content.
             string code = ModelStepFailureCode(error);
+            if (code == "context_window_exceeded")
+            {
+                assistantStream.Reset();
+                assistantStream.Complete();
+                throw new ContextOverflowStepException(error);
+            }
             if (ProviderTransientPauseException.RequiresExplicitContinue(code))
             {
                 // Exhausted transient retries can recover after a wait; an account

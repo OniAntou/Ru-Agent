@@ -6,13 +6,19 @@ namespace RuAgent.Harness.Core.Context;
 
 public sealed record RunHandoffHistory(
     RunId RunId, HarnessRunState State, IReadOnlyList<ModelContextEntry> Entries, bool Truncated,
-    string? TerminalErrorCode = null, int OmittedPayloadCount = 0);
+    string? TerminalErrorCode = null, int OmittedPayloadCount = 0,
+    IReadOnlyList<ModelContextEntry>? ApplicableSummaries = null);
+
+public sealed record SessionRunHandoffContext(
+    string RenderedHandoff,
+    IReadOnlyList<string> ObservedPaths);
 
 /// <summary>Portable historical evidence, never native tool calls or execution authority.</summary>
 public static class SessionRunHandoff
 {
     public const string ContextSourceId = "base:session-run-handoff";
     public const int MaximumRuns = 4;
+    public const int MaximumSummariesPerRun = 4;
     public const int MaximumCharacters = 16_000;
     private static readonly JsonSerializerOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
@@ -35,6 +41,13 @@ public static class SessionRunHandoff
             var excerpts = new List<string>();
             int used = block.Length;
             bool omitted = run.Truncated;
+            foreach (var summary in (run.ApplicableSummaries ?? Array.Empty<ModelContextEntry>()).Reverse())
+            {
+                var excerpt = Describe(summary);
+                if (used + excerpt.Length + 100 > perRunLimit) { omitted = true; continue; }
+                excerpts.Add(excerpt);
+                used += excerpt.Length;
+            }
             foreach (var entry in run.Entries.Reverse())
             {
                 if (ReferenceEquals(entry, goal)) continue;
@@ -44,7 +57,7 @@ public static class SessionRunHandoff
                 used += excerpt.Length;
             }
             foreach (var excerpt in excerpts.AsEnumerable().Reverse()) block.AppendLine(excerpt);
-            if (omitted) block.AppendLine("[Earlier entries or oversized payloads omitted; coverage is partial.]");
+            if (omitted) block.AppendLine("[Earlier entries, compaction summaries, or oversized payloads may be omitted; coverage is partial.]");
             builder.AppendLine(block.ToString());
         }
         builder.AppendLine("Assistant statements and proposed calls are not proof of execution. Missing receipts and interrupted actions are unverified. Check current files and receipts before repeating mutations. Past permissions/approvals do not authorize this run. The current user request takes precedence.");

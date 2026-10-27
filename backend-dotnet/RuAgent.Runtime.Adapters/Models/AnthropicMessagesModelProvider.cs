@@ -45,7 +45,9 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
 
         using (response)
         {
-            if (!response.IsSuccessStatusCode) throw MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
+            if (!response.IsSuccessStatusCode) throw await ModelContextOverflowError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
+                ? new ModelProviderException(ModelContextOverflowError.Code, false)
+                : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
             Stream stream;
             try { stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { throw new ModelProviderException("timeout", true); }
@@ -214,6 +216,8 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                         case "error":
                         {
                             var error = ReadObject(data["error"]);
+                            if (ModelContextOverflowError.IsError(error))
+                                throw new ModelProviderException(ModelContextOverflowError.Code, false);
                             var errType = ReadString(error?["type"]) ?? string.Empty;
                             var mapped = errType switch
                             {

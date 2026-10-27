@@ -79,11 +79,13 @@ public sealed partial class RunVerificationEvidence
                 : ". Inspecting logs does not satisfy a check. Rerun the same check after repairs or report [BLOCKED].");
     }
 
-    public static RunVerificationEvidence Project(IEnumerable<ModelContextEntry> originalRunEntries)
+    public static RunVerificationEvidence Project(IEnumerable<ModelContextEntry> originalRunEntries,
+        RunVerificationEvidence? previous = null)
     {
         var evidence = new VerificationEvidenceBuffer(MaximumChecks);
-        bool hasMutations = false;
-        string? programFailure = null;
+        if (previous is not null) evidence.Seed(previous.Checks, previous._expectedFailures, previous.Overflowed);
+        bool hasMutations = previous?.HasMutations ?? false;
+        string? programFailure = previous?._programFailure;
         foreach (var (entry, proposed) in ExpandProgramEvidence(originalRunEntries, () =>
             { programFailure = "program_evidence_unavailable"; hasMutations = true; evidence.Invalidate(); }))
         {

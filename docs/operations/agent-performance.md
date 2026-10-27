@@ -26,17 +26,25 @@ session ids, model output, prompts, arguments, paths, key stamps or credentials.
 Metrics/listener failures do not change execution outcomes.
 
 `ru.agent.context.cache.lookups` reports `result=hit|miss` for parsed context rows.
-This is a Host computation cache, unrelated to provider KV-cache hit rate.
+`ru.agent.context.projection.lookups` separately reports active-projection
+`result=hit|miss` without identifiers. The row counter counts only parsed-row
+lookups, not active-projection reuse: an unchanged
+warm load can legitimately emit no row lookups. These Host computation caches
+are unrelated to provider KV-cache hit rate.
 Each context-source instance caches at most 1,024 admitted rows within an
 8 MiB conservative accounting budget. Entries expire after two minutes and are
 evicted on the next cache access; idle instances have no background timer.
 When full, new rows bypass the cache until capacity expires, preventing sequential
 scans larger than the cache from repeatedly evicting the entire admitted prefix.
-The current key store is checked once per nonempty load before cache use.
+The current key store is checked once per load before projection reuse.
 The fingerprint covers the run, key identity and every selected encrypted-row,
 context and receipt field. Key failures clear the cache; changed keys/rows cannot
-reuse old entries. Reads still query the database and apply compactions and
-current Session Work State, so deleted runs and replaced summaries remain visible.
+reuse old parsed entries. A separate bounded active projection uses append
+watermarks and mutation revisions to avoid rereading covered ciphertexts. Updates
+and deletes invalidate it; cold rebuilds still check row fingerprints/audiences.
+Current Session Work State and images on active receipts are refreshed. See
+[context management](../architecture/context-management.md#active-context-projection)
+for the per-source run, memory, lifetime and revision bounds.
 Parsed values stay in managed memory only, scoped to the source lifetime;
 there is no plaintext checkpoint on disk. This is not a memory-zeroization claim.
 

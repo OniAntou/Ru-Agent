@@ -58,6 +58,7 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
 
     public async Task ResetSessionHistorySchemaToV29Async()
     {
+        await ResetContextProjectionSchemaToV30Async();
         await using var connection = CreateRawConnection();
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
@@ -80,6 +81,30 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
             PRAGMA foreign_keys=ON;
             """;
         await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task ResetContextProjectionSchemaToV30Async()
+    {
+        await using var connection = CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DROP TRIGGER IF EXISTS context_payload_updated;
+            DROP TRIGGER IF EXISTS context_payload_deleted;
+            DROP TRIGGER IF EXISTS context_event_updated;
+            DROP TRIGGER IF EXISTS context_event_deleted;
+            DROP TRIGGER IF EXISTS context_compaction_updated;
+            DROP TRIGGER IF EXISTS context_compaction_deleted;
+            DROP INDEX IF EXISTS ix_agent_context_compactions_run_version;
+            DROP INDEX IF EXISTS ix_business_session_messages_session_source;
+            ALTER TABLE agent_runs DROP COLUMN context_revision;
+            PRAGMA user_version=30;
+            """;
+        await command.ExecuteNonQueryAsync();
+        // This fixture deliberately moves the schema backwards. A pooled handle
+        // from the newer shape is not a faithful process opening a v30 database.
+        await using var pooled = await Options.OpenConnectionAsync(default);
+        SqliteConnection.ClearPool(pooled);
     }
 
     public async Task<WorkspaceIdentity> RegisterWorkspaceAsync(int number)

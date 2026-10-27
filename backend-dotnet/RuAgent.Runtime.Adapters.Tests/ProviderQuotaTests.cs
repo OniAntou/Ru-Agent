@@ -6,7 +6,7 @@ using Xunit;
 
 namespace RuAgent.Runtime.Adapters.Tests;
 
-public sealed class ProviderQuotaTests
+public sealed partial class ProviderQuotaTests
 {
     [Theory]
     [InlineData(false, "error")]

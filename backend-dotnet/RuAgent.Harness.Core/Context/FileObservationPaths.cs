@@ -5,11 +5,13 @@ public static class FileObservationPaths
 {
     public const int MaximumPaths = 128;
 
-    public static IReadOnlyList<string> Read(IEnumerable<ModelContextEntry> entries)
+    public static IReadOnlyList<string> Read(IEnumerable<ModelContextEntry> entries,
+        IReadOnlyList<string>? previousPaths = null)
     {
         var pending = new Dictionary<string, ModelToolCall>(StringComparer.Ordinal);
         var paths = new LinkedList<string>();
         var known = new Dictionary<string, LinkedListNode<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var hint in Copy(previousPaths)) known[hint] = paths.AddLast(hint);
         foreach (var entry in entries)
         {
             if (entry.AssistantStep is { } step)

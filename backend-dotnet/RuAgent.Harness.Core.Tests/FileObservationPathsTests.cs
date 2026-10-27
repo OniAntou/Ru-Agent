@@ -37,6 +37,27 @@ public sealed class FileObservationPathsTests
     }
 
     [Fact]
+    public void Reused_provider_call_id_pairs_only_with_the_latest_step()
+    {
+        using var fileArguments = JsonDocument.Parse("{\"path\":\"old/Parser.cs\"}");
+        using var commandArguments = JsonDocument.Parse("{\"command\":\"dotnet test\"}");
+        var entries = new[]
+        {
+            ModelContextEntry.Assistant("old-step", 1, new AssistantStep(null,
+                [new ModelToolCall("reused-call", "read_file", "1", fileArguments.RootElement)],
+                AssistantFinishReason.ToolCalls, 0)),
+            ModelContextEntry.Assistant("new-step", 3, new AssistantStep(null,
+                [new ModelToolCall("reused-call", "bash", "1", commandArguments.RootElement)],
+                AssistantFinishReason.ToolCalls, 0)),
+            ModelContextEntry.ToolResult("new-receipt", 4, new ToolExecutionReceipt(
+                new("exec_" + new string('b', 32)), new("call_" + new string('b', 32)),
+                ToolExecutionOutcome.Succeeded, "ok", null, false, providerCallId: "reused-call"), "ok"),
+        };
+
+        Assert.Empty(FileObservationPaths.Read(entries));
+    }
+
+    [Fact]
     public async Task Discovery_metadata_is_copied_and_does_not_rewrite_model_history()
     {
         var entries = new[] { ModelContextEntry.Text("user", 1, ModelContextRole.User, "Continue") };

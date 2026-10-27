@@ -66,13 +66,13 @@ _Avoid_: treating the newest display window as complete durable history
 
 
 **Session Work State**:
-A bounded encrypted workflow record for one conversation and canonical workspace identity, linking intent, tasks and receipt-backed observations. It supplies context, never authority or proof of current file state.
+A bounded encrypted workflow record for one conversation and canonical workspace identity, linking intent, tasks and receipt-backed observations. It supplies context, never authority or proof of current file state. Explicit imperative constraints retain provenance; model-facing intent follows visible history after rewind.
 Implementation: [harness](docs/architecture/harness.md#session-work-state).
 _Avoid_: global memory, cross-session authority, model prose as proof, or work state as permission
 
 
 **Session Run Handoff**:
-A bounded encrypted snapshot of earlier model-visible root-run evidence in the same conversation/workspace, eligible only while its user messages remain visible. Historical calls are quoted context, never replayed execution or inherited approval.
+A bounded encrypted snapshot of earlier model-visible root-run evidence in the same conversation/workspace, eligible only while its user messages remain visible. Historical calls are quoted context, never replayed execution or inherited approval. Applicable checkpoints and separate Host-authored directory hints preserve continuity; quoted model text cannot create those private hints.
 Implementation: [harness](docs/architecture/harness.md#session-run-handoff).
 _Avoid_: complete memory, cross-session history, inherited approvals, automatic re-execution of unfinished calls
 

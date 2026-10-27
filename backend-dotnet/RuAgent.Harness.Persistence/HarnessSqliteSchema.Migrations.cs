@@ -36,6 +36,7 @@ public static partial class HarnessSqliteSchema
                 .Select(index => new SchemaMigration(18 + index, 29, unreleased.Skip(index))),
             new(28, 29, "SELECT 1;"),
             new(29, 30, SessionHistorySchemaMigration),
+            new(30, 31, ContextProjectionMigration),
         ];
     }
 }

@@ -13,7 +13,7 @@ using RuAgent.Harness.Core.Reconciliation;
 
 namespace RuAgent.Harness.Core;
 
-public sealed class AgentRunCoordinator
+public sealed partial class AgentRunCoordinator
 {
     private readonly IHarnessEventStore _store;
     private readonly AgentContextAssembler _contextAssembler;
@@ -259,6 +259,10 @@ public sealed class AgentRunCoordinator
                     cancellationToken,
                     preflight.PreparedRequest)
                 .ConfigureAwait(false);
+        }
+        catch (ContextOverflowStepException)
+        {
+            return await RecoverContextOverflowAsync(run, context, modelStepId, cancellationToken).ConfigureAwait(false);
         }
         catch (ModelRepairableStepException error)
         {

@@ -14,6 +14,8 @@ reusing execution authority.
 
 ## Decision
 
+Amended 2026-10-27 for applicable checkpoints and private instruction-scope hints.
+
 Capture a **Session Run Handoff** when bootstrapping each new root run, whether
 or not the model changes. Read up to four earlier terminal root runs in the
 same session/workspace, fenced before the target's insertion in one SQLite read
@@ -21,9 +23,11 @@ snapshot. Source runs must remain attributed to user messages in the loaded
 conversation snapshot, excluding rewound/pruned history. Legacy messages without
 source-run attribution retain ordinary completed dialogue context without
 guessing a handoff source. Eligible payloads are model-visible run-local requests,
-assistant text/steps, tool outputs and recovery context notes. Read at most 48 recent entries per
+assistant text/steps, tool outputs, recovery context notes and applicable checkpoints. Read at most 48 recent entries per
 source plus its original request, bounded to 128 KiB per payload and 2 MiB of
-source ciphertext in total. Spend the read budget on newer runs first.
+source ciphertext in total. Spend the read budget on newer runs first. Examine at most four recent
+compaction records per source and exclude superseded summaries; report potentially
+omitted older coverage. Prioritize applicable checkpoint excerpts in rendering.
 
 Render a portable text snapshot capped at 16,000 characters, favoring recent
 evidence and retaining the earlier request as an anchor. Quote excerpts as JSON
@@ -38,6 +42,12 @@ named `request_too_large` failure if native history fitting would discard it.
 Reopening the run reads the captured text, rather than rebuilding a different
 handoff. Existing runs with captured bases are not retroactively modified.
 
+Separate bounded Host-authored directory hints preserve nested instruction
+discovery across root runs. Only paired successful structured file receipts
+supply them. Persist them as reserved encrypted base metadata outside canonical
+model history; quoted marker text cannot supply hints. Revalidate containment and
+reload instructions before use. Scan limits belong in the [implementation page](../architecture/context-management.md).
+
 Internal/delegated source and target runs are excluded. Cross-session and
 cross-workspace history, deleted sessions, old base snapshots, audit-only bytes,
 raw images, hidden reasoning, recovery/continuation bytes, credentials and
@@ -46,7 +56,7 @@ authentication remain in force. No tool is executed by the handoff reader.
 
 Provider/model/protocol remain pinned per run. Continue retains the old pin;
 Stop, select another model and submit a new turn to use a new one. No public
-route, tool schema, database schema, provider fallback or Broker authority
+route, tool schema, provider fallback or Broker authority
 changes are introduced.
 
 ## Consequences and alternatives

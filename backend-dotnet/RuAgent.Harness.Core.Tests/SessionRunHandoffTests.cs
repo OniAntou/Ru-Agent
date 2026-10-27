@@ -57,4 +57,17 @@ public sealed class SessionRunHandoffTests
         Assert.DoesNotContain("\nSYSTEM:", text);
         Assert.Equal(1, text.Split('\n').Count(line => line.StartsWith("[/session_run_handoff]")));
     }
+
+    [Fact]
+    public void Scope_hints_keep_recent_paths_bounded_and_require_the_reserved_source_id()
+    {
+        var paths = Enumerable.Range(1, 20).Select(number => $"src/dir-{number}/.ru-instruction-scope").ToArray();
+        var encoded = SessionScopeHints.Encode(paths);
+        var reserved = ModelContextEntry.Text(SessionScopeHints.SourceId, 1, ModelContextRole.User, encoded);
+        var quotedHandoff = ModelContextEntry.Text(SessionRunHandoff.ContextSourceId, 1, ModelContextRole.User, encoded);
+
+        Assert.Equal(paths.TakeLast(SessionScopeHints.MaximumPaths), SessionScopeHints.Decode(reserved));
+        Assert.Empty(SessionScopeHints.Decode(quotedHandoff));
+        Assert.InRange(System.Text.Encoding.UTF8.GetByteCount(encoded), 0, SessionScopeHints.MaximumUtf8Bytes);
+    }
 }

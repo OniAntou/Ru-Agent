@@ -193,6 +193,7 @@ internal static class HarnessSqliteSchemaValidator
         SqliteConnection connection,
         CancellationToken cancellationToken)
     {
+        if (!await ValidateContextProjectionAsync(connection, cancellationToken).ConfigureAwait(false)) return false;
         if (await ScalarLongAsync(connection, "PRAGMA foreign_keys", cancellationToken)
                 .ConfigureAwait(false) != 1
             || await ScalarLongAsync(connection, "PRAGMA user_version", cancellationToken)
@@ -274,6 +275,17 @@ internal static class HarnessSqliteSchemaValidator
             """;
         return (long)(await searchCommand.ExecuteScalarAsync(cancellationToken)
             .ConfigureAwait(false) ?? 0L) == 1;
+    }
+
+    private static async Task<bool> ValidateContextProjectionAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        if (!(await ReadColumnsAsync(connection, "agent_runs", ct).ConfigureAwait(false)).Contains("context_revision")) return false;
+        return await ScalarLongAsync(connection, """
+            SELECT count(*) FROM sqlite_master WHERE
+              (type='trigger' AND name IN ('context_payload_updated','context_payload_deleted',
+               'context_event_updated','context_event_deleted','context_compaction_updated','context_compaction_deleted'))
+              OR (type='index' AND name IN ('ix_agent_context_compactions_run_version','ix_business_session_messages_session_source'))
+            """, ct).ConfigureAwait(false) == 8;
     }
 
     private static async Task<HashSet<string>> ReadColumnsAsync(

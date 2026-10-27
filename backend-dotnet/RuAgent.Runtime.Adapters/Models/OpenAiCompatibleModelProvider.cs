@@ -46,7 +46,9 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
             {
                 throw response.StatusCode == HttpStatusCode.TooManyRequests
                     ? await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                    : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
+                    : await ModelContextOverflowError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
+                        ? new ModelProviderException(ModelContextOverflowError.Code, false)
+                        : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
             }
 
             Stream stream;
@@ -118,6 +120,8 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
                         }
                     }
 
+                    if (ModelContextOverflowError.IsError(data["error"]))
+                        throw new ModelProviderException(ModelContextOverflowError.Code, false);
                     if (data["error"] is JsonObject providerError
                         && providerError["code"] is JsonValue errorCode
                         && errorCode.TryGetValue<string>(out var code)

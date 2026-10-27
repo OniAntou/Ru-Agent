@@ -236,7 +236,8 @@ public static partial class AgentCliParser
             options.Classic,
             options.TrustWorkspace,
             options.ConfirmFullAccess,
-            options.Images.Count == 0 ? null : options.Images));
+            options.Images.Count == 0 ? null : options.Images,
+            WorkspaceExplicit: options.Workspace is not null));
     }
 
     /// <summary>

@@ -19,6 +19,16 @@ public sealed partial class AgentCommands
 {
     private sealed partial class ChatSession
     {
+        private string CurrentWorkspaceHeading() => TuiWorkspaceHeading.Describe(canonicalWorkspace, cmd.WorkspaceExplicit,
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Directory.Exists(canonicalWorkspace));
+
+        private void RefreshWorkspaceHeading()
+        {
+            if (!tgMode) return;
+            var label = CurrentWorkspaceHeading();
+            RunOnTgUi(() => tgWindow!.SetWorkspaceContext(label));
+        }
+
         int ChatRenderWidth() => tgMode && tgWindow!.Transcript.Viewport.Width > 0
             ? tgWindow.Transcript.Viewport.Width : Tui.TuiViewport.Width();
 

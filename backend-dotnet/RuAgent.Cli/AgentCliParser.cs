@@ -144,7 +144,8 @@ public sealed record ChatCommand(
     bool Classic = false,
     bool TrustWorkspace = false,
     bool ConfirmFullAccess = false,
-    IReadOnlyList<string>? Images = null) : AgentCommand(CliCommandKind.Chat, Json);
+    IReadOnlyList<string>? Images = null,
+    bool WorkspaceExplicit = true) : AgentCommand(CliCommandKind.Chat, Json);
 
 public sealed record SessionListCommand(
     bool Json) : AgentCommand(CliCommandKind.SessionList, Json);

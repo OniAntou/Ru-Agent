@@ -1,22 +1,50 @@
 using RuAgent.Cli.Tui;
 using Terminal.Gui.ViewBase;
+using Terminal.Gui.Views;
 
 namespace RuAgent.Cli.TerminalGui;
 
-/// <summary>
-/// The pre-chat home surface: the "ru agent" block wordmark ("ru" aurora-green,
-/// "agent" light gray, diagonal light falloff) centered in the
-/// transcript region. Hidden as soon as the transcript has content and restored when
-/// <c>/clear</c> empties it, mirroring the classic landing screen. A meteor clump falls across
-/// the sky while visible, advanced by <see cref="Tick"/> on the UI loop.
-/// </summary>
-public sealed class TgLandingView : View
+/// <summary>Welcome-only Braille sky behind the existing Ru wordmark and composer.</summary>
+public sealed partial class TgLandingView : ImageView
 {
     public int? WordmarkRow { get; set; }
-    private int _meteorTick;
-    private bool _meteorTicked;
-    private bool _meteorWasVisible;
-    private int _skySeed;
+    internal int? HintRow { get; set; }
+    internal int? SkyRows { get; set; }
+    internal System.Drawing.Rectangle? ComposerBounds { get; set; }
+    private readonly TuiGalaxySky _sky = new();
+    private TimeSpan? _lastTick;
+    private double _animationTime;
+    internal double AnimationTime => _animationTime;
+    private bool _animationPaused;
+    internal bool AnimationPaused
+    {
+        get => _animationPaused;
+        set
+        {
+            if (_animationPaused == value) return;
+            _animationPaused = value;
+            if (value) HideSquareWordmark();
+            SetNeedsDraw();
+        }
+    }
+    private static readonly string[] Glyphs = Enumerable.Range(0, 256)
+        .Select(bits => bits == 0 ? " " : ((char)(0x2800 + bits)).ToString()).ToArray();
+    private static readonly Terminal.Gui.Drawing.Attribute[] SkyColors =
+    [
+        TgPalette.Attr((0, 0, 0)), TgPalette.Attr((16, 23, 45)),
+        TgPalette.Attr((36, 69, 101)), TgPalette.Attr((63, 120, 129)),
+        TgPalette.Attr((147, 133, 180)), TgPalette.Attr((193, 142, 175)),
+        TgPalette.Attr((92, 159, 203)), TgPalette.Attr((181, 217, 228)),
+        TgPalette.Attr((244, 233, 211)),
+    ];
+    private static readonly Terminal.Gui.Drawing.Attribute[] MeteorColors =
+    [
+        TgPalette.Attr((0, 0, 0)), TgPalette.Attr((35, 7, 12)),
+        TgPalette.Attr((55, 10, 16)), TgPalette.Attr((82, 16, 24)),
+        TgPalette.Attr((110, 20, 25)), TgPalette.Attr((140, 24, 28)),
+        TgPalette.Attr((170, 29, 30)), TgPalette.Attr((235, 47, 40)),
+        TgPalette.Attr((255, 68, 58)),
+    ];
 
     public TgLandingView()
     {
@@ -24,39 +52,32 @@ public sealed class TgLandingView : View
         Y = 0;
         Width = Dim.Fill();
         Height = Dim.Fill();
+        CanFocus = false;
+        Enabled = false;
+        UseRasterGraphics = true;
+        UseBackgroundRendering = false;
+        AllowSixelUpscaling = false;
+        MaxSixelPaletteColors = 32;
         SetScheme(TgPalette.Scheme(TuiToken.Meta));
     }
 
-    /// <summary>
-    /// Advances one meteor frame. Redraws only while the meteor is on screen, so an idle
-    /// sky costs nothing; before the first tick nothing moves and snapshots stay still.
-    /// </summary>
-    public void Tick()
+    public void Tick() => Tick(TimeSpan.FromSeconds(
+        (double)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency));
+
+    internal void Tick(TimeSpan now)
     {
-        if (!Visible)
+        if (!Visible || AnimationPaused || Viewport.Width <= 0 || Viewport.Height <= 0)
         {
-            _meteorWasVisible = false;
+            _lastTick = null;
             return;
         }
-
-        _meteorTick++;
-        _meteorTicked = true;
-
-        // The sky reshuffles once per meteor cooldown, so the stars land somewhere new each
-        // round instead of sitting in the same cells for the whole session. A seed rather than
-        // a random number per frame: the new sky then holds still until its turn comes round.
-        var seed = _meteorTick / TuiHeader.MeteorCooldownTicks;
-        var reseeded = seed != _skySeed;
-        _skySeed = seed;
-
-        var cells = TuiHeader.MeteorCells(_meteorTick, Viewport.Width, Viewport.Height);
-        var visible = cells.Count > 0;
-        if (visible || _meteorWasVisible || reseeded)
-        {
-            SetNeedsDraw();
-        }
-
-        _meteorWasVisible = visible;
+        if (_lastTick is not { } previous) { _lastTick = now; return; }
+        var elapsed = now - previous;
+        if (elapsed.TotalMilliseconds < TuiGalaxySky.FrameMilliseconds) return;
+        _lastTick = now;
+        // Resume without jumping forward after a hidden window or slow terminal.
+        _animationTime += Math.Min(elapsed.TotalSeconds, 0.1);
+        SetNeedsDraw();
     }
 
     protected override bool OnDrawingContent(DrawContext? context)
@@ -65,11 +86,13 @@ public sealed class TgLandingView : View
         var height = Viewport.Height;
         if (width <= 0 || height <= 0)
         {
+            ClearRasterWordmark();
             return true;
         }
 
         if (width < TuiHeader.MinWordmarkWidth)
         {
+            HideSquareWordmark();
             const string fallback = "Ru Agent";
             SetAttribute(TgPalette.Attr(TuiToken.Aurora));
             Move(Math.Max(0, (width - fallback.Length) / 2), WordmarkRow ?? Math.Max(0, height / 2));
@@ -77,68 +100,84 @@ public sealed class TgLandingView : View
             return true;
         }
 
-        var ru = TuiHeader.WordmarkRuRows;
-        var agent = TuiHeader.WordmarkAgentRows;
-        var blockWidth = 0;
-        for (var i = 0; i < ru.Count; i++)
-        {
-            blockWidth = Math.Max(blockWidth, TuiText.VisibleWidth(ru[i]) + 1 + TuiText.VisibleWidth(agent[i]));
-        }
-
-        var left = Math.Max(0, (width - blockWidth) / 2);
-        var top = WordmarkRow ?? Math.Max(0, (height - ru.Count) / 2);
-        TuiToken? current = null;
+        var left = Math.Max(0, (width - TgWelcomeWordmark.Width) / 2);
+        var top = WordmarkRow ?? Math.Max(0, (height - TuiHeader.WordmarkRows) / 2);
+        var squareWordmark = TryDrawSquareWordmark(width, height, top);
+        if (squareWordmark) BeginWordmarkFrame();
+        _sky.Render(width, Math.Clamp(SkyRows ?? height, 0, height), _animationTime);
+        var dots = _sky.Dots;
+        var colors = _sky.Colors;
+        byte previousColor = byte.MaxValue;
         for (var r = 0; r < height; r++)
         {
             Move(0, r);
             for (var c = 0; c < width; c++)
             {
-                var star = TuiHeader.StarCell(c, r, _skySeed);
-                var token = star?.Token;
-                if (token != current)
-                {
-                    if (token is { } paint)
-                    {
-                        SetAttribute(TgPalette.Attr(paint));
-                    }
-
-                    current = token;
-                }
-
-                AddStr(star?.Glyph.ToString() ?? " ");
+                var index = r * _sky.Columns + c;
+                // Keep the command hint's entire row quiet, including outside its
+                // centered view bounds where the full-width sky would otherwise show.
+                var inside = c < _sky.Columns && r < _sky.Rows && r != HintRow;
+                var bits = inside ? dots[index] : (byte)0;
+                var color = inside ? colors[index] : (byte)0;
+                if (r >= _sky.Rows && r != HintRow && ComposerBounds?.Contains(c, r) != true)
+                    (bits, color) = TuiWelcomeStars.At(c, r, _animationTime);
+                if (color != previousColor) { SetAttribute(SkyColors[color]); previousColor = color; }
+                AddStr(Glyphs[bits]);
             }
         }
 
-        if (_meteorTicked)
+        DrawMeteors(width, height);
+        if (squareWordmark) return true;
+        var sweep = TgWelcomeWordmark.SweepPosition(_animationTime);
+        for (var row = 0; row < TuiHeader.WordmarkRows; row++)
         {
-            foreach (var (col, row, glyph, token) in TuiHeader.MeteorCells(_meteorTick, width, height))
+            var y = top + row;
+            if (y < 0 || y >= height || y == HintRow) continue;
+            for (var column = 0; column < TgWelcomeWordmark.Width && left + column < width; column++)
             {
-                Move(col, row);
-                SetAttribute(TgPalette.Attr(token));
-                AddStr(glyph.ToString());
+                if (ComposerBounds?.Contains(left + column, y) == true) continue;
+                SetAttribute(TgWelcomeWordmark.AttributeAt(row, column, sweep));
+                Move(left + column, y);
+                AddStr(TgWelcomeWordmark.Glyph(row, column));
             }
         }
-
-        current = null;
-        for (var i = 0; i < ru.Count; i++)
-        {
-            Move(left, top + i);
-            foreach (var (glyph, token) in TuiHeader.WordmarkRowCells(i))
-            {
-                if (token != current)
-                {
-                    if (token is { } paint)
-                    {
-                        SetAttribute(TgPalette.Attr(paint));
-                    }
-
-                    current = token;
-                }
-
-                AddStr(glyph.ToString());
-            }
-        }
-
+        DrawWordmarkShadow(left, top + TuiHeader.WordmarkRows, width, height);
         return true;
+    }
+
+    private void DrawWordmarkShadow(int left, int row, int width, int height)
+    {
+        if (row < 0 || row >= height || row == HintRow) return;
+        SetAttribute(TgWelcomeWordmark.ShadowAttribute);
+        for (var column = 0; column < TgWelcomeWordmark.Width; column++)
+        {
+            var x = left + column + 1;
+            if (x >= width || ComposerBounds?.Contains(x, row) == true) continue;
+            var glyph = TgWelcomeWordmark.ShadowGlyph(column);
+            if (glyph == " ") continue;
+            Move(x, row);
+            AddStr(glyph);
+        }
+    }
+
+    private void DrawMeteors(int width, int height)
+    {
+        Span<TuiShootingStars.Cell> cells = stackalloc TuiShootingStars.Cell[TuiShootingStars.MaxCells];
+        var count = TuiShootingStars.Collect(cells, width, height, _animationTime, out _);
+        for (var i = 0; i < count; i++)
+        {
+            var cell = cells[i];
+            if (cell.Row == HintRow || ComposerBounds?.Contains(cell.Column, cell.Row) == true) continue;
+            byte bits;
+            if (cell.Column < _sky.Columns && cell.Row < _sky.Rows)
+            {
+                var index = cell.Row * _sky.Columns + cell.Column;
+                bits = _sky.Dots[index];
+            }
+            else (bits, _) = TuiWelcomeStars.At(cell.Column, cell.Row, _animationTime);
+            SetAttribute(MeteorColors[cell.Color]);
+            Move(cell.Column, cell.Row);
+            AddStr(Glyphs[bits | cell.Dots]);
+        }
     }
 }

@@ -110,6 +110,18 @@ append-only output adapter continues to use its existing line renderer.
 Tool groups settle their summary before the first native prose preview, so a summary
 cannot split a cached paragraph prefix from its changing tail.
 
+The native view does not invalidate wrapped history just because a new/tail row
+contains a pipe. It tracks the last verified table's source range and column count
+while its wrap layout is valid. A header/separator pair, a valid body extension or
+editing a row already rendered as a table triggers the existing full table reflow;
+ordinary log/code pipes use incremental append/tail wrapping. New rows beyond the
+existing 100-rendered-row table cap do not keep extending that table. A cheap
+negative divider check avoids inline parsing when a separator is impossible.
+Styled/escaped separators and the renderer's existing entity behavior are retained.
+Resize, retention and multi-row removal still invalidate the layout and rediscover
+table ranges; expanded-block handling is unchanged. This optimization changes no
+history cap, parser/source text, model input, copy content or execution authority.
+
 Pending images appear as `[image 1] [image 2]` in the composer's spacer row,
 including while another turn streams. The labels are presentation only; submission
 snapshots retain the original image data URLs. Queued/admitted images leave the draft;
@@ -271,9 +283,150 @@ The native permission label is drawn immediately before the top-right usage
 cluster, using the existing green accent, instead of the composer metadata row.
 Composer preset changes forward to the header through one presentation event, so
 startup, selection, session replay and retained-run updates share the same path.
-The empty welcome screen hides the header, including the preset; it reappears
-beside tokens once conversation content is present. Header chrome is drawn above
-the meteor surface. Idle footer text is empty instead of `Ready`; explicit feedback,
+The header remains visible on the empty welcome screen for the centered workspace
+label, while session title, preset and usage remain hidden until conversation
+content is present. Header chrome is drawn above the landing sky. Idle footer text is empty instead of `Ready`; explicit feedback,
 attachments, approvals and queued/running states remain visible. Narrow headers retain the preset
 and compact token count before optional percentage/cost details. No policy,
 approval, token accounting or command behavior changes.
+
+
+### Workspace heading
+
+The top center shows the canonical chat workspace, independently of footer
+feedback and attachment labels. An implicit launch from the user profile shows
+`Chưa chọn dự án · ~`; an explicit `--workspace` pointing to the profile still
+shows its actual path. Other directories are workspaces without searching for
+Git or project manifests. `WorkspaceExplicit` is display provenance only. The
+bare `bin/ru.cmd` launcher leaves workspace selection implicit; parser fallback
+still supplies the same process cwd, with no change to execution/policy scope.
+
+`TuiWorkspaceHeading` classifies availability at startup and interaction boundaries
+(prompt, normal slash dispatch, session switching and turn completion). There is
+no per-frame filesystem check or model/API polling. Missing/inaccessible paths
+show `Path không khả dụng`. A shell tool's cwd does not change the chat workspace;
+opening another session retains the current chat's canonical workspace.
+
+The header uses cell-aware middle truncation and reserves space for preset/tokens;
+expanded cost/percentage detail yields to a readable path. Very narrow chat frames
+put the path on the second header row, avoiding the right-aligned subagent chips.
+Zero/one-cell budgets are bounded locally instead of inheriting the legacy
+`MiddleTruncate` small-width behavior. Ordinary spaces in paths are preserved and
+terminal controls are stripped. `/status` includes a wrapped full workspace-path
+section; each framed line keeps the panel width.
+
+### Welcome sky
+
+The native welcome surface uses `TuiGalaxySky`, a deterministic 2x4-dot Braille
+raster matching the approved wide spiral-galaxy preview. A warm nucleus and
+bulge sit inside six full-length spiral arms, dust lanes and a sparse halo.
+The arms are evenly spaced through a full turn and share the fixed particle
+budget. Filament and tangent-link sampling uses the particle index within each
+arm, keeping all six arms detailed rather than tying those patterns to an arm ID.
+The sky palette uses dark indigo envelopes, blue/teal ridges, lavender dust,
+muted rose knots and an ivory nucleus. Lower stars also include blue, teal,
+lavender and rose accents; a few foreground stars use warm glints.
+The native welcome wordmark uses a green-to-blue RU gradient and silver AGENT,
+with a narrow warm light sweeping across for 2.5 seconds every 10 active welcome
+seconds. Its first sweep starts at two seconds. `TgWelcomeWordmark` caches glyph
+strings and 16 light levels per cell. When the driver reports Sixel or enabled
+Kitty raster support, the centered logo uses square tiles with black gutters,
+small rims along every letter and four shadow layers cast down/right.
+RU uses low-contrast inner seams with subpixel coverage colors; its outer
+silhouette stays defined. AGENT retains its black tile grid. Glyph shape,
+placement, face colors and raster dimensions remain the same.
+`TgSquareWordmarkRaster` reuses two 354x84 pixel buffers, updates at most 10 times
+per active second during the sweep and reuses its quiet frame between sweeps.
+The existing welcome clock owns animation timing; no additional periodic timer or
+background renderer is started. `TgLandingView` inherits `ImageView` for native
+raster ownership and cleanup. It captures the ID of the image command registered
+by the base view once, then places its bounded logo through Terminal.Gui's output
+buffer after text. It does not duplicate the library's private ID format. Sky,
+meteors and logo share the same view, preserving Braille cells beneath transparent
+image regions. Scaled pixels and encoded data are cached; only a changed sweep
+frame, output size, protocol or palette limit requires re-encoding. The Sixel
+palette uses at most 32 colors, respecting a smaller reported terminal limit.
+Sixel placement is re-emitted after text redraws to keep the animated sky from
+erasing the logo; cached encoding avoids repeated conversion during quiet frames.
+`TgSynchronizedFrame` brackets raster welcome frames with DEC synchronized-output
+mode 2026 through the existing driver. It ends the batch on
+`IApplication.LayoutAndDrawComplete`, after `Driver.Refresh` has flushed both text
+and raster data. This prevents the terminal from presenting the intermediate
+text pass that temporarily erases Sixel letters. Removal frames are included;
+disposal closes an unfinished batch after an aborted draw. Glyph-only welcome
+frames do not enable this mode. This does not add a renderer, timer or change
+the animation cadence; terminals without mode 2026 support ignore the sequences.
+The raster's frame must fit outside the header, composer and hint; its output is
+capped at 262,144 pixels and invalid cell resolutions are rejected. Unsupported
+terminals, constrained frames and welcome overlays retain the existing glyph
+wordmark with its small lower half-block shadow. Raster placements are removed
+when hidden or paused and restored on welcome resume. The classic header keeps
+its existing palette.
+Ice-white glints in the galaxy are sparse
+instead of covering every ridge. A rounder bulge and a few steady cross-shaped
+foreground stars add depth without full-screen flashes, extra particles or timers.
+Fine ribbons sit inside each wider arm envelope, with compressed stellar knots,
+gently undulating dust lanes and occasional faint tangent links. The core uses
+a loose, slightly irregular bulge with Gaussian light/density falloff, mixing
+ivory, ice, pale silver and blue haze instead of filling central Braille cells
+into solid blocks. Its seeded edge varies gently and drifts at a quarter of the
+arm rotation speed; the bright central anchor remains fixed.
+These details reuse the same particle loop and cell buffers; tangent links add
+only a bounded secondary dot for a small subset of arm stars.
+The welcome layout reserves roughly the top 75% for the sky and centers the
+wordmark horizontally and vertically on the full welcome viewport. Short
+windows and tall drafts clamp it above the composer rather than overlapping
+input. The composer sits
+below that region, with its hint below;
+short windows or taller drafts shrink the sky to keep input/hints on screen.
+The galaxy raster ends one row before the composer. A separate sparse, fixed
+star field fills the remaining lower space and the sides of the centered input;
+the composer's full bounds and the entire command-hint row remain excluded.
+`TuiWelcomeStars` hashes cell coordinates without particle storage and varies
+only brightness on the existing welcome clock, so positions do not jump.
+The core retains a 1.5x projection scale; arms/halo/rings have an additional 1.1x
+multiplier, giving a nominal 2.508-raster-width disc centered at 50% across / 64%
+down its dedicated sky region. The centered wordmark is painted above the galaxy.
+Its outer vertical radius factor is 0.957 (with 0.54 inclination compression), giving
+a wider, tilted-disc silhouette. Arms have broader, feathered dust bands.
+After flattening, the disc receives an additional -8-degree screen-plane rotation
+around its fixed core, with a nominal 1.2 dot aspect correction. This tilts the
+elliptical outline itself; rotating only the unprojected disc would leave its
+outline level. The wordmark/input, background stars and falling-star paths are
+not screen-rotated. Trigonometric coefficients are cached.
+Outer stars are clipped at the edges. Arms rotate at 0.045 rad/s
+and radial phase moves inward at 0.015/s, fading before wrapping to the outside.
+The galaxy remains the primary welcome effect. `TuiShootingStars` adds 2–3 short
+falling streaks per 40 seconds of active welcome time, first appearing at 12
+seconds. Each shower lasts under three seconds, with a bright red head fading
+through red to a dark red tail. Meteor colors use
+a separate cached palette so bright galaxy cells cannot turn the streak white.
+The head travels to the bottom of the full welcome viewport; the remaining tail
+exits afterwards rather than
+disappearing inside the galaxy's shorter sky region. Up to 54 sparse Braille
+cells are collected on the stack and merged with the sky/lower stars before
+painting the wordmark. Input bounds and the entire hint row stay excluded.
+This does not add a screen-sized buffer or inherit the galaxy raster's dimension
+cap. No retained particle objects, background tasks or extra timer are created, and
+the same hidden/overlay pause stops both effects.
+The terminal font owns glyph metrics. The existing wordmark, workspace heading
+and composer stay above the black sky. No new controls or provider calls are added.
+The sequential output adapter retains its existing header renderer.
+
+The existing UI timer still owns activity/footer updates. Only the welcome clock
+is throttled to 50 ms (at most 20 FPS; about 18.5 FPS with the shared 18 ms timer);
+it stops advancing while the landing is hidden, has no viewport, or a slash
+dropdown, command palette, modal or document
+panel is open. First transcript/live content hides the landing, including replay
+of an existing conversation; an empty transcript restores it. Typing an unsent
+ordinary draft leaves it visible. Resume caps a delayed step to 100 ms.
+
+Two byte buffers store masks and foreground ownership per cell; they are reused
+until resize, capped at 240 columns by 100 rows (48,000 payload bytes), with black
+outside that raster. Main particle count is bounded at 43,200, plus a halo/core
+fraction and sparse background stars, without retained particle objects. Glyph strings and palette
+attributes are cached. The raster itself allocates no managed memory per steady
+frame; the Terminal.Gui draw pass still walks the landing cells and its driver
+owns terminal output diffing. Narrow windows retain the compact Ru Agent fallback.
+The command-hint row is excluded from sky painting across the full viewport,
+including beyond the centered hint view, so background stars cannot trail the hint.

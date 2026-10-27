@@ -21,14 +21,14 @@ public sealed class TgWelcomeChromeTests
                 var screen = TgSnapshot.Capture(app);
                 if (step == 0)
                 {
-                    Assert.False(window.Header.Visible); Assert.True(window.Landing.Visible);
+                    Assert.True(window.Header.Visible); Assert.True(window.Landing.Visible);
                     Assert.DoesNotContain("standard", string.Join('\n', screen));
                     Assert.DoesNotContain("Ready", string.Join('\n', screen));
                     window.Composer.SetMeta("plan", "model", "provider"); step++; return true;
                 }
                 if (step == 1)
                 {
-                    Assert.False(window.Header.Visible); Assert.Equal("plan", window.Header.Preset);
+                    Assert.True(window.Header.Visible); Assert.Equal("plan", window.Header.Preset);
                     Assert.DoesNotContain("plan", string.Join('\n', screen));
                     window.Transcript.Append("hello", TranscriptStyle.Prose); step++; return true;
                 }
@@ -38,7 +38,7 @@ public sealed class TgWelcomeChromeTests
                     Assert.DoesNotContain("Ready", string.Join('\n', screen));
                     window.ResetTranscript(); step++; return true;
                 }
-                Assert.False(window.Header.Visible); Assert.True(window.Landing.Visible);
+                Assert.True(window.Header.Visible); Assert.True(window.Landing.Visible);
                 Assert.DoesNotContain("plan", string.Join('\n', screen));
                 step++; app.RequestStop(); return false;
             }

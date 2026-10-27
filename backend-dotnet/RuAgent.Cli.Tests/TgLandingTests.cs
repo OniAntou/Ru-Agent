@@ -42,9 +42,12 @@ public sealed class TgLandingTests
         // rather than as two bare stems.
         Assert.DoesNotContain("▀  ▀ ▀▀▀▀", captures[0]);
         Assert.Contains("█  █ █▄▄█", captures[0]);
+        Assert.Contains(captures[0], ch => ch is >= '\u2801' and <= '\u28ff');
 
         Assert.DoesNotContain("█▀▀█ █  █ █▀▀█", captures[1]);
         Assert.Contains("xin chào", captures[1]);
+        Assert.DoesNotContain(captures[1], ch => ch is >= '\u2801' and <= '\u28ff');
         Assert.Contains("█▀▀█ █  █ █▀▀█", captures[2]);
+        Assert.Contains(captures[2], ch => ch is >= '\u2801' and <= '\u28ff');
     }
 }

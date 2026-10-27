@@ -97,6 +97,9 @@ public static class TuiSurfaces
             new("workspace", ShortenPath(snapshot.Workspace)),
         };
 
+        var pathWidth = Math.Max(1, Math.Clamp(width, TuiPanel.MinWidth, TuiPanel.MaxWidth) - (framed ? 6 : 2));
+        var pathRows = TuiText.HardWrapLine(TuiWorkspaceHeading.DisplayPath(snapshot.Workspace), pathWidth)
+            .Select(line => new PanelRow(line, FullWidth: true)).ToArray();
         return TuiPanel.Compose(
             width,
             "status",
@@ -104,6 +107,7 @@ public static class TuiSurfaces
                 new PanelSection("session", session),
                 new PanelSection("model", model),
                 new PanelSection("run", run),
+                new PanelSection("workspace path", pathRows),
             ],
             PanelHint, framed);
     }

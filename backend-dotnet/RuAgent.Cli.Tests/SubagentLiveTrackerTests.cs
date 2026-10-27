@@ -157,7 +157,7 @@ public sealed class SubagentLiveTrackerTests
     }
 
     [Fact]
-    public void Header_paints_the_strip_right_aligned_on_the_workspace_row()
+    public void Header_keeps_strip_right_aligned_below_centered_workspace()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
@@ -173,7 +173,8 @@ public sealed class SubagentLiveTrackerTests
         app.AddTimeout(TimeSpan.FromMilliseconds(500), () =>
         {
             var row = TgSnapshot.Capture(app)[1].TrimEnd();
-            Assert.StartsWith("D:/proj", row, StringComparison.Ordinal);
+            Assert.Contains("D:/proj", TgSnapshot.Capture(app)[0], StringComparison.Ordinal);
+            Assert.DoesNotContain("D:/proj", row, StringComparison.Ordinal);
             Assert.EndsWith("◐ review-1  ✓ coder-2", row, StringComparison.Ordinal);
 
             header.SetSubagents([]);
@@ -181,7 +182,8 @@ public sealed class SubagentLiveTrackerTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(800), () =>
         {
-            Assert.Equal("D:/proj", TgSnapshot.Capture(app)[1].TrimEnd());
+            Assert.Equal(string.Empty, TgSnapshot.Capture(app)[1].TrimEnd());
+            Assert.Contains("D:/proj", TgSnapshot.Capture(app)[0], StringComparison.Ordinal);
             app.RequestStop();
             return false;
         });

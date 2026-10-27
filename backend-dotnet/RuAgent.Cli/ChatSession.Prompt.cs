@@ -24,6 +24,7 @@ public sealed partial class AgentCommands
             CancellationToken ct,
             ChatSubmissionSnapshot? submission = null)
         {
+            RefreshWorkspaceHeading();
             if (historyReloadRequired)
             {
                 await WriteDiagnosticLineAsync(_err, $"history_reload_required: use /sessions id:{sessionId} before sending.");
@@ -460,12 +461,14 @@ public sealed partial class AgentCommands
             {
                 transfer?.Dispose();
                 runSettlement?.Dispose();
+                RefreshWorkspaceHeading();
             }
             await _out.FlushAsync().ConfigureAwait(false);
         }
 
         async Task<bool> HandleSlashLineAsync(string slashLine)
         {
+            RefreshWorkspaceHeading();
             if (!cmd.Json && !tgMode)
             {
                 await _out.WriteLineAsync(Tui.ChatPromptEcho.Format(slashLine)).ConfigureAwait(false);

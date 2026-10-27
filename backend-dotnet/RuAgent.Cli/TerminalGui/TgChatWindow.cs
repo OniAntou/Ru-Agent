@@ -38,6 +38,7 @@ public sealed partial class TgChatWindow : Window
     private IApplication? _resizeApp;
     private ModalInputState? _modalInputState;
     private bool _relayoutInProgress;
+    private bool _workspaceContextPinned;
 
     private TgChatWindow()
     {
@@ -51,7 +52,7 @@ public sealed partial class TgChatWindow : Window
         Composer.PresetChanged += preset => { Header.SetPreset(preset); Relayout(); };
         Hints = new TgHintsView { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
         Landing = new TgLandingView();
-        Hints.WorkspaceChanged += () => Header.SetWorkspace(Hints.Workspace);
+        Hints.WorkspaceChanged += () => { if (!_workspaceContextPinned) Header.SetWorkspace(Hints.Workspace); };
 
         Add(Transcript, Landing, Header, HeaderDivider, Composer, Hints);
         CanFocus = true;
@@ -94,8 +95,16 @@ public sealed partial class TgChatWindow : Window
     /// <summary>The aurora/gray wordmark shown until the transcript has content.</summary>
     public TgLandingView Landing { get; }
 
+    internal void TickWelcome()
+    {
+        Landing.AnimationPaused = IsModalPanelOpen || IsDocumentPanelOpen
+            || IsCommandPaletteOpen || IsSlashDropdownOpen;
+        Landing.Tick();
+    }
+
     private void HideLanding()
     {
+        Landing.ClearRasterWordmark();
         Landing.Visible = false;
         Relayout();
         Landing.SetNeedsDraw();
@@ -244,6 +253,12 @@ public sealed partial class TgChatWindow : Window
     /// Run (or on the first tick) is ignored, which the spike reproduced. Callers use
     /// this from a one-shot timeout once the window is live.
     /// </summary>
+    internal void SetWorkspaceContext(string label)
+    {
+        _workspaceContextPinned = true;
+        Header.SetWorkspace(label);
+    }
+
     public void FocusComposer()
     {
         SetFocus();

@@ -230,12 +230,24 @@ public sealed class TgCardTests
         WithPicker(app =>
         {
             var rows = TgSnapshot.Capture(app);
-            var ruleRow = Array.FindIndex(rows, row => row.Trim().Length > 0 && row.Trim().All(c => c == '─'));
-            Assert.True(ruleRow > 0, "the card must separate its heading with a rule");
-
-            var attr = TgSnapshot.CellAttribute(app, ruleRow, 20);
-            Assert.Equal(TgPalette.ToColor(TuiToken.Line), attr.Foreground);
-            Assert.Equal(TgPalette.ToColor(TgPalette.CardBgRgb()), attr.Background);
+            var titleRow = Array.FindIndex(rows, row => row.Contains("  model", StringComparison.Ordinal));
+            Assert.True(titleRow > 0);
+            var ruleRow = titleRow + 1;
+            var fill = TgPalette.ToColor(TgPalette.CardBgRgb());
+            var cardColumns = Enumerable.Range(0, app.Driver!.Cols)
+                .Where(col => TgSnapshot.CellAttribute(app, titleRow, col).Background == fill).ToArray();
+            Assert.NotEmpty(cardColumns);
+            var left = cardColumns[0];
+            var width = cardColumns.Length;
+            Assert.Equal(Enumerable.Range(left, width), cardColumns);
+            // The full-width sky may remain visible outside the floating card.
+            Assert.Equal(new string('─', width), rows[ruleRow].Substring(left, width));
+            foreach (var col in cardColumns)
+            {
+                var attr = TgSnapshot.CellAttribute(app, ruleRow, col);
+                Assert.Equal(TgPalette.ToColor(TuiToken.Line), attr.Foreground);
+                Assert.Equal(fill, attr.Background);
+            }
         });
     }
 

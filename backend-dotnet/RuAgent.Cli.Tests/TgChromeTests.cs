@@ -535,7 +535,7 @@ public sealed class TgChromeTests
         {
             var text = string.Join('\n', TgSnapshot.Capture(app));
             Assert.Equal("Fix the busy lock", window.Header.SessionTitle);
-            Assert.False(window.Header.Visible);
+            Assert.True(window.Header.Visible);
             Assert.DoesNotContain("hello", text);
             Assert.DoesNotContain("39,413", text);
             Assert.DoesNotContain("$0.29", text);

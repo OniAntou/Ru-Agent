@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **style(tui)**: Soften the inner RU tile seams while preserving the full
+  RU AGENT logo, its size, colors, outlines and shadows, and AGENT's grid.
+
+- **style(tui)**: Give welcome meteors bright red heads and fading dark red tails.
+
+- **fix(tui)**: Present the welcome sky and raster logo in one synchronized
+  terminal update to avoid flickering letters between the text and image passes.
+  Close the update after the driver flush and release unfinished updates on
+  disposal, while preserving the logo design and existing animation cadence.
+
+- **feat(tui)**: Add a wide, tilted Braille spiral galaxy to the welcome screen,
+  with a warm core, six colorful spiral arms, dust lanes and inward-moving stars. Keep
+  the Ru wordmark, workspace heading and composer; throttle animation to at most
+  20 FPS and pause it during chat or open welcome overlays.
+  Reserve roughly three quarters of welcome for the galaxy and place input
+  below it, shrinking the sky for short terminals and taller drafts.
+  Add sparse twinkling stars below the galaxy, preserving clear input and hint rows.
+  Occasionally add 2–3 brief falling stars that travel to the bottom of the full
+  welcome screen before their tails exit. Center the logo on the full screen,
+  keeping the composer and command hint clear.
+  Refine the arms with fine filaments, stellar knots and curved dust gaps,
+  plus a loose, softly fading nucleus with an irregular edge and fewer solid
+  Braille blocks at the center.
+  Decorate the centered native welcome wordmark with green/blue RU, silver AGENT,
+  a slow starlight sweep and a thin half-block shadow, using cached colors on the
+  existing welcome clock.
+  On terminals with raster support, render square tiles with rims and layered
+  shadows behind every letter. Preserve the Braille sky through transparent
+  regions and keep the glyph logo on unsupported or constrained terminals.
+
+- **perf(tui)**: Keep ordinary pipe-containing log/code rows on incremental layout
+  instead of rebuilding retained history. Reflow only for verified table changes
+  or the existing expanded/resize/retention paths; preserve streaming separators,
+  column resizing, table limits, row styles and collapsed details.
+
+- **feat(tui)**: Center the current workspace in the top header on welcome and
+  chat screens. Show `Chưa chọn dự án · ~` for an implicit user-profile launch,
+  preserve explicit workspace selection, and keep permission hidden on welcome.
+  Fit narrow/Unicode paths without overwriting usage; show the full wrapped path
+  in `/status`. Keep footer attachments separate from workspace identity.
+
 - **feat(tui)**: Replace destructive chat rewind with `/history` turn browsing,
   recorded evidence previews and staged edit/continue branches. Create the child
   only on send, preserve the original conversation and current files, and guard

@@ -23,7 +23,7 @@ public sealed class TgReasoningMetaTests
             var row = TgSnapshot.Capture(app)[window.Composer.Frame.Y + TgComposerView.MetadataRow];
             Assert.Contains("my-model", row); Assert.Contains("reasoning: " + (effort ?? "—"), row);
             Assert.True(row.IndexOf("reasoning:", StringComparison.Ordinal) > row.IndexOf("my-model", StringComparison.Ordinal));
-            Assert.Equal("standard", window.Composer.Preset); Assert.False(window.Header.Visible);
+            Assert.Equal("standard", window.Composer.Preset); Assert.True(window.Header.Visible);
             checkedRow = true; app.RequestStop(); return false;
         });
         app.Run(window); Assert.True(checkedRow);

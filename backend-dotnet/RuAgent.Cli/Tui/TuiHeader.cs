@@ -388,8 +388,9 @@ public static class TuiHeader
 
     /// <summary>
     /// Cells of one wordmark row: base tone above the light diagonal, dim tone below it.
-    /// The shadow height grows left to right, so the lit face forms a triangle. Shared by
-    /// the classic rows and the Terminal.Gui view.
+    /// The shadow height grows left to right, so the lit face forms a triangle in
+    /// classic output. The native welcome shares these glyphs but applies its
+    /// own cached starlight palette.
     /// </summary>
     public static IReadOnlyList<(char Glyph, TuiToken? Token)> WordmarkRowCells(int row)
     {

@@ -3,19 +3,49 @@ namespace RuAgent.Cli.Tui;
 /// <summary>Renders a verified header/separator/body block from retained raw rows.</summary>
 internal static class TuiMarkdownTable
 {
+    internal const int MaximumRows = 100;
+
+    internal static bool IsHeaderSeparator(string header, string divider) =>
+        TryReadHeader(header, divider, out _, out _);
+
+    internal static int ColumnCount(string row) => Cells(row).Length;
+
+    private static bool TryReadHeader(string headerText, string dividerText, out string[] header, out string[] divider)
+    {
+        header = []; divider = [];
+        if (!headerText.Contains('|')) return false;
+        // A rendered dash must originate in a literal dash or an HTML entity.
+        // Conservatively validate entity-containing text with the existing cell renderer.
+        if (!MayBeDivider(dividerText)) return false;
+        divider = Cells(dividerText);
+        if (divider.Length is < 2 or > 12
+            || divider.Any(cell => cell.Trim(':').Length < 3 || cell.Trim(':').Any(c => c != '-'))) return false;
+        header = Cells(headerText);
+        return header.Length == divider.Length;
+    }
+
     internal static bool TryRender(IReadOnlyList<string> lines, int start, int width,
         out int consumed, out IReadOnlyList<string> rendered)
     {
         consumed = 0;
         rendered = [];
-        if (start + 1 >= lines.Count || !lines[start].Contains('|')) return false;
-        var header = Cells(lines[start]);
-        var divider = Cells(lines[start + 1]);
-        if (header.Length is < 2 or > 12 || divider.Length != header.Length
-            || divider.Any(cell => cell.Trim(':').Length < 3 || cell.Trim(':').Any(c => c != '-'))) return false;
+        // Keep rejected history rows outside the formatter's captured render state.
+        if (start + 1 >= lines.Count || !lines[start].Contains('|')
+            || !MayBeDivider(lines[start + 1])) return false;
+        return RenderTable(lines, start, width, out consumed, out rendered);
+    }
+
+    private static bool MayBeDivider(string text) => text.AsSpan().IndexOfAny('-', '&') >= 0;
+
+    private static bool RenderTable(IReadOnlyList<string> lines, int start, int width,
+        out int consumed, out IReadOnlyList<string> rendered)
+    {
+        consumed = 0;
+        rendered = [];
+        if (!TryReadHeader(lines[start], lines[start + 1], out var header, out var divider)) return false;
         var rows = new List<string[]> { header };
         consumed = 2;
-        while (start + consumed < lines.Count && rows.Count < 100)
+        while (start + consumed < lines.Count && rows.Count < MaximumRows)
         {
             var raw = lines[start + consumed];
             if (!raw.Contains('|')) break;

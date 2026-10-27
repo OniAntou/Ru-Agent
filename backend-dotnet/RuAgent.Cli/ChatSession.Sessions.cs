@@ -220,6 +220,7 @@ public sealed partial class AgentCommands
 
             pendingHistoryBranch = null;
             sessionId = targetSessionId;
+            RefreshWorkspaceHeading();
             sessionTitle = replay.Title;
             runSession.ResetSession();
             sessionTitleProbes = 0;

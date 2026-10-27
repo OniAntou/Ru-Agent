@@ -45,6 +45,8 @@ public sealed partial class TgTranscriptView : View
     private int _wrapWidth = -1;
     private int _tailRows = 1;
     private bool _tailDirty;
+    internal long FullWrapRebuildCount { get; private set; }
+    internal IReadOnlyList<TgTranscriptRow> RenderedRows { get { EnsureWrapped(); return _wrapped; } }
     private bool _historyTruncated;
     internal long RetentionVersion { get; private set; }
     private int _scrollTop;
@@ -270,7 +272,7 @@ public sealed partial class TgTranscriptView : View
             FirstContentAppended?.Invoke();
         }
 
-        if (HasExpandedBlocks || bounded.Contains('|'))
+        if (HasExpandedBlocks || RequiresTableRebuild(replacingTail: false))
         {
             // The revealed rows trail the wrap cache; rebuild it on the next draw.
             _wrapWidth = -1;
@@ -347,7 +349,7 @@ public sealed partial class TgTranscriptView : View
         // A grown row can turn into a markdown table row; the table branch of the rebuild
         // renders several wrapped rows for one source row, so the incremental tail reflow
         // (which assumes the tail owns _tailRows entries) would append a second copy.
-        if (HasExpandedBlocks || grown.Contains('|'))
+        if (HasExpandedBlocks || RequiresTableRebuild(replacingTail: true))
         {
             _wrapWidth = -1;
         }
@@ -375,7 +377,7 @@ public sealed partial class TgTranscriptView : View
             _lines[^1] = new TgTranscriptRow(bounded, style, PrepareRowSpans(spans, bounded, style));
             _retainedCharacters += CharacterCount(bounded);
         }
-        if (text is null || HasExpandedBlocks || text.Contains('|')) _wrapWidth = -1;
+        if (text is null || HasExpandedBlocks || RequiresTableRebuild(replacingTail: true)) _wrapWidth = -1;
         else if (_wrapWidth > 0) _tailDirty = true;
         MarkOutputUnseen();
         EnforceRetention();
@@ -552,6 +554,9 @@ public sealed partial class TgTranscriptView : View
 
     private void RebuildWrapped(int width)
     {
+        FullWrapRebuildCount++;
+        _lastTableStart = _lastTableEnd = -1;
+        _lastTableColumns = 0;
         var oldTop = _followingTail ? Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)) : _scrollTop;
         _wrapped.Clear();
         var rawRows = _lines.Select(row => row.Style == TranscriptStyle.Prose ? row.Text : string.Empty).ToArray();
@@ -562,6 +567,9 @@ public sealed partial class TgTranscriptView : View
                 && TuiMarkdownTable.TryRender(rawRows, i, Math.Min(width, 100), out var consumed, out var table))
             {
                 _wrapped.AddRange(table.Select(row => new TgTranscriptRow(row, TranscriptStyle.Prose, TgAnsiPaint.Decorate(row, null))));
+                _lastTableStart = i;
+                _lastTableEnd = i + consumed - 1;
+                _lastTableColumns = TuiMarkdownTable.ColumnCount(text);
                 i += consumed - 1;
                 _tailRows = 0;
                 AppendCollapsedBlocksAfter(i + 1, summaryTop: null, width);

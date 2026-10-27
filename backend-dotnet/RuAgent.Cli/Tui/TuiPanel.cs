@@ -1,7 +1,7 @@
 namespace RuAgent.Cli.Tui;
 
 /// <summary>One labelled line inside a panel.</summary>
-public sealed record PanelRow(string Label, string? Detail = null);
+public sealed record PanelRow(string Label, string? Detail = null, bool FullWidth = false);
 
 /// <summary>A titled group of rows. The title is optional; rows are always shown.</summary>
 public sealed record PanelSection(string? Title, IReadOnlyList<PanelRow> Rows);
@@ -72,6 +72,12 @@ public static class TuiPanel
     {
         var inner = Math.Max(1, width - (framed ? 4 : 0));
         var contentBudget = Math.Max(1, inner - 2);
+        if (row.FullWidth)
+        {
+            var singleLine = TuiText.SanitizeUntrusted(row.Label).Replace('\n', ' ').Replace('\t', ' ');
+            var text = "  " + TuiPalette.Paint(TuiText.Truncate(singleLine, contentBudget), TuiToken.Ink);
+            return framed ? Frame(width, text) : TuiText.Truncate(text, width);
+        }
         var label = TuiText.Pad(Clean(row.Label, 160), Math.Min(LabelColumn, contentBudget));
         var labelWidth = TuiText.VisibleWidth(label);
         var detailWidth = contentBudget - labelWidth - 1;

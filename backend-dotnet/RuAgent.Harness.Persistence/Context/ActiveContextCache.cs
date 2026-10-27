@@ -13,7 +13,10 @@ internal sealed class ActiveContextCache
 
     internal sealed record Entry(string KeyStamp, long Revision, long Version, long Sequence, int BaseCount,
         ModelContextEntry[] Base, ModelContextEntry[] Local, IReadOnlyList<string> Paths,
-        RunVerificationEvidence Verification, ModelContextEntry? LastAssistant, long Weight, DateTimeOffset Accessed);
+        RunVerificationEvidence Verification, ModelContextEntry? LastAssistant,
+        IReadOnlyList<ActiveSkillSnapshots.Snapshot> ActiveSkills, IReadOnlyList<string> SkillOmissions,
+        int AdditionalSkillOmissionCount,
+        long Weight, DateTimeOffset Accessed);
 
     internal Entry? Get(string runId, string key, long revision, long version, long sequence, int baseCount)
     {
@@ -53,4 +56,13 @@ internal sealed class ActiveContextCache
         + (entry.AssistantStep?.ResponsesMessages is null ? 0
             : 4L * Core.Prompting.ResponsesAssistantMessages.MaximumBytes)
         + (entry.SummaryRanges?.Count ?? 0) * 256L);
+
+    internal static long SkillWeight(IEnumerable<ActiveSkillSnapshots.Snapshot> snapshots) =>
+        snapshots.Sum(snapshot => 512L + snapshot.Body.Length * 2L + snapshot.Name.Length * 2L
+            + snapshot.Description.Length * 2L + snapshot.SourcePath.Length * 2L
+            + snapshot.ResourceBase.Length * 2L + snapshot.Revision.Length * 2L
+            + snapshot.Arguments.Length * 2L);
+
+    internal static long SkillOmissionWeight(IEnumerable<string> omissions) =>
+        omissions.Sum(item => 64L + item.Length * 2L);
 }

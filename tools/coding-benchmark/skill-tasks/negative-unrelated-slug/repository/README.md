@@ -1,0 +1,1 @@
+Small dependency-free Python fixture. Edit only src/ as instructed. Acceptance is determined by external tests. The candidate-visible `.agents/skills/` is fixture context; grader and reference sources are not copied into the workspace.

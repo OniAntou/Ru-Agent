@@ -547,6 +547,13 @@ namespace RuApp.Views
 
                 if (snapshot.IsEmpty) return;
 
+                if (attachments.Count == 0 && text.Trim().Equals("/skills", StringComparison.OrdinalIgnoreCase))
+                {
+                    Composer.ClearText();
+                    OnSkillsButtonClick(this, new RoutedEventArgs());
+                    return;
+                }
+
                 if (IsContinueResumeCommand(text, attachments) && _agentController?.CanContinue == true)
                 {
                     // Typed "Continue" resumes a resumable run instead of

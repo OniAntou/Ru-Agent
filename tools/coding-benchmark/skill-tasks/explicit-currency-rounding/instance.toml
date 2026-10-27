@@ -1,0 +1,10 @@
+id = "explicit-currency-rounding"
+language = "python"
+difficulty = "skills"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["exact_total", "precision_format", "reject_negative", "reject_boolean", "precision_bounds"]
+pass_to_pass = ["input_unchanged"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 30
+skill_scenario = "explicit"
+expected_skill_selection = "required"

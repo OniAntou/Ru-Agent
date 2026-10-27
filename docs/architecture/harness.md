@@ -135,8 +135,9 @@ source hash. Source-file containment, decoding and size checks still apply.
 The loader then discovers direct-child skill directories from
 `RuAgent.Protocol.SkillRoots` in precedence order:
 `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, `<workspace-root>/.agents/skills`,
-`RU_SKILLS_ROOT` when set, `~/.ru/skills`, and
-`%LOCALAPPDATA%\Ru\skills`. The prompt listing, the `skill` tool and `/skills` share that one list. A package is recognized only when it contains a
+`RU_SKILLS_ROOT` when set, `~/.ru/skills`, `~/.agents/skills`, and
+`%LOCALAPPDATA%\Ru\skills`, followed by roots registered for this workspace.
+The prompt listing, the `skill` tool and `/skills` share that catalog. A package is recognized only when it contains a
 case-insensitive `SKILL.md`; for example:
 
 ```markdown
@@ -153,9 +154,8 @@ Describe the review workflow here.
 
 The loader applies final-path containment, strict UTF-8 decoding, NFC and
 newline normalization, a 64 KiB per-file cap, and a 256 KiB combined
-instruction cap. It re-reads the roots whenever a prompt context is built, so
-copying or editing a package is picked up on the next Agent run (and after a
-restart) without a downloader or package manager. Only `SKILL.md` is loaded;
+instruction cap. The shared metadata catalog caches validated discovery and checks for changes;
+Refresh forces a rescan. On-demand loads read and validate a bounded body snapshot. Only `SKILL.md` is loaded;
 nearby `references/`, `assets/`, and `scripts/` files are ignored by discovery
 and are never automatically read or executed. The typed context has bounded
 references (128 KiB each), and an 8 MiB serialized-context
@@ -661,43 +661,32 @@ _Avoid_: a new execution authority, a user conversation, or an OS sandbox
 
 ## Markdown Skill
 
-A directory containing a case-insensitive `SKILL.md` under one of the supported
-skill roots, listed in precedence order: `<workspace-root>/skills`, `<workspace-root>/.ru/skills`,
-`<workspace-root>/.agents/skills`, `RU_SKILLS_ROOT` when set, `~/.ru/skills`, and
-`%LOCALAPPDATA%\Ru\skills`. It is bounded, untrusted prompt guidance. For
-example:
+Definition: [Markdown Skill](../../CONTEXT.md) (glossary).
 
-```markdown
----
-name: pdf-analyzer
-description: Analyze and summarize PDF files
-allowed-tools: read, bash
----
+A shared Broker catalog supplies canonical directory IDs and bounded YAML metadata.
+The prompt includes one budgeted `ExternalSkill` catalog block; full bodies are
+loaded on demand with `skill`. Metadata revisions describe the discovered file,
+while `body_sha256` identifies the exact loaded body. Expected revision/digest
+arguments can reject a changed definition. Source path and resource base accompany
+body loads; references and scripts are never automatically read or executed.
 
-# PDF Analyzer
+`/skill <id> [arguments]` is a real explicit chat invocation: the Host validates
+user invocation policy and requirements, then atomically persists a model-only
+`SkillInvocation` payload with the visible user prompt. Run command invocation
+also appends that durable workflow. `$ARGUMENTS` expansion happens only in the
+rendered workflow, preserving the original body digest. It does not launch tools.
 
-Describe the review workflow here.
-```
+Active skill projection validates successful native receipts and Host invocation
+provenance before compaction, retaining at most four complete workflows within
+128 KiB of bodies. It deduplicates identity/version, reports omissions and
+re-attaches missing workflows as untrusted user context after compact/restart.
+It never rereads changed disk content to restore a run. New runs do not inherit
+an unbounded collection of previous workflows.
 
-`allowed-tools` is descriptive metadata only; it never grants a tool, scope,
-path, network permission, approval, or Broker capability. An optional
-`requires:` field names a capability the workflow needs; only `python` is
-recognized today. Every surface that returns a body enforces it: the model's
-`skill` tool and the Host's `/skill` command fail closed with
-`python_unavailable` when a Python requirement is unmet, and an unrecognized
-token fails closed as `unsupported_skill_requirement` naming the token;
-skills without `requires` are unaffected. The Host discovers
-only direct child skill directories and lists each skill lazily as
-name + description + `SKILL.md` path with the body version pinned in the
-receipt digest; the full workflow is pulled on demand with the read tool,
-never inlined. Adjacent
-`references/`, `assets/`, and `scripts/` files are ignored by discovery and are
-never automatically read or executed. Copying a package requires no downloader
-or package manager: the Host re-reads the roots when building a new prompt
-context, including a new Agent run or after restart. Markdown skills never
-become `SkillManifest`/`skill.json` executable workflows and never enter
-`/skills` or `/skill`; `RuAgentBroker` remains the sole authority for path
-canonicalization, policy, approvals, and execution.
+The catalog, user invocation and resource details are documented in
+[skill operations](../operations/skills.md). [ADR 0032](../adr/0032-skill-catalog-and-workflow-snapshots.md)
+records ownership and snapshot lifetime. `allowed-tools` is descriptive only;
+no skill content changes Broker policy, approvals or execution authority.
 _Avoid_: treating `SKILL.md` as a permission manifest or executable plugin
 
 ## Native Tool Batch

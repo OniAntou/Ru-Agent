@@ -384,6 +384,8 @@ namespace RuApp.Views
             ProviderCatalogController? providerCatalogController,
             GroupedProviderCatalogController? groupedProviderCatalogs)
         {
+            _skillsApiClient?.Dispose();
+            _skillsApiClient = null;
             _apiService = apiService;
             if (_ownsProviderCatalogController && _providerCatalogController is not null)
             {

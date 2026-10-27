@@ -21,6 +21,7 @@ public enum HarnessPayloadKind
     UserInputRequest = 16,
     RuntimeContextSnapshot = 17,
     ToolImage = 18,
+    SkillInvocation = 19,
 }
 
 [Flags]
@@ -146,7 +147,7 @@ public sealed record HarnessPayloadIntent
                 nameof(kind));
         }
 
-        if (kind is HarnessPayloadKind.ModelContextNote or HarnessPayloadKind.RuntimeContextSnapshot
+        if (kind is HarnessPayloadKind.ModelContextNote or HarnessPayloadKind.RuntimeContextSnapshot or HarnessPayloadKind.SkillInvocation
             && (audience != HarnessPayloadAudience.ModelContext
                 || encoding != HarnessPayloadEncoding.Utf8Text))
         {

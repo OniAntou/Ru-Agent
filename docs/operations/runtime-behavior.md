@@ -190,7 +190,7 @@ path and normalized content hash, with relevant sections read on demand.
 The optional user-wide `~/.ru/AGENTS.md` comes first, so workspace instructions
 take precedence. Skill directories follow the shared `RuAgent.Protocol.SkillRoots`
 order: `<workspace-root>/skills`, `<workspace-root>/.ru/skills`,
-`<workspace-root>/.agents/skills`, `RU_SKILLS_ROOT` when set, `~/.ru/skills`, and
+`<workspace-root>/.agents/skills`, `RU_SKILLS_ROOT` when set, `~/.ru/skills`, `~/.agents/skills`, and
 `%LOCALAPPDATA%\Ru\skills`. A directory is a skill
 only when it contains a case-insensitive `SKILL.md`. For example:
 

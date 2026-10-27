@@ -18,6 +18,7 @@ public sealed class SkillRootsTests
                 Path.Combine("w", ".agents", "skills"),
                 "extra",
                 Path.Combine("home", ".ru", "skills"),
+                Path.Combine("home", ".agents", "skills"),
                 Path.Combine("local", "Ru", "skills"),
             },
             roots);

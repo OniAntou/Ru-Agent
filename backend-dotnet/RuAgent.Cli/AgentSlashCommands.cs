@@ -14,6 +14,7 @@ public sealed partial class AgentSlashCommands
     private TextWriter _humanOut;
     private readonly TextWriter _err;
     private readonly SessionApiClient? _sessionClient;
+    private readonly SkillsApiClient? _skillsClient;
 
     /// <summary>
     /// Writer for human-facing text. Defaults to the construction writer; the chat REPL
@@ -71,10 +72,11 @@ public sealed partial class AgentSlashCommands
     {
     }
 
-    public AgentSlashCommands(SettingsApiClient settingsClient, SessionApiClient? sessionClient, TextWriter outWriter, TextWriter errWriter)
+    public AgentSlashCommands(SettingsApiClient settingsClient, SessionApiClient? sessionClient, TextWriter outWriter, TextWriter errWriter, SkillsApiClient? skillsClient = null)
     {
         _settingsClient = settingsClient ?? throw new ArgumentNullException(nameof(settingsClient));
         _sessionClient = sessionClient;
+        _skillsClient = skillsClient;
         _humanOut = outWriter ?? throw new ArgumentNullException(nameof(outWriter));
         _err = errWriter ?? throw new ArgumentNullException(nameof(errWriter));
     }
@@ -121,6 +123,12 @@ public sealed partial class AgentSlashCommands
             return true;
         }
 
+        if (slashCmd is "/skills")
+        {
+            await HandleSkillsAsync(arg, workspacePath, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
         if (slashCmd is "/help")
         {
             WriteHelpPanel();
@@ -136,6 +144,80 @@ public sealed partial class AgentSlashCommands
 
         return false;
     }
+
+    private async Task HandleSkillsAsync(string? argument, string? workspacePath, CancellationToken cancellationToken)
+    {
+        if (_skillsClient is null || string.IsNullOrWhiteSpace(workspacePath))
+        {
+            await _humanOut.WriteLineAsync("skills_unavailable: workspace or Host session is unavailable.").ConfigureAwait(false);
+            return;
+        }
+
+        string? query = null;
+        var refresh = false;
+        SkillSettingsRequest? update = null;
+        var parts = (argument ?? string.Empty).Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 0)
+        {
+            switch (parts[0].ToLowerInvariant())
+            {
+                case "add-root" when parts.Length >= 2:
+                    update = new(workspacePath, "add_root", Root: UnquotePath(string.Join(' ', parts.Skip(1))));
+                    break;
+                case "remove-root" when parts.Length >= 2:
+                    update = new(workspacePath, "remove_root", Root: UnquotePath(string.Join(' ', parts.Skip(1))));
+                    break;
+                case "enable" when parts.Length == 2:
+                    update = new(workspacePath, "set_enabled", Id: parts[1], Enabled: true);
+                    break;
+                case "disable" when parts.Length == 2:
+                    update = new(workspacePath, "set_enabled", Id: parts[1], Enabled: false);
+                    break;
+                case "implicit" when parts.Length is 2 or 3:
+                    if (parts.Length == 3 && !parts[2].Equals("on", StringComparison.OrdinalIgnoreCase)
+                        && !parts[2].Equals("off", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await _humanOut.WriteLineAsync("Usage: /skills implicit <id> [on|off]").ConfigureAwait(false);
+                        return;
+                    }
+                    update = new(workspacePath, "set_implicit", Id: parts[1], Enabled: parts.Length == 2 || parts[2].Equals("on", StringComparison.OrdinalIgnoreCase));
+                    break;
+                case "refresh":
+                    refresh = true;
+                    break;
+                case "search" when parts.Length >= 2:
+                    query = string.Join(' ', parts.Skip(1));
+                    break;
+                case "":
+                    break;
+                default:
+                    await _humanOut.WriteLineAsync("Usage: /skills [refresh|search <text>|add-root <path>|remove-root <path>|enable <id>|disable <id>|implicit <id> [off]]").ConfigureAwait(false);
+                    return;
+            }
+        }
+
+        var catalog = update is null
+            ? await _skillsClient.ListAsync(workspacePath, query, refresh, cancellationToken).ConfigureAwait(false)
+            : await _skillsClient.UpdateAsync(update, cancellationToken).ConfigureAwait(false);
+        foreach (var skill in catalog.Items)
+        {
+            var flags = string.Join(", ", new[]
+            {
+                skill.Enabled ? "enabled" : "disabled",
+                skill.UserInvocable ? "user-invocable" : "not-user-invocable",
+                skill.ModelInvocable ? "model-invocable" : "not-model-invocable",
+            });
+            await _humanOut.WriteLineAsync($"{skill.Id} — {skill.Name} [{flags}]").ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(skill.Description)) await _humanOut.WriteLineAsync($"  {skill.Description}").ConfigureAwait(false);
+        }
+        foreach (var diagnostic in catalog.Diagnostics)
+            await _humanOut.WriteLineAsync($"! {diagnostic.Code}: {diagnostic.SourcePath}").ConfigureAwait(false);
+        if (catalog.Truncated) await _humanOut.WriteLineAsync($"Catalog truncated ({catalog.Items.Count} shown of {catalog.Total}).").ConfigureAwait(false);
+        await _humanOut.FlushAsync().ConfigureAwait(false);
+    }
+
+    private static string UnquotePath(string path) =>
+        path.Length >= 2 && path[0] == '"' && path[^1] == '"' ? path[1..^1] : path;
 
     private static readonly (string Backend, string Alias, string Field, string HasKeyField)[] KnownBackends =
     [

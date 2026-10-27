@@ -26,6 +26,7 @@ public static class TuiSurfaces
     [
         ("session", ["/new", "/sessions", "/resume", "/delete", "/status", "/preset", "/computer"]),
         ("run", ["/follow", "/retry", "/release"]),
+        ("skills", ["/skills", "/skill"]),
         ("model & backend", ["/model", "/backend", "/key", "/reasoning"]),
         ("terminal", ["/clear", "/help", "/update", "/exit"]),
     ];

@@ -51,7 +51,7 @@ public sealed class AgentSkillCommandTests
     public async Task Skill_command_refuses_an_unknown_requirement_naming_the_token_without_its_body()
     {
         using var tmp = TempWorkspace.Create();
-        AddSkill(tmp.Path, "node.required", "---\nname: node.required\ndescription: Needs Node\nrequires: node\n---\n\nRun the script.");
+        AddSkill(tmp.Path, "node.required", "---\nname: node.required\ndescription: Needs optional capability\nrequires: unobtainium\n---\n\nRun the script.");
         using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
         using var client = factory.CreateAuthenticatedClient();
         factory.Services.GetRequiredService<AgentCommandsService>().PythonAvailable = () => true;
@@ -63,7 +63,7 @@ public sealed class AgentSkillCommandTests
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal("unsupported_skill_requirement", error.GetProperty("error_code").GetString());
-        Assert.Contains("node", error.GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.Contains("unobtainium", error.GetProperty("message").GetString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Run the script", raw, StringComparison.Ordinal);
     }
 

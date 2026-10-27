@@ -7,12 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(skills)**: Automatically discover the shared user library at
+  `~/.agents/skills` in every workspace. Existing project and `~/.ru/skills`
+  packages retain priority when skill IDs collide.
+
+- **feat(skills)**: Unify YAML parsing and skill IDs, return resource bases and
+  versioned bodies, and make `/skill <id> [arguments]` activate a workflow in chat.
+  Add a run-independent catalog, GUI picker and TUI management for local roots,
+  enable/disable and explicit-only selection. Cache metadata independently from
+  body budgets and restore bounded workflow snapshots after compact or restart.
+  Add dependency diagnostics and opt-in skill task benchmarks.
+
 - **fix(gui)**: The chat no longer blinks when a reply finishes or a session opens.
   The end-of-turn reload merges changed rows into the transcript instead of rebuilding
   it, so unchanged rows, the scroll position and expanded rows stay put. An opened
   session paints its rows at full height in the first frame instead of growing them
   over several (the transcript no longer uses scrolling placeholders), and the side
   panel and task shelf no longer reflow the outgoing transcript first.
+
 - **feat(agent)**: The `computer` tool gains `action=focus`: bring a granted app's
   window to the front, restoring it when minimized, without sending input to the window
   it replaces. Protected apps stay unreachable; failures are named

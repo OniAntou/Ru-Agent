@@ -28,7 +28,7 @@ using RuAgent.Runtime.Adapters.Models;
 
 namespace RuBackend.Harness;
 
-public sealed class AgentCommandsService
+public sealed partial class AgentCommandsService
 {
     private static readonly ReconciliationCommand UnknownContinueCommand =
         new(ReconciliationCommandKind.UnknownContinue);
@@ -411,14 +411,14 @@ public sealed class AgentCommandsService
                             new { name = "/compact", arguments = "normal|aggressive", description = "Compact the run context." },
                             new { name = "/help", arguments = "", description = "List typed Agent commands." },
                             new { name = "/skills", arguments = "", description = "List workspace skills (name + description)." },
-                            new { name = "/skill", arguments = "<name>", description = "Load one workspace skill's SKILL.md body." },
+                            new { name = "/skill", arguments = "<id> [arguments]", description = "Activate a skill workflow in this run." },
                             new { name = "/tasks", arguments = "[kill <execution_id>]", description = "List this session's background tasks or stop one." },
                         },
                     },
                     run.Version);
 
             case AgentCommandKind.Skills:
-                return DispatchSkills(run, runIdRaw, cancellationToken);
+                return await DispatchSkillsAsync(run, runIdRaw, cancellationToken).ConfigureAwait(false);
 
             case AgentCommandKind.Compact:
             {
@@ -438,7 +438,7 @@ public sealed class AgentCommandsService
             }
 
             case AgentCommandKind.Skill:
-                return DispatchSkill(run, runIdRaw, command, cancellationToken);
+                return await DispatchSkillAsync(run, runIdRaw, command, cancellationToken).ConfigureAwait(false);
 
             case AgentCommandKind.Tasks:
                 return await DispatchTasksAsync(runIdRaw, run, command, cancellationToken).ConfigureAwait(false);
@@ -478,77 +478,6 @@ public sealed class AgentCommandsService
         }
 
         return CommandSucceeded(runIdRaw, "tasks", payload, run.Version);
-    }
-
-    private AgentServiceResult DispatchSkills(
-        AgentRun run,
-        string runIdRaw,
-        CancellationToken cancellationToken)
-    {
-        var workspaceRoot = ResolveRunWorkspaceRoot(run.RunId);
-        if (workspaceRoot is null)
-        {
-            return BoundedError(409, "workspace_unknown", "The run has no workspace root.");
-        }
-
-        var loader = new RuBackend.Harness.Prompting.MarkdownSkillLoader();
-        var roots = RuAgent.Protocol.SkillRoots.For(workspaceRoot);
-        var loaded = loader.Load(roots, cancellationToken);
-        var items = loaded.Skills
-            .OrderBy(skill => skill.Id, StringComparer.Ordinal)
-            .Select(skill => new
-            {
-                name = skill.Id,
-                description = skill.Description,
-            })
-            .ToArray();
-        return CommandSucceeded(runIdRaw, "skills", new { items }, run.Version);
-    }
-
-    private AgentServiceResult DispatchSkill(
-        AgentRun run,
-        string runIdRaw,
-        AgentCommand command,
-        CancellationToken cancellationToken)
-    {
-        if (command.SkillId is null)
-        {
-            return BoundedError(400, "command_invalid", "Skill requires a skill name.");
-        }
-
-        var workspaceRoot = ResolveRunWorkspaceRoot(run.RunId);
-        if (workspaceRoot is null)
-        {
-            return BoundedError(409, "workspace_unknown", "The run has no workspace root.");
-        }
-
-        var loader = new RuBackend.Harness.Prompting.MarkdownSkillLoader();
-        var roots = RuAgent.Protocol.SkillRoots.For(workspaceRoot);
-        var loaded = loader.Load(roots, cancellationToken);
-        var skill = loaded.Skills.FirstOrDefault(item =>
-            string.Equals(item.Id, command.SkillId, StringComparison.OrdinalIgnoreCase));
-        if (skill is null)
-        {
-            return BoundedError(404, "skill_not_found", "The requested skill was not found.");
-        }
-
-        var unmet = SkillRequirements.FindUnmet(skill.Requires, PythonAvailable);
-        if (unmet is not null)
-        {
-            return BoundedError(409, unmet.Code, unmet.Message);
-        }
-
-        return CommandSucceeded(
-            runIdRaw,
-            "skill",
-            new
-            {
-                name = skill.Id,
-                description = skill.Description,
-                body = skill.Body,
-                body_sha256 = skill.ContentSha256,
-            },
-            run.Version);
     }
 
     private string? ResolveRunWorkspaceRoot(RunId runId) =>

@@ -50,8 +50,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private readonly TerminalAdapter _terminal;
     private readonly BackgroundTaskRegistry _backgroundTasks;
     private readonly HelpDocsTool _helpDocs;
-    private readonly SkillBodyStore _skillBodies;
     private readonly Func<bool> _pythonAvailable;
+    private readonly Func<string, bool> _skillCapabilityAvailable;
     private readonly WebOptions _webOptions;
     private readonly WebSearchAdapter? _webSearch;
     private readonly WebFetchAdapter? _webFetch;
@@ -65,7 +65,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         ApprovalTokenService? approvalTokens = null,
         Func<bool>? pythonAvailable = null,
         string? terminalSpoolRoot = null,
-        TerminalConcurrencyOptions? terminalConcurrencyOptions = null)
+        TerminalConcurrencyOptions? terminalConcurrencyOptions = null,
+        Func<string, bool>? skillCapabilityAvailable = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
@@ -125,8 +126,9 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         }
 
         _catalog = new ToolCatalog(BuildExecutors(), _webOptions);
-        _skillBodies = new SkillBodyStore(_workspace.Root);
         _pythonAvailable = pythonAvailable ?? (() => PythonAvailability.IsAvailable);
+        _skillCapabilityAvailable = skillCapabilityAvailable ?? (capability =>
+            string.Equals(capability, "python", StringComparison.OrdinalIgnoreCase) ? _pythonAvailable() : SkillCapabilityAvailability.IsAvailable(capability));
     }
 
     internal int CachedRootToolSetCount => _toolSetsByRoot.Count;

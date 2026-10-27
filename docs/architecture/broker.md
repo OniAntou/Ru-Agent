@@ -444,12 +444,15 @@ Excerpts retain both replacement sides and avoid splitting UTF-16 surrogate
 pairs. Context slicing allocates only the bounded excerpt, not copies of the
 whole file for each edit.
 
-## Skill Manifest
+## Skill guidance
 
-Definition: [Skill Manifest](../../CONTEXT.md) (glossary).
-
-The declarative, bounded description of an allowed workflow, its named tools,
-scopes, ordered steps, schemas, and approval policy.
+The shared `Skills` module owns bounded YAML metadata discovery, canonical IDs,
+local preferences, cache validation and checked on-demand body reads. The Host
+uses the same catalog for prompt descriptors, explicit invocation and client
+listing. `skill` returns a resource base and exact body digest; reading references
+or executing scripts still requires the normal tools and Broker policy.
+There is no executable `SkillManifest` or `skill.json` workflow runtime.
+See [skill operations](../operations/skills.md) and [ADR 0032](../adr/0032-skill-catalog-and-workflow-snapshots.md).
 
 ## Session Grant
 

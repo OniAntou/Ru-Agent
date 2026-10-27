@@ -19,6 +19,7 @@ public sealed partial class AgentCommands : IDisposable
     private readonly AgentApiClient _agentClient;
     private readonly AgentSseClient _sseClient;
     private readonly SettingsApiClient _settingsClient;
+    private readonly SkillsApiClient _skillsClient;
     private readonly AgentSlashCommands _slashCommands;
     private readonly RunStarter _runStarter;
     private readonly RunStartCore _runStartCore;
@@ -40,10 +41,11 @@ public sealed partial class AgentCommands : IDisposable
         _sessionClient = new SessionApiClient(session, httpClient, clientSource: "cli");
         _agentClient = new AgentApiClient(session, httpClient);
         _settingsClient = new SettingsApiClient(session, httpClient);
+        _skillsClient = new SkillsApiClient(session, httpClient);
         _runStarter = new RunStarter(_sessionClient, _agentClient, _out, _err, _settingsClient);
         _runStartCore = _runStarter.Core;
         _sseClient = new AgentSseClient(session, sseHttpClient ?? httpClient);
-        _slashCommands = new AgentSlashCommands(_settingsClient, _sessionClient, outWriter, errWriter);
+        _slashCommands = new AgentSlashCommands(_settingsClient, _sessionClient, outWriter, errWriter, _skillsClient);
     }
 
     public void Dispose()

@@ -13,6 +13,8 @@ public static class ChatCommandCatalog
         new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
         new("/computer", "Show or set computer use for new turns", "/computer [on|off]"),
         new("/status", "Show session status and preset", "/status"),
+        new("/skills", "List and manage local skills", "/skills [refresh|search <text>|add-root <path>|remove-root <path>|enable <id>|disable <id>|implicit <id> [off]]"),
+        new("/skill", "Run a skill in this turn", "/skill <id> [arguments]"),
         new("/preset", "Choose permissions for new turns", "/preset [plan|standard|full_access]"),
         new("/release", "Cancel a parked run in this session", "/release [run-id]"),
         new("/new", "Start a new session", "/new"),

@@ -23,7 +23,7 @@ public sealed class RuInstructionLoaderTests
         var result = new RuInstructionLoader().Load(fixture.Root);
 
         Assert.Equal(
-            new[] { "root:AGENTS.md", "root:CONTEXT.md", "ru:AGENTS.md", "ru:CONTEXT.md" },
+            new[] { "root:AGENTS.md", "root:CONTEXT.md", "ru:AGENTS.md", "ru:CONTEXT.md", "skill:catalog" },
             result.Blocks.Select(block => block.SourceId));
         Assert.Equal("root guidance", result.Blocks[0].Content);
         Assert.DoesNotContain("workflow context", result.Blocks[1].Content, StringComparison.Ordinal);
@@ -90,7 +90,7 @@ public sealed class RuInstructionLoaderTests
 
         var result = new RuInstructionLoader().Load(fixture.Root);
 
-        Assert.Empty(result.Blocks);
+        Assert.Equal("skill:catalog", Assert.Single(result.Blocks).SourceId);
         Assert.Equal(
             new[] { "invalid_encoding", "invalid_encoding", "oversize", "contains_nul" },
             result.Skips.Select(skip => skip.Reason));
@@ -137,16 +137,16 @@ public sealed class RuInstructionLoaderTests
         var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot).Load(fixture.Root);
 
         Assert.Equal(
-            new[] { "root:AGENTS.md", "skill:alpha", "skill:beta", "skill:gamma" },
+            new[] { "root:AGENTS.md", "skill:catalog" },
             result.Blocks.Select(block => block.SourceId));
         Assert.Equal(PromptInstructionOrigin.Workspace, result.Blocks[0].Origin);
         Assert.All(result.Blocks.Skip(1), block => Assert.Equal(PromptInstructionOrigin.ExternalSkill, block.Origin));
-        Assert.Contains(result.Skips, skip => skip.Reason == "duplicate");
-        var alpha = result.Blocks.Single(block => block.SourceId == "skill:alpha");
-        // Native skill tool: the prompt carries name + description only —
-        // never the full workflow body. The model loads it with the skill tool.
-        Assert.Contains("Alpha", alpha.DisplayName, StringComparison.Ordinal);
+        var alpha = result.Blocks.Single(block => block.SourceId == "skill:catalog");
+        // The single catalog block carries bounded metadata and paths, never workflow bodies.
+        Assert.Equal("Available skills", alpha.DisplayName);
         Assert.Contains("skill tool", alpha.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("alpha | alpha", alpha.Content, StringComparison.Ordinal);
+        Assert.Contains("alpha-copy", alpha.Content, StringComparison.Ordinal);
         Assert.DoesNotContain("Workspace alpha", alpha.Content, StringComparison.Ordinal);
         Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("Alpha copy", StringComparison.Ordinal));
 
@@ -176,7 +176,7 @@ public sealed class RuInstructionLoaderTests
         var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot, userProfileRoot: profile)
             .Load(fixture.Root);
 
-        Assert.Equal(new[] { "user:AGENTS.md", "root:AGENTS.md" }, result.Blocks.Select(block => block.SourceId));
+        Assert.Equal(new[] { "user:AGENTS.md", "root:AGENTS.md", "skill:catalog" }, result.Blocks.Select(block => block.SourceId));
         Assert.Equal(PromptInstructionOrigin.User, result.Blocks[0].Origin);
         Assert.Equal("~/.ru/AGENTS.md", result.Blocks[0].DisplayName);
         Assert.Equal(PromptInstructionOrigin.Workspace, result.Blocks[1].Origin);
@@ -225,21 +225,37 @@ public sealed class RuInstructionLoaderTests
     }
 
     [Fact]
-    public void Discovers_skills_in_the_agents_folder_and_the_user_ru_folder_with_workspace_precedence()
+    public void Discovers_shared_user_skills_with_workspace_and_ru_user_precedence()
     {
         using var fixture = TempRoot.Create();
         var profile = Directory.CreateDirectory(Path.Combine(fixture.Parent, "profile")).FullName;
         var agentsSkills = Directory.CreateDirectory(Path.Combine(fixture.Root, ".agents", "skills")).FullName;
         var homeSkills = Directory.CreateDirectory(Path.Combine(profile, ".ru", "skills")).FullName;
+        var sharedHomeSkills = Directory.CreateDirectory(Path.Combine(profile, ".agents", "skills")).FullName;
         WriteSkill(agentsSkills, "delta", "# Delta\n\nFrom the shared agents folder.");
         WriteSkill(homeSkills, "delta-home", "---\nname: delta\n---\n# Delta home\n\nLoses to the workspace copy.");
         WriteSkill(homeSkills, "epsilon", "# Epsilon\n\nFrom the user profile.");
+        WriteSkill(sharedHomeSkills, "zeta", "---\nname: Shared Zeta\ndescription: Shared user workflow\n---\nPrivate shared body.");
+        WriteSkill(homeSkills, "delta", "---\nname: Home collision\ndescription: Home delta must lose\n---\nHome body.");
+        WriteSkill(sharedHomeSkills, "delta", "---\nname: Shared collision\ndescription: Shared delta must lose\n---\nShared body.");
+        WriteSkill(sharedHomeSkills, "epsilon", "---\nname: Shared epsilon\ndescription: Shared epsilon must lose\n---\nShared body.");
 
         var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot, userProfileRoot: profile)
             .Load(fixture.Root);
 
-        Assert.Equal(new[] { "skill:delta", "skill:epsilon" }, result.Blocks.Select(block => block.SourceId));
-        Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("Delta home", StringComparison.Ordinal));
+        Assert.Equal(new[] { "skill:catalog" }, result.Blocks.Select(block => block.SourceId));
+        Assert.Contains("delta-home", result.Blocks[0].Content, StringComparison.Ordinal);
+        Assert.Contains("zeta | Shared Zeta | Shared user workflow", result.Blocks[0].Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("Home delta must lose", result.Blocks[0].Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("Shared delta must lose", result.Blocks[0].Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("Shared epsilon must lose", result.Blocks[0].Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("Private shared body", result.Blocks[0].Content, StringComparison.Ordinal);
+
+        var loaded = new MarkdownSkillLoader().Load(
+            RuAgent.Protocol.SkillRoots.For(fixture.Root, fixture.UserDataRoot, profile, configuredRoot: ""));
+        var sharedBody = Assert.Single(loaded.Skills, skill => skill.Id == "zeta");
+        Assert.Equal(Path.Combine(sharedHomeSkills, "zeta"), Path.GetDirectoryName(sharedBody.SourcePath));
+        Assert.Equal("Private shared body.", sharedBody.Body);
     }
 
     [Fact]
@@ -256,12 +272,12 @@ public sealed class RuInstructionLoaderTests
 
         var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot).Load(fixture.Root);
 
-        // Descriptors are ~200 bytes each, so even 65KB workflows fit beside the
-        // fixed roots; the full bodies never enter the prompt.
-        Assert.Contains(result.Blocks, block => block.SourceId == "skill:first");
-        Assert.Contains(result.Blocks, block => block.SourceId == "skill:second");
+        // Bounded metadata for both skills fits beside the fixed roots; neither body enters the prompt.
+        Assert.Contains(result.Blocks, block => block.SourceId == "skill:catalog");
         Assert.DoesNotContain(result.Skips, skip => skip.Reason == "oversize");
-        var first = result.Blocks.Single(block => block.SourceId == "skill:first");
+        var first = result.Blocks.Single(block => block.SourceId == "skill:catalog");
+        Assert.Contains("first", first.Content, StringComparison.Ordinal);
+        Assert.Contains("second", first.Content, StringComparison.Ordinal);
         Assert.DoesNotContain(new string('f', 100), first.Content, StringComparison.Ordinal);
     }
 

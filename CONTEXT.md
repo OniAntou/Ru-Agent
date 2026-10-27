@@ -130,12 +130,6 @@ Implementation: [harness](docs/architecture/harness.md#tool-output-projection).
 _Avoid_: treating projected output as a new receipt, complete history, or authority
 
 
-**Skill Manifest**:
-A typed declaration for an executable skill workflow, distinct from untrusted Markdown instructions. Broker policy remains the execution authority.
-Implementation: [broker](docs/architecture/broker.md#skill-manifest).
-_Avoid_: executable plugin or self-modifying workflow
-
-
 **MCP Server**:
 A stdio Model Context Protocol program the user declares in their own `~/.ru/mcp.json` and the Broker runs on first use, reached by the model through the single `mcp` tool. Starting it or calling one of its tools has terminal-launch authority outside the workspace (`ExternalTerminal`); its output is untrusted and grants nothing.
 Implementation: [agent tools](docs/operations/agent-tools.md#mcp-servers), [ADR 0025](docs/adr/0025-mcp-servers-through-the-broker.md).
@@ -158,7 +152,7 @@ _Avoid_: a new execution authority, a user conversation, or an OS sandbox
 
 
 **Markdown Skill**:
-A discovered `SKILL.md` package supplying bounded untrusted workflow guidance. Metadata and referenced files never grant execution authority or run automatically.
+A discovered `SKILL.md` package identified by its canonical directory ID, with metadata advertised separately from its on-demand workflow body. Explicit chat invocation captures a bounded, versioned workflow snapshot for that run; successful skill receipts can restore the same snapshot after compaction or restart. Metadata and referenced files never grant execution authority or run automatically.
 Implementation: [harness](docs/architecture/harness.md#markdown-skill).
 _Avoid_: treating `SKILL.md` as a permission manifest or executable plugin
 

@@ -24,6 +24,8 @@ class Task:
     groups: tuple
     fail_to_pass: tuple
     pass_to_pass: tuple
+    skill_scenario: str | None
+    expected_skill_selection: str | None
     agent_seconds: int
     verifier_seconds: int
     fixture_hash: str
@@ -79,6 +81,16 @@ def load_task(path, suite):
     seed = path / ("environment/workspace" if is_terminal else "repository")
     fail = tuple(metadata.get("fail_to_pass", []))
     passed = tuple(metadata.get("pass_to_pass", []))
+    skill_scenario = metadata.get("skill_scenario") if suite == "skills" else None
+    expected_skill_selection = metadata.get("expected_skill_selection") if suite == "skills" else None
+    if suite == "skills":
+        if skill_scenario not in {"explicit", "implicit", "negative_unrelated", "negative_manual_only", "supporting_resource"}:
+            raise ValueError("invalid skill evaluation scenario")
+        if expected_skill_selection not in {"required", "none"}:
+            raise ValueError("invalid expected skill selection")
+        selection_required = skill_scenario in {"explicit", "implicit", "supporting_resource"}
+        if (expected_skill_selection == "required") != selection_required:
+            raise ValueError("skill scenario and expected selection disagree")
     groups = tuple(metadata["check_groups"]) if is_terminal else fail + passed
     if len(groups) < 6 or len(set(groups)) != len(groups) or not all(isinstance(g, str) and g for g in groups):
         raise ValueError("missing or duplicate grader groups")
@@ -106,6 +118,7 @@ def load_task(path, suite):
             raise ValueError(f"missing task file: {filename}")
     return Task(
         path, suite, task_id, language, seed, instruction, globs, groups, fail, passed,
+        skill_scenario, expected_skill_selection,
         int(config.get("agent", {}).get("timeout_sec", metadata.get("agent_timeout_sec", 1800))),
         int(config.get("verifier", {}).get("timeout_sec", metadata.get("verifier_timeout_sec", 120))),
         tree_hash(path),

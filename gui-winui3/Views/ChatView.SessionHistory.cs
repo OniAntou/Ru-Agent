@@ -904,6 +904,8 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            _skillsApiClient?.Dispose();
+            _skillsApiClient = null;
             SidePanel.SubagentsChanged -= OnSubagentsChanged;
         SidePanel.DisposeSubagents();
             ModelSelection.PickerProjectionReady -= OnModelSelectionPickerReady;

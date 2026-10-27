@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 
 namespace RuAgent.Protocol;
 
@@ -19,7 +18,8 @@ public sealed record AgentCommand(
     string? Strategy = null,
     string? SkillId = null,
     JsonObject? JsonInput = null,
-    string? TaskKillId = null);
+    string? TaskKillId = null,
+    string? SkillArguments = null);
 
 public sealed record AgentCommandParseResult(
     AgentCommand? Command,
@@ -39,14 +39,10 @@ public static class AgentActionRouter
 {
     public const int MaxInputBytes = 16 * 1024;
     public const int MaxSkillJsonBytes = 8 * 1024;
-    public const int MaxSkillIdLength = 128;
+    public const int MaxSkillIdLength = 96;
     // Mirrors TerminalLimits.MaxExecutionIdChars in the Protocol layer, which
     // the Broker's task registry enforces.
     public const int MaxExecutionIdLength = 256;
-
-    private static readonly Regex SkillIdPattern = new(
-        "^[a-z][a-z0-9]*(?:\\.[a-z0-9][a-z0-9_-]*)+$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static AgentCommandParseResult Parse(string? text)
     {
@@ -126,16 +122,18 @@ public static class AgentActionRouter
 
     private static AgentCommandParseResult ParseSkill(string remainder)
     {
-        var skillId = remainder.Trim();
-        if (skillId.Length == 0 || skillId.Length > MaxSkillIdLength || !SkillIdPattern.IsMatch(skillId))
+        var separator = IndexOfWhitespace(remainder);
+        var skillId = separator < 0 ? remainder : remainder[..separator];
+        var arguments = separator < 0 ? string.Empty : remainder[(separator + 1)..].Trim();
+        if (!SkillIdentity.IsValid(skillId) || Encoding.UTF8.GetByteCount(arguments) > MaxSkillJsonBytes)
         {
-            return Invalid("Skill requires a skill name, e.g. /skill pdf.analyzer.");
+            return Invalid("Skill requires an ID, e.g. /skill verify [arguments].");
         }
 
         return new AgentCommandParseResult(
-            new AgentCommand(AgentCommandKind.Skill, SkillId: skillId, JsonInput: new JsonObject()),
+            new AgentCommand(AgentCommandKind.Skill, SkillId: skillId, JsonInput: new JsonObject(), SkillArguments: arguments),
             null,
-            "Skill body requested.");
+            "Skill invocation requested.");
     }
 
     private static AgentCommandParseResult NoArguments(

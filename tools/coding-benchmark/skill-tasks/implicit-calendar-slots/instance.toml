@@ -1,0 +1,10 @@
+id = "implicit-calendar-slots"
+language = "python"
+difficulty = "skills"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["conflict_filter", "half_open_boundary", "inclusive_window", "invalid_duration"]
+pass_to_pass = ["chronological_slots", "events_unchanged"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 30
+skill_scenario = "implicit"
+expected_skill_selection = "required"

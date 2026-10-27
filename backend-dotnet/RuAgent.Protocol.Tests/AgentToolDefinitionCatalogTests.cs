@@ -329,7 +329,10 @@ public sealed class AgentToolDefinitionCatalogTests
     {
         var skill = AgentToolDefinitionCatalog.Find("skill", "1.0.0")!;
         Assert.Equal(AgentToolScopes.SystemRead, skill.Scope);
-        Assert.Contains(skill.InputSchema["required"]!.AsArray(), item => item!.GetValue<string>() == "name");
+        Assert.Empty(skill.InputSchema["required"]?.AsArray() ?? new JsonArray());
+        var properties = Properties("skill");
+        Assert.True(properties.ContainsKey("name"));
+        Assert.True(properties.ContainsKey("query"));
         Assert.Contains("allowed-tools", skill.Description, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("never grants", skill.Description, StringComparison.OrdinalIgnoreCase);
     }

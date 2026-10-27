@@ -172,11 +172,11 @@ public sealed partial class RuPromptContextProviderTests
         File.WriteAllText(Path.Combine(fixture.Root, "AGENTS.md"), "changed guidance", new System.Text.UTF8Encoding(false));
         var second = await provider.BuildAsync(run, snapshot, CancellationToken.None);
 
-        Assert.Equal(new[] { "root:AGENTS.md", "skill:reloadable" }, first.InstructionBlocks.Select(block => block.SourceId));
+        Assert.Equal(new[] { "root:AGENTS.md", "skill:catalog" }, first.InstructionBlocks.Select(block => block.SourceId));
         File.WriteAllText(Path.Combine(skills, "SKILL.md"), "# Reloadable\n\nchanged skill body", new System.Text.UTF8Encoding(false));
         var third = await provider.BuildAsync(run, snapshot, CancellationToken.None);
-        var firstSkill = first.InstructionBlocks.Single(block => block.SourceId == "skill:reloadable");
-        var thirdSkill = third.InstructionBlocks.Single(block => block.SourceId == "skill:reloadable");
+        var firstSkill = first.InstructionBlocks.Single(block => block.SourceId == "skill:catalog");
+        var thirdSkill = third.InstructionBlocks.Single(block => block.SourceId == "skill:catalog");
         Assert.NotEqual(firstSkill.ContentSha256, thirdSkill.ContentSha256);
         Assert.Contains("skill tool", thirdSkill.Content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("changed skill body", thirdSkill.Content, StringComparison.Ordinal);

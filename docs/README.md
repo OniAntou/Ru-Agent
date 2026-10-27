@@ -41,6 +41,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Provider catalogs and model-specific reasoning](operations/provider-catalog.md)
 - [Operations and verification](operations/verification.md)
 - [Agent tools and truthful execution](operations/agent-tools.md)
+- [Skill setup, invocation and continuity](operations/skills.md)
 - [Coding-agent capability and acceptance map](operations/coding-agent-capabilities.md)
 - [Custom Terminal/SWE/Everyday coding benchmark](../tools/coding-benchmark/README.md)
 - [Logging and diagnostics](operations/logging.md)
@@ -55,6 +56,8 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Agent guidance](../AGENTS.md)
 
 ## Decisions
+
+- [Shared skill catalog and run-local workflow snapshots](adr/0032-skill-catalog-and-workflow-snapshots.md)
 
 - [Retire the legacy tool surface](adr/0029-retire-legacy-tool-surface.md)
 - [Bounded programmatic coding tools](adr/0028-bounded-programmatic-coding-tools.md)

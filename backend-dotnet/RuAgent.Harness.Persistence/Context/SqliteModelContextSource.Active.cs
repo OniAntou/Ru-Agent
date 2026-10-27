@@ -48,25 +48,54 @@ public sealed partial class SqliteModelContextSource
         var paths = FileObservationPaths.Read(evidenceEntries, cached?.Paths ?? capturedPaths);
         var verification = RunVerificationEvidence.Project(evidenceEntries, cached?.Verification);
         var lastAssistant = appended.LastOrDefault(e => e.AssistantStep is not null) ?? cached?.LastAssistant;
+        IReadOnlyList<ModelContextEntry> skillBaseEntries = cached is null ? sessionBase : Array.Empty<ModelContextEntry>();
+        IReadOnlyList<ModelContextEntry> skillRunEntries = cached is null ? runLocal : evidenceEntries;
+        var activeSkills = ActiveSkillSnapshots.Project(skillBaseEntries, skillRunEntries, cached?.ActiveSkills,
+            cached?.SkillOmissions, cached?.AdditionalSkillOmissionCount ?? 0);
+        // Keep source IDs for compaction ranges, but remove the encoded seed from
+        // compaction input so it cannot be copied into a summary.
+        ReplaceSkillInvocationSeeds(sessionBase);
+        ReplaceSkillInvocationSeeds(runLocal);
         await ApplyCompactionsAsync(connection, transaction, runId, sessionBase, runLocal,
             cached?.Version ?? -1, header.Version, ct).ConfigureAwait(false);
 
         // Cache only active model entries and bounded receipt projections. Images,
         // dynamic work state and inherited child context are refreshed separately.
         var weight = ActiveContextCache.Weight(sessionBase.Concat(runLocal))
-            + (lastAssistant is null ? 0 : ActiveContextCache.Weight([lastAssistant])) + 256 * 1024;
+            + (lastAssistant is null ? 0 : ActiveContextCache.Weight([lastAssistant]))
+            + ActiveContextCache.SkillWeight(activeSkills.Snapshots)
+            + ActiveContextCache.SkillOmissionWeight(activeSkills.Omissions)
+            + 64L + 256 * 1024;
         _activeCache?.Store(runId.Value, new ActiveContextCache.Entry(key, header.Revision, header.Version,
             header.Sequence, header.BaseCount, sessionBase.ToArray(), runLocal.ToArray(), paths,
-            verification, lastAssistant, weight, DateTimeOffset.UtcNow));
+            verification, lastAssistant, activeSkills.Snapshots, activeSkills.Omissions,
+            activeSkills.AdditionalOmissionCount, weight, DateTimeOffset.UtcNow));
+        var workflow = ActiveSkillSnapshots.CreateWorkflowEntry(activeSkills.Snapshots, sessionBase.Concat(runLocal),
+            activeSkills.OmissionEntry is null ? 0 : 1);
+        if (workflow is not null) runLocal.Add(workflow);
+        if (activeSkills.OmissionEntry is not null) runLocal.Add(activeSkills.OmissionEntry);
         await AttachToolImagesAsync(connection, transaction, runId, runLocal, ct).ConfigureAwait(false);
         var inheritedPaths = await InheritSubagentContextAsync(connection, transaction, runId, sessionBase, depth, ct).ConfigureAwait(false);
         await AppendSessionWorkStateAsync(connection, transaction, runId, sessionBase, ct).ConfigureAwait(false);
         await transaction.CommitAsync(ct).ConfigureAwait(false);
-        return new ModelContextSourceSnapshot(sessionBase.Where(e => e.SourceId != SessionScopeHints.SourceId).ToArray(),
-            runLocal, inheritedPaths.Concat(paths).ToArray(), verification);
+        return new ModelContextSourceSnapshot(sessionBase.Where(e => e.SourceId != SessionScopeHints.SourceId
+                && !ActiveSkillSnapshots.IsReservedSourceId(e.SourceId)).ToArray(),
+            runLocal.Where(e => !ActiveSkillSnapshots.IsReservedSourceId(e.SourceId)).ToArray(),
+            inheritedPaths.Concat(paths).ToArray(), verification);
     }
 
     private sealed record ContextHeader(int BaseCount, long Revision, long Version, long Sequence);
+
+    private static void ReplaceSkillInvocationSeeds(List<ModelContextEntry> entries)
+    {
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var entry = entries[index];
+            if (!ActiveSkillSnapshots.IsReservedSourceId(entry.SourceId)) continue;
+            entries[index] = ModelContextEntry.Text(entry.SourceId, entry.Sequence, entry.Role,
+                "[skill workflow receipt]");
+        }
+    }
 
     private static async Task<ContextHeader> ReadContextHeaderAsync(SqliteConnection connection,
         SqliteTransaction transaction, RunId run, CancellationToken ct)

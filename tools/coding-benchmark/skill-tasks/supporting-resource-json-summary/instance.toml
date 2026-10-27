@@ -1,0 +1,10 @@
+id = "supporting-resource-json-summary"
+language = "python"
+difficulty = "skills"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["aliases", "region_case_and_space", "record_count", "minor_unit_sum", "unknown_region"]
+pass_to_pass = ["input_unchanged", "empty_summary"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 30
+skill_scenario = "supporting_resource"
+expected_skill_selection = "required"

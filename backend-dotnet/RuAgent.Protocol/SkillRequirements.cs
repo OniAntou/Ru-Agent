@@ -11,8 +11,6 @@ public sealed record SkillRequirementFailure(string Code, string Message);
 /// </summary>
 public static class SkillRequirements
 {
-    private const string PythonToken = "python";
-    private const string PythonUnavailableCode = "python_unavailable";
     private const string UnsupportedRequirementCode = "unsupported_skill_requirement";
     private const int MaxRequirements = 8;
     private const int MaxRequirementLength = 64;
@@ -43,25 +41,25 @@ public static class SkillRequirements
         return requirements;
     }
 
-    public static SkillRequirementFailure? FindUnmet(IReadOnlyList<string> requires, Func<bool> pythonAvailable)
+    public static SkillRequirementFailure? FindUnmet(IReadOnlyList<string> requires, Func<bool> pythonAvailable) =>
+        FindUnmet(requires, capability => string.Equals(capability, "python", StringComparison.OrdinalIgnoreCase)
+            ? pythonAvailable()
+            : SkillCapabilityAvailability.IsAvailable(capability));
+
+    public static SkillRequirementFailure? FindUnmet(IReadOnlyList<string> requires, Func<string, bool> capabilityAvailable)
     {
         foreach (var requirement in requires)
         {
-            if (string.Equals(requirement, PythonToken, StringComparison.OrdinalIgnoreCase))
+            if (!SkillCapabilityAvailability.Supported.Contains(requirement, StringComparer.OrdinalIgnoreCase))
             {
-                if (!pythonAvailable())
-                {
-                    return new SkillRequirementFailure(
-                        PythonUnavailableCode,
-                        "This skill requires Python, which is not installed or not on PATH.");
-                }
-
-                continue;
+                return new SkillRequirementFailure(UnsupportedRequirementCode,
+                    $"This skill requires unsupported capability '{requirement}'. Supported requirements: {string.Join(", ", SkillCapabilityAvailability.Supported)}.");
             }
 
-            return new SkillRequirementFailure(
-                UnsupportedRequirementCode,
-                $"This skill requires unsupported capability '{requirement}'. Supported requirements: python.");
+            if (capabilityAvailable(requirement)) continue;
+            var normalized = requirement.ToLowerInvariant();
+            return new SkillRequirementFailure(normalized + "_unavailable",
+                $"This skill requires {normalized}, which is not installed or not on PATH.");
         }
 
         return null;

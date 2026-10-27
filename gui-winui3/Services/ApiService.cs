@@ -6,6 +6,8 @@ using System.Text.Json;
 using System.Threading.Tasks;
 
 using RuApp.Services;
+using RuAgent.Client;
+using RuAgent.Protocol.Harness;
 
 namespace RuApp.Services
 {
@@ -52,6 +54,11 @@ namespace RuApp.Services
         public event EventHandler<ApiErrorEventArgs>? RequestFailed;
 
         public ApiErrorSnapshot? LastError { get; private set; }
+
+        public SkillsApiClient CreateSkillsApiClient()
+        {
+            return new SkillsApiClient(RuAppComposition.ToPublicHostSession(_session), _httpClient);
+        }
 
         private void LogApiError(string method, Exception ex)
         {

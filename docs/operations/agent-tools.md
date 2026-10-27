@@ -590,77 +590,29 @@ global flag list; noninteractive operation and timeout/cancellation remain.
 
 ### Skill guidance (`SKILL.md`)
 
-Workspace `SKILL.md` guidance follows the Claude/OpenCode/Pi shape: one
-directory per skill, `SKILL.md` with `name` + `description` frontmatter and a
-markdown workflow body. The prompt lists name + description only (with the
-body digest pinning the pointed-at version). The model loads the full body
-on demand with the `skill` tool (`name`), then acts with its normal tools
-under Broker policy. The user-facing `/skills` lists name + description;
-`/skill <name>` loads one body. Neither executes tools by itself.
+The shared metadata catalog advertises canonical IDs and descriptions, and the
+`skill` tool loads a workflow on demand. `/skill <id> [arguments]` explicitly
+activates a workflow in a chat turn; `/skills` and the GUI composer picker work
+before a run exists. The picker and `/skills` management actions support local
+root registration, enable/disable, automatic-selection controls and refresh.
+See [skill setup, requirements, versioning and diagnostics](skills.md).
 
 Skill bodies are untrusted guidance. `allowed-tools` is descriptive metadata
-only: it never grants a tool, scope, path, network permission, approval, or
-Broker capability.
+only: it never grants a tool, scope, path, network permission, approval or Broker
+capability. Relative references resolve against the returned `resource_base`,
+then use normal file/terminal tools under their existing policy. Nothing in the
+package executes automatically.
 
-An optional `requires:` frontmatter entry names a capability the workflow
-needs; only `python` is recognized today. It is checked wherever a body is
-returned: the model's `skill` tool (Broker) and the `/skill <name>` command
-(Host) both fail closed with `python_unavailable` when Python is absent, an
-unrecognized token fails closed as `unsupported_skill_requirement` naming the
-token, and the body is not returned. Skills without `requires` are unaffected.
-
-An optional `~/.ru/AGENTS.md` carries user-wide preferences and is read before the workspace files.
-`AGENTS.md`, `CONTEXT.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are the fixed
-user-workspace instruction candidates below the selected run root, not repo
-templates. The loader applies final-path containment, strict UTF-8 decoding,
-normalization, a 64 KiB per-file limit, and a 256 KiB combined instruction
-limit. Their contents are untrusted guidance only; they cannot grant tools,
-scopes, paths, network access, approvals, or Broker authority.
-Example `AGENTS.md` format:
-
-```markdown
-# Ru workspace instructions
-
-- Follow repo conventions.
-- Keep changes minimal and verified.
-```
-
-Workspace skill roots holding that same `SKILL.md` shape. Copy a directory
-containing a case-insensitive `SKILL.md` into one of the supported roots:
-`<workspace-root>/skills`, `<workspace-root>/.ru/skills`, `<workspace-root>/.agents/skills`,
-`RU_SKILLS_ROOT`, `~/.ru/skills`, or `%LOCALAPPDATA%\Ru\skills` (first match wins, so a
-workspace skill overrides a user-wide one). Skills in other tools' folders such as `~/.agents/skills`
-are not read automatically; copy the ones you want into `~/.ru/skills`. A minimal package can look like this:
-
-```markdown
----
-name: pdf-analyzer
-description: Analyze and summarize PDF files
-allowed-tools: read, powershell
----
-
-# PDF Analyzer
-
-Describe the review workflow here.
-```
-
-The Host discovers direct child directories in that precedence order and
-re-reads them for each newly built prompt context, including a new Agent run
-or after restart. `allowed-tools` is descriptive metadata only: it does not
-advertise or grant tools, scopes, paths, network access, or approvals. Only
-`SKILL.md` is read by discovery. Ancillary `references/`, `assets/`, and
-`scripts/` files are ignored and never automatically read or executed; any
-later access still has to use an advertised tool under Broker policy.
-
-Skill guidance is rendered as untrusted `ExternalSkill` prompt content. It
-uses `SKILL.md` only and never executes tools by itself.
-The in-process execution authority remains the only owner
-for canonical paths, capabilities, scopes, approvals, and execution.
+An optional `~/.ru/AGENTS.md` carries user-wide preferences and is read before the
+workspace files. `AGENTS.md`, `CONTEXT.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md`
+are the fixed instruction candidates below the run root. Their final-path,
+UTF-8, per-file and combined instruction checks remain separate from catalog
+metadata and skill-body budgets. These files also grant no execution authority.
 
 ## Typed command channel
 
 `POST /agent/v1/runs/{runId}/commands` accepts only the bounded commands
-`/compact normal|aggressive`, `/help`, `/skills`, `/skill <name>`, and
+`/compact normal|aggressive`, `/help`, `/skills`, `/skill <id> [arguments]`, and
 `/tasks [kill <execution_id>]`.
 The shared `AgentActionRouter` rejects unknown or malformed slash commands with
 stable `command_unknown`/`command_invalid` codes, without creating a prompt,

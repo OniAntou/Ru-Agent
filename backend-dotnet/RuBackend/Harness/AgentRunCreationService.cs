@@ -308,6 +308,11 @@ public sealed class AgentRunCreationService
         var isTrusted = admittedWorkspace.IsTrusted;
         var policySnapshot = admittedWorkspace.PolicySnapshot;
 
+        var skillInvocation = await SkillInvocation.ResolveAsync(canonicalWorkspacePath, prompt,
+            static () => PythonAvailability.IsAvailable, cancellationToken).ConfigureAwait(false);
+        if (skillInvocation.Code is not null)
+            return BoundedError(400, skillInvocation.Code, skillInvocation.Message ?? "Skill invocation failed.");
+
         // Before anything of the run is written, so a refused prompt leaves no run behind.
         if (_lifecycleHooks is not null
             && await _lifecycleHooks.SubmitPromptAsync(prompt, sessionIdRaw, canonicalWorkspacePath, isTrusted, cancellationToken)
@@ -338,6 +343,15 @@ public sealed class AgentRunCreationService
         {
             new(promptEventId, HarnessEventKind.RunStateChanged, payloadId: promptPayloadId, safeCode: isTrusted ? "waiting_history" : "waiting_workspace_trust"),
         };
+        HarnessPayloadIntent? skillPayload = null;
+        if (skillInvocation.EncodedSnapshot is { } skillSnapshot)
+        {
+            var bytes = Encoding.UTF8.GetBytes(skillSnapshot);
+            skillPayload = new HarnessPayloadIntent(_ids.NewPayloadId(), HarnessPayloadKind.SkillInvocation,
+                HarnessPayloadAudience.ModelContext, HarnessPayloadEncoding.Utf8Text, bytes.Length, bytes);
+            events.Add(new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunNoteAdded,
+                payloadId: skillPayload.PayloadId, safeCode: "skill_invoked"));
+        }
         var run = new AgentRun(
             runId,
             sessionHarnessId,
@@ -355,6 +369,7 @@ public sealed class AgentRunCreationService
             updatedAt: now);
 
         var payloads = new List<HarnessPayloadIntent> { promptPayload };
+        if (skillPayload is not null) payloads.Add(skillPayload);
         if (hasImages)
         {
             foreach (var url in request.ImageAttachments!)

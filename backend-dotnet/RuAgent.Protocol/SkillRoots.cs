@@ -38,6 +38,7 @@ public static class SkillRoots
         if (!string.IsNullOrWhiteSpace(userProfileRoot))
         {
             roots.Add(Path.Combine(userProfileRoot, ".ru", "skills"));
+            roots.Add(Path.Combine(userProfileRoot, ".agents", "skills"));
         }
 
         localApplicationDataRoot ??= Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

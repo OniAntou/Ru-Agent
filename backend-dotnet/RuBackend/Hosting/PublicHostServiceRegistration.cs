@@ -230,11 +230,19 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton(_ => new RuAgent.Broker.Tools.Mcp.McpServerHost(
             () => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             name => new RuBackend.Business.Settings.WindowsCredentialApi().Read(name)?.Secret));
+        // Computer use (ADR 0031): one desktop controller per Host. The stop hotkey is
+        // registered on the first action, and pressing it cancels the controlling run.
+        services.AddSingleton(_ => new RuAgent.Broker.Tools.Computer.ComputerStopHotkey());
+        services.AddSingleton(services => new RuAgent.Broker.Tools.Computer.ComputerUseService(
+            new RuAgent.Broker.Tools.Computer.WindowsDesktopController(),
+            services.GetRequiredService<RuAgent.Broker.Tools.Computer.ComputerStopHotkey>()));
+        services.AddHostedService<RuBackend.Harness.ComputerUseStopService>();
         services.AddSingleton(services => new InProcessExecutionAuthority(
             services.GetRequiredService<DataPaths>(),
             services.GetRequiredService<ILogger<InProcessExecutionAuthority>>(),
             mcpServers: services.GetRequiredService<RuAgent.Broker.Tools.Mcp.McpServerHost>(),
-            programJournal: services.GetRequiredService<HarnessPayloadStore>()));
+            programJournal: services.GetRequiredService<HarnessPayloadStore>(),
+            computer: services.GetRequiredService<RuAgent.Broker.Tools.Computer.ComputerUseService>()));
         services.AddSingleton<IToolGatewayFactory>(services =>
             new InProcessToolGatewayFactory(
                 services.GetRequiredService<InProcessExecutionAuthority>().Runtime,

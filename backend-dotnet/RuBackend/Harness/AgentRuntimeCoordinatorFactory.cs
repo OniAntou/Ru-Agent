@@ -159,7 +159,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         if (_runModelMetadataResolver is not null)
         {
             var metadata = await _runModelMetadataResolver.ResolveAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
-            availability = availability with { ToolProfile = metadata.ToolProfile };
+            availability = availability with { ToolProfile = metadata.ToolProfile, ComputerUseEnabled = metadata.ComputerUse };
         }
         var subagentStore = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(_sqliteOptions, _payloadStore);
         var internalRun = storedRun is not null && await subagentStore.IsInternalSessionAsync(storedRun.SessionId, cancellationToken).ConfigureAwait(false);

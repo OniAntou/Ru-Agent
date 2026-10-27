@@ -421,6 +421,7 @@ public static partial class BusinessEndpoints
         var result = value.Raw.DeepClone().AsObject();
         result.Remove("reasoning_preferences");
         result["reasoning_effort"] = reasoningEffort;
+        result[RuBackend.Providers.ComputerUsePolicy.SettingField] = RuBackend.Providers.ComputerUsePolicy.IsEnabled(value);
         foreach (var key in new[]
                  {
                      "api_key",

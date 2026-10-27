@@ -8,7 +8,8 @@ public readonly record struct AgentToolRuntimeAvailability(
     bool WebFetchEnabled,
     SubagentRole? ChildRole = null,
     bool McpEnabled = false,
-    string ToolProfile = AgentToolProfiles.Minimal);
+    string ToolProfile = AgentToolProfiles.Minimal,
+    bool ComputerUseEnabled = false);
 
 public static class AgentToolRuntimeProjection
 {
@@ -25,6 +26,8 @@ public static class AgentToolRuntimeProjection
                 "web_fetch" => availability.WebFetchEnabled,
                 // Advertised only while the user's ~/.ru/mcp.json declares a server.
                 "mcp" => availability.McpEnabled,
+                // Advertised only for a run that pinned the opt-in with image input (ADR 0031).
+                "computer" => availability.ComputerUseEnabled && availability.ChildRole is null,
                 _ => true,
             })
             .ToArray();

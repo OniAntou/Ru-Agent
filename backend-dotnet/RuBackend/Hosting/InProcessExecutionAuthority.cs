@@ -32,6 +32,7 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
     private BrokerExecutionRuntime? _composedRuntime;
     private int _disposed;
     private readonly RuAgent.Broker.Tools.Mcp.McpServerHost? _mcpServers;
+    private readonly RuAgent.Broker.Tools.Computer.ComputerUseService? _computer;
     private readonly object _lifetimeGate = new();
     private readonly RuAgent.Protocol.Programs.IProgramJournal? _programJournal;
 
@@ -41,9 +42,11 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
         string? spoolRoot = null,
         Func<string, string?>? readEnvironment = null,
         RuAgent.Broker.Tools.Mcp.McpServerHost? mcpServers = null,
-        RuAgent.Protocol.Programs.IProgramJournal? programJournal = null)
+        RuAgent.Protocol.Programs.IProgramJournal? programJournal = null,
+        RuAgent.Broker.Tools.Computer.ComputerUseService? computer = null)
     {
         _mcpServers = mcpServers;
+        _computer = computer;
         _programJournal = programJournal;
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(logger);
@@ -113,6 +116,7 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
             // authority does the same on first composition, scoped to its root.
             tools.CleanStaleSpoolFiles();
             if (_mcpServers is not null) tools.UseMcpServers(_mcpServers);
+            if (_computer is not null) tools.UseComputer(_computer);
             _tools = tools;
             _composedRuntime = new BrokerExecutionRuntime(
                 session,

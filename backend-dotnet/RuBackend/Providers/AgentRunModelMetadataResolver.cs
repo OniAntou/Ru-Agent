@@ -12,7 +12,8 @@ public sealed record AgentRunModelMetadata(
     string ContextWindowSource,
     string ContextWindowVersion,
     int OutputTokenReserve,
-    string ToolProfile = RuAgent.Protocol.AgentToolProfiles.Minimal);
+    string ToolProfile = RuAgent.Protocol.AgentToolProfiles.Minimal,
+    bool ComputerUse = false);
 
 public interface IAgentRunModelMetadataResolver
 {
@@ -45,7 +46,8 @@ public sealed class AgentRunModelMetadataResolver(
                 selection.ContextWindowSource,
                 selection.ContextWindowVersion,
                 selection.OutputTokenReserve,
-                RuAgent.Protocol.AgentToolProfiles.ReadPin(System.Text.Json.Nodes.JsonNode.Parse(selection.RequestOptionsJson)!.AsObject()));
+                RuAgent.Protocol.AgentToolProfiles.ReadPin(System.Text.Json.Nodes.JsonNode.Parse(selection.RequestOptionsJson)!.AsObject()),
+                ComputerUsePolicy.IsPinned(selection));
         }
         catch (HarnessStoreException error)
         {

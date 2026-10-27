@@ -38,6 +38,11 @@ internal static class BrokerGatewayContracts
             "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "todo_write" or "agent_spawn" or "agent_send" or "agent_cancel" or "agent_apply" => ToolAccessKind.Mutation,
             "agent_wait" => ToolAccessKind.ReadOnly,
             "powershell" or "run_process" => ToolAccessKind.Terminal,
+            // Observing the screen changes nothing; input runs as the user (ADR 0031).
+            "computer" => ComputerActions.IsObservation(arguments?["action"] is JsonValue action
+                && action.TryGetValue<string>(out var name) ? name : null)
+                ? ToolAccessKind.ReadOnly
+                : ToolAccessKind.Terminal,
             _ when BrokerPolicyContracts.IsReadOnlyTool(toolId) => ToolAccessKind.ReadOnly,
             _ => ToolAccessKind.Terminal,
         };
@@ -88,6 +93,7 @@ internal static class BrokerGatewayContracts
         "terminal_protected_path_requires_approval" => "terminal_protected_path_requires_approval",
         "web_approval_required" => "web_approval_required",
         "mcp_call_requires_approval" => "mcp_call_requires_approval",
+        "computer_access_requires_approval" => "computer_access_requires_approval",
         "subagent_apply_approval_required" => "subagent_apply_approval_required",
         _ => "approval_required",
     };

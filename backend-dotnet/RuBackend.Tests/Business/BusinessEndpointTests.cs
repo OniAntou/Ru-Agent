@@ -382,6 +382,33 @@ public sealed partial class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task Computer_use_opt_in_saves_alone_reads_back_and_rejects_a_non_boolean()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(data.Paths.SettingsFile, "{\"backend\":\"openai\",\"openai_model\":\"gpt-4o\"}");
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using (var before = await client.GetAsync("/settings"))
+            Assert.False((await before.Content.ReadFromJsonAsync<JsonObject>())!["computer_use_enabled"]!.GetValue<bool>());
+
+        using (var saved = await client.PostAsJsonAsync("/settings", new { computer_use_enabled = true }))
+            Assert.Equal("success", (await saved.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
+
+        using (var after = await client.GetAsync("/settings"))
+        {
+            var body = (await after.Content.ReadFromJsonAsync<JsonObject>())!;
+            Assert.True(body["computer_use_enabled"]!.GetValue<bool>());
+            Assert.Equal("gpt-4o", body["openai_model"]!.GetValue<string>());
+        }
+
+        using (var rejected = await client.PostAsJsonAsync("/settings", new { computer_use_enabled = "yes" }))
+            Assert.Equal("error", (await rejected.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
+        using (var unchanged = await client.GetAsync("/settings"))
+            Assert.True((await unchanged.Content.ReadFromJsonAsync<JsonObject>())!["computer_use_enabled"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public async Task PostSettings_selected_model_saves_one_atomic_candidate()
     {
         using var data = TemporaryBusinessData.Create();

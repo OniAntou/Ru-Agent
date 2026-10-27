@@ -102,6 +102,8 @@ public static class AgentActivityProjector
                 ? ExtractWebTarget(proposal)
             : proposal.ToolId == "mcp"
                 ? ExtractMcpTarget(proposal)
+            : proposal.ToolId == "computer"
+                ? ExtractComputerTarget(proposal)
             : state == AgentActivityState.Started && kind == AgentActivityKind.Edit
                 ? ExtractEditPreview(proposal)
                 : null;
@@ -121,6 +123,30 @@ public static class AgentActivityProjector
             SafeCodeFor(state, safeCode ?? receipt?.Code),
             ToolDisplay: toolDisplay,
             Detail: detail);
+    }
+
+    /// <summary>
+    /// The computer action for its row: the apps of an access request, the key chord,
+    /// or how much text was typed. Typed text itself never enters the row.
+    /// </summary>
+    private static string? ExtractComputerTarget(ToolProposal proposal)
+    {
+        if (proposal.Arguments.ValueKind != JsonValueKind.Object
+            || !proposal.Arguments.TryGetProperty("action", out var actionValue)
+            || actionValue.ValueKind != JsonValueKind.String) return null;
+        var action = actionValue.GetString();
+        string? Text(string name) => proposal.Arguments.TryGetProperty(name, out var value)
+            && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        var detail = action switch
+        {
+            "request_access" when proposal.Arguments.TryGetProperty("apps", out var apps) && apps.ValueKind == JsonValueKind.Array =>
+                "request_access " + string.Join(", ", apps.EnumerateArray()
+                    .Where(app => app.ValueKind == JsonValueKind.String).Select(app => app.GetString()).Take(8)),
+            "key" => "key " + Text("keys"),
+            "type" => $"type ({Text("text")?.Length ?? 0} characters)",
+            _ => action,
+        };
+        return detail is { Length: > 160 } ? detail[..160] : detail;
     }
 
     /// <summary>"server › tool" for an MCP row; arguments stay out of the row.</summary>

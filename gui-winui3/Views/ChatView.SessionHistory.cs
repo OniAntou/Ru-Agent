@@ -933,6 +933,7 @@ namespace RuApp.Views
             }
             _contextMeterScheduled = false;
             TranscriptTypography.Instance.PropertyChanged -= OnTranscriptTypographyChanged;
+            AgentActivityDisplayPreferences.Instance.PropertyChanged -= OnActivityDisplayPreferenceChanged;
             Composer.Queue.Items.CollectionChanged -= OnQueuedTurnsChanged;
             Composer.TextReplaced -= OnComposerTextReplaced;
             Messages.CollectionChanged -= OnMessagesChanged;

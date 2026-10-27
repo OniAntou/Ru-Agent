@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Add an opt-in compact agent activity display in Settings: one
+  expandable status line per reply, preserving prose, activity details and alerts.
+  Remember the choice locally and apply it to current and restored chats.
 - **fix(gui)**: Remove the sidebar search box, Load more sessions button and
   pagination notice, retaining backend search and paging support.
 - **fix(policy)**: Pending approvals and authorization tokens bind the policy

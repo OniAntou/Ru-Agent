@@ -24,6 +24,8 @@ namespace RuApp.Views
 
         public SettingsViewModel ViewModel { get; }
 
+        public AgentActivityDisplayPreferences ActivityFeedPreferences => AgentActivityDisplayPreferences.Instance;
+
         /// <summary>The remembered approval rules page.</summary>
         public ViewModels.ApprovalRulesViewModel Rules { get; }
 

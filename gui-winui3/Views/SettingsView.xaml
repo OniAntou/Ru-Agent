@@ -302,6 +302,20 @@
                         </StackPanel>
                     </Border>
 
+                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
+                        <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                            <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                <TextBlock Text="Compact agent activity" Style="{StaticResource SettingLabelStyle}" />
+                                <TextBlock Text="Group each turn’s activity into one expandable line."
+                                           Style="{StaticResource SettingDescStyle}" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="CompactAgentActivityToggle" Grid.Column="1"
+                                          IsOn="{x:Bind ActivityFeedPreferences.Compact, Mode=TwoWay}"
+                                          OnContent="" OffContent="" VerticalAlignment="Center"
+                                          AutomationProperties.Name="Compact agent activity" />
+                        </Grid>
+                    </Border>
+
                     <!-- Agent Capabilities Card -->
                     <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
                         <StackPanel Spacing="16">

@@ -445,9 +445,10 @@
                 <StackPanel MaxWidth="820"
                             HorizontalAlignment="Stretch"
                             Spacing="16">
+                    <controls:AgentActivitySummaryControl Message="{x:Bind}" />
                     <ItemsControl AutomationProperties.AutomationId="AgentActivitySegments"
                                   AutomationProperties.Name="Agent Activity Timeline"
-                                  ItemsSource="{x:Bind Segments, Mode=OneWay}"
+                                  ItemsSource="{x:Bind DisplayedSegments, Mode=OneWay}"
                                   ItemTemplateSelector="{StaticResource AssistantSegmentSelector}"
                                   Visibility="{x:Bind HasSegments, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
                         <ItemsControl.ItemsPanel>

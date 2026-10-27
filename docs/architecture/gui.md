@@ -83,6 +83,30 @@ Provider billing and cache counters remain independent of these display estimate
 The meter button's accessible help includes the total and all three values, so
 the reading remains available even when the flyout opens as a transient hover.
 
+## Compact agent activity
+
+Settings includes an opt-in **Compact agent activity** switch. Detailed mode is
+still the default. The device-local `Ru/activity-display.json` preference applies
+to open transcripts and newly loaded messages; it does not enter backend settings,
+model context, durable activity records or execution policy.
+
+Each assistant message with activity gets one disclosure line in compact mode.
+It counts recorded non-narration activities, reports failed/waiting states, and
+shows the latest running activity while the turn streams. Reply text stays visible.
+Expanding the line restores the original interleaved text/activity timeline;
+collapsing filters only activity segments and preserves the same live text objects.
+The legacy replay layout uses the same disclosure. Expansion is per message and
+is not reset when more activity arrives. Existing approval/question surfaces and
+file-change summaries stay outside this disclosure.
+
+`AgentActivitySummaryProjection` owns counts/status wording; the native summary
+control coalesces updates, follows item changes, stops its timer and releases
+subscriptions on unload. `ChatMessageItem.ActivityDisplay` keeps the text-only projection,
+using incremental appends for live segments. The disclosure uses a keyboard-operable
+button with an accessible action and expanded/collapsed status; it adds no motion.
+The stored preference is bounded and written atomically; absent/invalid preferences
+fall back to detailed mode.
+
 ## Presentation ownership
 
 WinUI-independent presenters own settings load generations and save ordering,

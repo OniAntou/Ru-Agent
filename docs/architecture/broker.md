@@ -173,7 +173,7 @@ reconciliation surfaces from Phase 3:
   - `apply_patch` exposes a workspace-scoped unified diff through the existing patch adapter, with
     all-target policy checks, internal preimage hashes and preparation before mutation.
   - See the pinned coding profiles below.
-- Model surface: the Protocol tool definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. The `mcp` tool executes user-declared stdio servers through the Broker under [ADR 0025](../adr/0025-mcp-servers-through-the-broker.md); workspace files cannot declare servers, and subagents cannot use it. Mail/calendar/task connectors are not advertised Agent tools.
+- Model surface: the Protocol tool definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. The `mcp` tool executes user-declared stdio servers through the Broker under [ADR 0025](../adr/0025-mcp-servers-through-the-broker.md); workspace files cannot declare servers, and subagents cannot use it. The opt-in `computer` tool ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)) captures monitors and sends pointer and keyboard input through `ComputerUseService` behind the same execution authority; `plan` denies it, `standard` grants apps per session, protected apps and Ru's terminal hosts are never targets, and Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) cancels the controlling run. Mail/calendar/task connectors are not advertised Agent tools.
 - Terminal authority: [ADR 0017](../adr/0017-workspace-terminal-policy.md) replaces
   command-form approval with canonical launch-directory permission. `run` preserves
   literal argv; `shell` explicitly selects PowerShell syntax. Both are automatic
@@ -405,7 +405,7 @@ The profile is pinned alongside the provider selection and removed from request
 options before provider transport. Missing pins fail as `tool_profile_required`;
 retired or unknown pins fail as `tool_profile_invalid`, without provider access
 or substitution. Run queries return null for unsupported historical labels.
-The catalog has 27 definitions and the Broker 26 bindings (`ask_user` is Host-only).
+The catalog has 28 definitions and the Broker 27 bindings (`ask_user` is Host-only).
 There are no public `write`, `edit` or `bash` bindings. Internal operation tags
 still let saved policy-family deny/ask rules constrain the corresponding modern
 tools; they cannot dispatch a retired tool. Shared file/terminal adapters remain

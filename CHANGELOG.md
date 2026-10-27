@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)**: Computer use (ADR 0031), off by default. Turn it on in Settings or
+  with `/computer on`; new turns with an image-capable model get one `computer` tool to
+  list monitors and apps, request access to apps, take screenshots of any monitor, and
+  click, move, drag, scroll, type and press keys. In `standard` the user approves each app
+  once per session and screenshots black out every other app; `plan` denies it and
+  `full_access` needs no grants. Ru's own windows, terminal hosts and sign-in or elevation
+  UI are never targets, elevated windows are refused, one run controls the desktop at a
+  time, and Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) cancels the action and the run. Subagents and `run_code` never
+  get the tool. Repeated successful computer calls no longer trip the repeated-call guard.
 - **feat(gui)**: Add an opt-in compact agent activity display in Settings: one
   expandable status line per reply, preserving prose, activity details and alerts.
   Remember the choice locally and apply it to current and restored chats.

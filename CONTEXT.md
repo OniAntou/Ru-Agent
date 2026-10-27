@@ -141,6 +141,16 @@ A stdio Model Context Protocol program the user declares in their own `~/.ru/mcp
 Implementation: [agent tools](docs/operations/agent-tools.md#mcp-servers), [ADR 0025](docs/adr/0025-mcp-servers-through-the-broker.md).
 _Avoid_: workspace-declared servers, a per-server tool definition, or a second execution authority
 
+**Computer Use**:
+The opt-in `computer` tool through which a run that pinned `_ru_computer_use_v1` sees monitors and sends pointer and keyboard input as the current Windows user. One run controls the desktop at a time; Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) stops it. `plan` denies it, and Ru's own windows, terminal hosts and credential UI are never targets in any preset.
+Implementation: [agent tools](docs/operations/agent-tools.md#computer-use), [ADR 0031](docs/adr/0031-computer-use-through-the-broker.md).
+_Avoid_: unmasked screenshots in `standard`, input to Ru's own windows, or treating a grant as confinement
+
+**App Grant**:
+The Broker session's record that the user approved computer use for an application, by executable file name, through `request_access`. It lasts for the Agent session, gates every input target and screenshot pixel in `standard`, and never covers a protected application.
+Implementation: [ADR 0031](docs/adr/0031-computer-use-through-the-broker.md).
+_Avoid_: a durable grant, a grant by window title, or a grant implied by `full_access` for protected apps
+
 **Subagent**:
 A delegated internal run owned and controlled by the main agent, with bounded family resources and isolated child-private history. Users can observe/export it; only the main agent sends work, cancels or applies results.
 Implementation: [harness](docs/architecture/harness.md#subagent).

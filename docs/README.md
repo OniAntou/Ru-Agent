@@ -88,6 +88,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Delegated subagent runs](adr/0022-delegated-subagent-runs.md)
 
 - [Relational history and database maintenance](adr/0030-relational-history-and-database-maintenance.md)
+- [Computer use through the Broker](adr/0031-computer-use-through-the-broker.md)
 
 Git history is the recovery source for removed dated plans, specifications,
 reviews and verification records.

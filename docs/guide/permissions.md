@@ -49,6 +49,16 @@ A remembered approval lasts for the session, and an *always* rule lasts until yo
 remove rules with `ru agent policy list` and `ru agent policy remove <rule-id>`. If two windows answer
 the same request, the first answer wins.
 
+## Computer use
+
+Computer use is off until you turn it on in **Settings → General → Computer use** or with
+`/computer on`. It then applies to new turns with a model that accepts images. Ru asks before
+it controls an app, by name, and the answer lasts for the session. In `standard`, screenshots
+show only the apps you approved; `plan` never controls the desktop; `full_access` controls
+any app without asking. Ru's own windows, terminals, and sign-in or elevation prompts are
+never reachable. Press **Ctrl+Alt+Backspace** (or **Ctrl+Alt+Pause** on keyboards that have it) to stop it at once. See
+[Computer use](../operations/agent-tools.md#computer-use).
+
 ## What guides Ru and what grants permission
 
 Instructions, skills, custom commands and hooks shape how Ru works. None of them can grant a tool, a

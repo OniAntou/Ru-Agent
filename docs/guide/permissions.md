@@ -7,6 +7,11 @@ and you can always see and stop what it is doing.
 > **Terminal commands run as your Windows user, without an operating-system filesystem or network
 > sandbox.** A command Ru launches can reach files outside the project and the network. Standard
 > permission does not confine a child process to the workspace.
+>
+> The same applies to Ru's own local service: the runtime descriptor in your profile holds the
+> token that the desktop app and the terminal UI use to approve requests and change rules. A
+> command running as your user can read it, so in `standard` an approval prompt guards against
+> mistakes, not against a command written to bypass it. Use `plan` when commands must not run.
 
 ## Permission modes
 

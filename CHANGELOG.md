@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AgentApiClient`, `TuiTranscript` and `ChatView.AgentRun` into partial files by
   responsibility; move the test-only desktop `FileTools` facade into the Broker
   tests and make `FileReadAdapter.Execute` an internal test convenience.
-
+- **docs**: Point broker implementation sections at the CONTEXT.md glossary instead
+  of restating definitions, break up the longest paragraphs, and state in the
+  permissions guide that a terminal command can read the local service token.
 - **fix(harness)**: A declared verification whose launch was rejected before any
   process ran (`malformed_call`, policy or resolution failure) no longer blocks
   the run forever: it stays outstanding until a corrected check of the same kind

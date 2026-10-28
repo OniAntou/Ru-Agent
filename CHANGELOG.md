@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(history)**: Keep conversation branching compatible with paged SQL
+  history. Bind revisions to the window and rewind epoch, use absolute turn
+  boundaries, and copy retained message rows and receipts atomically while
+  returning a bounded window.
+
 - **style(tui)**: Soften the inner RU tile seams while preserving the full
   RU AGENT logo, its size, colors, outlines and shadows, and AGENT's grid.
 
@@ -100,6 +105,177 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Enter sends on the existing run; Escape leaves the question pending for `/follow`.
   Recover pending questions after session reopen and refuse stale answers without retries.
 
+
+- **feat(web)**: Runs on first-party Anthropic and OpenAI models now search through the
+  provider's own hosted web search, as Claude Code and Codex do, instead of scraping
+  search-engine pages (ADR 0033). It needs no extra key; each search is billed on the
+  provider account. It applies only where the run's policy allows `web_search` without
+  an approval, cited answers end with a Sources list, and `provider_web_search_enabled`
+  set to `false` keeps the old search for new runs. Other providers are unchanged.
+
+- **feat(skills)**: Automatically discover the shared user library at
+  `~/.agents/skills` in every workspace. Existing project and `~/.ru/skills`
+  packages retain priority when skill IDs collide.
+
+- **fix(web)**: `web_fetch` now names itself (`RuAgent/<version>`), sends `Accept` and
+  `Accept-Language` and decodes compressed responses, so sites such as Wikipedia and
+  VnExpress that refused the bare request now answer. Repeated URLs, same-page anchors
+  and footnote markers no longer repeat their URL, cutting about a fifth of an article's
+  text. `web_fetch` also reads PDF text (papers, specifications, reports). Web failures
+  now tell the model what to try next, and the `web_search` and `web_fetch`
+  descriptions explain how to query and page instead of engine internals.
+
+- **feat(skills)**: Unify YAML parsing and skill IDs, return resource bases and
+  versioned bodies, and make `/skill <id> [arguments]` activate a workflow in chat.
+  Add a run-independent catalog, GUI picker and TUI management for local roots,
+  enable/disable and explicit-only selection. Cache metadata independently from
+  body budgets and restore bounded workflow snapshots after compact or restart.
+  Add dependency diagnostics and opt-in skill task benchmarks.
+
+- **fix(gui)**: The chat no longer blinks when a reply finishes or a session opens.
+  The end-of-turn reload merges changed rows into the transcript instead of rebuilding
+  it, so unchanged rows, the scroll position and expanded rows stay put. An opened
+  session paints its rows at full height in the first frame instead of growing them
+  over several (the transcript no longer uses scrolling placeholders), and the side
+  panel and task shelf no longer reflow the outgoing transcript first.
+
+- **feat(agent)**: The `computer` tool gains `action=focus`: bring a granted app's
+  window to the front, restoring it when minimized, without sending input to the window
+  it replaces. Protected apps stay unreachable; failures are named
+  (`computer_app_not_running`, `computer_focus_refused`).
+- **feat(agent)**: Computer use (ADR 0031), off by default. Turn it on in Settings or
+  with `/computer on`; new turns with an image-capable model get one `computer` tool to
+  list monitors and apps, request access to apps, take screenshots of any monitor, and
+  click, move, drag, scroll, type and press keys. In `standard` the user approves each app
+  once per session and screenshots black out every other app; `plan` denies it and
+  `full_access` needs no grants. Ru's own windows, terminal hosts and sign-in or elevation
+  UI are never targets, elevated windows are refused, one run controls the desktop at a
+  time, and Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) cancels the action and the run. Subagents and `run_code` never
+  get the tool. Repeated successful computer calls no longer trip the repeated-call guard.
+- **feat(gui)**: Add an opt-in compact agent activity display in Settings: one
+  expandable status line per reply, preserving prose, activity details and alerts.
+  Remember the choice locally and apply it to current and restored chats.
+- **fix(gui)**: Remove the sidebar search box, Load more sessions button and
+  pagination notice, retaining backend search and paging support.
+- **fix(policy)**: Pending approvals and authorization tokens bind the policy
+  snapshot's canonical SHA-256 as well as its version, because session approval
+  memory can derive the same version for a different rule set. The session
+  approval ledger uses one lock, so pruning an empty session can no longer drop a
+  concurrently remembered approval.
+- **fix(broker)**: Canonical path resolution opens a query-only handle, so locked or
+  unreadable files resolve through the OS final-path API instead of the managed
+  link walk.
+- **refactor**: Split `ModelStepService`, `AgentToolExecutionPipeline`,
+  `AgentApiClient`, `TuiTranscript` and `ChatView.AgentRun` into partial files by
+  responsibility; move the test-only desktop `FileTools` facade into the Broker
+  tests and make `FileReadAdapter.Execute` an internal test convenience.
+- **docs**: Point broker implementation sections at the CONTEXT.md glossary instead
+  of restating definitions, break up the longest paragraphs, and state in the
+  permissions guide that a terminal command can read the local service token.
+- **fix(harness)**: A declared verification whose launch was rejected before any
+  process ran (`malformed_call`, policy or resolution failure) no longer blocks
+  the run forever: it stays outstanding until a corrected check of the same kind
+  passes, instead of failing the run after the recovery-note budget. A rejected
+  rerun never replaces evidence from a check that actually ran, and the recovery
+  note for `malformed_call`/`invalid_arguments` tells the model to keep the
+  declared purpose on the corrected call.
+- **fix(policy)**: Plan's read-only gate now covers `file_restore`, so a remembered
+  allow or ask rule can no longer restore files or prompt in `plan`.
+- **fix(web)**: Only 192.0.0.0/24 and 192.0.2.0/24 are treated as reserved;
+  public hosts elsewhere in 192.0.0.0/16 (for example WordPress.com) are reachable.
+- **fix(prompt)**: Repair double-encoded em dashes and ellipses in model-facing
+  boundary markers and tool-result labels; a Python guard rejects mojibake in
+  tracked sources.
+
+- **fix(context)**: Compact historical exchanges while protecting instructions and
+  current requests; enforce the 256-range cap and bounded checkpoint chunks.
+- **fix(context)**: Recover provider context-window rejection using the same pin,
+  finite retries and partial-text reset. Checkpoints keep referenced pinned tool
+  definitions, omit unused schemas/duplicate references and shrink rejected spans.
+- **perf(context)**: Remove repeated candidate rebuilding and retain bounded
+  incremental active context/receipt projections. Schema v31 adds mutation fences
+  and indexed lookups; encrypted originals and the v18 upgrade floor remain.
+- **fix(context)**: Carry applicable checkpoints and private directory hints
+  between visible root runs; retain bounded explicit English/Vietnamese user
+  constraints with provenance and hide rewound intent.
+
+- **feat(database)**: Normalize retained conversation messages and delivery receipts
+  in schema v30; add paged history, session paging and FTS search without the old
+  200-message retention limit. Preserve rewind indices, full-history export and
+  bounded model context; migration cannot recover previously pruned messages.
+- **feat(database)**: Add status, online SQLite backup with opaque key/manifest,
+  verification, journaled offline restore, compaction and explicit dry-run/apply
+  pruning. A profile lease prevents maintenance from racing the running Host.
+- **perf(database)**: Use indexed same-run context event joins, align SQLite command
+  timeouts with configured lock budgets, and remove global session read blocking.
+
+- **fix(providers)**: Preserve Responses assistant message phases through streaming,
+  durable context and native replay; continue commentary-only replies with bounded
+  recovery instead of completing the task, and avoid duplicate narration.
+- **perf(prompt)**: Load root domain context as digest-bound references, remove
+  repeated native tool field hints, and add a concise coding quality contract.
+  Apply a narrow Codex recipe only to its confirmed official native route;
+  custom endpoints and unknown models retain neutral guidance.
+
+- **fix(verification)**: Preserve prior checks after authority-identified read-only
+  commands exit nonzero; retain the original failed diagnostic or required check.
+  Clarify explicit inspection intent for PowerShell reads.
+- **fix(approvals)**: Show the total multi-edit count, bounded numbered excerpts
+  and omitted-edit notice; preserve Unicode boundaries and full-argument binding.
+- **refactor(policy)**: Share PowerShell wrapper recognition with the resolver,
+  preserving exact allows, including wildcard rules, and broad deny/ask matching.
+- **docs(adr)**: Reconcile ADR 0027's effective profile rules with ADRs 0028/0029.
+
+- **fix(tui)**: Reflow long-paragraph storage segments continuously across terminal
+  widths, preserving whitespace, inline styles and quote/list indentation.
+
+- **fix(agent)**: Stop final-prose retry loops for confirmed expected-exit
+  mismatches and publish the observed failure without clearing required checks.
+  Clarify native argv/exit handling and multiline JSON edit/write arguments.
+- **fix(history)**: Commit failed-run reports and their final history outbox
+  atomically; delivery retains the failed state instead of rejecting the report
+  with a runtime driver error.
+- **fix(gui)**: Use the desktop workspace folder picker, prevent duplicate
+  dialogs and treat native Cancel/close as an ordinary no-selection outcome.
+
+- **fix(agent)**: Keep optional diagnostics and successful negative tests out of
+  required verification limits; preserve checks after authority-identified
+  read-only terminal completion and accept nonzero Windows signed exit codes.
+- **fix(policy)**: Apply remembered command-prefix rules to current terminal
+  tools; flag-first and shell-wrapper allows match complete argv, while deny/ask
+  restrictions retain their broad matching and precedence.
+- **refactor(runtime)**: Separate run parking/cleanup and GUI feed lifecycle
+  ownership; test update scheduling/cancellation through behavior.
+- **refactor(context)**: Give model output one effective paging cursor and
+  align guidance with current tool identities; keep original Broker receipts.
+- **test(docs)**: Link one canonical policy contract and retain semantic/link
+  guards instead of requiring repeated policy wording in every guide.
+
+- **refactor(tools)!**: Retire the legacy tool profile and public `write`, `edit`,
+  `bash` bindings. Existing provider selections require an explicit supported
+  profile pin; old pins fail with a named error instead of silently switching.
+  Modern tools retain existing policy-family rules and the same Broker authority.
+
+
+- **feat(tools)**: Pin simpler coding tool profiles per run, with explicit
+  Windows terminal operations, atomic same-file multi-edit, line-based reads,
+  and policy-checked multi-file unified patches. Preserve legacy run tools.
+- **feat(tools)**: Add an opt-in `coding_code_v1` profile with bounded synchronous
+  JavaScript tool orchestration, encrypted nested receipts, shared tool budgets,
+  and conservative interruption handling. Retain all nested verification evidence
+  while sending selected results to the model. No LSP or browser automation.
+- **feat(benchmark)**: Add a file-creation/multi-edit workflow with a Unicode path,
+  explicit process-scoped tool-profile selection and observed tool/model-step
+  counts. Distinguish missing nested-call/error telemetry from measured counts.
+- **fix(patch)**: Preserve CRLF and final-newline semantics and reject malformed
+  hunk counts, positions and overlapping ranges.
+- **fix(approvals)**: Keep patch, restore and terminal lifecycle approvals
+  single-use instead of remembering a matcher that cannot bind their contents
+  or opaque IDs. Preserve explicit ask rules for terminal output/stop tools.
+- **fix(providers)**: Preserve cancellation when it races a provider rejection.
+- **feat(search)**: Allow an explicitly configured JSON search backend with
+  bounded structured results and no silent HTML fallback; retain HTML racing
+  as the default mode.
 - **perf(tui)**: Separate streaming Markdown projection from tool/lifecycle rendering.
   Cache settled paragraph chunks and native rows, reparse only unresolved tails,
   and preserve late Markdown closers, tab columns and bounded history during updates.

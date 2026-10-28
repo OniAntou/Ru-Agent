@@ -21,13 +21,22 @@ public sealed class SkillRequirementsTests
     }
 
     [Fact]
-    public void Unknown_token_fails_closed_naming_the_token()
+    public void Unsupported_token_fails_closed_naming_the_token()
     {
-        var failure = SkillRequirements.FindUnmet(["node"], () => true);
+        var failure = SkillRequirements.FindUnmet(["unobtainium"], () => true);
 
         Assert.NotNull(failure);
         Assert.Equal("unsupported_skill_requirement", failure.Code);
-        Assert.Contains("node", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("unobtainium", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Supported_node_requirement_uses_an_injected_probe()
+    {
+        Assert.Null(SkillRequirements.FindUnmet(["node"], capability => capability == "node"));
+        var failure = SkillRequirements.FindUnmet(["node"], _ => false);
+        Assert.NotNull(failure);
+        Assert.Equal("node_unavailable", failure.Code);
     }
 
     [Fact]

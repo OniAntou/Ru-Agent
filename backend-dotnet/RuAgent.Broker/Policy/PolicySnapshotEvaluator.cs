@@ -92,7 +92,17 @@ public sealed class PolicySnapshotEvaluator
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(invariants);
-        return EvaluateInner(snapshot, context, invariants, now);
+        if (context.PatchTargets.Count == 0) return EvaluateInner(snapshot, context, invariants, now);
+        var parent = EvaluateInner(snapshot, context, invariants, now);
+        if (parent.Decision == "deny") return parent;
+        PolicyEvaluation? ask = parent.Decision == "ask" ? parent : null;
+        foreach (var target in context.PatchTargets)
+        {
+            var decision = EvaluateInner(snapshot, target, invariants, now);
+            if (decision.Decision == "deny") return decision;
+            if (decision.Decision == "ask") ask ??= decision;
+        }
+        return ask ?? new PolicyEvaluation("allow", "patch_targets_allowed", null);
     }
 
     private PolicyEvaluation EvaluateInner(
@@ -129,6 +139,14 @@ public sealed class PolicySnapshotEvaluator
                 > (context.Background ? TerminalLimits.BackgroundMaxLifetimeMs : TerminalLimits.HardMaxTimeoutMs))
         {
             return Deny("timeout_exceeds_hard_max");
+        }
+
+        // Ru's own windows, terminal hosts and credential UI are never computer-use
+        // targets, in any preset: input there could answer Ru's own approval
+        // prompts, so no rule or preset may grant them (ADR 0031).
+        if (IsComputer(context) && context.Argv.Any(ComputerProtectedApps.IsProtected))
+        {
+            return Deny("computer_app_protected");
         }
 
         var structuredTarget = context.Target;
@@ -263,6 +281,7 @@ public sealed class PolicySnapshotEvaluator
         || string.Equals(context.OperationClass, PolicyOperationClasses.Edit, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Delete, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Patch, StringComparison.Ordinal)
+        || string.Equals(context.OperationClass, PolicyOperationClasses.Restore, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Mutation, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal);
 
@@ -277,6 +296,17 @@ public sealed class PolicySnapshotEvaluator
             return string.Equals(context.ToolOp, "list_servers", StringComparison.Ordinal)
                 ? Allow("mcp_list_servers_allow")
                 : ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "mcp_call_requires_approval");
+        }
+
+        // ADR 0031: granting an app control runs input with the user's rights, the same
+        // authority as an external terminal launch (plan deny, standard ask, full_access
+        // allow). Other actions are checked against the session's app grants when they
+        // execute, because their target window is only known at that moment.
+        if (IsComputer(context))
+        {
+            return string.Equals(context.ToolOp, ComputerActions.RequestAccess, StringComparison.Ordinal)
+                ? ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "computer_access_requires_approval")
+                : ProfileDecision(snapshot, AgentPolicySubject.WorkspaceTerminal, "computer_action_grant_checked");
         }
 
         if (IsTerminal(context))
@@ -337,6 +367,9 @@ public sealed class PolicySnapshotEvaluator
     private static bool IsWebTool(PolicyContext context) =>
         string.Equals(context.ToolId, "web_search", StringComparison.Ordinal)
         || string.Equals(context.ToolId, "web_fetch", StringComparison.Ordinal);
+
+    private static bool IsComputer(PolicyContext context) =>
+        string.Equals(context.ToolId, "computer", StringComparison.Ordinal);
 
     private static bool IsTerminal(PolicyContext context) =>
         string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal);

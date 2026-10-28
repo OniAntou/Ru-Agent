@@ -30,7 +30,7 @@ public sealed partial class SubagentNativeControlTests
         Assert.True(await new SubagentRuntimeBinder(storage.EventStore, agents, scopes, execution.Factory)
             .BindAsync(attempt.Run.RunId, scope.WorkspaceRoot, policy, default));
         var write = new ToolProposal(attempt.Run.RunId, new("step_" + new string('1', 32)), new("call_" + new string('2', 32)),
-            "provider_child_write", 1, "write", "1.0.0", JsonSerializer.SerializeToElement(new { op = "write", path = "a.txt", content = "child", overwrite = true }));
+            "provider_child_write", 1, "write_file", "1.0.0", JsonSerializer.SerializeToElement(new { path = "a.txt", content = "child", overwrite = true }));
         var allowed = await gateway.EvaluateAsync(write, default);
         Assert.Equal(PolicyDecision.Allow, allowed.Decision);
         var prepared = await gateway.PrepareAsync(new(write, new("exec_" + new string('3', 32)), allowed.CanonicalIntentToken!, allowed.GatewayGeneration), default);

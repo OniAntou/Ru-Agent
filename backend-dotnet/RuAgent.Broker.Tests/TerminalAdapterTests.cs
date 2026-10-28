@@ -200,7 +200,7 @@ public sealed class TerminalAdapterTests
             var wrongBindingToken = approvals.Issue(
                 "request-1",
                 "session-1",
-                "terminal.run",
+                "run_process",
                 "1.0.0",
                 "not-the-intent-hash",
                 TimeSpan.FromSeconds(60));
@@ -222,7 +222,7 @@ public sealed class TerminalAdapterTests
             var token = approvals.Issue(
                 "request-2",
                 "session-1",
-                "terminal.run",
+                "run_process",
                 "1.0.0",
                 intent.IntentHash,
                 TimeSpan.FromSeconds(60));
@@ -313,7 +313,7 @@ public sealed class TerminalAdapterTests
             var token = approvals.Issue(
                 "request-reresolve",
                 "session-1",
-                "terminal.run",
+                "run_process",
                 "1.0.0",
                 intent.IntentHash,
                 TimeSpan.FromSeconds(60));
@@ -353,7 +353,7 @@ public sealed class TerminalAdapterTests
             var token = approvals.Issue(
                 "request-network-1",
                 "session-network-1",
-                "terminal.run",
+                "run_process",
                 "1.0.0",
                 intent.IntentHash,
                 TimeSpan.FromSeconds(60));
@@ -732,7 +732,7 @@ public sealed class TerminalAdapterTests
             var token = approvals.Issue(
                 "request-1",
                 "session-1",
-                "terminal.shell",
+                "powershell",
                 "1.0.0",
                 scriptIntent.IntentHash,
                 TimeSpan.FromSeconds(30));
@@ -823,7 +823,7 @@ public sealed class TerminalAdapterTests
             var token = approvals.Issue(
                 "request-1",
                 "session-1",
-                "terminal.shell",
+                "powershell",
                 "1.0.0",
                 powershellIntent.IntentHash,
                 TimeSpan.FromSeconds(30));
@@ -873,7 +873,7 @@ public sealed class TerminalAdapterTests
             var outsideToken = approvals.Issue(
                 "request-outside-1",
                 "session-shell-unconfined",
-                "terminal.shell",
+                "powershell",
                 "1.0.0",
                 outsideIntent.IntentHash,
                 TimeSpan.FromSeconds(60));
@@ -1084,7 +1084,7 @@ public sealed class TerminalAdapterTests
             var intent = adapter.CanonicalizeRun(new TerminalRunRequest(
                 "powershell", ".", "git", new[] { "commit" }, 10_000, false, "token", "req-1", "sess-1", false));
 
-            var token = approvals.Issue("req-1", "sess-1", "terminal.run", "1.0.0", intent.IntentHash, TimeSpan.FromSeconds(30));
+            var token = approvals.Issue("req-1", "sess-1", "run_process", "1.0.0", intent.IntentHash, TimeSpan.FromSeconds(30));
 
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
@@ -1211,7 +1211,7 @@ public sealed class TerminalAdapterTests
             var intent = adapter.CanonicalizeRun(new TerminalRunRequest(
                 "powershell", ".", "git", new[] { "commit", "-m", "agent commit" }, 10_000, false, "token", "req-1", "sess-1", false));
 
-            var token = approvals.Issue("req-1", "sess-1", "terminal.run", "1.0.0", intent.IntentHash, TimeSpan.FromSeconds(30));
+            var token = approvals.Issue("req-1", "sess-1", "run_process", "1.0.0", intent.IntentHash, TimeSpan.FromSeconds(30));
 
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),

@@ -69,7 +69,8 @@ public sealed record ModelTurn
         string? toolCallId = null,
         string? toolResultCode = null,
         string? reasoningContent = null,
-        IReadOnlyList<ModelImage>? images = null)
+        IReadOnlyList<ModelImage>? images = null,
+        RuAgent.Harness.Core.Prompting.ResponsesAssistantMessages? responsesMessages = null)
     {
         if (role is not ("system" or "user" or "assistant" or "tool"))
         {
@@ -94,6 +95,9 @@ public sealed record ModelTurn
         if (reasoningContent is not null && (role != "assistant" || reasoningContent.Contains('\0')
             || StrictUtf8.GetByteCount(reasoningContent) > RuAgent.Harness.Core.Prompting.ProviderContinuation.MaximumBytes))
             throw new ArgumentException("Invalid private chat reasoning.", nameof(reasoningContent));
+        if (responsesMessages is not null && (role != "assistant" || responsesMessages.Text != content))
+            throw new ArgumentException("Invalid Responses message history.", nameof(responsesMessages));
+        ResponsesMessages = responsesMessages;
         Role = role;
         Content = content;
         ToolCalls = new ReadOnlyCollection<ModelFunctionCall>(calls);
@@ -103,6 +107,7 @@ public sealed record ModelTurn
         Images = Array.AsReadOnly(copiedImages);
     }
 
+    public RuAgent.Harness.Core.Prompting.ResponsesAssistantMessages? ResponsesMessages { get; }
     public string Role { get; }
 
     public string Content { get; }

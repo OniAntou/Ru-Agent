@@ -6,7 +6,6 @@ using System.Text.RegularExpressions;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
-using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
@@ -76,7 +75,7 @@ public sealed partial class ToolExecutionService
                 ? objectNode
                 : throw new ToolExecutionException("invalid_arguments");
             var binding = _catalog.Registry.Get(toolId, toolVersion);
-            var decision = EvaluateWithOpScope(request.SessionId, binding.Manifest, arguments);
+            var decision = EvaluateSessionGrant(request.SessionId, binding.Manifest);
             if (!decision.Allowed)
             {
                 return Result(
@@ -93,7 +92,7 @@ public sealed partial class ToolExecutionService
             try
             {
                 ToolSchemaValidator.Validate(binding.Manifest.InputSchema, arguments);
-                ValidateTerminalTimeoutCeiling(toolId, arguments);
+                ValidateTerminalLaunchArguments(toolId, arguments);
             }
             catch (ToolSchemaException error)
             {
@@ -116,7 +115,7 @@ public sealed partial class ToolExecutionService
             {
                 var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
                 var argumentsHash = PendingApprovalStore.ComputeArgumentsHash(toolId, toolVersion, arguments);
-                var terminalApprovalToken = toolId is "bash" or "terminal.run" or "terminal.shell"
+                var terminalApprovalToken = toolId is "powershell" or "run_process"
                     ? _approvalTokens.Issue(
                         request.RequestId,
                         request.SessionId,
@@ -258,7 +257,7 @@ public sealed partial class ToolExecutionService
             }
 
             var binding = _catalog.Registry.Get(pending.Manifest.Id, pending.Manifest.Version);
-            var decision = EvaluateWithOpScope(pending.Request.SessionId, binding.Manifest, pending.Arguments);
+            var decision = EvaluateSessionGrant(pending.Request.SessionId, binding.Manifest);
             if (!decision.Allowed)
             {
                 return Result(
@@ -321,87 +320,10 @@ public sealed partial class ToolExecutionService
         }
     }
 
-    private ToolPolicyDecision EvaluateWithOpScope(string sessionId, ToolManifest manifest, JsonObject arguments)
+    private ToolPolicyDecision EvaluateSessionGrant(string sessionId, ToolManifest manifest)
     {
         var grant = new PolicyGrant(sessionId, _session.ScopesFor(sessionId), _session.ExpiresAt);
-        var decision = _policy.Evaluate(grant, manifest);
-        if (!decision.Allowed)
-        {
-            return decision;
-        }
-
-        if (manifest.Id is "read" or "write" or "bash" or "grep" or "glob" or "web_search" or "web_fetch")
-        {
-            return EvaluateOpGrant(grant, manifest, arguments) ?? decision;
-        }
-
-        return decision;
-    }
-
-    private ToolPolicyDecision? EvaluateOpGrant(PolicyGrant grant, ToolManifest manifest, JsonObject arguments)
-    {
-        if (manifest.Id is "web_search" or "web_fetch")
-        {
-            var scope = manifest.Id == "web_search" ? ToolScope.WebSearch : ToolScope.WebFetch;
-            return grant.Scopes.Contains(scope)
-                ? new ToolPolicyDecision(true, true, "allowed")
-                : new ToolPolicyDecision(false, false, "scope_missing");
-        }
-
-        if (manifest.Id is "grep" or "glob")
-        {
-            var scopes = new HashSet<string>(manifest.Scopes, StringComparer.Ordinal);
-            scopes.Remove(ToolScope.WebSearch);
-            scopes.Remove(ToolScope.WebFetch);
-            return scopes.All(grant.Scopes.Contains)
-                ? new ToolPolicyDecision(true, false, "allowed")
-                : new ToolPolicyDecision(false, false, "scope_missing");
-        }
-
-        var op = ReadOptionalString(arguments, "op");
-        if (manifest.Id == "read")
-        {
-            if (op is "help")
-            {
-                return new ToolPolicyDecision(true, false, "allowed");
-            }
-
-            if (op is "list" or "read")
-            {
-                var manifestScopes = new HashSet<string>(manifest.Scopes, StringComparer.Ordinal);
-                manifestScopes.Remove(ToolScope.WebSearch);
-                manifestScopes.Remove(ToolScope.WebFetch);
-                if (!manifestScopes.All(grant.Scopes.Contains))
-                {
-                    return new ToolPolicyDecision(false, false, "scope_missing");
-                }
-
-                return new ToolPolicyDecision(true, false, "allowed");
-            }
-
-            return null;
-        }
-
-        if (manifest.Id == "write")
-        {
-            if (op is "write" or "delete" or "restore")
-            {
-                return grant.Scopes.Contains(ToolScope.WorkspaceWrite)
-                    ? new ToolPolicyDecision(true, true, "allowed")
-                    : new ToolPolicyDecision(false, false, "scope_missing");
-            }
-
-            return null;
-        }
-
-        if (manifest.Id == "bash")
-        {
-            return grant.Scopes.Contains(ToolScope.TerminalExecute)
-                ? new ToolPolicyDecision(true, true, "allowed")
-                : new ToolPolicyDecision(false, false, "scope_missing");
-        }
-
-        return null;
+        return _policy.Evaluate(grant, manifest);
     }
 
     private bool IsWindowsCurrentUserAuthority(
@@ -424,12 +346,14 @@ public sealed partial class ToolExecutionService
     /// adapter work, for callers that reach execution without policy
     /// evaluation.
     /// </summary>
-    private static void ValidateTerminalTimeoutCeiling(string toolId, JsonObject arguments)
+    private static void ValidateTerminalLaunchArguments(string toolId, JsonObject arguments)
     {
-        if (!IsTerminalRunOrShellCall(toolId, arguments))
+        if (!IsTerminalLaunch(toolId))
         {
             return;
         }
+        if (!TerminalWorkflowIntent.HasValidExpectedExitCode(arguments))
+            throw new ToolSchemaException("invalid_arguments");
 
         if (arguments["background"] is JsonValue backgroundValue
             && backgroundValue.TryGetValue<bool>(out var background)
@@ -446,23 +370,9 @@ public sealed partial class ToolExecutionService
         }
     }
 
-    /// <summary>
-    /// True for a bash run/shell call. Those executions are bounded by the
-    /// terminal timeout and the runner's own kill timer, not by the envelope
-    /// deadline, which is a control-RPC budget.
-    /// </summary>
-    private static bool IsTerminalRunOrShellCall(string toolId, JsonObject arguments)
-    {
-        if (!string.Equals(toolId, "bash", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var mode = arguments["mode"] is JsonValue modeValue && modeValue.TryGetValue<string>(out var text)
-            ? text
-            : "run";
-        return mode is "run" or "shell";
-    }
+    // Launch lifetime is owned by the terminal runner, independently of the
+    // envelope's control-RPC deadline. Output reads and stops keep that deadline.
+    private static bool IsTerminalLaunch(string toolId) => toolId is "powershell" or "run_process";
 
     private async Task<ToolResult> ExecuteBindingAsync(
         AgentEnvelope receiptRequest,
@@ -480,7 +390,7 @@ public sealed partial class ToolExecutionService
         try
         {
             ToolSchemaValidator.Validate(binding.Manifest.InputSchema, arguments);
-            ValidateTerminalTimeoutCeiling(ReadString(contextRequest.Payload, "tool_id"), arguments);
+            ValidateTerminalLaunchArguments(ReadString(contextRequest.Payload, "tool_id"), arguments);
         }
         catch (ToolSchemaException error)
         {
@@ -530,7 +440,7 @@ public sealed partial class ToolExecutionService
         };
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (!IsTerminalRunOrShellCall(ReadString(contextRequest.Payload, "tool_id"), arguments))
+        if (!IsTerminalLaunch(ReadString(contextRequest.Payload, "tool_id")))
         {
             deadline.CancelAfter(Math.Clamp(context.DeadlineMs, 1, 300_000));
         }
@@ -585,7 +495,9 @@ public sealed partial class ToolExecutionService
         {
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "invalid_arguments"),
-                "Tool arguments were rejected.",
+                error.Message is "read_line_too_long" or "read_line_scan_limit" ? IoRepairHint(error.Message)
+                    : error.Message == "edit_overlap" ? "Edits overlap in the original file. Combine them into one exact replacement or use disjoint spans."
+                    : "Tool arguments were rejected.",
                 VerificationFailure(binding));
         }
         catch (IOException error)
@@ -594,6 +506,11 @@ public sealed partial class ToolExecutionService
                 StableCode(error.Message, "io_error"),
                 IoRepairHint(error.Message),
                 VerificationFailure(binding));
+        }
+        catch (InvalidDataException error) when (binding.Manifest.Id is "web_search" or "web_fetch")
+        {
+            var code = StableCode(error.Message, "invalid_data");
+            outcome = ToolExecutionOutcome.Failed(code, WebFailureHints.For(code), ToolVerificationStates.NotRequired);
         }
         catch (InvalidDataException error)
         {
@@ -618,8 +535,7 @@ public sealed partial class ToolExecutionService
         {
             var code = error.StatusCode is { } status ? $"web_http_{(int)status}" : "web_network_error";
             outcome = ToolExecutionOutcome.Failed(code,
-                "The web request failed. Use another relevant public source or explain the missing evidence; "
-                + "do not retry this URL unchanged or bypass an access restriction through terminal scraping.",
+                WebFailureHints.ForHttpStatus(error.StatusCode is { } known ? (int)known : null),
                 ToolVerificationStates.NotRequired);
         }
         catch (Exception error)
@@ -631,7 +547,7 @@ public sealed partial class ToolExecutionService
             VerificationFailure(binding));
         }
 
-        if (binding.Manifest.Id == "bash" && context.AuthorizedTerminalIntent is { } terminalIntent)
+        if (binding.Manifest.Id is "powershell" or "run_process" && context.AuthorizedTerminalIntent is { } terminalIntent)
             AddVerificationIdentity(outcome.Output, terminalIntent);
         outcome = outcome with
         {

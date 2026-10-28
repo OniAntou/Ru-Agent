@@ -227,6 +227,7 @@ public sealed partial class InProcessToolGateway
                 {
                     ["run_id"] = _runId,
                     ["image_input"] = imageInput,
+                    ["tool_call_id"] = pending.Proposal.ToolCallId.Value,
                     ["tool_id"] = pending.ToolId,
                     ["tool_version"] = pending.ToolVersion,
                     ["authorization_token"] = pending.AuthorizationToken,
@@ -237,6 +238,10 @@ public sealed partial class InProcessToolGateway
 
         if (reply.Receipt is null)
         {
+            if (pending.ToolId == "run_code")
+                return new ToolExecutionReceipt(execution.ExecutionId, execution.ToolCallId,
+                    ToolExecutionOutcome.OutcomeUnknown, "program_execution_unknown", null, sideEffectsPossible: true,
+                    modelContent: System.Text.Encoding.UTF8.GetBytes("{\"error\":\"program_execution_unknown\",\"effects_unknown\":true}"));
             return BrokerGatewayContracts.FailedReceipt(
                 execution,
                 reply.ErrorCode is { Length: > 0 } errorCode ? errorCode : "tool_failed",
@@ -244,6 +249,12 @@ public sealed partial class InProcessToolGateway
         }
 
         var result = reply.Receipt;
+        if (pending.ToolId == "run_code")
+            return new ToolExecutionReceipt(execution.ExecutionId, execution.ToolCallId,
+                result.Output["effects_unknown"]?.GetValue<bool>() == true ? ToolExecutionOutcome.OutcomeUnknown
+                    : result.Status == ToolResultStatuses.Succeeded ? ToolExecutionOutcome.Succeeded : ToolExecutionOutcome.Failed,
+                result.ErrorCode ?? "ok", null, sideEffectsPossible: true,
+                modelContent: System.Text.Encoding.UTF8.GetBytes(result.Output.ToJsonString()), contentEncoding: RuAgent.Harness.Core.Persistence.HarnessPayloadEncoding.Json);
         switch (result.Status)
         {
             case ToolResultStatuses.Succeeded:

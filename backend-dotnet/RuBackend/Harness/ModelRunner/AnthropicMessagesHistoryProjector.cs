@@ -9,7 +9,8 @@ internal static class AnthropicMessagesHistoryProjector
     public static IReadOnlyList<JsonObject> Project(
         IReadOnlyList<ModelTurn> turns,
         IReadOnlyList<ProviderContinuation> continuations,
-        string model)
+        string model,
+        bool providerWebSearch = false)
     {
         var used = new HashSet<ProviderContinuation>();
         var messages = new List<JsonObject>();
@@ -24,7 +25,7 @@ internal static class AnthropicMessagesHistoryProjector
                 continue;
             }
             if (pendingCalls.Count > 0) throw new ModelRunnerProtocolException("provider_continuation_invalid");
-            AppendAssistantOrUser(turn, continuations, used, messages, pendingCalls, model);
+            AppendAssistantOrUser(turn, continuations, used, messages, pendingCalls, model, providerWebSearch);
         }
         if (pendingCalls.Count > 0)
             throw new ModelRunnerProtocolException("provider_continuation_invalid");
@@ -37,14 +38,21 @@ internal static class AnthropicMessagesHistoryProjector
         HashSet<ProviderContinuation> used,
         List<JsonObject> messages,
         Queue<ModelFunctionCall> pendingCalls,
-        string model)
+        string model,
+        bool providerWebSearch)
     {
         if (turn.Role == "assistant" && turn.ToolCalls.Count > 0)
         {
             var continuation = ProviderContinuationMatch.FindAnthropic(continuations, used, turn.ToolCalls, model)
                 ?? throw new ModelRunnerProtocolException("provider_continuation_missing");
             used.Add(continuation);
-            messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = new JsonArray(continuation.OutputItems.Select(item => item.DeepClone()).ToArray()) });
+            // Search content replays unchanged to a request that declares the hosted search,
+            // minus a deferred call whose result never arrived; any other request gets none
+            // of it (ADR 0033).
+            var blocks = providerWebSearch
+                ? ProviderSearchContent.DropUnansweredSearchCalls(continuation.OutputItems)
+                : ProviderSearchContent.StripAnthropic(continuation.OutputItems);
+            messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = new JsonArray(blocks.Select(item => item.DeepClone()).ToArray()) });
             foreach (var call in turn.ToolCalls) pendingCalls.Enqueue(call);
             return;
         }

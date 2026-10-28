@@ -72,6 +72,7 @@ public sealed class WebContentSanitizer
     {
         // Explicit stack handles deeply nested input without recursive overflow.
         var pending = new Stack<(INode Node, bool Closing)>();
+        var linked = new HashSet<string>(StringComparer.Ordinal);
         pending.Push((root, false));
         while (pending.Count > 0 && writer.Length <= limit)
         {
@@ -91,7 +92,12 @@ public sealed class WebContentSanitizer
                 && link.Scheme is "http" or "https")
             {
                 var label = string.Join(' ', element.TextContent.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-                var reference = $"[{label}]({link})";
+                // URLs took about half of an article's extracted text. An anchor into
+                // this page, a URL already given and a footnote marker keep their text
+                // only; every other destination is still written out once.
+                var reference = IsSamePage(link, sourceUrl) || IsFootnoteMarker(label) || !linked.Add(link.AbsoluteUri)
+                    ? label
+                    : $"[{label}]({link})";
                 writer.Append(reference.AsSpan(0, Math.Min(reference.Length, Math.Max(0, limit + 1 - writer.Length))));
                 continue;
             }
@@ -110,6 +116,17 @@ public sealed class WebContentSanitizer
             for (var index = node.ChildNodes.Length - 1; index >= 0; index--)
                 pending.Push((node.ChildNodes[index], false));
         }
+    }
+
+    private static bool IsSamePage(Uri link, Uri page) =>
+        !string.IsNullOrEmpty(link.Fragment)
+        && string.Equals(link.GetLeftPart(UriPartial.Query), page.GetLeftPart(UriPartial.Query), StringComparison.Ordinal);
+
+    // "[12]", "12", "^", "↑": citation and back-reference markers.
+    private static bool IsFootnoteMarker(string label)
+    {
+        var core = label.Trim('[', ']', '(', ')', ' ');
+        return core.Length == 0 || core is "^" or "↑" || (core.Length <= 4 && core.All(char.IsAsciiDigit));
     }
 
     private static void Break(StringBuilder writer)

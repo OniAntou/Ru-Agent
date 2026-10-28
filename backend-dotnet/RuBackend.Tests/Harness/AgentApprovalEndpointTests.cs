@@ -24,7 +24,7 @@ namespace RuBackend.Tests.Harness;
 /// finished when its approval event is already committed and readable.
 /// </summary>
 [Collection(nameof(TerminalProcessHeavyCollection))]
-public sealed class AgentApprovalEndpointTests
+public sealed partial class AgentApprovalEndpointTests
 {
     /// <summary>
     /// How long a run is given to reach an expected state.
@@ -247,7 +247,7 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var runner = new ScriptedRunner(
-                ToolCall("files.read", JsonSerializer.Serialize(new { path = externalFile })),
+                ToolCall("read", JsonSerializer.Serialize(new { path = externalFile })),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -297,8 +297,8 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var runner = new ScriptedRunner(
-                ToolCall("files.read", JsonSerializer.Serialize(new { path = externalFile })),
-                ToolCall("files.list", JsonSerializer.Serialize(new { path = externalPath })),
+                ToolCall("read", JsonSerializer.Serialize(new { path = externalFile })),
+                ToolCall("list", JsonSerializer.Serialize(new { path = externalPath })),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -351,9 +351,9 @@ public sealed class AgentApprovalEndpointTests
             // never produce an approval event on the new run's stream.
             string externalArguments = JsonSerializer.Serialize(new { path = externalFile });
             var runner = new ScriptedRunner(
-                ToolCall("files.read", externalArguments),
+                ToolCall("read", externalArguments),
                 FinalStep("done"),
-                ToolCall("files.read", externalArguments),
+                ToolCall("read", externalArguments),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -406,9 +406,9 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var runner = new ScriptedRunner(
-                ToolCall("files.read", JsonSerializer.Serialize(new { path = externalFile })),
+                ToolCall("read", JsonSerializer.Serialize(new { path = externalFile })),
                 FinalStep("done"),
-                ToolCall("files.read", JsonSerializer.Serialize(new { path = externalFile })),
+                ToolCall("read", JsonSerializer.Serialize(new { path = externalFile })),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -455,7 +455,7 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var runner = new ScriptedRunner(
-                ToolCall("terminal.run", FailureCommand()),
+                ToolCall("run_process", FailureCommand()),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -490,10 +490,9 @@ public sealed class AgentApprovalEndpointTests
         {
             var runner = new ScriptedRunner(
                 ToolCall(
-                    "terminal.run",
+                    "run_process",
                     JsonSerializer.Serialize(new
                     {
-                        mode = "run",
                         executable = "ru-missing-test-executable-7f3a.exe",
                         arguments = new[] { "--version" },
                         working_directory = Path.GetTempPath(),
@@ -708,7 +707,7 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var runner = new ScriptedRunner(
-                ToolCall("terminal.run", FailureCommand()),
+                ToolCall("run_process", FailureCommand()),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -816,12 +815,13 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var command = shell
-                ? JsonSerializer.Serialize(new { mode = "shell", script = "Write-Output 'session-memory'", working_directory = Path.GetTempPath() })
+                ? JsonSerializer.Serialize(new { script = "Write-Output 'session-memory'", working_directory = Path.GetTempPath() })
                 : Command("session-memory");
+            var tool = shell ? "powershell" : "run_process";
             var runner = new ScriptedRunner(
-                ToolCall("bash", command),
+                ToolCall(tool, command),
                 FinalStep("done"),
-                ToolCall("bash", command),
+                ToolCall(tool, command),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -873,9 +873,9 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var runner = new ScriptedRunner(
-                ToolCall("terminal.run", Command("first")),
+                ToolCall("run_process", Command("first")),
                 FinalStep("done"),
-                ToolCall("terminal.run", Command("second")),
+                ToolCall("run_process", Command("second")),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -919,9 +919,9 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var runner = new ScriptedRunner(
-                ToolCall("terminal.run", Command("fresh")),
+                ToolCall("run_process", Command("fresh")),
                 FinalStep("done"),
-                ToolCall("terminal.run", Command("fresh")),
+                ToolCall("run_process", Command("fresh")),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -971,7 +971,7 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var runner = new ScriptedRunner(
-                ToolCall("files.read", JsonSerializer.Serialize(new { path = externalFile })),
+                ToolCall("read", JsonSerializer.Serialize(new { path = externalFile })),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -1019,9 +1019,9 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var runner = new ScriptedRunner(
-                ToolCall("files.read", JsonSerializer.Serialize(new { path = firstFile })),
+                ToolCall("read", JsonSerializer.Serialize(new { path = firstFile })),
                 FinalStep("done"),
-                ToolCall("files.read", JsonSerializer.Serialize(new { path = secondFile })),
+                ToolCall("read", JsonSerializer.Serialize(new { path = secondFile })),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -1092,7 +1092,7 @@ public sealed class AgentApprovalEndpointTests
         RuBackend.Business.DataPaths dataPaths,
         Action<IServiceCollection>? configureServices = null)
     {
-        var runner = new ScriptedRunner(ToolCall("terminal.run", FailureCommand()));
+        var runner = new ScriptedRunner(ToolCall("run_process", FailureCommand()));
         var factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, configureServices: configureServices);
         var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
@@ -1287,7 +1287,7 @@ public sealed class AgentApprovalEndpointTests
                     JsonDocument.Parse("{\"path\":\"README.md\"}").RootElement.Clone()),
                 new ModelToolCall(
                     "provider-batch-2",
-                    "bash",
+                    "run_process",
                     "1.0.0",
                     JsonDocument.Parse(ExpectedFailureCommand())
                         .RootElement.Clone()),
@@ -1308,61 +1308,37 @@ public sealed class AgentApprovalEndpointTests
             null,
             new[]
             {
-                new ModelToolCall("provider-batch-1", "bash", "1.0.0", first),
-                new ModelToolCall("provider-batch-2", "bash", "1.0.0", second),
+                new ModelToolCall("provider-batch-1", "run_process", "1.0.0", first),
+                new ModelToolCall("provider-batch-2", "run_process", "1.0.0", second),
             },
             AssistantFinishReason.ToolCalls,
             0);
     }
 
     private static string Command(string marker) =>
-        JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/c", "echo", marker }, working_directory = Path.GetTempPath() });
+        JsonSerializer.Serialize(new { executable = "cmd.exe", arguments = new[] { "/c", "echo", marker }, working_directory = Path.GetTempPath() });
 
     private static string ExpectedFailureCommand() =>
-        JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/d", "/c", "exit", "7" },
+        JsonSerializer.Serialize(new { executable = "cmd.exe", arguments = new[] { "/d", "/c", "exit", "7" },
             working_directory = Path.GetTempPath(), purpose = "expected_failure", expected_exit_code = 7 });
 
     private static string FailureCommand() =>
-        JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/d", "/c", "exit", "7" }, working_directory = Path.GetTempPath() });
+        JsonSerializer.Serialize(new { executable = "cmd.exe", arguments = new[] { "/d", "/c", "exit", "7" }, working_directory = Path.GetTempPath() });
 
     private static AssistantStep ToolCall(string toolId, string argumentsJson)
     {
-        var (mappedId, mappedJson) = MapToPi(toolId, argumentsJson);
         return new(
             null,
             new[]
             {
                 new ModelToolCall(
                     "provider_call_1",
-                    mappedId,
+                    toolId,
                     "1.0.0",
-                    JsonDocument.Parse(mappedJson).RootElement.Clone()),
+                    JsonDocument.Parse(argumentsJson).RootElement.Clone()),
             },
             AssistantFinishReason.ToolCalls,
             0);
-    }
-
-    private static (string Id, string Json) MapToPi(string toolId, string argumentsJson)
-    {
-        var node = JsonNode.Parse(argumentsJson) as JsonObject ?? new JsonObject();
-        var id = toolId;
-        switch (toolId)
-        {
-            case "files.list": id = "list"; node.Remove("op"); break;
-            case "files.glob": id = "glob"; node.Remove("op"); break;
-            case "files.search": id = "grep"; node.Remove("op"); break;
-            case "files.read": id = "read"; node.Remove("op"); break;
-            case "files.write": id = "write"; node["op"] = "write"; break;
-            case "files.edit": id = "edit"; break;
-            case "files.delete": id = "write"; node["op"] = "delete"; break;
-            case "files.restore": id = "write"; node["op"] = "restore"; break;
-            case "terminal.run": id = "bash"; node["mode"] = "run"; node["working_directory"] ??= Path.GetTempPath(); break;
-            case "terminal.shell": id = "bash"; node["mode"] = "shell"; break;
-            case "web.search": id = "web_search"; node.Remove("op"); break;
-            case "web.fetch": id = "web_fetch"; node.Remove("op"); break;
-            case "help.docs": id = "help"; node.Remove("op"); break;
-        }
-        return (id, node.ToJsonString());
     }
 
     private static AssistantStep FinalStep(string text) =>

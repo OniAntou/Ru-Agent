@@ -10,6 +10,28 @@ namespace RuBackend.Tests.Business;
 public sealed class SessionForkTests
 {
     [Theory]
+    [InlineData(24)]
+    [InlineData(220)]
+    public async Task Paged_source_forks_the_absolute_prefix_including_older_messages(int keep)
+    {
+        using var data = TemporaryBusinessData.Create(); var store = new SessionStore(data.Paths);
+        var id = (await store.CreateAsync(default))!;
+        var messages = Enumerable.Range(0, 220).Select(i => new SessionMessage(i % 2 == 0 ? "user" : "ai", "row " + i)).ToArray();
+        Assert.True(await store.AppendAsync(id, messages, default));
+        var source = (await store.GetAsync(id, default))!;
+        Assert.Equal(20, source.MessageOffset); Assert.Equal(220, source.TotalMessageCount);
+        Assert.Equal("invalid_fork_boundary", (await store.ForkAsync(id, 0, SessionStore.HistoryRevision(source), default)).ErrorCode);
+        var result = await store.ForkAsync(id, keep, SessionStore.HistoryRevision(source), default);
+        Assert.Null(result.ErrorCode);
+        var child = Assert.IsType<SessionDocument>(result.Document);
+        Assert.Equal(keep, child.TotalMessageCount);
+        Assert.Equal(messages.Take(keep).TakeLast(200), child.Messages);
+        var reopened = new SessionStore(data.Paths);
+        Assert.Equal(child.Messages, (await reopened.GetAsync(child.Id, default))!.Messages);
+        Assert.Equal(220, (await reopened.GetAsync(id, default))!.TotalMessageCount);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(2)]
     [InlineData(4)]

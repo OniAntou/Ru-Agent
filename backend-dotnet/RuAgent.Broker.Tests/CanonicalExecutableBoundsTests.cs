@@ -36,7 +36,7 @@ public sealed class CanonicalExecutableBoundsTests
     private static V2ApprovalBinding CreateBinding(string executable) => new(
         RunId: "run_11111111111111111111111111111111",
         ToolCallId: "call_11111111111111111111111111111111",
-        ToolId: "bash",
+        ToolId: "run_process",
         ToolVersion: "1.0.0",
         CanonicalPath: null,
         ResolvedExecutable: executable,
@@ -48,7 +48,7 @@ public sealed class CanonicalExecutableBoundsTests
         IntentHash: new string('a', 64));
 
     private static BrokerPolicyMatcherWire CreateMatcher(string executable) => new(
-        ToolId: "bash",
+        ToolId: "run_process",
         ToolVersion: "1.0.0",
         CanonicalPathPattern: null,
         ResolvedExecutable: executable,

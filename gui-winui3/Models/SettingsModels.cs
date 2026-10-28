@@ -20,6 +20,11 @@ namespace RuApp.Models
         [JsonPropertyName("model")]
         public string Model { get; set; } = string.Empty;
 
+        /// <summary>The computer-use opt-in (ADR 0031); absent in older Hosts, so it defaults off.</summary>
+        [JsonPropertyName("computer_use_enabled")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool ComputerUseEnabled { get; set; }
+
         [JsonPropertyName("custom_model")]
         public string CustomModel { get; set; } = string.Empty;
 

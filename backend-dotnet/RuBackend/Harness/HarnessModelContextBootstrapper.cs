@@ -79,11 +79,17 @@ public sealed class HarnessModelContextBootstrapper : IHarnessModelContextBootst
         var visibleSourceRunIds = session.Messages
             .Where(message => message.Role == "user" && message.SourceRunId is not null)
             .Select(message => message.SourceRunId!).Distinct(StringComparer.Ordinal).ToArray();
-        var handoff = await _payloads.ReadSessionRunHandoffAsync(runId, sessionId, visibleSourceRunIds, cancellationToken)
+        var handoff = await _payloads.ReadSessionRunHandoffContextAsync(runId, sessionId, visibleSourceRunIds, cancellationToken)
             .ConfigureAwait(false);
         if (handoff is not null)
+        {
             entries.Add(new HarnessBaseContextEntry(_ids.NewPayloadId(), SessionRunHandoff.ContextSourceId,
-                sequence++, ModelContextRole.User, handoff));
+                sequence++, ModelContextRole.User, handoff.RenderedHandoff));
+            var scopeHints = SessionScopeHints.Encode(handoff.ObservedPaths);
+            if (scopeHints.Length > 0)
+                entries.Add(new HarnessBaseContextEntry(_ids.NewPayloadId(), SessionScopeHints.SourceId,
+                    sequence++, ModelContextRole.User, scopeHints));
+        }
 
         var outcome = await _payloads.CaptureBaseContextAsync(
                 runId,

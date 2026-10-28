@@ -65,13 +65,13 @@ public sealed partial class SubagentGatewayTests
         }
         Assert.True(await binder.BindAsync(child.Run.RunId, execution.WorkspaceRoot, policy, default));
         SessionApprovalLedger.ClearSession(root.Run.SessionId.Value);
-        using var arguments = JsonDocument.Parse("{\"op\":\"write\",\"path\":\"x.txt\",\"content\":\"x\"}");
+        using var arguments = JsonDocument.Parse("{\"path\":\"x.txt\",\"content\":\"x\"}");
         var decision = await gateway.EvaluateAsync(new(child.Run.RunId, new("step_" + new string('c', 32)),
-            new("call_" + new string('d', 32)), "provider_call", 1, "write", "1.0.0", arguments.RootElement), default);
+            new("call_" + new string('d', 32)), "provider_call", 1, "write_file", "1.0.0", arguments.RootElement), default);
         Assert.Equal(PolicyDecision.Deny, decision.Decision);
         Assert.Equal("subagent_role_denied", decision.SafeCode);
         await new SqliteAgentRunProviderSelectionStore(storage.Options).PinAsync(child.Run.RunId,
-            new("Custom OpenAI", "custom_openai", "chat_completions", "https://example.invalid/v1/", "fixture-model", null, "{}", null), default);
+            new("Custom OpenAI", "custom_openai", "chat_completions", "https://example.invalid/v1/", "fixture-model", null, "{\"ru_tool_profile\":\"coding_v2\"}", null), default);
         await storage.PayloadStore.CaptureBaseContextAsync(child.Run.RunId, [], DateTimeOffset.UtcNow, default);
         Assert.True(await agents.TryAdmitAsync(agentId: "agent_review", now: BackendHarnessTestFixture.Timestamp.AddSeconds(1), ct: default));
         var model = new CapabilityCapture(ScriptedModelStepRunner.FromJsonForTests("""[{"text":"review result"}]"""));
@@ -93,9 +93,14 @@ public sealed partial class SubagentGatewayTests
         Assert.True(completed.Run.State == HarnessRunState.Completed, $"state={completed.Run.State} error={completed.ErrorCode}");
         Assert.Contains("read", model.Tools);
         Assert.DoesNotContain("ask_user", model.Tools);
-        Assert.DoesNotContain("write", model.Tools);
-        Assert.DoesNotContain("edit", model.Tools);
-        Assert.DoesNotContain("bash", model.Tools);
+        Assert.DoesNotContain("write_file", model.Tools);
+        Assert.DoesNotContain("edit_file", model.Tools);
+        Assert.DoesNotContain("file_delete", model.Tools);
+        Assert.DoesNotContain("file_restore", model.Tools);
+        Assert.DoesNotContain("powershell", model.Tools);
+        Assert.DoesNotContain("run_process", model.Tools);
+        Assert.DoesNotContain("terminal_read", model.Tools);
+        Assert.DoesNotContain("terminal_stop", model.Tools);
         Assert.DoesNotContain(model.Tools, id => id.StartsWith("agent_", StringComparison.Ordinal));
         Assert.Null(await new HarnessOutboxStore(storage.Options).ClaimNextAsync(DateTimeOffset.UtcNow, default));
     }
@@ -118,9 +123,9 @@ public sealed partial class SubagentGatewayTests
         await fixture.Factory.CreateAsync(fixture.WorkspaceRoot, policy, rootId, new string('a', 32), default);
         var child = await fixture.Factory.CreateAsync(fixture.WorkspaceRoot, policy, childId, new string('b', 32), default);
         await fixture.Factory.BindDelegationAsync(rootId, childId, SubagentRole.Review, default);
-        using var arguments = JsonDocument.Parse("{\"op\":\"write\",\"path\":\"x.txt\",\"content\":\"x\"}");
+        using var arguments = JsonDocument.Parse("{\"path\":\"x.txt\",\"content\":\"x\"}");
         var decision = await child.EvaluateAsync(new ToolProposal(childId, new("step_" + new string('c', 32)),
-            new("call_" + new string('d', 32)), "provider_call", 1, "write", "1.0.0", arguments.RootElement), default);
+            new("call_" + new string('d', 32)), "provider_call", 1, "write_file", "1.0.0", arguments.RootElement), default);
         Assert.Equal(PolicyDecision.Deny, decision.Decision);
         Assert.Equal("subagent_role_denied", decision.SafeCode);
     }

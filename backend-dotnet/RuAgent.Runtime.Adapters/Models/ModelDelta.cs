@@ -12,7 +12,8 @@ public sealed record ModelDelta
         string? finishReason,
         ModelUsage? usage = null,
         string? reasoning = null,
-        ProviderContinuation? providerContinuation = null)
+        ProviderContinuation? providerContinuation = null,
+        ResponsesAssistantMessages? responsesMessages = null)
     {
         if (text is not null && (text.Length > 64 * 1024 || text.Contains('\0')))
         {
@@ -42,6 +43,7 @@ public sealed record ModelDelta
         Usage = usage;
         Reasoning = reasoning;
         ProviderContinuation = providerContinuation;
+        ResponsesMessages = responsesMessages;
     }
 
     public string? Text { get; }
@@ -59,4 +61,5 @@ public sealed record ModelDelta
     public string? Reasoning { get; }
 
     public ProviderContinuation? ProviderContinuation { get; }
+    public ResponsesAssistantMessages? ResponsesMessages { get; }
 }

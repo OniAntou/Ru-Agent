@@ -8,7 +8,7 @@ using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools.Files;
 
-public sealed class FileReadAdapter
+public sealed partial class FileReadAdapter
 {
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private readonly string _workspaceRoot;
@@ -21,7 +21,11 @@ public sealed class FileReadAdapter
         _resolver = new CanonicalPathResolver(_workspaceRoot, allowProtectedPaths);
     }
 
-    public JsonObject Execute(JsonObject arguments) =>
+    /// <summary>
+    /// Blocking test convenience. Production dispatch awaits <see cref="ExecuteAsync"/>
+    /// with the run's cancellation token; this wrapper can do neither.
+    /// </summary>
+    internal JsonObject Execute(JsonObject arguments) =>
         ExecuteAsync(arguments, CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
     /// <summary>Text-only read: an image file fails with <c>image_unsupported_by_model</c>.</summary>

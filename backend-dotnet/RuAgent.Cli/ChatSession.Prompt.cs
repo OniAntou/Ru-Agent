@@ -504,6 +504,14 @@ public sealed partial class AgentCommands
                 return true;
             }
 
+            // Explicit skill invocation is a normal user turn. The Host resolves the
+            // exact skill and durably captures it before model dispatch.
+            if (slashCmd == "/skill")
+            {
+                await HandlePromptLineAsync(slashLine, cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+
             if (slashCmd == "/preset")
             {
                 await ChangePresetAsync(arg).ConfigureAwait(false);

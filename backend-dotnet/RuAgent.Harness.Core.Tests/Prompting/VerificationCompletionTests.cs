@@ -8,6 +8,17 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 public sealed class VerificationCompletionTests
 {
     [Fact]
+    public void Coding_terminal_check_is_invalidated_by_multi_edit_and_completed_by_rerun()
+    {
+        const string args = """{"script":"dotnet test","purpose":"verification"}""";
+        var initial = Batch(1, "check", "powershell", args, ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}""")
+            .Concat(Batch(3, "change", "edit_file", "{}", ToolExecutionOutcome.Succeeded, "ok", "{}"));
+        Assert.Equal("verification_stale", Snapshot(initial).VerificationEvidence.Checks.Single().Code);
+        var repaired = initial.Concat(Batch(5, "recheck", "powershell", args, ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""));
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(repaired), out _));
+    }
+
+    [Fact]
     public void Expected_nonzero_exit_can_complete_without_rewriting_failed_receipt()
     {
         var entries = Batch(1, "negative", "bash",
@@ -182,6 +193,49 @@ public sealed class VerificationCompletionTests
                 ToolExecutionOutcome.Succeeded, "ok", JsonSerializer.Serialize(new { exit_code = 0, verification_identity = digest })));
         Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out _));
         Assert.Single(Snapshot(entries).VerificationEvidence.Checks);
+    }
+
+    [Fact]
+    public void A_check_rejected_before_launch_stays_outstanding_until_a_corrected_check_passes()
+    {
+        var rejected = Batch(1, "malformed", "run_process", """{"executable":"python","purpose":"verification"}""",
+            ToolExecutionOutcome.Failed, "malformed_call", "{}");
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(rejected), out var code));
+        Assert.Equal("malformed_call", code);
+        Assert.Contains("rejected before launch", Snapshot(rejected).VerificationEvidence.DescribePending());
+        Assert.Contains("keep that purpose", AgentRecoveryNotes.BuildUnverifiedNote(code));
+
+        var corrected = rejected
+            .Concat(Batch(3, "write", "write_file", "{}", ToolExecutionOutcome.Succeeded, "ok", "{}"))
+            .Concat(Batch(5, "run", "powershell", """{"script":"python gen_docs.py","purpose":"verification"}""",
+                ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""))
+            .Concat(Batch(7, "list", "list", "{}", ToolExecutionOutcome.Succeeded, "ok", "{}"));
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(corrected), out _));
+        Assert.Null(Snapshot(corrected).VerificationEvidence.BlockingCode);
+    }
+
+    [Fact]
+    public void A_passing_negative_check_does_not_resolve_a_rejected_verification()
+    {
+        var entries = Batch(1, "malformed", "run_process", """{"executable":"python","purpose":"verification"}""",
+                ToolExecutionOutcome.Failed, "malformed_call", "{}")
+            .Concat(Batch(3, "negative", "bash",
+                """{"mode":"shell","script":"exit 1","purpose":"expected_failure","expected_exit_code":1}""",
+                ToolExecutionOutcome.Failed, "process_exit_nonzero", """{"exit_code":1}"""));
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out var code));
+        Assert.Equal("malformed_call", code);
+    }
+
+    [Fact]
+    public void A_rejected_rerun_does_not_replace_a_check_that_actually_failed()
+    {
+        var entries = Batch(1, "test", "bash", Verification,
+                ToolExecutionOutcome.Failed, "process_exit_nonzero", """{"exit_code":1}""")
+            .Concat(Batch(3, "rerun", "bash", Verification, ToolExecutionOutcome.Failed, "malformed_call", "{}"))
+            .Concat(Batch(5, "lint", "bash", Verification.Replace("dotnet test", "dotnet format"),
+                ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""));
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out var code));
+        Assert.Equal("process_exit_nonzero", code);
     }
 
     private const string Verification = """{"mode":"shell","script":"dotnet test","purpose":"verification"}""";

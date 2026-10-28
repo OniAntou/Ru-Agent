@@ -6,6 +6,16 @@ namespace RuBackend.Tests.Harness;
 
 public sealed class BackgroundTaskNoteTrackerTests
 {
+    [Fact]
+    public async Task Advice_uses_the_current_terminal_lifecycle_tools()
+    {
+        var tracker = new BackgroundTaskNoteTracker(_ => Task.FromResult(Payload(("t1", "running", null))));
+        var note = await tracker.ProbeAsync(default);
+        Assert.Contains("terminal_read", note);
+        Assert.Contains("terminal_stop", note);
+        Assert.DoesNotContain("bash", note);
+    }
+
     private static JsonObject Payload(params (string Id, string State, int? Exit)[] tasks)
     {
         var array = new JsonArray();

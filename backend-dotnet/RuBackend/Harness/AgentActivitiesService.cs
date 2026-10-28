@@ -515,8 +515,7 @@ public sealed class AgentActivitiesService
     private static AgentActivity WithEditPreview(AgentActivity activity, ToolProposal proposal)
     {
         if (activity.Detail is not null
-            || (!string.Equals(proposal.ToolId, "edit", StringComparison.Ordinal)
-                && !string.Equals(proposal.ToolId, "write", StringComparison.Ordinal)))
+            || proposal.ToolId is not ("edit" or "write" or "edit_file" or "write_file" or "apply_patch"))
         {
             return activity;
         }

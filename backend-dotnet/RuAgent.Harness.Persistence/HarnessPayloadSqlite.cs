@@ -269,6 +269,7 @@ public sealed partial class HarnessPayloadStore
                 entryKind = ModelContextEntryKind.Text;
                 break;
             case HarnessPayloadKind.RuntimeContextSnapshot:
+            case HarnessPayloadKind.SkillInvocation:
                 role = ModelContextRole.User;
                 entryKind = ModelContextEntryKind.Text;
                 break;
@@ -291,13 +292,19 @@ public sealed partial class HarnessPayloadStore
         }
 
         var match = matches[0];
+        // Only a Host-created invocation note gets the reserved provenance marker.
+        // Ordinary model/tool/user text cannot manufacture an active workflow snapshot.
+        var skillInvocation = intent.Kind == HarnessPayloadKind.SkillInvocation
+            && match.Event.SafeCode == "skill_invoked";
         return new ContextBinding(
             Scope: 1,
-            intent.Kind == HarnessPayloadKind.RuntimeContextSnapshot
+            skillInvocation
+                ? "run:invoked-skills:" + match.Event.EventId.Value
+                : intent.Kind == HarnessPayloadKind.RuntimeContextSnapshot
                 ? RuAgent.Harness.Core.Prompting.RuntimeContextSnapshot.SourcePrefix + match.Event.EventId.Value
                 : $"event:{match.Event.EventId.Value}",
             checked(firstEventSequence + match.Index),
-            role,
+            skillInvocation ? ModelContextRole.User : role,
             entryKind);
     }
 

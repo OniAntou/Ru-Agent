@@ -21,10 +21,13 @@ rewound/pruned runs and legacy unattributed messages cannot introduce a handoff.
 A SQLite read snapshot binds the source runs, model-visible payloads and receipts;
 the rendered handoff is encrypted with the new run's once-only base context.
 It is a separate, charged history turn and cannot silently fall out of native
-history fitting. At most 48 recent entries per source plus its original request
-are read, with a 128 KiB per-payload and 2 MiB aggregate read cap; the final
+history fitting. At most 48 recent entries per source plus its original request and bounded
+applicable summaries are read, with a 128 KiB per-payload and 2 MiB aggregate read cap; the final
 portable text is capped at 16,000 characters. Excerpts and omissions are explicit.
-Only root run-local evidence is eligible: completed conversation turns remain
+Up to four recent compaction records per source supply applicable summaries,
+prioritizing newer summaries and reporting omitted older coverage. Separate
+Host-authored directory hints preserve instruction discovery; quoted text cannot
+supply them. Only root run-local evidence is eligible: completed conversation turns remain
 in the existing 32-turn base, and old base snapshots are never copied recursively.
 Assistant statements/proposals remain untrusted quoted text. Receipt outcomes
 retain provenance; missing receipts or interrupted effects must be checked before
@@ -48,12 +51,13 @@ transaction; any late statement failure rolls back the entire upgrade. This
 explicit drain is needed because the pinned [Microsoft.Data.Sqlite 10.0.11
 implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Data.Sqlite.Core/SqliteCommand.cs)
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
-batch statements. Migration tests build the original released v18 DDL and frozen
-development DDL independently of current schema creation; they never relabel a
-current database as an older one. The selected upgrade suffix commits atomically
-at v29, which consolidates the unreleased changes. Versions below v18 fail with
+batch statements. Release migration tests build the original released v18 DDL and frozen
+development DDL independently of current schema creation. The selected upgrade suffix commits atomically
+at v31. Version 29 consolidated earlier development changes; v30
+normalizes retained conversation history and source receipts. Version 31 adds
+context mutation fences and indexed compaction/intent lookup. Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
-v19-v28 databases remain eligible sources; adding a migration extends one ordered
+v19-v30 databases remain eligible sources; adding a migration extends one ordered
 catalog instead of every historical branch. Fresh installs use the same released
 baseline and upgrade batch. Tests cover every retained source, identical schema,
 rollback/retry, restored FKs and two simultaneous initializer processes.
@@ -67,7 +71,11 @@ Encrypted `SessionWorkState` rows are keyed by session and workspace.
 AES-GCM associated data binds the source run/event and version to the current
 workspace display-identity hash; a changed workspace identity fails closed.
 Run creation writes the bounded user-goal snapshot in the same transaction as
-its source prompt event. A successful durable `todo_write` receipt updates only
+its source prompt event. A narrow English/Vietnamese imperative/correction screen
+retains bounded constraints with provenance; this is not general semantic
+extraction. Model-facing user intent follows visible message sources after
+rewind. Receipt-observed effects remain evidence because chat rewind does not
+undo files. A successful durable `todo_write` receipt updates only
 untrusted model task candidates in the same receipt transaction. Every fact
 retains its own source run/event provenance, and session deletion removes the
 state in the artifact deletion transaction. The state is projected as untrusted
@@ -79,10 +87,12 @@ provider continuation data.
 Long-session checkpoint generation, tool excerpts, usage-anchored estimates and
 nested instruction discovery are described in [context management](context-management.md).
 
-Context sources may reuse bounded parsed encrypted rows in source-local memory.
-The current key and complete row fingerprint are checked before reuse; the
-database remains authoritative for membership, receipts, compactions and current
-work state. No plaintext cache is persisted. Phase timing distinguishes context,
+Context sources reuse a bounded active projection with append watermarks and
+incremental receipt evidence. Current key identity and mutation revisions fence
+reuse; updates/deletes invalidate it. Cold rebuilds still validate encrypted rows,
+audiences and receipt identities. Parsed-row fingerprints are checked on decode;
+the database owns originals, compactions and current Work State. No plaintext
+cache is persisted. Phase timing distinguishes context,
 preparation, provider output and tool work without recording content or ids.
 See [performance diagnostics](../operations/agent-performance.md) for bounds,
 measurement definitions and the synthetic CI workload.
@@ -91,7 +101,19 @@ For every accepted model step, the Host rebuilds a bounded context and the
 in-process step service composes exactly one `system` message. The seven ordered
 blocks are the neutral Ru Agent runtime contract, Agent execution contract,
 environment, profile plus canonical effective policy, root-selected Ru/skill
-instruction blocks, host-derived capabilities, and runtime context.
+instruction blocks, host-derived capabilities, and runtime context. The neutral
+coding contract covers reuse, preserving unrelated edits, root-cause repair,
+honest error reporting and focused behavioral verification. Native requests use
+Protocol tool descriptions/schemas without repeating the field-specific text
+selection hints; batching, ordering and approval barriers remain in the system
+contract. Text selection retains those supplemental hints.
+
+A small prompt recipe may specialize the execution block only for native
+`openai_responses` with the pinned exact model `gpt-5.3-codex` at HTTPS
+`api.openai.com:443`. It requests concise, evidence-backed closeout text. Custom
+endpoints, unknown model aliases and other protocols keep the neutral recipe;
+selection never changes provider, model, protocol, tools or policy.
+
 For system prompt composition the Host persists receipt digest metadata in an `InternalOnly`
 `PromptReceipt` payload referenced by `model.prompt_composed`; the raw prompt,
 instruction text, tool results, arguments, paths, and provider data do
@@ -105,10 +127,17 @@ note above).
 The bounded instruction loader first reads the optional user-wide `~/.ru/AGENTS.md` (origin `User`,
 followed by the workspace guidance), then the fixed `AGENTS.md`, `CONTEXT.md`,
 `.ru/AGENTS.md`, and `.ru/CONTEXT.md` candidates below the selected run root,
-then discovers direct-child skill directories from `RuAgent.Protocol.SkillRoots` in precedence order:
+with `AGENTS.md` content inlined as workflow guidance. The two `CONTEXT.md`
+files become short workspace-relative documentation references containing the
+normalized source SHA-256; their bodies are read through advertised file tools
+when relevant. The receipt binds the normalized reference text, including that
+source hash. Source-file containment, decoding and size checks still apply.
+The loader then discovers direct-child skill directories from
+`RuAgent.Protocol.SkillRoots` in precedence order:
 `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, `<workspace-root>/.agents/skills`,
-`RU_SKILLS_ROOT` when set, `~/.ru/skills`, and
-`%LOCALAPPDATA%\Ru\skills`. The prompt listing, the `skill` tool and `/skills` share that one list. A package is recognized only when it contains a
+`RU_SKILLS_ROOT` when set, `~/.ru/skills`, `~/.agents/skills`, and
+`%LOCALAPPDATA%\Ru\skills`, followed by roots registered for this workspace.
+The prompt listing, the `skill` tool and `/skills` share that catalog. A package is recognized only when it contains a
 case-insensitive `SKILL.md`; for example:
 
 ```markdown
@@ -125,9 +154,8 @@ Describe the review workflow here.
 
 The loader applies final-path containment, strict UTF-8 decoding, NFC and
 newline normalization, a 64 KiB per-file cap, and a 256 KiB combined
-instruction cap. It re-reads the roots whenever a prompt context is built, so
-copying or editing a package is picked up on the next Agent run (and after a
-restart) without a downloader or package manager. Only `SKILL.md` is loaded;
+instruction cap. The shared metadata catalog caches validated discovery and checks for changes;
+Refresh forces a rescan. On-demand loads read and validate a bounded body snapshot. Only `SKILL.md` is loaded;
 nearby `references/`, `assets/`, and `scripts/` files are ignored by discovery
 and are never automatically read or executed. The typed context has bounded
 references (128 KiB each), and an 8 MiB serialized-context
@@ -174,8 +202,10 @@ settings field controls their exposure. Returned web text is bounded,
 sanitized, and wrapped with the `[untrusted_web_reference]` marker. Search uses
 engine-specific DOM result selectors; known-engine challenge/navigation links
 are rejected and Bing redirect links are decoded. Fetch uses an in-process
-AngleSharp parser with no resource loader or JavaScript execution, preserves
-code and plain text, and pages extracted text through optional `offset`/`limit`.
+AngleSharp parser with no resource loader or JavaScript execution, reads PDF
+text through PdfPig (parse only, at most 500 pages), preserves code and plain
+text, and pages extracted text through optional `offset`/`limit`. Requests name
+Ru in the User-Agent rather than posing as a browser.
 The default download bound is 4 MiB; output defaults to 32000 UTF-16 characters
 with `next_offset`/`truncated` metadata. Pages refetch the source rather than
 retaining a snapshot. Structured Host projection retains the untrusted web
@@ -404,9 +434,11 @@ membership defaults to 32 slots; the existing concurrency API accepts shared
 mode with 2–32 slots and cannot disable parallel sessions. Extra runnable work
 waits for available membership/worker capacity; one session still owns at most
 one active run. GUI and CLI use the same admission policy.
-Session documents retain their message/source-ledger representation, with
-separately indexed summary metadata; settings and activity keep bounded JSON
-payloads inside SQLite rows. No new ORM or second database is introduced.
+Since schema v30, messages live in `business_session_messages` with absolute per-session
+indices, source fingerprints in `business_session_source_receipts`, and small
+metadata/summary rows in `business_sessions`. FTS5 is a transactional message-search
+projection. Settings and activity keep bounded JSON payloads inside SQLite rows.
+No new ORM or second database is introduced.
 Windows Credential Manager remains the API-key store.
 
 Each store imports its legacy `settings.json`, `sessions/*.json` or
@@ -434,7 +466,7 @@ can group the sidebar by workspace without a second round trip.
 
 Session creation and import accept optional `X-Ru-Client-Source: gui|cli`; unknown values
 return HTTP 400. The source is durable session metadata in the existing SQLite
-document/summary JSON and is returned as `client_source` by `/sessions`.
+metadata/summary rows and is returned as `client_source` by session listings.
 It is a presentation label, never execution authority. GUI and CLI creation
 paths label their own sessions; resuming a session does not change its source.
 Older sessions and callers omitting the header retain a null source.
@@ -443,16 +475,38 @@ sessions grouped by source independently of their working directory. CLI rows
 can be reordered within their section; GUI rows keep existing workspace/Recents
 placement. Sidebar organization never changes execution cwd or session source.
 
-Listing queries indexed metadata across all stored sessions, returning the
-newest 500 summaries ordered by UTC update time with session ID as the tie
-breaker. `sessions_truncated` reports additional stored sessions. It does not
-scan transcript files or maintain a filesystem-summary cache. Workspace metadata
-is queried only for the returned session IDs using the v13
-`(session_id, created_at_utc DESC, run_id DESC)` index.
-Import keeps the 200-message retention limit and reports the persisted count
-in `session.messages`, all omitted transcript entries in `dropped_entries`, and
-`partial_import` when any entry was omitted. An import with no persistable
-message fails without retaining an empty session.
+`GET /sessions` retains its bounded newest-500 summary response. New callers use
+`GET /sessions/page?limit=100&cursor=...&query=...` to reach older summaries;
+message-content filtering uses FTS5 and title filtering uses literal text. Pages
+carry the same workspace, source and running-state enrichment as the original
+listing. List cursors are keyset positions, not a frozen database snapshot:
+sessions updated while paging can move to the refreshed first page.
+
+`GET /sessions/{sessionId}/messages` returns the newest page in chronological
+order, with `start_index`, `total_messages`, `history_epoch` and `next_cursor`.
+The cursor moves toward older messages and binds the session, captured count
+and rewind epoch. Appends do not shift previous indices; rewind makes earlier
+cursors return `session_history_cursor_stale` (HTTP 409). Malformed cursors return
+HTTP 400. Limit is 1–200; the normal serialized message budget is 4 MiB. A
+single valid 1 MiB UTF-8 message may expand under JSON escaping and is returned
+alone (at most roughly 6 MiB plus metadata), within the 8 MiB Client response cap.
+Reads and model context remain bounded; retained history
+is no longer deleted after 200 messages. `GetAsync`/activate return a bounded tail
+and explicit offset/count/epoch metadata. `GET /sessions/search?query=...` returns
+bounded literal-phrase FTS hits with absolute message indices.
+
+Export walks all retained pages in chronological order and refuses a concurrent
+rewind or an oversized output instead of silently exporting a tail. Import reports
+the complete persisted count in `session.messages`, omitted transcript entries in
+`dropped_entries`, and `partial_import` when any entry was omitted. An import with
+no persistable message fails without retaining an empty session. Migration cannot
+recover messages that older builds already pruned. Rewind deletes visible tail
+rows but retains source receipts, preventing late outbox delivery from re-adding
+them. No automatic conversation/run retention policy is enabled.
+
+Operational backup, verification, offline restore/compaction and opt-in pruning
+are documented in [database maintenance](../operations/database-maintenance.md)
+and [ADR 0030](../adr/0030-relational-history-and-database-maintenance.md).
 
 Interrupted imports attempt bounded compensation with a cleanup token independent
 of the request. The Session Store checks emptiness and deletes in one immediate
@@ -497,8 +551,8 @@ A bounded, encrypted base-context snapshot of model-visible evidence from up to
 four earlier terminal root runs in the same Conversation Session and workspace.
 Only runs whose user messages remain attributed in the loaded conversation
 snapshot are eligible; rewind/pruning cannot restore removed run details.
-It carries recorded requests, assistant statements/proposals, tool-result excerpts
-and receipt outcomes with run/event provenance, including work stopped before a
+It carries applicable checkpoint excerpts, recorded requests, assistant statements/
+proposals, tool-result excerpts and receipt outcomes with run/event provenance, including work stopped before a
 final reply. It is captured once for a new root run, alongside the existing
 32 completed conversation turns and Session Work State. Historical proposals are
 quoted context, never executable native calls; missing receipts and omitted
@@ -609,43 +663,32 @@ _Avoid_: a new execution authority, a user conversation, or an OS sandbox
 
 ## Markdown Skill
 
-A directory containing a case-insensitive `SKILL.md` under one of the supported
-skill roots, listed in precedence order: `<workspace-root>/skills`, `<workspace-root>/.ru/skills`,
-`<workspace-root>/.agents/skills`, `RU_SKILLS_ROOT` when set, `~/.ru/skills`, and
-`%LOCALAPPDATA%\Ru\skills`. It is bounded, untrusted prompt guidance. For
-example:
+Definition: [Markdown Skill](../../CONTEXT.md) (glossary).
 
-```markdown
----
-name: pdf-analyzer
-description: Analyze and summarize PDF files
-allowed-tools: read, bash
----
+A shared Broker catalog supplies canonical directory IDs and bounded YAML metadata.
+The prompt includes one budgeted `ExternalSkill` catalog block; full bodies are
+loaded on demand with `skill`. Metadata revisions describe the discovered file,
+while `body_sha256` identifies the exact loaded body. Expected revision/digest
+arguments can reject a changed definition. Source path and resource base accompany
+body loads; references and scripts are never automatically read or executed.
 
-# PDF Analyzer
+`/skill <id> [arguments]` is a real explicit chat invocation: the Host validates
+user invocation policy and requirements, then atomically persists a model-only
+`SkillInvocation` payload with the visible user prompt. Run command invocation
+also appends that durable workflow. `$ARGUMENTS` expansion happens only in the
+rendered workflow, preserving the original body digest. It does not launch tools.
 
-Describe the review workflow here.
-```
+Active skill projection validates successful native receipts and Host invocation
+provenance before compaction, retaining at most four complete workflows within
+128 KiB of bodies. It deduplicates identity/version, reports omissions and
+re-attaches missing workflows as untrusted user context after compact/restart.
+It never rereads changed disk content to restore a run. New runs do not inherit
+an unbounded collection of previous workflows.
 
-`allowed-tools` is descriptive metadata only; it never grants a tool, scope,
-path, network permission, approval, or Broker capability. An optional
-`requires:` field names a capability the workflow needs; only `python` is
-recognized today. Every surface that returns a body enforces it: the model's
-`skill` tool and the Host's `/skill` command fail closed with
-`python_unavailable` when a Python requirement is unmet, and an unrecognized
-token fails closed as `unsupported_skill_requirement` naming the token;
-skills without `requires` are unaffected. The Host discovers
-only direct child skill directories and lists each skill lazily as
-name + description + `SKILL.md` path with the body version pinned in the
-receipt digest; the full workflow is pulled on demand with the read tool,
-never inlined. Adjacent
-`references/`, `assets/`, and `scripts/` files are ignored by discovery and are
-never automatically read or executed. Copying a package requires no downloader
-or package manager: the Host re-reads the roots when building a new prompt
-context, including a new Agent run or after restart. Markdown skills never
-become `SkillManifest`/`skill.json` executable workflows and never enter
-`/skills` or `/skill`; `RuAgentBroker` remains the sole authority for path
-canonicalization, policy, approvals, and execution.
+The catalog, user invocation and resource details are documented in
+[skill operations](../operations/skills.md). [ADR 0032](../adr/0032-skill-catalog-and-workflow-snapshots.md)
+records ownership and snapshot lifetime. `allowed-tools` is descriptive only;
+no skill content changes Broker policy, approvals or execution authority.
 _Avoid_: treating `SKILL.md` as a permission manifest or executable plugin
 
 ## Native Tool Batch
@@ -668,12 +711,15 @@ the `ModelContext` audience, that answers a dead-end model step instead of
 failing the run; the same model takes the next step with that feedback in
 context. Bounds are per kind — 4 `unverified_after_tool_failure` notes, 4
 `model_repairable` notes, 3 `empty_model_reply` notes and 3 consecutive
-`model_output_truncated` notes — under a global cap of
+`model_output_truncated` notes, plus 3 `model_commentary_only` notes — under a global cap of
 24 notes per run, measured over the recovery notes visible in the assembled
 context. A note is persisted with the system role and is therefore never folded
 away by compaction, so the cap is cumulative for the whole run rather than
 per budget window. Every note is
-same-model bounded self-correction, never provider/model/tool substitution;
+same-model bounded self-correction, never provider/model/tool substitution.
+Responses commentary-only text stays in model context with its original phase,
+without a final conversation outbox entry; the next step receives a recovery
+note asking it to continue or close out. Other unusable replies remain audit-only;
 when a bound is spent the run fails closed with the original code. A model
 may instead emit a final `[BLOCKED]` report describing the incomplete/partial
 outcome. The marker is removed from durable visible history, and the run ends
@@ -711,7 +757,7 @@ history; summaries, session handoffs and model claims cannot clear them. The
 projection travels as private context metadata, outside canonical provider history,
 and outstanding commands are supplied in bounded runtime context guidance.
 
-For `bash`, optional `purpose=verification` declares a check requiring observed
+For `powershell` and `run_process`, optional `purpose=verification` declares a check requiring observed
 exit zero. Reading another file or passing a different command cannot resolve
 that required check. Unannotated or `purpose=inspection` process failures remain
 failed diagnostic receipts, not new mandatory checks: a failed optional lookup
@@ -732,15 +778,32 @@ rerun can resolve it. This tracks observed run-local mutations, not an OS-enforc
 snapshot or proof that another process/session did not change the workspace.
 
 A deliberately failing task may declare `purpose=expected_failure` and an exact
-`expected_exit_code` from 1 through 255 before execution. Only that observed
+nonzero signed 32-bit `expected_exit_code` before execution. Only that observed
 `process_exit_nonzero` satisfies it; its original receipt remains failed. Denial,
 unknown outcomes, timeout and cancellation never become expected success.
+Observed exit codes remain attached to check evidence. A confirmed
+`expected_exit_mismatch` is an observed result, not a transient execution error.
+At final prose, the Host publishes one receipt-derived failure report and ends
+the run unsuccessfully rather than regenerating final prose through recovery
+notes. A corrected invocation is a separate check and cannot erase the original
+mismatch. This receipt-derived report also replaces model-authored `[BLOCKED]`
+text; other unresolved checks retain their failure codes and remain outstanding.
+The failed projection, `blocked_report` assistant payload and final conversation
+outbox intent commit atomically. Persistence permits this terminal outbox only
+for a Running-to-Failed transition with one matching report and failure event;
+session identity, same-write-set references and assistant-payload checks remain.
+Outbox delivery is fenced and idempotent; its terminal-run acknowledgement does
+not move the failed run to Completed, including after restart.
 `purpose=inspection` declares read-only intent and does not invalidate earlier
-checks, but is not OS-enforced proof of absence of side effects. These labels
-change completion bookkeeping only, never tool authority or approval.
+checks, but is not OS-enforced proof of absence of side effects. Set it explicitly
+for exploratory shell reads: arbitrary PowerShell scripts have unknown effects,
+and omitted `purpose` defaults to `command`, which invalidates earlier checks
+unless authority-derived metadata identifies a completed read-only operation.
+These labels change completion bookkeeping only, never tool authority or approval.
 
-Tracking is bounded to 256 distinct checks and fails closed on overflow. The
-existing bounded recovery or explicit `[BLOCKED]` outcome handles outstanding
+Tracking retains 256 required checks independently from 64 recent diagnostics
+and fails closed if required capacity is exceeded. Except for confirmed negative
+exit mismatches, bounded recovery or an explicit `[BLOCKED]` outcome handles outstanding
 checks. This is evidence for declared checks, not a claim that all code is correct
 or every possible verification has run.
 
@@ -775,3 +838,22 @@ The built-in prompt is a neutral execution contract. Root instructions may
 guide persona and workflow but cannot grant tools, folders, network access, or
 override Broker policy.
 _Avoid_: embedded fallback persona
+
+
+### Runtime driver state ownership
+
+`AgentRuntimeLoopService` drives runs; `AgentRuntimeRootRegistry` owns registered
+roots/coordinators, and `AgentRuntimeCoordinatorFactory` composes a drive.
+`AgentRuntimeParkingState` owns client-wait and recovered-approval/version fences.
+`AgentRuntimeRunLifecycle` releases registration, Broker resources and retained
+approval state only after pending user-apply and child work is cancelled.
+The separation preserves the recovered-approval version race and cleanup order.
+
+`VerificationEvidenceBuffer` retains required checks separately from bounded
+recent diagnostics. Authority-derived `terminal_effect` metadata can identify a
+completed read-only command. A consistent observed normal exit preserves unrelated
+checks even when its exit code is nonzero; the failed diagnostic or required check
+remains failed. Missing/malformed metadata, inconsistent outcome/exit pairs,
+timeout, cancellation and unknown effects remain conservative. This metadata
+does not change execution policy. Check overflow applies to required evidence,
+not the number of optional lookups or already-satisfied negative tests.

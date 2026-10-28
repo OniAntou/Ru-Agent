@@ -1,5 +1,4 @@
 using RuAgent.Broker.Policy;
-using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools.Terminal;
 
@@ -34,20 +33,4 @@ public sealed record TerminalShellRequest(
     bool Network = false)
 {
     internal CanonicalCommandIntent? AuthorizedIntent { get; init; }
-}
-
-public static class TerminalManifests
-{
-    public static ToolManifest Bash { get; } = new(
-        "bash",
-        "1.0.0",
-        "terminal",
-        RiskClass.Reversible,
-        new HashSet<string>([ToolScope.TerminalExecute], StringComparer.Ordinal),
-        AgentModelToolContractCatalog.Get("bash", "1.0.0").InputSchema,
-        new System.Text.Json.Nodes.JsonObject { ["type"] = "object" },
-        120_000,
-        256 * 1024,
-        "builtin",
-        RequiresApproval: true);
 }

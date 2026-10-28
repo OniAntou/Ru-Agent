@@ -31,7 +31,7 @@ flowchart LR
 
 ## Coding core and plugins
 
-The default product is .NET 10. Media surfaces and the private Runtime Worker are retired. Repository Python is tooling; optional workflow requirements produce a named failure when unavailable. See [Host implementation](architecture/host.md#coding-core-and-plugins), [runtime boundary](operations/python-runtime-boundary.md) and [ADR 0012](adr/0012-in-process-model-runner.md).
+The default product is .NET 10. Media surfaces and the private Runtime Worker are retired. Repository Python is tooling; optional workflow requirements produce a named failure when unavailable. The opt-in programmatic coding profile uses a bounded managed JavaScript interpreter inside Broker ([ADR 0028](adr/0028-bounded-programmatic-coding-tools.md)), without a second execution authority. See [Host implementation](architecture/host.md#coding-core-and-plugins), [runtime boundary](operations/python-runtime-boundary.md) and [ADR 0012](adr/0012-in-process-model-runner.md).
 
 ## Contracts and transport
 
@@ -54,7 +54,7 @@ The Host orchestrates; Harness state machines own ordering/durability; Broker ow
 
 ## Data ownership
 
-The canonical profile keeps the shared SQLite WAL store and encrypted payloads; credentials remain in Windows Credential Manager. Schema initialization uses an ordered catalog and one atomic selected upgrade batch ending in v29. The released v18 schema is the supported floor; earlier versions are rejected without mutation. Development v19-v28 sources still upgrade through the catalog. Fresh and upgraded shape, rollback and concurrent initialization are checked against frozen original DDL. See [Harness persistence](architecture/harness.md#data-ownership), [ADR 0013](adr/0013-consolidate-business-persistence-in-sqlite.md) and [data location](adr/0004-canonical-ru-data-location.md).
+The canonical profile keeps the shared SQLite WAL store and encrypted payloads; credentials remain in Windows Credential Manager. Schema initialization uses an ordered catalog and one atomic selected upgrade batch ending in v31 (relational history/search plus context mutation fences). The released v18 schema is the supported floor; earlier versions are rejected without mutation. Development v19-v30 sources still upgrade through the catalog. Fresh and upgraded shape, rollback and concurrent initialization are checked against frozen original DDL. See [Harness persistence](architecture/harness.md#data-ownership), [ADR 0013](adr/0013-consolidate-business-persistence-in-sqlite.md) and [data location](adr/0004-canonical-ru-data-location.md).
 
 ## Privacy boundary
 

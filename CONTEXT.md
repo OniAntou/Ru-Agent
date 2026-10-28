@@ -64,14 +64,23 @@ Implementation: [TUI history](docs/architecture/tui.md).
 _Avoid_: file checkpoint, Git branch, restored execution state
 
 
+**Conversation History**:
+Retained, ordered message rows belonging to one Conversation Session. Source
+receipts preserve delivery idempotency even after a rewind removes visible rows.
+Bounded model/UI windows do not define retention. A history cursor binds its
+session and rewind epoch; an append preserves older-page navigation.
+Implementation: [Harness persistence](docs/architecture/harness.md#data-ownership).
+_Avoid_: treating the newest display window as complete durable history
+
+
 **Session Work State**:
-A bounded encrypted workflow record for one conversation and canonical workspace identity, linking intent, tasks and receipt-backed observations. It supplies context, never authority or proof of current file state.
+A bounded encrypted workflow record for one conversation and canonical workspace identity, linking intent, tasks and receipt-backed observations. It supplies context, never authority or proof of current file state. Explicit imperative constraints retain provenance; model-facing intent follows visible history after rewind.
 Implementation: [harness](docs/architecture/harness.md#session-work-state).
 _Avoid_: global memory, cross-session authority, model prose as proof, or work state as permission
 
 
 **Session Run Handoff**:
-A bounded encrypted snapshot of earlier model-visible root-run evidence in the same conversation/workspace, eligible only while its user messages remain visible. Historical calls are quoted context, never replayed execution or inherited approval.
+A bounded encrypted snapshot of earlier model-visible root-run evidence in the same conversation/workspace, eligible only while its user messages remain visible. Historical calls are quoted context, never replayed execution or inherited approval. Applicable checkpoints and separate Host-authored directory hints preserve continuity; quoted model text cannot create those private hints.
 Implementation: [harness](docs/architecture/harness.md#session-run-handoff).
 _Avoid_: complete memory, cross-session history, inherited approvals, automatic re-execution of unfinished calls
 
@@ -108,6 +117,20 @@ The Protocol-owned model-visible schema and metadata for one tool. Advertisement
 Implementation: [broker](docs/architecture/broker.md#tool-definition).
 _Avoid_: treating a Broker manifest or adapter list as the model contract
 
+**Tool Profile**:
+The run-pinned selection of Protocol tool definitions shown to the model.
+Supported profiles select simple file/Windows-terminal operations, unified
+patches or bounded programs. Persisted provider selections require an explicit
+supported pin; retired surfaces are not executable. This does not select an
+execution authority or grant permission. See [ADR 0029](docs/adr/0029-retire-legacy-tool-surface.md).
+
+**Program Invocation**:
+A run-bound `run_code` invocation in the experimental coding profile. Pure
+computation selects data; every nested coding tool still uses Broker authority.
+Its durable intent/receipt journal is keyed by run and invocation, and an intent
+without a receipt remains uncertain. This is not a child agent or a permission
+grant. See [ADR 0028](docs/adr/0028-bounded-programmatic-coding-tools.md).
+
 
 **Tool Output Projection**:
 The bounded, paged representation of a durable tool result supplied to model context and clients. Presentation excerpts preserve receipt provenance without claiming to contain the complete result.
@@ -115,16 +138,25 @@ Implementation: [harness](docs/architecture/harness.md#tool-output-projection).
 _Avoid_: treating projected output as a new receipt, complete history, or authority
 
 
-**Skill Manifest**:
-A typed declaration for an executable skill workflow, distinct from untrusted Markdown instructions. Broker policy remains the execution authority.
-Implementation: [broker](docs/architecture/broker.md#skill-manifest).
-_Avoid_: executable plugin or self-modifying workflow
-
-
 **MCP Server**:
 A stdio Model Context Protocol program the user declares in their own `~/.ru/mcp.json` and the Broker runs on first use, reached by the model through the single `mcp` tool. Starting it or calling one of its tools has terminal-launch authority outside the workspace (`ExternalTerminal`); its output is untrusted and grants nothing.
 Implementation: [agent tools](docs/operations/agent-tools.md#mcp-servers), [ADR 0025](docs/adr/0025-mcp-servers-through-the-broker.md).
 _Avoid_: workspace-declared servers, a per-server tool definition, or a second execution authority
+
+**Computer Use**:
+The opt-in `computer` tool through which a run that pinned `_ru_computer_use_v1` sees monitors and sends pointer and keyboard input as the current Windows user. One run controls the desktop at a time; Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) stops it. `plan` denies it, and Ru's own windows, terminal hosts and credential UI are never targets in any preset.
+Implementation: [agent tools](docs/operations/agent-tools.md#computer-use), [ADR 0031](docs/adr/0031-computer-use-through-the-broker.md).
+_Avoid_: unmasked screenshots in `standard`, input to Ru's own windows, or treating a grant as confinement
+
+**App Grant**:
+The Broker session's record that the user approved computer use for an application, by executable file name, through `request_access`. It lasts for the Agent session, gates every input target and screenshot pixel in `standard`, and never covers a protected application.
+Implementation: [ADR 0031](docs/adr/0031-computer-use-through-the-broker.md).
+_Avoid_: a durable grant, a grant by window title, or a grant implied by `full_access` for protected apps
+
+**Provider Web Search**:
+The model provider's own hosted web search, used instead of the Broker's `web_search` by a root run that pinned `_ru_provider_web_search_v1` on first-party Anthropic or OpenAI and whose policy allows `web_search` without an approval. The provider runs the query and bills it to the user's account; answers that cite results end with a Sources list.
+Implementation: [agent tools](docs/operations/agent-tools.md#provider-web-search), [ADR 0033](docs/adr/0033-provider-hosted-web-search.md).
+_Avoid_: calling it a Broker tool, using it where a rule asks for `web_search` approval, or routing `web_fetch` through the provider
 
 **Subagent**:
 A delegated internal run owned and controlled by the main agent, with bounded family resources and isolated child-private history. Users can observe/export it; only the main agent sends work, cancels or applies results.
@@ -133,7 +165,7 @@ _Avoid_: a new execution authority, a user conversation, or an OS sandbox
 
 
 **Markdown Skill**:
-A discovered `SKILL.md` package supplying bounded untrusted workflow guidance. Metadata and referenced files never grant execution authority or run automatically.
+A discovered `SKILL.md` package identified by its canonical directory ID, with metadata advertised separately from its on-demand workflow body. Explicit chat invocation captures a bounded, versioned workflow snapshot for that run; successful skill receipts can restore the same snapshot after compaction or restart. Metadata and referenced files never grant execution authority or run automatically.
 Implementation: [harness](docs/architecture/harness.md#markdown-skill).
 _Avoid_: treating `SKILL.md` as a permission manifest or executable plugin
 
@@ -165,12 +197,15 @@ _Avoid_: fallback answer, substitute model, retry on another backend
 **Receipt-backed Verification**:
 A bounded projection of original run-local terminal proposals and execution receipts.
 Declared required checks remain outstanding through unrelated reads, compaction
-and restart. Exploratory failures remain failed receipts without becoming mandatory
-checks; known run-local mutations invalidate passed required checks
+and restart. Exploratory failures remain bounded diagnostics without consuming required-check
+capacity; known run-local mutations invalidate passed required checks
 and pending checks that would certify older code. New terminal receipts identify
 the canonical executable/argv/cwd; this fingerprint never grants authority. Explicit
 expected nonzero exits can satisfy a negative test without rewriting its failed
-receipt. Intent metadata grants no authority and does not prove complete correctness.
+receipt. Authority-derived read-only completion metadata preserves prior checks
+for observed normal exits, including nonzero exits; a failed lookup or required
+check still retains its own failure. Unknown effects remain conservative. Intent metadata grants no authority and
+does not prove complete correctness.
 Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
 _Avoid_: treating a successful inspection, summary or model claim as a passed check
 
@@ -209,6 +244,15 @@ _Avoid_: current settings as restart fallback
 Encrypted internal provider-native state bound to an exact run, model step and native call batch. It is excluded from visible history, clients, portable handoffs and telemetry.
 Implementation: [providers](docs/architecture/providers.md#provider-continuation).
 _Avoid_: hidden reasoning in chat history or reconstructed prose
+
+
+**Responses Assistant Phase**:
+The provider's public per-message distinction between commentary and final_answer,
+with null retaining ordinary assistant-message semantics. Retained native history
+preserves this metadata; commentary alone does not complete an Agent Run. Private
+reasoning remains in Provider Continuation.
+Implementation: [providers](docs/architecture/providers.md#provider-continuation).
+_Avoid_: treating progress text as a final answer or adding phase to user messages
 
 
 **Runtime Context Snapshot**:

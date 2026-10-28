@@ -173,8 +173,16 @@ public sealed class AgentProviderSnapshotFactory(
                 ? AnthropicOutputBudget.For(DocumentedOutputLimit(selected) ?? modelMetadata?.MaxOutputTokens, contextWindowTokens)
                 : AgentRunProviderSelection.DefaultOutputTokenReserve);
         if (ChatReasoningReplayPolicy.Supports(selected)) options[ChatReasoningReplayPolicy.PinField] = true;
+        options[RuAgent.Protocol.AgentToolProfiles.PinField] = AgentToolProfilePin.SelectNew();
         if (await ImageInputPolicy.AcceptsAsync(catalog, selected, ct).ConfigureAwait(false))
+        {
             options[ImageInputPolicy.PinField] = true;
+            // Computer use needs screenshots, so it is pinned only with image input (ADR 0031).
+            if (ComputerUsePolicy.IsEnabled(current)) options[ComputerUsePolicy.PinField] = true;
+        }
+        // Eligibility only; the run's policy decides whether it is used (ADR 0033).
+        if (ProviderWebSearchPolicy.IsEnabled(current) && ProviderWebSearchPolicy.Supports(selected, options))
+            options[ProviderWebSearchPolicy.PinField] = true;
         var proposed = new AgentRunProviderSelection(
             selected.Backend,
             selected.Alias,
@@ -201,10 +209,6 @@ public sealed class AgentProviderSnapshotFactory(
         CancellationToken ct)
     {
         var selected = ReadSelection(pin);
-        var key = await ReadCredentialAsync(selected, ct).ConfigureAwait(false);
-        var models = await catalog.GetAsync(selected, current, false, ct).ConfigureAwait(false);
-        ValidateCredentialRevision(key, models);
-        _ = ProviderReasoningPreferences.Resolve(models, selected.Model, "default");
         JsonObject options;
         try
         {
@@ -223,6 +227,13 @@ public sealed class AgentProviderSnapshotFactory(
         var replayChatReasoning = ChatReasoningReplayPolicy.TakePinnedCapability(options, selected);
         // The image-input decision gates the read tool, not the provider request (ADR 0026).
         _ = ImageInputPolicy.TakePinnedCapability(options);
+        _ = ComputerUsePolicy.TakePinnedCapability(options);
+        _ = ProviderWebSearchPolicy.TakePinnedCapability(options);
+        AgentToolProfilePin.ValidateAndRemove(options);
+        var key = await ReadCredentialAsync(selected, ct).ConfigureAwait(false);
+        var models = await catalog.GetAsync(selected, current, false, ct).ConfigureAwait(false);
+        ValidateCredentialRevision(key, models);
+        _ = ProviderReasoningPreferences.Resolve(models, selected.Model, "default");
         return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens ?? pin.OutputTokenReserve, toolCallingMode,
             allowNativeResponses: true,
             allowNativeAnthropic: true,

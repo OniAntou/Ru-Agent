@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace RuAgent.Client;
 
-public sealed class SessionApiClient
+public sealed partial class SessionApiClient
 {
     private readonly HttpClient _httpClient;
     private readonly PublicHostSession _session;
@@ -222,6 +222,8 @@ public sealed class SessionApiClient
                     message = msg.GetString();
                 if (root.TryGetProperty("error_code", out var ec) && ec.ValueKind == JsonValueKind.String)
                     code = ec.GetString();
+                if (code is null && root.TryGetProperty("code", out var historyCode) && historyCode.ValueKind == JsonValueKind.String)
+                    code = historyCode.GetString();
             }
 
             throw new AgentApiException(

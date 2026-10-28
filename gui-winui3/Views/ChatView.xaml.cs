@@ -175,6 +175,7 @@ namespace RuApp.Views
             // A size chosen while the transcript is open repaints the rows already on
             // screen; without this only rows created afterwards would pick it up.
             TranscriptTypography.Instance.PropertyChanged += OnTranscriptTypographyChanged;
+            AgentActivityDisplayPreferences.Instance.PropertyChanged += OnActivityDisplayPreferenceChanged;
             RefreshTranscriptTypography();
             _replyRenderScheduler = new AgentReplyRenderScheduler(
                 _replyAccumulator,
@@ -205,6 +206,7 @@ namespace RuApp.Views
 
         private void OnMessagesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
         {
+            ApplyActivityDisplayPreference(e.NewItems);
             _transcriptRevision++;
             UpdateViewMode();
         }
@@ -382,6 +384,8 @@ namespace RuApp.Views
             ProviderCatalogController? providerCatalogController,
             GroupedProviderCatalogController? groupedProviderCatalogs)
         {
+            _skillsApiClient?.Dispose();
+            _skillsApiClient = null;
             _apiService = apiService;
             if (_ownsProviderCatalogController && _providerCatalogController is not null)
             {

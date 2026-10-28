@@ -27,8 +27,8 @@ public sealed class HarnessModelContextBootstrapperTests
             "https://provider.invalid/v1", "model-a", "custom_api_key", "{}", 8192);
         await selections.PinAsync(previous.Run.RunId, modelA, default);
         var step = new AssistantStep("Updated parser.cs; now checking the tests.",
-            [new ModelToolCall("old-call", "bash", "1",
-                System.Text.Json.JsonDocument.Parse("{\"command\":\"dotnet test Parser.Tests\"}").RootElement)],
+            [new ModelToolCall("old-call", "read_file", "1",
+                System.Text.Json.JsonDocument.Parse("{\"path\":\"src/Parser.cs\"}").RootElement)],
             AssistantFinishReason.ToolCalls, 1);
         var assistant = new HarnessPayloadIntent(new PayloadId("payload_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
             HarnessPayloadKind.AssistantStep, HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
@@ -81,10 +81,11 @@ public sealed class HarnessModelContextBootstrapperTests
         }
         var handoff = Assert.Single(snapshot.SessionBase);
         Assert.Contains("Parser.Tests: 12 passed", handoff.Content);
-        Assert.Contains("dotnet test Parser.Tests", handoff.Content);
+        Assert.Contains("read_file", handoff.Content);
         Assert.Contains(previous.Run.RunId.Value, handoff.Content);
         Assert.Contains("Cancelled", handoff.Content);
         Assert.Contains("untrusted", handoff.Content);
+        Assert.Contains(Path.Combine("src", ".ru-instruction-scope"), snapshot.ObservedFilePaths);
         Assert.Equal("model-a", (await selections.GetAsync(previous.Run.RunId, default))!.Selection!.Model);
         Assert.Equal("model-b", (await selections.GetAsync(nextRun.RunId, default))!.Selection!.Model);
         var context = await new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))

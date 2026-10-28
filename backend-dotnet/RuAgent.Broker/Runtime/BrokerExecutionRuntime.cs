@@ -29,6 +29,8 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
     private readonly SemaphoreSlim _lifecycleGate;
     private readonly RunToolCancellationRegistry _runCancellations;
     private int _disposed;
+    private readonly RuAgent.Protocol.Programs.IProgramJournal? _programJournal;
+    private readonly SemaphoreSlim _programSlots = new(2, 2);
 
     /// <summary>
     /// Production wiring: the runtime uses the execution service's own surface
@@ -43,7 +45,8 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
         ApprovalTokenService? approvalTokenService = null,
         IReadOnlyList<string>? advertisedCapabilities = null,
         SemaphoreSlim? lifecycleGate = null,
-        RunToolCancellationRegistry? runCancellations = null)
+        RunToolCancellationRegistry? runCancellations = null,
+        RuAgent.Protocol.Programs.IProgramJournal? programJournal = null)
         : this(
             session,
             ToolExecutionBackend.From(tools),
@@ -53,6 +56,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
             lifecycleGate,
             runCancellations)
     {
+        _programJournal = programJournal;
     }
 
     /// <summary>

@@ -10,6 +10,9 @@ public sealed record ModelRequest
     private const int MaxAnthropicContentBlocks = 64;
     private const int MaxNativeArgumentsBytes = 64 * 1024;
     public const int MaximumSerializedBodyBytes = ModelInputLimits.MaxRequestBytes;
+
+    /// <summary>The settings field that asks for the provider's hosted web search (ADR 0033).</summary>
+    public const string ProviderWebSearchSetting = "provider_web_search";
     public ModelRequest(
         string model,
         string systemPrompt,
@@ -205,6 +208,10 @@ public sealed record ModelRequest
 
     public bool NativeToolCalling { get; }
 
+    /// <summary>Whether this request declares the provider's hosted web search tool.</summary>
+    public bool ProviderWebSearch => NativeToolCalling
+        && Settings[ProviderWebSearchSetting] is JsonValue value && value.TryGetValue<bool>(out var enabled) && enabled;
+
     public IReadOnlyList<JsonObject> AnthropicMessages { get; }
 
     public static long MeasureJsonArrayBytes(IReadOnlyList<JsonObject>? items)
@@ -242,8 +249,14 @@ public sealed record ModelRequest
     {
         isToolResult = false;
         if (!TryGetString(block["type"], out var type)) return false;
+        // Provider-hosted search content (ADR 0033) is replayed unchanged on assistant turns.
+        if (RuAgent.Harness.Core.Prompting.ProviderSearchContent.IsAnthropicSearchBlock(block))
+            return role == "assistant" && RuAgent.Harness.Core.Prompting.ProviderSearchContent.IsValidAnthropicSearchBlock(block);
+        var cited = type == "text" && role == "assistant" && block.ContainsKey("citations");
+        if (cited && !RuAgent.Harness.Core.Prompting.ProviderSearchContent.IsValidCitations(block["citations"])) return false;
         var fields = type switch
         {
+            "text" when cited => new[] { "citations", "text", "type" },
             "text" when role == "assistant" || role == "user" => new[] { "text", "type" },
             "thinking" when role == "assistant" => new[] { "signature", "thinking", "type" },
             "redacted_thinking" when role == "assistant" => new[] { "data", "type" },
@@ -322,6 +335,7 @@ public sealed record ModelRequest
         if (item is null) return false;
         var type = item["type"]?.GetValue<string>();
         if (type is "function_call" or "function_call_output" or "reasoning" or "message") return true;
+        if (type == "web_search_call") return RuAgent.Harness.Core.Prompting.ProviderSearchContent.IsValidResponsesSearchCall(item);
         var role = item["role"]?.GetValue<string>();
         return role is "user" or "assistant"
             && item["content"] is JsonValue content
@@ -335,6 +349,11 @@ public sealed record ModelRequest
         for (var index = 0; index < messages.Count; index++)
         {
             bytes = checked(bytes + Encoding.UTF8.GetByteCount(messages[index].ToJsonObject().ToJsonString()));
+            // The neutral wire shape intentionally omits Responses-only metadata.
+            // Include it in admission bounds even for direct adapter projection.
+            if (messages[index].ResponsesMessages is { } responseMessages)
+                bytes = checked(bytes + Encoding.UTF8.GetByteCount(new JsonArray(
+                    responseMessages.Messages.Select(message => message.DeepClone()).ToArray()).ToJsonString()));
             if (index > 0)
             {
                 bytes = checked(bytes + 1);

@@ -83,7 +83,7 @@ public sealed class RunLifecycleHooksTests : IDisposable
     [Fact]
     public async Task Stop_hooks_run_once_for_a_finished_run_and_ignore_tool_matchers()
     {
-        WriteHooks(_workspace, """{"hooks":{"Stop":[{"matcher":"bash","command":"notify"}]}}""");
+        WriteHooks(_workspace, """{"hooks":{"Stop":[{"matcher":"run_process","command":"notify"}]}}""");
         var runner = new RecordingRunner(new HookResult(0, string.Empty, TimedOut: false));
         var hooks = Hooks(runner);
         var run = Run(HarnessRunState.Failed, "approval_denied");

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Reconciliation;
 using Xunit;
 
@@ -7,6 +8,23 @@ namespace RuAgent.Harness.Core.Tests;
 
 public sealed class ContextCompactionPlannerTests
 {
+    [Fact]
+    public async Task A_small_prior_checkpoint_does_not_block_compacting_the_next_large_old_unit()
+    {
+        var snapshot = await AssembleAsync(
+            ModelContextEntry.Summary("previous", 1, "Earlier decisions: preserve the API.", [new ContextEntryRange("older", 1, 1)]),
+            ModelContextEntry.Text("old-continue", 2, ModelContextRole.User, "continue"),
+            ModelContextEntry.Text("large-old-decision", 3, ModelContextRole.User, "Preserve schema. " + new string('x', 20000)),
+            ModelContextEntry.Text("current", 4, ModelContextRole.User, "continue the task"));
+        var decision = new ContextBudgetPolicy().Evaluate(ModelContextSizeEstimator.EstimateTokens(snapshot), 4000, ContextCompactionStrategy.Normal);
+        var plan = ContextCompactionPlanner.Plan(snapshot, decision, "compact-followup", ContextCompactionReason.Manual,
+            maximumCoveredTokens: 2000);
+        Assert.NotNull(plan);
+        Assert.Contains(plan.CoveredEntries, e => e.SourceId == "previous");
+        Assert.Contains(plan.CoveredEntries, e => e.SourceId == "large-old-decision");
+        Assert.DoesNotContain(plan.CoveredEntries, e => e.SourceId == "current");
+    }
+
     private static readonly RunId RunId = new("run_33333333333333333333333333333333");
 
     [Fact]
@@ -125,6 +143,181 @@ public sealed class ContextCompactionPlannerTests
         Assert.DoesNotContain(plan!.CoveredEntries, entry => entry.SourceId == currentSource);
         Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == currentSource);
         Assert.True(plan.AfterTokens < plan.BeforeTokens);
+    }
+
+    [Fact]
+    public async Task Planner_compacts_complete_historical_base_exchanges_in_snapshot_order()
+    {
+        var sessionBase = new[]
+        {
+            ModelContextEntry.Text("base:memory", 900, ModelContextRole.User, "keep durable instructions"),
+            ModelContextEntry.Text("base:turn:1:user", 901, ModelContextRole.User, new string('u', 8_000)),
+            ModelContextEntry.Assistant("base:turn:2:assistant", 902,
+                new AssistantStep(new string('a', 200), [], AssistantFinishReason.Stop, 0)),
+            ModelContextEntry.Text("base:turn:3:user", 903, ModelContextRole.User, new string('v', 1_200)),
+            ModelContextEntry.Assistant("base:turn:4:assistant", 904,
+                new AssistantStep(new string('b', 1_200), [], AssistantFinishReason.Stop, 0)),
+        };
+        var runLocal = new[]
+        {
+            ModelContextEntry.Text("event:old", 1, ModelContextRole.User, new string('l', 500)),
+            ModelContextEntry.Text("event:current", 2, ModelContextRole.User, "current request"),
+        };
+        var snapshot = await new AgentContextAssembler(new FixedMergedSource(sessionBase, runLocal))
+            .AssembleAsync(RunId, CancellationToken.None);
+        var decision = new ContextBudgetDecision(
+            10_000, 1_500, 1_500, 1_500, 1_500, true, ContextCompactionStrategy.Normal);
+
+        var plan = ContextCompactionPlanner.Plan(
+            snapshot,
+            decision,
+            "compact-base-dialogue-order",
+            ContextCompactionReason.Automatic,
+            maxSummaryChars: 128,
+            estimatedTokensOverride: 10_000);
+
+        Assert.NotNull(plan);
+        var coveredSources = plan!.CoveredEntries.Select(entry => entry.SourceId).ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("base:turn:1:user", coveredSources);
+        Assert.Contains("base:turn:2:assistant", coveredSources);
+        Assert.DoesNotContain("base:turn:3:user", coveredSources);
+        Assert.DoesNotContain("base:turn:4:assistant", coveredSources);
+        Assert.DoesNotContain("event:old", coveredSources);
+        Assert.DoesNotContain("base:memory", coveredSources);
+        Assert.DoesNotContain("event:current", coveredSources);
+        Assert.Equal("base:turn:1:user", plan.CoveredEntries[0].SourceId);
+        Assert.Equal(901, plan.ProjectedEntries.Single(entry => entry.Kind == ModelContextEntryKind.Summary).Sequence);
+        Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == "base:memory");
+        Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == "event:current");
+    }
+
+    [Theory]
+    [InlineData(255)]
+    [InlineData(256)]
+    [InlineData(257)]
+    public async Task Planner_never_returns_more_than_256_unique_source_ranges(int sourceCount)
+    {
+        var entries = Enumerable.Range(0, sourceCount)
+            .Select(index => ModelContextEntry.Text(
+                $"old-{index}", index + 1, ModelContextRole.User, new string('x', 100)))
+            .Append(ModelContextEntry.Text(
+                "current", sourceCount + 1, ModelContextRole.User, "current request"))
+            .ToArray();
+        var snapshot = await AssembleAsync(entries);
+        var decision = new ContextBudgetDecision(10_000, 1, 1, 1, 1, true, ContextCompactionStrategy.Normal);
+
+        var plan = ContextCompactionPlanner.Plan(
+            snapshot,
+            decision,
+            "compact-range-cap",
+            ContextCompactionReason.Automatic,
+            estimatedTokensOverride: 10_000);
+
+        Assert.NotNull(plan);
+        Assert.InRange(plan!.CoveredRanges.Select(range => range.SourceId).Distinct(StringComparer.Ordinal).Count(),
+            1, 256);
+        Assert.Equal(Math.Min(sourceCount, 256), plan.CoveredRanges.Count);
+        Assert.DoesNotContain(plan.CoveredEntries, entry => entry.SourceId == "current");
+    }
+
+    [Fact]
+    public async Task Planner_protects_actual_user_request_when_runtime_snapshot_is_last_user_entry()
+    {
+        var requestSource = "event:request";
+        var snapshotSource = RuntimeContextSnapshot.SourcePrefix + "paths";
+        var snapshot = await AssembleAsync(
+            ModelContextEntry.Text(requestSource, 1, ModelContextRole.User, new string('r', 500)),
+            ModelContextEntry.Assistant("event:old-answer", 2,
+                new AssistantStep(new string('a', 2_000), [], AssistantFinishReason.Stop, 0)),
+            ModelContextEntry.Text(snapshotSource, 3, ModelContextRole.User, "\nobserved_path_b64: abc"));
+        var decision = new ContextBudgetDecision(10_000, 1, 1, 1, 1, true, ContextCompactionStrategy.Normal);
+
+        var plan = ContextCompactionPlanner.Plan(
+            snapshot,
+            decision,
+            "compact-request-with-runtime-snapshot",
+            ContextCompactionReason.Automatic,
+            estimatedTokensOverride: 10_000);
+
+        Assert.NotNull(plan);
+        Assert.Contains(plan!.CoveredEntries, entry => entry.SourceId == "event:old-answer");
+        Assert.DoesNotContain(plan.CoveredEntries, entry => entry.SourceId == requestSource);
+        Assert.DoesNotContain(plan.CoveredEntries, entry => entry.SourceId == snapshotSource);
+        Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == requestSource);
+        Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == snapshotSource);
+    }
+
+    [Fact]
+    public async Task Planner_does_not_split_an_indivisible_native_batch_over_the_range_cap()
+    {
+        using var arguments = JsonDocument.Parse("{}");
+        var calls = Enumerable.Range(0, 256)
+            .Select(index => new ModelToolCall($"provider-call-{index}", "files.read", "1.0.0", arguments.RootElement))
+            .ToArray();
+        var entries = new List<ModelContextEntry>
+        {
+            ModelContextEntry.Assistant("oversized-batch", 1,
+                new AssistantStep("large native batch", calls, AssistantFinishReason.ToolCalls, 100)),
+        };
+        for (var index = 0; index < calls.Length; index++)
+        {
+            var suffix = index.ToString("x32");
+            entries.Add(ModelContextEntry.ToolResult(
+                $"receipt-{index}",
+                index + 2,
+                new ToolExecutionReceipt(
+                    new ExecutionId($"exec_{suffix}"),
+                    new ToolCallId($"call_{suffix}"),
+                    ToolExecutionOutcome.Succeeded,
+                    "ok",
+                    null,
+                    false,
+                    providerCallId: calls[index].ProviderCallId),
+                "result"));
+        }
+        entries.Add(ModelContextEntry.Text("current", calls.Length + 2, ModelContextRole.User, "current request"));
+        var snapshot = await AssembleAsync(entries.ToArray());
+        var decision = new ContextBudgetDecision(10_000, 1, 1, 1, 1, true, ContextCompactionStrategy.Normal);
+
+        var plan = ContextCompactionPlanner.Plan(
+            snapshot,
+            decision,
+            "compact-oversized-batch",
+            ContextCompactionReason.Automatic,
+            estimatedTokensOverride: 10_000);
+
+        Assert.Null(plan);
+    }
+
+    [Fact]
+    public async Task Planner_uses_subquadratic_allocations_for_many_historical_entries()
+    {
+        const int historicalEntryCount = 192;
+        var largeText = new string('x', 2_000);
+        var entries = Enumerable.Range(0, historicalEntryCount)
+            .Select(index => ModelContextEntry.Text(
+                $"old-{index}", index + 1, ModelContextRole.User, largeText))
+            .Append(ModelContextEntry.Text(
+                "current", historicalEntryCount + 1, ModelContextRole.User, "current request"))
+            .ToArray();
+        var snapshot = await AssembleAsync(entries);
+        var decision = new ContextBudgetDecision(100_000, 1, 1, 1, 1, true, ContextCompactionStrategy.Normal);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        var allocatedBefore = GC.GetTotalAllocatedBytes(precise: true);
+
+        var plan = ContextCompactionPlanner.Plan(
+            snapshot,
+            decision,
+            "compact-planner-allocation-bound",
+            ContextCompactionReason.Automatic,
+            estimatedTokensOverride: 100_000);
+
+        var allocatedBytes = GC.GetTotalAllocatedBytes(precise: true) - allocatedBefore;
+        Assert.NotNull(plan);
+        Assert.True(allocatedBytes < 128L * 1024 * 1024,
+            $"Planner allocated {allocatedBytes:N0} bytes for {historicalEntryCount} historical entries.");
     }
 
     [Fact]

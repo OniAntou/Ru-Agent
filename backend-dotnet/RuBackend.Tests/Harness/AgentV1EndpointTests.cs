@@ -20,6 +20,8 @@ public sealed class AgentV1EndpointTests
 {
     private static readonly (string Method, string Path)[] ExpectedRoutes =
     {
+        ("GET", "/agent/v1/skills"),
+        ("POST", "/agent/v1/skills/settings"),
         ("POST", "/agent/v1/runs"),
         ("GET", "/agent/v1/runs/{runId}"),
         ("GET", "/agent/v1/runs/{runId}/subagents"),
@@ -61,7 +63,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(47, doc.RootElement.GetArrayLength()); // 47 HTTP routes (22 non-Agent + 25 /agent/v1/*), no websocket
+        Assert.Equal(52, doc.RootElement.GetArrayLength()); // Includes skill/history routes and conversation forks.
     }
 
     [Theory]

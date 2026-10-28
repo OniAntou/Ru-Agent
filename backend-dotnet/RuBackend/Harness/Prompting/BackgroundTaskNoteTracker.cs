@@ -115,7 +115,7 @@ public sealed class BackgroundTaskNoteTracker
             : notes.GetRange(notes.Count - MaxNotesPerProbe, MaxNotesPerProbe);
         var note = "Background terminal task state changed: "
             + string.Join("; ", recent)
-            + ". Page live output with bash mode=read_output (execution_id) or stop a task with mode=kill.";
+            + ". Page live output with terminal_read (execution_id) or stop a task with terminal_stop (execution_id).";
         return note.Length <= MaxNoteLength ? note : note[..MaxNoteLength];
     }
 }

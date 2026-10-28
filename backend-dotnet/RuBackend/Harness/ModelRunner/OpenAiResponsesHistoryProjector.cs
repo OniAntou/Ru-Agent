@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Nodes;
+using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Models;
 
@@ -9,7 +9,8 @@ internal static class OpenAiResponsesHistoryProjector
     public static IReadOnlyList<JsonObject> Project(
         IReadOnlyList<ModelTurn> turns,
         IReadOnlyList<ProviderContinuation> continuations,
-        string model)
+        string model,
+        bool providerWebSearch = false)
     {
         var used = new HashSet<ProviderContinuation>();
         var items = new List<JsonObject>();
@@ -26,11 +27,21 @@ internal static class OpenAiResponsesHistoryProjector
                 var continuation = ProviderContinuationMatch.FindOpenAi(continuations, used, turn.ToolCalls, model)
                     ?? throw new ModelRunnerProtocolException("provider_continuation_missing");
                 used.Add(continuation);
-                if (!string.IsNullOrWhiteSpace(turn.Content)) items.Add(new JsonObject { ["role"] = "assistant", ["content"] = turn.Content });
-                foreach (var output in continuation.OutputItems) items.Add((JsonObject)output.DeepClone());
+                if (!continuation.OutputItems.Any(item => item["type"]?.GetValue<string>() == "message"))
+                {
+                    if (turn.ResponsesMessages is { } messages)
+                        items.AddRange(messages.Messages.Select(message => (JsonObject)message.DeepClone()));
+                    else if (!string.IsNullOrWhiteSpace(turn.Content))
+                        items.Add(new JsonObject { ["role"] = "assistant", ["content"] = turn.Content });
+                }
+                // Search calls replay only to a request that declares the hosted search (ADR 0033).
+                var outputs = providerWebSearch ? continuation.OutputItems : ProviderSearchContent.StripResponses(continuation.OutputItems);
+                foreach (var output in outputs) items.Add((JsonObject)output.DeepClone());
                 continue;
             }
-            items.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
+            if (turn.Role == "assistant" && turn.ResponsesMessages is { } responseMessages)
+                items.AddRange(responseMessages.Messages.Select(message => (JsonObject)message.DeepClone()));
+            else items.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
         }
         return items.AsReadOnly();
     }

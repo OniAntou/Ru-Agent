@@ -20,6 +20,7 @@ public static partial class AgentV1Endpoints
     public static void Map(WebApplication app)
     {
         MapSubagents(app);
+        MapSkills(app);
         app.MapPost("/agent/v1/runs", CreateRunAsync);
         app.MapGet("/agent/v1/runs/{runId}", GetRunAsync);
         app.MapGet("/agent/v1/runs/{runId}/events", GetEventsAsync);

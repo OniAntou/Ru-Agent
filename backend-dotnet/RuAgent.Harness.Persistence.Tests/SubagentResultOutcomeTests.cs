@@ -38,6 +38,7 @@ public sealed class SubagentResultOutcomeTests
                 false, "subagent_attempt_timeout", HarnessStoreTestFixture.Timestamp), default);
             await results.PublishTerminalAsync(root.Run.RunId, "agent_one", child.Run.RunId, default);
         }
+        await fixture.ResetSessionHistorySchemaToV29Async();
         command.CommandText = "DROP TABLE agent_subagent_result_outcomes; PRAGMA user_version=23";
         await command.ExecuteNonQueryAsync();
         Assert.True((await HarnessSqliteSchema.InitializeAsync(fixture.Options, default)).IsAvailable);

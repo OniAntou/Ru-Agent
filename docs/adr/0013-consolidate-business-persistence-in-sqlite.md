@@ -12,10 +12,12 @@ duplicated persistence concerns.
 
 Schema v18 adds four focused tables to `agent_harness.db`: `business_settings`,
 `business_sessions`, `business_activity` and `business_migrations`. Existing
-Host-owned stores keep their APIs and validation. Session documents and their
-source-message ledgers remain bounded serialized records, with indexed summary
-metadata for listing. Settings and sanitized activity are JSON payloads in
-SQLite rows. Separate message tables are unnecessary for current access patterns.
+Host-owned stores retain their validation. The original v18 design used bounded
+serialized session/message-ledger records with indexed summary metadata.
+[ADR 0030](0030-relational-history-and-database-maintenance.md) supersedes that
+storage choice: v30 normalizes retained messages and receipts and separates
+bounded read windows from durable retention. Settings and sanitized activity
+remain JSON payloads in SQLite rows.
 Session read/modify/write operations use one immediate transaction; activity
 insert, event-ID deduplication and retention share a transaction. Settings writes
 are atomic, while Credential Manager updates retain their existing compensation.
@@ -50,4 +52,5 @@ make those operations one transaction. The unused activity-file poller is remove
 Back up the database through SQLite's backup API or stop all Ru Host processes
 before copying the database and any outstanding WAL. Copying only a live `.db`
 file is insufficient. Technical-log cleanup excludes legacy activity backups.
-The public HTTP/SSE contracts and Broker execution authority stay unchanged.
+ADR 0030 adds paged/search HTTP history routes and explicit maintenance commands;
+the Broker execution authority and SQLite ownership remain unchanged.

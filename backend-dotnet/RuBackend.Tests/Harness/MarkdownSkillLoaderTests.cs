@@ -13,12 +13,12 @@ public sealed class MarkdownSkillLoaderTests
         using var fixture = TempRoot.Create();
         var root = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills")).FullName;
         var body = "# PDF Analyzer\n\nUse the existing file tool.";
-        WriteSkill(root, "pdf", $"---\nname: PDF Analyzer\ndescription: Analyze and summarize PDF files\nallowed-tools: files.read, terminal.run\nlicense: MIT\n---\n{body}");
+        WriteSkill(root, "pdf", $"---\nname: PDF Analyzer\ndescription: Analyze and summarize PDF files\nallowed-tools: read_file, run_process\nlicense: MIT\n---\n{body}");
 
         var result = new MarkdownSkillLoader().Load(new[] { root });
 
         var skill = Assert.Single(result.Skills);
-        Assert.Equal("pdf-analyzer", skill.Id);
+        Assert.Equal("pdf", skill.Id);
         Assert.Equal("PDF Analyzer", skill.Name);
         Assert.Equal("Analyze and summarize PDF files", skill.Description);
         Assert.Equal(body, skill.Body);
@@ -47,7 +47,7 @@ public sealed class MarkdownSkillLoaderTests
     }
 
     [Fact]
-    public void Ignores_unknown_front_matter_and_malformed_metadata_lines()
+    public void Reports_unknown_front_matter_and_rejects_malformed_yaml()
     {
         using var fixture = TempRoot.Create();
         var root = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills")).FullName;
@@ -55,12 +55,17 @@ public sealed class MarkdownSkillLoaderTests
 
         var result = new MarkdownSkillLoader().Load(new[] { root });
 
+        Assert.Empty(result.Skills);
+        Assert.Contains(result.Skips, skip => skip.Reason == "invalid_frontmatter");
+
+        WriteSkill(root, "metadata", "---\nname: metadata-skill\ndescription: Readable body\nunknown: ignored\n---\n# Readable body\n\nContinue.");
+        result = new MarkdownSkillLoader().Load(new[] { root });
         var skill = Assert.Single(result.Skills);
-        Assert.Equal("metadata-skill", skill.Id);
+        Assert.Equal("metadata", skill.Id);
         Assert.Equal("metadata-skill", skill.Name);
         Assert.Equal("Readable body", skill.Description);
         Assert.Equal("# Readable body\n\nContinue.", skill.Body);
-        Assert.Empty(result.Skips);
+        Assert.Contains(result.Skips, skip => skip.Reason == "unsupported_field:unknown");
     }
 
     [Fact]
@@ -146,7 +151,7 @@ public sealed class MarkdownSkillLoaderTests
 
         var skill = Assert.Single(result.Skills);
         Assert.Equal("with-assets", skill.Id);
-        Assert.Empty(result.Skips);
+        Assert.All(result.Skips, skip => Assert.Equal("missing_frontmatter", skip.Reason));
         Assert.DoesNotContain("must not execute", skill.Body, StringComparison.Ordinal);
     }
 
@@ -188,7 +193,7 @@ public sealed class MarkdownSkillLoaderTests
     }
 
     [Fact]
-    public void Uses_a_deterministic_nonempty_safe_id_when_metadata_and_folder_are_not_sluggable()
+    public void Rejects_a_folder_that_cannot_be_a_canonical_id()
     {
         using var fixture = TempRoot.Create();
         var root = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills")).FullName;
@@ -196,14 +201,12 @@ public sealed class MarkdownSkillLoaderTests
 
         var result = new MarkdownSkillLoader().Load(new[] { root });
 
-        var skill = Assert.Single(result.Skills);
-        Assert.NotEmpty(skill.Id);
-        Assert.Matches("^[a-z0-9][a-z0-9._-]*$", skill.Id);
-        Assert.Equal(skill.Id, new MarkdownSkillLoader().Load(new[] { root }).Skills.Single().Id);
+        Assert.Empty(result.Skills);
+        Assert.Contains(result.Skips, skip => skip.Reason == "invalid_skill_id");
     }
 
     [Fact]
-    public void Reports_a_duplicate_before_the_capacity_skip_for_a_later_root()
+    public void Display_name_collision_does_not_replace_the_unique_folder_identity_at_capacity()
     {
         using var fixture = TempRoot.Create();
         var firstRoot = Directory.CreateDirectory(Path.Combine(fixture.Root, "first")).FullName;
@@ -217,8 +220,8 @@ public sealed class MarkdownSkillLoaderTests
 
         var result = new MarkdownSkillLoader().Load(new[] { firstRoot, secondRoot });
 
-        Assert.Contains(result.Skips, skip => skip.Reason == "duplicate");
-        Assert.DoesNotContain(result.Skips, skip => skip.SourcePath.EndsWith(Path.Combine("duplicate", "SKILL.md"), StringComparison.OrdinalIgnoreCase) && skip.Reason == "oversize");
+        Assert.DoesNotContain(result.Skips, skip => skip.Reason == "duplicate");
+        Assert.Contains(result.Skips, skip => skip.SourcePath.EndsWith(Path.Combine("duplicate", "SKILL.md"), StringComparison.OrdinalIgnoreCase) && skip.Reason == "oversize");
     }
 
     [Fact]

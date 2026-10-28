@@ -228,8 +228,11 @@ public sealed class CanonicalPathResolver
                 return null;
             }
 
-            // Windows: use GetFinalPathNameByHandle
-            const uint GENERIC_READ = 0x80000000;
+            // Windows: use GetFinalPathNameByHandle on a query-only handle. Zero
+            // desired access needs no read or list permission and is not blocked
+            // by an exclusive lock, so such files still resolve through the OS
+            // instead of falling back to the managed link walk.
+            const uint QUERY_ONLY_ACCESS = 0;
             const uint FILE_SHARE_READ = 0x00000001;
             const uint FILE_SHARE_WRITE = 0x00000002;
             const uint FILE_SHARE_DELETE = 0x00000004;
@@ -237,7 +240,7 @@ public sealed class CanonicalPathResolver
             const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
             const int FILE_NAME_NORMALIZED = 0x0;
 
-            using var handle = CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
+            using var handle = CreateFile(path, QUERY_ONLY_ACCESS, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
             if (handle.IsInvalid)
             {
                 return null;

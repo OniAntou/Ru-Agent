@@ -200,8 +200,11 @@ internal sealed partial class AgentRunCompaction
                         EstimateInputTokens(context, preparedRequest),
                         limitTokens,
                         ContextCompactionStrategy.Normal);
-                    if (decision.NeedsCompaction)
+                    // Large retained histories can need several range/token-bounded
+                    // checkpoints. Every pass must shrink and consumes normal budget.
+                    for (var pass = 0; pass < 16 && decision.NeedsCompaction; pass++)
                     {
+                        var beforePass = EstimateInputTokens(context, preparedRequest);
                         var compaction = await CompactSnapshotLockedAsync(
                                 run,
                                 context,
@@ -228,6 +231,7 @@ internal sealed partial class AgentRunCompaction
                                 EstimateInputTokens(context, preparedRequest),
                                 limitTokens,
                                 ContextCompactionStrategy.Normal);
+                            if (EstimateInputTokens(context, preparedRequest) >= beforePass) break;
                         }
                         else if (compaction.Outcome is ContextCompactionOutcome.CommitConflict
                             or ContextCompactionOutcome.RunNotFound
@@ -238,6 +242,7 @@ internal sealed partial class AgentRunCompaction
                                 null,
                                 compaction.ErrorCode ?? "commit_conflict");
                         }
+                        else break;
                     }
 
                     return EstimateInputTokens(context, preparedRequest) > decision.UsablePromptTokens
@@ -262,21 +267,27 @@ internal sealed partial class AgentRunCompaction
         ContextCompactionReason reason,
         CancellationToken cancellationToken,
         bool outputReserveAlreadyAccounted = false,
-        long? estimatedTokensOverride = null)
+        long? estimatedTokensOverride = null,
+        long? forcedTargetTokens = null)
     {
         var startedAt = _time.UtcNow;
         var estimatedTokens = estimatedTokensOverride ?? ModelContextSizeEstimator.EstimateTokens(context);
         var decision = outputReserveAlreadyAccounted
             ? _contextBudgetPolicy.EvaluateAvailablePromptTokens(estimatedTokens, limitTokens, strategy)
             : _contextBudgetPolicy.Evaluate(estimatedTokens, limitTokens, strategy);
+        if (forcedTargetTokens is { } target)
+            decision = decision with { TargetTokens = Math.Min(decision.TargetTokens, target), NeedsCompaction = true };
         var eventId = _ids.NewEventId();
-        var plan = ContextCompactionPlanner.Plan(
+        var coveredBudget = _summarizer is null ? long.MaxValue : Math.Max(1, decision.UsablePromptTokens / 2);
+        ContextCompactionPlan? PlanAt(long budget) => ContextCompactionPlanner.Plan(
             context,
             decision,
             "compact-" + eventId.Value,
             reason,
             estimatedTokensOverride: estimatedTokensOverride,
-            retainRecentTokens: reason == ContextCompactionReason.Automatic ? (long)(decision.UsablePromptTokens * 0.16) : 0);
+            retainRecentTokens: reason == ContextCompactionReason.Automatic ? (long)(decision.UsablePromptTokens * 0.16) : 0,
+            maximumCoveredTokens: budget);
+        var plan = PlanAt(coveredBudget);
         if (plan is null)
         {
             return ContextCompactionResult.NoOp(run, strategy);
@@ -284,11 +295,26 @@ internal sealed partial class AgentRunCompaction
 
         if (_summarizer is not null && _promptContextProvider is not null)
         {
-            var checkpoint = await BuildCheckpointAsync(run, plan, cancellationToken).ConfigureAwait(false);
-            run = checkpoint.Run;
-            if (checkpoint.ErrorCode is not null)
+            // Three source spans, at most four admitted calls including format
+            // repair. A rejected span is never committed as if it were summarized.
+            var callsLeft = 4;
+            for (var inputAttempt = 0; ; inputAttempt++)
+            {
+                var beforeCalls = run.ModelStepsInWindow;
+                var checkpoint = await BuildCheckpointAsync(run, plan, cancellationToken, Math.Min(2, callsLeft)).ConfigureAwait(false);
+                run = checkpoint.Run;
+                callsLeft -= run.ModelStepsInWindow - beforeCalls;
+                if (checkpoint.ErrorCode is null) { plan = checkpoint.Plan!; break; }
+                if (checkpoint.ErrorCode is "checkpoint_input_too_large" or "checkpoint_context_overflow"
+                    && inputAttempt < 2 && callsLeft > 0)
+                {
+                    coveredBudget = Math.Max(1, coveredBudget / 2);
+                    var reduced = PlanAt(coveredBudget);
+                    if (reduced is not null && reduced.InputHash != plan.InputHash)
+                    { plan = reduced; continue; }
+                }
                 return new ContextCompactionResult(ContextCompactionOutcome.NotAvailable, run, strategy, ErrorCode: checkpoint.ErrorCode);
-            plan = checkpoint.Plan!;
+            }
         }
 
         var summaryBytes = Encoding.UTF8.GetBytes(plan.SummaryText);

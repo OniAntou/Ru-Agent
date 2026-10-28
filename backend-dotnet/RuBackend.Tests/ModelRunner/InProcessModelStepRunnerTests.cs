@@ -278,7 +278,26 @@ public sealed partial class InProcessModelStepRunnerTests
     {
         var provider = new ScriptedProvider((_, _) =>
             Throws(new ModelProviderException("rate_limited", retryable: true, retryAfter: TimeSpan.FromSeconds(30))));
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        using var cancellation = new CancellationTokenSource();
+        var retryReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runner = Runner(provider);
+        runner.RetryJitterSample = () => { retryReady.TrySetResult(); return 0.5; };
+        var operation = runner.RunStepAsync(Request(), _ => ValueTask.CompletedTask, cancellation.Token);
+        await retryReady.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+        Assert.Equal(1, provider.Calls);
+    }
+
+    [Fact]
+    public async Task Cancellation_before_a_provider_error_is_observed_keeps_cancellation_semantics()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var provider = new ScriptedProvider((_, _) =>
+        {
+            cancellation.Cancel();
+            return Throws(new ModelProviderException("rate_limited", retryable: true));
+        });
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Runner(provider).RunStepAsync(
             Request(), _ => ValueTask.CompletedTask, cancellation.Token));
         Assert.Equal(1, provider.Calls);

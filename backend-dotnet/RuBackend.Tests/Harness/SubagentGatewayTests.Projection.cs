@@ -20,13 +20,21 @@ public sealed partial class SubagentGatewayTests
         Assert.DoesNotContain("web_search", tools);
         Assert.DoesNotContain("ask_user", tools);
         Assert.DoesNotContain(tools, id => id.StartsWith("agent_", StringComparison.Ordinal));
-        foreach (var tool in new[] { "write", "edit", "bash" })
+        var codingTools = new[]
+        {
+            "write_file", "edit_file", "file_delete", "file_restore",
+            "powershell", "run_process", "terminal_read", "terminal_stop",
+        };
+        foreach (var tool in codingTools)
             Assert.Equal(role == SubagentRole.Coding, tools.Contains(tool));
-        Assert.Equal(AgentToolDefinitionCatalog.Get().Select(t => t.ToolId),
-            AgentToolRuntimeProjection.Select(new(true, true, McpEnabled: true)).Select(t => t.ToolId));
+        Assert.Equal(AgentToolDefinitionCatalog.Get().Where(t => AgentToolProfiles.Includes(AgentToolProfiles.Minimal, t.ToolId)).Select(t => t.ToolId),
+            AgentToolRuntimeProjection.Select(new(true, true, McpEnabled: true, ComputerUseEnabled: true)).Select(t => t.ToolId));
         // MCP is advertised only while the user declares a server, and never to a child.
         Assert.DoesNotContain("mcp", AgentToolRuntimeProjection.Select(new(true, true)).Select(t => t.ToolId));
         Assert.DoesNotContain("mcp", AgentToolRuntimeProjection.Select(new(true, true, role, McpEnabled: true)).Select(t => t.ToolId));
+        // Computer use needs the run's opt-in pin and never reaches a child (ADR 0031).
+        Assert.DoesNotContain("computer", AgentToolRuntimeProjection.Select(new(true, true, McpEnabled: true)).Select(t => t.ToolId));
+        Assert.DoesNotContain("computer", AgentToolRuntimeProjection.Select(new(true, true, role, ComputerUseEnabled: true)).Select(t => t.ToolId));
         Assert.False(SubagentRoleTools.Includes(role, "agent_spawn"));
         Assert.False(SubagentRoleTools.Includes(role, "future_unknown_tool"));
     }

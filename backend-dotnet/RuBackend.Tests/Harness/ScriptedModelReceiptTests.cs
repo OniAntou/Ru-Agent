@@ -90,7 +90,7 @@ public sealed class ScriptedModelReceiptTests
         var runner = ScriptedModelStepRunner.FromJsonForTests("""
             [
               { "tool": { "id": "read", "arguments": { "path": "large.txt", "offset": 0 } } },
-              { "tool": { "id": "read", "arguments": { "path": "large.txt", "offset": "$projection_next_offset" } } }
+              { "tool": { "id": "read", "arguments": { "path": "large.txt", "offset": "$next_offset" } } }
             ]
             """);
         var context = new ModelContextSnapshot(
@@ -122,7 +122,7 @@ public sealed class ScriptedModelReceiptTests
         var runner = ScriptedModelStepRunner.FromJsonForTests("""
             [
               { "tool": { "id": "grep", "arguments": { "query": "needle", "offset": 0 } } },
-              { "tool": { "id": "grep", "arguments": { "query": "needle", "offset": "$projection_next_offset" } } },
+              { "tool": { "id": "grep", "arguments": { "query": "needle", "offset": "$next_offset" } } },
               { "text": "The deterministic page sequence ended." }
             ]
             """);
@@ -169,7 +169,7 @@ public sealed class ScriptedModelReceiptTests
             context.InstructionBlocks,
             context.Capabilities,
             new PromptRuntimeContext([new PromptReference("tool_result", "untrusted tool result",
-                $"{{\"projection_tool_call_id\":\"{toolCallId}\",\"projection_provider_call_id\":\"{providerCallId}\",\"projection_next_offset\":{cursor},\"projection_has_more\":true}}") ]));
+                $"{{\"projection_tool_call_id\":\"{toolCallId}\",\"projection_provider_call_id\":\"{providerCallId}\",\"next_offset\":{cursor},\"has_more\":true}}") ]));
     }
 
     private static SystemPromptContext ContextWithCompleteGrepReference(string providerCallId, string toolCallId)

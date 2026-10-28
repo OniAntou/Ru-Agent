@@ -30,11 +30,13 @@ public sealed class FilePatchAdapterTests : IDisposable
         var newLines = newContent.Replace("\r\n", "\n").Split('\n');
         if (oldLines.Length == 1 && oldLines[0] == string.Empty) oldLines = Array.Empty<string>();
         if (newLines.Length == 1 && newLines[0] == string.Empty) newLines = Array.Empty<string>();
+        if (oldContent.EndsWith('\n')) oldLines = oldLines[..^1];
+        if (newContent.EndsWith('\n')) newLines = newLines[..^1];
 
         var sb = new StringBuilder();
         sb.Append($"--- a/{path}\n");
         sb.Append($"+++ b/{path}\n");
-        sb.Append($"@@ -1,{oldLines.Length} +1,{newLines.Length} @@\n");
+        sb.Append($"@@ -{(oldLines.Length == 0 ? 0 : 1)},{oldLines.Length} +{(newLines.Length == 0 ? 0 : 1)},{newLines.Length} @@\n");
         int max = Math.Max(oldLines.Length, newLines.Length);
         for (int i = 0; i < max; i++)
         {
@@ -58,6 +60,8 @@ public sealed class FilePatchAdapterTests : IDisposable
             {
                 sb.Append($"+{newLines[i]}\n");
             }
+            if (i == newLines.Length - 1 && !newContent.EndsWith('\n'))
+                sb.Append("\\ No newline at end of file\n");
         }
         return sb.ToString();
     }
@@ -439,7 +443,7 @@ public sealed class FilePatchAdapterTests : IDisposable
 
         var result = adapter.Execute(args);
         Assert.Equal(1, result["count"]!.GetValue<int>());
-        Assert.Equal("first\nsecond", File.ReadAllText(Full("new.txt")));
+        Assert.Equal("first\nsecond\n", File.ReadAllText(Full("new.txt")));
     }
 
     private static bool TryCreateJunction(string junctionPath, string targetPath)

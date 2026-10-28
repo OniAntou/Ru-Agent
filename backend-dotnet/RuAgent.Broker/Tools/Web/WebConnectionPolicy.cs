@@ -29,6 +29,10 @@ public static class WebConnectionPolicy
         {
             AllowAutoRedirect = false,
             UseProxy = false,
+            // Decompression happens before WebResponseReader counts bytes, so its
+            // download bound applies to the decoded body and a small compressed
+            // response cannot expand past it.
+            AutomaticDecompression = DecompressionMethods.All,
             ConnectCallback = CreateConnectCallback(resolve),
         };
 

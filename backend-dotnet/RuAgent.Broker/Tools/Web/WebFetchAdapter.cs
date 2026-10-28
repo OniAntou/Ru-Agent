@@ -38,6 +38,7 @@ public sealed class WebFetchAdapter
         {
             await _policy.ValidateAsync(current, cancellationToken).ConfigureAwait(false);
             using var request = new HttpRequestMessage(HttpMethod.Get, current);
+            WebRequestIdentity.Apply(request);
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             if ((int)response.StatusCode is >= 300 and < 400)
             {
@@ -59,6 +60,17 @@ public sealed class WebFetchAdapter
 
             response.EnsureSuccessStatusCode();
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
+            if (IsPdf(contentType))
+            {
+                var pdf = await WebResponseReader.ReadBytesAsync(response, _maxResponseBytes, cancellationToken).ConfigureAwait(false);
+                var (pdfTitle, pdfText) = WebPdfTextExtractor.Extract(pdf, WebOptions.MaxConfiguredResponseBytes, cancellationToken);
+                // A scanned PDF parses but holds only images.
+                if (string.IsNullOrWhiteSpace(pdfText)) throw new InvalidDataException("web_pdf_unreadable");
+                var page = _sanitizer.Extract(pdfTitle ?? current.Segments[^1], current, pdfText, isHtml: false,
+                    Math.Min(limit, _maxResponseBytes), offset);
+                return new WebFetchResult(new SourceCitation(page.Title, current), page.Text, contentType, offset, page.NextOffset);
+            }
+
             if (!contentType.Contains("html", StringComparison.OrdinalIgnoreCase)
                 && !contentType.Contains("json", StringComparison.OrdinalIgnoreCase)
                 && !contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase))
@@ -79,4 +91,7 @@ public sealed class WebFetchAdapter
         throw new InvalidDataException("web_redirect_limit");
     }
 
+    private static bool IsPdf(string contentType) =>
+        contentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase)
+        || contentType.Equals("application/x-pdf", StringComparison.OrdinalIgnoreCase);
 }

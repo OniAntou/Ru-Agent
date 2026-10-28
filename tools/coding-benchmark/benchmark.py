@@ -22,7 +22,7 @@ GIT_ENV = {
 
 
 def tasks(suite, task_root=None):
-    directories = {"terminal": "tasks", "swe": "swe-tasks", "everyday": "everyday-tasks"}
+    directories = {"terminal": "tasks", "swe": "swe-tasks", "everyday": "everyday-tasks", "skills": "skill-tasks"}
     if suite not in directories:
         raise ValueError("unknown suite")
     directory = Path(task_root) if task_root is not None else ROOT / directories[suite]
@@ -64,6 +64,12 @@ def prepare(task, destination):
         "instruction_sha256": hashlib.sha256(task.instruction.encode("utf-8")).hexdigest(),
         "created_utc": datetime.now(UTC).isoformat(),
     }
+    if task.suite == "skills":
+        trial["skill_eval"] = {
+            "scenario": task.skill_scenario,
+            "expected_skill_selection": task.expected_skill_selection,
+            "observed_skill_selection": "unknown",
+        }
     (destination / "instruction.md").write_text(task.instruction, encoding="utf-8")
     write_json(destination / "trial.json", trial)
     return trial
@@ -157,7 +163,7 @@ def export_swe(output, include_oracle):
     return {"exported": len(records), "oracle_included": include_oracle, "output": str(output)}
 
 
-def run_live(selected, destination, executable, allow_live, attempts, trust_workspace=False):
+def run_live(selected, destination, executable, allow_live, attempts, trust_workspace=False, tool_profile=None):
     if not allow_live:
         raise ValueError("live execution requires --allow-live")
     if not trust_workspace:
@@ -177,9 +183,15 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
         for attempt in range(attempts):
             trial_dir = destination / f"{task.id}-{attempt + 1}"
             trial = prepare(task, trial_dir)
-            execution = run_ru(executable, task, Path(trial["workspace"]), trial_dir, trust_workspace=trust_workspace)
+            execution = run_ru(executable, task, Path(trial["workspace"]), trial_dir, trust_workspace=trust_workspace, tool_profile=tool_profile)
             result = grade(task, Path(trial["workspace"]))
             result.update({"agent": execution, "attempt": attempt + 1, "base_commit": trial["base_commit"]})
+            if task.suite == "skills":
+                result["skill_eval"] = {
+                    "scenario": task.skill_scenario,
+                    "expected_skill_selection": task.expected_skill_selection,
+                    "observed_skill_selection": "unknown",
+                }
             if execution["status"] != "completed":
                 result["reward"] = 0
                 result["status"] = "agent_" + execution["status"]
@@ -200,7 +212,7 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
 def main():
     parser = argparse.ArgumentParser(description="Ru custom Terminal-Bench / SWE-bench-style tooling")
     parser.add_argument("command", choices=["list", "validate", "prepare", "grade", "self-test", "grade-patch", "export-patch", "export-swe", "run-live", "compare", "compare-cohorts"])
-    parser.add_argument("--suite", choices=["terminal", "swe", "everyday", "all"], default="all")
+    parser.add_argument("--suite", choices=["terminal", "swe", "everyday", "skills", "all"], default="all")
     parser.add_argument("--task")
     parser.add_argument("--destination", type=Path)
     parser.add_argument("--workspace", type=Path)
@@ -217,6 +229,7 @@ def main():
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--trust-workspace", action="store_true")
     parser.add_argument("--ru-executable", type=Path)
+    parser.add_argument("--tool-profile", choices=["coding_v2", "patch_v2", "coding_code_v1"])
     args = parser.parse_args()
     try:
         if args.task_root is not None and args.suite == "all":
@@ -241,7 +254,11 @@ def main():
             raise ValueError("--patch required")
         if args.command in {"list", "validate"}:
             result = {"tasks": [{"id": task.id, "suite": task.suite, "language": task.language,
-                                  "fixture_sha256": task.fixture_hash, "groups": len(task.groups)} for task in selected],
+                                  "fixture_sha256": task.fixture_hash, "groups": len(task.groups),
+                                  **({"skill_scenario": task.skill_scenario,
+                                     "expected_skill_selection": task.expected_skill_selection,
+                                     "observed_skill_selection": "unknown"} if task.suite == "skills" else {})}
+                                 for task in selected],
                       "live_provider": "not_run", "task_quality_pass_rate": None}
         elif args.command == "prepare":
             result = prepare(selected[0], args.destination)
@@ -277,7 +294,7 @@ def main():
                 entry["records"] = load_records(args.cohorts.parent / entry["predictions"])
             result = compare_cohorts(entries, args.track)
         else:
-            result = run_live(selected, args.destination, args.ru_executable, args.allow_live, args.attempts, args.trust_workspace)
+            result = run_live(selected, args.destination, args.ru_executable, args.allow_live, args.attempts, args.trust_workspace, args.tool_profile)
         if args.report is not None and args.command != "export-swe":
             write_json(args.report, result)
         print(json.dumps(result, ensure_ascii=False, indent=2))

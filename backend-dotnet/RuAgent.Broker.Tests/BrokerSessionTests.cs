@@ -127,8 +127,8 @@ public sealed class BrokerSessionTests
         Assert.Null(error);
         Assert.NotNull(session.ActiveRunLease);
         Assert.Equal(
-            new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait",
-                "bash", "edit", "glob", "grep", "help", "list", "mcp", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
+            AgentToolDefinitionCatalog.Get().Where(d => d.ToolId != "ask_user")
+                .Select(d => d.ToolId).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 
@@ -203,8 +203,8 @@ public sealed class BrokerSessionTests
             Path.GetTempPath(),
             LeaseTestSnapshots.StandardEmpty());
         Assert.Equal(
-            new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait",
-                "bash", "edit", "glob", "grep", "help", "list", "mcp", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
+            AgentToolDefinitionCatalog.Get().Where(d => d.ToolId != "ask_user")
+                .Select(d => d.ToolId).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 

@@ -24,6 +24,8 @@ namespace RuApp.Views
 
         public SettingsViewModel ViewModel { get; }
 
+        public AgentActivityDisplayPreferences ActivityFeedPreferences => AgentActivityDisplayPreferences.Instance;
+
         /// <summary>The remembered approval rules page.</summary>
         public ViewModels.ApprovalRulesViewModel Rules { get; }
 
@@ -94,6 +96,7 @@ namespace RuApp.Views
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController is null;
             _ = ViewModel.AttachAsync(new ApiSettingsBackend(apiService), new ProviderCatalogSession(_providerCatalogController));
+            _ = LoadComputerUseAsync(apiService);
         }
 
         public Task RefreshProviderCatalogAsync() => ViewModel.RefreshCatalogAsync();
@@ -367,6 +370,7 @@ namespace RuApp.Views
         {
             _updateLifetime.Cancel();
             StopUpdateAvailabilityChecks();
+            _updateMonitor?.Dispose();
             ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
             ViewModel.ProviderPickerCommitted -= OnProviderPickerCommitted;
             if (ProviderButton?.Flyout is Flyout providerFlyout)

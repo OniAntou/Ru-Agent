@@ -1,0 +1,10 @@
+id = "negative-unrelated-slug"
+language = "python"
+difficulty = "skills"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["case_fold", "collapse_separators", "trim_edges", "ascii_boundary", "punctuation", "spaces"]
+pass_to_pass = ["function_available"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 30
+skill_scenario = "negative_unrelated"
+expected_skill_selection = "none"

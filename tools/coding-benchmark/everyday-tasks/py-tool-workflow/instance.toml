@@ -1,0 +1,8 @@
+id = "py-tool-workflow"
+language = "python"
+difficulty = "everyday"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["line_totals", "currency_normalization", "report_created", "grouped_totals", "iterable_and_empty"]
+pass_to_pass = ["existing_label"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 120

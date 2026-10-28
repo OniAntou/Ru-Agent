@@ -13,7 +13,7 @@ namespace RuApp.Models
         public int Bottom => Y + Height;
     }
 
-    public class ChatMessageItem : INotifyPropertyChanged
+    public partial class ChatMessageItem : INotifyPropertyChanged
     {
         // Durable run ownership for history/replay reconciliation, not display.
         public string? SourceRunId { get; set; }
@@ -217,6 +217,7 @@ namespace RuApp.Models
                     _segments.CollectionChanged += OnSegmentsChanged;
                 }
 
+                UpdateCompactSegments();
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasSegments));
                 OnPropertyChanged(nameof(ShowLegacyActivityFeed));
@@ -235,6 +236,7 @@ namespace RuApp.Models
         /// </summary>
         private void OnSegmentsChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
+            UpdateCompactSegments(e);
             OnPropertyChanged(nameof(HasSegments));
             OnPropertyChanged(nameof(ShowLegacyActivityFeed));
             OnPropertyChanged(nameof(ShowLegacyText));
@@ -264,7 +266,7 @@ namespace RuApp.Models
         }
 
         /// <summary>Legacy feed: visible only when no chronological segments exist.</summary>
-        public bool ShowLegacyActivityFeed => HasAgentActivities && !HasSegments;
+        public bool ShowLegacyActivityFeed => HasAgentActivities && !HasSegments && !ActivityDetailsCollapsed;
 
         /// <summary>Legacy full-text block: hidden once segments take over rendering.</summary>
         public bool ShowLegacyText => !HasSegments;

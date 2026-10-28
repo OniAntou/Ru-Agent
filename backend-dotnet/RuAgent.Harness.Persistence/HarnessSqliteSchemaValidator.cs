@@ -27,7 +27,15 @@ internal static class HarnessSqliteSchemaValidator
             ["agent_subagent_reservations"] = ["root_run_id", "window", "invocation_id", "kind", "amount"],
             ["business_migrations"] = ["name"],
             ["business_settings"] = ["id", "document"],
-            ["business_sessions"] = ["session_id", "document", "summary", "updated_at_utc"],
+            ["business_sessions"] =
+            [
+                "session_id", "document", "summary", "updated_at_utc", "title", "created_at_utc",
+                "parent_session_id", "forked_from_message_id", "last_agent_activity_at_utc",
+                "client_source", "total_message_count", "history_epoch",
+            ],
+            ["business_session_messages"] =
+                ["message_id", "session_id", "message_index", "role", "content", "source_message_id", "source_run_id"],
+            ["business_session_source_receipts"] = ["session_id", "source_message_id", "fingerprint"],
             ["business_activity"] = ["sequence", "event_id", "timestamp", "document"],
             ["agent_workspaces"] =
             [
@@ -185,6 +193,7 @@ internal static class HarnessSqliteSchemaValidator
         SqliteConnection connection,
         CancellationToken cancellationToken)
     {
+        if (!await ValidateContextProjectionAsync(connection, cancellationToken).ConfigureAwait(false)) return false;
         if (await ScalarLongAsync(connection, "PRAGMA foreign_keys", cancellationToken)
                 .ConfigureAwait(false) != 1
             || await ScalarLongAsync(connection, "PRAGMA user_version", cancellationToken)
@@ -251,11 +260,32 @@ internal static class HarnessSqliteSchemaValidator
                   'ix_agent_events_provider_continuation',
                   'ix_agent_events_session_receipts',
                   'ix_agent_session_work_states_workspace',
+                  'ix_business_session_messages_session_index',
                   'business_sessions_updated',
                   'business_activity_timestamp')
             """;
-        return (long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
-            .ConfigureAwait(false) ?? 0L) == 15;
+        if ((long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
+                .ConfigureAwait(false) ?? 0L) != 16)
+            return false;
+
+        await using var searchCommand = connection.CreateCommand();
+        searchCommand.CommandText = """
+            SELECT count(*) FROM sqlite_master
+            WHERE type = 'table' AND name = 'business_session_message_search';
+            """;
+        return (long)(await searchCommand.ExecuteScalarAsync(cancellationToken)
+            .ConfigureAwait(false) ?? 0L) == 1;
+    }
+
+    private static async Task<bool> ValidateContextProjectionAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        if (!(await ReadColumnsAsync(connection, "agent_runs", ct).ConfigureAwait(false)).Contains("context_revision")) return false;
+        return await ScalarLongAsync(connection, """
+            SELECT count(*) FROM sqlite_master WHERE
+              (type='trigger' AND name IN ('context_payload_updated','context_payload_deleted',
+               'context_event_updated','context_event_deleted','context_compaction_updated','context_compaction_deleted'))
+              OR (type='index' AND name IN ('ix_agent_context_compactions_run_version','ix_business_session_messages_session_source'))
+            """, ct).ConfigureAwait(false) == 8;
     }
 
     private static async Task<HashSet<string>> ReadColumnsAsync(

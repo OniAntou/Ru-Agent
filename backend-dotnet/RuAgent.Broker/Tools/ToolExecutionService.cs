@@ -7,7 +7,6 @@ using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Skills;
-using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
@@ -51,8 +50,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private readonly TerminalAdapter _terminal;
     private readonly BackgroundTaskRegistry _backgroundTasks;
     private readonly HelpDocsTool _helpDocs;
-    private readonly SkillBodyStore _skillBodies;
     private readonly Func<bool> _pythonAvailable;
+    private readonly Func<string, bool> _skillCapabilityAvailable;
     private readonly WebOptions _webOptions;
     private readonly WebSearchAdapter? _webSearch;
     private readonly WebFetchAdapter? _webFetch;
@@ -66,7 +65,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         ApprovalTokenService? approvalTokens = null,
         Func<bool>? pythonAvailable = null,
         string? terminalSpoolRoot = null,
-        TerminalConcurrencyOptions? terminalConcurrencyOptions = null)
+        TerminalConcurrencyOptions? terminalConcurrencyOptions = null,
+        Func<string, bool>? skillCapabilityAvailable = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
@@ -121,13 +121,14 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             _webFetch = new WebFetchAdapter(webClient, webPolicy, sanitizer, _webOptions.MaxResponseBytes);
             if (_webOptions.SearchEndpoint is not null)
             {
-                _webSearch = new WebSearchAdapter(webClient, webPolicy, sanitizer, _webOptions.SearchEndpoint, _webOptions.MaxResponseBytes, WebOptions.DefaultFallbackEndpoints);
+                _webSearch = new WebSearchAdapter(webClient, webPolicy, sanitizer, _webOptions.SearchEndpoint, _webOptions.MaxResponseBytes, WebOptions.DefaultFallbackEndpoints, _webOptions.SearchMode);
             }
         }
 
         _catalog = new ToolCatalog(BuildExecutors(), _webOptions);
-        _skillBodies = new SkillBodyStore(_workspace.Root);
         _pythonAvailable = pythonAvailable ?? (() => PythonAvailability.IsAvailable);
+        _skillCapabilityAvailable = skillCapabilityAvailable ?? (capability =>
+            string.Equals(capability, "python", StringComparison.OrdinalIgnoreCase) ? _pythonAvailable() : SkillCapabilityAvailability.IsAvailable(capability));
     }
 
     internal int CachedRootToolSetCount => _toolSetsByRoot.Count;
@@ -153,6 +154,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         // spool id must never resolve to another session's text, and a spilled
         // spool file must never outlive it.
         _spools.RemoveSession(sessionId);
+        // App grants for computer use end with the Agent session (ADR 0031).
+        _computer?.RemoveSession(sessionId);
     }
 
     /// <summary>
@@ -174,6 +177,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     {
         var executors = new Dictionary<string, ToolExecutor>(StringComparer.Ordinal)
         {
+            ["run_code"] = (_, _, _) => ValueTask.FromResult(ToolExecutionOutcome.Failed("program_runtime_required", "Programs require an authenticated run and durable journal.")),
             ["read"] = ExecuteReadAsync,
             ["list"] = ExecuteListAsync,
             ["help"] = ExecuteHelpAsync,
@@ -192,12 +196,20 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
                     token).ConfigureAwait(false),
                 ToolVerificationStates.NotRequired,
                 "Workspace glob completed."),
-            ["write"] = ExecuteWriteOpAsync,
-            ["edit"] = (context, arguments, _) => ExecuteFileEdit(context, arguments),
-            ["bash"] = ExecuteBashAsync,
+            ["apply_patch"] = ExecutePatchAsync,
+            ["read_file"] = ExecuteLineReadAsync,
+            ["write_file"] = (context, arguments, _) => Succeeded(ExecuteFileWrite(context, arguments), "Workspace file written."),
+            ["edit_file"] = ExecuteMultiEditAsync,
+            ["file_delete"] = (context, arguments, _) => Succeeded(ExecuteDelete(context, arguments), "Workspace file deleted."),
+            ["file_restore"] = (context, arguments, _) => ExecuteRestore(context, arguments),
+            ["powershell"] = ExecuteTerminalShellAsync,
+            ["run_process"] = ExecuteTerminalRunAsync,
+            ["terminal_read"] = (context, arguments, _) => ValueTask.FromResult(ExecuteTerminalReadOutput(context, arguments)),
+            ["terminal_stop"] = (context, arguments, _) => ValueTask.FromResult(ExecuteTerminalKill(context, arguments)),
             ["web_search"] = ExecuteWebSearchAsync,
             ["web_fetch"] = ExecuteWebFetchAsync,
             ["mcp"] = ExecuteMcpAsync,
+            ["computer"] = ExecuteComputerAsync,
         };
 
         // Native orchestration consumes exact authorization through Runtime callbacks.
@@ -268,8 +280,10 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private static string IoRepairHint(string? code) => code switch
     {
         "is_directory" => "target is a directory, and file tools address files: list it and act on the files inside, or remove it with an approved terminal command.",
-        "file_not_found" => "file does not exist: list the directory to check the path. To create a new file use write with op=write, path and content; edit only modifies an existing file.",
-        "file_exists" => "file already exists: read it, then retry with op=write, the same path and content, and overwrite=true; use edit for a partial change.",
+        "file_not_found" => "file does not exist: list the directory to check the path. Create it with an advertised write_file or apply_patch add-file diff. An edit cannot create files.",
+        "read_line_too_long" => "A line exceeds the line-read output limit. Use read with byte paging and its returned cursor instead.",
+        "read_line_scan_limit" => "The file exceeds the 4 MiB line snapshot limit. Use read with bounded byte paging instead.",
+        "file_exists" => "file already exists: read it, then use the advertised file tool for a partial change, or retry write_file with the same path and content and overwrite=true for deliberate replacement.",
         _ => "Tool input or output failed.",
     };
 

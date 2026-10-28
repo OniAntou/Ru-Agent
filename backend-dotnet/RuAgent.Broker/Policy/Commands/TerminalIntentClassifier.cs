@@ -15,7 +15,7 @@ public sealed class TerminalIntentClassifier
     public TerminalIntentClassification Classify(PolicyContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (context.ToolId != "bash") return Reject("terminal_tool_invalid");
+        if (context.ToolId is not ("bash" or "powershell" or "run_process")) return Reject("terminal_tool_invalid");
         if (context.BashMode is not (null or "run" or "shell")) return Reject("terminal_mode_invalid");
         var directory = context.WorkingDirectory;
         if (directory is null || string.IsNullOrWhiteSpace(context.CanonicalCwd)

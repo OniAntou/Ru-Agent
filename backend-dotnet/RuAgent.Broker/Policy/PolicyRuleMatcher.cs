@@ -1,4 +1,5 @@
 using System.Globalization;
+using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
@@ -29,6 +30,12 @@ public sealed record PolicyRuleSpec(
 
 public static class PolicyRuleMatcher
 {
+    private enum ArgvMatchSemantics
+    {
+        Prefix,
+        Exact,
+    }
+
     /// <summary>
     /// Parses a wire rule into a spec. Structural validation already happened at snapshot
     /// validation; this compiles matcher patterns and throws on any malformed value.
@@ -49,19 +56,17 @@ public static class PolicyRuleMatcher
             return false;
         }
 
-        return MatchesMatcher(rule.Matcher, context, exactShellInvocation: rule.Decision == "allow",
+        return MatchesMatcher(rule.Matcher, context, isAllowRule: rule.Decision == "allow",
             includeRequestedExecutable: rule.Decision != "allow");
     }
 
     public static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context)
-        => MatchesMatcher(matcher, context, exactShellInvocation: false);
+        => MatchesMatcher(matcher, context, isAllowRule: false);
 
-    private static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context, bool exactShellInvocation,
+    private static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context, bool isAllowRule,
         bool includeRequestedExecutable = false)
     {
-        if (matcher.ToolId is not null
-            && !string.Equals(matcher.ToolId, context.ToolId, StringComparison.Ordinal)
-            && !LegacyToolIdMatches(matcher.ToolId, context.ToolId, context.ToolOp, context.BashMode))
+        if (matcher.ToolId is not null && !ToolIdMatches(matcher.ToolId, context))
         {
             return false;
         }
@@ -104,12 +109,14 @@ public static class PolicyRuleMatcher
             if (!matches) return false;
         }
 
-        // A shell allow binds program text, not a glob or a command prefix.
-        // Deny/ask rules retain pattern matching so a broad restriction wins.
+        // Allow rules derived from terminal calls distinguish reviewed exact
+        // invocations from normal command prefixes. Restrictions intentionally
+        // keep glob/prefix matching so a broad deny or ask still wins.
         if (matcher.ArgvPattern.Count > 0
-            && !(context.BashMode == "shell" && exactShellInvocation
-                ? matcher.ArgvPattern.SequenceEqual(context.Argv, StringComparer.Ordinal)
-                : ArgvMatches(matcher.ArgvPattern, context.Argv)))
+            && !ArgvMatches(
+                matcher.ArgvPattern,
+                context.Argv,
+                GetArgvMatchSemantics(isAllowRule, matcher, context)))
         {
             return false;
         }
@@ -207,6 +214,17 @@ public static class PolicyRuleMatcher
         return context.Target?.CanonicalPath;
     }
 
+    private static bool ToolIdMatches(string matcherId, PolicyContext context)
+    {
+        if (matcherId == context.ToolId || LegacyToolIdMatches(matcherId, context.ToolId, context.ToolOp, context.BashMode))
+            return true;
+        var adapterId = CodingToolArguments.AdapterToolId(context.ToolId);
+        if (context.ToolId == "apply_patch" && context.OperationClass != PolicyOperationClasses.Patch)
+            adapterId = context.OperationClass == PolicyOperationClasses.Edit ? "edit" : "write";
+        return adapterId is not null && (matcherId == adapterId
+            || LegacyToolIdMatches(matcherId, adapterId, context.ToolOp, context.BashMode));
+    }
+
     private static bool LegacyToolIdMatches(string matcherToolId, string contextToolId, string? toolOp, string? bashMode) =>
         (matcherToolId, contextToolId) switch
         {
@@ -246,8 +264,51 @@ public static class PolicyRuleMatcher
         return string.Equals(pattern, baseName, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool ArgvMatches(IReadOnlyList<string> pattern, IReadOnlyList<string> argv)
+    private static ArgvMatchSemantics GetArgvMatchSemantics(
+        bool isAllowRule,
+        MatcherSpec matcher,
+        PolicyContext context)
     {
+        // An app list is a grant, not a command prefix: a remembered [notepad.exe]
+        // must never cover a later request that adds another app (ADR 0031).
+        if (isAllowRule && string.Equals(context.ToolId, "computer", StringComparison.Ordinal))
+        {
+            return ArgvMatchSemantics.Exact;
+        }
+
+        if (isAllowRule && context.OperationClass == PolicyOperationClasses.Terminal)
+        {
+            if (context.BashMode == "shell"
+                || CommandIntentResolver.IsPowerShellCommandInvocation(context.ResolvedExecutable, context.Argv))
+            {
+                return ArgvMatchSemantics.Exact;
+            }
+
+            // Flag-first native invocations include PowerShell wrappers. This does
+            // not depend on the resolver's current shell startup flag sequence.
+            if (IsLeadingFlag(matcher.ArgvPattern[0]))
+            {
+                return ArgvMatchSemantics.Exact;
+            }
+        }
+
+        return ArgvMatchSemantics.Prefix;
+    }
+
+    private static bool IsLeadingFlag(string argument) =>
+        argument.StartsWith("-", StringComparison.Ordinal)
+        || argument.StartsWith("/", StringComparison.Ordinal);
+
+    private static bool ArgvMatches(
+        IReadOnlyList<string> pattern,
+        IReadOnlyList<string> argv,
+        ArgvMatchSemantics semantics)
+    {
+        if (semantics == ArgvMatchSemantics.Exact)
+        {
+            return pattern.SequenceEqual(argv, StringComparer.Ordinal);
+        }
+
         if (pattern.Count > argv.Count)
         {
             return false;

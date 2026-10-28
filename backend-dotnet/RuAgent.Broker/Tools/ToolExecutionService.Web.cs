@@ -6,7 +6,6 @@ using System.Text.RegularExpressions;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
-using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
@@ -14,6 +13,8 @@ using RuAgent.Broker.Tools.Web;
 using RuAgent.Broker.Tools.Help;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+
+using RuAgent.Broker.Skills;
 
 namespace RuAgent.Broker.Tools;
 
@@ -74,14 +75,50 @@ public sealed partial class ToolExecutionService
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
-        _ = context;
         cancellationToken.ThrowIfCancellationRequested();
-        var name = arguments["name"]?.GetValue<string>()?.Trim()
-            ?? throw new ArgumentException("invalid_skill_name");
-        var body = _skillBodies.LoadBody(name);
-        if (body is null)
+        var skillBodies = new SkillBodyStore(ToolsFor(context).MutationResolver.CanonicalRoot);
+        var name = arguments["name"]?.GetValue<string>()?.Trim();
+        var query = arguments["query"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(name) == string.IsNullOrWhiteSpace(query))
+            throw new ArgumentException("skill_requires_name_or_query");
+        if (!string.IsNullOrWhiteSpace(query))
         {
-            throw new UnauthorizedAccessException("skill_not_found");
+            if (arguments["expected_revision"] is not null || arguments["expected_body_sha256"] is not null)
+                throw new ArgumentException("skill_query_does_not_accept_body_version");
+            var catalog = skillBodies.Discover(query, cancellationToken: cancellationToken);
+            var items = catalog.Items.Where(item => item.Enabled && item.ModelInvocable).Take(32).Select(item => (JsonNode?)new JsonObject
+            {
+                ["id"] = item.Id,
+                ["name"] = item.Name,
+                ["description"] = item.Description,
+                ["source_path"] = item.SourcePath,
+                ["resource_base"] = item.ResourceBase,
+                ["revision"] = item.Revision,
+                ["enabled"] = item.Enabled,
+                ["model_invocable"] = item.ModelInvocable,
+                ["user_invocable"] = item.UserInvocable,
+                ["requires"] = new JsonArray(item.Requires.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()),
+                ["compatibility"] = item.Compatibility,
+            }).ToArray();
+            var diagnostics = catalog.Diagnostics.Take(64).Select(item => (JsonNode?)new JsonObject
+            {
+                ["source_path"] = item.SourcePath,
+                ["code"] = item.Code,
+            }).ToArray();
+            return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+                new JsonObject
+                {
+                    ["items"] = new JsonArray(items),
+                    ["diagnostics"] = new JsonArray(diagnostics),
+                    ["truncated"] = catalog.Truncated || catalog.Items.Count > items.Length,
+                    ["total"] = catalog.Total,
+                }, ToolVerificationStates.NotRequired, "Workspace skill catalog searched."));
+        }
+        var expectedRevision = arguments["expected_revision"]?.GetValue<string>();
+        var expectedBodySha256 = arguments["expected_body_sha256"]?.GetValue<string>();
+        if (!skillBodies.TryLoadBody(name!, out var body, out var errorCode, expectedRevision, expectedBodySha256) || body is null)
+        {
+            throw new UnauthorizedAccessException(errorCode ?? "skill_not_found");
         }
 
         var unmet = EvaluateSkillRequirements(body.Requires);
@@ -97,6 +134,14 @@ public sealed partial class ToolExecutionService
                 ["description"] = body.Description,
                 ["body"] = body.Body,
                 ["body_sha256"] = body.BodySha256,
+                ["id"] = body.Id,
+                ["source_path"] = body.SourcePath,
+                ["resource_base"] = body.ResourceBase,
+                ["revision"] = body.Revision,
+                ["requires"] = new JsonArray(body.Requires.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()),
+                ["compatibility"] = body.Compatibility,
+                ["model_invocable"] = body.ModelInvocable,
+                ["user_invocable"] = body.UserInvocable,
             },
             ToolVerificationStates.NotRequired,
             "Workspace skill loaded."));
@@ -104,7 +149,7 @@ public sealed partial class ToolExecutionService
 
     private ToolExecutionOutcome? EvaluateSkillRequirements(IReadOnlyList<string> requires)
     {
-        var failure = SkillRequirements.FindUnmet(requires, _pythonAvailable);
+        var failure = SkillRequirements.FindUnmet(requires, _skillCapabilityAvailable);
         return failure is null
             ? null
             : ToolExecutionOutcome.Failed(failure.Code, failure.Message, ToolVerificationStates.NotRequired);

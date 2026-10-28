@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using RuAgent.Client;
 using RuAgent.Updates;
+using RuApp.Services;
 
 namespace RuApp.Views;
 
@@ -13,34 +14,28 @@ public sealed partial class SettingsView
     private InstalledRelease? _installedRelease;
     private bool _updatesInitializing;
     private CancellationTokenSource? _updateDownload;
-    private DispatcherTimer? _updateCheckTimer;
+    private UpdateAvailabilityMonitor? _updateMonitor;
+    private Task? _updateMonitorTask;
     public Func<bool>? CanInstallUpdate { get; set; }
     public event Action? UpdateRestartRequested;
     public event Action<bool>? UpdateAvailabilityChanged;
 
     public void StartUpdateAvailabilityChecks()
     {
-        if (_installedRelease is null || _updateCheckTimer is not null || _updateLifetime.IsCancellationRequested) return;
-        _updateCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(30) };
-        _updateCheckTimer.Tick += OnAutomaticUpdateCheck;
-        _updateCheckTimer.Start();
-        CheckForUpdates();
+        if (_installedRelease is null || _updateLifetime.IsCancellationRequested) return;
+        if (_updateMonitorTask is null && _updateMonitor is not null)
+            _updateMonitorTask = ObserveUpdateMonitorAsync(_updateMonitor.Start());
     }
-
-    private void OnAutomaticUpdateCheck(object? sender, object e) => CheckForUpdates();
 
     private void StopUpdateAvailabilityChecks()
     {
-        if (_updateCheckTimer is null) return;
-        _updateCheckTimer.Stop();
-        _updateCheckTimer.Tick -= OnAutomaticUpdateCheck;
-        _updateCheckTimer = null;
+        _updateMonitor?.Stop();
     }
 
-    private void CheckForUpdates()
+    private async void CheckForUpdates()
     {
-        if (CheckUpdatesButton.IsEnabled && !_updateLifetime.IsCancellationRequested)
-            OnCheckUpdatesClick(this, new RoutedEventArgs());
+        if (CheckUpdatesButton.IsEnabled && !_updateLifetime.IsCancellationRequested && _updateMonitor is not null)
+            await _updateMonitor.CheckNowAsync(_updateLifetime.Token);
     }
 
     private void SetAvailableUpdate(ReleaseUpdate? release)
@@ -60,6 +55,7 @@ public sealed partial class SettingsView
 
     private void InitializeUpdates()
     {
+        _updateMonitor = new UpdateAvailabilityMonitor(CheckUpdateAvailabilityAsync, ReportUpdateCheckFailure);
         _updatesInitializing = true;
         AboutVersionText.Text = "Version " + InstalledRelease.SoftwareVersion;
         AboutBuildText.Text = "Source build";
@@ -96,6 +92,12 @@ public sealed partial class SettingsView
 
     private async void OnCheckUpdatesClick(object sender, RoutedEventArgs e)
     {
+        if (_updateMonitor is null) return;
+        await _updateMonitor.CheckNowAsync(_updateLifetime.Token);
+    }
+
+    private async Task CheckUpdateAvailabilityAsync(CancellationToken cancellationToken)
+    {
         if (_installedRelease is null || !CheckUpdatesButton.IsEnabled || _updateLifetime.IsCancellationRequested) return;
         SetAvailableUpdate(null);
         CheckUpdatesButton.IsEnabled = false;
@@ -104,11 +106,9 @@ public sealed partial class SettingsView
         UpdateStatusText.Text = "Checking releases…";
         try
         {
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_updateLifetime.Token);
-            deadline.CancelAfter(TimeSpan.FromSeconds(30));
             using var client = new ReleaseUpdateClient();
-            var channel = UpdateChannelCombo.SelectedIndex == 1 ? UpdateChannel.Preview : UpdateChannel.Stable;
-            var release = await client.CheckAsync(_installedRelease, channel, deadline.Token);
+            var channel = UpdateAvailabilityMonitor.ChannelFromSelection(UpdateChannelCombo.SelectedIndex);
+            var release = await client.CheckAsync(_installedRelease, channel, cancellationToken);
             if (_updateLifetime.IsCancellationRequested) return;
             SetAvailableUpdate(release);
             UpdateStatusText.Text = _availableUpdate is null ? "No newer compatible release is available on this channel." : $"Ru {_availableUpdate.Version} is available.";
@@ -121,6 +121,25 @@ public sealed partial class SettingsView
         {
             if (!_updateLifetime.IsCancellationRequested) { CheckUpdatesButton.IsEnabled = true; UpdateChannelCombo.IsEnabled = true; }
         }
+    }
+
+    private async Task ObserveUpdateMonitorAsync(Task monitorTask)
+    {
+        try { await monitorTask; }
+        catch (OperationCanceledException) when (_updateLifetime.IsCancellationRequested) { }
+        catch (Exception error) { ReportUpdateCheckFailure(error); }
+    }
+
+    private void ReportUpdateCheckFailure(Exception error)
+    {
+        if (_updateLifetime.IsCancellationRequested) return;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_updateLifetime.IsCancellationRequested)
+                UpdateStatusText.Text = error is TimeoutException
+                    ? "Update check timed out. Try again."
+                    : $"Could not check for updates: {error.Message}";
+        });
     }
 
     private async void OnInstallUpdateClick(object sender, RoutedEventArgs e)

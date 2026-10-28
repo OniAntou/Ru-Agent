@@ -38,6 +38,7 @@ sealed class ProbeMetrics : IDisposable
         _listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
         {
             if (instrument.Name == "ru.agent.context.cache.lookups") stats.Add("cache." + tags[0].Value, value);
+            if (instrument.Name == "ru.agent.context.projection.lookups") stats.Add("projection." + tags[0].Value, value);
         });
         _listener.Start();
     }

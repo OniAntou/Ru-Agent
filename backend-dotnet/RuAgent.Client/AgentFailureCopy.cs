@@ -146,6 +146,14 @@ public static class AgentFailureCopy
             "Model has no vision",
             "this model cannot read images",
             "model does not support images · switch to a vision model with /model");
+        Add(table, ["provider_web_search_unavailable"],
+            "Provider web search unavailable",
+            "the provider refused its hosted web search for this model or account",
+            "turn it on for the organization, pick another model, or set provider_web_search_enabled to false");
+        Add(table, ["provider_search_paused"],
+            "Web search did not finish",
+            "the provider paused its search turn too many times",
+            "retry, or ask for a narrower search");
         Add(table, ["image_limit_exceeded"],
             "Too many images",
             "a turn can carry at most 4 images",

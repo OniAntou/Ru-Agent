@@ -4,6 +4,20 @@ Interactive and headless client for Ru's coding loop. It delegates runs to the
 Public Host over authenticated HTTP/SSE; model execution and policy remain
 Harness/Broker owned.
 
+## Durable history and database maintenance
+
+`ru session list --limit 100 --query TEXT` pages summaries; add `--cursor TOKEN`
+to continue. `ru session history SESSION_ID --limit 200 --json` returns the
+newest chronological message page and an older-page cursor. `ru session search
+TEXT --limit 50` searches retained messages. The existing `agent session ...`
+spelling remains supported. Plain history output is a bounded preview; JSON
+contains the complete returned page. Rewind uses absolute zero-based indices.
+
+`ru database status|backup|verify|restore|compact|prune` uses the matching Backend
+binary directly without starting a model run. See [database maintenance](../../docs/operations/database-maintenance.md)
+for bundle paths, the same-Windows-identity key constraint, offline operations
+and explicit pruning. No automatic conversation deletion is enabled.
+
 ## Transcript and command navigation
 
 Terminal.Gui is the default interactive surface on supported terminals. Ctrl+P
@@ -100,7 +114,9 @@ retains at most 2,000 rows and 200,000 Unicode characters, with 16,000 UTF-16 un
 per line, including collapsed content; a notice marks discarded history. These are
 rendering limits and do not alter durable model context. Long native assistant
 paragraphs use multiple bounded storage segments after Markdown styling and tab
-expansion; copy joins those segments without adding newlines. Provisional segments
+expansion; copy joins those segments without adding newlines, and display reflow
+continues across storage boundaries. Quote/list indentation and double-space layout
+keep their original whole-row wrapping. Provisional segments
 are replaced together, so preview growth and final commit do not duplicate text.
 
 ## Project context and run continuity
@@ -312,11 +328,11 @@ inspection and branch creation block overlapping sends before attachment admissi
 - `output` wraps `GET /agent/v1/runs/{runId}/payloads/{payloadId}` — the explicit user action that fetches final head/tail tool output bytes. Nothing in the tracer fetches private payloads implicitly; the event stream only references payloads by opaque `payload_ref`. The command prints the payload's `content` field just as the host returned it: UTF-8 text for `utf8text`/`json` payloads, and the base64 wire form for `opaque` payloads (it does not decode them); `--json` is accepted for symmetry with the other commands but adds no envelope, because the payload is already the answer.
 ## Current model tool surface
 
-The Agent model-step advertisement contains the thirteen Protocol definitions:
-`read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write` with
-`op=write|delete|restore`, `edit`, `bash` with `mode=run|shell|read_output|kill`
-plus a `background` flag on run/shell, standalone
-`web_search`/`web_fetch`, `skill`, and Host-intercepted `ask_user`. A provider-native model step may return
+The Agent model-step advertisement selects Protocol definitions from its pinned
+`coding_v2`, `patch_v2` or `coding_code_v1` profile. See the
+[current tool inventory](../../docs/operations/agent-tools.md#current-capability-matrix)
+for explicit file, Windows terminal, Web, question and orchestration tools.
+A provider-native model step may return
 optional narration and one or more ordered calls; the compatibility text path
 still emits exactly one JSON selection. The shared budget is 256 tool calls per
 window, read-only concurrency is capped at eight, and mutation/terminal calls
@@ -324,22 +340,14 @@ remain sequential. Durable approval resume re-evaluates retained proposals
 without a new model proposal, and an `ask_user` park resumes the same way once
 `ru agent answer` completes the asked call.
 
-Canonical `plan` is read-only: workspace read/Web auto, terminal/mutation denied
-outright, external structured access asks.
-`standard` auto-allows workspace mutation and executable/shell launches from a workspace cwd;
-external structured paths and external launch directories ask. Terminal children
-in both execution presets run as the current Windows user without OS filesystem
-or network confinement; obsolete sandbox arguments are rejected by schema.
-`full_access` (the skip-all mode) allows external
-structured files, arbitrary terminal, and structured protected paths
-(harness key/database files and runtime descriptors) automatically, while
-hard-invalid requests remain denied. Web is
-automatic in all profiles; `web_approval_required` is only an explicit-rule
-compatibility reason. Full-access terminal runs as the current Windows user and
-has no OS filesystem/network confinement. Time, machine status, app discovery,
-and optional volume commands use the terminal; notes use `write` with
-`op=write`.
-`files.apply_patch` and `app.open` are not model-usable. Managed
+The [canonical tool policy](../../docs/operations/agent-tools.md#current-capability-matrix)
+owns preset decisions, explicit-rule precedence and session/project approval scope.
+Terminal children run as the current Windows user without an OS filesystem or
+network sandbox. Timeout, output, cancellation and process-tree bounds remain.
+Time, machine status, app discovery,
+and optional volume commands use the terminal; notes use `write_file`.
+`apply_patch` is available in the patch and programmatic profiles; `app.open`
+is not model-usable. Managed
 Web results are bounded and marked untrusted. Workspace SKILL.md bodies are
 prompt guidance only and grant nothing; a `requires: python` frontmatter entry
 fails the model's `skill` load closed with `python_unavailable` when Python is

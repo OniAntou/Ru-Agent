@@ -14,7 +14,7 @@ using Xunit;
 
 namespace RuBackend.Tests.Business;
 
-public sealed class BusinessEndpointTests
+public sealed partial class BusinessEndpointTests
 {
     [Fact]
     public async Task Session_create_accepts_optional_source_and_lists_it_durably()
@@ -379,6 +379,33 @@ public sealed class BusinessEndpointTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(data.Paths))!.AsObject();
         Assert.Equal("http://10.0.0.5:9000/v1", persisted["custom_url"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Computer_use_opt_in_saves_alone_reads_back_and_rejects_a_non_boolean()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(data.Paths.SettingsFile, "{\"backend\":\"openai\",\"openai_model\":\"gpt-4o\"}");
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using (var before = await client.GetAsync("/settings"))
+            Assert.False((await before.Content.ReadFromJsonAsync<JsonObject>())!["computer_use_enabled"]!.GetValue<bool>());
+
+        using (var saved = await client.PostAsJsonAsync("/settings", new { computer_use_enabled = true }))
+            Assert.Equal("success", (await saved.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
+
+        using (var after = await client.GetAsync("/settings"))
+        {
+            var body = (await after.Content.ReadFromJsonAsync<JsonObject>())!;
+            Assert.True(body["computer_use_enabled"]!.GetValue<bool>());
+            Assert.Equal("gpt-4o", body["openai_model"]!.GetValue<string>());
+        }
+
+        using (var rejected = await client.PostAsJsonAsync("/settings", new { computer_use_enabled = "yes" }))
+            Assert.Equal("error", (await rejected.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
+        using (var unchanged = await client.GetAsync("/settings"))
+            Assert.True((await unchanged.Content.ReadFromJsonAsync<JsonObject>())!["computer_use_enabled"]!.GetValue<bool>());
     }
 
     [Fact]
@@ -832,7 +859,7 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
-    public async Task Session_import_reports_retention_drops_and_persists_only_the_retained_messages()
+    public async Task Session_import_retains_all_messages_beyond_the_initial_display_window()
     {
         using var data = TemporaryBusinessData.Create();
         using var factory = CreateAspNetFactory(data.Paths);
@@ -849,9 +876,9 @@ public sealed class BusinessEndpointTests
             .GetAsync(session.GetProperty("id").GetString()!, CancellationToken.None);
 
         Assert.Equal("ok", payload.GetProperty("status").GetString());
-        Assert.Equal(200, session.GetProperty("messages").GetInt32());
-        Assert.Equal(2, payload.GetProperty("dropped_entries").GetInt32());
-        Assert.True(payload.GetProperty("partial_import").GetBoolean());
+        Assert.Equal(202, session.GetProperty("messages").GetInt32());
+        Assert.Equal(0, payload.GetProperty("dropped_entries").GetInt32());
+        Assert.False(payload.GetProperty("partial_import").GetBoolean());
         Assert.NotNull(document);
         Assert.Equal(200, document!.Messages.Count);
         Assert.Equal("message-2", document.Messages[0].Content);

@@ -16,7 +16,7 @@ public sealed record ParsedPatchFile(
     bool IsNewFile,
     bool IsDeletedFile);
 
-public static class UnifiedPatchParser
+public static partial class UnifiedPatchParser
 {
     public const int MaxPatchBytes = 4 * 1024 * 1024;
     public const int MaxFiles = 64;
@@ -135,12 +135,6 @@ public static class UnifiedPatchParser
                             break;
                         }
 
-                        if (hl.StartsWith("\\ No newline", StringComparison.Ordinal))
-                        {
-                            i++;
-                            continue;
-                        }
-
                         hunkLines.Add(hl);
                         if (hunkLines.Count > MaxLinesPerHunk)
                         {
@@ -177,70 +171,6 @@ public static class UnifiedPatchParser
         }
 
         return files;
-    }
-
-    public static string ApplyHunks(string originalContent, IReadOnlyList<PatchHunk> hunks)
-    {
-        var originalLines = SplitContentLines(originalContent);
-        var newLines = new List<string>();
-        int origIdx = 0;
-
-        foreach (var hunk in hunks)
-        {
-            int oldStartIdx = Math.Max(0, hunk.OldStart - 1);
-            while (origIdx < oldStartIdx && origIdx < originalLines.Count)
-            {
-                newLines.Add(originalLines[origIdx]);
-                origIdx++;
-            }
-
-            int oldLinesConsumed = 0;
-            foreach (var hl in hunk.Lines)
-            {
-                if (hl.Length == 0)
-                {
-                    continue;
-                }
-
-                var prefix = hl[0];
-                var content = hl.Length > 1 ? hl.Substring(1) : string.Empty;
-                switch (prefix)
-                {
-                    case ' ':
-                        RequireOriginalLine(originalLines, origIdx, content);
-                        newLines.Add(content);
-                        origIdx++;
-                        oldLinesConsumed++;
-                        break;
-                    case '-':
-                        RequireOriginalLine(originalLines, origIdx, content);
-                        origIdx++;
-                        oldLinesConsumed++;
-                        break;
-                    case '+':
-                        newLines.Add(content);
-                        break;
-                    case '\\':
-                        break;
-                }
-            }
-
-            // The hunk header declares how many old-side lines the hunk covers;
-            // a short or long old side means the patch does not describe the file
-            // it claims to patch.
-            if (oldLinesConsumed != hunk.OldCount)
-            {
-                throw new ArgumentException("patch_context_mismatch");
-            }
-        }
-
-        while (origIdx < originalLines.Count)
-        {
-            newLines.Add(originalLines[origIdx]);
-            origIdx++;
-        }
-
-        return string.Join("\n", newLines);
     }
 
     private static void RequireOriginalLine(List<string> originalLines, int index, string expected)

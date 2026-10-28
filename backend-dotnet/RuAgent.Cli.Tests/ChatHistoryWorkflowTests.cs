@@ -15,6 +15,7 @@ public sealed class ChatHistoryWorkflowTests
             new { role = "user", content = "first\nrequest" }, new { role = "ai", content = "first answer" },
             new { role = "user", content = "second request" }, new { role = "ai", content = "second answer" } });
         internal int Forks, Keep;
+        internal int MessageOffset;
         internal bool LoseResponse, WrongPrefix, Stale;
         internal List<string> PolicySessions = [];
         internal List<string> Requests = [];
@@ -26,7 +27,8 @@ public sealed class ChatHistoryWorkflowTests
             Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
             if (path == "/settings") return Json(new { status = "ok", backend = "OpenAI", openai_model = "model-a" });
             if (path.EndsWith("/activate")) return Json(new { status = "ok", session = new {
-                id = path.Contains("/child/") ? "child" : "source", title = "History", messages = path.Contains("/child/") ? Messages.EnumerateArray().Take(Keep) : Messages.EnumerateArray(), history_revision = new string('a', 64) } });
+                id = path.Contains("/child/") ? "child" : "source", title = "History", messages = path.Contains("/child/") ? Messages.EnumerateArray().Take(Keep) : Messages.EnumerateArray(),
+                message_offset = MessageOffset, total_message_count = MessageOffset + Messages.GetArrayLength(), history_revision = new string('a', 64) } });
             if (path == "/sessions/source/fork")
             {
                 using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
@@ -34,7 +36,12 @@ public sealed class ChatHistoryWorkflowTests
                 Assert.Equal(new string('a', 64), body.RootElement.GetProperty("history_revision").GetString());
                 if (Stale) return Json(new { status = "error", error_code = "history_stale" }, HttpStatusCode.BadRequest);
                 if (LoseResponse) throw new HttpRequestException("synthetic response lost after commit");
-                return Json(new { status = "ok", parent_session_id = "source", session = new { id = "child", title = "Branch", messages = Messages.EnumerateArray().Take(WrongPrefix ? 4 : Keep) } });
+                var history = Enumerable.Range(0, MessageOffset).Select(i => JsonSerializer.SerializeToElement(
+                    new { role = i % 2 == 0 ? "user" : "ai", content = "older " + i })).Concat(Messages.EnumerateArray());
+                var childOffset = Math.Max(0, Keep - 200);
+                return Json(new { status = "ok", parent_session_id = "source", session = new { id = "child", title = "Branch",
+                    message_offset = childOffset, total_message_count = Keep,
+                    messages = history.Take(WrongPrefix ? MessageOffset + 4 : Keep).Skip(childOffset) } });
             }
             if (path.Contains("/policies") && request.Content is not null)
             {
@@ -46,6 +53,23 @@ public sealed class ChatHistoryWorkflowTests
             if (path == "/sessions") return Json(new { status = "ok", sessions = new[] { new { id = "source", title = "Original", message_count = 4 } } });
             return Json(new { status = "ok", items = Array.Empty<object>(), models = Array.Empty<object>(), provider_ids = Array.Empty<object>(), providers = Array.Empty<object>() });
         }
+    }
+
+    [Theory]
+    [InlineData("1 edit", 20)]
+    [InlineData("1 continue", 22)]
+    [InlineData("2 continue", 24)]
+    [InlineData("2 continue", 224)]
+    public async Task Paged_history_uses_absolute_boundaries_and_validates_the_returned_window(string command, int keep)
+    {
+        var offset = keep > 200 ? 220 : 20;
+        using var host = new Host { MessageOffset = offset }; using var http = new HttpClient(host);
+        using var agents = new AgentApiClient(Host.Session, http);
+        var workflow = new ChatHistoryWorkflow(new SessionApiClient(Host.Session, http), agents);
+        var plan = await workflow.SelectAsync("source", command, () => true, null, null, new StringWriter(), false, default);
+        Assert.NotNull(plan); Assert.Equal(keep, plan.KeepMessages); Assert.Equal(offset, plan.MessageOffset);
+        await workflow.CommitAsync(plan, default);
+        Assert.Equal(keep, host.Keep); Assert.Equal(1, host.Forks);
     }
 
     [Theory]

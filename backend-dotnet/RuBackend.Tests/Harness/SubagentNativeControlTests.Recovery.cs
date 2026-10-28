@@ -153,11 +153,11 @@ public sealed partial class SubagentNativeControlTests
         public Task<ModelStepResult> RunStepAsync(ModelStepRequest request, Func<AssistantDelta, ValueTask> delta, CancellationToken ct)
         {
             var call = ++_calls;
-            var tool = requiresInspection && call == 2 ? "write"
+            var tool = requiresInspection && call == 2 ? "write_file"
                 : call == (requiresInspection ? 3 : 2) ? "read" : "agent_apply";
             var args = tool switch
             {
-                "write" => JsonSerializer.SerializeToElement(new { op = "write", path = "a.txt", content = "must not write" }),
+                "write_file" => JsonSerializer.SerializeToElement(new { path = "a.txt", content = "must not write" }),
                 "read" => JsonSerializer.SerializeToElement(new { path = "a.txt" }),
                 _ => JsonSerializer.SerializeToElement(new { agent_id = agentId, result_version = 1 }),
             };

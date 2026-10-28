@@ -23,7 +23,8 @@ namespace RuBackend.Harness;
 public sealed class ScriptedModelStepRunner : IModelStepRunner
 {
     public const string EnvironmentVariable = "RU_SCRIPTED_MODEL";
-    private const string ProjectionCursorPlaceholder = "$projection_next_offset";
+    private const string ProjectionCursorPlaceholder = "$next_offset";
+    private const string LegacyProjectionCursorPlaceholder = "$projection_next_offset";
     private const string ProjectionSpoolIdPlaceholder = "$projection_spool_id";
     private const int MaxScriptedCallsPerStep = 8;
 
@@ -238,7 +239,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
     {
         var sourceCallId = step["cursor_from_call_id"]?.GetValue<string>();
         var hasPlaceholder = currentCalls.Any(call =>
-            IsPlaceholder(call.Arguments, "offset", ProjectionCursorPlaceholder)
+            IsOffsetCursorPlaceholder(call.Arguments)
             || IsPlaceholder(call.Arguments, "execution_id", ProjectionSpoolIdPlaceholder));
         if (!hasPlaceholder)
         {
@@ -265,7 +266,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
         var calls = step.ToolCalls.ToArray();
         var changed = false;
         var needsPaging = calls.Any(call =>
-            IsPlaceholder(call.Arguments, "offset", ProjectionCursorPlaceholder)
+            IsOffsetCursorPlaceholder(call.Arguments)
             || IsPlaceholder(call.Arguments, "execution_id", ProjectionSpoolIdPlaceholder));
         var expectedReceiptEntry = needsPaging
             ? context.Entries
@@ -293,7 +294,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
                 continue;
             }
 
-            var needsCursor = IsPlaceholder(call.Arguments, "offset", ProjectionCursorPlaceholder);
+            var needsCursor = IsOffsetCursorPlaceholder(call.Arguments);
             var needsSpoolId = IsPlaceholder(call.Arguments, "execution_id", ProjectionSpoolIdPlaceholder);
             if (!needsCursor && !needsSpoolId)
                 continue;
@@ -336,7 +337,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
                 var terminal = scriptedTerminal.Step;
                 if (terminal.ToolCalls.Count == 1
                     && terminal.ToolCalls[0].Arguments.ValueKind == JsonValueKind.Object
-                    && IsPlaceholder(terminal.ToolCalls[0].Arguments, "offset", ProjectionCursorPlaceholder))
+                    && IsOffsetCursorPlaceholder(terminal.ToolCalls[0].Arguments))
                 {
                     continue;
                 }
@@ -357,6 +358,10 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
         && value.ValueKind == JsonValueKind.String
         && string.Equals(value.GetString(), placeholder, StringComparison.Ordinal);
 
+    private static bool IsOffsetCursorPlaceholder(JsonElement arguments) =>
+        IsPlaceholder(arguments, "offset", ProjectionCursorPlaceholder)
+        || IsPlaceholder(arguments, "offset", LegacyProjectionCursorPlaceholder);
+
     private static bool TryReadProjectionCursor(string content, out int cursor, out bool hasMore)
     {
         cursor = 0;
@@ -366,14 +371,9 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
         {
             using var document = JsonDocument.Parse(content);
             var root = document.RootElement;
-            if (root.TryGetProperty("projection_next_offset", out var cursorProperty)
-                && cursorProperty.TryGetInt32(out var value)
-                && value >= 0
-                && root.TryGetProperty("projection_has_more", out var hasMoreProperty)
-                && (hasMoreProperty.ValueKind == JsonValueKind.True || hasMoreProperty.ValueKind == JsonValueKind.False))
+            if (TryReadCursor(root, "next_offset", "has_more", out cursor, out hasMore)
+                || TryReadCursor(root, "projection_next_offset", "projection_has_more", out cursor, out hasMore))
             {
-                cursor = value;
-                hasMore = hasMoreProperty.ValueKind == JsonValueKind.True;
                 return true;
             }
 
@@ -386,6 +386,41 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
         }
 
         return false;
+    }
+
+    private static bool TryReadCursor(
+        JsonElement root,
+        string cursorName,
+        string hasMoreName,
+        out int cursor,
+        out bool hasMore)
+    {
+        cursor = 0;
+        hasMore = false;
+        if (!root.TryGetProperty(hasMoreName, out var hasMoreProperty)
+            || hasMoreProperty.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            return false;
+        }
+
+        hasMore = hasMoreProperty.ValueKind == JsonValueKind.True;
+        if (!root.TryGetProperty(cursorName, out var cursorProperty))
+        {
+            return !hasMore;
+        }
+
+        if (cursorProperty.ValueKind == JsonValueKind.Null)
+        {
+            return !hasMore;
+        }
+
+        if (!cursorProperty.TryGetInt32(out cursor) || cursor < 0)
+        {
+            cursor = 0;
+            return false;
+        }
+
+        return true;
     }
 
     private static bool IsCompleteStructuredResult(JsonElement root) =>

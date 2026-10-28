@@ -85,8 +85,11 @@ _Avoid_: Requiring GUI feature parity or treating presentation metadata as autho
 
 Native paragraph projection splits styled, tab-expanded prose into storage segments
 of at most 16,000 UTF-16 units at rune boundaries before applying the view's per-row
-cap. Continuation segments copy without an inserted newline. The native writer tracks
-the entire provisional segment count and replaces it together on each preview or
+cap. Continuation segments copy without an inserted newline and wrap as one logical
+paragraph. Ordinary prose reflows only the last visual row with the changing tail;
+indented text, quote/list affixes and double-space layout use whole-row reflow to keep
+the original wrapper and synthetic prefixes consistent across storage boundaries.
+The native writer tracks the entire provisional segment count and replaces it together on each preview or
 commit, including when the total history budget has evicted earlier segments. Retry,
 suppression and durable turn replacement operate on all segments. The existing
 2,000-row/200,000-character history budget still bounds retained content; segmentation
@@ -246,9 +249,11 @@ The branch plan is cleared on session switching/reload. Native history operation
 use the auxiliary control lifetime, reject busy/paused/queued work and block
 other submissions before snapshots; text typed during the picker is not replaced.
 
-Session activation exposes a SHA256 `history_revision` over persisted messages.
-`SessionStore.ForkAsync` checks the revision and whole-turn prefix boundary under
-its gate and an immediate SQLite transaction, then creates a new conversation
+Session activation exposes a SHA256 `history_revision` over its bounded message
+window, absolute offset, total count and rewind epoch. The CLI translates visible
+turn boundaries into absolute message indices. `SessionStore.ForkAsync` checks
+the same window revision and a whole-turn boundary within that window in one
+immediate SQLite transaction, then creates a new conversation
 identity with parent metadata and only the retained source ledger. Source rows
 are untouched. No schema migration, run/approval/grant/work-state copy, policy
 change, or file restoration occurs. New runs still pass the existing preset and

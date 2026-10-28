@@ -8,7 +8,10 @@ namespace RuApp.ViewModels;
 /// <summary>The Host calls the sidebar makes.</summary>
 internal interface ISessionListBackend
 {
-    Task<SessionListResponse?> GetSessionsAsync(CancellationToken cancellationToken);
+    Task<SessionListPageResponse?> GetSessionsPageAsync(
+        string? cursor,
+        string? query,
+        CancellationToken cancellationToken);
 
     Task<SessionInfo?> CreateSessionAsync();
 
@@ -18,8 +21,12 @@ internal interface ISessionListBackend
 /// <summary>Resolves the current <see cref="ApiService"/> per call, so a reconnect needs no rewiring.</summary>
 internal sealed class ApiSessionListBackend(Func<ApiService?> api) : ISessionListBackend
 {
-    public Task<SessionListResponse?> GetSessionsAsync(CancellationToken cancellationToken) =>
-        api()?.GetSessionsAsync(cancellationToken) ?? Task.FromResult<SessionListResponse?>(null);
+    public Task<SessionListPageResponse?> GetSessionsPageAsync(
+        string? cursor,
+        string? query,
+        CancellationToken cancellationToken) =>
+        api()?.GetSessionsPageAsync(cursor, 100, query, cancellationToken)
+        ?? Task.FromResult<SessionListPageResponse?>(null);
 
     public Task<SessionInfo?> CreateSessionAsync() =>
         api()?.CreateSessionAsync() ?? Task.FromResult<SessionInfo?>(null);
@@ -28,6 +35,11 @@ internal sealed class ApiSessionListBackend(Func<ApiService?> api) : ISessionLis
         api()?.DeleteSessionAsync(sessionId)
         ?? Task.FromResult(new ApiService.SessionDeletionOutcome(false, false, null));
 }
+
+internal sealed record SessionListPageBatch(
+    IReadOnlyList<SessionInfo> Sessions,
+    string? NextCursor,
+    int PageCount);
 
 /// <summary>The confirmations and notices a delete may need; the view owns the dialogs.</summary>
 internal interface ISessionDeletionPrompts
@@ -86,7 +98,11 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     private readonly SessionDraftPresentation _drafts = new();
     private readonly HashSet<string> _groupShowAll = new(StringComparer.Ordinal);
     private readonly List<WorkspaceGroup> _groups = new();
-    private readonly RefreshController<SessionListResponse?> _refresh;
+    private readonly RefreshController<SessionListPageBatch?> _refresh;
+    private int _loadedPageCount = 1;
+    private string? _searchQuery;
+    private long _listingGeneration;
+    private CancellationTokenSource? _loadMoreCancellation;
     private long _navigationGeneration;
     private bool _disposed;
 
@@ -104,8 +120,8 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         _groupPreferences = groupPreferences ?? new WorkspaceGroupPreferenceStore();
         _pins = pins ?? new WorkspacePinStore();
         _sessionWorkspaces = sessionWorkspaces ?? new SessionWorkspaceMapStore();
-        _refresh = new RefreshController<SessionListResponse?>(
-            token => _backend.GetSessionsAsync(token),
+        _refresh = new RefreshController<SessionListPageBatch?>(
+            FetchLoadedPagesAsync,
             result => { if (result is not null) ApplySessions(result); },
             dispatch);
     }
@@ -123,6 +139,11 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     public ObservableCollection<object> Rows { get; } = new();
 
     [ObservableProperty] public partial bool IsTruncated { get; private set; }
+
+    [ObservableProperty] public partial bool IsLoadingMore { get; private set; }
+
+    internal bool CanLoadMore => _nextCursor is not null;
+    private string? _nextCursor;
 
     /// <summary>The session open in the chat view.</summary>
     [ObservableProperty] public partial string? ActiveSessionId { get; private set; }
@@ -160,13 +181,104 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     /// identity so containers and title waves survive, and the sidebar is rebuilt only
     /// when order, membership or row content changed.
     /// </summary>
-    internal void ApplySessions(SessionListResponse result)
+    internal string? SearchQuery => _searchQuery;
+
+    internal void SetSearchQuery(string? query)
     {
-        IsTruncated = result.SessionsTruncated;
+        var normalized = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
+        if (string.Equals(_searchQuery, normalized, StringComparison.Ordinal)) return;
+        _searchQuery = normalized;
+        _loadedPageCount = 1;
+        _listingGeneration++;
+        _nextCursor = null;
+        IsTruncated = false;
+        try { _loadMoreCancellation?.Cancel(); } catch (ObjectDisposedException) { }
+        Render();
+    }
+
+    internal async Task<bool> LoadMoreAsync()
+    {
+        if (_disposed || IsLoadingMore || !CanLoadMore) return false;
+        var cursor = _nextCursor;
+        var query = _searchQuery;
+        var generation = _listingGeneration;
+        var cancellation = new CancellationTokenSource();
+        var previous = _loadMoreCancellation;
+        _loadMoreCancellation = cancellation;
+        try { previous?.Cancel(); } catch (ObjectDisposedException) { }
+        IsLoadingMore = true;
+        try
+        {
+            var page = await _backend.GetSessionsPageAsync(cursor, query, cancellation.Token).ConfigureAwait(true);
+            if (page is null
+                || cancellation.IsCancellationRequested
+                || generation != _listingGeneration
+                || !string.Equals(cursor, _nextCursor, StringComparison.Ordinal)
+                || string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            ApplySessions(new SessionListPageBatch(
+                Sessions.Concat(page.Sessions).ToArray(),
+                page.NextCursor,
+                _loadedPageCount + 1));
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            return false;
+        }
+        finally
+        {
+            if (ReferenceEquals(_loadMoreCancellation, cancellation)) _loadMoreCancellation = null;
+            cancellation.Dispose();
+            IsLoadingMore = false;
+        }
+    }
+
+    private async Task<SessionListPageBatch?> FetchLoadedPagesAsync(CancellationToken cancellationToken)
+    {
+        var query = _searchQuery;
+        var requestedPageCount = _loadedPageCount;
+        var sessions = new List<SessionInfo>();
+        string? cursor = null;
+        int loadedPages = 0;
+        for (; loadedPages < requestedPageCount; loadedPages++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var page = await _backend.GetSessionsPageAsync(cursor, query, cancellationToken).ConfigureAwait(false);
+            if (page is null) return null;
+            sessions.AddRange(page.Sessions);
+            cursor = page.NextCursor;
+            if (cursor is null)
+            {
+                loadedPages++;
+                break;
+            }
+        }
+
+        return new SessionListPageBatch(sessions, cursor, loadedPages);
+    }
+
+    internal void ApplySessions(SessionListPageBatch result)
+    {
+        _listingGeneration++;
+        var loadMore = _loadMoreCancellation;
+        _loadMoreCancellation = null;
+        if (loadMore is not null)
+        {
+            try { loadMore.Cancel(); } catch (ObjectDisposedException) { }
+        }
+        bool pageStateChanged = !string.Equals(_nextCursor, result.NextCursor, StringComparison.Ordinal);
+        _nextCursor = result.NextCursor;
+        _loadedPageCount = Math.Max(1, result.PageCount);
+        IsTruncated = _nextCursor is not null;
         var before = SidebarRowFingerprint.ForSessions(Sessions);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         int insertAt = 0;
-        foreach (var incoming in _drafts.Project(result.Sessions))
+        foreach (var incoming in _drafts.Project(result.Sessions
+            .DistinctBy(session => session.Id, StringComparer.Ordinal).ToArray()))
         {
             seen.Add(incoming.Id);
             var existing = Sessions.FirstOrDefault(session => session.Id == incoming.Id);
@@ -208,7 +320,8 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
             }
         }
 
-        if (Rows.Count == 0 || !string.Equals(SidebarRowFingerprint.ForSessions(Sessions), before, StringComparison.Ordinal))
+        if (pageStateChanged || Rows.Count == 0
+            || !string.Equals(SidebarRowFingerprint.ForSessions(Sessions), before, StringComparison.Ordinal))
         {
             Render();
         }
@@ -565,6 +678,9 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     {
         if (_disposed) return;
         _disposed = true;
+        var loadMore = _loadMoreCancellation;
+        _loadMoreCancellation = null;
+        try { loadMore?.Cancel(); } catch (ObjectDisposedException) { }
         await _refresh.DisposeAsync();
     }
 }

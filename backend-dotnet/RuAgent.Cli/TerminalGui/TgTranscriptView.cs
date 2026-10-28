@@ -239,6 +239,7 @@ public sealed partial class TgTranscriptView : View
         _lines.Clear();
         _wrapped.Clear();
         _wrapCache.Clear();
+        ResetWrapGroup();
         ClearCollapsedBlocks();
         _wrapWidth = -1;
         _tailRows = 1;
@@ -279,7 +280,7 @@ public sealed partial class TgTranscriptView : View
         }
         else if (_wrapWidth > 0)
         {
-            _tailRows = AppendWrapped(_lines[^1].Text, _lines[^1].Style, _lines[^1].Spans, _wrapWidth);
+            _tailRows = AppendViewRow(_lines.Count - 1, _wrapWidth);
         }
 
         MarkOutputUnseen();
@@ -559,6 +560,7 @@ public sealed partial class TgTranscriptView : View
         _lastTableColumns = 0;
         var oldTop = _followingTail ? Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)) : _scrollTop;
         _wrapped.Clear();
+        ResetWrapGroup();
         var rawRows = _lines.Select(row => row.Style == TranscriptStyle.Prose ? row.Text : string.Empty).ToArray();
         for (var i = 0; i < _lines.Count; i++)
         {
@@ -572,11 +574,12 @@ public sealed partial class TgTranscriptView : View
                 _lastTableColumns = TuiMarkdownTable.ColumnCount(text);
                 i += consumed - 1;
                 _tailRows = 0;
+                ResetWrapGroup();
                 AppendCollapsedBlocksAfter(i + 1, summaryTop: null, width);
                 continue;
             }
             var summaryTop = _wrapped.Count;
-            _tailRows = AppendWrapped(text, style, spans, width);
+            _tailRows = AppendViewRow(i, width);
             AppendCollapsedBlocksAfter(i + 1, summaryTop, width);
         }
 
@@ -618,7 +621,7 @@ public sealed partial class TgTranscriptView : View
                 _wrapped.RemoveRange(_wrapped.Count - take, take);
             }
 
-            _tailRows = AppendWrapped(_lines[^1].Text, _lines[^1].Style, _lines[^1].Spans, width);
+            _tailRows = AppendViewRow(_lines.Count - 1, width, replacingTail: true);
             _tailDirty = false;
         }
     }

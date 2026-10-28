@@ -72,7 +72,7 @@ public sealed class WebPolicy
                 || (bytes[0] == 169 && bytes[1] == 254)
                 || (bytes[0] == 100 && bytes[1] is >= 64 and <= 127)
                 || bytes[0] == 0
-                || (bytes[0] == 192 && bytes[1] == 0)
+                || (bytes[0] == 192 && bytes[1] == 0 && bytes[2] is 0 or 2)
                 || (bytes[0] == 198 && bytes[1] is >= 18 and <= 19)
                 || (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100)
                 || (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113)

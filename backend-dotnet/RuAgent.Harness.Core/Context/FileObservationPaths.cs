@@ -5,11 +5,13 @@ public static class FileObservationPaths
 {
     public const int MaximumPaths = 128;
 
-    public static IReadOnlyList<string> Read(IEnumerable<ModelContextEntry> entries)
+    public static IReadOnlyList<string> Read(IEnumerable<ModelContextEntry> entries,
+        IReadOnlyList<string>? previousPaths = null)
     {
         var pending = new Dictionary<string, ModelToolCall>(StringComparer.Ordinal);
         var paths = new LinkedList<string>();
         var known = new Dictionary<string, LinkedListNode<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var hint in Copy(previousPaths)) known[hint] = paths.AddLast(hint);
         foreach (var entry in entries)
         {
             if (entry.AssistantStep is { } step)
@@ -19,7 +21,7 @@ public static class FileObservationPaths
             }
             else if (entry.ToolReceipt is { } receipt && pending.Remove(receipt.ProviderCallId!, out var call)
                 && receipt.Outcome == ToolExecutionOutcome.Succeeded
-                && call.ToolId is "read" or "write" or "edit" or "files.read" or "files.write" or "files.edit"
+                && call.ToolId is "read" or "read_file" or "write_file" or "edit_file" or "write" or "edit" or "files.read" or "files.write" or "files.edit"
                 && call.Arguments.ValueKind == System.Text.Json.JsonValueKind.Object
                 && call.Arguments.TryGetProperty("path", out var value)
                 && value.ValueKind == System.Text.Json.JsonValueKind.String

@@ -1,6 +1,5 @@
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -25,7 +24,6 @@ public sealed partial class SessionStore
             return SessionAppendOutcome.InvalidMessage;
         }
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
@@ -37,8 +35,9 @@ public sealed partial class SessionStore
                 return SessionAppendOutcome.SessionNotFound;
             }
 
-            var ledger = BuildSourceLedger(current);
-            if (ledger.TryGetValue(message.SourceMessageId, out var existingFingerprint))
+            var existingFingerprint = await ReadReceiptAsync(sessionId, message.SourceMessageId,
+                connection, transaction, cancellationToken).ConfigureAwait(false);
+            if (existingFingerprint is not null)
             {
                 return string.Equals(
                         existingFingerprint,
@@ -64,11 +63,7 @@ public sealed partial class SessionStore
         }
         catch (InvalidDataException)
         {
-            return SessionAppendOutcome.TransientFailure;
-        }
-        finally
-        {
-            _gate.Release();
+            return SessionAppendOutcome.InvalidMessage;
         }
     }
 
@@ -78,36 +73,29 @@ public sealed partial class SessionStore
         SqliteConnection connection, SqliteTransaction transaction,
         CancellationToken cancellationToken)
     {
-        var merged = current.Messages.Concat(messages).ToArray();
-        long contentBytes = 0;
-        foreach (var message in merged)
-        {
-            contentBytes += Encoding.UTF8.GetByteCount(message.Content);
-            if (contentBytes > MaximumSessionFileBytes)
-            {
-                // Reject before JsonSerializer allocates a potentially much
-                // larger document for a session that cannot be persisted.
-                throw new InvalidDataException("session_file_too_large");
-            }
-        }
-
-        var ledger = BuildSourceLedger(current);
+        var count = current.TotalMessageCount ?? 0;
         foreach (var message in messages.Where(message => message.SourceMessageId is not null))
         {
             var fingerprint = SourceFingerprint(message);
-            if (ledger.TryGetValue(message.SourceMessageId!, out var existing)
-                && !string.Equals(existing, fingerprint, StringComparison.Ordinal))
+            var existing = await ReadReceiptAsync(current.Id, message.SourceMessageId!, connection,
+                transaction, cancellationToken).ConfigureAwait(false);
+            if (existing is not null && !string.Equals(existing, fingerprint, StringComparison.Ordinal))
             {
-                throw new InvalidDataException("session_source_ledger_conflict");
+                throw new InvalidDataException("permanentInvalidMessage");
             }
-
-            ledger[message.SourceMessageId!] = fingerprint;
         }
 
         var title = string.IsNullOrWhiteSpace(current.Title) || current.Title == DefaultTitle
-            ? TitleFromMessages(merged)
+            ? TitleFromMessages(messages)
             : current.Title;
         var now = _clock.GetUtcNow().ToUniversalTime();
+        await InsertMessagesAsync(messages, current.Id, count, connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var message in messages.Where(message => message.SourceMessageId is not null))
+        {
+            await InsertReceiptAsync(current.Id, message, connection, transaction, cancellationToken)
+                .ConfigureAwait(false);
+        }
         var updated = current with
         {
             Title = title,
@@ -115,10 +103,34 @@ public sealed partial class SessionStore
             LastAgentActivityAt = messages.Any(message => message.Role == "ai")
                 ? now
                 : current.LastAgentActivityAt,
-            Messages = merged.TakeLast(MaximumMessages).ToArray(),
-            SourceMessageLedger = ledger.Count == 0 ? null : ledger,
+            TotalMessageCount = checked(count + messages.Count),
         };
-        await WriteUnlockedAsync(updated, connection, transaction, cancellationToken).ConfigureAwait(false);
+        await UpdateMetadataUnlockedAsync(updated, connection, transaction, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string?> ReadReceiptAsync(
+        string sessionId, string sourceMessageId, SqliteConnection connection,
+        SqliteTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT fingerprint FROM business_session_source_receipts WHERE session_id = $id AND source_message_id = $source;";
+        command.Parameters.AddWithValue("$id", sessionId);
+        command.Parameters.AddWithValue("$source", sourceMessageId);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
+    }
+
+    private static async Task InsertReceiptAsync(
+        string sessionId, SessionMessage message, SqliteConnection connection,
+        SqliteTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "INSERT INTO business_session_source_receipts(session_id, source_message_id, fingerprint) VALUES ($id, $source, $fingerprint);";
+        command.Parameters.AddWithValue("$id", sessionId);
+        command.Parameters.AddWithValue("$source", message.SourceMessageId!);
+        command.Parameters.AddWithValue("$fingerprint", SourceFingerprint(message));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsValidSourceId(string? value) =>
@@ -131,22 +143,6 @@ public sealed partial class SessionStore
                 or '-'
                 or '.'
                 or ':');
-
-    private static Dictionary<string, string> BuildSourceLedger(SessionDocument document)
-    {
-        var ledger = document.SourceMessageLedger is null
-            ? new Dictionary<string, string>(StringComparer.Ordinal)
-            : new Dictionary<string, string>(
-                document.SourceMessageLedger,
-                StringComparer.Ordinal);
-        foreach (var message in document.Messages.Where(message =>
-                     message.SourceMessageId is not null))
-        {
-            ledger.TryAdd(message.SourceMessageId!, SourceFingerprint(message));
-        }
-
-        return ledger;
-    }
 
     private static bool TryReadSourceLedger(
         JsonObject root,

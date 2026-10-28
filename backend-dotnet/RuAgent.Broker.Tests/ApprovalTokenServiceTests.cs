@@ -12,7 +12,7 @@ public sealed class ApprovalTokenServiceTests
         var token = service.Issue(
             "request-1",
             "session-1",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "arguments-hash",
             TimeSpan.FromSeconds(30));
@@ -20,7 +20,7 @@ public sealed class ApprovalTokenServiceTests
         var expected = new ApprovalBinding(
             "request-1",
             "session-1",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "arguments-hash",
             DateTimeOffset.UtcNow.AddMinutes(5));
@@ -37,7 +37,7 @@ public sealed class ApprovalTokenServiceTests
         var token = service.Issue(
             "request-1",
             "session-1",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "arguments-hash",
             TimeSpan.FromSeconds(30));
@@ -45,7 +45,7 @@ public sealed class ApprovalTokenServiceTests
         var wrongArguments = new ApprovalBinding(
             "request-1",
             "session-1",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "different-hash",
             DateTimeOffset.UtcNow);
@@ -78,6 +78,25 @@ public sealed class ApprovalTokenServiceTests
             IntentHash: new string('a', 64));
 
         Assert.False(service.TryConsume(token, wrongVersion, out _));
+    }
+
+    [Fact]
+    public void Token_rejects_same_version_with_a_different_snapshot_hash()
+    {
+        // Session approval memory derives snapshot versions, so a version can repeat
+        // for a different rule set; the canonical hash must still match.
+        var service = new ApprovalTokenService();
+        var token = service.Issue("request-1", "session-1", "files.read", "1.0.0", "hash",
+            TimeSpan.FromSeconds(30), snapshotVersion: 5, intentHash: new string('a', 64),
+            snapshotSha256: new string('c', 64));
+
+        var otherSnapshot = new ApprovalBinding("request-1", "session-1", "files.read", "1.0.0", "hash",
+            DateTimeOffset.UtcNow.AddMinutes(5), SnapshotVersion: 5, IntentHash: new string('a', 64),
+            SnapshotSha256: new string('d', 64));
+        var sameSnapshot = otherSnapshot with { SnapshotSha256 = new string('c', 64) };
+
+        Assert.False(service.TryConsume(token, otherSnapshot, out _));
+        Assert.True(service.TryConsume(token, sameSnapshot, out _));
     }
 
     [Fact]
@@ -114,7 +133,7 @@ public sealed class ApprovalTokenServiceTests
         var token = service.Issue(
             "request-2",
             "session-2",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "hash2",
             TimeSpan.FromSeconds(30));
@@ -122,7 +141,7 @@ public sealed class ApprovalTokenServiceTests
         var expected = new ApprovalBinding(
             "request-2",
             "session-2",
-            "terminal.shell",
+            "powershell",
             "1.0.0",
             "hash2",
             DateTimeOffset.UtcNow.AddMinutes(5),

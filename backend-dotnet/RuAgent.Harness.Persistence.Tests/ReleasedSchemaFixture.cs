@@ -101,6 +101,7 @@ internal sealed class ReleasedSchemaFixture : IAsyncDisposable
             {
                 DataSource = path, Mode = SqliteOpenMode.ReadWriteCreate,
                 Pooling = true, Cache = SqliteCacheMode.Private,
+                DefaultTimeout = Options.DefaultTimeoutSeconds,
             }.ToString());
             SqliteConnection.ClearPool(connection);
         }

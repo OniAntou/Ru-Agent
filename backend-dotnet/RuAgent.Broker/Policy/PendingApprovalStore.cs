@@ -62,7 +62,8 @@ public sealed record V2ApprovalBinding
         long SnapshotVersion,
         string IntentHash,
         string ApprovalKind = "terminal_risk",
-        string? BoundaryDirectory = null)
+        string? BoundaryDirectory = null,
+        string? SnapshotSha256 = null)
     {
         if (string.IsNullOrWhiteSpace(RunId) || RunId.Length > 128) throw new ArgumentException("RunId bounded.", nameof(RunId));
         if (string.IsNullOrWhiteSpace(ToolCallId) || ToolCallId.Length > 128) throw new ArgumentException("ToolCallId bounded.", nameof(ToolCallId));
@@ -78,6 +79,7 @@ public sealed record V2ApprovalBinding
         if (string.IsNullOrWhiteSpace(IntentHash) || IntentHash.Length > 128) throw new ArgumentException("IntentHash bounded.", nameof(IntentHash));
         if (ApprovalKind is not ("external_directory" or "terminal_risk" or "subagent_apply")) throw new ArgumentOutOfRangeException(nameof(ApprovalKind));
         if (BoundaryDirectory is { Length: > 4096 }) throw new ArgumentException("BoundaryDirectory bounded.", nameof(BoundaryDirectory));
+        if (SnapshotSha256 is { Length: > 128 }) throw new ArgumentException("SnapshotSha256 bounded.", nameof(SnapshotSha256));
 
         this.RunId = RunId;
         this.ToolCallId = ToolCallId;
@@ -93,6 +95,7 @@ public sealed record V2ApprovalBinding
         this.IntentHash = IntentHash;
         this.ApprovalKind = ApprovalKind;
         this.BoundaryDirectory = BoundaryDirectory;
+        this.SnapshotSha256 = SnapshotSha256;
     }
 
     public string RunId { get; init; }
@@ -109,6 +112,12 @@ public sealed record V2ApprovalBinding
     public string IntentHash { get; init; }
     public string ApprovalKind { get; init; } = "terminal_risk";
     public string? BoundaryDirectory { get; init; }
+    /// <summary>
+    /// Canonical hash of the snapshot the approval was issued under. Session
+    /// approval memory derives snapshot versions, so a version alone can repeat
+    /// for a different rule set; null only for legacy bindings without a lease.
+    /// </summary>
+    public string? SnapshotSha256 { get; init; }
 }
 
 public sealed record V2ApprovalResolution(
@@ -350,6 +359,7 @@ public sealed class PendingApprovalStore
             && string.Equals(left.OperationClass, right.OperationClass, StringComparison.Ordinal)
             && string.Equals(left.NetworkIntent, right.NetworkIntent, StringComparison.Ordinal)
             && left.SnapshotVersion == right.SnapshotVersion
+            && string.Equals(left.SnapshotSha256, right.SnapshotSha256, StringComparison.Ordinal)
             && string.Equals(left.IntentHash, right.IntentHash, StringComparison.Ordinal)
             && string.Equals(left.ApprovalKind, right.ApprovalKind, StringComparison.Ordinal)
             && string.Equals(left.BoundaryDirectory, right.BoundaryDirectory, StringComparison.Ordinal);

@@ -50,15 +50,19 @@ internal sealed partial class AgentRunStepHandlers
                     modelStepId,
                     step,
                     droppedCount,
-                    kind == AgentRecoveryKind.OutputTruncated
-                        ? AgentRecoveryNotes.BuildTruncatedNote()
-                        : AgentRecoveryNotes.BuildEmptyNote(),
+                    kind switch
+                    {
+                        AgentRecoveryKind.OutputTruncated => AgentRecoveryNotes.BuildTruncatedNote(),
+                        AgentRecoveryKind.CommentaryOnly => AgentRecoveryNotes.BuildCommentaryNote(),
+                        _ => AgentRecoveryNotes.BuildEmptyNote(),
+                    },
                     AgentRecoveryNotes.NoteCount(context, kind),
                     errorCode,
                     promptReceiptPayload,
                     promptComposedEvent,
                     cancellationToken,
-                    reasoningText)
+                    reasoningText,
+                    retainAssistantContext: kind == AgentRecoveryKind.CommentaryOnly)
                 .ConfigureAwait(false);
         }
 

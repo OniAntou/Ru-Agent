@@ -8,14 +8,13 @@ public sealed partial class SessionStore
     {
         if (!IsValidSessionId(sessionId)) return false;
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
             using var transaction = connection.BeginTransaction(deferred: false);
             var current = await LoadUnlockedAsync(sessionId, cancellationToken, connection, transaction)
                 .ConfigureAwait(false);
-            if (current is not null && current.Messages.Count == 0)
+            if (current is not null && current.TotalMessageCount == 0)
             {
                 await using var command = connection.CreateCommand();
                 command.Transaction = transaction;
@@ -30,10 +29,6 @@ public sealed partial class SessionStore
         catch (Exception error) when (error is SqliteException or IOException or UnauthorizedAccessException)
         {
             return false;
-        }
-        finally
-        {
-            _gate.Release();
         }
     }
 }

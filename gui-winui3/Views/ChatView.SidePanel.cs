@@ -78,9 +78,36 @@ public sealed partial class ChatView
         }
     }
 
+    /// <summary>
+    /// The open generation whose outgoing transcript is still on screen. Bound to the
+    /// generation so any other activation ends the deferral instead of leaving the
+    /// panel unlaid.
+    /// </summary>
+    private long? _sidePanelLayoutDeferredFor;
+
+    private bool IsSidePanelLayoutDeferred => _sidePanelLayoutDeferredFor == _sessionOpenGeneration;
+
+    private void DeferSidePanelLayout() => _sidePanelLayoutDeferredFor = _sessionOpenGeneration;
+
+    /// <summary>Lays the side panel out for the transcript now on screen.</summary>
+    private void EndSidePanelLayoutDeferral()
+    {
+        if (_sidePanelLayoutDeferredFor is null) return;
+        _sidePanelLayoutDeferredFor = null;
+        // The exit fade keeps the panel's width reserved until it ends, which would
+        // paint the incoming rows narrow and widen them a moment later. The rows were
+        // just swapped, so there is nothing to fade from.
+        if (SidePanel is not null && SidePanel.Visibility == Visibility.Visible && !IsSidePanelDesiredVisible())
+        {
+            SidePanel.CancelVisibilityAnimations();
+            SidePanel.Visibility = Visibility.Collapsed;
+        }
+        ApplySidePanelState();
+    }
+
     private void UpdateSidePanelLayout()
     {
-        if (SidePanel is null || RootGrid is null)
+        if (SidePanel is null || RootGrid is null || IsSidePanelLayoutDeferred)
         {
             return;
         }

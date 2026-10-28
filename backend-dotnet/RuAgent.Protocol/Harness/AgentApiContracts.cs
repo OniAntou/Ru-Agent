@@ -57,7 +57,8 @@ public sealed record GetAgentRunResponse(
     [property: JsonPropertyName("context_window_tokens")] long? ContextWindowTokens = null,
     [property: JsonPropertyName("context_window_source")] string? ContextWindowSource = null,
     [property: JsonPropertyName("context_window_version")] string? ContextWindowVersion = null,
-    [property: JsonPropertyName("output_token_reserve")] int? OutputTokenReserve = null);
+    [property: JsonPropertyName("output_token_reserve")] int? OutputTokenReserve = null,
+    [property: JsonPropertyName("tool_profile")] string? ToolProfile = null);
 
 public sealed record TrustAgentRunRequest(
     [property: JsonPropertyName("trust_request_id")] string TrustRequestId,

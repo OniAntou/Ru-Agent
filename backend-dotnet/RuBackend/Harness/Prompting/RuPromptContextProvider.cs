@@ -122,7 +122,7 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
             environment,
             instructions.Blocks.Where(block => !block.SourceId.StartsWith("nested:", StringComparison.Ordinal)).ToArray(),
             capabilities,
-            runtime);
+            runtime) with { ProviderWebSearch = _availability.ProviderWebSearch };
     }
 
     private static string SelectModel(SettingsSnapshot settings)

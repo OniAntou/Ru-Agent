@@ -87,12 +87,12 @@ public static class ConsecutiveToolCallGuard
         }
 
         var index = context.Entries.Count - 1;
-        // Advice replaces a suppressed call in model context. Look through our
-        // trailing advice to the original result, without crossing a user turn.
-        while (index >= 0
-            && context.Entries[index].Kind == ModelContextEntryKind.Text
+        // Progress and advice are not tool actions. Look through them to the
+        // original result without crossing a user turn.
+        while (index >= 0 && (AgentRecoveryNotes.IsCommentaryProgress(context.Entries[index])
+            || context.Entries[index].Kind == ModelContextEntryKind.Text
             && context.Entries[index].Role == ModelContextRole.System
-            && context.Entries[index].Content?.StartsWith(RepairNotePrefix, StringComparison.Ordinal) == true)
+            && context.Entries[index].Content?.StartsWith(RepairNotePrefix, StringComparison.Ordinal) == true))
         {
             index--;
         }
@@ -133,6 +133,13 @@ public static class ConsecutiveToolCallGuard
             && wait.ProviderCallId == prior[0].ProviderCallId)
             return false;
 
+        // The desktop changes between calls: a second screenshot, or the same key or
+        // click on the next screen, is progress (ADR 0031). Only successful computer
+        // calls are exempt; a repeated failure stays guarded.
+        if (prior.All(call => call.ToolId == "computer" && call.ToolVersion == "1.0.0")
+            && receipts.All(receipt => receipt.Outcome == ToolExecutionOutcome.Succeeded))
+            return false;
+
         // A single retry after an infrastructure failure that never executed
         // the tool is allowed through; a second consecutive identical
         // infra-failure still fails (bounded further by the step/call
@@ -170,6 +177,7 @@ public static class ConsecutiveToolCallGuard
         IReadOnlyList<ModelToolCall> proposed)
     {
         var index = assistantIndex - 1;
+        while (index >= 0 && AgentRecoveryNotes.IsCommentaryProgress(context.Entries[index])) index--;
         var receipts = new List<ToolExecutionReceipt>();
         while (index >= 0 && context.Entries[index].Kind == ModelContextEntryKind.ToolResult)
         {

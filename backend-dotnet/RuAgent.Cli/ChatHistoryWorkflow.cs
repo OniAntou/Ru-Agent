@@ -7,7 +7,7 @@ namespace RuAgent.Cli;
 
 internal sealed record ChatHistoryTurn(int Number, int Start, int End, string Prompt);
 internal sealed record ChatHistoryBranch(string SourceId, string Revision, int KeepMessages,
-    string? Draft, JsonElement Messages);
+    string? Draft, JsonElement Messages, int MessageOffset = 0);
 
 /// <summary>Turn-based browsing stages a branch; only the next ordinary send creates it.</summary>
 internal sealed class ChatHistoryWorkflow(SessionApiClient sessions, AgentApiClient agents)
@@ -28,6 +28,10 @@ internal sealed class ChatHistoryWorkflow(SessionApiClient sessions, AgentApiCli
         }
         var root = await sessions.GetSessionAsync(session, ct);
         var messages = ChatRewindWorkflow.ReadMessages(root, session);
+        var offset = root.GetProperty("session").TryGetProperty("message_offset", out var offsetValue)
+            ? offsetValue.GetInt32() : 0;
+        if (offset < 0 || offset > int.MaxValue - messages.GetArrayLength())
+            throw new AgentApiException("history_branch_unsupported", "Saved history has an invalid page offset.");
         var turns = Turns(messages);
         var parts = (argument ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length > 2 || (parts.Length > 0 && (!int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var n) || n < 1))
@@ -82,8 +86,8 @@ internal sealed class ChatHistoryWorkflow(SessionApiClient sessions, AgentApiCli
                 throw new AgentApiException("history_branch_unsupported", "Update the Host to use history branches.");
             if (action == "edit" && (target.Prompt.Length > 16_000 || TuiText.SanitizeUntrusted(target.Prompt) != target.Prompt))
                 throw new AgentApiException("history_prompt_unavailable", "Saved prompt exceeds the editor limit or contains control sequences. Use Continue from here.");
-            return new(session, token, action == "edit" ? target.Start : target.End,
-                action == "edit" ? target.Prompt : null, messages.Clone());
+            return new(session, token, offset + (action == "edit" ? target.Start : target.End),
+                action == "edit" ? target.Prompt : null, messages.Clone(), offset);
         }
     }
 
@@ -97,7 +101,16 @@ internal sealed class ChatHistoryWorkflow(SessionApiClient sessions, AgentApiCli
             var id = root.GetProperty("session").GetProperty("id").GetString();
             if (id == plan.SourceId || !ChatSessionWorkflow.IsValidSessionId(id)) throw new InvalidOperationException("invalid branch identity");
             var kept = ChatRewindWorkflow.ReadMessages(root, id!);
-            if (kept.GetArrayLength() != plan.KeepMessages || Enumerable.Range(0, plan.KeepMessages).Any(i => !JsonElement.DeepEquals(kept[i], plan.Messages[i])))
+            var snapshot = root.GetProperty("session");
+            var childOffset = snapshot.TryGetProperty("message_offset", out var start) ? start.GetInt32() : 0;
+            var childCount = snapshot.TryGetProperty("total_message_count", out var total) ? total.GetInt32() : kept.GetArrayLength();
+            var knownCount = plan.KeepMessages - plan.MessageOffset;
+            var knownStart = plan.MessageOffset - childOffset;
+            if (childOffset < 0 || childCount != plan.KeepMessages
+                || (long)childOffset + kept.GetArrayLength() != childCount
+                || knownCount < 0 || knownCount > plan.Messages.GetArrayLength()
+                || knownStart < 0 || (long)knownStart + knownCount > kept.GetArrayLength()
+                || Enumerable.Range(0, knownCount).Any(i => !JsonElement.DeepEquals(kept[knownStart + i], plan.Messages[i])))
                 throw new InvalidOperationException("invalid branch prefix");
             return root;
         }

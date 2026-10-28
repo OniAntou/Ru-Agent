@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy.Commands;
 using RuAgent.Broker.Runtime;
+using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
@@ -14,7 +15,7 @@ namespace RuAgent.Broker.Policy;
 /// Builds a <see cref="PolicyContext"/> from trusted resolution. The workspace root comes only from
 /// the v2 run lease — never from RU_WORKSPACE_ROOT, the broker current directory, or model input.
 /// </summary>
-public sealed class PolicyContextFactory
+public sealed partial class PolicyContextFactory
 {
     private static readonly System.Text.RegularExpressions.Regex McpServerName =
         new("^[a-z][a-z0-9_-]{0,31}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
@@ -37,6 +38,25 @@ public sealed class PolicyContextFactory
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
         ArgumentNullException.ThrowIfNull(arguments);
+        if (toolId is "powershell" or "run_process" && !TerminalWorkflowIntent.HasValidExpectedExitCode(arguments))
+            throw new PolicyContextException("invalid_arguments", hint: "expected_failure requires a nonzero signed 32-bit expected_exit_code.");
+        if (toolId == "apply_patch") return CreatePatchContext(toolVersion, arguments);
+        if (toolId == "run_code")
+        {
+            var definition = AgentToolDefinitionCatalog.Find(toolId, toolVersion)
+                ?? throw new PolicyContextException("invalid_arguments");
+            try { ToolSchemaValidator.Validate(definition.InputSchema, arguments); }
+            catch (ToolSchemaException error)
+            { throw new PolicyContextException("invalid_arguments", error); }
+        }
+        var advertisedToolId = toolId;
+        var advertisedArguments = arguments;
+        if (CodingToolArguments.AdapterToolId(toolId) is { } adapterToolId)
+        {
+            try { arguments = CodingToolArguments.ToAdapterArguments(toolId, arguments); }
+            catch (ArgumentException error) { throw new PolicyContextException("invalid_arguments", error); }
+            toolId = adapterToolId;
+        }
         if (SubagentContractValidator.IsControlTool(toolId)
             && (toolVersion != "1.0.0" || !SubagentContractValidator.Validate(toolId,
                 System.Text.Json.JsonSerializer.SerializeToElement(arguments)).IsValid))
@@ -64,7 +84,7 @@ public sealed class PolicyContextFactory
         {
             throw new PolicyContextException(
                 "malformed_call",
-                hint: "background is only valid with bash mode \"run\" or \"shell\".");
+                hint: "background is only valid for powershell or run_process launches.");
         }
 
         var networkDeclared = IsTrue(arguments, "network_intent") || IsTrue(arguments, "network");
@@ -101,7 +121,7 @@ public sealed class PolicyContextFactory
             {
                 throw new PolicyContextException(
                     "malformed_call",
-                    hint: "bash mode must be \"run\" (executable plus arguments) or \"shell\" (script).");
+                    hint: "Use run_process with executable/arguments or powershell with script.");
             }
 
             var workingDirectory = OptionalText(arguments, "working_directory") ?? ".";
@@ -126,14 +146,14 @@ public sealed class PolicyContextFactory
                 resolvedExecutable = OptionalText(arguments, "executable")
                     ?? throw new PolicyContextException(
                         "malformed_call",
-                        hint: "bash mode \"run\" requires executable (and optional string arguments); use mode \"shell\" with a script for pipelines.");
+                        hint: "run_process requires executable (and optional arguments); use powershell with script for pipelines.");
             }
             else
             {
                 var script = OptionalText(arguments, "script")
                     ?? throw new PolicyContextException(
                         "malformed_call",
-                        hint: "bash mode \"shell\" requires script as a single string.");
+                        hint: "powershell requires script as a single string.");
                 _ = OptionalText(arguments, "shell");
                 // Shell text is bound verbatim; the installed shell owns syntax validation.
                 shellScript = script;
@@ -231,6 +251,9 @@ public sealed class PolicyContextFactory
                 case "help":
                     op = "help";
                     break;
+                case "run_code":
+                    op = "run_code";
+                    break;
                 case "todo_write":
                     // The task list has no path, no scope beyond the session, and no
                     // side effect outside the process: the policy only has to let it
@@ -241,12 +264,12 @@ public sealed class PolicyContextFactory
                     var writeOp = OptionalText(arguments, "op")
                         ?? throw new PolicyContextException(
                             "malformed_call",
-                            hint: "write requires op: \"write\", \"delete\", or \"restore\".");
+                            hint: "Use write_file, file_delete or file_restore with their own schemas.");
                     if (writeOp is not ("write" or "delete" or "restore"))
                     {
                         throw new PolicyContextException(
                             "malformed_call",
-                            hint: "write op must be write|delete|restore.");
+                            hint: "Use write_file, file_delete or file_restore with their own schemas.");
                     }
 
                     op = writeOp;
@@ -270,7 +293,7 @@ public sealed class PolicyContextFactory
                     {
                         throw new PolicyContextException(
                             "malformed_call",
-                            hint: "bash mode must be \"run\" (executable plus arguments), \"shell\" (script), \"read_output\" (execution_id), or \"kill\" (execution_id).");
+                            hint: "Use the advertised terminal launch, read or stop tool with its own schema.");
                     }
 
                     break;
@@ -327,13 +350,43 @@ public sealed class PolicyContextFactory
                         }
                     }
 
-                    break;                case var control when SubagentContractValidator.IsControlTool(control):
+                    break;
+                case "computer":
+                    // Computer actions carry no path. request_access binds its exact
+                    // app list as argv so an approval or an "always" rule covers only
+                    // those apps; protected apps are refused by the evaluator (ADR 0031).
+                    op = OptionalText(arguments, "action");
+                    if (op is null || !ComputerActions.All.Contains(op))
+                    {
+                        throw new PolicyContextException(
+                            "malformed_call",
+                            hint: "computer action must be one of: " + string.Join(", ", ComputerActions.All) + ".");
+                    }
+
+                    resolvedExecutable = "computer:" + op;
+                    if (op == ComputerActions.RequestAccess)
+                    {
+                        argv = ReadComputerApps(arguments);
+                    }
+                    else if (arguments.ContainsKey("apps"))
+                    {
+                        throw new PolicyContextException("malformed_call", hint: "apps is only valid with action=request_access.");
+                    }
+                    else if (op == ComputerActions.Focus)
+                    {
+                        // The app travels as argv so the protected-app invariant denies it before execution.
+                        argv = [ComputerProtectedApps.Normalize(OptionalText(arguments, "app"))
+                            ?? throw new PolicyContextException("malformed_call", hint: "focus needs app, an executable name such as notepad.exe.")];
+                    }
+
+                    break;
+                case var control when SubagentContractValidator.IsControlTool(control):
                     op = control;
                     break;
                 default:
                     throw new PolicyContextException(
                         "malformed_call",
-                        hint: "unknown tool id; use read, list, help, todo_write, grep, glob, write, edit, bash, web_search, or web_fetch.");
+                        hint: "unknown tool id; select an advertised tool and follow its schema.");
             }
 
             if (IsTargetFreeOp(toolId, op!))
@@ -353,7 +406,7 @@ public sealed class PolicyContextFactory
                 {
                     throw new PolicyContextException(
                         "malformed_call",
-                        hint: "write op \"restore\" requires recovery_id or path.");
+                        hint: "file_restore requires recovery_id.");
                 }
 
                 if (pathInput is not null)
@@ -388,7 +441,7 @@ public sealed class PolicyContextFactory
         }
 
         return new PolicyContext(
-            ToolId: toolId,
+            ToolId: advertisedToolId,
             ToolVersion: toolVersion,
             CanonicalWorkspaceRoot: _canonicalRoot,
             Target: target,
@@ -402,19 +455,19 @@ public sealed class PolicyContextFactory
             NetworkIntent: networkDeclared ? PolicyNetworkIntents.Declared : PolicyNetworkIntents.None,
             NetworkDeclared: networkDeclared,
             IntentHash: ComputeIntentHash(
-                toolId,
+                advertisedToolId,
                 toolVersion,
                 target?.CanonicalIntentHash,
                 resolvedExecutable,
                 argv,
                 canonicalCwd,
                 operationClass,
-                arguments),
+                advertisedArguments),
             TimeoutMs: timeoutMs,
             SessionId: _sessionId,
             WorkingDirectory: terminalWorkingDirectory,
             TerminalAnalysis: terminalAnalysis,
-            ToolOp: toolId is "read" or "write" or "mcp" ? ReadOpOf(toolId, arguments) : null,
+            ToolOp: toolId is "read" or "write" or "mcp" ? ReadOpOf(toolId, arguments) : toolId == "computer" ? OptionalText(arguments, "action") : null,
             BashMode: toolId == "bash" ? OptionalText(arguments, "mode") : null,
             Background: background)
         {
@@ -460,7 +513,7 @@ public sealed class PolicyContextFactory
     {
         "read" => PolicyOperationClasses.Read,
         "list" => PolicyOperationClasses.List,
-        "help" => PolicyOperationClasses.Read,
+        "help" or "run_code" => PolicyOperationClasses.Read,
         "todo_write" => PolicyOperationClasses.Read,
         "grep" => PolicyOperationClasses.Search,
         "glob" => PolicyOperationClasses.Glob,
@@ -476,9 +529,40 @@ public sealed class PolicyContextFactory
         // Listing declared servers reads the user's own file; starting a server or calling
         // a tool runs a program, which plan denies like any mutation.
         "mcp" => OptionalText(arguments, "op") == "list_servers" ? PolicyOperationClasses.Read : PolicyOperationClasses.Mutation,
+        // Every computer action, including a screenshot, reaches outside the workspace:
+        // plan denies them all through its read-only gate (ADR 0031).
+        "computer" => PolicyOperationClasses.Mutation,
         _ when SubagentContractValidator.IsControlTool(toolId) => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
+
+    private static string[] ReadComputerApps(JsonObject arguments)
+    {
+        if (arguments["apps"] is not JsonArray apps || apps.Count is 0 or > ComputerLimits.MaxRequestedApps)
+        {
+            throw new PolicyContextException(
+                "malformed_call",
+                hint: $"request_access needs apps: 1 to {ComputerLimits.MaxRequestedApps} executable names such as notepad.exe.");
+        }
+
+        var names = new List<string>(apps.Count);
+        foreach (var item in apps)
+        {
+            var name = item is JsonValue value && value.TryGetValue<string>(out var text)
+                ? ComputerProtectedApps.Normalize(text)
+                : null;
+            if (name is null)
+            {
+                throw new PolicyContextException("malformed_call", hint: "each app must be an executable file name such as notepad.exe.");
+            }
+
+            if (!names.Contains(name, StringComparer.Ordinal)) names.Add(name);
+        }
+
+        // One canonical order, so the same apps always bind the same approval and rule.
+        names.Sort(StringComparer.Ordinal);
+        return names.ToArray();
+    }
 
     private static bool IsSpoolRead(JsonObject arguments) =>
         string.Equals(OptionalText(arguments, "mode"), "read_output", StringComparison.Ordinal);
@@ -495,9 +579,9 @@ public sealed class PolicyContextFactory
     };
 
     private static bool IsTargetFreeOp(string toolId, string op) =>
-        toolId == "help"
+        toolId is "help" or "run_code"
         || toolId == "todo_write"
-        || toolId is "web_search" or "web_fetch" or "mcp"
+        || toolId is "web_search" or "web_fetch" or "mcp" or "computer"
         || SubagentContractValidator.IsControlTool(toolId)
         // A spool read names a session-scoped output id, not a path; a task
         // kill names a session-scoped task id. The execution leg still fails

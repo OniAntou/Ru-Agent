@@ -1,0 +1,10 @@
+id = "negative-manual-only-csv"
+language = "python"
+difficulty = "skills"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["only_fields", "trim_and_parse", "skip_invalid", "order", "reject_nonfinite"]
+pass_to_pass = ["input_unchanged", "empty_rows"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 30
+skill_scenario = "negative_manual_only"
+expected_skill_selection = "none"

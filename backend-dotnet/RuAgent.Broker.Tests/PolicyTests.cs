@@ -78,7 +78,7 @@ public sealed class PolicyTests
     {
         var decision = new ToolPolicyEngine().Evaluate(
             MakeGrant(ToolScope.TerminalExecute),
-            TerminalManifests.Bash);
+            new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs()).Registry.Get("run_process", "1.0.0").Manifest);
 
         Assert.True(decision.Allowed);
         Assert.True(decision.RequiresApproval);
@@ -89,7 +89,7 @@ public sealed class PolicyTests
     {
         var decision = new ToolPolicyEngine().Evaluate(
             MakeGrant(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
-            TerminalManifests.Bash);
+            new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs()).Registry.Get("run_process", "1.0.0").Manifest);
 
         Assert.True(decision.Allowed);
         Assert.True(decision.RequiresApproval);
@@ -119,7 +119,7 @@ public sealed class PolicyTests
         WorkspaceRequired: true);
 }
 
-public sealed class PolicyEvaluationTests
+public sealed partial class PolicyEvaluationTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 24, 12, 0, 0, TimeSpan.Zero);
 
@@ -716,8 +716,8 @@ public sealed class PolicyEvaluationTests
             ("glob", new JsonObject { ["pattern"] = "*.txt", ["path"] = "." }),
             ("grep", new JsonObject { ["query"] = "x", ["path"] = "." }),
             ("read", new JsonObject { ["path"] = "src/read.txt" }),
-            ("write", new JsonObject { ["op"] = "write", ["path"] = "src/write.txt" }),
-            ("edit", new JsonObject { ["path"] = "src/edit.txt", ["old_string"] = "a" }),
+            ("write_file", new JsonObject { ["path"] = "src/write.txt", ["content"] = "x" }),
+            ("edit_file", new JsonObject { ["path"] = "src/edit.txt", ["edits"] = new JsonArray(new JsonObject { ["old_string"] = "a", ["new_string"] = "b" }) }),
         };
         foreach (var (piId, args) in cases)
         {
@@ -795,9 +795,9 @@ public sealed class PolicyEvaluationTests
             }
 
             var arguments = write
-                ? new JsonObject { ["op"] = "write", ["path"] = path, ["content"] = "synthetic" }
+                ? new JsonObject { ["path"] = path, ["content"] = "synthetic" }
                 : new JsonObject { ["path"] = path };
-            var context = factory.Create(write ? "write" : "read", "1.0.0", arguments);
+            var context = factory.Create(write ? "write_file" : "read", "1.0.0", arguments);
             var evaluation = new PolicySnapshotEvaluator(grants).Evaluate(
                 lease.Snapshot,
                 context,
@@ -912,11 +912,10 @@ public sealed class PolicyEvaluationTests
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
             factory.Create(
-                "write",
+                "write_file",
                 "1.0.0",
                 new JsonObject
                 {
-                    ["op"] = "write",
                     ["path"] = @"C:\SharedWork\notes.txt",
                     ["content"] = "x",
                 }),
@@ -957,16 +956,10 @@ public sealed class PolicyEvaluationTests
     {
         var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
 
-        // read no longer takes an op, so the malformed case is write without one.
-        var writeWithoutOp = Assert.Throws<PolicyContextException>(
-            () => factory.Create("write", "1.0.0", new JsonObject { ["path"] = "notes/a.txt", ["content"] = "x" }));
-        Assert.Equal("malformed_call", writeWithoutOp.Code);
-        Assert.Contains("write requires op", writeWithoutOp.Hint);
-
-        var bashWithoutExecutable = Assert.Throws<PolicyContextException>(
-            () => factory.Create("bash", "1.0.0", new JsonObject { ["working_directory"] = "." }));
-        Assert.Equal("malformed_call", bashWithoutExecutable.Code);
-        Assert.Contains("executable", bashWithoutExecutable.Hint);
+        var missingExecutable = Assert.Throws<PolicyContextException>(
+            () => factory.Create("run_process", "1.0.0", new JsonObject { ["working_directory"] = "." }));
+        Assert.Equal("malformed_call", missingExecutable.Code);
+        Assert.Contains("executable", missingExecutable.Hint);
 
         Assert.Null(new PolicyContextException("invalid_path").Hint);
     }
@@ -987,17 +980,17 @@ public sealed class PolicyEvaluationTests
             Now);
         var delete = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
-            factory.Create("write", "1.0.0", new JsonObject { ["op"] = "delete", ["path"] = "src/old.txt" }),
+            factory.Create("file_delete", "1.0.0", new JsonObject { ["path"] = "src/old.txt" }),
             PolicyRequestInvariants.Valid,
             Now);
         var restore = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
-            factory.Create("write", "1.0.0", new JsonObject { ["op"] = "restore", ["path"] = "src/old.txt" }),
+            factory.Create("file_restore", "1.0.0", new JsonObject { ["recovery_id"] = "recovery-1" }),
             PolicyRequestInvariants.Valid,
             Now);
         var networked = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
-            factory.Create("write", "1.0.0", new JsonObject { ["op"] = "write", ["path"] = "out.txt", ["network"] = true }),
+            factory.Create("write_file", "1.0.0", new JsonObject { ["path"] = "out.txt", ["content"] = "x", ["network"] = true }),
             PolicyRequestInvariants.Valid,
             Now);
 
@@ -1009,6 +1002,115 @@ public sealed class PolicyEvaluationTests
         Assert.Equal("allow", delete.Decision);
         Assert.Equal("allow", restore.Decision);
         Assert.Equal("allow", networked.Decision);
+    }
+
+    [Theory]
+    [InlineData("plan", "list", "deny", "plan_preset_read_only")]
+    [InlineData("plan", "screenshot", "deny", "plan_preset_read_only")]
+    [InlineData("plan", "request_access", "deny", "plan_preset_read_only")]
+    [InlineData("standard", "request_access", "ask", "computer_access_requires_approval")]
+    [InlineData("standard", "screenshot", "allow", "computer_action_grant_checked")]
+    [InlineData("standard", "click", "allow", "computer_action_grant_checked")]
+    [InlineData("plan", "focus", "deny", "plan_preset_read_only")]
+    [InlineData("standard", "focus", "allow", "computer_action_grant_checked")]
+    [InlineData("full_access", "request_access", "allow", "full_access_allow")]
+    public void Computer_actions_follow_the_preset(string preset, string action, string decision, string reason)
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
+        var arguments = new JsonObject { ["action"] = action };
+        if (action == "request_access") arguments["apps"] = new JsonArray("notepad.exe");
+        if (action == "click") { arguments["x"] = 1; arguments["y"] = 1; }
+        if (action == "focus") arguments["app"] = "notepad.exe";
+
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot, factory.Create("computer", "1.0.0", arguments), PolicyRequestInvariants.Valid, Now);
+
+        Assert.Equal(decision, evaluation.Decision);
+        Assert.Equal(reason, evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void Computer_access_to_a_protected_app_is_denied_even_in_full_access_with_an_allow_rule()
+    {
+        var snapshot = PolicyEvalSnapshots.SnapshotWith(PolicyEvalSnapshots.AllowAllRule()) with { Preset = "full_access" };
+        var (lease, factory) = Bind(snapshot);
+        var context = factory.Create("computer", "1.0.0", new JsonObject
+        {
+            ["action"] = "request_access",
+            ["apps"] = new JsonArray("Notepad", "ruapp.exe"),
+        });
+
+        Assert.Equal(new[] { "notepad.exe", "ruapp.exe" }, context.Argv);
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("computer_app_protected", evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void A_remembered_computer_grant_never_covers_a_request_for_more_apps()
+    {
+        var rule = PolicyEvalSnapshots.Rule("r-notepad", "allow", PolicyEvalSnapshots.Matcher(
+            toolId: "computer", resolvedExecutable: "computer:request_access", argvPattern: ["notepad.exe"]));
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(rule));
+        PolicyEvaluation Request(params string[] apps) => new PolicySnapshotEvaluator().Evaluate(lease.Snapshot,
+            factory.Create("computer", "1.0.0", new JsonObject
+            {
+                ["action"] = "request_access",
+                ["apps"] = new JsonArray(apps.Select(app => (JsonNode?)app).ToArray()),
+            }),
+            PolicyRequestInvariants.Valid, Now);
+
+        Assert.Equal("allow", Request("notepad.exe").Decision);
+        Assert.Equal("ask", Request("notepad.exe", "chrome.exe").Decision);
+    }
+
+    [Fact]
+    public void Focusing_a_protected_app_is_denied_by_policy_in_full_access()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty("full_access"));
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot,
+            factory.Create("computer", "1.0.0", new JsonObject { ["action"] = "focus", ["app"] = "RuApp" }),
+            PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("computer_app_protected", evaluation.ReasonCode);
+    }
+
+    [Theory]
+    [InlineData("{\"action\":\"focus\"}")]
+    [InlineData("{\"action\":\"fly\"}")]
+    [InlineData("{\"action\":\"request_access\"}")]
+    [InlineData("{\"action\":\"request_access\",\"apps\":[\"bad/name?\"]}")]
+    [InlineData("{\"action\":\"click\",\"apps\":[\"notepad.exe\"]}")]
+    public void Malformed_computer_calls_are_rejected(string json)
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var error = Assert.Throws<PolicyContextException>(
+            () => factory.Create("computer", "1.0.0", JsonNode.Parse(json)!.AsObject()));
+        Assert.Equal("malformed_call", error.Code);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("allow")]
+    [InlineData("ask")]
+    public void Plan_denies_file_restore_even_when_a_rule_would_allow_or_ask(string? ruleDecision)
+    {
+        // Restoring a recovery copy writes the workspace, so Plan's read-only gate
+        // applies ahead of any remembered allow or ask rule, like any other mutation.
+        var snapshot = ruleDecision is null
+            ? PolicyEvalSnapshots.Empty("plan")
+            : PolicyEvalSnapshots.SnapshotWith(
+                PolicyEvalSnapshots.Rule("r-restore", ruleDecision, PolicyEvalSnapshots.Matcher())) with { Preset = "plan" };
+        var (lease, factory) = Bind(snapshot);
+
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create("file_restore", "1.0.0", new JsonObject { ["recovery_id"] = "recovery-1" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("plan_preset_read_only", evaluation.ReasonCode);
     }
 
     [Fact]
@@ -1500,9 +1602,9 @@ public sealed class PolicyEvaluationTests
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var context = factory.Create(
-            "bash",
+            "terminal_read",
             "1.0.0",
-            new JsonObject { ["mode"] = "read_output", ["execution_id"] = "req-1" });
+            new JsonObject { ["execution_id"] = "req-1" });
 
         Assert.Equal(PolicyOperationClasses.Read, context.OperationClass);
         Assert.Null(context.Target);
@@ -1515,9 +1617,9 @@ public sealed class PolicyEvaluationTests
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
             factory.Create(
-                "bash",
+                "terminal_read",
                 "1.0.0",
-                new JsonObject { ["mode"] = "read_output", ["execution_id"] = "req-1" }),
+                new JsonObject { ["execution_id"] = "req-1" }),
             PolicyRequestInvariants.Valid,
             Now);
 
@@ -1535,9 +1637,9 @@ public sealed class PolicyEvaluationTests
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
             factory.Create(
-                "bash",
+                "terminal_read",
                 "1.0.0",
-                new JsonObject { ["mode"] = "read_output", ["execution_id"] = "req-1" }),
+                new JsonObject { ["execution_id"] = "req-1" }),
             PolicyRequestInvariants.Valid,
             Now);
 
@@ -1558,16 +1660,16 @@ public sealed class PolicyEvaluationTests
             "1.0.0",
             new JsonObject { ["query"] = "ru" }),
         AgentPolicySubject.WorkspaceMutation => factory.Create(
-            "write",
+            "write_file",
             "1.0.0",
-            new JsonObject { ["op"] = "write", ["path"] = "src/write.txt" }),
+            new JsonObject { ["path"] = "src/write.txt", ["content"] = "x" }),
         AgentPolicySubject.WorkspaceTerminal => Terminal(factory, "git", "status"),
         AgentPolicySubject.ExternalStructuredFile => factory.Create(
             "read",
             "1.0.0",
             new JsonObject { ["path"] = Path.Combine(Path.GetTempPath(), "ru-policy-outside.txt") }),
-        AgentPolicySubject.ExternalTerminal => factory.Create("bash", "1.0.0", new JsonObject
-        { ["mode"] = "run", ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = Path.GetTempPath() }),
+        AgentPolicySubject.ExternalTerminal => factory.Create("run_process", "1.0.0", new JsonObject
+        { ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = Path.GetTempPath() }),
         AgentPolicySubject.StructuredProtectedPath => factory.Create(
             "read",
             "1.0.0",
@@ -1675,7 +1777,6 @@ public sealed class PolicyEvaluationTests
 
         var arguments = new JsonObject
         {
-            ["mode"] = "run",
             ["executable"] = executable,
             ["arguments"] = new JsonArray(argvList.Select(a => JsonValue.Create(a)).ToArray()),
             ["working_directory"] = ".",
@@ -1685,13 +1786,12 @@ public sealed class PolicyEvaluationTests
             arguments["timeout_ms"] = timeoutMs.Value;
         }
 
-        return factory.Create("bash", "1.0.0", arguments);    }
+        return factory.Create("run_process", "1.0.0", arguments);    }
 
     private static PolicyContext Shell(PolicyContextFactory factory, string script, int? timeoutMs = null)
     {
         var arguments = new JsonObject
         {
-            ["mode"] = "shell",
             ["script"] = script,
             ["working_directory"] = ".",
         };
@@ -1700,7 +1800,7 @@ public sealed class PolicyEvaluationTests
             arguments["timeout_ms"] = timeoutMs.Value;
         }
 
-        return factory.Create("bash", "1.0.0", arguments);
+        return factory.Create("powershell", "1.0.0", arguments);
     }
 
     private static void AssertDeny(PolicyEvaluation evaluation, string reasonCode)

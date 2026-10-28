@@ -328,6 +328,13 @@ public sealed record SystemPromptContext
 
     public PromptRuntimeContext RuntimeContext { get; }
 
+    /// <summary>
+    /// Whether this run searches through the provider's hosted web search instead of the
+    /// Broker's <c>web_search</c> (ADR 0033). Decided per run from the pinned selection
+    /// and the run's policy; not part of the serialized prompt.
+    /// </summary>
+    public bool ProviderWebSearch { get; init; }
+
     /// <summary>Returns the strict UTF-8 JSON representation used for the context byte cap.</summary>
     public byte[] SerializeUtf8() => JsonSerializer.SerializeToUtf8Bytes(
         new

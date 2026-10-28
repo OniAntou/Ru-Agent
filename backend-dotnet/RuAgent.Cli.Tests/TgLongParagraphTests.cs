@@ -11,6 +11,114 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgLongParagraphTests
 {
     [Fact]
+    public void Storage_segments_do_not_add_visual_line_breaks_to_one_paragraph()
+    {
+        WithWriter((view, writer) =>
+        {
+            var text = new string('a', 32000) + "TAIL";
+            writer.CommitPresentation(new TuiMarkdown().RenderParagraphPresentation(text));
+            Assert.Equal(text, view.CopyText());
+            foreach (var width in new[] { 79, 120, 44 })
+            {
+                view.Frame = new System.Drawing.Rectangle(0, 0, width, 12);
+                var expectedRows = (text.Length + view.Viewport.Width - 1) / view.Viewport.Width;
+                Assert.Equal(Math.Max(0, expectedRows - view.Viewport.Height), view.ScrollPosition);
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData("alpha beta ")]
+    [InlineData("alpha  beta ")]
+    [InlineData("emoji \U0001f600 beta ")]
+    public void Storage_segments_reflow_like_the_complete_paragraph(string phrase)
+    {
+        WithWriter((view, writer) =>
+        {
+            var text = string.Concat(Enumerable.Repeat(phrase, 3200)) + "TAIL";
+            writer.CommitPresentation(new TuiMarkdown().RenderParagraphPresentation(text));
+            foreach (var width in new[] { 79, 120, 44 })
+            {
+                view.Frame = new System.Drawing.Rectangle(0, 0, width, 12);
+                IReadOnlyList<TgSpan> spans = [new TgSpan(text, new Terminal.Gui.Drawing.Attribute())];
+                var expected = phrase.Contains("  ", StringComparison.Ordinal)
+                    ? TgAnsiPaint.HardWrapSpans(text, spans, view.Viewport.Width)
+                    : TgAnsiPaint.WordWrapSpans(text, spans, view.Viewport.Width);
+                Assert.Equal(expected.Select(row => row.Row), view.WrappedLines.Select(row => row.Text));
+                Assert.All(view.WrappedLines, row =>
+                {
+                    if (row.Spans is not null) Assert.Equal(row.Text, string.Concat(row.Spans.Select(span => span.Text)));
+                });
+            }
+        });
+    }
+
+    [Fact]
+    public void Streaming_checkpoints_reflow_after_tail_growth_and_resize()
+    {
+        WithWriter((view, writer) =>
+        {
+            var parser = new StreamingParagraphParser();
+            var text = "";
+            view.Frame = new System.Drawing.Rectangle(0, 0, 79, 12);
+            foreach (var count in new[] { 500, 700, 13, 900, 17 })
+            {
+                var delta = string.Concat(Enumerable.Repeat("alpha beta ", count));
+                text += delta;
+                parser.Append(delta);
+                writer.PreviewPresentation(parser.Preview());
+                var expected = TgAnsiPaint.WordWrapSpans(text, [new TgSpan(text, new Terminal.Gui.Drawing.Attribute())], view.Viewport.Width);
+                Assert.Equal(expected.Select(row => row.Row), view.WrappedLines.Select(row => row.Text));
+            }
+            writer.CommitPresentation(parser.Preview());
+            Assert.Equal(text.TrimEnd(), view.CopyText().TrimEnd());
+        });
+    }
+
+    [Theory]
+    [InlineData("double  gap ")]
+    [InlineData("> ")]
+    [InlineData("- ")]
+    public void Structured_paragraph_segments_keep_the_original_wrap_mode_and_affixes(string prefix)
+    {
+        WithWriter((view, writer) =>
+        {
+            var source = prefix + string.Concat(Enumerable.Repeat("alpha beta ", 3200)) + "TAIL";
+            writer.CommitPresentation(new TuiMarkdown().RenderPresentation(source, 79));
+            var text = string.Concat(view.Lines.Select(row => row.Text));
+            var spans = view.Lines.SelectMany(row => row.Spans ?? [new TgSpan(row.Text, new Terminal.Gui.Drawing.Attribute())]).ToArray();
+            foreach (var width in new[] { 79, 44, 120 })
+            {
+                view.Frame = new System.Drawing.Rectangle(0, 0, width, 12);
+                var expected = TgAnsiPaint.HardWrapSpans(text, spans, view.Viewport.Width);
+                Assert.Equal(expected.Select(row => row.Row), view.WrappedLines.Select(row => row.Text));
+            }
+        });
+    }
+
+    [Fact]
+    public void Late_double_space_reflows_the_logical_paragraph_then_keeps_its_mode()
+    {
+        WithWriter((view, writer) =>
+        {
+            var parser = new StreamingParagraphParser();
+            var text = "";
+            view.Frame = new System.Drawing.Rectangle(0, 0, 79, 12);
+            foreach (var delta in new[] { string.Concat(Enumerable.Repeat("alpha beta ", 500)), "two  spaces", " then more", " again" })
+            {
+                text += delta;
+                parser.Append(delta);
+                writer.PreviewPresentation(parser.Preview());
+                var spans = new[] { new TgSpan(text, new Terminal.Gui.Drawing.Attribute()) };
+                var expected = text.Contains("  ", StringComparison.Ordinal)
+                    ? TgAnsiPaint.HardWrapSpans(text, spans, view.Viewport.Width)
+                    : TgAnsiPaint.WordWrapSpans(text, spans, view.Viewport.Width);
+                Assert.Equal(expected.Select(row => row.Row), view.WrappedLines.Select(row => row.Text));
+            }
+        });
+    }
+
+    [Fact]
     public void Soft_lines_form_a_long_paragraph_without_losing_its_tail_or_copy_text()
     {
         WithWriter((view, writer) =>
@@ -69,6 +177,7 @@ public sealed class TgLongParagraphTests
                 if (row.Spans is not null) Assert.Equal(row.Text, string.Concat(row.Spans.Select(span => span.Text)));
             });
             Assert.Equal(17000, view.Lines.SelectMany(row => row.Spans ?? []).Where(span => span.Attr.Style == Terminal.Gui.Drawing.TextStyle.Bold).Sum(span => span.Text.Length));
+            Assert.Equal(17000, view.WrappedLines.SelectMany(row => row.Spans ?? []).Where(span => span.Attr.Style == Terminal.Gui.Drawing.TextStyle.Bold).Sum(span => span.Text.Length));
         });
     }
 
@@ -220,6 +329,9 @@ public sealed class TgLongParagraphTests
                 Assert.InRange(view.RetainedCharacterCount, 1, TgTranscriptView.MaxRetainedCharacters);
                 Assert.InRange(view.RetainedRowCount, 1, TgTranscriptView.MaxRetainedRows);
                 Assert.True(view.IsHistoryTruncated);
+                view.Frame = new System.Drawing.Rectangle(0, 0, length == 250000 ? 44 : 79, 12);
+                Assert.Contains(view.WrappedLines, row => row.Style == TranscriptStyle.Meta && row.Text.Contains("earlier transcript"));
+                Assert.DoesNotContain(view.WrappedLines, row => row.Style == TranscriptStyle.Prose && row.Text.Contains("truncated"));
             }
             writer.PreviewPresentation(markdown.RenderParagraphPresentation("short replacement"));
             writer.CommitPresentation(markdown.RenderParagraphPresentation("short replacement"));

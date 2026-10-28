@@ -116,6 +116,84 @@ public sealed class WebContentQualityTests
         Assert.Contains("[the reference](https://example.com/reference)", result.SanitizedText);
     }
 
+    [Fact]
+    public async Task Fetch_writes_each_destination_once_and_drops_anchor_and_footnote_urls()
+    {
+        using var http = Client("<article><p><a href='#history'>History</a> of <a href='/wiki/Iron'>iron</a>"
+            + " and <a href='/wiki/Iron'>iron ore</a><sup><a href='#cite-1'>[1]</a></sup>"
+            + " near <a href='https://example.org/mine'>the mine</a>.</p></article>");
+        var result = await new WebFetchAdapter(http, Policy(), new WebContentSanitizer()).FetchAsync(new Uri("https://example.com/wiki/Gold"), CancellationToken.None);
+        Assert.Contains("History of [iron](https://example.com/wiki/Iron) and iron ore[1] near [the mine](https://example.org/mine).", result.SanitizedText);
+        Assert.DoesNotContain("#history", result.SanitizedText);
+        Assert.DoesNotContain("#cite-1", result.SanitizedText);
+    }
+
+    [Fact]
+    public async Task Fetch_names_Ru_and_asks_for_text_instead_of_posing_as_a_browser()
+    {
+        var handler = new RecordingHandler();
+        using var http = new HttpClient(handler);
+        await new WebFetchAdapter(http, Policy(), new WebContentSanitizer()).FetchAsync(new Uri("https://example.com/page"), CancellationToken.None);
+        var request = Assert.Single(handler.Requests);
+        var agent = request.Headers.UserAgent.ToString();
+        Assert.StartsWith("RuAgent/", agent);
+        Assert.Contains("github.com/OniAntou/Ru-Agent", agent);
+        Assert.DoesNotContain("Mozilla", agent);
+        Assert.DoesNotContain("Chrome", agent);
+        Assert.Contains(request.Headers.Accept, value => value.MediaType == "text/html");
+        Assert.NotEmpty(request.Headers.AcceptLanguage);
+    }
+
+    [Fact]
+    public void Web_handler_decodes_compressed_bodies_before_the_download_bound()
+    {
+        using var handler = WebConnectionPolicy.CreateHandler();
+        Assert.Equal(DecompressionMethods.All, handler.AutomaticDecompression);
+    }
+
+    [Fact]
+    public async Task Fetch_reads_the_text_of_a_pdf()
+    {
+        var builder = new UglyToad.PdfPig.Writer.PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(UglyToad.PdfPig.Fonts.Standard14Fonts.Standard14Font.Helvetica);
+        builder.AddPage(UglyToad.PdfPig.Content.PageSize.A4)
+            .AddText("Attention is all you need", 12, new UglyToad.PdfPig.Core.PdfPoint(72, 720), font);
+        using var http = new HttpClient(new BytesHandler(builder.Build(), "application/pdf"));
+        var result = await new WebFetchAdapter(http, Policy(), new WebContentSanitizer()).FetchAsync(new Uri("https://example.com/paper.pdf"), CancellationToken.None);
+        Assert.Contains("Attention is all you need", result.SanitizedText);
+        Assert.Equal("application/pdf", result.ContentType);
+    }
+
+    [Fact]
+    public async Task Fetch_names_an_unreadable_pdf()
+    {
+        using var http = new HttpClient(new BytesHandler("%PDF-1.7 not really a document"u8.ToArray(), "application/pdf"));
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new WebFetchAdapter(http, Policy(), new WebContentSanitizer()).FetchAsync(new Uri("https://example.com/broken.pdf"), CancellationToken.None));
+        Assert.Equal("web_pdf_unreadable", error.Message);
+    }
+
+    private sealed class BytesHandler(byte[] body, string contentType) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var content = new ByteArrayContent(body);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+        }
+    }
+
+    private sealed class RecordingHandler : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<p>ok</p>", Encoding.UTF8, "text/html") });
+        }
+    }
+
     [Theory]
     [InlineData("<form id='challenge-form'>Verify</form>", "web_page_blocked")]
     [InlineData("<html><script>loadApplication()</script></html>", "web_content_empty")]

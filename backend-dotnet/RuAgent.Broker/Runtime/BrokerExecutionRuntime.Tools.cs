@@ -76,7 +76,9 @@ public sealed partial class BrokerExecutionRuntime
         using var telemetryActivity = BrokerTelemetry.StartToolActivity();
         try
         {
-            var result = await preparation.Handler!(request, executionToken).ConfigureAwait(false);
+            var result = PayloadReads.OptionalString(request.Payload, "tool_id") == "run_code"
+                ? await ExecuteProgramAsync(request, lease, executionToken).ConfigureAwait(false)
+                : await preparation.Handler!(request, executionToken).ConfigureAwait(false);
             BrokerTelemetry.SetToolOutcome(
                 telemetryActivity,
                 BrokerTelemetry.ReadToolId(request.Payload),
@@ -86,6 +88,13 @@ public sealed partial class BrokerExecutionRuntime
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Exception error) when (PayloadReads.OptionalString(request.Payload, "tool_id") == "run_code")
+        {
+            BrokerDiagnosticLog.ToolHandlerFailed(request, error);
+            return ToolExecutionReply.FromReceipt(new ToolResult(request.RequestId, request.SessionId,
+                ToolResultStatuses.Failed, new JsonObject { ["error"] = "program_execution_unknown", ["effects_unknown"] = true },
+                "program_execution_unknown", "Program interrupted; inspect the workspace before any new mutation.", 0, AdapterInvoked: true));
         }
         catch (Exception error)
         {
@@ -135,6 +144,7 @@ public sealed partial class BrokerExecutionRuntime
         {
             context = new PolicyContextFactory(lease).Create(toolId, toolVersion, arguments);
             context = BindSubagentControlContext(request, lease, context);
+            context = BindProgramContext(request, lease, context);
         }
         catch (PolicyContextException error)
         {
@@ -159,6 +169,13 @@ public sealed partial class BrokerExecutionRuntime
         // which can perform its own policy-checked action; never issue a child approval.
         if (delegation is not null && evaluation.Decision == "ask")
             evaluation = new PolicyEvaluation("deny", "subagent_parent_action_required", null);
+        if (evaluation.Decision == "ask" && payload["program_nested"]?.GetValue<bool>() == true)
+            evaluation = new PolicyEvaluation("deny", "program_requires_direct_call", null);
+        // Computer use belongs to the root run's direct calls only (ADR 0031): a child or a
+        // program never controls the desktop, even where its policy would allow the action.
+        if (string.Equals(toolId, "computer", StringComparison.Ordinal)
+            && (delegation is not null || _delegations.ContainsKey(runId) || payload["program_nested"]?.GetValue<bool>() == true))
+            evaluation = new PolicyEvaluation("deny", "computer_root_run_required", null);
 
         string? authorizationToken = null;
         string? approvalId = null;
@@ -178,7 +195,8 @@ public sealed partial class BrokerExecutionRuntime
                     argumentsHash: context.IntentHash,
                     lifetime: TimeSpan.FromSeconds(60),
                     snapshotVersion: lease.Snapshot.Version,
-                    intentHash: context.IntentHash);
+                    intentHash: context.IntentHash,
+                    snapshotSha256: lease.Snapshot.Sha256);
             }
             catch (ArgumentOutOfRangeException)
             {
@@ -207,12 +225,20 @@ public sealed partial class BrokerExecutionRuntime
                 SnapshotVersion: snapshotVersion,
                 IntentHash: context.IntentHash,
                 ApprovalKind: approvalKind,
-                BoundaryDirectory: approvalKind == "external_directory" ? DeriveGrantDirectory(context) : null);
+                BoundaryDirectory: approvalKind == "external_directory" ? DeriveGrantDirectory(context) : null,
+                SnapshotSha256: lease.Snapshot.Sha256);
             var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
             approvalId = _pendingV2.IssueV2(binding, expiresAt);
             approvalExpiresAt = expiresAt;
             matcherPreview = PendingApprovalStore.BuildMatcherPreview(binding);
             matcherPreview["safe_summary"] = "approval required for " + toolId;
+            if (context.PatchTargets.Count > 0)
+            {
+                matcherPreview["paths"] = new JsonArray(context.PatchTargets
+                    .Select(target => (JsonNode?)target.RelativePathInsideWorkspace).ToArray());
+                matcherPreview["file_count"] = context.PatchTargets.Count;
+                matcherPreview["safe_summary"] = "approval required for all patch targets";
+            }
             boundaryDirectory = DeriveGrantDirectory(context);
         }
 
@@ -299,6 +325,7 @@ public sealed partial class BrokerExecutionRuntime
         {
             authContext = new PolicyContextFactory(lease).Create(toolId, toolVersion, authArguments);
             authContext = BindSubagentControlContext(request, lease, authContext);
+            authContext = BindProgramContext(request, lease, authContext);
         }
         catch (PolicyContextException error)
         {
@@ -323,7 +350,8 @@ public sealed partial class BrokerExecutionRuntime
             ArgumentsHash: authContext.IntentHash,
             ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5),
             SnapshotVersion: lease.Snapshot.Version,
-            IntentHash: authContext.IntentHash);
+            IntentHash: authContext.IntentHash,
+            SnapshotSha256: lease.Snapshot.Sha256);
 
         if (!_authTokens.TryConsume(authorizationToken!, expected, out _))
         {

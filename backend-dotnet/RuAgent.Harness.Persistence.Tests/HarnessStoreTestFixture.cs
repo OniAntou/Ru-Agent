@@ -1,4 +1,6 @@
 using Microsoft.Data.Sqlite;
+using System.Security.Cryptography;
+using System.Text;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Workspace;
@@ -54,15 +56,74 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
     public SqliteConnection CreateRawConnection() =>
         new($"Data Source={Options.DatabasePath};Mode=ReadWrite;Pooling=False");
 
+    public async Task ResetSessionHistorySchemaToV29Async()
+    {
+        await ResetContextProjectionSchemaToV30Async();
+        await using var connection = CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            PRAGMA foreign_keys=OFF;
+            DROP TRIGGER IF EXISTS business_session_messages_search_insert;
+            DROP TRIGGER IF EXISTS business_session_messages_search_delete;
+            DROP TRIGGER IF EXISTS business_session_messages_search_update;
+            DROP TABLE IF EXISTS business_session_message_search;
+            DROP TABLE IF EXISTS business_session_source_receipts;
+            DROP TABLE IF EXISTS business_session_messages;
+            ALTER TABLE business_sessions DROP COLUMN history_epoch;
+            ALTER TABLE business_sessions DROP COLUMN total_message_count;
+            ALTER TABLE business_sessions DROP COLUMN client_source;
+            ALTER TABLE business_sessions DROP COLUMN last_agent_activity_at_utc;
+            ALTER TABLE business_sessions DROP COLUMN forked_from_message_id;
+            ALTER TABLE business_sessions DROP COLUMN parent_session_id;
+            ALTER TABLE business_sessions DROP COLUMN created_at_utc;
+            ALTER TABLE business_sessions DROP COLUMN title;
+            PRAGMA foreign_keys=ON;
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task ResetContextProjectionSchemaToV30Async()
+    {
+        await using var connection = CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DROP TRIGGER IF EXISTS context_payload_updated;
+            DROP TRIGGER IF EXISTS context_payload_deleted;
+            DROP TRIGGER IF EXISTS context_event_updated;
+            DROP TRIGGER IF EXISTS context_event_deleted;
+            DROP TRIGGER IF EXISTS context_compaction_updated;
+            DROP TRIGGER IF EXISTS context_compaction_deleted;
+            DROP INDEX IF EXISTS ix_agent_context_compactions_run_version;
+            DROP INDEX IF EXISTS ix_business_session_messages_session_source;
+            ALTER TABLE agent_runs DROP COLUMN context_revision;
+            PRAGMA user_version=30;
+            """;
+        await command.ExecuteNonQueryAsync();
+        // This fixture deliberately moves the schema backwards. A pooled handle
+        // from the newer shape is not a faithful process opening a v30 database.
+        await using var pooled = await Options.OpenConnectionAsync(default);
+        SqliteConnection.ClearPool(pooled);
+    }
+
     public async Task<WorkspaceIdentity> RegisterWorkspaceAsync(int number)
     {
         var identity = Workspace(number);
+        var key = await _keyStore.GetOrCreateKeyAsync(CancellationToken.None);
+        WorkspaceRootCiphertext encryptedRoot;
+        try
+        {
+            encryptedRoot = WorkspaceRootCryptography.Encrypt(identity.WorkspaceId, key,
+                Encoding.UTF8.GetBytes($"C:\\ru-test-workspace-{number}"));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+        }
         var registration = new WorkspaceRegistration(
             identity,
-            new WorkspaceRootCiphertext(
-                Enumerable.Repeat((byte)number, 12).ToArray(),
-                Enumerable.Repeat((byte)(number + 16), 48).ToArray(),
-                Enumerable.Repeat((byte)(number + 32), 16).ToArray()));
+            encryptedRoot);
         var request = new WorkspaceTrustRequest(
             Trust(number),
             identity,

@@ -15,7 +15,7 @@ public sealed class TerminalLaunchFeedbackTests
     {
         var arguments = new JsonObject
         {
-            ["mode"] = "run", ["executable"] = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+            ["executable"] = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
             ["timeout_ms"] = 10_000,
         };
         if (includeArguments) arguments["arguments"] = new JsonArray();
@@ -25,13 +25,15 @@ public sealed class TerminalLaunchFeedbackTests
     }
 
     [Theory]
-    [InlineData("run", "executable")]
-    [InlineData("shell", "script")]
-    public async Task Missing_mode_specific_field_preserves_invalid_arguments(string mode, string missingField)
+    [InlineData("run_process", "executable")]
+    [InlineData("powershell", "script")]
+    public async Task Missing_required_field_preserves_invalid_arguments(string toolId, string missingField)
     {
-        var arguments = new JsonObject { ["mode"] = mode, ["arguments"] = new JsonArray() };
+        var arguments = toolId == "powershell"
+            ? new JsonObject()
+            : new JsonObject { ["arguments"] = new JsonArray() };
         Assert.False(arguments.ContainsKey(missingField));
-        var result = await ExecuteAsync(arguments);
+        var result = await ExecuteAsync(toolId, arguments);
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
         Assert.Equal("invalid_arguments", result.ErrorCode);
         Assert.False(result.Output.ContainsKey("execution_id"));
@@ -44,7 +46,6 @@ public sealed class TerminalLaunchFeedbackTests
     {
         var result = await ExecuteAsync(new JsonObject
         {
-            ["mode"] = "run",
             ["executable"] = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing.exe"),
             ["background"] = background, ["arguments"] = new JsonArray(),
         });
@@ -53,7 +54,9 @@ public sealed class TerminalLaunchFeedbackTests
         Assert.False(result.Output.ContainsKey("execution_id"));
     }
 
-    private static async Task<ToolResult> ExecuteAsync(JsonObject arguments)
+    private static async Task<ToolResult> ExecuteAsync(JsonObject arguments) => await ExecuteAsync("run_process", arguments);
+
+    private static async Task<ToolResult> ExecuteAsync(string toolId, JsonObject arguments)
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-launch-feedback-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -74,7 +77,7 @@ public sealed class TerminalLaunchFeedbackTests
                 AgentEnvelopeCodec.ProtocolVersionV2, "missing-launch", AgentMessageTypes.ToolExecute,
                 sessionId, null, 30_000, new JsonObject
                 {
-                    ["tool_id"] = "bash", ["tool_version"] = "1.0.0",
+                    ["tool_id"] = toolId, ["tool_version"] = "1.0.0",
                     ["capability_class"] = "internal", ["run_id"] = runId,
                     ["arguments"] = arguments,
                 }), default);

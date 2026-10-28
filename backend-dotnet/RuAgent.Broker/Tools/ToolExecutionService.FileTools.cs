@@ -6,7 +6,6 @@ using System.Text.RegularExpressions;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
-using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
@@ -20,25 +19,6 @@ namespace RuAgent.Broker.Tools;
 
 public sealed partial class ToolExecutionService
 {
-    private async ValueTask<ToolExecutionOutcome> ExecuteWriteOpAsync(ToolExecutionContext context, JsonObject arguments, CancellationToken cancellationToken)
-    {
-        _ = cancellationToken;
-        var op = ReadOptionalString(arguments, "op") ?? "write";
-        return op switch
-        {
-            "write" => ToolExecutionOutcome.Succeeded(
-                ExecuteFileWrite(context, arguments),
-                ToolVerificationStates.NotRequired,
-                "Workspace file written."),
-            "delete" => ToolExecutionOutcome.Succeeded(
-                ExecuteDelete(context, arguments),
-                ToolVerificationStates.NotRequired,
-                "Workspace file deleted."),
-            "restore" => await ExecuteRestore(context, arguments).ConfigureAwait(false),
-            _ => throw new ArgumentException("unknown_write_op"),
-        };
-    }
-
     private JsonObject ExecuteFileWrite(ToolExecutionContext context, JsonObject arguments)
     {
         var tools = ResolveTools(context, TargetPathOf(arguments));
@@ -260,17 +240,6 @@ public sealed partial class ToolExecutionService
         }
     }
 
-    private ValueTask<ToolExecutionOutcome> ExecuteFileEdit(ToolExecutionContext context, JsonObject arguments)
-    {
-        var tools = ResolveTools(context, TargetPathOf(arguments));
-        // EditMatchException is deliberately not caught here: the executor catch in
-        // ExecuteBindingAsync turns it into the repair hint handed back to the model.
-        return Succeeded(
-            tools.Edit.Execute(
-                WithInternalExpectedHash(tools.MutationResolver, arguments)),
-            "Workspace file edited.");
-    }
-
     private ValueTask<ToolExecutionOutcome> ExecuteRestore(ToolExecutionContext context, JsonObject arguments)
     {
         var tools = ResolveRestoreTools(context, arguments);
@@ -332,38 +301,6 @@ public sealed partial class ToolExecutionService
         {
             return baseTools;
         }
-    }
-
-    private static string EditPreview(JsonObject arguments, string? fileText)
-    {
-        var oldString = ReadOptionalString(arguments, "old_string") ?? string.Empty;
-        var newString = ReadOptionalString(arguments, "new_string") ?? string.Empty;
-        if (oldString.Length == 0 && newString.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        var matchIndex = oldString.Length > 0 && fileText is not null
-            ? fileText.IndexOf(oldString, StringComparison.Ordinal)
-            : -1;
-        if (matchIndex < 0)
-        {
-            return $"[-{Bound(oldString)}-][+{Bound(newString)}+]";
-        }
-
-        var before = fileText![..matchIndex];
-        var after = fileText[(matchIndex + oldString.Length)..];
-        var core = $"[-{oldString}-][+{newString}+]";
-        var budget = ApprovalPreviewFields.MaxLength - core.Length;
-        if (budget <= 0)
-        {
-            return core;
-        }
-
-        var afterCount = Math.Min(after.Length, budget / 2);
-        var beforeCount = Math.Min(before.Length, budget - afterCount);
-        afterCount = Math.Min(after.Length, budget - beforeCount);
-        return $"{before[^beforeCount..]}{core}{after[..afterCount]}";
     }
 
     private string? ReadTargetFileText(JsonObject arguments)

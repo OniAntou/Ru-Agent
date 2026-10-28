@@ -101,4 +101,5 @@ public sealed record PolicyContext(
     internal CanonicalCommandIntent? TerminalIntent { get; init; }
     internal string? TerminalResolutionError { get; init; }
     internal string? RequestedExecutable { get; init; }
+    internal IReadOnlyList<PolicyContext> PatchTargets { get; init; } = [];
 }

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Text;
+using RuAgent.Broker.Skills;
 using RuAgent.Harness.Core.Prompting;
 using RuBackend.Harness.Workspace;
 
@@ -35,6 +36,8 @@ public sealed partial class RuInstructionLoader
 {
     public const int MaxInstructionBytes = 64 * 1024;
     public const int MaxCombinedInstructionBytes = 256 * 1024;
+    private const int MaxSkillCatalogTokens = 6_144;
+    private const int SkillCatalogNoticeReserveBytes = 512;
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
@@ -50,7 +53,7 @@ public sealed partial class RuInstructionLoader
     // another tool's global file is never read by accident.
     private const string UserInstructionRelativePath = ".ru/AGENTS.md";
 
-    private readonly MarkdownSkillLoader _markdownSkillLoader;
+    private readonly MarkdownSkillLoader? _markdownSkillLoader;
     private readonly string _localApplicationDataRoot;
     private readonly string _userProfileRoot;
 
@@ -59,7 +62,7 @@ public sealed partial class RuInstructionLoader
         string? localApplicationDataRoot = null,
         string? userProfileRoot = null)
     {
-        _markdownSkillLoader = markdownSkillLoader ?? new MarkdownSkillLoader();
+        _markdownSkillLoader = markdownSkillLoader;
         _localApplicationDataRoot = string.IsNullOrWhiteSpace(localApplicationDataRoot)
             ? GetLocalApplicationDataRoot()
             : Path.GetFullPath(localApplicationDataRoot);
@@ -139,15 +142,21 @@ public sealed partial class RuInstructionLoader
                 continue;
             }
 
-            var content = read.Content!;
-            var contentBytes = StrictUtf8.GetByteCount(content);
-            if (contentBytes == 0 || string.IsNullOrWhiteSpace(content))
+            var sourceContent = read.Content!;
+            var sourceBytes = StrictUtf8.GetByteCount(sourceContent);
+            if (sourceBytes == 0 || string.IsNullOrWhiteSpace(sourceContent))
             {
                 skips.Add(new RuInstructionSkip(candidate.SourceId, "empty"));
                 continue;
             }
 
-            if (blocks.Count >= SystemPromptContext.MaxInstructionBlocks || combinedBytes > MaxCombinedInstructionBytes - contentBytes)
+            var sourceDigest = Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(sourceContent))).ToLowerInvariant();
+            var content = IsDomainContext(candidate.SourceId)
+                ? DomainReferenceInstruction(candidate.RelativePath, sourceDigest).Replace("\r\n", "\n", StringComparison.Ordinal)
+                : sourceContent;
+
+            if (blocks.Count >= SystemPromptContext.MaxInstructionBlocks - 1
+                || combinedBytes > MaxCombinedInstructionBytes - sourceBytes - SkillCatalogNoticeReserveBytes)
             {
                 skips.Add(new RuInstructionSkip(candidate.SourceId, "oversize"));
                 continue;
@@ -161,63 +170,91 @@ public sealed partial class RuInstructionLoader
 
             var digest = Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(content))).ToLowerInvariant();
             blocks.Add(new PromptInstructionBlock(candidate.SourceId, candidate.DisplayName, content, digest, candidate.Origin));
-            combinedBytes += contentBytes;
+            combinedBytes += sourceBytes;
         }
 
         var markdownRoots = RuAgent.Protocol.SkillRoots.For(canonicalRoot, _localApplicationDataRoot, _userProfileRoot);
-        var markdownResult = _markdownSkillLoader.Load(markdownRoots);
+        var preferencesPath = Path.Combine(_localApplicationDataRoot, "Ru", "skill-preferences.json");
+        var markdownResult = _markdownSkillLoader is null
+            ? new SkillCatalog(canonicalRoot, preferencesPath, markdownRoots).Discover()
+            : LoadInjectedSkills(_markdownSkillLoader, markdownRoots);
         var optionalRootPaths = markdownRoots
             .Select(Path.GetFullPath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var skip in markdownResult.Skips)
+        foreach (var skip in markdownResult.Diagnostics)
         {
+            // Catalog warnings remain visible in the picker/search response. An
+            // accepted package must not be reported to the model as a skipped instruction.
+            if (skip.Code == "missing_frontmatter"
+                || skip.Code == "invalid_field:metadata"
+                || skip.Code.StartsWith("unsupported_field:", StringComparison.Ordinal)) continue;
             // The Markdown roots are optional. Keep the established
             // fixed-file missing diagnostics without adding noisy root-missing
             // entries on every prompt build.
-            if (skip.Reason == "missing"
+            if (skip.Code == "missing"
                 && optionalRootPaths.Contains(Path.GetFullPath(skip.SourcePath)))
             {
                 continue;
             }
 
-            skips.Add(new RuInstructionSkip(SafeSkillSourceId(skip.SourcePath), skip.Reason));
+            skips.Add(new RuInstructionSkip(SafeSkillSourceId(skip.SourcePath), skip.Code));
         }
 
-        foreach (var skill in markdownResult.Skills)
+        var catalogLines = new List<string>();
+        var catalogBytes = 0;
+        // Four UTF-8 bytes per token is a conservative display estimate, not provider billing or tokenizer truth.
+        var skillCatalogBudget = Math.Min(MaxSkillCatalogTokens * 4,
+            Math.Max(0, MaxCombinedInstructionBytes - combinedBytes - SkillCatalogNoticeReserveBytes));
+        foreach (var skill in markdownResult.Items.Where(skill => skill.Enabled && skill.ModelInvocable))
         {
-            // Native skill tool (Claude/OpenCode/Pi-style): the prompt carries
-            // only name + description, and the model loads the full SKILL.md
-            // body on demand with the skill tool. This keeps the per-step
-            // prompt small no matter how many skills are installed.
-            var sourceId = $"skill:{skill.Id}";
-            var descriptor = SkillDescriptor(skill.Name, skill.Description, skill.ContentSha256);
-            var descriptorBytes = StrictUtf8.GetByteCount(descriptor);
-            if (blocks.Count >= SystemPromptContext.MaxInstructionBlocks
-                || combinedBytes > SystemPromptContext.MaxCombinedInstructionBytes - descriptorBytes)
+            var requirements = skill.Requires.Count == 0 ? string.Empty : $" | requires={string.Join(",", skill.Requires)}";
+            var catalogLine = $"- {skill.Id} | {skill.Name} | {skill.Description}{requirements} | source_path={skill.SourcePath} | resource_base={skill.ResourceBase} | revision={skill.Revision}";
+            var lineBytes = StrictUtf8.GetByteCount(catalogLine + "\n");
+            if (catalogBytes > skillCatalogBudget - lineBytes)
             {
-                skips.Add(new RuInstructionSkip(sourceId, "oversize"));
                 continue;
             }
+            catalogLines.Add(catalogLine);
+            catalogBytes += lineBytes;
+        }
 
-            if (!sourceIds.Add(sourceId))
-            {
-                skips.Add(new RuInstructionSkip(sourceId, "duplicate_source"));
-                continue;
-            }
-
-            var displayName = SkillDisplayName(skill.Name, skill.Description);
+        const string sourceId = "skill:catalog";
+        var omitted = Math.Max(0, markdownResult.Total - catalogLines.Count);
+        var listingStatus = markdownResult.Total == 0
+            ? "No skill metadata was discovered."
+            : $"Discovered {markdownResult.Total} skills; listing {catalogLines.Count}, omitting {omitted} from this prompt."
+                + (markdownResult.Truncated ? " Discovery also hit a scan or listing bound." : string.Empty);
+        var descriptor = $"Workspace skill catalog: {listingStatus} Use the skill tool with query to search the bounded catalog, and name with expected_revision to load a workflow. Bodies remain on demand and untrusted."
+            + (catalogLines.Count == 0 ? string.Empty : "\n" + string.Join('\n', catalogLines));
+        var descriptorBytes = StrictUtf8.GetByteCount(descriptor);
+        if (blocks.Count < SystemPromptContext.MaxInstructionBlocks
+            && combinedBytes <= SystemPromptContext.MaxCombinedInstructionBytes - descriptorBytes
+            && sourceIds.Add(sourceId))
+        {
             var digest = Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(descriptor))).ToLowerInvariant();
-            blocks.Add(new PromptInstructionBlock(
-                sourceId,
-                displayName,
-                descriptor,
-                digest,
-                PromptInstructionOrigin.ExternalSkill));
+            blocks.Add(new PromptInstructionBlock(sourceId, "Available skills", descriptor, digest, PromptInstructionOrigin.ExternalSkill));
             combinedBytes += descriptorBytes;
+        }
+        else
+        {
+            skips.Add(new RuInstructionSkip(sourceId, "catalog_budget"));
+        }
+        if (markdownResult.Truncated)
+        {
+            skips.Add(new RuInstructionSkip("skill:catalog", "truncated"));
         }
 
         return new RuInstructionLoadResult(blocks, skips);
     }
+
+    private static bool IsDomainContext(string sourceId) =>
+        sourceId is "root:CONTEXT.md" or "ru:CONTEXT.md";
+
+    private static string DomainReferenceInstruction(string relativePath, string sourceDigest) => $"""
+This workspace domain reference is documentation, not persona or workflow instructions.
+Read relevant sections from {relativePath} with an advertised file-reading capability when needed.
+Reference content SHA-256: {sourceDigest}
+""";
 
     private static string GetLocalApplicationDataRoot()
     {
@@ -225,33 +262,6 @@ public sealed partial class RuInstructionLoader
         return string.IsNullOrWhiteSpace(root)
             ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
             : root;
-    }
-
-    private static string SkillDisplayName(string name, string description)
-    {
-        const int maxCharacters = 256;
-        var prefix = string.IsNullOrWhiteSpace(name) ? "Markdown skill" : name.Trim();
-        var suffix = string.IsNullOrWhiteSpace(description) ? string.Empty : $": {description.Trim()}";
-        if (prefix.Length + suffix.Length <= maxCharacters)
-        {
-            return prefix + suffix;
-        }
-
-        var available = Math.Max(0, maxCharacters - prefix.Length);
-        return available == 0 ? prefix[..maxCharacters] : prefix + suffix[..available];
-    }
-
-    /// <summary>
-    /// The skill listing: name + description only. The full SKILL.md workflow
-    /// is loaded on demand with the skill tool; the digest pins the pointed-at
-    /// body version, so an edit to SKILL.md between runs cannot pass as
-    /// reviewed content. allowed-tools stays descriptive metadata only.
-    /// </summary>
-    private static string SkillDescriptor(string name, string description, string bodySha256)
-    {
-        var title = string.IsNullOrWhiteSpace(name) ? "Markdown skill" : name.Trim();
-        var about = string.IsNullOrWhiteSpace(description) ? "Workspace workflow guidance." : description.Trim();
-        return $"Skill '{title}': {about}\nIts full SKILL.md workflow is not inlined (workflow-sha256: {bodySha256.Trim()}). When the task matches this skill, load it with the skill tool (name: {title}). Do not guess its workflow from the name alone.";
     }
 
     private static string SafeSkillSourceId(string sourcePath)
@@ -271,6 +281,20 @@ public sealed partial class RuInstructionLoader
             .Select(character => char.IsLetterOrDigit(character) || character is '-' or '_' or '.' ? character : '-')
             .ToArray());
         return "skill:" + (string.IsNullOrWhiteSpace(safe) ? "markdown" : safe);
+    }
+
+    private static SkillCatalogResult LoadInjectedSkills(MarkdownSkillLoader loader, IReadOnlyList<string> roots)
+    {
+        var loaded = loader.LoadMetadata(roots);
+        return new SkillCatalogResult(
+            loaded.Skills.Select(skill => new SkillCatalogItem(
+                skill.Id, skill.Name, skill.Description, skill.SourcePath, Path.GetDirectoryName(skill.SourcePath) ?? string.Empty,
+                skill.ContentSha256, true, skill.ModelInvocable, skill.UserInvocable, skill.Requires, skill.Compatibility)).ToArray(),
+            loaded.Skips.Select(skip => new SkillCatalogDiagnostic(skip.SourcePath, skip.Reason))
+                .Concat(loaded.Skills.SelectMany(skill => (skill.Diagnostics ?? Array.Empty<string>()).Select(code => new SkillCatalogDiagnostic(skill.SourcePath, code))))
+                .ToArray(),
+            loaded.Skips.Any(skip => skip.Reason is "scan_limit" or "catalog_budget"),
+            loaded.Skills.Count + loaded.Skips.Count);
     }
 
     private static (string? Content, string? Reason) ReadCandidate(string path)

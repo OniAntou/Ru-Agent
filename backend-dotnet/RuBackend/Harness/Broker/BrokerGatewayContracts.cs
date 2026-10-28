@@ -35,9 +35,14 @@ internal static class BrokerGatewayContracts
     internal static ToolAccessKind AccessKindForTool(string toolId, JsonObject? arguments = null) =>
         toolId switch
         {
-            "write" or "edit" or "todo_write" or "agent_spawn" or "agent_send" or "agent_cancel" or "agent_apply" => ToolAccessKind.Mutation,
+            "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "todo_write" or "agent_spawn" or "agent_send" or "agent_cancel" or "agent_apply" => ToolAccessKind.Mutation,
             "agent_wait" => ToolAccessKind.ReadOnly,
-            "bash" => ToolAccessKind.Terminal,
+            "powershell" or "run_process" => ToolAccessKind.Terminal,
+            // Observing the screen changes nothing; input runs as the user (ADR 0031).
+            "computer" => ComputerActions.IsObservation(arguments?["action"] is JsonValue action
+                && action.TryGetValue<string>(out var name) ? name : null)
+                ? ToolAccessKind.ReadOnly
+                : ToolAccessKind.Terminal,
             _ when BrokerPolicyContracts.IsReadOnlyTool(toolId) => ToolAccessKind.ReadOnly,
             _ => ToolAccessKind.Terminal,
         };
@@ -50,7 +55,7 @@ internal static class BrokerGatewayContracts
 
     internal static string ProposalApprovalArgsKey(ToolProposal proposal) =>
         ApprovalArgsKey(proposal.ToolId, proposal.Arguments)
-        + (RuAgent.Protocol.Subagents.SubagentContractValidator.IsControlTool(proposal.ToolId) ? "|call:" + proposal.ToolCallId.Value : string.Empty);
+        + (RuAgent.Protocol.Subagents.SubagentContractValidator.IsControlTool(proposal.ToolId) || proposal.ToolId == "run_code" ? "|call:" + proposal.ToolCallId.Value : string.Empty);
 
     private static JsonNode? CanonicalizeJson(JsonNode? node) => node switch
     {
@@ -88,6 +93,7 @@ internal static class BrokerGatewayContracts
         "terminal_protected_path_requires_approval" => "terminal_protected_path_requires_approval",
         "web_approval_required" => "web_approval_required",
         "mcp_call_requires_approval" => "mcp_call_requires_approval",
+        "computer_access_requires_approval" => "computer_access_requires_approval",
         "subagent_apply_approval_required" => "subagent_apply_approval_required",
         _ => "approval_required",
     };
@@ -150,7 +156,7 @@ internal static class BrokerGatewayContracts
         }
 
         if (output is not null)
-            foreach (var field in new[] { "verification_identity", "verification_cwd" })
+            foreach (var field in new[] { "verification_identity", "verification_cwd", "terminal_effect" })
                 if (output[field] is JsonValue value && value.TryGetValue<string>(out var metadata)
                     && metadata.Length <= 4096 && !metadata.Contains('\0')) content[field] = metadata;
 

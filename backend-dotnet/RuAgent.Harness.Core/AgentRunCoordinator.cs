@@ -13,7 +13,7 @@ using RuAgent.Harness.Core.Reconciliation;
 
 namespace RuAgent.Harness.Core;
 
-public sealed class AgentRunCoordinator
+public sealed partial class AgentRunCoordinator
 {
     private readonly IHarnessEventStore _store;
     private readonly AgentContextAssembler _contextAssembler;
@@ -260,6 +260,10 @@ public sealed class AgentRunCoordinator
                     preflight.PreparedRequest)
                 .ConfigureAwait(false);
         }
+        catch (ContextOverflowStepException)
+        {
+            return await RecoverContextOverflowAsync(run, context, modelStepId, cancellationToken).ConfigureAwait(false);
+        }
         catch (ModelRepairableStepException error)
         {
             if (AgentRecoveryNotes.CanAdvise(context, AgentRecoveryKind.ModelRepairable))
@@ -381,10 +385,14 @@ public sealed class AgentRunCoordinator
                 .ConfigureAwait(false);
         }
 
+        if (step.ResponsesMessages?.IsCommentaryOnly == true)
+            return await _steps.HandleCommentaryStepAsync(run, modelStepId, step, modelDroppedCount,
+                context, promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText).ConfigureAwait(false);
+
         if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode)
             || AgentRecoveryNotes.TryReadBlockedReply(step, out _))
         {
-            if (!AgentRecoveryNotes.TryReadBlockedReply(step, out _))
+            if (context.VerificationEvidence.HasExitMismatch || !AgentRecoveryNotes.TryReadBlockedReply(step, out _))
                 invocation.RetractAssistantText();
             return await _steps.HandleUnverifiedFailureStepAsync(
                     run,

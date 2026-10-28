@@ -94,9 +94,9 @@ public sealed class InProcessModelConversationTests
         var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
         using var json = JsonDocument.Parse(messages![^1].Content);
         var root = json.RootElement;
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
         Assert.Equal(Encoding.UTF8.GetByteCount(root.GetProperty("content").GetString()!),
-            root.GetProperty("projection_next_offset").GetInt32());
+            root.GetProperty("next_offset").GetInt32());
         Assert.Equal("provider_large", messages[^1].ToolCallId);
     }
 
@@ -219,7 +219,7 @@ public sealed class InProcessModelConversationTests
     {
         const int sourceOffset = 17;
         const string hiddenMarker = "READ-CURSOR-MARKER-INSIDE-BROKER-PAGE";
-        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiáº¿ngðŸ™‚", 14_000)) + hiddenMarker;
+        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 14_000)) + hiddenMarker;
         var bytesRead = Encoding.UTF8.GetByteCount(content);
         var source = new JsonObject
         {
@@ -251,10 +251,10 @@ public sealed class InProcessModelConversationTests
         Assert.Equal(sourceOffset, root.GetProperty("offset").GetInt32());
         Assert.Equal(new string('a', 64), root.GetProperty("sha256").GetString());
         Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
         Assert.Equal(Encoding.UTF8.GetByteCount(visible), root.GetProperty("projection_visible_bytes").GetInt32());
         Assert.Equal(sourceOffset + Encoding.UTF8.GetByteCount(visible),
-            root.GetProperty("projection_next_offset").GetInt32());
+            root.GetProperty("next_offset").GetInt32());
         Assert.Equal("provider_read_1", result.ToolCallId);
         Assert.Equal(source, context.Entries[^1].Content);
         Assert.DoesNotContain('\uFFFD', visible);
@@ -281,8 +281,8 @@ public sealed class InProcessModelConversationTests
         var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         using var projected = JsonDocument.Parse(messages![^1].Content);
-        Assert.True(projected.RootElement.GetProperty("projection_has_more").GetBoolean());
-        Assert.Equal(12, projected.RootElement.GetProperty("projection_next_offset").GetInt32());
+        Assert.True(projected.RootElement.GetProperty("has_more").GetBoolean());
+        Assert.Equal(12, projected.RootElement.GetProperty("next_offset").GetInt32());
     }
 
     [Fact]
@@ -326,9 +326,9 @@ public sealed class InProcessModelConversationTests
         Assert.True(root.GetProperty("truncated").GetBoolean());
         Assert.InRange(visibleResults.GetArrayLength(), 1, 99);
         Assert.DoesNotContain(hiddenMarker, result.Content, StringComparison.Ordinal);
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
         Assert.Equal(sourceOffset + visibleResults.GetArrayLength(),
-            root.GetProperty("projection_next_offset").GetInt32());
+            root.GetProperty("next_offset").GetInt32());
         Assert.Equal("provider_grep_1", result.ToolCallId);
         Assert.Equal(source, context.Entries[^1].Content);
     }
@@ -349,8 +349,8 @@ public sealed class InProcessModelConversationTests
 
         using var projected = JsonDocument.Parse(messages![^1].Content);
         var root = projected.RootElement;
-        Assert.Equal(root.GetProperty("results").GetArrayLength(), root.GetProperty("projection_next_offset").GetInt32());
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(root.GetProperty("results").GetArrayLength(), root.GetProperty("next_offset").GetInt32());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
     }
 
     [Fact]
@@ -358,7 +358,7 @@ public sealed class InProcessModelConversationTests
     {
         const int sourceOffset = 120;
         const string hiddenMarker = "SPOOL-CURSOR-MARKER-INSIDE-BROKER-PAGE";
-        var page = new string('s', ModelInputLimits.MaxToolResultChars - 120) + "ðŸ™‚" + new string('t', 300) + hiddenMarker;
+        var page = new string('s', ModelInputLimits.MaxToolResultChars - 120) + "🙂" + new string('t', 300) + hiddenMarker;
         var source = new JsonObject
         {
             ["spool_id"] = "execution_0123456789abcdef0123456789abcdef",
@@ -370,8 +370,8 @@ public sealed class InProcessModelConversationTests
         }.ToJsonString();
         var context = Snapshot(
             ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Find the middle output marker."),
-            AssistantStepEntry("src-output", 2, "provider_output_1", "bash",
-                "{\"mode\":\"read_output\",\"execution_id\":\"execution_0123456789abcdef0123456789abcdef\",\"offset\":120,\"limit\":7000}"),
+            AssistantStepEntry("src-output", 2, "provider_output_1", "terminal_read",
+                "{\"execution_id\":\"execution_0123456789abcdef0123456789abcdef\",\"offset\":120,\"limit\":7000}"),
             ToolResultEntry("src-result", 3, "internal_output_1", "provider_output_1", source));
 
         var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
@@ -385,8 +385,8 @@ public sealed class InProcessModelConversationTests
         Assert.Equal(sourceOffset, root.GetProperty("offset").GetInt32());
         Assert.Equal(600_000, root.GetProperty("total_chars").GetInt32());
         Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
-        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
-        Assert.Equal(sourceOffset + visible.Length, root.GetProperty("projection_next_offset").GetInt32());
+        Assert.True(root.GetProperty("has_more").GetBoolean());
+        Assert.Equal(sourceOffset + visible.Length, root.GetProperty("next_offset").GetInt32());
         Assert.Equal("provider_output_1", result.ToolCallId);
         Assert.Equal(source, context.Entries[^1].Content);
     }
@@ -396,7 +396,7 @@ public sealed class InProcessModelConversationTests
     {
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "Tao file robots.txt."),
-            AssistantStepEntry("src-2", 2, "provider_write_1", "write", "{\"op\":\"write\",\"path\":\"robots.txt\"}"),
+            AssistantStepEntry("src-2", 2, "provider_write_1", "write_file", "{\"path\":\"robots.txt\"}"),
             ToolResultEntry("src-3", 3, "internal_call_1", "provider_write_1", "{\"status\":\"ok\",\"path\":\"robots.txt\",\"bytes\":40}"));
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
@@ -409,7 +409,7 @@ public sealed class InProcessModelConversationTests
         Assert.Equal("assistant", assistant.Role);
         var call = Assert.Single(assistant.ToolCalls);
         Assert.Equal("provider_write_1", call.Id);
-        Assert.Equal("write", call.Name);
+        Assert.Equal("write_file", call.Name);
         Assert.Equal("robots.txt", call.Arguments.GetProperty("path").GetString());
         var tool = messages[2];
         Assert.Equal("tool", tool.Role);
@@ -555,7 +555,7 @@ public sealed class InProcessModelConversationTests
     public void Oversized_unknown_tool_history_keeps_the_full_block_cap_and_truthful_omission_count()
     {
         const string prefix = "{\"unknown\":\"";
-        var source = prefix + string.Concat(Enumerable.Repeat("ðŸ™‚", 100_000));
+        var source = prefix + string.Concat(Enumerable.Repeat("🙂", 100_000));
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "inspect output"),
             AssistantStepEntry("src-2", 2, "provider_unknown_1", "unknown_tool", "{}"),
@@ -564,7 +564,7 @@ public sealed class InProcessModelConversationTests
         var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         var visible = Assert.Single(messages!, message => message.Role == "tool").Content;
-        const string note = "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
+        const string note = "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at next_offset or next_line when present)";
         Assert.InRange(visible.Length, 1, ModelInputLimits.MaxToolResultChars);
         var noteOffset = visible.IndexOf(note, StringComparison.Ordinal);
         Assert.True(noteOffset >= 0);

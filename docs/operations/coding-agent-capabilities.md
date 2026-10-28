@@ -19,7 +19,7 @@ These products differ in architecture and scope. Ru must keep its native .NET ru
 
 | Workflow | Current source evidence | Acceptance gap |
 | --- | --- | --- |
-| Read/edit/run/verify loop | Harness Core, thirteen Protocol tool definitions, Broker adapters; incomplete-finish rejection and concrete tool repair hints | Before the finish-reason fixes, the nine-task live rerun resolved none. The post-fix small C# diagnostic stopped at provider rate limiting before tool use; improvement remains unmeasured. See [Verification](../history/verification/2026-10-10.md#provider-finish-reason-and-tool-feedback-fixes-2026-10-10) |
+| Read/edit/run/verify loop | Harness Core, run-pinned Protocol coding profiles, Broker adapters; incomplete-finish rejection and concrete tool repair hints | Before the finish-reason fixes, the nine-task live rerun resolved none. The post-fix small C# diagnostic stopped at provider rate limiting before tool use; improvement remains unmeasured. See [Verification](../history/verification/2026-10-10.md#provider-finish-reason-and-tool-feedback-fixes-2026-10-10) |
 | Multi-tool steps and bounded repair | Tool Batch, durable Recovery Notes, failed period-2/3 cycle guard; real Host/Broker edit/verify and guard scenarios | Real-provider effectiveness of repair advice |
 | Streaming and durable replay | HTTP/SSE, transcript reconciliation, retained run discovery, explicit `/follow` and typed `Continue` | Native rendering and transport interruption acceptance |
 | Approval, trust and presets | Broker authority, single-use tokens, Workspace Trust; pending approval replay and fresh run-version checks | Native approval keyboard acceptance; another client may resolve first |
@@ -61,7 +61,7 @@ and scripted workflows do not measure model quality; native live trials provide
 condition-specific evidence with pinned runtime, model and policy. Candidate
 grader correctness and unattended run completion must be reported separately.
 
-Session listing queries indexed SQLite summaries across all stored sessions and returns the newest 500, ordered by UTC update time and then session ID. More rows set `sessions_truncated`; there is no filesystem scan, byte-budget or summary-cache deadline. The one-time legacy import validates transcript files separately.
+Session listing queries indexed SQLite summaries. The original `/sessions` route returns the newest 500; `/sessions/page` reaches older sessions and filters titles or retained message content. `/sessions/{sessionId}/messages` pages retained history with absolute indices and rewind-bound cursors; `/sessions/search` provides literal FTS hits. GUI and CLI keep bounded read windows; stored history is no longer pruned at 200 messages. The one-time legacy import validates transcript files separately. See [database maintenance](database-maintenance.md).
 
 Project-file discovery inspects at most 5,000 entries for two seconds and presents at most 50 matches. Selection is explicit; pending context is capped at eight attachments and 32 MiB of source bytes. Prompt submissions retain their own copies, with eight queued entries and a 32 MiB aggregate estimate of retained content. A refused submission preserves the draft and attachments. A failed submission holds the queue until `/retry`; configuration/help commands remain available while it is paused.
 

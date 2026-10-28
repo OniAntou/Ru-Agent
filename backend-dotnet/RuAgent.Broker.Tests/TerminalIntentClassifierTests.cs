@@ -14,34 +14,66 @@ public sealed class TerminalIntentClassifierTests
     private readonly TerminalIntentClassifier _classifier = new();
 
     [Theory]
-    [InlineData("powershell")]
-    [InlineData("pwsh")]
-    public void Remembered_shell_intent_matches_real_policy_context_without_allowing_changed_calls(string shell)
+    [InlineData("*")]
+    [InlineData("**")]
+    public void Native_powershell_wrapper_does_not_widen_wildcard_allow_rules(string wildcard)
+    {
+        using var workspace = new TemporaryWorkspace();
+        var context = Terminal(CreateFactory(workspace.Root), "powershell",
+            "-NoProfile", "-NonInteractive", "-Command", "Write-Output reviewed");
+        var rule = new PolicyRuleSpec("rule_" + new string('7', 32), "project", "allow",
+            new MatcherSpec("run_process", "1.0.0", null, context.ResolvedExecutable,
+                [wildcard], context.CanonicalCwd, "terminal", "none"), 1, null);
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.False(PolicyRuleMatcher.Matches(rule, context, now));
+        Assert.True(PolicyRuleMatcher.Matches(rule with { Decision = "deny" }, context, now));
+        Assert.True(PolicyRuleMatcher.Matches(rule with { Decision = "ask" }, context, now));
+    }
+
+    [Theory]
+    [InlineData("powershell", "-NoProfile")]
+    [InlineData("powershell", "-NoLogo")]
+    [InlineData("pwsh", "-Command")]
+    public void Native_shell_allow_uses_exact_argv_independently_of_its_flag_prefix(string executable, string firstFlag)
+    {
+        using var workspace = new TemporaryWorkspace();
+        var context = Terminal(CreateFactory(workspace.Root), executable, firstFlag, "Write-Output ok");
+        var rule = new PolicyRuleSpec("rule_" + new string('6', 32), "project", "allow",
+            new MatcherSpec("run_process", "1.0.0", null, context.ResolvedExecutable,
+                context.Argv, context.CanonicalCwd, "terminal", "none"), 1, null);
+        var appended = context with { Argv = [.. context.Argv, "extra"] };
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
+        Assert.False(PolicyRuleMatcher.Matches(rule, appended, now));
+        Assert.True(PolicyRuleMatcher.Matches(rule with { Decision = "deny" }, appended, now));
+        Assert.True(PolicyRuleMatcher.Matches(rule with { Decision = "ask" }, appended, now));
+    }
+
+    [Fact]
+    public void Remembered_shell_intent_matches_powerShell_identity_without_allowing_changed_calls()
     {
         using var workspace = new TemporaryWorkspace();
         var factory = CreateFactory(workspace.Root);
         const string script = "Write-Output 'session approval'";
-        var args = new JsonObject { ["mode"] = "shell", ["shell"] = shell, ["script"] = script };
-        var context = factory.Create("bash", "1.0.0", args);
+        var args = new JsonObject { ["script"] = script };
+        var context = factory.Create("powershell", "1.0.0", args);
         var now = DateTimeOffset.UtcNow;
         var rule = new PolicyRuleSpec("rule_" + new string('1', 32), "run", "allow",
-            new MatcherSpec("bash", "1.0.0", null, shell,
+            new MatcherSpec("bash", "1.0.0", null, context.ResolvedExecutable,
                 ["-NoProfile", "-NonInteractive", "-Command", script], context.CanonicalCwd,
                 "terminal", "none"), 1, now.AddMinutes(30));
 
         Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
         args["script"] = "Write-Output 'another command'";
-        var changed = factory.Create("bash", "1.0.0", args);
+        var changed = factory.Create("powershell", "1.0.0", args);
         Assert.False(PolicyRuleMatcher.Matches(rule, changed, now));
         Assert.NotEqual(context.IntentHash, changed.IntentHash);
-        args["script"] = script;
-        args["shell"] = shell == "powershell" ? "pwsh" : "powershell";
-        Assert.False(PolicyRuleMatcher.Matches(rule, factory.Create("bash", "1.0.0", args), now));
         Assert.False(PolicyRuleMatcher.Matches(rule, context with { CanonicalCwd = workspace.Outside }, now));
         Assert.False(PolicyRuleMatcher.Matches(rule, context with { NetworkIntent = "declared" }, now));
         Assert.False(PolicyRuleMatcher.Matches(rule, context, now.AddMinutes(31)));
-        args.Remove("shell");
-        var defaultShell = factory.Create("bash", "1.0.0", args).ResolvedExecutable!;
+        var defaultShell = factory.Create("powershell", "1.0.0", args).ResolvedExecutable!;
         Assert.True(Path.IsPathFullyQualified(defaultShell));
         Assert.Equal("powershell", Path.GetFileNameWithoutExtension(defaultShell), ignoreCase: true);
     }
@@ -53,15 +85,15 @@ public sealed class TerminalIntentClassifierTests
     {
         using var workspace = new TemporaryWorkspace();
         var factory = CreateFactory(workspace.Root);
-        var args = new JsonObject { ["mode"] = "shell", ["script"] = script };
-        var context = factory.Create("bash", "1.0.0", args);
+        var args = new JsonObject { ["script"] = script };
+        var context = factory.Create("powershell", "1.0.0", args);
         var now = DateTimeOffset.UtcNow;
         var rule = new PolicyRuleSpec("rule_" + new string('1', 32), "run", "allow",
             new MatcherSpec("bash", "1.0.0", null, "powershell", context.Argv,
                 context.CanonicalCwd, "terminal", "none"), 1, null);
         Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
         args["script"] = different;
-        Assert.False(PolicyRuleMatcher.Matches(rule, factory.Create("bash", "1.0.0", args), now));
+        Assert.False(PolicyRuleMatcher.Matches(rule, factory.Create("powershell", "1.0.0", args), now));
         Assert.False(PolicyRuleMatcher.Matches(rule, context with { Argv = [.. context.Argv, "extra"] }, now));
         var restriction = rule with { Matcher = rule.Matcher with
         {
@@ -69,6 +101,83 @@ public sealed class TerminalIntentClassifierTests
         } };
         Assert.True(PolicyRuleMatcher.Matches(restriction with { Decision = "deny" }, context, now));
         Assert.True(PolicyRuleMatcher.Matches(restriction with { Decision = "ask" }, context, now));
+    }
+
+    [Fact]
+    public void Remembered_flag_first_run_process_allow_rejects_appended_arguments()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var context = Terminal(CreateFactory(workspace.Root), "node", "-e", "console.log('reviewed')");
+        var now = DateTimeOffset.UtcNow;
+        var rule = new PolicyRuleSpec("rule_" + new string('2', 32), "project", "allow",
+            new MatcherSpec("run_process", "1.0.0", null, context.ResolvedExecutable,
+                context.Argv, context.CanonicalCwd, "terminal", "none"), 1, null);
+
+        Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
+        Assert.False(PolicyRuleMatcher.Matches(
+            rule,
+            context with { Argv = [.. context.Argv, "--require", "unexpected.js"] },
+            now));
+    }
+
+    [Fact]
+    public void Remembered_windows_slash_flag_run_process_allow_rejects_appended_arguments()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var context = Terminal(CreateFactory(workspace.Root), "cmd.exe", "/d", "/c", "echo", "fixture");
+        var now = DateTimeOffset.UtcNow;
+        var rule = new PolicyRuleSpec("rule_" + new string('5', 32), "project", "allow",
+            new MatcherSpec("run_process", "1.0.0", null, context.ResolvedExecutable,
+                context.Argv, context.CanonicalCwd, "terminal", "none"), 1, null);
+
+        Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
+        Assert.False(PolicyRuleMatcher.Matches(
+            rule,
+            context with { Argv = [.. context.Argv, "&", "whoami"] },
+            now));
+    }
+
+    [Fact]
+    public void Remembered_run_process_shell_wrapper_allow_rejects_appended_arguments()
+    {
+        using var workspace = new TemporaryWorkspace();
+        const string script = "Write-Output 'reviewed script'";
+        var context = Terminal(
+            CreateFactory(workspace.Root),
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            script);
+        var now = DateTimeOffset.UtcNow;
+        var rule = new PolicyRuleSpec("rule_" + new string('3', 32), "project", "allow",
+            new MatcherSpec("run_process", "1.0.0", null, context.ResolvedExecutable,
+                context.Argv, context.CanonicalCwd, "terminal", "none"), 1, null);
+
+        Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
+        Assert.False(PolicyRuleMatcher.Matches(
+            rule,
+            context with { Argv = [.. context.Argv, "-EncodedCommand", "unexpected"] },
+            now));
+    }
+
+    [Fact]
+    public void Deny_and_ask_rules_keep_broad_argv_matching_for_executable_aliases()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var context = Terminal(CreateFactory(workspace.Root), "node", "-e", "console.log('reviewed')");
+        var now = DateTimeOffset.UtcNow;
+        var appended = context with { Argv = [.. context.Argv, "--require", "unexpected.js"] };
+
+        foreach (var executableAlias in new[] { "node", context.ResolvedExecutable! })
+        {
+            var restriction = new PolicyRuleSpec("rule_" + new string('4', 32), "project", "deny",
+                new MatcherSpec("run_process", "1.0.0", null, executableAlias,
+                    ["-e", "**"], context.CanonicalCwd, "terminal", "none"), 1, null);
+
+            Assert.True(PolicyRuleMatcher.Matches(restriction, appended, now));
+            Assert.True(PolicyRuleMatcher.Matches(restriction with { Decision = "ask" }, appended, now));
+        }
     }
 
     [Theory]
@@ -167,11 +276,10 @@ public sealed class TerminalIntentClassifierTests
         string executable,
         params string[] argv) =>
         factory.Create(
-            "bash",
+            "run_process",
             "1.0.0",
             new JsonObject
             {
-                ["mode"] = "run",
                 ["executable"] = executable,
                 ["arguments"] = new JsonArray(argv.Select(argument => (JsonNode?)JsonValue.Create(argument)).ToArray()),
                 ["working_directory"] = workingDirectory,
@@ -179,11 +287,10 @@ public sealed class TerminalIntentClassifierTests
 
     private static PolicyContext Shell(PolicyContextFactory factory, string script) =>
         factory.Create(
-            "bash",
+            "powershell",
             "1.0.0",
             new JsonObject
             {
-                ["mode"] = "shell",
                 ["script"] = script,
                 ["working_directory"] = ".",
             });

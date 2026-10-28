@@ -14,6 +14,8 @@ public enum AgentRecoveryKind
     EmptyModelReply,
     ModelRepairable,
     OutputTruncated,
+    CommentaryOnly,
+    ContextOverflow,
 }
 
 /// <summary>
@@ -58,6 +60,12 @@ public static class AgentRecoveryNotes
     // Global cap across every recovery case, counted from the context for the
     // whole run. This bounds recovery across all cases, including truncation.
     public const int MaximumNotesPerRun = 24;
+    public const int MaximumCommentaryNotes = 3;
+    public const int MaximumContextOverflowNotes = 2;
+
+    public static string BuildContextOverflowNote() =>
+        $"{NotePrefix} {KindMarker(AgentRecoveryKind.ContextOverflow)} - the provider rejected the previous context. "
+        + "The harness reduced older history; no proposed tools from the rejected reply executed. Continue the current request using this checkpoint and retained evidence.";
 
     /// <summary>
     /// Names the failed receipt and gives recovery guidance for known effect codes.
@@ -78,10 +86,13 @@ public static class AgentRecoveryNotes
         "edit_not_unique" => "Re-read the same file and narrow old_string or set expected_occurrences to the observed match count.",
         "workspace_changed" => "Inspect the current workspace and reconcile the change; do not overwrite stale content.",
         "process_exit_nonzero" => "For a declared required check, inspect the verification diagnostics, fix the cause and rerun that check. For exploratory work, repair the command or use an alternative relevant source; do not claim the failed command succeeded.",
+        "expected_exit_mismatch" => "Report the observed exit code and the unmet expectation. Do not retry a deliberately failing command merely to force the expected code, or claim a different invocation cleared it. Use run_process when a native process's exact exit code matters; PowerShell wrappers can return 1 instead.",
         "verification_stale" => "Code changed after a successful check. Rerun that same verification against the current changes.",
         "verification_pending" => "The required check is still running. Read its terminal output until its real exit is known; starting it is not a pass.",
         "verification_result_missing" => "The check has no confirmed terminal exit. Inspect its retained output or rerun it; do not infer success.",
         "process_start_failed" => "Inspect the executable and invocation error, then retry only after correcting it.",
+        "malformed_call" or "invalid_arguments" =>
+            "The call was rejected before anything ran. Follow the receipt's hint to correct the arguments and run it again; when it declared purpose verification or expected_failure, keep that purpose on the corrected call so its passing result resolves the check.",
         "side_effects_possible" => "Inspect the affected state before deciding whether any retry is safe.",
         "approval_denied" or "access_denied" or "rule_denied" or "workspace_path_outside_root" =>
             "The action was denied; report the blocker and do not route around the same restriction.",
@@ -91,6 +102,16 @@ public static class AgentRecoveryNotes
     public static string BuildEmptyNote() =>
         $"{NotePrefix} {KindMarker(AgentRecoveryKind.EmptyModelReply)} - the last model "
         + "reply was empty. Answer with text or a valid tool call.";
+
+    public static string BuildCommentaryNote() =>
+        $"{NotePrefix} {KindMarker(AgentRecoveryKind.CommentaryOnly)} - the provider marked its last reply as commentary, not a final answer. "
+        + "Continue the requested work with advertised tools when needed, or supply the final closeout when done. Do not repeat the progress message.";
+
+    /// <summary>Progress is retained for replay but cannot reset tool failure/repetition evidence.</summary>
+    public static bool IsCommentaryProgress(ModelContextEntry entry) =>
+        entry.AssistantStep?.ResponsesMessages?.IsCommentaryOnly == true
+        || entry.Kind == ModelContextEntryKind.Text && entry.Role == ModelContextRole.System
+            && entry.Content?.StartsWith(NotePrefix + " model_commentary_only -", StringComparison.Ordinal) == true;
 
     public static string BuildTruncatedNote() =>
         $"{NotePrefix} {KindMarker(AgentRecoveryKind.OutputTruncated)} - the provider "
@@ -127,6 +148,8 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.EmptyModelReply => "empty_model_reply",
         AgentRecoveryKind.ModelRepairable => "model_repairable",
         AgentRecoveryKind.OutputTruncated => "model_output_truncated",
+        AgentRecoveryKind.CommentaryOnly => "model_commentary_only",
+        AgentRecoveryKind.ContextOverflow => "context_window_exceeded",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -136,6 +159,8 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.EmptyModelReply => MaximumEmptyNotes,
         AgentRecoveryKind.ModelRepairable => MaximumModelRepairableNotes,
         AgentRecoveryKind.OutputTruncated => MaximumTruncatedNotes,
+        AgentRecoveryKind.CommentaryOnly => MaximumCommentaryNotes,
+        AgentRecoveryKind.ContextOverflow => MaximumContextOverflowNotes,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

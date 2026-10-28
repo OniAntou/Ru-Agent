@@ -7,6 +7,67 @@ namespace RuAgent.Harness.Persistence.Tests;
 
 public sealed class HarnessSqliteSchemaTests
 {
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(999, 1)]
+    [InlineData(1000, 1)]
+    [InlineData(1001, 2)]
+    [InlineData(5000, 5)]
+    [InlineData(60000, 60)]
+    public async Task Open_connection_applies_busy_timeout_to_commands_and_transactions(
+        int busyTimeoutMilliseconds,
+        int expectedDefaultTimeoutSeconds)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-harness-timeout", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var options = new HarnessSqliteOptions(
+                Path.Combine(root, "agent_harness.db"),
+                busyTimeoutMilliseconds);
+            await using var connection = await options.OpenConnectionAsync(CancellationToken.None);
+
+            Assert.Equal(expectedDefaultTimeoutSeconds, connection.DefaultTimeout);
+            await using var commandTimeout = connection.CreateCommand();
+            Assert.Equal(expectedDefaultTimeoutSeconds, commandTimeout.CommandTimeout);
+            await using var pragma = connection.CreateCommand();
+            pragma.CommandText = "PRAGMA busy_timeout";
+            Assert.Equal((long)busyTimeoutMilliseconds, (long)(await pragma.ExecuteScalarAsync() ?? 0L));
+            await using var foreignKeys = connection.CreateCommand();
+            foreignKeys.CommandText = "PRAGMA foreign_keys";
+            Assert.Equal(1L, (long)(await foreignKeys.ExecuteScalarAsync() ?? 0L));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Read_only_connection_does_not_create_a_missing_database()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-harness-readonly", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var databasePath = Path.Combine(root, "missing.db");
+        try
+        {
+            var options = new HarnessSqliteOptions(databasePath);
+
+            await Assert.ThrowsAsync<SqliteException>(() => options.OpenConnectionAsync(
+                CancellationToken.None,
+                SqliteOpenMode.ReadOnly,
+                pooling: false));
+
+            Assert.False(File.Exists(databasePath));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static readonly string[] RequiredTables =
     [
         "business_migrations",

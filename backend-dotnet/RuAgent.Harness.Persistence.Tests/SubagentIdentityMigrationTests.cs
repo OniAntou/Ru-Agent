@@ -23,6 +23,7 @@ public sealed class SubagentIdentityMigrationTests
         await events.TryCreateRunAsync(root, default);
         var agents = new SqliteSubagentStore(fixture.Options, fixture.PayloadStore);
         await agents.CreateAsync(new("agent_one", root.Run.RunId, "spawn_one", SubagentRole.Review, child), default);
+        await fixture.ResetSessionHistorySchemaToV29Async();
         await using var connection = fixture.CreateRawConnection();
         await connection.OpenAsync();
         using var command = connection.CreateCommand();

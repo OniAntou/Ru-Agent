@@ -22,6 +22,8 @@ public enum CliCommandKind
     Command,
     Chat,
     SessionList,
+    SessionHistory,
+    SessionSearch,
     SessionRewind,
     SessionDelete,
     SessionExport,
@@ -148,7 +150,21 @@ public sealed record ChatCommand(
     bool WorkspaceExplicit = true) : AgentCommand(CliCommandKind.Chat, Json);
 
 public sealed record SessionListCommand(
-    bool Json) : AgentCommand(CliCommandKind.SessionList, Json);
+    bool Json,
+    string? Cursor = null,
+    int Limit = 100,
+    string? Query = null) : AgentCommand(CliCommandKind.SessionList, Json);
+
+public sealed record SessionSearchCommand(
+    string Query,
+    int Limit,
+    bool Json) : AgentCommand(CliCommandKind.SessionSearch, Json);
+
+public sealed record SessionHistoryCommand(
+    string SessionId,
+    string? Cursor,
+    int Limit,
+    bool Json) : AgentCommand(CliCommandKind.SessionHistory, Json);
 
 public sealed record SessionRewindCommand(
     string SessionId,

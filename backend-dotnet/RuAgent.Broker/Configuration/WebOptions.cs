@@ -3,6 +3,8 @@ using RuAgent.Broker.Tools.Web;
 
 namespace RuAgent.Broker.Configuration;
 
+public enum WebSearchMode { HtmlRace, ConfiguredJson }
+
 public sealed record WebOptions
 {
     public const int DefaultMaxResponseBytes = 4 * 1024 * 1024;
@@ -26,12 +28,15 @@ public sealed record WebOptions
     public WebOptions(
         bool enabled = false,
         Uri? searchEndpoint = null,
-        int maxResponseBytes = DefaultMaxResponseBytes)
+        int maxResponseBytes = DefaultMaxResponseBytes,
+        WebSearchMode searchMode = WebSearchMode.HtmlRace)
     {
         if (maxResponseBytes is < 1 or > MaxConfiguredResponseBytes)
         {
             throw new ArgumentOutOfRangeException(nameof(maxResponseBytes));
         }
+        if (!Enum.IsDefined(searchMode) || searchMode == WebSearchMode.ConfiguredJson && searchEndpoint is null)
+            throw new ArgumentException("web_search_mode_invalid", nameof(searchMode));
 
         if (searchEndpoint is not null)
         {
@@ -46,11 +51,13 @@ public sealed record WebOptions
         // never widens the network boundary the call was granted under.
         SearchEndpoint = searchEndpoint ?? (enabled ? DefaultGoogleEndpoint : null);
         MaxResponseBytes = maxResponseBytes;
+        SearchMode = searchMode;
     }
 
     public bool Enabled { get; }
     public Uri? SearchEndpoint { get; }
     public int MaxResponseBytes { get; }
+    public WebSearchMode SearchMode { get; }
 
     public bool FetchEnabled => Enabled;
     public bool SearchEnabled => Enabled && SearchEndpoint is not null;

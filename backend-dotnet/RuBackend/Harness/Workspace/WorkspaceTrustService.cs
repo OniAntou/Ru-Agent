@@ -16,9 +16,6 @@ public sealed class WorkspaceTrustService
     private readonly WorkspaceTrustRequestStore _trustStore;
     private readonly IHarnessKeyStore? _keyStore;
 
-    private const string RootAssociatedDataPrefix = "ru-workspace-root-v1:";
-    private const int AesGcmTagBytes = 16;
-
     public WorkspaceTrustService(
         WindowsWorkspaceIdentityResolver resolver,
         SqliteWorkspaceStore store,
@@ -82,23 +79,24 @@ public sealed class WorkspaceTrustService
                 throw new HarnessStoreException("harness_key_invalid");
             }
 
-            var plaintext = new byte[stored.EncryptedCanonicalRoot.Ciphertext.Length];
-            using var aes = new AesGcm(key, AesGcmTagBytes);
-            aes.Decrypt(
-                stored.EncryptedCanonicalRoot.Nonce.Span,
-                stored.EncryptedCanonicalRoot.Ciphertext.Span,
-                stored.EncryptedCanonicalRoot.AuthenticationTag.Span,
-                plaintext,
-                AssociatedData(stored.Identity));
-            var root = Encoding.UTF8.GetString(plaintext);
-            var canonical = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(root);
-            var current = await _resolver.ResolveAsync(canonical, cancellationToken).ConfigureAwait(false);
-            if (current != stored.Identity)
+            var plaintext = WorkspaceRootCryptography.Decrypt(
+                stored.Identity.WorkspaceId, key, stored.EncryptedCanonicalRoot);
+            try
             {
-                throw new HarnessStoreException("workspace_identity_changed");
-            }
+                var root = Encoding.UTF8.GetString(plaintext);
+                var canonical = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(root);
+                var current = await _resolver.ResolveAsync(canonical, cancellationToken).ConfigureAwait(false);
+                if (current != stored.Identity)
+                {
+                    throw new HarnessStoreException("workspace_identity_changed");
+                }
 
-            return canonical;
+                return canonical;
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(plaintext);
+            }
         }
         catch (CryptographicException exception)
         {
@@ -153,9 +151,6 @@ public sealed class WorkspaceTrustService
         var keyStore = _keyStore ?? throw new HarnessStoreException("workspace_root_key_unavailable");
         var key = await keyStore.GetOrCreateKeyAsync(cancellationToken).ConfigureAwait(false);
         var plaintext = Encoding.UTF8.GetBytes(canonicalRoot);
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var ciphertext = new byte[plaintext.Length];
-        var tag = new byte[AesGcmTagBytes];
         try
         {
             if (key is not { Length: 32 })
@@ -163,9 +158,7 @@ public sealed class WorkspaceTrustService
                 throw new HarnessStoreException("harness_key_invalid");
             }
 
-            using var aes = new AesGcm(key, tag.Length);
-            aes.Encrypt(nonce, plaintext, ciphertext, tag, AssociatedData(identity));
-            return new WorkspaceRootCiphertext(nonce, ciphertext, tag);
+            return WorkspaceRootCryptography.Encrypt(identity.WorkspaceId, key, plaintext);
         }
         finally
         {
@@ -176,9 +169,6 @@ public sealed class WorkspaceTrustService
             CryptographicOperations.ZeroMemory(plaintext);
         }
     }
-
-    private static byte[] AssociatedData(WorkspaceIdentity identity) =>
-        Encoding.UTF8.GetBytes(RootAssociatedDataPrefix + identity.WorkspaceId.Value);
 
     public Task<bool> IsTrustedAsync(WorkspaceIdentity identity, AgentPermissionPreset preset, CancellationToken cancellationToken = default)
         => _store.IsTrustedAsync(identity, preset, cancellationToken);

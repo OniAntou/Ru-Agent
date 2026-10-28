@@ -17,6 +17,7 @@ public sealed class WebSearchAdapter
     private readonly Uri _endpoint;
     private readonly IReadOnlyList<Uri> _fallbackEndpoints;
     private readonly int _maxResponseBytes;
+    private readonly WebSearchMode _searchMode;
 
     public WebSearchAdapter(
         HttpClient http,
@@ -24,7 +25,8 @@ public sealed class WebSearchAdapter
         WebContentSanitizer sanitizer,
         Uri endpoint,
         int maxResponseBytes = WebOptions.DefaultMaxResponseBytes,
-        IReadOnlyList<Uri>? fallbackEndpoints = null)
+        IReadOnlyList<Uri>? fallbackEndpoints = null,
+        WebSearchMode searchMode = WebSearchMode.HtmlRace)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _policy = policy ?? throw new ArgumentNullException(nameof(policy));
@@ -37,6 +39,8 @@ public sealed class WebSearchAdapter
         }
 
         _maxResponseBytes = maxResponseBytes;
+        if (!Enum.IsDefined(searchMode)) throw new ArgumentOutOfRangeException(nameof(searchMode));
+        _searchMode = searchMode;
     }
 
     public Task<IReadOnlyList<SourceCitation>> SearchAsync(string query, CancellationToken cancellationToken) =>
@@ -50,6 +54,8 @@ public sealed class WebSearchAdapter
         }
 
         maxResults = Math.Clamp(maxResults, 1, 10);
+        if (_searchMode == WebSearchMode.ConfiguredJson)
+            return await SearchEngineAsync(_endpoint, query, maxResults, cancellationToken).ConfigureAwait(false);
         // Fixed engine set: the configured primary first, then the built-in
         // free engines. Every request still passes WebPolicy (redirect and
         // private-host validation), so a fallback never widens the network
@@ -176,6 +182,11 @@ public sealed class WebSearchAdapter
             await _policy.ValidateAsync(current, cancellationToken).ConfigureAwait(false);
             using var request = new HttpRequestMessage(HttpMethod.Get, current);
             ApplyBrowserHeaders(request, endpoint);
+            if (_searchMode == WebSearchMode.ConfiguredJson)
+            {
+                request.Headers.Accept.Clear();
+                request.Headers.Accept.ParseAdd("application/json");
+            }
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             if ((int)response.StatusCode is >= 300 and < 400)
             {
@@ -206,6 +217,8 @@ public sealed class WebSearchAdapter
 
             var body = await WebResponseReader.ReadAsync(response, _maxResponseBytes, cancellationToken).ConfigureAwait(false);
             var isJson = contentType.Contains("json", StringComparison.OrdinalIgnoreCase);
+            if (_searchMode == WebSearchMode.ConfiguredJson && !isJson)
+                throw new InvalidDataException("web_search_json_required");
             var candidates = isJson
                 ? ParseJsonCandidates(body)
                 : WebSearchHtmlParser.Parse(body, endpoint).Select(candidate => new SearchCandidate(candidate.Url, candidate.Title, candidate.Snippet)).ToArray();
@@ -388,6 +401,7 @@ public sealed class WebSearchAdapter
                     url,
                     ReadJsonString(item, "title") ?? ReadJsonString(item, "name") ?? string.Empty,
                     ReadJsonString(item, "snippet")
+                        ?? ReadJsonString(item, "content")
                         ?? ReadJsonString(item, "description")
                         ?? ReadJsonString(item, "summary")));
             }

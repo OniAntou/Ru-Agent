@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text;
 using System.Text.Json;
+using RuAgent.Harness.Core.Prompting;
 
 namespace RuAgent.Harness.Core;
 
@@ -87,7 +88,8 @@ public sealed record AssistantStep
         IReadOnlyList<ModelToolCall> toolCalls,
         AssistantFinishReason finishReason,
         int estimatedInputTokens,
-        ModelUsage? usage = null)
+        ModelUsage? usage = null,
+        ResponsesAssistantMessages? responsesMessages = null)
     {
         ArgumentNullException.ThrowIfNull(toolCalls);
         if (text is { Length: > 1_000_000 })
@@ -132,6 +134,9 @@ public sealed record AssistantStep
         FinishReason = finishReason;
         EstimatedInputTokens = estimatedInputTokens;
         Usage = usage;
+        if (responsesMessages is not null && responsesMessages.Text != (text ?? string.Empty))
+            throw new ArgumentException("Responses messages do not match assistant text.", nameof(responsesMessages));
+        ResponsesMessages = responsesMessages;
     }
 
     public string? Text { get; }
@@ -143,4 +148,5 @@ public sealed record AssistantStep
     public int EstimatedInputTokens { get; }
 
     public ModelUsage? Usage { get; }
+    public ResponsesAssistantMessages? ResponsesMessages { get; }
 }

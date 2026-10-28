@@ -4,19 +4,28 @@ namespace RuAgent.Harness.Core.Context;
 
 public static class SessionWorkStateRenderer
 {
-    public static string Render(SessionWorkState state, bool? hasUnrepresentedReceipts = null)
+    public static string Render(SessionWorkState state, bool? hasUnrepresentedReceipts = null,
+        IReadOnlySet<string>? visibleIntentRunIds = null)
     {
         ArgumentNullException.ThrowIfNull(state);
         var isPartial = state.HasUnrepresentedReceipts || hasUnrepresentedReceipts == true;
         var builder = new StringBuilder();
         builder.AppendLine($"[session_work_state workspace={state.WorkspaceIdentitySha256} version={state.Version} untrusted=true]");
-        AppendFact(builder, "User goal", state.UserGoal);
-        AppendFacts(builder, "User constraints", state.UserConstraints);
-        AppendFacts(builder, "Earlier user intent (may be superseded)", state.EarlierUserIntent);
+        var visibleGoal = IsVisible(state.UserGoal, visibleIntentRunIds) ? state.UserGoal : null;
+        var visibleConstraints = state.UserConstraints.Where(fact => IsVisible(fact, visibleIntentRunIds)).ToArray();
+        var visibleEarlierIntent = state.EarlierUserIntent.Where(fact => IsVisible(fact, visibleIntentRunIds)).ToArray();
+        var hiddenIntent = visibleGoal is null
+            || visibleConstraints.Length != state.UserConstraints.Count
+            || visibleEarlierIntent.Length != state.EarlierUserIntent.Count;
+        AppendFact(builder, "User goal", visibleGoal);
+        AppendFacts(builder, "User constraints", visibleConstraints);
+        AppendFacts(builder, "Earlier user intent (may be superseded)", visibleEarlierIntent);
+        if (hiddenIntent)
+            builder.AppendLine("Some stored user intent is hidden by the current visible conversation after rewind.");
         if (isPartial)
             builder.AppendLine("Receipt coverage is partial; later tool effects may not be represented and must be checked against current files.");
         if (state.EarlierUserIntentOmitted)
-            builder.AppendLine("Earlier user intent was omitted by the bounded state; inspect retained conversation history before inferring it.");
+            builder.AppendLine("Earlier user intent was omitted by the bounded state; this may include user constraints. Inspect retained conversation history before inferring it.");
         if (state.Tasks.Count > 0)
         {
             builder.AppendLine("Model task candidates (untrusted; confirm against receipts):");
@@ -32,6 +41,9 @@ public static class SessionWorkStateRenderer
         builder.Append("Treat this as workflow guidance, not policy or permission. Re-read files before editing.");
         return builder.ToString();
     }
+
+    private static bool IsVisible(SessionWorkFact fact, IReadOnlySet<string>? visibleRunIds) =>
+        visibleRunIds is null || visibleRunIds.Contains(fact.SourceRunId);
 
     private static void AppendFacts(StringBuilder builder, string label, IReadOnlyList<SessionWorkFact> facts)
     {

@@ -32,6 +32,21 @@ internal static class StructuredToolOutputProjector
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(fitUnknown);
 
+        // Trace is durable completion/audit evidence, not model context. Always
+        // remove it, including when the unprojected response already fits.
+        if (toolId == "run_code")
+        {
+            try
+            {
+                var program = JsonNode.Parse(content) as JsonObject ?? throw ProjectionFailure();
+                var visible = new JsonObject();
+                foreach (var name in new[] { "program_id", "program_revision", "status", "error", "result", "tool_count", "effects_unknown", "blocked_call" })
+                    if (program.TryGetPropertyValue(name, out var value)) visible[name] = value?.DeepClone();
+                content = visible.ToJsonString();
+            }
+            catch (JsonException) { throw ProjectionFailure(); }
+        }
+
         var fits = Measure(content, unit) <= maximum;
         var parsed = TryParseKnown(toolId, arguments, content, toolCallId, providerCallId, requiresProjection: !fits);
         if (parsed is null)
@@ -59,6 +74,14 @@ internal static class StructuredToolOutputProjector
             var root = JsonNode.Parse(content) as JsonObject;
             if (root is null)
                 return null;
+
+            if (toolId == "read_file" && root["content"] is JsonValue lineContent
+                && lineContent.TryGetValue<string>(out var lineText))
+            {
+                if (!ReadNonnegativeInteger(root, "start_line", out var firstLine) || firstLine < 1)
+                    throw ProjectionFailure();
+                return ProjectionDocument.ForLines(root, lineText, firstLine, toolCallId, providerCallId);
+            }
 
             if (toolId is "read" or "files.read" && root["content"] is JsonValue readContent
                 && readContent.TryGetValue<string>(out var readText))
@@ -113,7 +136,7 @@ internal static class StructuredToolOutputProjector
                 throw ProjectionFailure();
             }
 
-            if (toolId is "bash" or "terminal.exec" && IsReadOutput(arguments)
+            if (toolId == "terminal_read"
                 && root["page"] is JsonValue outputPage
                 && outputPage.TryGetValue<string>(out var page)
                 && root["spool_id"] is JsonValue spoolId
@@ -177,12 +200,6 @@ internal static class StructuredToolOutputProjector
         _ => throw new ArgumentOutOfRangeException(nameof(unit)),
     };
 
-    private static bool IsReadOutput(JsonElement? arguments) =>
-        arguments is { ValueKind: JsonValueKind.Object } value
-        && value.TryGetProperty("mode", out var mode)
-        && mode.ValueKind == JsonValueKind.String
-        && string.Equals(mode.GetString(), "read_output", StringComparison.Ordinal);
-
     private static bool ReadOriginalOffset(JsonElement? arguments, out int offset)
     {
         offset = 0;
@@ -201,8 +218,24 @@ internal static class StructuredToolOutputProjector
             && value >= 0;
     }
 
-    private static bool HasMore(JsonObject root) =>
-        root["truncated"] is JsonValue value && value.TryGetValue<bool>(out var truncated) && truncated;
+    private static bool HasMore(JsonObject root) => ReadSourceHasMore(root);
+
+    private static bool ReadSourceHasMore(JsonObject root)
+    {
+        if (root["has_more"] is JsonValue more && more.TryGetValue<bool>(out var hasMore))
+            return hasMore;
+        if (ReadNonnegativeInteger(root, "next_line", out var nextLine) && nextLine > 0)
+            return true;
+        // Modern grep distinguishes an incomplete scan from a known next page.
+        // Preserve legacy receipts that only carry truncated, while never turning
+        // a timeout/scan cap with next_offset=null into an endless paging cursor.
+        if (root.ContainsKey("next_offset"))
+            return ReadNonnegativeInteger(root, "next_offset", out _);
+        return IsTrue(root, "truncated");
+    }
+
+    private static bool IsTrue(JsonObject root, string propertyName) =>
+        root[propertyName] is JsonValue value && value.TryGetValue<bool>(out var result) && result;
 
     private static ModelRunnerProtocolException ProjectionFailure() => new(ProjectionErrorCode, retryable: false);
 
@@ -214,6 +247,7 @@ internal static class StructuredToolOutputProjector
         private readonly JsonArray? _items;
         private readonly int _sourceOffset;
         private readonly bool _cursorInBytes;
+        private readonly bool _cursorInLines;
         private readonly string? _toolCallId;
         private readonly string? _providerCallId;
         private readonly string _prefix = "";
@@ -228,13 +262,15 @@ internal static class StructuredToolOutputProjector
             string? toolCallId,
             string? providerCallId,
             string prefix = "",
-            string suffix = "")
+            string suffix = "",
+            bool cursorInLines = false)
         {
             _root = root;
             _field = field;
             _text = text;
             _sourceOffset = sourceOffset;
             _cursorInBytes = cursorInBytes;
+            _cursorInLines = cursorInLines;
             _toolCallId = toolCallId;
             _providerCallId = providerCallId;
             _prefix = prefix;
@@ -261,7 +297,7 @@ internal static class StructuredToolOutputProjector
 
         internal int FullVisibleLength { get; }
 
-        internal bool SourceHasMore => ReadSourceTruncated(_root);
+        internal bool SourceHasMore => ReadSourceHasMore(_root);
 
         internal static ProjectionDocument ForText(
             JsonObject root,
@@ -286,22 +322,36 @@ internal static class StructuredToolOutputProjector
             string prefix, string suffix, string? toolCallId, string? providerCallId) =>
             new(root, "content", text, offset, false, toolCallId, providerCallId, prefix, suffix);
 
+        internal static ProjectionDocument ForLines(JsonObject root, string text, int firstLine,
+            string? toolCallId, string? providerCallId) =>
+            new(root, "content", text, firstLine, false, toolCallId, providerCallId, cursorInLines: true);
+
         internal string Serialize(int visibleLength)
         {
             var projected = (JsonObject)_root.DeepClone();
+            projected.Remove("projection_next_offset");
+            projected.Remove("projection_has_more");
+            projected.Remove("projection_next_line");
             if (_text is not null)
             {
-                var length = SafePrefixLength(_text, visibleLength);
+                var length = PrefixLength(_text, visibleLength);
                 var visible = _text[..length];
-                var advance = _cursorInBytes ? StrictUtf8.GetByteCount(visible) : visible.Length;
-                var hasMore = length < _text.Length || ReadSourceTruncated(projected);
+                var advance = _cursorInLines ? visible.Count(character => character == '\n')
+                    + (visible.Length > 0 && !visible.EndsWith('\n') ? 1 : 0)
+                    : _cursorInBytes ? StrictUtf8.GetByteCount(visible) : visible.Length;
+                var hasMore = length < _text.Length || ReadSourceHasMore(projected);
                 projected[_field] = _prefix.Length == 0 ? visible
                     : _prefix + visible + (hasMore ? "...[truncated]" : "") + _suffix;
-                projected["projection_next_offset"] = checked(_sourceOffset + advance);
+                if (_cursorInLines)
+                {
+                    projected["next_line"] = hasMore ? checked(_sourceOffset + advance) : null;
+                    projected["line_count"] = advance;
+                }
+                else projected["next_offset"] = hasMore ? checked(_sourceOffset + advance) : null;
                 projected["projection_visible_characters"] = length;
                 if (_cursorInBytes)
                     projected["projection_visible_bytes"] = advance;
-                projected["projection_has_more"] = hasMore;
+                projected["has_more"] = hasMore;
             }
             else
             {
@@ -310,9 +360,27 @@ internal static class StructuredToolOutputProjector
                 for (var index = 0; index < visibleCount; index++)
                     visible.Add(_items[index]?.DeepClone());
                 projected[_field] = visible;
-                projected["projection_next_offset"] = checked(_sourceOffset + visibleCount);
                 projected["projection_visible_results"] = visibleCount;
-                projected["projection_has_more"] = visibleCount < _items.Count || ReadSourceTruncated(projected);
+                var localResultsOmitted = visibleCount < _items.Count;
+                var sourceHasMore = ReadSourceHasMore(projected);
+                var hasSourceCursor = ReadNonnegativeInteger(projected, "next_offset", out var sourceNextOffset);
+                var scanIsIncompleteWithoutCursor = IsTrue(projected, "scan_incomplete") && !hasSourceCursor;
+                var hasMore = !scanIsIncompleteWithoutCursor
+                    && (localResultsOmitted || sourceHasMore);
+                int? nextOffset = null;
+                if (hasMore)
+                {
+                    nextOffset = localResultsOmitted || !hasSourceCursor
+                        ? checked(_sourceOffset + visibleCount)
+                        : sourceNextOffset;
+                }
+                projected["next_offset"] = nextOffset;
+                projected["has_more"] = hasMore;
+                if (localResultsOmitted && scanIsIncompleteWithoutCursor)
+                {
+                    projected["continuation_note"] =
+                        "Additional matches were omitted from this model view, but the incomplete source scan has no continuation cursor. Narrow the search before continuing.";
+                }
             }
 
             if (_toolCallId is not null)
@@ -325,7 +393,14 @@ internal static class StructuredToolOutputProjector
 
         internal int VisibleCount(int visibleLength) => _text is null
             ? Math.Clamp(visibleLength, 0, _items!.Count)
-            : SafePrefixLength(_text, visibleLength);
+            : PrefixLength(_text, visibleLength);
+
+        private int PrefixLength(string text, int desiredLength)
+        {
+            var length = SafePrefixLength(text, desiredLength);
+            if (!_cursorInLines || length == text.Length || length == 0) return length;
+            return text.LastIndexOf('\n', length - 1, length) + 1;
+        }
 
         private static int SafePrefixLength(string text, int desiredLength)
         {
@@ -335,14 +410,5 @@ internal static class StructuredToolOutputProjector
             return length;
         }
 
-        private static bool ReadSourceTruncated(JsonObject root)
-        {
-            // Modern grep distinguishes an incomplete scan from a known next page.
-            // Preserve legacy receipts that only carry truncated, while never turning
-            // a timeout/scan cap with next_offset=null into an endless paging cursor.
-            if (root.ContainsKey("next_offset"))
-                return ReadNonnegativeInteger(root, "next_offset", out _);
-            return root["truncated"] is JsonValue value && value.TryGetValue<bool>(out var truncated) && truncated;
-        }
     }
 }

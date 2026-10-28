@@ -6,7 +6,6 @@ using System.Text.RegularExpressions;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
-using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
@@ -21,9 +20,9 @@ public sealed partial class ToolExecutionService
 {
     private static string SafeAction(ToolManifest manifest) => manifest.Id switch
     {
-        "bash" => "Run a terminal action in the workspace.",
+        "powershell" or "run_process" => "Run a terminal action in the workspace.",
         "mcp" => "Start or call one of your MCP servers.",
-        "edit" => "Chỉnh sửa file.",
+        "edit_file" => "Chỉnh sửa file.",
         _ => "Run an external or destructive Agent action.",
     };
 
@@ -36,13 +35,15 @@ public sealed partial class ToolExecutionService
                 return string.Empty;
             }
 
+            if (toolId == "edit_file")
+                return BuildEditPreview(arguments["edits"]?.AsArray(), fileText);
+            if (toolId == "apply_patch") return Bound(ReadOptionalString(arguments, "patch") ?? string.Empty);
             var preview = toolId switch
             {
-                "write" => ReadOptionalString(arguments, "content") ?? string.Empty,
-                "edit" => EditPreview(arguments, fileText),
-                "bash" => IsShellArgs(arguments)
-                    ? ReadOptionalString(arguments, "script") ?? string.Empty
-                    : TerminalRunPreview(arguments),
+                "write_file" => ReadOptionalString(arguments, "content") ?? string.Empty,
+                "powershell" => ReadOptionalString(arguments, "script") ?? string.Empty,
+                "run_process" => TerminalRunPreview(arguments),
+                "terminal_read" => "Read retained terminal output.",
                 // ADR 0025: the card names the server, the tool and the bounded arguments.
                 "mcp" => ReadOptionalString(arguments, "op") == "call"
                     ? $"{ReadOptionalString(arguments, "server")} > {ReadOptionalString(arguments, "tool")} {Bound(ReadOptionalString(arguments, "arguments") ?? "{}")}"
@@ -58,9 +59,6 @@ public sealed partial class ToolExecutionService
             return string.Empty;
         }
     }
-
-    private static bool IsShellArgs(JsonObject arguments) =>
-        string.Equals(arguments["mode"]?.GetValue<string>(), "shell", StringComparison.Ordinal);
 
     private static string Bound(string value) =>
         value.Length <= ApprovalPreviewFields.MaxLength / 2 ? value : value[..(ApprovalPreviewFields.MaxLength / 2)];

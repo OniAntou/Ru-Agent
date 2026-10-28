@@ -1,4 +1,5 @@
 using System.Text.Json;
+using RuAgent.Harness.Core.Prompting;
 
 namespace RuAgent.Harness.Core;
 
@@ -41,6 +42,11 @@ public static class AssistantStepJsonCodec
             writer.WriteEndArray();
             writer.WriteString("finish_reason", FinishReason(step.FinishReason));
             writer.WriteNumber("estimated_input_tokens", step.EstimatedInputTokens);
+            if (step.ResponsesMessages is { } messages)
+            {
+                writer.WritePropertyName("responses_messages");
+                messages.WriteTo(writer);
+            }
             if (step.Usage is not null)
             {
                 writer.WritePropertyName("usage");
@@ -93,7 +99,9 @@ public static class AssistantStepJsonCodec
                 calls,
                 ParseFinishReason(root.GetProperty("finish_reason").GetString()),
                 root.GetProperty("estimated_input_tokens").GetInt32(),
-                usage);
+                usage,
+                root.TryGetProperty("responses_messages", out var messages) && messages.ValueKind != JsonValueKind.Null
+                    ? ResponsesAssistantMessages.Read(messages) : null);
         }
         catch (Exception exception) when (exception is
             JsonException

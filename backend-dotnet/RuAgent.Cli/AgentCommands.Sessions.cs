@@ -12,41 +12,6 @@ namespace RuAgent.Cli;
 
 public sealed partial class AgentCommands
 {
-    public async Task<int> SessionListAsync(SessionListCommand cmd, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var element = await _sessionClient.ListAsync(cancellationToken).ConfigureAwait(false);
-            if (cmd.Json)
-            {
-                await _out.WriteLineAsync(JsonEnvelope("session_list", element)).ConfigureAwait(false);
-                return 0;
-            }
-
-            await _out.WriteLineAsync(Tui.TuiPalette.BoldPaint("Active Sessions:")).ConfigureAwait(false);
-            if (element.TryGetProperty("sessions", out var array) && array.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in array.EnumerateArray())
-                {
-                    var id = item.GetProperty("id").GetString();
-                    var title = item.GetProperty("title").GetString();
-                    var msgCount = item.TryGetProperty("message_count", out var mc) ? mc.GetInt32() : 0;
-                    await _out.WriteLineAsync($"  • {Tui.TuiPalette.Accent(id ?? "")} - {title} ({msgCount} messages)").ConfigureAwait(false);
-                }
-            }
-            return 0;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            await _err.WriteLineAsync($"session_list_error: {ex.Message}").ConfigureAwait(false);
-            return 1;
-        }
-    }
-
     /// <summary>
     /// Writes one of Ru's sessions out in another agent's format.
     /// </summary>

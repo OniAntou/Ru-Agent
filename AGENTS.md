@@ -34,6 +34,9 @@ Use CONTEXT.md's domain language and update it when concepts change.
   transient providers wait for explicit Continue. User-selected provider/model
   changes apply to new runs. The documented `web_search` exception races its
   fixed upstream engine set within one tool; every request passes `WebPolicy`.
+  The second exception, provider-hosted search (ADR 0033), runs at a pinned
+  first-party Anthropic or OpenAI provider, only where the Broker would allow
+  `web_search` without an approval; `web_fetch` always stays in the Broker.
 - **Scoped permissions.** Permissions are session-scoped; approval tokens are
   single-use, bound to exact canonical arguments and lost on restart.
   Structured file tools deny harness key/database files, runtime descriptors

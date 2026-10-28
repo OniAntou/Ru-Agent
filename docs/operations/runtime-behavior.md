@@ -158,9 +158,11 @@ messages; clock, mood, and references are not appended as separate system
 messages.
 
 Host capabilities are the runtime projection of the Protocol-owned tool
-definitions: `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`,
-`edit`, `bash`, `web_search`, `web_fetch`, `skill`, and Host-intercepted
-`ask_user`. `ask_user` never dispatches to the Broker: it parks the run in
+definitions selected by the run-pinned `coding_v2`, `patch_v2` or `coding_code_v1`
+profile. File tools use explicit identities such as `write_file`/`edit_file`;
+terminal tools are `powershell`, `run_process`, `terminal_read`, `terminal_stop`.
+See the [tool inventory](agent-tools.md#current-capability-matrix).
+`ask_user` is Host-intercepted. `ask_user` never dispatches to the Broker: it parks the run in
 `WaitingUser` with a durable `input.requested` event until the client posts the
 answer, which arrives as that call's durable tool result. The execution contract
 also states that the run's current permission mode is described only by the
@@ -169,8 +171,10 @@ and never the run's own mode, so a model cannot mistake a mode described in
 CONTEXT.md for the mode it is in. On provider-native
 paths, one generation may return optional narration and one or more ordered
 calls. The Host persists the assistant batch and matching durable tool results;
-it does not flatten native calls into prose. Compatibility text selection emits
-exactly one JSON object. The model makes no success claim before durable
+it does not flatten native calls into prose. Responses assistant message phases survive native replay: `commentary` is
+progress rather than a completed answer. A commentary-only response continues
+with bounded recovery, and `final_answer` can finish normally. Compatibility
+text selection emits exactly one JSON object. The model makes no success claim before durable
 results. If a batch asks, no call executes; after approval the runtime
 re-evaluates the retained durable proposals without a new model proposal.
 Read-only calls may overlap up to eight at a time while mutation/terminal
@@ -180,10 +184,14 @@ duplicate, malformed, or digest-mismatched contracts fail before provider
 execution; wire and invariant violations remain terminal.
 
 The Host reads the fixed `AGENTS.md`, `CONTEXT.md`, `.ru/AGENTS.md`, and
-`.ru/CONTEXT.md` candidates below the selected run root, then discovers
-direct-child skill directories from
-`<workspace-root>/skills`, `<workspace-root>/.ru/skills`, and
-`%LOCALAPPDATA%\Ru\skills`, in that order. A directory is a skill
+`.ru/CONTEXT.md` candidates below the selected run root. `AGENTS.md` is loaded
+as workflow guidance; each `CONTEXT.md` body is represented by a short relative
+path and normalized content hash, with relevant sections read on demand.
+The optional user-wide `~/.ru/AGENTS.md` comes first, so workspace instructions
+take precedence. Skill directories follow the shared `RuAgent.Protocol.SkillRoots`
+order: `<workspace-root>/skills`, `<workspace-root>/.ru/skills`,
+`<workspace-root>/.agents/skills`, `RU_SKILLS_ROOT` when set, `~/.ru/skills`, `~/.agents/skills`, and
+`%LOCALAPPDATA%\Ru\skills`. A directory is a skill
 only when it contains a case-insensitive `SKILL.md`. For example:
 
 ```markdown
@@ -405,6 +413,12 @@ The WinUI 3 desktop client connects to the shared local Public Host via loopback
 
 ## Session and history lifecycle
 
+Conversation history is retained as indexed message rows; GUI and CLI read bounded
+pages with absolute indices. Rewind invalidates older history cursors, while append
+preserves older-page navigation. The initial display window is not a retention
+policy. See [database maintenance](database-maintenance.md) for full-history export,
+backup/restore and opt-in pruning.
+
 ASP.NET Core is authoritative for persisted conversation sessions, history, and
 the Harness records owned by a session. `DELETE /sessions/{sessionId}` keeps a
 stable HTTP 200 response envelope: `status: "ok"` is returned only after the
@@ -417,25 +431,14 @@ after `status: "ok"`, and shows a bounded error without silently replacing the
 conversation when deletion fails. If the last session was deleted
 successfully, the UI creates one fresh session.
 
-## Action execution kernel v1
+## Action execution kernel
 
-The typed model-step settings advertise these tools, one purpose each:
-`read`, `list`,
-`grep`, `glob`, `help`, `todo_write`, `skill`, `write` with
-`op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
-`web_search`, `web_fetch`, and Host-intercepted `ask_user`. The canonical matrix is: `plan` allows workspace
-read and Web but denies terminal and mutation outright (read-only, no
-per-change asks) and asks for external structured access; `standard`
-auto-allows workspace mutation and executable/shell launches from a workspace cwd;
-external structured paths and external launch directories ask; `full_access` is the skip-all mode — external
-structured files, arbitrary terminal, and structured protected paths (harness
-key/database files, runtime descriptors and Ru hook and MCP configuration files) are
-automatic, while hard-invalid
-requests remain denied.
-These defaults do not bypass explicit deny or ask rules: an external folder
-grant or Full Access fallback cannot override a matched ask. Hard invariants,
-including Plan's read-only gate, are evaluated first.
-Repository cleanliness never changes the decision.
+The typed model-step settings advertise the run's supported pinned tool profile,
+with explicit file creation, editing, deletion/restoration and Windows terminal
+operations. [The tool contract](agent-tools.md#coding-profiles) owns inventories,
+arguments and availability; old or unversioned pins cannot resume execution. The [canonical permission matrix](agent-tools.md#current-capability-matrix)
+owns preset behavior, explicit-rule precedence and approval reasons. The Host
+projects that contract; documentation never grants the run additional authority.
 
 Standard structured-file access outside the trusted root may create a
 session-scoped canonical folder grant; it is not shared with a new
@@ -448,7 +451,7 @@ and `full_access` run as the current Windows user without OS filesystem or
 network confinement, including outside the workspace (ADR-0015). Standard
 uses launch-directory permission under ADR-0017, with explicit ask/deny rules;
 Full Access also permits external launch directories. The
-`bash` schema has no sandbox selector and rejects obsolete sandbox arguments.
+terminal tool schemas have no sandbox selector and rejects obsolete sandbox arguments.
 Hard timeout, output cap, cancellation, redaction, and process-tree cleanup
 remain. Structured file tools retain their independent path protections: the
 protected-path denial holds in `plan` and `standard`, and `full_access` is
@@ -536,8 +539,8 @@ run state. Raw tool receipts never cross into the visible transcript, history,
 reviewed examples, or public payload metadata.
 
 The tools above are the model surface. `read`, `list`, `grep`,
-`glob`, and `help` are separate definitions; `write`, `edit`, and `bash` expose
-their own schemas, alongside `todo_write`, `skill`, `web_search`,
+`glob`, and `help` are separate definitions. Modern file and terminal operations
+have their own schemas, alongside `todo_write`, `skill`, `web_search`,
 `web_fetch`, and the Host-intercepted `ask_user`. Managed startup constructs an enabled WebOptions instance with
 Google HTML as the primary search engine `https://www.google.com/search`, raced
 against the fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek); the bounded

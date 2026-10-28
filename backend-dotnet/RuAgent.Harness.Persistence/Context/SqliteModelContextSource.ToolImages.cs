@@ -16,25 +16,26 @@ public sealed partial class SqliteModelContextSource
     /// compaction and outside the entry cache, whose fingerprint does not cover images.
     /// </summary>
     private async Task AttachToolImagesAsync(
-        SqliteConnection connection,
+        SqliteConnection connection, SqliteTransaction transaction,
         RunId runId,
         List<ModelContextEntry> runLocal,
         CancellationToken cancellationToken)
     {
+        var candidates = runLocal.Where(e => e.Kind == ModelContextEntryKind.ToolResult && e.ToolReceipt?.ResultPayloadId is not null)
+            .Select(e => ToolImagePayloadId.For(e.ToolReceipt!.ResultPayloadId!.Value).Value).ToArray();
+        if (candidates.Length == 0) return;
         var stored = new HashSet<string>(StringComparer.Ordinal);
-        await using (var command = connection.CreateCommand())
+        foreach (var chunk in candidates.Chunk(128))
         {
-            command.CommandText = """
-                SELECT payload_id FROM agent_payloads
-                WHERE run_id = $run_id AND kind = $kind
-                """;
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            var names = chunk.Select((_, index) => "$image" + index).ToArray();
+            command.CommandText = $"SELECT payload_id FROM agent_payloads WHERE run_id=$run_id AND kind=$kind AND payload_id IN ({string.Join(',', names)})";
             command.Parameters.AddWithValue("$run_id", runId.Value);
             command.Parameters.AddWithValue("$kind", (int)HarnessPayloadKind.ToolImage);
+            for (var index = 0; index < chunk.Length; index++) command.Parameters.AddWithValue(names[index], chunk[index]);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                stored.Add(reader.GetString(0));
-            }
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) stored.Add(reader.GetString(0));
         }
 
         if (stored.Count == 0)
@@ -59,19 +60,20 @@ public sealed partial class SqliteModelContextSource
             }
 
             runLocal[index] = entry.WithToolImage(seen < ToolOutputImage.MaximumInContext
-                ? await ReadToolImageAsync(connection, runId, imagePayloadId, cancellationToken).ConfigureAwait(false)
+                ? await ReadToolImageAsync(connection, transaction, runId, imagePayloadId, cancellationToken).ConfigureAwait(false)
                 : null);
             seen++;
         }
     }
 
     private async Task<ToolOutputImage> ReadToolImageAsync(
-        SqliteConnection connection,
+        SqliteConnection connection, SqliteTransaction transaction,
         RunId runId,
         PayloadId payloadId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT kind, audience, encoding, byte_cap, protected_content,
                    protection_version, nonce, authentication_tag

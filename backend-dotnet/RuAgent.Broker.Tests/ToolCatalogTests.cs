@@ -39,6 +39,9 @@ public sealed class ToolCatalogTests
     [InlineData("files.list")]
     [InlineData("files.read")]
     [InlineData("terminal.run")]
+    [InlineData("write")]
+    [InlineData("edit")]
+    [InlineData("bash")]
     [InlineData("web.search")]
     [InlineData("help.docs")]
     public void Retired_tool_is_not_bound(string toolId)
@@ -53,19 +56,19 @@ public sealed class ToolCatalogTests
     public void Terminal_bindings_are_model_visible_in_agent_but_still_require_approval()
     {
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
-        var bash = catalog.Registry.Get("bash", "1.0.0");
+        var powershell = catalog.Registry.Get("powershell", "1.0.0");
 
-        Assert.True(bash.Manifest.RequiresApproval);
-        Assert.Equal(RiskClass.Reversible, bash.Manifest.Risk);
-        Assert.False(bash.VerificationRequired);
-        Assert.Equal("executable", bash.Availability);
+        Assert.True(powershell.Manifest.RequiresApproval);
+        Assert.Equal(RiskClass.Reversible, powershell.Manifest.Risk);
+        Assert.False(powershell.VerificationRequired);
+        Assert.Equal("executable", powershell.Availability);
 
         // Advertisement is derived from profile scopes. The single Agent
         // profile includes terminal execution; policy still decides whether
         // each concrete command can run or needs one-time approval.
         var advertised = Enum.GetValues<CapabilityProfile>()
             .Where(profile => catalog.Registry.ModelCapabilities(profile)
-                .Any(item => item.Manifest.Id == "bash"))
+                .Any(item => item.Manifest.Id == "powershell"))
             .ToArray();
         Assert.DoesNotContain(CapabilityProfile.Chat, advertised);
         Assert.Contains(CapabilityProfile.Agent, advertised);
@@ -77,7 +80,9 @@ public sealed class ToolCatalogTests
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
 
         var capabilities = catalog.Registry.ListCapabilities();
-        Assert.Equal(18, capabilities.Count);
+        Assert.Equal(AgentToolDefinitionCatalog.Get().Where(d => d.ToolId != "ask_user")
+            .Select(d => d.ToolId).OrderBy(id => id, StringComparer.Ordinal),
+            capabilities.Select(c => c.ToolId).OrderBy(id => id, StringComparer.Ordinal));
         Assert.DoesNotContain(capabilities, item => item.ToolId == "app.open");
         // ask_user is Host-intercepted before gateway dispatch and deliberately has
         // no Broker binding, so it never appears in the Broker's capability surface.
@@ -93,112 +98,45 @@ public sealed class ToolCatalogTests
             .Select(binding => binding.Manifest.Id)
             .ToHashSet(StringComparer.Ordinal);
         Assert.All(
-            new[] { "system.time", "files.read", "terminal.run", "web.search", "help.docs" },
+            new[] { "system.time", "files.read", "terminal.run", "web.search", "help.docs", "write", "edit", "bash" },
             retiredId => Assert.DoesNotContain(retiredId, agentModelIds));
     }
 
     [Fact]
-    public void Bash_schema_requires_mode_and_canonical_intent_contract_fields()
+    public void Modern_coding_schemas_are_separate_and_reject_legacy_discriminators()
     {
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
-        var bashSchema = catalog.Registry.Get("bash", "1.0.0").Manifest.InputSchema;
-        var properties = bashSchema["properties"]!.AsObject();
+        var writeSchema = catalog.Registry.Get("write_file", "1.0.0").Manifest.InputSchema;
+        ToolSchemaValidator.Validate(writeSchema, new JsonObject { ["path"] = "a.txt", ["content"] = "text" });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(writeSchema,
+            new JsonObject { ["op"] = "write", ["path"] = "a.txt", ["content"] = "text" }));
+        var editSchema = catalog.Registry.Get("edit_file", "1.0.0").Manifest.InputSchema;
+        ToolSchemaValidator.Validate(editSchema, new JsonObject { ["path"] = "a.txt", ["edits"] = new JsonArray(
+            new JsonObject { ["old_string"] = "before", ["new_string"] = "after" }) });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(editSchema,
+            new JsonObject { ["op"] = "edit", ["path"] = "a.txt", ["old_string"] = "before", ["new_string"] = "after" }));
 
-        Assert.True(properties.ContainsKey("mode"));
-        Assert.True(properties.ContainsKey("executable"));
-        Assert.True(properties.ContainsKey("arguments"));
-        Assert.True(properties.ContainsKey("script"));
-        Assert.True(properties.ContainsKey("working_directory"));
-        Assert.True(properties.ContainsKey("timeout_ms"));
-        Assert.True(properties.ContainsKey("network_intent"));
-        Assert.True(properties.ContainsKey("background"));
-        Assert.True(properties.ContainsKey("shell"));
-        Assert.False(properties.ContainsKey("network"));
-
-        var timeoutSchema = properties["timeout_ms"]!.AsObject();
-        Assert.Equal(1, timeoutSchema["minimum"]!.GetValue<int>());
-        Assert.Equal(TerminalLimits.BackgroundMaxLifetimeMs, timeoutSchema["maximum"]!.GetValue<int>());
-        var modeSchema = properties["mode"]!.AsObject();
-        Assert.Contains("kill", modeSchema["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
-        var argumentsSchema = properties["arguments"]!.AsObject();
-        Assert.Equal(TerminalLimits.MaxArguments, argumentsSchema["maxItems"]!.GetValue<int>());
-
-        var valid = new JsonObject
-        {
-            ["mode"] = "run",
-            ["executable"] = "git",
-            ["arguments"] = new JsonArray("status"),
-            ["working_directory"] = ".",
-            ["timeout_ms"] = TerminalLimits.DefaultTimeoutMs,
-            ["network_intent"] = false,
-        };
-        ToolSchemaValidator.Validate(bashSchema, valid);
-
-        Assert.Equal(
-            "invalid_arguments",
-            Assert.Throws<ToolSchemaException>(() =>
-                ToolSchemaValidator.Validate(bashSchema, new JsonObject())).Code);
-        Assert.Equal(
-            "invalid_arguments",
-            Assert.Throws<ToolSchemaException>(() =>
-                ToolSchemaValidator.Validate(
-                    bashSchema,
-                    new JsonObject
-                    {
-                        ["mode"] = "run",
-                        ["executable"] = "git",
-                        ["arguments"] = "status",
-                    })).Code);
-        // The legacy declarative network field no longer exists.
-        Assert.Equal(
-            "invalid_arguments",
-            Assert.Throws<ToolSchemaException>(() =>
-                ToolSchemaValidator.Validate(
-                    bashSchema,
-                    new JsonObject
-                    {
-                        ["mode"] = "run",
-                        ["executable"] = "git",
-                        ["arguments"] = new JsonArray("status"),
-                        ["network"] = true,
-                    })).Code);
-        Assert.Equal(
-            "invalid_arguments",
-            Assert.Throws<ToolSchemaException>(() =>
-                ToolSchemaValidator.Validate(
-                    bashSchema,
-                    new JsonObject
-                    {
-                        ["mode"] = "run",
-                        ["executable"] = "git",
-                        ["timeout_ms"] = TerminalLimits.BackgroundMaxLifetimeMs + 1,
-                    })).Code);
-        Assert.Equal(
-            "invalid_arguments",
-            Assert.Throws<ToolSchemaException>(() =>
-                ToolSchemaValidator.Validate(
-                    bashSchema,
-                    new JsonObject
-                    {
-                        ["mode"] = "shell",
-                        ["script"] = new string('x', TerminalLimits.MaxScriptChars + 1),
-                    })).Code);
-
-        var contract = AgentModelToolContractCatalog.Get("bash", "1.0.0");
-        ToolSchemaValidator.Validate(contract.InputSchema, contract.ExampleArguments ?? new JsonObject());
+        var powershellSchema = catalog.Registry.Get("powershell", "1.0.0").Manifest.InputSchema;
+        ToolSchemaValidator.Validate(powershellSchema, new JsonObject { ["script"] = "Get-Date" });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(powershellSchema,
+            new JsonObject { ["mode"] = "shell", ["script"] = "Get-Date" }));
+        var processSchema = catalog.Registry.Get("run_process", "1.0.0").Manifest.InputSchema;
+        ToolSchemaValidator.Validate(processSchema, new JsonObject { ["executable"] = "git", ["arguments"] = new JsonArray("status") });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(processSchema,
+            new JsonObject { ["mode"] = "run", ["executable"] = "git", ["arguments"] = new JsonArray("status") }));
     }
 
     [Fact]
     public void Canonical_contract_returns_fresh_schema_and_example_nodes()
     {
-        var first = AgentModelToolContractCatalog.Get("bash", "1.0.0");
-        var second = AgentModelToolContractCatalog.Get("bash", "1.0.0");
+        var first = AgentModelToolContractCatalog.Get("read", "1.0.0");
+        var second = AgentModelToolContractCatalog.Get("read", "1.0.0");
 
         first.InputSchema.Clear();
-        first.ExampleArguments!["mode"] = "shell";
+        first.ExampleArguments!["path"] = "changed";
 
         Assert.Equal("object", second.InputSchema["type"]!.GetValue<string>());
-        Assert.Equal("run", second.ExampleArguments!["mode"]!.GetValue<string>());
+        Assert.NotEqual("changed", second.ExampleArguments!["path"]!.GetValue<string>());
         ToolSchemaValidator.Validate(second.InputSchema, second.ExampleArguments);
     }
 

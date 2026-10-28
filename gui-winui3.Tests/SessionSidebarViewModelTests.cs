@@ -266,6 +266,96 @@ public sealed class SessionSidebarViewModelTests : IDisposable
         Assert.Equal(2, vm.Rows.OfType<SessionInfo>().Count());
     }
 
+    [Fact]
+    public async Task Load_more_appends_pages_without_replacing_existing_session_rows()
+    {
+        var backend = new FakeSessions(Enumerable.Range(0, 101)
+            .Select(index => Session(index.ToString(), $"Session {index:D3}"))
+            .ToArray());
+        var viewModel = NewViewModel(backend);
+        viewModel.SetRefreshActive(true);
+
+        Assert.True(await viewModel.RefreshAsync());
+        var first = viewModel.Sessions[0];
+        Assert.Equal(100, viewModel.Sessions.Count);
+        Assert.True(viewModel.CanLoadMore);
+
+        Assert.True(await viewModel.LoadMoreAsync());
+
+        Assert.Equal(101, viewModel.Sessions.Count);
+        Assert.Same(first, viewModel.Sessions[0]);
+        Assert.False(viewModel.CanLoadMore);
+        Assert.Equal(new string?[] { null, "100" }, backend.Requests.Select(request => request.Cursor));
+    }
+
+    [Fact]
+    public async Task Load_more_clears_cursor_after_remaining_sessions_are_deleted()
+    {
+        var backend = new FakeSessions(Enumerable.Range(0, 101)
+            .Select(index => Session(index.ToString(), $"Session {index:D3}"))
+            .ToArray());
+        await using var viewModel = NewViewModel(backend);
+        viewModel.SetRefreshActive(true);
+        Assert.True(await viewModel.RefreshAsync());
+        Assert.True(viewModel.CanLoadMore);
+
+        backend.Remove("100");
+
+        Assert.True(await viewModel.LoadMoreAsync());
+
+        Assert.Equal(100, viewModel.Sessions.Count);
+        Assert.False(viewModel.CanLoadMore);
+        Assert.False(viewModel.IsTruncated);
+        Assert.Equal(2, backend.Requests.Count);
+        Assert.False(await viewModel.LoadMoreAsync());
+        Assert.Equal(2, backend.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Load_more_rejects_a_cursor_that_does_not_advance()
+    {
+        var backend = new FakeSessions(Enumerable.Range(0, 101)
+            .Select(index => Session(index.ToString(), $"Session {index:D3}"))
+            .ToArray());
+        await using var viewModel = NewViewModel(backend);
+        viewModel.SetRefreshActive(true);
+        Assert.True(await viewModel.RefreshAsync());
+        var existingRows = viewModel.Sessions.ToArray();
+        backend.PageOverride = (cursor, _) => new SessionListPageResponse
+        {
+            Status = "ok",
+            Sessions = [Session("duplicate", "Duplicate page")],
+            NextCursor = cursor,
+        };
+
+        Assert.False(await viewModel.LoadMoreAsync());
+
+        Assert.Equal(existingRows.Select(session => session.Id), viewModel.Sessions.Select(session => session.Id));
+        Assert.DoesNotContain(viewModel.Sessions, session => session.Id == "duplicate");
+        Assert.True(viewModel.CanLoadMore);
+    }
+
+    [Fact]
+    public async Task Search_query_filters_server_pages_and_keeps_cli_and_workspace_placement()
+    {
+        var workspace = Session("workspace", "Needle workspace");
+        workspace.WorkspacePath = @"D:\work\app";
+        var cli = Session("cli", "Needle terminal");
+        cli.ClientSource = "cli";
+        var backend = new FakeSessions(workspace, cli, Session("other", "Unmatched"));
+        var viewModel = NewViewModel(backend);
+        viewModel.SetAppRoot(AppRoot);
+        viewModel.SetRefreshActive(true);
+        viewModel.SetSearchQuery("needle");
+
+        Assert.True(await viewModel.RefreshLatestAsync());
+
+        Assert.Equal(["workspace", "cli"], viewModel.Sessions.Select(session => session.Id));
+        Assert.Contains(viewModel.Rows.OfType<WorkspaceGroupRow>(), row => row.Group.Sessions.Any(session => session.Id == "workspace"));
+        Assert.Contains(viewModel.Rows.OfType<SidebarSectionRow>(), row => row.Key == SidebarSessionOrganization.CliKey);
+        Assert.All(backend.Requests, request => Assert.Equal("needle", request.Query));
+    }
+
     private SessionSidebarViewModel NewViewModel(FakeSessions backend) =>
         new(backend,
             action => action(),
@@ -299,18 +389,43 @@ public sealed class SessionSidebarViewModelTests : IDisposable
 
         public Action? OnList { get; set; }
 
+        public Func<string?, string?, SessionListPageResponse?>? PageOverride { get; set; }
+
+        public List<(string? Cursor, string? Query)> Requests { get; } = new();
+
         public void Remove(string id) => Rows.RemoveAll(row => row.Id == id);
 
-        public Task<SessionListResponse?> GetSessionsAsync(CancellationToken cancellationToken)
+        public Task<SessionListPageResponse?> GetSessionsPageAsync(
+            string? cursor,
+            string? query,
+            CancellationToken cancellationToken)
         {
             OnList?.Invoke();
+            Requests.Add((cursor, query));
+            if (PageOverride?.Invoke(cursor, query) is { } page)
+            {
+                return Task.FromResult<SessionListPageResponse?>(page);
+            }
+
+            var matching = string.IsNullOrEmpty(query)
+                ? Rows
+                : Rows.Where(row => row.Title.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+            int start = cursor is null ? 0 : int.Parse(cursor, System.Globalization.CultureInfo.InvariantCulture);
+            var selected = matching.Skip(start).Take(100);
             // Fresh objects each time, as the wire would deliver.
-            var copy = Rows.Select(row => new SessionInfo
+            var copy = selected.Select(row => new SessionInfo
             {
                 Id = row.Id, Title = row.Title, MessageCount = row.MessageCount, CreatedAt = row.CreatedAt,
                 UpdatedAt = row.UpdatedAt, ClientSource = row.ClientSource, WorkspacePath = row.WorkspacePath,
+                WorkspaceId = row.WorkspaceId, WorkspaceLabel = row.WorkspaceLabel,
             }).ToList();
-            return Task.FromResult<SessionListResponse?>(new SessionListResponse { Sessions = copy });
+            int next = start + copy.Count;
+            return Task.FromResult<SessionListPageResponse?>(new SessionListPageResponse
+            {
+                Status = "ok",
+                Sessions = copy,
+                NextCursor = next < matching.Count ? next.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+            });
         }
 
         public Task<SessionInfo?> CreateSessionAsync() =>

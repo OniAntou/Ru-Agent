@@ -13,6 +13,20 @@ namespace RuBackend.Tests.Harness;
 /// </summary>
 public sealed class ApprovalPatternTests
 {
+    [Theory]
+    [InlineData("apply_patch", "patch")]
+    [InlineData("file_restore", "restore")]
+    [InlineData("write", "restore")]
+    [InlineData("terminal_read", "read")]
+    [InlineData("terminal_stop", "read")]
+    [InlineData("bash", "read")]
+    public void Opaque_mutation_intents_cannot_become_session_or_permanent_allows(string tool, string operation)
+    {
+        var binding = Binding(tool, operationClass: operation);
+        Assert.False(AgentApprovalsService.CanRememberApproval(binding));
+        Assert.Null(AgentV1Service.BuildAllowAlwaysMatcher(binding, "rule_asks", externalDirectoryRequested: false));
+    }
+
     private static ToolApprovalBinding Binding(
         string toolId,
         string? canonicalPath = null,
@@ -88,6 +102,64 @@ public sealed class ApprovalPatternTests
 
         Assert.NotNull(matcher);
         Assert.Equal(new[] { "run", "build" }, matcher!.ArgvPattern);
+    }
+
+    [Fact]
+    public void Modern_run_process_remembers_the_same_bounded_command_prefix()
+    {
+        var matcher = AgentV1Service.BuildAllowAlwaysMatcher(
+            Binding(
+                "run_process",
+                resolvedExecutable: "git",
+                argv: new[] { "status", "--porcelain", "--branch" },
+                cwd: @"C:\work\repo"),
+            "terminal_timeout_requires_approval",
+            externalDirectoryRequested: false);
+
+        Assert.NotNull(matcher);
+        Assert.Equal("run_process", matcher!.ToolId);
+        Assert.Equal("git", matcher.ResolvedExecutable);
+        Assert.Equal(new[] { "status" }, matcher.ArgvPattern);
+        Assert.Equal(@"C:\work\repo", matcher.CwdPattern);
+    }
+
+    [Fact]
+    public void Modern_run_process_keeps_flag_first_invocations_exact()
+    {
+        var argv = new[] { "-e", "console.log('hi')" };
+        var matcher = AgentV1Service.BuildAllowAlwaysMatcher(
+            Binding("run_process", resolvedExecutable: "node", argv: argv),
+            "terminal_timeout_requires_approval",
+            externalDirectoryRequested: false);
+
+        Assert.NotNull(matcher);
+        Assert.Equal(argv, matcher!.ArgvPattern);
+    }
+
+    [Fact]
+    public void Modern_run_process_keeps_windows_slash_flag_invocations_exact()
+    {
+        var argv = new[] { "/d", "/c", "echo", "fixture" };
+        var matcher = AgentV1Service.BuildAllowAlwaysMatcher(
+            Binding("run_process", resolvedExecutable: "cmd.exe", argv: argv),
+            "terminal_timeout_requires_approval",
+            externalDirectoryRequested: false);
+
+        Assert.NotNull(matcher);
+        Assert.Equal(argv, matcher!.ArgvPattern);
+    }
+
+    [Fact]
+    public void Modern_run_process_keeps_powershell_script_wrappers_exact()
+    {
+        var argv = new[] { "-NoProfile", "-NonInteractive", "-Command", "Get-ChildItem | Select-String TODO" };
+        var matcher = AgentV1Service.BuildAllowAlwaysMatcher(
+            Binding("run_process", resolvedExecutable: "pwsh.exe", argv: argv),
+            "terminal_timeout_requires_approval",
+            externalDirectoryRequested: false);
+
+        Assert.NotNull(matcher);
+        Assert.Equal(argv, matcher!.ArgvPattern);
     }
 
     [Fact]

@@ -47,6 +47,21 @@ public sealed partial class SessionStore
             existing.Parameters.AddWithValue("$id", id);
             if (await existing.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null) continue;
             await WriteUnlockedAsync(document, connection, transaction, cancellationToken).ConfigureAwait(false);
+            await InsertMessagesAsync(document.Messages, id, 0, connection, transaction, cancellationToken)
+                .ConfigureAwait(false);
+            if (document.SourceMessageLedger is not null)
+            {
+                foreach (var (sourceId, fingerprint) in document.SourceMessageLedger)
+                {
+                    await using var receipt = connection.CreateCommand();
+                    receipt.Transaction = transaction;
+                    receipt.CommandText = "INSERT OR IGNORE INTO business_session_source_receipts(session_id, source_message_id, fingerprint) VALUES ($id, $source, $fingerprint);";
+                    receipt.Parameters.AddWithValue("$id", id);
+                    receipt.Parameters.AddWithValue("$source", sourceId);
+                    receipt.Parameters.AddWithValue("$fingerprint", fingerprint);
+                    await receipt.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
     }
 

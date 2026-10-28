@@ -104,7 +104,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
 
     private static AgentRunProviderSelection CustomPin(string baseUri, string model) => new(
         "Custom OpenAI", "custom", ProviderProtocols.ChatCompletions, baseUri, model, "custom_api_key",
-        "{}", null, model, "native");
+        "{\"ru_tool_profile\":\"coding_v2\"}", null, model, "native");
 
     [Fact]
     public async Task Same_run_keeps_model_key_and_effort_after_settings_change()
@@ -132,6 +132,8 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         Assert.Equal("provider_catalog", firstMetadata.ContextWindowSource);
         Assert.Equal(8_192, firstMetadata.OutputTokenReserve);
         Assert.Equal("high", first.RequestOptions?["reasoning_effort"]?.GetValue<string>());
+        Assert.Equal(RuAgent.Protocol.AgentToolProfiles.Minimal, firstMetadata.ToolProfile);
+        Assert.False(first.RequestOptions?.ContainsKey(RuAgent.Protocol.AgentToolProfiles.PinField) ?? false);
         Assert.Equal("key-one", first.Credential);
 
         credentials.Key = "key-two";
@@ -462,6 +464,8 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
                 Assert.Equal(1, await command.ExecuteNonQueryAsync());
             }
 
+            // A restart releases the profile owner before the replacement Host opens it.
+            restartedHost.Dispose();
             using var legacyHost = new BackendWebApplicationFactory(dataPaths: paths, settingsStore: settings);
             var legacyError = await Assert.ThrowsAsync<ProviderCatalogException>(() =>
                 legacyHost.Services.GetRequiredService<AgentProviderSnapshotFactory>().GetAsync(runId, default));

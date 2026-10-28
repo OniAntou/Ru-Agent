@@ -16,13 +16,13 @@ internal sealed partial class AgentRunCompaction
     private readonly bool _internalRun;
 
     private async Task<(AgentRun Run, ContextCompactionPlan? Plan, string? ErrorCode)> BuildCheckpointAsync(
-        AgentRun run, ContextCompactionPlan plan, CancellationToken ct)
+        AgentRun run, ContextCompactionPlan plan, CancellationToken ct, int maximumCalls = MaximumCheckpointCalls)
     {
         var entries = plan.CoveredEntries.ToArray();
         var snapshot = new ModelContextSnapshot(entries, ModelContextSnapshot.Canonicalize(entries),
             verificationEvidence: plan.VerificationEvidence);
         string? lastInvalidCandidate = null;
-        for (var call = 0; call < MaximumCheckpointCalls; call++)
+        for (var call = 0; call < maximumCalls; call++)
         {
             var stepId = _ids.NewModelStepId();
             var admitted = await AdmitCheckpointCallAsync(run, stepId, ct).ConfigureAwait(false);
@@ -37,7 +37,16 @@ internal sealed partial class AgentRunCompaction
                 var requestContext = call == 0
                     ? snapshot
                     : ContextCheckpoint.WithRepairDirective(snapshot, lastInvalidCandidate);
-                var prompt = await _promptContextProvider!.BuildAsync(run, requestContext, ct).ConfigureAwait(false);
+                var taskPrompt = await _promptContextProvider!.BuildAsync(run, requestContext, ct).ConfigureAwait(false);
+                // Keep definitions referenced by native call/result history while
+                // omitting unrelated schemas and duplicated outputs. Returned
+                // tool proposals are still rejected, never dispatched.
+                var referencedTools = entries.SelectMany(e => e.AssistantStep?.ToolCalls ?? [])
+                    .Select(c => (c.ToolId, c.ToolVersion)).ToHashSet();
+                var prompt = new SystemPromptContext(taskPrompt.SchemaVersion, taskPrompt.AgentProfile, taskPrompt.Preset,
+                    taskPrompt.Environment, taskPrompt.InstructionBlocks,
+                    taskPrompt.Capabilities.Where(c => referencedTools.Contains((c.Id, c.Version))).ToArray(),
+                    new PromptRuntimeContext(taskPrompt.RuntimeContext.References.Where(r => r.Kind == "nested_instructions").ToArray()));
                 var result = await _summarizer!.SummarizeAsync(new ModelStepRequest(run.RunId, stepId, requestContext, prompt,
                     run.Preset, run.PolicySnapshotVersion, run.PolicySnapshotSha256), ct).ConfigureAwait(false);
 
@@ -46,7 +55,7 @@ internal sealed partial class AgentRunCompaction
                 run = accountingError.Run;
                 if (result.ErrorCode is not null)
                 {
-                    if (result.ErrorCode == "checkpoint_invalid" && call + 1 < MaximumCheckpointCalls)
+                    if (result.ErrorCode == "checkpoint_invalid" && call + 1 < maximumCalls)
                     {
                         lastInvalidCandidate = result.Text;
                         continue;
@@ -58,7 +67,7 @@ internal sealed partial class AgentRunCompaction
 
                 string text;
                 try { text = ContextCheckpoint.Validate(result.Text); }
-                catch (ContextCheckpointException error) when (error.Code == "checkpoint_invalid" && call + 1 < MaximumCheckpointCalls)
+                catch (ContextCheckpointException error) when (error.Code == "checkpoint_invalid" && call + 1 < maximumCalls)
                 {
                     lastInvalidCandidate = result.Text;
                     continue;

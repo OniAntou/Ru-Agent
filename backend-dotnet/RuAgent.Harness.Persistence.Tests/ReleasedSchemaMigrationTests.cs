@@ -43,6 +43,115 @@ public sealed class ReleasedSchemaMigrationTests
     }
 
     [Fact]
+    public async Task V29_to_v30_normalizes_history_and_preserves_pruned_source_receipts()
+    {
+        await using var fixture = await ReleasedSchemaFixture.CreateAsync();
+        using var resource = typeof(ReleasedSchemaFixture).Assembly.GetManifestResourceStream(
+            "RuAgent.Harness.Persistence.Tests.Fixtures.development-migrations.json")!;
+        var fragments = await System.Text.Json.JsonSerializer.DeserializeAsync<Dictionary<int, string>>(resource)!;
+        var v29 = string.Join('\n', Enumerable.Range(18, 10).Select(version => fragments![version]));
+        await fixture.ExecuteAsync(v29 + "\nPRAGMA user_version=29;");
+        await fixture.ExecuteAsync("""
+            UPDATE business_sessions
+            SET document = CAST('{"id":"released-session","title":"Legacy","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","messages":[{"role":"user","content":"legacy body","source_message_id":"evt_live","source_run_id":"run_live"}],"source_message_ledger":{"evt_live":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","evt_pruned":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}' AS BLOB),
+                summary = '{"Id":"released-session","Title":"Legacy","CreatedAt":"2026-01-01T00:00:00+00:00","UpdatedAt":"2026-01-02T00:00:00+00:00","MessageCount":1}'
+            WHERE session_id='released-session';
+            """);
+
+        var result = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+
+        Assert.True(result.IsAvailable, result.ErrorCode);
+        Assert.Equal(1L, await fixture.ScalarAsync("SELECT count(*) FROM business_session_messages WHERE session_id='released-session' AND message_index=0 AND content='legacy body';"));
+        Assert.Equal(2L, await fixture.ScalarAsync("SELECT count(*) FROM business_session_source_receipts WHERE session_id='released-session';"));
+        Assert.Equal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            await fixture.ScalarAsync("SELECT fingerprint FROM business_session_source_receipts WHERE source_message_id='evt_pruned';"));
+        Assert.Equal(1L, await fixture.ScalarAsync("SELECT total_message_count FROM business_sessions WHERE session_id='released-session';"));
+        Assert.Equal("[]", await fixture.ScalarAsync("SELECT json_extract(CAST(document AS TEXT),'$.messages') FROM business_sessions WHERE session_id='released-session';"));
+        Assert.Equal(1L, await fixture.ScalarAsync("SELECT count(*) FROM business_session_message_search WHERE business_session_message_search MATCH 'legacy';"));
+    }
+
+    [Fact]
+    public async Task V29_to_v30_accepts_a_null_source_ledger_from_the_previous_serializer()
+    {
+        await using var fixture = await ReleasedSchemaFixture.CreateAsync();
+        using var resource = typeof(ReleasedSchemaFixture).Assembly.GetManifestResourceStream(
+            "RuAgent.Harness.Persistence.Tests.Fixtures.development-migrations.json")!;
+        var fragments = (await System.Text.Json.JsonSerializer.DeserializeAsync<Dictionary<int, string>>(resource))!;
+        await fixture.ExecuteAsync(string.Join('\n', Enumerable.Range(18, 10).Select(version => fragments[version]))
+            + "\nPRAGMA user_version=29;");
+        await fixture.ExecuteAsync("""
+            UPDATE business_sessions SET document=CAST('{"messages":[],"source_message_ledger":null}' AS BLOB)
+            WHERE session_id='released-session';
+            """);
+        var result = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+        Assert.True(result.IsAvailable, result.ErrorCode);
+        Assert.Equal(0L, await fixture.ScalarAsync("SELECT count(*) FROM business_session_source_receipts;"));
+    }
+
+    [Fact]
+    public async Task V29_to_v30_rejects_corrupt_valid_json_without_advancing_and_can_retry()
+    {
+        await using var fixture = await ReleasedSchemaFixture.CreateAsync();
+        using var resource = typeof(ReleasedSchemaFixture).Assembly.GetManifestResourceStream(
+            "RuAgent.Harness.Persistence.Tests.Fixtures.development-migrations.json")!;
+        var fragments = (await System.Text.Json.JsonSerializer.DeserializeAsync<Dictionary<int, string>>(resource))!;
+        var v29 = string.Join('\n', Enumerable.Range(18, 10).Select(version => fragments[version]));
+        await fixture.ExecuteAsync(v29 + "\nPRAGMA user_version=29;");
+        await fixture.ExecuteAsync("""
+            UPDATE business_sessions
+            SET document = CAST('{"id":"released-session","title":"Corrupt","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","messages":[{"role":"tool","content":"must not be dropped"}]}' AS BLOB)
+            WHERE session_id='released-session';
+            """);
+
+        var rejected = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+
+        Assert.False(rejected.IsAvailable);
+        Assert.Equal("harness_session_history_migration_invalid", rejected.ErrorCode);
+        Assert.Equal(29L, await fixture.ScalarAsync("PRAGMA user_version;"));
+        Assert.Equal(0L, await fixture.ScalarAsync("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='business_session_messages';"));
+
+        await fixture.ExecuteAsync("""
+            UPDATE business_sessions
+            SET document = CAST('{"id":"released-session","title":"Repaired","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","messages":[{"role":"user","content":"repaired"}]}' AS BLOB)
+            WHERE session_id='released-session';
+            """);
+        var retried = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+
+        Assert.True(retried.IsAvailable, retried.ErrorCode);
+        Assert.Equal(1L, await fixture.ScalarAsync("SELECT count(*) FROM business_session_messages WHERE content='repaired';"));
+    }
+
+    [Theory]
+    [InlineData("evt?", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("evt_pruned", "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg")]
+    public async Task V29_to_v30_rejects_invalid_source_receipts_without_dropping_ledger(string sourceId, string fingerprint)
+    {
+        await using var fixture = await ReleasedSchemaFixture.CreateAsync();
+        using var resource = typeof(ReleasedSchemaFixture).Assembly.GetManifestResourceStream(
+            "RuAgent.Harness.Persistence.Tests.Fixtures.development-migrations.json")!;
+        var fragments = (await System.Text.Json.JsonSerializer.DeserializeAsync<Dictionary<int, string>>(resource))!;
+        var v29 = string.Join('\n', Enumerable.Range(18, 10).Select(version => fragments[version]));
+        await fixture.ExecuteAsync(v29 + "\nPRAGMA user_version=29;");
+        var document = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            id = "released-session",
+            title = "Legacy",
+            created_at = "2026-01-01T00:00:00Z",
+            updated_at = "2026-01-02T00:00:00Z",
+            messages = Array.Empty<object>(),
+            source_message_ledger = new Dictionary<string, string> { [sourceId] = fingerprint },
+        }).Replace("'", "''", StringComparison.Ordinal);
+        await fixture.ExecuteAsync($"UPDATE business_sessions SET document=CAST('{document}' AS BLOB) WHERE session_id='released-session';");
+
+        var rejected = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+
+        Assert.False(rejected.IsAvailable);
+        Assert.Equal("harness_session_history_migration_invalid", rejected.ErrorCode);
+        Assert.Equal(29L, await fixture.ScalarAsync("PRAGMA user_version;"));
+        Assert.Equal(0L, await fixture.ScalarAsync("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='business_session_source_receipts';"));
+    }
+
+    [Fact]
     public async Task Released_v18_upgrade_preserves_records_and_matches_a_fresh_database()
     {
         await using var fixture = await ReleasedSchemaFixture.CreateAsync();

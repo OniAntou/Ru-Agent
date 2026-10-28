@@ -99,15 +99,14 @@ public sealed class AgentPolicyProfileParityTests
             "1.0.0",
             new JsonObject { ["query"] = "ru" }),
         AgentPolicySubject.WorkspaceMutation => factory.Create(
-            "write",
+            "write_file",
             "1.0.0",
-            new JsonObject { ["op"] = "write", ["path"] = "src/write.txt" }),
+            new JsonObject { ["path"] = "src/write.txt" }),
         AgentPolicySubject.WorkspaceTerminal => factory.Create(
-            "bash",
+            "run_process",
             "1.0.0",
             new JsonObject
             {
-                ["mode"] = "run",
                 ["executable"] = "dotnet",
                 ["arguments"] = new JsonArray("test"),
                 ["working_directory"] = ".",
@@ -117,11 +116,10 @@ public sealed class AgentPolicyProfileParityTests
             "1.0.0",
             new JsonObject { ["path"] = outsidePath }),
         AgentPolicySubject.ExternalTerminal => factory.Create(
-            "bash",
+            "run_process",
             "1.0.0",
             new JsonObject
             {
-                ["mode"] = "run",
                 ["executable"] = "git",
                 ["arguments"] = new JsonArray("push"),
                 ["working_directory"] = outsidePath,
@@ -131,11 +129,10 @@ public sealed class AgentPolicyProfileParityTests
             "1.0.0",
             new JsonObject { ["path"] = "runtime_descriptor.json" }),
         AgentPolicySubject.HardInvalid => factory.Create(
-            "bash",
+            "run_process",
             "1.0.0",
             new JsonObject
             {
-                ["mode"] = "run",
                 ["executable"] = "git",
                 ["arguments"] = new JsonArray("status"),
                 ["working_directory"] = ".",

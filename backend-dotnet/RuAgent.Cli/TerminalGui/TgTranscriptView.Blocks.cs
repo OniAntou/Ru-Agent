@@ -223,6 +223,7 @@ public sealed partial class TgTranscriptView
                 continue;
             }
 
+            ResetWrapGroup();
             foreach (var (hiddenText, hiddenStyle) in block.Hidden)
             {
                 _tailRows = AppendWrapped(hiddenText, hiddenStyle, null, width);

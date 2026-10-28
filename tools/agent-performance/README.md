@@ -22,7 +22,8 @@ by the fixture rather than a completed user task.
 
 Each adjacent request must retain all preceding messages and the same tools/model
 request envelope, including across reconstruction. All steps must remain successful/running and cached mode must
-exercise the Host cache. First four steps and the reconstruction step are
+exercise the active context projection (positive `ProjectionHits`). Parsed-row
+`CacheHits` may be zero when no original rows need to be reread. First four steps and the reconstruction step are
 excluded from warm percentiles. Every sample's warm step p95 must stay below
 the explicit, deliberately generous 2,000 ms Host regression budget. Cold start
 and reconstruction times are reported separately. The gate does not require a
@@ -30,7 +31,7 @@ cache speedup on every machine or compare .NET timings with DSH's Node timings.
 
 `-CompareCache` runs an otherwise identical uncached variant and alternates mode
 order between samples. Report per-sample warm step/context p50/p95, cold costs,
-cache hits, OS/architecture/CPU count and prefix comparisons; retain raw samples.
+parsed-row cache hits, active-projection hits, OS/architecture/CPU count and prefix comparisons; retain raw samples.
 The script shares the test-matrix mutex and exits 75 on contention. Do not overlap
 with publishing, another benchmark or a running process/loopback matrix.
 

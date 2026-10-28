@@ -131,4 +131,61 @@ namespace RuApp.Models
             set => _sessions = value ?? new();
         }
     }
+
+    public sealed class SessionListPageResponse
+    {
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = string.Empty;
+
+        private List<SessionInfo> _sessions = new();
+
+        [JsonPropertyName("sessions")]
+        public List<SessionInfo> Sessions
+        {
+            get => _sessions;
+            set => _sessions = value ?? new();
+        }
+
+        [JsonPropertyName("next_cursor")]
+        public string? NextCursor { get; set; }
+    }
+
+    public sealed class SessionMessagesPageResponse
+    {
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = string.Empty;
+
+        [JsonPropertyName("session_id")]
+        public string SessionId { get; set; } = string.Empty;
+
+        [JsonPropertyName("messages")]
+        public List<SessionMessageDto> Messages { get; set; } = new();
+
+        [JsonPropertyName("start_index")]
+        public int StartIndex { get; set; }
+
+        [JsonPropertyName("total_messages")]
+        public int TotalMessages { get; set; }
+
+        [JsonPropertyName("next_cursor")]
+        public string? NextCursor { get; set; }
+
+        [JsonPropertyName("history_epoch")]
+        public long HistoryEpoch { get; set; }
+    }
+
+    public sealed class SessionMessageDto
+    {
+        [JsonPropertyName("role")]
+        public string Role { get; set; } = string.Empty;
+
+        [JsonPropertyName("content")]
+        public string Content { get; set; } = string.Empty;
+
+        [JsonPropertyName("source_run_id")]
+        public string? SourceRunId { get; set; }
+
+        [JsonPropertyName("source_message_id")]
+        public string? SourceMessageId { get; set; }
+    }
 }

@@ -59,9 +59,11 @@ try {
                 }
                 $warm = @($rows | Select-Object -Skip 4 | Where-Object { $_.step -ne ([int]($stepCount / 2) + 1) })
                 $hits = ($rows | ForEach-Object { $_.ms.'cache.hit' } | Measure-Object -Sum).Sum
-                if ($mode -eq 'cached' -and $hits -le 0) { throw "Context cache was not exercised; see $sampleLog" }
+                $projectionHits = ($rows | ForEach-Object { $_.ms.'projection.hit' } | Measure-Object -Sum).Sum
+                if ($mode -eq 'cached' -and $projectionHits -le 0) { throw "Active context projection was not exercised; see $sampleLog" }
                 $results += [pscustomobject]@{
                     Steps = $stepCount; Mode = $mode; Sample = $sample; CacheHits = $hits
+                    ProjectionHits = $projectionHits
                     WarmStepP50Ms = Percentile @($warm.ms.total) 0.50
                     WarmStepP95Ms = Percentile @($warm.ms.total) 0.95
                     WarmContextP50Ms = Percentile @($warm.ms.'phase.ContextRead') 0.50

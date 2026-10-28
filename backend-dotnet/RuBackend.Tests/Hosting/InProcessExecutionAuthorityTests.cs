@@ -15,6 +15,23 @@ namespace RuBackend.Tests.Hosting;
 /// </summary>
 public sealed class InProcessExecutionAuthorityTests : IDisposable
 {
+    [Theory]
+    [InlineData("configured_json", "https://search.example.com/search?format=json", true)]
+    [InlineData("configured_json", null, false)]
+    [InlineData("unknown", "https://search.example.com", false)]
+    public void ConfiguredSearchModeIsExplicitAndInvalidConfigurationDisablesWeb(string mode, string? endpoint, bool expected)
+    {
+        var options = InProcessExecutionAuthority.BuildWebOptions(name => name switch
+        {
+            "RU_AGENT_BROKER_WEB_ENABLED" => "true",
+            "RU_AGENT_BROKER_WEB_SEARCH_MODE" => mode,
+            "RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT" => endpoint,
+            _ => null,
+        }, NullLogger.Instance);
+        Assert.Equal(expected, options is not null);
+        if (options is not null) Assert.Equal("ConfiguredJson", options.SearchMode.ToString());
+    }
+
     private readonly string _root = Path.Combine(Path.GetTempPath(), "ru-authority-" + Guid.NewGuid().ToString("N"));
 
     public InProcessExecutionAuthorityTests() => Directory.CreateDirectory(_root);

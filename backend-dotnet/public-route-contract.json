@@ -1,4 +1,6 @@
 [
+  {"method":"GET","path":"/agent/v1/skills","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.Skills.cs","classification":"aspnet-direct","winui_callers":["ChatView.ShowSkillsAsync"]},
+  {"method":"POST","path":"/agent/v1/skills/settings","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.Skills.cs","classification":"aspnet-direct","winui_callers":["ChatView.ShowSkillsAsync"]},
   {"method":"GET","path":"/status","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetStatusAsync"]},
   {"method":"POST","path":"/host/shutdown","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ShutdownHostAsync"]},
   {"method":"GET","path":"/diagnostics/logs","transport":"http","source":"backend-dotnet/RuBackend/Diagnostics/DiagnosticEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetDiagnosticLogsAsync"]},
@@ -14,6 +16,9 @@
   {"method":"POST","path":"/settings/provider/remove","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.RemoveProviderAsync"]},
   {"method":"GET","path":"/settings/models-dev-keys","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetModelsDevKeysAsync"]},
   {"method":"GET","path":"/sessions","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetSessionsAsync"]},
+  {"method":"GET","path":"/sessions/page","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.SessionHistory.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetSessionsPageAsync"]},
+  {"method":"GET","path":"/sessions/search","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.SessionHistory.cs","classification":"aspnet-direct","winui_callers":[]},
+  {"method":"GET","path":"/sessions/{sessionId}/messages","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.SessionHistory.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetSessionHistoryPageAsync"]},
   {"method":"POST","path":"/sessions/new","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.CreateSessionAsync"]},
   {"method":"POST","path":"/sessions/{sessionId}/activate","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ActivateSessionAsync"]},
   {"method":"DELETE","path":"/sessions/{sessionId}","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.DeleteSessionAsync"]},

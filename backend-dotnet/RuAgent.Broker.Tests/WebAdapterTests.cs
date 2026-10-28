@@ -377,6 +377,7 @@ public sealed class WebAdapterTests
     [Theory]
     [InlineData("::ffff:127.0.0.1")]
     [InlineData("192.0.0.1")]
+    [InlineData("192.0.2.1")]
     [InlineData("198.18.0.1")]
     [InlineData("2001:db8::1")]
     [InlineData("64:ff9b::127.0.0.1")]
@@ -394,6 +395,15 @@ public sealed class WebAdapterTests
                     ? $"https://[{host}]/page"
                     : $"https://{host}/page"),
                 CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("192.0.78.9")]
+    [InlineData("192.0.78.17")]
+    [InlineData("192.0.1.1")]
+    public void Public_addresses_inside_192_0_slash_16_are_not_private(string address)
+    {
+        Assert.False(WebPolicy.IsPrivateAddress(IPAddress.Parse(address)));
     }
 
     [Fact]

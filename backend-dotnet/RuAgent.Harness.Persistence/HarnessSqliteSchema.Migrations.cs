@@ -35,7 +35,8 @@ public static partial class HarnessSqliteSchema
             .. Enumerable.Range(1, unreleased.Length - 1)
                 .Select(index => new SchemaMigration(18 + index, 29, unreleased.Skip(index))),
             new(28, 29, "SELECT 1;"),
-            // Add a future upgrade once here, e.g. new(29, 30, NextSql).
+            new(29, 30, SessionHistorySchemaMigration),
+            new(30, 31, ContextProjectionMigration),
         ];
     }
 }

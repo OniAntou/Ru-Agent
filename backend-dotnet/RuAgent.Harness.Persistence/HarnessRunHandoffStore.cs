@@ -26,6 +26,14 @@ public sealed partial class HarnessPayloadStore
     public async Task<string?> ReadSessionRunHandoffAsync(RunId targetId, SessionId sessionId,
         IReadOnlyCollection<string> visibleSourceRunIds, CancellationToken ct)
     {
+        var context = await ReadSessionRunHandoffContextAsync(targetId, sessionId, visibleSourceRunIds, ct)
+            .ConfigureAwait(false);
+        return context?.RenderedHandoff;
+    }
+
+    public async Task<SessionRunHandoffContext?> ReadSessionRunHandoffContextAsync(RunId targetId, SessionId sessionId,
+        IReadOnlyCollection<string> visibleSourceRunIds, CancellationToken ct)
+    {
         ArgumentNullException.ThrowIfNull(visibleSourceRunIds);
         var visible = visibleSourceRunIds.Distinct(StringComparer.Ordinal).ToArray();
         if (visible.Length > 256 || visible.Any(id => string.IsNullOrEmpty(id) || id.Length > 128))
@@ -80,18 +88,38 @@ public sealed partial class HarnessPayloadStore
         var contextSource = new SqliteModelContextSource(options, this);
         var budget = new HandoffReadBudget();
         var histories = new List<RunHandoffHistory>();
+        var observedPaths = new List<string>(SessionScopeHints.MaximumPaths);
+        var knownPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Spend the read budget on the newest run first; display chronologically.
         foreach (var run in runs)
         {
             budget.Omitted = false;
             budget.OmittedPayloadCount = 0;
+            var summaryRead = await ReadHandoffSummariesAsync(connection, transaction, run.RunId, budget, ct)
+                .ConfigureAwait(false);
             var entries = await ReadHandoffEntriesAsync(connection, transaction, contextSource, run.RunId, budget, ct)
                 .ConfigureAwait(false);
-            histories.Add(new(run.RunId, run.State, entries, budget.Omitted, run.TerminalErrorCode, budget.OmittedPayloadCount));
+            AddRecentScopeHints(FileObservationPaths.Read(entries), observedPaths, knownPaths);
+            if (observedPaths.Count < SessionScopeHints.MaximumPaths)
+            {
+                var scopeHistory = await ReadHandoffScopeHistoryAsync(connection, transaction, contextSource,
+                    run.RunId, entries, budget, ct).ConfigureAwait(false);
+                AddRecentScopeHints(FileObservationPaths.Read(entries.Concat(scopeHistory)
+                    .OrderBy(entry => entry.Sequence)), observedPaths, knownPaths);
+            }
+            histories.Add(new(run.RunId, run.State, entries, budget.Omitted || summaryRead.Omitted,
+                run.TerminalErrorCode, budget.OmittedPayloadCount, summaryRead.Entries));
         }
         await transaction.CommitAsync(ct).ConfigureAwait(false);
         histories.Reverse();
-        return SessionRunHandoff.Render(histories);
+        return new SessionRunHandoffContext(SessionRunHandoff.Render(histories), Array.AsReadOnly(observedPaths.AsEnumerable().Reverse().ToArray()));
+    }
+
+    private static void AddRecentScopeHints(IReadOnlyList<string> paths, List<string> retained,
+        HashSet<string> knownPaths)
+    {
+        for (var index = paths.Count - 1; index >= 0 && retained.Count < SessionScopeHints.MaximumPaths; index--)
+            if (knownPaths.Add(paths[index])) retained.Add(paths[index]);
     }
 
     private static async Task<IReadOnlyList<ModelContextEntry>> ReadHandoffEntriesAsync(
@@ -111,7 +139,8 @@ public sealed partial class HarnessPayloadStore
                    e.tool_call_id,e.provider_call_id,e.execution_id,e.safe_code,e.tool_outcome,e.side_effects_possible,
                    length(p.protected_content)
             FROM agent_payloads p LEFT JOIN agent_events e ON e.run_id=p.run_id
-                AND ('event:' || e.event_id)=p.context_source_id
+                AND substr(p.context_source_id,1,6)='event:'
+                AND e.event_id=substr(p.context_source_id,7)
             WHERE p.run_id=$run AND p.context_scope=1 AND (p.audience & 2)=2
               AND p.kind IN (0,1,3,7,13)
             """;

@@ -31,7 +31,9 @@ guidance is reported rather than assumed. See [context management](../architectu
 ## Skills: workflows for tasks you repeat
 
 A skill is a folder with a `SKILL.md` file that describes a workflow. Ru lists only each skill's name and
-description, and loads the full text when a task matches, so many skills do not slow every prompt down.
+description in a bounded catalog and loads the full workflow on demand. Use
+`/skill release-notes [arguments]` in chat to select one explicitly, or open
+**Skills** in the GUI composer. `/skills` lists and manages skills in the TUI.
 
 ```markdown
 ---
@@ -51,11 +53,16 @@ Ru looks in these folders, and the first match wins, so a project skill override
 <project>\skills\
 <project>\.ru\skills\
 <project>\.agents\skills\
+RU_SKILLS_ROOT (when configured)
 ~\.ru\skills\
+~\.agents\skills\
 %LOCALAPPDATA%\Ru\skills\
 ```
 
 A skill is guidance. Its `allowed-tools` line is only a note and never grants a tool or a folder.
+You can register existing local roots, enable or disable skills, restrict automatic
+selection and refresh the catalog. See [skill operations](../operations/skills.md)
+for invocation flags, resource paths, diagnostics and run-local snapshots.
 
 ## Custom commands
 

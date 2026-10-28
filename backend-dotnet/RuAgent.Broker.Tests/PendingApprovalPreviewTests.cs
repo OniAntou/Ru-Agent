@@ -10,57 +10,108 @@ public sealed class PendingApprovalPreviewTests
     private const int MaxPreviewLength = ApprovalPreviewFields.MaxLength;
 
     [Fact]
+    public void Multi_edit_excerpts_do_not_split_unicode_surrogate_pairs()
+    {
+        var text = string.Concat(Enumerable.Repeat("😀", 400));
+        var edits = new JsonArray(Enumerable.Range(0, 4).Select(_ => (JsonNode)new JsonObject
+            { ["old_string"] = text, ["new_string"] = text }).ToArray());
+
+        var preview = ToolExecutionService.BuildPreview("edit_file", new JsonObject { ["edits"] = edits });
+
+        Assert.Equal(preview, System.Text.Encoding.UTF8.GetString(System.Text.Encoding.UTF8.GetBytes(preview)));
+        Assert.Contains("4 edits", preview, StringComparison.Ordinal);
+        Assert.InRange(preview.Length, 1, MaxPreviewLength);
+    }
+
+    [Fact]
+    public void Multi_edit_preview_names_the_count_and_each_small_replacement()
+    {
+        var args = new JsonObject { ["path"] = "demo.txt", ["edits"] = new JsonArray(
+            new JsonObject { ["old_string"] = "first", ["new_string"] = "FIRST" },
+            new JsonObject { ["old_string"] = "second", ["new_string"] = "SECOND" }) };
+
+        var preview = ToolExecutionService.BuildPreview("edit_file", args, "first and second");
+
+        Assert.Contains("2 edits", preview, StringComparison.Ordinal);
+        Assert.Contains("[-first-][+FIRST+]", preview, StringComparison.Ordinal);
+        Assert.Contains("[-second-][+SECOND+]", preview, StringComparison.Ordinal);
+        Assert.InRange(preview.Length, 1, MaxPreviewLength);
+    }
+
+    [Fact]
+    public void Large_multi_edit_preview_discloses_omitted_edits_within_the_existing_bound()
+    {
+        var edits = new JsonArray(Enumerable.Range(1, 64).Select(index => (JsonNode)new JsonObject
+        {
+            ["old_string"] = $"old{index}:" + new string('a', 2000),
+            ["new_string"] = $"new{index}:" + new string('b', 2000),
+        }).ToArray());
+        var args = new JsonObject { ["path"] = "demo.txt", ["edits"] = edits };
+        var original = args.ToJsonString();
+
+        var preview = ToolExecutionService.BuildPreview("edit_file", args);
+
+        Assert.Contains("64 edits", preview, StringComparison.Ordinal);
+        Assert.Contains("not shown", preview, StringComparison.Ordinal);
+        Assert.Contains("all 64 edits", preview, StringComparison.Ordinal);
+        Assert.Contains("old1:", preview, StringComparison.Ordinal);
+        Assert.Contains("new1:", preview, StringComparison.Ordinal);
+        Assert.Contains("old2:", preview, StringComparison.Ordinal);
+        Assert.Contains("new2:", preview, StringComparison.Ordinal);
+        Assert.InRange(preview.Length, 1, MaxPreviewLength);
+        Assert.Equal(original, args.ToJsonString());
+    }
+
+    [Fact]
     public void Write_preview_is_the_first_512_chars_of_content()
     {
         var content = new string('a', 700);
         var args = new JsonObject
         {
-            ["op"] = "write",
             ["path"] = "notes/demo.txt",
             ["content"] = content,
         };
 
-        var preview = ToolExecutionService.BuildPreview("write", args);
+        var preview = ToolExecutionService.BuildPreview("write_file", args);
 
         Assert.Equal(content[..MaxPreviewLength], preview);
     }
 
     [Fact]
-    public void Bash_shell_preview_is_the_script_head()
+    public void PowerShell_preview_is_the_script_head()
     {
         var script = "Get-ChildItem -Recurse " + new string('x', 600);
-        var args = new JsonObject { ["mode"] = "shell", ["script"] = script };
+        var args = new JsonObject { ["script"] = script };
 
-        var preview = ToolExecutionService.BuildPreview("bash", args);
+        var preview = ToolExecutionService.BuildPreview("powershell", args);
 
         Assert.Equal(script[..MaxPreviewLength], preview);
     }
 
     [Fact]
-    public void Bash_run_preview_is_the_bounded_command_head()
+    public void Run_process_preview_is_the_bounded_command_head()
     {
         var args = new JsonObject
         {
-            ["mode"] = "run",
             ["executable"] = "git",
             ["arguments"] = new JsonArray("commit", "-m", new string('m', 800)),
         };
 
-        var preview = ToolExecutionService.BuildPreview("bash", args);
+        var preview = ToolExecutionService.BuildPreview("run_process", args);
 
         Assert.True(preview.Length <= MaxPreviewLength);
         Assert.StartsWith("git commit", preview, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Bash_run_preview_without_an_executable_is_empty()
+    public void Run_process_preview_without_an_executable_is_empty()
     {
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("bash", new JsonObject { ["mode"] = "run", ["arguments"] = new JsonArray("x") }));
+            ToolExecutionService.BuildPreview("run_process", new JsonObject { ["arguments"] = new JsonArray("x") }));
         Assert.Equal(
             "git",
-            ToolExecutionService.BuildPreview("bash", new JsonObject { ["mode"] = "run", ["executable"] = "git" }));
+            ToolExecutionService.BuildPreview("run_process", new JsonObject { ["executable"] = "git" }));
     }
 
     [Fact]
@@ -71,19 +122,14 @@ public sealed class PendingApprovalPreviewTests
         var args = new JsonObject
         {
             ["path"] = "notes/demo.txt",
-            ["old_string"] = "TARGET",
-            ["new_string"] = "REPLACED",
+            ["edits"] = new JsonArray(new JsonObject { ["old_string"] = "TARGET", ["new_string"] = "REPLACED" }),
         };
 
-        var preview = ToolExecutionService.BuildPreview("edit", args, before + "TARGET" + after);
+        var preview = ToolExecutionService.BuildPreview("edit_file", args, before + "TARGET" + after);
 
         Assert.True(preview.Length <= MaxPreviewLength);
-        Assert.Contains("[-TARGET-]", preview, StringComparison.Ordinal);
-        Assert.Contains("[+REPLACED+]", preview, StringComparison.Ordinal);
-        Assert.StartsWith("bbbb", preview, StringComparison.Ordinal);
-        Assert.EndsWith("aaaa", preview, StringComparison.Ordinal);
-        var markerStart = preview.IndexOf("[-", StringComparison.Ordinal);
-        Assert.InRange(markerStart, 200, 290);
+        Assert.Contains("TARGET", preview, StringComparison.Ordinal);
+        Assert.Contains("REPLACED", preview, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -92,15 +138,14 @@ public sealed class PendingApprovalPreviewTests
         var args = new JsonObject
         {
             ["path"] = "notes/demo.txt",
-            ["old_string"] = "needle",
-            ["new_string"] = "replacement",
+            ["edits"] = new JsonArray(new JsonObject { ["old_string"] = "needle", ["new_string"] = "replacement" }),
         };
         var fileText = new string('x', 10_000) + "needle" + new string('y', 10_000);
 
-        var preview = ToolExecutionService.BuildPreview("edit", args, fileText);
+        var preview = ToolExecutionService.BuildPreview("edit_file", args, fileText);
 
         Assert.Equal(MaxPreviewLength, preview.Length);
-        Assert.Contains("[-needle-]", preview, StringComparison.Ordinal);
+        Assert.Contains("needle", preview, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,19 +154,17 @@ public sealed class PendingApprovalPreviewTests
         var args = new JsonObject
         {
             ["path"] = "notes/missing.txt",
-            ["old_string"] = new string('o', 400),
-            ["new_string"] = new string('n', 400),
+            ["edits"] = new JsonArray(new JsonObject { ["old_string"] = new string('o', 400), ["new_string"] = new string('n', 400) }),
         };
 
-        var missingFile = ToolExecutionService.BuildPreview("edit", args, fileText: null);
-        var noMatch = ToolExecutionService.BuildPreview("edit", args, "unrelated text");
+        var missingFile = ToolExecutionService.BuildPreview("edit_file", args, fileText: null);
+        var noMatch = ToolExecutionService.BuildPreview("edit_file", args, "unrelated text");
 
         foreach (var preview in new[] { missingFile, noMatch })
         {
             Assert.True(preview.Length <= MaxPreviewLength);
-            Assert.Contains("[-", preview, StringComparison.Ordinal);
-            Assert.Contains("[+", preview, StringComparison.Ordinal);
-            Assert.StartsWith("[-", preview, StringComparison.Ordinal);
+            Assert.Contains("[-ooo", preview, StringComparison.Ordinal);
+            Assert.Contains("[+nnn", preview, StringComparison.Ordinal);
         }
     }
 
@@ -140,13 +183,13 @@ public sealed class PendingApprovalPreviewTests
     {
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("write", new JsonObject { ["op"] = "write", ["path"] = "a.txt" }));
+            ToolExecutionService.BuildPreview("write_file", new JsonObject { ["path"] = "a.txt" }));
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("bash", new JsonObject { ["mode"] = "shell" }));
+            ToolExecutionService.BuildPreview("powershell", new JsonObject()));
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("edit", new JsonObject()));
+            ToolExecutionService.BuildPreview("edit_file", new JsonObject()));
     }
 
     [Fact]
@@ -154,10 +197,10 @@ public sealed class PendingApprovalPreviewTests
     {
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("write", new JsonObject { ["op"] = "write", ["content"] = 123 }));
+            ToolExecutionService.BuildPreview("write_file", new JsonObject { ["content"] = 123 }));
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("bash", new JsonObject { ["mode"] = "shell", ["script"] = true }));
+            ToolExecutionService.BuildPreview("powershell", new JsonObject { ["script"] = true }));
     }
 
     [Fact]

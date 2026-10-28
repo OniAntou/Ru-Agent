@@ -87,7 +87,7 @@ public static class BrokerPolicyContracts
 
     public static bool IsReadOnlyTool(string toolId) =>
         IsWebTool(toolId)
-        || toolId is "read" or "list" or "help" or "skill" or "grep" or "glob";
+        || toolId is "read" or "read_file" or "list" or "help" or "skill" or "grep" or "glob" or "terminal_read";
 
     public static bool IsWebTool(string toolId) =>
         string.Equals(toolId, "web_search", StringComparison.Ordinal)

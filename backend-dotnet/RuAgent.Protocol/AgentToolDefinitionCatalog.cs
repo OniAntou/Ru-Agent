@@ -29,30 +29,28 @@ public sealed class AgentToolDefinition
     public JsonObject? ExampleArguments => _createExampleArguments?.Invoke();
 }
 
-public static class AgentToolDefinitionCatalog
+public static partial class AgentToolDefinitionCatalog
 {
     public const string CurrentVersion = "1.0.0";
-    public const int MaximumModelTools = 19;
+    public const int MaximumModelTools = 32;
     private const string FilePathGuidance = " Use a workspace-relative path such as `src\\App.cs`; preserve a user-supplied absolute path only inside a directory granted for this session.";
 
     private sealed record Entry(string Id, string Description, string Scope, Func<JsonObject> Schema, Func<JsonObject>? Example = null);
 
     private static readonly IReadOnlyList<Entry> Entries =
     [
-        new("read", "Read one workspace file as UTF-8 text. Prefer it to a shell command for viewing a file. Use offset and limit to page through long files. If a result has projection_has_more=true, continue the same path at projection_next_offset; offsets count source bytes. On read_limit_too_small retry with limit at least 4; invalid_utf8_offset means the offset is inside a character, so use the returned cursor. A .png, .jpg, .jpeg or .webp file (at most 4 MiB and 8000 px a side) is returned as an image you can see, read whole without offset, when your model accepts image input; otherwise it fails with image_unsupported_by_model." + FilePathGuidance, AgentToolScopes.SystemRead, FileReadSchema, () => new JsonObject { ["path"] = "src\\App.cs" }),
+        new("read", "Read one workspace file as UTF-8 bytes or as an image. Prefer read_file for ordinary UTF-8 text by line. Use offset and limit to page through long files. When has_more=true, continue the same path at next_offset; offsets count source bytes. On read_limit_too_small retry with limit at least 4; invalid_utf8_offset means the offset is inside a character, so use the returned cursor. A .png, .jpg, .jpeg or .webp file (at most 4 MiB and 8000 px a side) is returned as an image you can see, read whole without offset, when your model accepts image input; otherwise it fails with image_unsupported_by_model." + FilePathGuidance, AgentToolScopes.SystemRead, FileReadSchema, () => new JsonObject { ["path"] = "src\\App.cs" }),
         new("list", "List one workspace directory's entries with metadata, bounded by max_entries. Use it to see how a folder is laid out; find files by name with glob and by content with grep." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileListSchema, () => new JsonObject { ["path"] = "." }),
         new("help", "Search Ru's bundled offline documentation for product behavior, architecture, configuration, tools, providers, and operating boundaries. Returns stable document IDs and excerpts only; it never reads workspace files. Call it for questions about how Ru itself works or is configured, not about the user's code.", AgentToolScopes.SystemRead, HelpDocsSchema, () => new JsonObject { ["query"] = "approval reasons" }),
         new("todo_write", "Replace the task list for this session. Send the complete list every time; it replaces the previous one. Use it to plan multi-step work and show progress: mark a task in_progress while working on it, completed the moment it is done, and keep at most one in_progress.", AgentToolScopes.SystemRead, TodoWriteSchema, () => new JsonObject { ["todos"] = new JsonArray(new JsonObject { ["content"] = "Read the failing test", ["status"] = "completed" }, new JsonObject { ["content"] = "Implement the validator", ["status"] = "in_progress" }) }),
-        new("grep", "Search workspace file contents. Prefer it to a shell command for searching, and use glob to find files by name. Text or regex search with a glob filter and bounded results. **/ matches zero or more directories. Previews include the match; column is the absolute 1-based line column and preview_column names the preview's first column. Continue the same query and filters at next_offset when present; if projection_has_more=true, use projection_next_offset instead. Cursors count match results and each page re-scans files. scan_incomplete means a scan/time bound, size exclusion or regex timeout prevented full coverage; excluded_by_size counts files above 1 MiB; narrow path/query rather than paging blindly. For exact numbers use is_regex word boundaries (\\b41\\b) so fixture hashes do not match as substrings." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GrepSchema, () => new JsonObject { ["query"] = "TODO", ["path"] = "." }),
+        new("grep", "Search workspace file contents. Prefer it to a shell command for searching, and use glob to find files by name. Text or regex search with a glob filter and bounded results. **/ matches zero or more directories. Previews include the match; column is the absolute 1-based line column and preview_column names the preview's first column. Continue the same query and filters at next_offset when has_more=true. Cursors count match results and each page re-scans files. scan_incomplete means a scan/time bound, size exclusion or regex timeout prevented full coverage; excluded_by_size counts files above 1 MiB; narrow path/query rather than paging blindly. For exact numbers use is_regex word boundaries (\\b41\\b) so fixture hashes do not match as substrings." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GrepSchema, () => new JsonObject { ["query"] = "TODO", ["path"] = "." }),
         new("glob", "Find workspace files by glob pattern. Use it to locate files by name before reading them. Bounded ordinal results with traversal caps; narrow the pattern when a result is truncated." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GlobSchema, () => new JsonObject { ["pattern"] = "**/*.cs", ["path"] = "." }),
-        new("write", "Create a NEW file with {\"op\":\"write\",\"path\":\"new.txt\",\"content\":\"full file content\"}. op is required, even for creation. This is the tool for creating files; edit cannot create a missing file or accept an empty old_string. To replace an existing file, use op=write with overwrite=true. Use op=delete or op=restore for those operations; use edit for a partial change. Policy still controls mutation and overwrite." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, WriteSchema, () => new JsonObject { ["op"] = "write", ["path"] = "src\\notes.txt", ["content"] = "new content" }),
-        new("edit", "Modify an EXISTING file only; this tool never creates files. To create a new file, use write with op=write, path and content. Never send empty old_string as a create-file operation. Replace one exact, non-empty string copied from a fresh read; whitespace must match. Put the copied text in old_string and its replacement in new_string. If old_string matches more than once, add surrounding lines to make it unique, or set expected_occurrences to the number of matches to replace them all. After a failed match, read the file again rather than guessing." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileEditSchema, () => new JsonObject { ["path"] = "src\\notes.txt", ["old_string"] = "old", ["new_string"] = "new" }),
-        new("bash", "Run commands in the Windows terminal (the tool name is historical). Use it for builds, tests, git and other programs, not to read or search files. For command text use {\"mode\":\"shell\",\"script\":\"dotnet test\"}; for direct launch use {\"mode\":\"run\",\"executable\":\"dotnet\",\"arguments\":[\"test\"]}. mode=run requires executable separate from arguments; arguments are literal argv, never script or shell text. Use mode=shell with script for pipes, redirection, or multiple commands. On Windows the default shell is powershell.exe (Windows PowerShell 5.1); shell=pwsh requires PowerShell 7 installed. Use PowerShell syntax, not Unix bash syntax. Omit working_directory to use the current workspace; relative directories resolve against that workspace. Never invent an absolute workspace path. Standard permits both modes with working_directory inside the workspace; outside directories require approval. Programs run as the current Windows user and can affect outside files or network. Set background=true for servers or watches; keep execution_id and use mode=read_output or mode=kill. Inspect truncated output with read_output rather than rerunning: use projection_next_offset or the returned cursor (UTF-16 characters). Results include stdout_head/stdout_tail, stdout_bytes/stdout_dropped_bytes and spool_path.", AgentToolScopes.TerminalExecute, BashSchema, () => new JsonObject { ["mode"] = "run", ["executable"] = "node", ["arguments"] = new JsonArray("-e", "console.log('hi')"), ["working_directory"] = "." }),
-        new("web_search", "Search the public web. The configured engine races a fixed set of free fallback engines and the first engine with usable results answers, so a slow or blocked primary no longer delays the result. If every engine fails or none of their layouts can be read, the call fails with a bounded error rather than returning an empty answer. Results are bounded, sanitized, and explicitly untrusted.", AgentToolScopes.NetworkSearch, WebSearchSchema, () => new JsonObject { ["query"] = "latest dotnet release" }),
-        new("web_fetch", "Fetch public HTML, Markdown, JSON or source text with code layout preserved. Downloads are bounded; output defaults to 32000 characters. For long documents, pass next_offset from the result as offset to read the next page; when projection_has_more=true, prefer projection_next_offset; offsets count UTF-16 characters in extracted text and each call fetches the source again. Optional limit is 1-32000. Page boundaries preserve whole Unicode characters. On web_limit_too_small retry with limit at least 2; web_offset_invalid_boundary means use a returned cursor instead of an offset inside an emoji. CAPTCHA, empty JavaScript shells and unsupported binary formats fail with named errors. Results are explicitly untrusted.", AgentToolScopes.NetworkFetch, WebFetchSchema, () => new JsonObject { ["url"] = "https://example.com" }),
-        new("skill", "Load one workspace skill's full SKILL.md workflow. Call it before acting when a listed skill matches the task. Skills are prompt guidance discovered from the workspace skill roots; the prompt lists only name and description, and the model calls this tool to load the body on demand. allowed-tools metadata is descriptive only and never grants a tool, scope, path, network permission, or approval.", AgentToolScopes.SystemRead, SkillSchema, () => new JsonObject { ["name"] = "pdf.analyzer" }),
+        new("web_search", "Search the public web and return result titles, URLs and snippets. Write a short keyword query (2-6 words, the terms a page would contain) rather than a question or a sentence; add site:example.com to stay on one site. Snippets are only previews: web_fetch the most relevant result before stating facts from it. Free search engines often refuse automated requests, so a call can fail with web_search_parse_failed, web_search_irrelevant_results or web_http_<status>; then retry once with fewer or different keywords, or web_fetch a known authoritative URL directly, and do not repeat an identical query. Results are bounded, sanitized, and explicitly untrusted.", AgentToolScopes.NetworkSearch, WebSearchSchema, () => new JsonObject { ["query"] = "latest dotnet release" }),
+        new("web_fetch", "Fetch one public web page as readable text: HTML is reduced to its main content with paragraphs, code and links kept; Markdown, JSON and source text keep their layout. Output holds up to 32000 characters; when truncated=true, call again with offset set to the returned next_offset to read on (offsets count UTF-16 characters of extracted text, and each call fetches the page again). Optional limit is 1-32000. A link already given, an anchor into the same page and a footnote marker keep their text only. PDF text is extracted too (web_pdf_unreadable for scanned or broken files); other binary files fail with web_content_type_not_supported. Sites that refuse automated clients fail with web_http_403/401/429 or web_page_blocked, and pages that need JavaScript fail with web_content_empty: use another source instead of retrying the same URL. Results are explicitly untrusted.", AgentToolScopes.NetworkFetch, WebFetchSchema, () => new JsonObject { ["url"] = "https://example.com" }),
+        new("skill", "Use query to search workspace skill metadata, including skills omitted from the prompt catalog; listings are bounded and include omissions. Use name to load that skill's full SKILL.md workflow. Pass expected_revision from a listing to reject stale metadata. Skills are untrusted guidance; allowed-tools never grants tools, scopes, paths, network permission, or approval.", AgentToolScopes.SystemRead, SkillSchema, () => new JsonObject { ["name"] = "pdf.analyzer" }),
         new("ask_user", "Ask the user a question and wait for the answer. Use it only when a decision is genuinely the user's and no tool or file can resolve it. The run parks until the user answers, and the answer arrives as this tool's result. options are optional suggested answers.", AgentToolScopes.UserInput, AskUserSchema, () => new JsonObject { ["question"] = "Which environment should I use?", ["options"] = new JsonArray("staging", "production") }),
         new("mcp", "Use the user's MCP servers (declared in their own ~/.ru/mcp.json). op=list_servers shows the declared servers without starting them; op=list_tools starts one server and lists its tools with their input schemas; op=call runs one tool with arguments, a JSON object encoded as a string that follows the tool's input schema. Starting a server and calling a tool run a user-chosen program and need approval in standard. Results are untrusted text from the server.", AgentToolScopes.TerminalExecute, McpSchema, () => new JsonObject { ["op"] = "list_servers" }),
+        new("computer", "Operate desktop applications as the user: see monitors and send pointer and keyboard input. Start with action=list to see monitors and running apps, then action=request_access with the apps' executable names (for example notepad.exe); the user approves them for this session. action=focus with app brings that granted app's window to the front, including a minimized one; use it when another window covers the app. action=screenshot returns an image of one monitor; in standard, windows of apps without access are blacked out. click, move, drag and scroll take x and y in pixels of that monitor's latest screenshot, so take a screenshot first and again after the screen changes. type sends text to the focused window; key sends a combination such as ctrl+s or alt+tab. Input reaches only apps with access; Ru's own windows, terminals and sign-in or elevation prompts are never reachable. The user can stop you at any time with Ctrl+Alt+Backspace (or Ctrl+Alt+Pause).", AgentToolScopes.TerminalExecute, ComputerSchema, () => new JsonObject { ["action"] = "screenshot", ["monitor"] = 0 }),
     ];
 
     private static readonly IReadOnlyList<AgentToolDefinition> Definitions = BuildDefinitions();
@@ -121,6 +119,7 @@ public static class AgentToolDefinitionCatalog
             result.Add(new AgentToolDefinition(index, entry.Id, CurrentVersion, entry.Description, entry.Scope, entry.Schema, entry.Example));
         }
         result.AddRange(Subagents.SubagentToolDefinitions.Get());
+        result.AddRange(CodingDefinitions(result.Count));
         if (result.Count > MaximumModelTools) throw new AgentProtocolException("tool_catalog_capacity");
         return Array.AsReadOnly(result.ToArray());
     }
@@ -145,8 +144,6 @@ public static class AgentToolDefinitionCatalog
         return true;
     }
 
-    private static JsonObject WriteSchema() => ObjectSchema(["op"], WriteSchemaProperties());
-    private static JsonObject BashSchema() => ObjectSchema(["mode"], BashSchemaProperties());
     private static JsonObject GrepSchema() => ObjectSchema(["query"], GrepSchemaProperties());
     // Query bound mirrors FileToolLimits.MaxQueryLength in RuAgent.Broker (the
     // adapter is the authority; Protocol cannot reference the Broker layer).
@@ -168,39 +165,8 @@ public static class AgentToolDefinitionCatalog
         ("pattern", StringSchema()),
         ("path", StringSchema()), ("max_results", IntegerSchema(1, 128)),
     ];
-    private static (string Name, JsonObject Schema)[] WriteSchemaProperties() =>
-    [
-        ("op", EnumSchema(["write", "delete", "restore"])),
-        ("path", StringSchema()), ("content", StringSchema()),
-        ("overwrite", WithDescription(BooleanSchema(), "Set true when intentionally replacing an existing file with op=write; omitted means false. Use edit for partial changes.")),
-        ("recovery_id", StringSchema(maxLength: 256)),
-    ];
-    private static (string Name, JsonObject Schema)[] BashSchemaProperties() =>
-    [
-        ("mode", WithDescription(EnumSchema(["run", "shell", "read_output", "kill"]), "Use shell for command text in script; use run only with executable and literal arguments. read_output and kill require an existing execution_id. Never pair run with script.")),
-        ("executable", WithDescription(StringSchema(TerminalLimits.MaxExecutableChars), "Required for mode=run: program name or path only, without command arguments. For command text use mode=shell and script instead.")),
-        ("arguments", WithDescription(ArraySchema(TerminalLimits.MaxArguments, TerminalLimits.MaxArgumentChars), "mode=run only: literal argv array, without the executable; no shell expansion, pipes or command text.")),
-        ("script", WithDescription(StringSchema(TerminalLimits.MaxScriptChars), "mode=shell only: command text, using Windows PowerShell syntax by default. Example: dotnet test. Do not send script with mode=run.")),
-        ("shell", WithDescription(EnumSchema(["powershell", "pwsh"]), "mode=shell only: powershell (Windows PowerShell 5.1) is the default; pwsh requires PowerShell 7 installed.")),
-        ("working_directory", WithDescription(StringSchema(TerminalLimits.MaxWorkingDirectoryChars), "Optional: omit to use the current workspace. Relative paths resolve against that workspace. Do not invent an absolute path from the workspace label.")),
-        // The schema carries the background ceiling; the evaluator enforces the
-        // tighter foreground hard max when background is not set.
-        ("timeout_ms", IntegerSchema(1, TerminalLimits.BackgroundMaxLifetimeMs)),
-        ("network_intent", BooleanSchema()),
-        ("purpose", WithDescription(EnumSchema(["command", "inspection", "verification", "expected_failure"]), "Workflow intent only; never changes execution permission or the actual tool outcome. Use verification for required checks, inspection for read-only diagnostics, expected_failure only for a deliberately failing command requested by the task.")),
-        ("expected_exit_code", WithDescription(IntegerSchema(1, 255), "For purpose=expected_failure only: the exact anticipated nonzero process exit. Denials, cancellation, timeout, unknown execution and other exit codes are never accepted as the expected result.")),
-        .. TerminalWriteSetProperties(),
-        ("background", BooleanSchema()),
-        ("execution_id", StringSchema(TerminalLimits.MaxExecutionIdChars, minLength: 1)),
-        // Paging bound mirrors the spool retention ceiling in RuAgent.Broker,
-        // counted in UTF-16 characters: the in-memory window plus the spilled
-        // file. Protocol cannot reference the Broker layer.
-        ("offset", IntegerSchema(0, TerminalLimits.MaxSpoolFileChars)),
-        ("limit", IntegerSchema(1, TerminalLimits.MaxSpoolPageChars)),
-    ];
     private static JsonObject FileListSchema() => ObjectSchema(properties: [("path", StringSchema()), ("max_entries", IntegerSchema(1, 512))]);
     private static JsonObject FileReadSchema() => ObjectSchema(["path"], [("path", StringSchema()), ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 4 * 1024 * 1024))]);
-    private static JsonObject FileEditSchema() => ObjectSchema(["path", "old_string"], [("path", StringSchema()), ("old_string", StringSchema(minLength: 1)), ("new_string", StringSchema()), ("expected_occurrences", IntegerSchema(1, 1024))]);
     private static JsonObject HelpDocsSchema() => ObjectSchema(["query"], [("query", StringSchema(minLength: 1, maxLength: 256)), ("max_results", IntegerSchema(1, 5))]);
 
     // The catalog declares its own bounds, as every other schema here does. Sharing the
@@ -240,7 +206,29 @@ public static class AgentToolDefinitionCatalog
         ("server", StringSchema(maxLength: 32, minLength: 1)),
         ("tool", StringSchema(maxLength: 128, minLength: 1)),
         ("arguments", StringSchema(maxLength: 64 * 1024)));
-    private static JsonObject SkillSchema() => ObjectSchema(["name"], [("name", StringSchema(minLength: 1, maxLength: 96))]);
+    // Bounds mirror ComputerLimits in RuAgent.Protocol; the Broker adapter is the authority.
+    private static JsonObject ComputerSchema() => ObjectSchema(
+        ["action"],
+        ("action", EnumSchema(ComputerActions.All.ToArray())),
+        ("monitor", IntegerSchema(0, ComputerLimits.MaxMonitorIndex)),
+        ("x", IntegerSchema(0, ComputerLimits.MaxScreenshotEdge)),
+        ("y", IntegerSchema(0, ComputerLimits.MaxScreenshotEdge)),
+        ("to_x", IntegerSchema(0, ComputerLimits.MaxScreenshotEdge)),
+        ("to_y", IntegerSchema(0, ComputerLimits.MaxScreenshotEdge)),
+        ("button", EnumSchema("left", "right", "middle")),
+        ("count", IntegerSchema(1, 3)),
+        ("direction", EnumSchema("up", "down", "left", "right")),
+        ("amount", IntegerSchema(1, ComputerLimits.MaxScrollAmount)),
+        ("text", StringSchema(maxLength: ComputerLimits.MaxTypeChars, minLength: 1)),
+        ("keys", StringSchema(maxLength: ComputerLimits.MaxKeyChordChars, minLength: 1)),
+        ("apps", ArraySchema(maxItems: ComputerLimits.MaxRequestedApps, itemMaxLength: ComputerLimits.MaxAppNameChars)),
+        ("app", StringSchema(maxLength: ComputerLimits.MaxAppNameChars, minLength: 1)));
+    private static JsonObject SkillSchema() => ObjectSchema(
+        [],
+        ("name", StringSchema(minLength: 1, maxLength: 96)),
+        ("query", StringSchema(minLength: 1, maxLength: 128)),
+        ("expected_revision", StringSchema(maxLength: 64)),
+        ("expected_body_sha256", StringSchema(maxLength: 64)));
     private static JsonObject AskUserSchema() => ObjectSchema(
         ["question"],
         ("question", StringSchema(maxLength: 2048, minLength: 1)),

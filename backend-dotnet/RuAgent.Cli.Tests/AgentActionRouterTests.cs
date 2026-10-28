@@ -44,7 +44,7 @@ public sealed class AgentActionRouterTests
     [InlineData("/compact invalid")]
     [InlineData("/help now")]
     [InlineData("/skill")]
-    [InlineData("/skill bad-id")]
+    [InlineData("/skill ../bad-id")]
     [InlineData("/tasks kill")]
     [InlineData("/tasks stop req-1")]
     public void Parser_rejects_malformed_commands_without_an_action(string text)
@@ -74,5 +74,17 @@ public sealed class AgentActionRouterTests
     {
         var oversized = AgentActionRouter.Parse("/help " + new string('x', AgentActionRouter.MaxInputBytes));
         Assert.Equal("command_invalid", oversized.Code);
+    }
+
+    [Theory]
+    [InlineData("verify")]
+    [InlineData("friendly-skill")]
+    [InlineData("pdf.analyzer")]
+    public void Skill_invocation_accepts_catalog_ids_and_preserves_arguments(string id)
+    {
+        var parsed = AgentActionRouter.Parse($"/skill {id} kiểm tra src/main.cs");
+        Assert.True(parsed.Success);
+        Assert.Equal(id, parsed.Command!.SkillId);
+        Assert.Equal("kiểm tra src/main.cs", parsed.Command.SkillArguments);
     }
 }

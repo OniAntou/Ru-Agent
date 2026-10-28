@@ -84,11 +84,9 @@ public sealed class AgentSessionUiSourceContractTests
     {
         var document = GuiSource.Xml("Views", "ChatView.xaml");
 
-        var composerRow = document.Descendants()
-            .FirstOrDefault(element => GuiSource.AttributeValue(element, "ColumnDefinitions") == "Auto,Auto,Auto,*,Auto");
-        Assert.True(composerRow is not null, "The composer row layout was not found.");
-
         var attach = GuiSource.Require(document, "AttachImageButton");
+        var composerRow = attach.Parent;
+        Assert.True(composerRow?.Name.LocalName == "Grid", "The composer row layout was not found.");
         var indicator = GuiSource.Require(document, "AgentModeButton");
 
         // Both are direct children of the composer row, on the leading edge.
@@ -96,6 +94,10 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Same(composerRow, indicator.Parent);
         Assert.Equal(0, GuiSource.IntAttribute(attach, "Column", -1));
         Assert.Equal(1, GuiSource.IntAttribute(indicator, "Column", -1));
+        var skills = GuiSource.Require(document, "SkillsButton");
+        Assert.Same(composerRow, skills.Parent);
+        Assert.Equal(2, GuiSource.IntAttribute(skills, "Column", -1));
+        Assert.Equal("Browse and manage skills", GuiSource.AttributeValue(skills, "Name"));
         Assert.True(
             GuiSource.DocumentOrder(document, attach) < GuiSource.DocumentOrder(document, indicator),
             "The attachment button must precede the agent indicator.");
@@ -383,12 +385,16 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
-    public void Sidebar_shows_a_persistent_notice_when_the_session_list_is_truncated()
+    public void Sidebar_omits_the_session_search_and_paging_header()
     {
         var document = GuiSource.Xml("MainWindow.xaml");
-        var warning = GuiSource.Require(document, "SidebarSessionTruncationWarning");
-        Assert.Equal("Collapsed", GuiSource.AttributeValue(warning, "Visibility"));
-        Assert.Contains("some sessions are hidden", GuiSource.AttributeValue(warning, "Text"), StringComparison.OrdinalIgnoreCase);
+        var names = GuiSource.NamedElements(document).Keys;
+        Assert.DoesNotContain("SidebarSessionSearchBox", names);
+        Assert.DoesNotContain("SidebarLoadMoreButton", names);
+        Assert.DoesNotContain("SidebarSessionTruncationWarning", names);
+        Assert.DoesNotContain("WorkspaceHeaderPanel", names);
+        Assert.Contains("SidebarSessionList", names);
+        Assert.Contains("WorkspaceGroupToggle", names);
     }
 
     [Fact]

@@ -156,11 +156,12 @@ namespace RuApp.Views
             string? streamedReply = _activeAgentAssistantMessage is { Content: { } content }
                 ? StripDisplayMarkers(content)
                 : null;
-            var history = await _apiService.GetSessionHistoryAsync(sessionId, cancellationToken);
-            if (history is null || !OwnsReload())
+            var pages = await FetchLoadedHistoryPagesAsync(sessionId, sessionGeneration, cancellationToken);
+            if (pages is null || !OwnsReload())
             {
                 return null;
             }
+            var history = FlattenHistoryPages(pages);
 
             var projectedHistory = SessionHistoryProjection.Project(history.Select(row => (row.Role, row.Content)));
             var normalizedHistory = projectedHistory
@@ -180,9 +181,15 @@ namespace RuApp.Views
                 ? await AgentActivityReplayLoader.LoadAsync(
                     sessionId, replayApi.ListSessionRunIdsAsync, replayApi.ListRunActivitiesAsync, cancellationToken)
                 : Array.Empty<SessionRunReplay>();
+            if (!OwnsReload()) return null;
 
+            bool appliedHistory = false;
             void Apply()
             {
+                if (!TryApplyHistoryPages(pages, sessionId, sessionGeneration)) return;
+                appliedHistory = true;
+                _historyReplay = replayedRuns;
+                UpdateLoadEarlierHistoryButton();
                 _suppressContextUsageUpdate = true;
                 try
                 {
@@ -207,8 +214,11 @@ namespace RuApp.Views
                         return;
                     }
 
-                    DetachAgentActivitiesFromMessages();
-                    var restored = SessionTranscriptBuilder.Build(history, replayedRuns, sessionId);
+                    var restored = SessionTranscriptBuilder.Build(
+                        history,
+                        replayedRuns,
+                        sessionId,
+                        completeHistory: IsCompleteHistory(pages));
                     if (preserveLiveTurn && runId is not null && AgentActivities.Count > 0)
                     {
                         var current = restored.LastOrDefault(item => item.Role == "assistant"
@@ -225,34 +235,24 @@ namespace RuApp.Views
                         RebuildMessageSegments(current);
                     }
                     _sidePanelEditsDirty = true;
-                    UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(restored));
 
-                    var scroller = ChatScrollViewer;
-                    double? preservedOffset = scroller is not null && scroller.ScrollableHeight > 0
-                        ? scroller.VerticalOffset
-                        : null;
+                    // Merged, not reset: a Reset dropped every container and painted the
+                    // top of the transcript before the scroll position came back, so the
+                    // chat blinked at the end of every reply. Unchanged rows keep their
+                    // containers and the reader keeps their place.
                     bool wasFollowing = _followOutput;
-                    var preservedAnchor = CaptureTranscriptAnchor();
-                    Messages.ReplaceAll(restored);
+                    var merge = TranscriptReconciler.Apply(
+                        Messages, restored, preserveLiveTurn ? assistant : null, runId);
+                    if (merge.KeptLiveReply) UpdateLiveTailText(assistant);
+                    // A kept row must not keep sharing the run's live collection, which
+                    // the next turn clears.
+                    DetachAgentActivitiesFromMessages();
+                    UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(Messages));
                     RefreshSidePanelEdits();
 
-                    if (history.Count > 0)
+                    if (history.Count > 0 && wasFollowing)
                     {
-                        // The reset above drops the virtualized panel to its top:
-                        // a reader parked mid-history keeps their place once layout
-                        // has run, while a following reader still lands latest.
-                        double restore = preservedOffset ?? 0;
-                        RunAfterLayout(() =>
-                        {
-                            if (wasFollowing)
-                            {
-                                ScrollToLatestAfterLayout();
-                                return;
-                            }
-
-                            RestoreTranscriptAnchor(preservedAnchor, restore);
-                            _followOutput = false;
-                        });
+                        RunAfterLayout(ScrollToLatestAfterLayout);
                     }
 
                     UpdateViewMode();
@@ -269,7 +269,9 @@ namespace RuApp.Views
                 OwnsReload,
                 Apply);
 
-            return didApply ? (preserveStreamedReply ? streamedReply : latestAssistant) : null;
+            return didApply && appliedHistory
+                ? (preserveStreamedReply ? streamedReply : latestAssistant)
+                : null;
         }
 
         private async void OnImageAttachmentClick(object sender, RoutedEventArgs e)
@@ -456,11 +458,20 @@ namespace RuApp.Views
                 generation = open.Generation;
                 _isSessionHistoryLoading = true;
                 var openToken = open.Cancellation;
+                _historyOpenCancellation = openToken;
+                _isLoadingEarlierHistory = false;
+                _historyPageCursor.Reset(sessionId, generation);
+                _historyReplay = Array.Empty<SessionRunReplay>();
+                UpdateLoadEarlierHistoryButton();
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 _agentWorkspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
                     ?? _agentWorkspace;
                 ResetAgentState(preserveTranscript: true);
                 _sidePanelRunRunning = null;
+                // The outgoing rows stay on screen until the history arrives; laying
+                // the incoming session's side panel out over them would reflow them
+                // to its width first, so the switch would paint twice.
+                DeferSidePanelLayout();
                 UpdateSidePanel(false);
                 // A preset belongs to the session it was set for. The send path
                 // pushes the composer's preset onto whichever session is open,
@@ -481,10 +492,17 @@ namespace RuApp.Views
                 // session out of order used to paint its history under the newer session's
                 // title, and the backend's active session (activation is a POST) could end
                 // up on a different session than the one on screen.
-                var history = await _apiService.GetSessionHistoryAsync(sessionId, openToken);
+                if (!await _apiService.ActivateSessionAsync(sessionId, openToken))
+                    throw new InvalidOperationException("Session activation is unavailable.");
                 if (!IsCurrentOpen(generation)) return;
-                if (history is null)
+                var historyPage = await _apiService.GetSessionHistoryPageAsync(
+                    sessionId,
+                    cancellationToken: openToken);
+                if (!IsCurrentOpen(generation)) return;
+                if (historyPage is null
+                    || !_historyPageCursor.TrySetNewest(historyPage, sessionId, generation))
                     throw new InvalidOperationException("Session history is unavailable.");
+                var history = historyPage.Messages;
                 // Durable replay: messages carry source_run_id, while a session
                 // opened fresh would show a transcript of prose with every tool row missing.
                 // Rebuild the settled rows from each terminal run's durable events. This is
@@ -494,20 +512,28 @@ namespace RuApp.Views
                 var replayedRuns = await AgentActivityReplayLoader.LoadAsync(
                     sessionId, _apiService.ListSessionRunIdsAsync, _apiService.ListRunActivitiesAsync, openToken);
                 if (!IsCurrentOpen(generation)) return;
+                _historyReplay = replayedRuns;
                 _sidePanelTasksRunId = replayedRuns.LastOrDefault()?.RunId;
                 UpdateAgentInlineState();
                 _ = RefreshAgentTasksAsync();
 
                 if (history != null)
                 {
-                    opened = SessionTranscriptBuilder.Build(history, replayedRuns, sessionId);
+                    opened = SessionTranscriptBuilder.Build(
+                        history,
+                        replayedRuns,
+                        sessionId,
+                        completeHistory: historyPage.StartIndex == 0
+                            && historyPage.RawMessageCount == historyPage.TotalMessages);
                     // No await between clearing the old feed and replacing its rows:
                     // the outgoing transcript remains intact throughout history I/O.
                     ClearAgentActivities();
                     _sidePanelEditsDirty = true;
+                    ClearTodoPanel();
                     UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(opened));
                     JumpToLatestForNewTurn();
                     Messages.ReplaceAll(opened);
+                    EndSidePanelLayoutDeferral();
                     RefreshSidePanelEdits();
 
                     if (history.Count > 0)
@@ -515,6 +541,7 @@ namespace RuApp.Views
                         PositionOpenedTranscript();
                     }
                 }
+                UpdateLoadEarlierHistoryButton();
 
                 // Restore the latest step's report and optional request breakdown,
                 // not cumulative session billing. The forced repaint below adopts
@@ -565,6 +592,7 @@ namespace RuApp.Views
                 }
 
                 ClearAgentActivities();
+                ClearTodoPanel();
                 Messages.ReplaceAll(new[] { new ChatMessageItem
                 {
                     Role = "assistant",
@@ -577,6 +605,7 @@ namespace RuApp.Views
                 if (IsCurrentOpen(generation))
                 {
                     _isSessionHistoryLoading = false;
+                    EndSidePanelLayoutDeferral();
                     UpdateContextUsage(force: true);
                 }
             }
@@ -875,6 +904,8 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            _skillsApiClient?.Dispose();
+            _skillsApiClient = null;
             SidePanel.SubagentsChanged -= OnSubagentsChanged;
         SidePanel.DisposeSubagents();
             ModelSelection.PickerProjectionReady -= OnModelSelectionPickerReady;
@@ -901,6 +932,7 @@ namespace RuApp.Views
             }
             _contextMeterScheduled = false;
             TranscriptTypography.Instance.PropertyChanged -= OnTranscriptTypographyChanged;
+            AgentActivityDisplayPreferences.Instance.PropertyChanged -= OnActivityDisplayPreferenceChanged;
             Composer.Queue.Items.CollectionChanged -= OnQueuedTurnsChanged;
             Composer.TextReplaced -= OnComposerTextReplaced;
             Messages.CollectionChanged -= OnMessagesChanged;

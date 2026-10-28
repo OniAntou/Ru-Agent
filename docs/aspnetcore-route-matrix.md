@@ -2,9 +2,10 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-47 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
-public owner, and every entry is `aspnet-direct`. The 25 Agent v1 routes under
-`/agent/v1/*` and the `POST /host/shutdown` route are active alongside the
+52 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
+public owner, and every entry is `aspnet-direct`. The 27 Agent v1 routes under
+`/agent/v1/*` (including the run-independent skills catalog/preferences)
+and the `POST /host/shutdown` route are active alongside the
 settings, session rewind, activity, status, and model routes. They cover
 run creation, policy/approval/input/trust, cancellation, typed command dispatch, SSE
 replay, and reconciliation; this is not a read-only tracer surface.
@@ -13,6 +14,11 @@ replay, and reconciliation; this is not a read-only tracer surface.
 committing it, preserving an existing key on rejection or unavailable validation.
 It shares the normal loopback/bearer boundary and settings transaction gate. GUI
 does not fall back to `POST /settings` when an older Host lacks this route.
+
+Session history adds `/sessions/page` for paged summaries,
+`/sessions/{sessionId}/messages` for bounded retained-message pages and
+`/sessions/search` for literal full-text hits. These share bearer/loopback checks
+and do not expose database maintenance over HTTP.
 
 Each entry contains:
 
@@ -32,7 +38,8 @@ or alternate host mode. Unknown public paths are never sent to Python.
 
 ## Reserved routes
 
-23 entries intentionally have empty `winui_callers`: the two session
+24 entries intentionally have empty `winui_callers`: the message search route
+`GET /sessions/search` driven by the CLI; the two session
 interchange routes (`GET /sessions/{sessionId}/export` and `POST /sessions/import`),
 which the CLI and session flows drive; the TUI conversation branch route
 (`POST /sessions/{sessionId}/fork`); 15 additive `/agent/v1/*` routes —
@@ -43,8 +50,10 @@ routes (`GET`/`POST /agent/v1/policies` and `DELETE /agent/v1/policies/{ruleId}`
 callers; and the five workspace coordination routes, which external clients
 drive over HTTP. The remaining `/agent/v1/*` routes (run activities, session
 run listing, and the session preset read) do have direct `ApiService` callers.
-The five subagent routes have `AgentRunClientAdapter` callers through the typed
+The two subagent routes have `AgentRunClientAdapter` callers through the typed
 Client library and drive the chat's read-only Subagents panel.
+The two skill catalog/preferences routes have `ChatView.ShowSkillsAsync` callers
+through `SkillsApiClient`, before a run exists.
 
 Empty `winui_callers` is therefore expected for these reserved routes and is not a dead-route signal.
 

@@ -7,6 +7,11 @@ and you can always see and stop what it is doing.
 > **Terminal commands run as your Windows user, without an operating-system filesystem or network
 > sandbox.** A command Ru launches can reach files outside the project and the network. Standard
 > permission does not confine a child process to the workspace.
+>
+> The same applies to Ru's own local service: the runtime descriptor in your profile holds the
+> token that the desktop app and the terminal UI use to approve requests and change rules. A
+> command running as your user can read it, so in `standard` an approval prompt guards against
+> mistakes, not against a command written to bypass it. Use `plan` when commands must not run.
 
 ## Permission modes
 
@@ -43,6 +48,16 @@ Outside what the mode allows, Ru stops and asks. You can:
 A remembered approval lasts for the session, and an *always* rule lasts until you remove it. List and
 remove rules with `ru agent policy list` and `ru agent policy remove <rule-id>`. If two windows answer
 the same request, the first answer wins.
+
+## Computer use
+
+Computer use is off until you turn it on in **Settings → General → Computer use** or with
+`/computer on`. It then applies to new turns with a model that accepts images. Ru asks before
+it controls an app, by name, and the answer lasts for the session. In `standard`, screenshots
+show only the apps you approved; `plan` never controls the desktop; `full_access` controls
+any app without asking. Ru's own windows, terminals, and sign-in or elevation prompts are
+never reachable. Press **Ctrl+Alt+Backspace** (or **Ctrl+Alt+Pause** on keyboards that have it) to stop it at once. See
+[Computer use](../operations/agent-tools.md#computer-use).
 
 ## What guides Ru and what grants permission
 

@@ -83,19 +83,26 @@ public sealed class ToolCatalog
     {
         yield return Manifest("read", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false,
             maxOutputBytes: Files.FileToolLimits.MaxReadOutputBytes);
+        yield return Manifest("read_file", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false,
+            maxOutputBytes: Files.FileReadAdapter.MaximumLineOutputBytes);
         yield return Manifest("list", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
         yield return Manifest("help", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
         yield return Manifest("todo_write", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
         yield return Manifest("grep", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
         yield return Manifest("glob", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
-        yield return Manifest("write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
-        yield return Manifest("edit", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
-        yield return Manifest("bash", ToolScope.TerminalExecute, RiskClass.Reversible, "terminal", workspace: false, requiresApproval: true);
+        yield return Manifest("apply_patch", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
+        foreach (var id in new[] { "write_file", "edit_file", "file_delete", "file_restore" })
+            yield return Manifest(id, ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
+        foreach (var id in new[] { "powershell", "run_process", "terminal_read", "terminal_stop" })
+            yield return Manifest(id, ToolScope.TerminalExecute, RiskClass.Reversible, "terminal", workspace: false, requiresApproval: true);
         yield return Manifest("web_search", ToolScope.WebSearch, RiskClass.External, "web", workspace: false, requiresApproval: true);
         yield return Manifest("web_fetch", ToolScope.WebFetch, RiskClass.External, "web", workspace: false, requiresApproval: true);
         yield return Manifest("skill", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
+        yield return Manifest("run_code", ToolScope.SystemRead, RiskClass.Reversible, "builtin", workspace: false);
         // An MCP server is a user-chosen program run with the user's rights (ADR 0025).
         yield return Manifest("mcp", ToolScope.TerminalExecute, RiskClass.External, "connector", workspace: false, requiresApproval: true);
+        // Computer use sends input as the user to granted apps (ADR 0031).
+        yield return Manifest("computer", ToolScope.TerminalExecute, RiskClass.External, "desktop", workspace: false, requiresApproval: true);
         foreach (var definition in RuAgent.Protocol.Subagents.SubagentToolDefinitions.Get())
             yield return Manifest(definition.ToolId,
                 definition.ToolId == "agent_apply" ? ToolScope.WorkspaceWrite : ToolScope.SystemRead,

@@ -16,10 +16,16 @@ public sealed class SystemPromptComposerTests
     {
         var capability = new PromptCapability(id, "1.0.0", "Fixture tool.", "workspace.read",
             "{\"type\":\"object\",\"properties\":{}}", new string('a', 64), null, "enabled");
-        var prompt = SystemPromptComposer.Compose(PromptFixtures.ValidContext(capabilities: [capability]), true);
+        var context = PromptFixtures.ValidContext(capabilities: [capability]);
+        var prompt = SystemPromptComposer.Compose(context);
         Assert.Contains(included, prompt.Text);
         Assert.DoesNotContain(excluded, prompt.Text);
-        prompt.Receipt.ValidateAgainst(PromptFixtures.ValidContext(capabilities: [capability]), prompt.Text);
+        prompt.Receipt.ValidateAgainst(context, prompt.Text);
+
+        var native = SystemPromptComposer.Compose(context, nativeToolCalling: true);
+        Assert.DoesNotContain(included, native.Text);
+        Assert.Contains(capability.Description, native.Text);
+        native.Receipt.ValidateAgainst(context, native.Text);
     }
 
     [Fact]
@@ -79,6 +85,32 @@ public sealed class SystemPromptComposerTests
             snapshot.Receipt.BlockDigests.Select(item => item.BlockId));
         Assert.Equal("2.0.0", snapshot.Receipt.ComposerVersion);
         snapshot.Receipt.ValidateAgainst(context, snapshot.Text);
+    }
+
+    [Fact]
+    public void Prompt_recipe_is_explicit_and_bound_inside_the_agent_contract_receipt()
+    {
+        var context = PromptFixtures.ValidContext();
+
+        var neutral = SystemPromptComposer.Compose(context);
+        var codex = SystemPromptComposer.Compose(context, recipe: PromptRecipe.CodexNative);
+
+        Assert.DoesNotContain("For this coding workflow", neutral.Text, StringComparison.Ordinal);
+        Assert.Contains("For this coding workflow, keep narration concise", codex.Text, StringComparison.Ordinal);
+        Assert.Equal(neutral.Receipt.BlockDigests.Select(block => block.BlockId),
+            codex.Receipt.BlockDigests.Select(block => block.BlockId));
+        Assert.NotEqual(
+            neutral.Receipt.BlockDigests.Single(block => block.BlockId == "agent.contract").Sha256,
+            codex.Receipt.BlockDigests.Single(block => block.BlockId == "agent.contract").Sha256);
+        neutral.Receipt.ValidateAgainst(context, neutral.Text);
+        codex.Receipt.ValidateAgainst(context, codex.Text);
+    }
+
+    [Fact]
+    public void Prompt_recipe_rejects_unknown_values()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            SystemPromptComposer.Compose(PromptFixtures.ValidContext(), recipe: (PromptRecipe)999));
     }
 
     [Fact]
@@ -143,7 +175,7 @@ public sealed class SystemPromptComposerTests
         var textSelection = SystemPromptComposer.Compose(context);
 
         Assert.Contains("TOOL CALLING:", native.Text, StringComparison.Ordinal);
-        Assert.Contains("one or more advertised calls", native.Text, StringComparison.Ordinal);
+        Assert.Contains("one or more calls in a step", native.Text, StringComparison.Ordinal);
         Assert.Contains(
             $"Group independent read-only calls in one native batch; up to {RuAgent.Harness.Core.ToolCallScheduler.MaxReadConcurrency} may overlap.",
             native.Text,

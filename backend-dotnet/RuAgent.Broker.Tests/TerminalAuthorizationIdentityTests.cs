@@ -19,7 +19,7 @@ public sealed class TerminalAuthorizationIdentityTests
     {
         var canonical = Path.GetFullPath("canonical-runner.exe");
         var alias = Path.GetFullPath("alias-runner.exe");
-        var context = new PolicyContext("bash", "1.0.0", Path.GetFullPath("."), null, null,
+        var context = new PolicyContext("run_process", "1.0.0", Path.GetFullPath("."), null, null,
             canonical, [], Path.GetFullPath("."), "terminal", "none", false, new string('a', 64))
         {
             RequestedExecutable = alias,
@@ -40,16 +40,14 @@ public sealed class TerminalAuthorizationIdentityTests
         try
         {
             var lease = new BrokerRunLease("run", "session", "workspace", root, "v", "f", new string('a', 64),
-                "standard", 1, new string('b', 64), DateTimeOffset.UtcNow.AddMinutes(5), ["bash"], null!, 1);
+                "standard", 1, new string('b', 64), DateTimeOffset.UtcNow.AddMinutes(5), ["run_process"], null!, 1);
             var factory = new PolicyContextFactory(lease);
-            var bareRequest = factory.Create("bash", "1.0.0", new JsonObject
+            var bareRequest = factory.Create("run_process", "1.0.0", new JsonObject
             {
-                ["mode"] = "run",
                 ["executable"] = "cmd",
             });
-            var explicitExtensionRequest = factory.Create("bash", "1.0.0", new JsonObject
+            var explicitExtensionRequest = factory.Create("run_process", "1.0.0", new JsonObject
             {
-                ["mode"] = "run",
                 ["executable"] = "cmd.exe",
             });
 
@@ -82,15 +80,15 @@ public sealed class TerminalAuthorizationIdentityTests
         {
             Link(link, first);
             var lease = new BrokerRunLease("run", "session", "workspace", root, "v", "f", new string('a', 64),
-                "standard", 1, new string('b', 64), DateTimeOffset.UtcNow.AddMinutes(5), ["bash"], null!, 1);
+                "standard", 1, new string('b', 64), DateTimeOffset.UtcNow.AddMinutes(5), ["run_process"], null!, 1);
             var factory = new PolicyContextFactory(lease);
-            var args = new JsonObject { ["mode"] = "run", ["executable"] = @"bin\runner.cmd" };
-            var before = factory.Create("bash", "1.0.0", args);
+            var args = new JsonObject { ["executable"] = @"bin\runner.cmd" };
+            var before = factory.Create("run_process", "1.0.0", args);
             var tokens = new ApprovalTokenService();
-            var token = tokens.Issue("request", "session", "bash", "1.0.0", before.IntentHash, TimeSpan.FromMinutes(1));
+            var token = tokens.Issue("request", "session", "run_process", "1.0.0", before.IntentHash, TimeSpan.FromMinutes(1));
             Directory.Delete(link);
             Link(link, second);
-            var after = factory.Create("bash", "1.0.0", args);
+            var after = factory.Create("run_process", "1.0.0", args);
 
             Assert.NotEqual(before.IntentHash, after.IntentHash);
             Assert.Equal(Path.Combine(first, "runner.cmd"), before.ResolvedExecutable, ignoreCase: true);
@@ -98,7 +96,7 @@ public sealed class TerminalAuthorizationIdentityTests
             Assert.True(MatchesExecutableRule(before.ResolvedExecutable!, before));
             Assert.False(MatchesExecutableRule(Path.Combine(root, "bin", "runner.cmd"), before));
             Assert.False(tokens.TryConsume(token,
-                new ApprovalBinding("request", "session", "bash", "1.0.0", after.IntentHash, DateTimeOffset.UtcNow), out _));
+                new ApprovalBinding("request", "session", "run_process", "1.0.0", after.IntentHash, DateTimeOffset.UtcNow), out _));
         }
         finally
         {

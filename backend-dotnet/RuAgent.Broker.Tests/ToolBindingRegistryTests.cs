@@ -16,7 +16,7 @@ public sealed class ToolBindingRegistryTests
 
         // list, help, todo_write and skill are read-only, so the Chat profile advertises them too.
         Assert.Equal(
-            new HashSet<string> { "read", "list", "help", "todo_write", "skill", "grep", "glob", "web_fetch", "web_search" },
+            new HashSet<string> { "read", "read_file", "list", "help", "todo_write", "skill", "grep", "glob", "web_fetch", "web_search" },
             ids);
     }
 
@@ -76,12 +76,13 @@ public sealed class ToolBindingRegistryTests
         var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Contains("write", ids);
-        Assert.Contains("edit", ids);
+        Assert.Contains("write_file", ids);
+        Assert.Contains("edit_file", ids);
         Assert.Contains("read", ids);
         Assert.Contains("grep", ids);
         Assert.Contains("glob", ids);
-        Assert.Contains("bash", ids);
+        Assert.Contains("powershell", ids);
+        Assert.Contains("run_process", ids);
         Assert.DoesNotContain("system.volume", ids);
         Assert.DoesNotContain("app.list", ids);
     }
@@ -92,7 +93,8 @@ public sealed class ToolBindingRegistryTests
         var agent = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Contains("bash", agent);
+        Assert.Contains("powershell", agent);
+        Assert.Contains("run_process", agent);
     }
 
     [Fact]
@@ -135,9 +137,9 @@ public sealed class ToolBindingRegistryTests
         Assert.Equal(
             new[]
             {
-                "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait",
-                "bash", "edit", "glob", "grep", "help", "list", "mcp",
-                "read", "skill", "todo_write", "web_fetch", "web_search", "write",
+                  "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "apply_patch",
+                "computer", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp",
+                "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write_file",
             },
             bound);
         Assert.DoesNotContain("app.open", bound);
@@ -163,13 +165,22 @@ public sealed class ToolBindingRegistryTests
         ["todo_write"] = Succeeded,
         ["grep"] = Succeeded,
         ["glob"] = Succeeded,
-        ["write"] = Succeeded,
-        ["edit"] = Succeeded,
-        ["bash"] = Succeeded,
         ["web_search"] = Succeeded,
         ["web_fetch"] = Succeeded,
         ["skill"] = Succeeded,
         ["mcp"] = Succeeded,
+        ["computer"] = Succeeded,
+          ["read_file"] = Succeeded,
+          ["run_code"] = Succeeded,
+          ["apply_patch"] = Succeeded,
+          ["write_file"] = Succeeded,
+          ["edit_file"] = Succeeded,
+          ["file_delete"] = Succeeded,
+          ["file_restore"] = Succeeded,
+          ["powershell"] = Succeeded,
+          ["run_process"] = Succeeded,
+          ["terminal_read"] = Succeeded,
+          ["terminal_stop"] = Succeeded,
     };
 
     private static ValueTask<ToolExecutionOutcome> Succeeded(

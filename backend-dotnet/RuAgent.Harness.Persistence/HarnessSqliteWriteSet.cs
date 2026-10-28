@@ -70,6 +70,7 @@ internal static class HarnessSqliteWriteSet
         ValidateOutboxBoundary(
             previous: null,
             request.Run,
+            request.Events,
             request.Payloads,
             request.ConversationOutbox);
     }
@@ -105,6 +106,7 @@ internal static class HarnessSqliteWriteSet
         ValidateOutboxBoundary(
             current,
             commit.NextRun,
+            commit.Events,
             commit.Payloads,
             commit.ConversationOutbox);
     }
@@ -437,6 +439,7 @@ internal static class HarnessSqliteWriteSet
     private static void ValidateOutboxBoundary(
         AgentRun? previous,
         AgentRun next,
+        IReadOnlyList<HarnessEventIntent> events,
         IReadOnlyList<HarnessPayloadIntent> payloads,
         IReadOnlyList<ConversationOutboxIntent> outbox)
     {
@@ -451,9 +454,20 @@ internal static class HarnessSqliteWriteSet
             return;
         }
 
-        if (outbox.Count != 1
-            || next.State != HarnessRunState.WaitingHistory
-            || next.HistoryWaitKind != outbox[0].HistoryWaitKind)
+        // A terminal blocked report is committed with its failed projection and
+        // final assistant payload. Delivery is still fenced/idempotent, but must
+        // never acknowledge the run into Completed after storing that report.
+        var failedReport = outbox.Count == 1
+            && previous?.State == HarnessRunState.Running && next.State == HarnessRunState.Failed
+            && outbox[0].Role == ConversationOutboxRole.Assistant
+            && outbox[0].HistoryWaitKind == HistoryWaitKind.FinalBeforeCompletion
+            && events.Count(item => item.Kind == HarnessEventKind.ModelStepCompleted) == 1
+            && events.Any(item => item.Kind == HarnessEventKind.ModelStepCompleted
+                && item.SafeCode == "blocked_report" && item.PayloadId == outbox[0].PayloadId)
+            && events.Count(item => item.Kind == HarnessEventKind.RunFailed) == 1
+            && events.Any(item => item.Kind == HarnessEventKind.RunFailed && item.SafeCode == next.TerminalErrorCode);
+        if (outbox.Count != 1 || !failedReport && (next.State != HarnessRunState.WaitingHistory
+            || next.HistoryWaitKind != outbox[0].HistoryWaitKind))
         {
             throw new HarnessStoreException("outbox_history_boundary_invalid");
         }
@@ -468,7 +482,7 @@ internal static class HarnessSqliteWriteSet
                         or HarnessRunState.WaitingWorkspaceTrust),
             ConversationOutboxRole.Assistant =>
                 previous?.State == HarnessRunState.Running
-                && next.HistoryWaitKind == HistoryWaitKind.FinalBeforeCompletion,
+                && (failedReport || next.HistoryWaitKind == HistoryWaitKind.FinalBeforeCompletion),
             _ => false,
         };
         if (!validTransition)

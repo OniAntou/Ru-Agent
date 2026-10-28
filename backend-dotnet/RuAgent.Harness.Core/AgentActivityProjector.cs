@@ -57,6 +57,18 @@ public static class AgentActivityProjector
     {
         ArgumentNullException.ThrowIfNull(proposal);
 
+        try
+        {
+            if (RuAgent.Protocol.CodingToolArguments.AdapterToolId(proposal.ToolId) is { } adapterId)
+            {
+                var arguments = RuAgent.Protocol.CodingToolArguments.ToAdapterArguments(proposal.ToolId,
+                    System.Text.Json.Nodes.JsonNode.Parse(proposal.Arguments.GetRawText())!.AsObject());
+                proposal = new ToolProposal(proposal.RunId, proposal.ModelStepId, proposal.ToolCallId, proposal.ProviderCallId,
+                    proposal.ModelOrder, adapterId, proposal.ToolVersion, System.Text.Json.JsonSerializer.SerializeToElement(arguments));
+            }
+        }
+        catch (ArgumentException) { /* Invalid arguments still need a visible failed activity. */ }
+
         var op = ReadOp(proposal);
         var metadata = ToolActivityMetadataExtractor.Extract(proposal, receipt);
         var kind = (proposal.ToolId, op) switch
@@ -64,7 +76,7 @@ public static class AgentActivityProjector
             ("read", "list") or ("glob", _) => AgentActivityKind.Explore,
             ("grep", _) or ("web_search", _) => AgentActivityKind.Search,
             ("read", "read") => AgentActivityKind.Analyze,
-            ("write", _) or ("edit", _) => AgentActivityKind.Edit,
+            ("write", _) or ("edit", _) or ("apply_patch", _) => AgentActivityKind.Edit,
             ("bash", _) => AgentActivityKind.Terminal,
             // Without this the tool fell to the default below and was reported as a bare
             // status line with its metadata deliberately stripped, so the one row that
@@ -90,6 +102,8 @@ public static class AgentActivityProjector
                 ? ExtractWebTarget(proposal)
             : proposal.ToolId == "mcp"
                 ? ExtractMcpTarget(proposal)
+            : proposal.ToolId == "computer"
+                ? ExtractComputerTarget(proposal)
             : state == AgentActivityState.Started && kind == AgentActivityKind.Edit
                 ? ExtractEditPreview(proposal)
                 : null;
@@ -109,6 +123,31 @@ public static class AgentActivityProjector
             SafeCodeFor(state, safeCode ?? receipt?.Code),
             ToolDisplay: toolDisplay,
             Detail: detail);
+    }
+
+    /// <summary>
+    /// The computer action for its row: the apps of an access request, the key chord,
+    /// or how much text was typed. Typed text itself never enters the row.
+    /// </summary>
+    private static string? ExtractComputerTarget(ToolProposal proposal)
+    {
+        if (proposal.Arguments.ValueKind != JsonValueKind.Object
+            || !proposal.Arguments.TryGetProperty("action", out var actionValue)
+            || actionValue.ValueKind != JsonValueKind.String) return null;
+        var action = actionValue.GetString();
+        string? Text(string name) => proposal.Arguments.TryGetProperty(name, out var value)
+            && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        var detail = action switch
+        {
+            "request_access" when proposal.Arguments.TryGetProperty("apps", out var apps) && apps.ValueKind == JsonValueKind.Array =>
+                "request_access " + string.Join(", ", apps.EnumerateArray()
+                    .Where(app => app.ValueKind == JsonValueKind.String).Select(app => app.GetString()).Take(8)),
+            "key" => "key " + Text("keys"),
+            "focus" => "focus " + Text("app"),
+            "type" => $"type ({Text("text")?.Length ?? 0} characters)",
+            _ => action,
+        };
+        return detail is { Length: > 160 } ? detail[..160] : detail;
     }
 
     /// <summary>"server › tool" for an MCP row; arguments stay out of the row.</summary>
@@ -455,6 +494,7 @@ public static class AgentActivityProjector
             ("read", "read") => "View",
             ("write", "write") => "Write",
             ("edit", _) => "Edit",
+            ("apply_patch", _) => "Patch",
             ("write", "delete") => "Delete",
             ("write", "restore") => "Restore",
             ("write", _) => "Write",

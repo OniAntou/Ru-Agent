@@ -122,10 +122,12 @@ public sealed partial class HarnessPayloadStore
                 2 * 1024 * 1024,
                 HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
                 new HashSet<HarnessPayloadEncoding> { HarnessPayloadEncoding.Json },
-                // Suppressed prose, an empty model reply, and the other failure paths
-                // record the same payload shape for audit only, so both audiences are
-                // valid for this kind.
-                AlternateAudience: HarnessPayloadAudience.InternalOnly),
+                // Final/tool replies are client-readable; unusable output is audit-only;
+                // phased commentary is replayable model context without a final reply.
+                AdditionalAudiences: new HashSet<HarnessPayloadAudience>
+                {
+                    HarnessPayloadAudience.InternalOnly, HarnessPayloadAudience.ModelContext,
+                }),
             [HarnessPayloadKind.ModelContextBase] = new(
                 4 * 1024 * 1024,
                 HarnessPayloadAudience.ModelContext,
@@ -152,6 +154,10 @@ public sealed partial class HarnessPayloadStore
                 [HarnessPayloadEncoding.Json]),
             [HarnessPayloadKind.ModelContextNote] = new(
                 16 * 1024,
+                HarnessPayloadAudience.ModelContext,
+                [HarnessPayloadEncoding.Utf8Text]),
+            [HarnessPayloadKind.SkillInvocation] = new(
+                512 * 1024,
                 HarnessPayloadAudience.ModelContext,
                 [HarnessPayloadEncoding.Utf8Text]),
             [HarnessPayloadKind.RuntimeContextSnapshot] = new(
@@ -394,7 +400,7 @@ public sealed partial class HarnessPayloadStore
         int MaximumBytes,
         HarnessPayloadAudience Audience,
         IReadOnlySet<HarnessPayloadEncoding> Encodings,
-        HarnessPayloadAudience AlternateAudience = HarnessPayloadAudience.None)
+        IReadOnlySet<HarnessPayloadAudience>? AdditionalAudiences = null)
     {
         public PayloadPolicy(
             int maximumBytes,
@@ -411,7 +417,7 @@ public sealed partial class HarnessPayloadStore
         /// audience and still be rejected at write time.
         /// </summary>
         public bool Allows(HarnessPayloadAudience audience) =>
-            audience == Audience || (AlternateAudience != HarnessPayloadAudience.None && audience == AlternateAudience);
+            audience == Audience || AdditionalAudiences?.Contains(audience) == true;
     }
 
 }

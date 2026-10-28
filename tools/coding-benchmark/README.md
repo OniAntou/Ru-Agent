@@ -5,6 +5,18 @@ use Terminal-Bench and SWE-bench evaluation patterns; they are not official
 datasets or leaderboard scores. The corpus is public, so runs can be
 contaminated by prior exposure to its reference solutions.
 
+The opt-in `skills` suite contains five dependency-free Python end tasks for
+explicit invocation with arguments, implicit workflow relevance, unrelated and
+manual-only negative controls, and supporting-resource use. Tasks use the same
+baseline-fails/reference-passes grader contract, immutable fixture checks and
+content fingerprints as other nonterminal suites. `skill_scenario` and
+`expected_skill_selection` are cohort labels for later analysis;
+`observed_skill_selection` remains `unknown` because current durable RPC
+summaries do not expose authoritative skill identity. End-task acceptance does
+not prove skill selection or adherence. Skill tasks are excluded from
+`--suite all`; select `--suite skills` explicitly. Offline `self-test` never
+calls a provider.
+
 ## Tasks
 
 | Suite | Task | Main difficulty |
@@ -24,13 +36,19 @@ contaminated by prior exposure to its reference solutions.
 | Everyday | `py-stable-dedupe` | Add stable record deduplication and preserve missing/falsy IDs |
 | Everyday | `ts-emitter-lifecycle` | Repair unsubscribe idempotence and mutation during dispatch |
 | Everyday | `ts-query-builder` | Add deterministic query encoding without losing falsy values |
+| Everyday | `py-tool-workflow` | Create a new Unicode/spaced path, repair existing functions and verify grouped output |
+| Skills | `explicit-currency-rounding` | Resolve `/skill currency-rounding precision=2` and produce a correctly rounded invoice total |
+| Skills | `implicit-calendar-slots` | Select a relevant scheduling workflow for conflict-free intervals |
+| Skills | `negative-unrelated-slug` | Complete standalone normalization with an unrelated skill in the catalog |
+| Skills | `negative-manual-only-csv` | Complete CSV cleanup without auto-invoking a manual-only workflow |
+| Skills | `supporting-resource-json-summary` | Apply aliases defined in a workflow supporting resource |
 
 These are compact, dependency-free repositories. Terminal/SWE tasks have
 difficult correctness constraints; Everyday tasks are focused bug repairs and
 small features with explicit requirements and runnable public regression checks.
 The small corpus measures those constraints, not arbitrary
 large-repository maintenance or a statistically established difficulty level.
-Each task supplies a public smoke program. External graders test additional
+Terminal tasks supply a public smoke program. External graders test additional
 cases, using fixed random seeds, explicit gates and manual clocks where needed.
 
 ## Offline use
@@ -44,7 +62,12 @@ uses Node's type stripping and checks runtime behavior; it does not run `tsc`.
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py validate
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py self-test --attempts 3 --report artifacts/coding-oracle.json
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py self-test --suite everyday --report artifacts/everyday-oracle.json
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py self-test --suite skills --report artifacts/skills-oracle.json
 ```
+
+The skills corpus only needs Python 3.11+ and the standard library. Its files
+are fixtures for future controlled cohorts; the suite does not install skill
+roots, call a provider, or infer a selection from end-task correctness.
 
 `self-test` prepares a fresh Git repository, grades its starter, overlays the
 reference sources, and grades again. Every starter must fail; every reference
@@ -121,6 +144,45 @@ credentials, and two explicit flags. `--allow-live` permits provider calls;
 directory. The adapter uses the existing stdio RPC bridge and `standard`
 preset. It never approves tool requests or continues parked runs.
 
+### Optional skill behavior cohort
+
+Run `self-test --suite skills` first; it only validates grader fixtures. A live
+skill cohort is a separate, manually prepared experiment: prepare one task,
+use the attempt's `workspace/.agents/skills`, discovered automatically.
+Enable the intended skill there before starting Ru. Use the same provider,
+model, effort, protocol, toolchain and deadlines across matched attempts, and
+use fresh workspaces. For the explicit case the task prompt starts with the
+normal `/skill currency-rounding precision=2` chat turn. The implicit and
+supporting-resource cases rely on the registered catalog and its resource
+base. Negative cases expose an unrelated or manual-only skill and expect none.
+
+The current trajectory can report end-task grader reward and general tool
+dispatch counts only. `skill_eval.observed_skill_selection` therefore remains
+`unknown`; do not convert expected selection labels, tool counts or a passing
+task into a selection/adherence score. Provider trials require explicit
+`--allow-live --trust-workspace`, for example:
+
+```powershell
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py run-live --suite skills --task explicit-currency-rounding --destination artifacts/skill-live-explicit --ru-executable backend-dotnet/RuAgent.Cli/bin/Debug/net10.0-windows/RuAgent.Cli.dll --allow-live --trust-workspace --report artifacts/skill-live-explicit/report.json
+```
+
+This command is documentation for a future controlled cohort; no live skill
+quality result is implied by the offline oracle.
+
+Cold initialize/run-start RPCs get up to 30 seconds inside the task deadline;
+ordinary RPC calls keep their 10-second bound. Preserve startup failures with no
+model steps as infrastructure evidence rather than model-quality outcomes.
+
+Use `--tool-profile coding_v2|patch_v2|coding_code_v1` to pin a trial's
+new Host process. A requested/actual pin mismatch fails explicitly. For matched
+tool comparisons, run the same task, model, effort, protocol and deadline with
+fresh destinations for each profile; compare externally graded success before
+latency. The trajectory records observed model steps, tool dispatches/receipts,
+approvals and completeness. Nested PTC call counts, malformed-call taxonomy and
+provider-only latency are null when RPC does not expose them; outer dispatches
+cannot be compared as though they were total nested tool usage. A selected PTC
+profile also does not prove that the model used `run_code`.
+
 ```powershell
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py run-live --suite terminal --task cs-single-flight-cache --attempts 3 --destination artifacts/ru-cache-live --ru-executable backend-dotnet/RuAgent.Cli/bin/Debug/net10.0-windows/RuAgent.Cli.dll --allow-live --trust-workspace --report artifacts/ru-cache-live/report.json
 ```
@@ -143,6 +205,14 @@ is not pass@k. A failed/intervened agent run cannot earn a passing reward from
 a coincidentally correct final workspace.
 
 `trajectory.json` records bounded safe events and run/session IDs. The
+`tool_profile` field records the actual run pin when the Host supplies it; older
+Hosts return null. To compare `coding_v2`, `patch_v2`, and
+`coding_code_v1`, start a dedicated Host with `RU_AGENT_TOOL_PROFILE` set before its
+new runs, use fresh identical fixture copies, and hold the runtime, model,
+effort, task deadlines and toolchains fixed. Do not infer the active profile
+from the bridge's environment when it attached to an already-running Host.
+
+The
 `events_complete` and `usage_complete` fields compare the received sequence
 with the terminal run's authoritative cursor: true means it caught up, false
 means partial evidence, and null means the cursor was unavailable. Available

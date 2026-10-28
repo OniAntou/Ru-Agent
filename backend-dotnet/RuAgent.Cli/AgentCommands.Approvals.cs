@@ -117,6 +117,10 @@ public sealed partial class AgentCommands
                 {
                     await _out.WriteLineAsync(JsonSerializer.Serialize(result.Data)).ConfigureAwait(false);
                 }
+                else if (parsed.Command.Kind == RuAgent.Protocol.AgentCommandKind.Skill)
+                {
+                    await _out.WriteLineAsync("result: skill activated for this run; --json includes the captured body and version").ConfigureAwait(false);
+                }
                 else
                 {
                     await _out.WriteLineAsync("result: bounded; see --json for structured metadata").ConfigureAwait(false);

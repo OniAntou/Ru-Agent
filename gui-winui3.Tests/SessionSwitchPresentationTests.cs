@@ -34,7 +34,8 @@ public sealed class SessionSwitchPresentationTests
         var code = GuiSource.ViewText("ChatView");
         Assert.Contains("_isSessionHistoryLoading", GuiSource.MethodBody(code, "SendCurrentMessageAsync"));
         var open = GuiSource.MethodBody(code, "OpenSessionAsync");
-        Assert.Contains("if (history is null)", open);
+        Assert.Contains("if (historyPage is null", open);
+        Assert.Contains("_historyPageCursor.TrySetNewest(historyPage, sessionId, generation)", open);
         Assert.DoesNotContain("Messages.Add(", open);
         Assert.Contains("if (IsCurrentOpen(generation))", open);
     }

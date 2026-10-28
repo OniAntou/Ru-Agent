@@ -115,7 +115,9 @@ public sealed partial class BrokerExecutionRuntime
         // every pending allow: the decision must be re-evaluated against the new
         // snapshot instead of authorizing an intent the current rules never saw.
         if ((command is ApprovalCommandV2.AllowOnce or ApprovalCommandV2.AllowSessionDirectory or ApprovalCommandV2.AllowAlways)
-            && lease.Snapshot.Version != pending.Binding.SnapshotVersion)
+            && (lease.Snapshot.Version != pending.Binding.SnapshotVersion
+                || pending.Binding.SnapshotSha256 is { } boundHash
+                    && !string.Equals(boundHash, lease.Snapshot.Sha256, StringComparison.Ordinal)))
         {
             return ApprovalDecisionResult.Denied("approval_stale", "approval is bound to an older snapshot");
         }
@@ -146,7 +148,8 @@ public sealed partial class BrokerExecutionRuntime
                 OperationClass: pending.Binding.OperationClass,
                 NetworkIntent: pending.Binding.NetworkIntent,
                 SnapshotVersion: overrideVersionRaw ?? pending.Binding.SnapshotVersion,
-                IntentHash: overrideHash ?? pending.Binding.IntentHash);
+                IntentHash: overrideHash ?? pending.Binding.IntentHash,
+                SnapshotSha256: pending.Binding.SnapshotSha256);
         }
 #endif
 
@@ -187,7 +190,8 @@ public sealed partial class BrokerExecutionRuntime
                     argumentsHash: pending.Binding.IntentHash,
                     lifetime: TimeSpan.FromSeconds(60),
                     snapshotVersion: pending.Binding.SnapshotVersion,
-                    intentHash: pending.Binding.IntentHash);
+                    intentHash: pending.Binding.IntentHash,
+                    snapshotSha256: pending.Binding.SnapshotSha256 ?? string.Empty);
                 return ApprovalDecisionResult.Authorized(
                     authToken,
                     DateTimeOffset.UtcNow.AddSeconds(60).ToString("O"),

@@ -1,8 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -45,12 +43,6 @@ namespace RuApp
             finally
             {
                 _suppressSidebarSelection = false;
-            }
-
-            var truncation = Sidebar.IsTruncated ? Visibility.Visible : Visibility.Collapsed;
-            if (SidebarSessionTruncationWarning.Visibility != truncation)
-            {
-                SidebarSessionTruncationWarning.Visibility = truncation;
             }
 
             _sessionWaveAnimationsEnabled = UiTiming.AnimationsEnabled;
@@ -100,24 +92,25 @@ namespace RuApp
             }
         }
 
+        private WorkspaceFolderPicker? _workspaceFolderPicker;
+
         private async void OnWorkspaceAddClick(object sender, RoutedEventArgs e)
         {
             try
             {
-                var picker = new Windows.Storage.Pickers.FolderPicker();
-                picker.FileTypeFilter.Add("*");
-                WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
-                var folder = await picker.PickSingleFolderAsync();
+                var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+                _workspaceFolderPicker ??= WorkspaceFolderPicker.For(windowId);
+                var folder = await _workspaceFolderPicker.PickAsync();
                 if (folder is not null)
                 {
-                    Sidebar.Pin(folder.Path);
+                    Sidebar.Pin(folder);
                 }
             }
             catch (Exception ex)
             {
                 // async void: the picker can throw (interop failure) and the
                 // sidebar update must not die silently.
-                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Workspace picker failed: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Workspace picker failed: {ex.GetType().Name} (0x{ex.HResult:X8})");
                 SetSessionActionError("Could not add the workspace");
             }
         }

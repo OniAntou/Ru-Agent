@@ -94,8 +94,8 @@ public sealed partial class SubagentPolicyTests : IDisposable
     }
 
     [Theory]
-    [InlineData("write", "{\"op\":\"write\",\"path\":\"x.txt\",\"content\":\"x\"}")]
-    [InlineData("bash", "{\"mode\":\"shell\",\"script\":\"echo unsafe\"}")]
+    [InlineData("write_file", "{\"path\":\"x.txt\",\"content\":\"x\"}")]
+    [InlineData("powershell", "{\"script\":\"Write-Output unsafe\"}")]
     public async Task Reviewer_is_denied_by_runtime_even_with_full_access(string tool, string arguments)
     {
         await Open("parent", "parent", EnvelopeTestSnapshots.FullAccessEmpty());
@@ -113,7 +113,7 @@ public sealed partial class SubagentPolicyTests : IDisposable
         await Open("child", "child", EnvelopeTestSnapshots.FullAccessEmpty());
         await Open("grandchild", "child", EnvelopeTestSnapshots.FullAccessEmpty());
         await _runtime.BindDelegationAsync("run_parent", "run_child", SubagentRole.Coding, default);
-        var denied = await Evaluate("child", "write", new JsonObject { ["op"] = "write", ["path"] = Path.Combine(_root, "parent", "x.txt"), ["content"] = "x" });
+        var denied = await Evaluate("child", "write_file", new JsonObject { ["path"] = Path.Combine(_root, "parent", "x.txt"), ["content"] = "x" });
         Assert.Equal("subagent_scope_denied", denied.Decision!.ReasonCode);
         await Assert.ThrowsAsync<AgentProtocolException>(() => _runtime.BindDelegationAsync("run_child", "run_grandchild", SubagentRole.Coding, default));
     }

@@ -28,7 +28,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
     private const int MaxConversationBlockChars = ModelInputLimits.MaxToolResultChars;
     private const string DurableToolContinuationPrompt = "Continue from the durable tool results.";
     private const string ConversationTruncationNote =
-        "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
+        "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at next_offset or next_line when present)";
 
     private readonly ModelStepService _stepService;
 
@@ -136,7 +136,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                     result.ToolCalls,
                     MapFinishReason(result.FinishReason),
                     estimatedInputTokens: 0,
-                    result.Usage);
+                    result.Usage,
+                    result.ToolCalls.Count == 0 ? result.ResponsesMessages : null);
                 return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText,
                     result.ProviderContinuation, attempt + 1, effectiveEffort, selectedEffort);
             }
@@ -164,6 +165,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             }
             catch (ModelStepException error)
             {
+                // Cancellation can win between provider rejection and the retry filter.
+                cancellationToken.ThrowIfCancellationRequested();
                 Console.Error.WriteLine(
                     $"ru.host step_rejected code={error.Code} retryable={error.Retryable}");
                 // The step driver records one durable code, and the provider
@@ -266,7 +269,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         try
         {
             return new ModelGenerationRequest(prompt, modelMessages!, request.PromptContext,
-                new ModelGenerationSettings(settings["model_tools"] as JsonArray), bootstrap,
+                new ModelGenerationSettings(settings["model_tools"] as JsonArray,
+                    providerWebSearch: request.PromptContext.ProviderWebSearch), bootstrap,
                 ParseRunImages(images), history.Responses, history.Anthropic,
                 promptInHistory: nativeText, pendingRuntimeSnapshot: pendingSnapshot);
         }
@@ -303,9 +307,11 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             : await LoadProviderContinuationsAsync(request.RunId, bootstrap,
                 RetainedAssistantEventIds(request.Context, modelMessages), cancellationToken).ConfigureAwait(false);
         return bootstrap.Protocol == ProviderProtocols.OpenAiResponses
-            ? new NativeHistory(OpenAiResponsesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model), empty.Anthropic)
+            ? new NativeHistory(OpenAiResponsesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model,
+                request.PromptContext.ProviderWebSearch), empty.Anthropic)
             : new NativeHistory(empty.Responses,
-                AnthropicMessagesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model));
+                AnthropicMessagesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model,
+                    request.PromptContext.ProviderWebSearch));
     }
 
     private async Task<ProviderBootstrapData> LoadProviderBootstrapAsync(
@@ -618,7 +624,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             }
 
             AddPendingUserBlocks(units, pendingUserBlocks);
-            units.Add(new List<ModelTurn> { new("assistant", step.Text) });
+            units.Add(new List<ModelTurn> { new("assistant", step.Text, responsesMessages: step.ResponsesMessages) });
             return;
         }
 
@@ -640,7 +646,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
 
         units.Add(new List<ModelTurn>
         {
-            new("assistant", step.Text ?? string.Empty, calls),
+            new("assistant", step.Text ?? string.Empty, calls, responsesMessages: step.ResponsesMessages),
         });
     }
 

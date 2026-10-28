@@ -1,5 +1,12 @@
 # Gui implementation
 
+Workspace selection uses the desktop Windows App SDK folder picker, associated
+with the owning window's `WindowId`. `WorkspaceFolderPicker` permits one dialog
+at a time and treats native Cancel/close as no selection. Unexpected failures
+reach the existing inline error and bounded exception-category/HRESULT trace.
+The selected path is pinned through the existing sidebar store; selecting a
+folder does not grant workspace trust or execution permission.
+
 Terminal failures keep their actionable inline status above the composer even
 when no assistant reply was rendered. The transcript does not add a terminal
 summary card; settled thinking rows alone must not hide a failed run.
@@ -76,6 +83,30 @@ Provider billing and cache counters remain independent of these display estimate
 The meter button's accessible help includes the total and all three values, so
 the reading remains available even when the flyout opens as a transient hover.
 
+## Compact agent activity
+
+Settings includes an opt-in **Compact agent activity** switch. Detailed mode is
+still the default. The device-local `Ru/activity-display.json` preference applies
+to open transcripts and newly loaded messages; it does not enter backend settings,
+model context, durable activity records or execution policy.
+
+Each assistant message with activity gets one disclosure line in compact mode.
+It counts recorded non-narration activities, reports failed/waiting states, and
+shows the latest running activity while the turn streams. Reply text stays visible.
+Expanding the line restores the original interleaved text/activity timeline;
+collapsing filters only activity segments and preserves the same live text objects.
+The legacy replay layout uses the same disclosure. Expansion is per message and
+is not reset when more activity arrives. Existing approval/question surfaces and
+file-change summaries stay outside this disclosure.
+
+`AgentActivitySummaryProjection` owns counts/status wording; the native summary
+control coalesces updates, follows item changes, stops its timer and releases
+subscriptions on unload. `ChatMessageItem.ActivityDisplay` keeps the text-only projection,
+using incremental appends for live segments. The disclosure uses a keyboard-operable
+button with an accessible action and expanded/collapsed status; it adds no motion.
+The stored preference is bounded and written atomically; absent/invalid preferences
+fall back to detailed mode.
+
 ## Presentation ownership
 
 WinUI-independent presenters own settings load generations and save ordering,
@@ -122,8 +153,14 @@ list selection, drag visuals, title waves and dialogs; it re-syncs selection on
 `Rendered` and supplies the delete confirmations through `ISessionDeletionPrompts`.
 A delete removes the row as soon as the Host confirms it, then refreshes with
 `RefreshLatestAsync`, which supersedes a poll that may hold the pre-delete list.
-The workspace sidebar has no search or current-workspace filter. Group expansion,
-pins, pagination, drag ordering and active-session visibility stay in its projection.
+The workspace sidebar uses the paged Host listing without a dedicated search box,
+Load more sessions button or pagination notice. Host title/message search and
+cursor-based pagination remain available through the backend. Group expansion,
+pins, drag ordering and active-session visibility stay in its projection. There
+is no separate current-workspace filter. Chat history opens at a bounded newest
+page; Load earlier messages prepends older rows with absolute indices and preserves the
+visible scroll anchor. Generation/session checks reject late responses after
+switching chats, and rewind invalidates obsolete history cursors.
 Workspaces, Recents and CLI Sessions headings pair their labels with decorative
 grid, history and minimal terminal-prompt icons; the labels and existing controls
 remain the accessible interaction targets.
@@ -330,6 +367,19 @@ saved assistant message gets its own bubble after its user turn, never an older
 turn's bubble. Replay preserves the saved final answer when payload reads omit
 it. Legacy messages without run identities permit ordinal replay only when the
 message/run counts match; unbalanced histories retain prose without guessing.
+A same-session reload (end of turn, rewind, paging refresh) merges the rebuilt rows
+into the bound transcript with `TranscriptReconciler` instead of a reset: a row that
+renders the same keeps its instance and container, a locally sent row adopts its
+durable identity, the streamed reply keeps its segments when the history holds the
+same text, and only changed rows are replaced. A reset re-created every container and
+painted the transcript's top before its scroll returned. Opening another session still
+replaces the list in one reset. The transcript ListView sets
+`ShowsScrollingPlaceholders="False"`: with placeholders, a reset prepared empty rows at
+the item minimum height and expanded their templates on later frames, so the opened
+session grew and jumped under the reader. Lists inside a row use a plain `StackPanel`
+rather than a nested virtualizing panel. The side panel and task shelf of the incoming
+session are laid out in the dispatcher turn that replaces the rows, so the outgoing rows
+never reflow first.
 Persisted transcript rows retain their raw server message index independently
 of hidden or synthetic display rows. Rewind uses that index, then reloads only
 while the requesting session still owns the view, without restoring live text
@@ -549,3 +599,17 @@ Ordinary tooltips do not blank the document surface.
 Renderer availability and fidelity depend on the installed handler. These
 presentation bounds do not claim OS-level confinement of third-party renderers.
 See [ADR 0024](../adr/0024-local-document-preview.md).
+
+
+### Run and update lifecycle owners
+
+`AgentRunController` exposes the existing run API, with lifecycle, feed and
+approval/input responsibilities in focused files. `AgentRunFeedState` owns
+stream deduplication, terminal status and lifetime drop counters; changing run
+ownership resets feed identity without losing controller-lifetime counters.
+`UpdateAvailabilityMonitor` owns immediate/periodic update checks, a bounded
+request deadline, single-flight execution and cancellation. A callback that
+ignores cancellation retains its flight slot until it exits; stopping the view
+never waits indefinitely for it. Expected and unexpected errors reach the view's
+reporter. Behavioral tests cover timing, stop, ignored cancellation and retries;
+source checks retain UI wiring rather than implementation statement spelling.

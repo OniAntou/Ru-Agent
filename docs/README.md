@@ -32,6 +32,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
   [Providers](architecture/providers.md)
 - [Domain language](../CONTEXT.md)
 - [Context management and checkpoints](architecture/context-management.md)
+- [Database history, backup and maintenance](operations/database-maintenance.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
 - [Agent performance diagnostics and offline benchmark](operations/agent-performance.md)
 - [The stdio RPC bridge](operations/rpc.md)
@@ -40,6 +41,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Provider catalogs and model-specific reasoning](operations/provider-catalog.md)
 - [Operations and verification](operations/verification.md)
 - [Agent tools and truthful execution](operations/agent-tools.md)
+- [Skill setup, invocation and continuity](operations/skills.md)
 - [Coding-agent capability and acceptance map](operations/coding-agent-capabilities.md)
 - [Custom Terminal/SWE/Everyday coding benchmark](../tools/coding-benchmark/README.md)
 - [Logging and diagnostics](operations/logging.md)
@@ -54,6 +56,12 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Agent guidance](../AGENTS.md)
 
 ## Decisions
+
+- [Shared skill catalog and run-local workflow snapshots](adr/0032-skill-catalog-and-workflow-snapshots.md)
+
+- [Retire the legacy tool surface](adr/0029-retire-legacy-tool-surface.md)
+- [Bounded programmatic coding tools](adr/0028-bounded-programmatic-coding-tools.md)
+- [Pinned coding tool profiles](adr/0027-pinned-coding-tool-profiles.md) (legacy compatibility superseded by 0029)
 
 - [`read` returns workspace images to vision models](adr/0026-read-returns-workspace-images.md) (proposed)
 - [MCP servers through the Broker behind one `mcp` tool](adr/0025-mcp-servers-through-the-broker.md)
@@ -80,7 +88,11 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Standard workspace Python files](adr/0016-standard-workspace-python-files.md)
 - [Workspace terminal policy](adr/0017-workspace-terminal-policy.md)
 - [Approval patterns and durable folder grants](adr/0018-approval-patterns-and-durable-folder-grants.md)
-- [Delegated subagent runs (implementation in progress)](adr/0022-delegated-subagent-runs.md)
+- [Delegated subagent runs](adr/0022-delegated-subagent-runs.md)
+
+- [Relational history and database maintenance](adr/0030-relational-history-and-database-maintenance.md)
+- [Computer use through the Broker](adr/0031-computer-use-through-the-broker.md)
+- [Provider-hosted web search](adr/0033-provider-hosted-web-search.md)
 
 Git history is the recovery source for removed dated plans, specifications,
 reviews and verification records.

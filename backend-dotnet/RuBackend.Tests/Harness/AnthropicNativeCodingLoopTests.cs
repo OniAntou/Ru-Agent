@@ -222,11 +222,11 @@ public sealed partial class HeadlessCodingLoopTests
             {
                 0 => ToolBatch(("toolu-read-a", "read", "{\"path\":\"seed.txt\"}"),
                     ("toolu-read-b", "read", "{\"path\":\"missing-native-file.txt\"}")),
-                1 => ToolBatch(("toolu-write-a", "write", "{\"op\":\"write\",\"path\":\"native-sequence.txt\",\"content\":\"first\"}"),
-                    ("toolu-write-b", "edit", "{\"path\":\"native-sequence.txt\",\"old_string\":\"first\",\"new_string\":\"second\"}"),
-                    ("toolu-write-c", "edit", "{\"path\":\"native-sequence.txt\",\"old_string\":\"second\",\"new_string\":\"third\"}")),
-                2 => ToolBatch(("toolu-approval", "write", JsonSerializer.Serialize(new
-                { op = "write", path = approvalWritePath, content = "approved native edit", overwrite = true }))),
+                1 => ToolBatch(("toolu-write-a", "write_file", "{\"path\":\"native-sequence.txt\",\"content\":\"first\"}"),
+                    ("toolu-write-b", "edit_file", "{\"path\":\"native-sequence.txt\",\"edits\":[{\"old_string\":\"first\",\"new_string\":\"second\"}]}"),
+                    ("toolu-write-c", "edit_file", "{\"path\":\"native-sequence.txt\",\"edits\":[{\"old_string\":\"second\",\"new_string\":\"third\"}]}")),
+                2 => ToolBatch(("toolu-approval", "write_file", JsonSerializer.Serialize(new
+                { path = approvalWritePath, content = "approved native edit", overwrite = true }))),
                 _ => TextCompletion("Anthropic native workflow complete."),
             };
             return new HttpResponseMessage(HttpStatusCode.OK)
@@ -339,12 +339,12 @@ public sealed partial class HeadlessCodingLoopTests
                 + Event("content_block_start", new JsonObject
                 {
                     ["type"] = "content_block_start", ["index"] = 0,
-                    ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = "toolu-interrupted", ["name"] = "write", ["input"] = new JsonObject() },
+                    ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = "toolu-interrupted", ["name"] = "write_file", ["input"] = new JsonObject() },
                 })
                 + Event("content_block_delta", new JsonObject
                 {
                     ["type"] = "content_block_delta", ["index"] = 0,
-                    ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "{\"op\":\"write\",\"path\":\"native-partial.txt\",\"content\":\"must-not-run\"}" },
+                    ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "{\"path\":\"native-partial.txt\",\"content\":\"must-not-run\"}" },
                 })
                 + Event("content_block_stop", new JsonObject { ["type"] = "content_block_stop", ["index"] = 0 });
             return new HttpResponseMessage(HttpStatusCode.OK)
@@ -389,11 +389,11 @@ public sealed partial class HeadlessCodingLoopTests
 
         private static void AppendWrite(StringBuilder output, int index, string id, string path)
         {
-            var arguments = JsonSerializer.Serialize(new { op = "write", path, content = "must-not-run" });
+            var arguments = JsonSerializer.Serialize(new { path, content = "must-not-run" });
             output.Append(Event("content_block_start", new JsonObject
             {
                 ["type"] = "content_block_start", ["index"] = index,
-                ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = id, ["name"] = "write", ["input"] = new JsonObject() },
+                ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = id, ["name"] = "write_file", ["input"] = new JsonObject() },
             }));
             output.Append(Event("content_block_delta", new JsonObject
             {

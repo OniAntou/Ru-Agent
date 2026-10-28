@@ -346,7 +346,7 @@ public sealed class AgentActivityUiSourceContractTests
 
         var wrapper = Assert.IsType<System.Xml.Linq.XElement>(panel.Parent);
         Assert.Equal(root, wrapper.Parent);
-        Assert.Equal("1", GuiSource.AttributeValue(wrapper, "Row"));
+        Assert.Equal(GuiSource.AttributeValue(inputContainer, "Row"), GuiSource.AttributeValue(wrapper, "Row"));
         Assert.Equal("Bottom", GuiSource.AttributeValue(wrapper, "VerticalAlignment"));
         Assert.Equal("20", GuiSource.AttributeValue(wrapper, "ZIndex"));
     }

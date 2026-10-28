@@ -463,6 +463,39 @@ before classifying an occupied port as a foreign Host.
 Startup is cancellation-scoped, with checks after asynchronous stages before
 creating subsequent UI services or timers. Host shutdown remains Host-owned.
 
+### Conversation header
+
+`ChatHeader` is the first row of the chat view's root grid, above the reading column,
+side surface and composer. Its left side is a breadcrumb: the workspace folder's name
+(full path in the tooltip), then the open session's title, trimmed against the width
+the other parts leave. After the title a label names the permission preset with the
+Settings names (Plan, Standard, Full Access) and a dot coloured by risk: info, success
+and warning. The label is a notice, not a control: the preset changes only in Settings
+or the command palette. On the right, "Working" with a breathing dot shows while
+a run is live (the dot holds still when animations are off). The header follows the
+transcript's visibility, so the welcome screen has none. The title updates when a
+session opens and when the open session is titled by its first prompt; the workspace
+follows the side surface's workspace and each run's resolved folder; the label follows
+`SessionPresetViewModel.Preset`.
+
+### Message rail
+
+`MessageRailControl` sits in `ChatContentGrid` beside, not inside, `ChatListView`, so it
+stays put while the transcript scrolls. It draws one tick per loaded message, spaced by index rather than by row geometry, because
+the list virtualizes and unrealized rows have no trustworthy position. When the ticks
+do not fit, `MessageRailPolicy` groups neighbouring messages into one tick. Ticks are
+shapes on one hit-test surface; the pointer's Y picks the nearest tick. At rest all
+ticks share one short, dim length and only the one in view is brighter; hovering lifts
+the tick under the pointer and tapers its neighbours, through a composition scale
+rather than a relayout. The hover card
+reads the message's current `Content` when shown, strips Markdown, and never takes hit
+tests, so it cannot steal the pointer from the rail. A click stops following output
+before jumping (the click lands outside the list, so the list's own input hooks never
+see it) and settles the jump again after layout. The highlighted tick follows
+`FirstVisibleIndex`, or the last message at the bottom. The rail hides below two
+messages or when the host is narrower than the reading column plus both gutters.
+Messages not yet paged in from history have no tick until loaded.
+
 ## Conversation Session
 
 The conversation and history record owned by the Public Host in the shared

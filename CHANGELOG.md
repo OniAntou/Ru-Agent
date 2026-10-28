@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: A header above the chat shows the workspace and session title as a
+  breadcrumb, the permission mode with a risk-coloured dot (Plan, Standard or
+  Full Access), and a Working indicator while a run is live. The mode is read-only there;
+  it still changes in Settings or with Ctrl+K.
+
+- **feat(gui)**: A message rail in the transcript's left gutter shows a tick per
+  loaded message. Hovering lifts the tick and previews the message (title and first lines, without
+  Markdown); clicking jumps to its first line. The tick for the message in view is
+  highlighted. The rail hides when the window leaves no gutter beside the reading column.
+
 - **feat(gui)**: A **Customize** page under New Chat gathers skills and plugins. Its
   Skills tab searches the workspace skills, enables or disables them, sets automatic
   use, adds local skill folders and puts `/skill <id>` in the composer; its Plugins tab

@@ -464,6 +464,7 @@ namespace RuApp.Views
                 _historyReplay = Array.Empty<SessionRunReplay>();
                 UpdateLoadEarlierHistoryButton();
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
+                UpdateChatHeaderTitle();
                 _agentWorkspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
                     ?? _agentWorkspace;
                 ResetAgentState(preserveTranscript: true);
@@ -914,6 +915,8 @@ namespace RuApp.Views
             RunPanel.QuestionArrived -= OnRunPanelQuestionArrived;
             RunPanel.TrustPromptRequested -= OnRunPanelTrustPromptRequested;
             StopTaskRefreshTimer();
+            DisposeMessageRail();
+            DisposeChatHeader();
             SidePanel?.CancelVisibilityAnimations();
             _taskRefreshCancellation?.Cancel();
             _taskRefreshCancellation?.Dispose();

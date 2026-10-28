@@ -538,7 +538,7 @@
                                            AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
     </UserControl.Resources>
 
-    <Grid x:Name="RootGrid" RowDefinitions="*,Auto" Background="{StaticResource RuCanvasBrush}">
+    <Grid x:Name="RootGrid" RowDefinitions="Auto,*,Auto" Background="{StaticResource RuCanvasBrush}">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="ResponsiveStates">
                 <VisualState x:Name="Wide">
@@ -574,13 +574,106 @@
 
         <controls:MeteorShowerField x:Name="MeteorShowerField"
                                     Grid.Row="0"
-                                    Grid.RowSpan="2"
+                                    Grid.RowSpan="3"
                                     HorizontalAlignment="Stretch"
                                     VerticalAlignment="Stretch"
                                     IsHitTestVisible="False" />
 
-        <Grid x:Name="ReadingColumn"
+        <!-- Conversation header: the session title and a read-only permission
+             label. A notice, not a control: the preset still changes only in
+             Settings or the command palette (owner decision, 2026-10-22). -->
+        <Grid x:Name="ChatHeader"
               Grid.Row="0"
+              Height="52"
+              Padding="20,0"
+              ColumnDefinitions="*,Auto"
+              ColumnSpacing="12"
+              Visibility="Collapsed"
+              BorderBrush="{StaticResource RuLineBrush}"
+              BorderThickness="0,0,0,1"
+              AutomationProperties.AutomationId="ChatHeader"
+              AutomationProperties.Name="Conversation header">
+            <StackPanel x:Name="ChatHeaderLeading"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Center">
+                <StackPanel x:Name="ChatHeaderWorkspace"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            VerticalAlignment="Center"
+                            Background="Transparent"
+                            AutomationProperties.AutomationId="ChatHeaderWorkspace">
+                    <FontIcon Glyph="&#xE8B7;"
+                              FontSize="13"
+                              Foreground="{StaticResource RuMutedBrush}"
+                              VerticalAlignment="Center"
+                              AutomationProperties.AccessibilityView="Raw" />
+                    <TextBlock x:Name="ChatHeaderWorkspaceText"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="13"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="200"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <FontIcon x:Name="ChatHeaderBreadcrumbSeparator"
+                          Glyph="&#xE76C;"
+                          FontSize="9"
+                          Foreground="{StaticResource RuMutedBrush}"
+                          VerticalAlignment="Center"
+                          AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock x:Name="ChatHeaderTitle"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource RuInkBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           TextWrapping="NoWrap"
+                           VerticalAlignment="Center"
+                           AutomationProperties.AutomationId="ChatHeaderTitle" />
+                <Border x:Name="ChatHeaderPermission"
+                        Margin="4,0,0,0"
+                        VerticalAlignment="Center"
+                        Background="Transparent"
+                        AutomationProperties.AutomationId="ChatHeaderPermission">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Ellipse x:Name="ChatHeaderPermissionDot"
+                                 Width="6"
+                                 Height="6"
+                                 VerticalAlignment="Center" />
+                        <TextBlock x:Name="ChatHeaderPermissionText"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="12.5"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Shown only while a run is live; the dot breathes (see ChatView.Header). -->
+            <Border x:Name="ChatHeaderRunStatus"
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed"
+                    AutomationProperties.AutomationId="ChatHeaderRunStatus"
+                    AutomationProperties.Name="Run in progress">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse x:Name="ChatHeaderRunDot"
+                             Width="6"
+                             Height="6"
+                             Fill="{StaticResource RuAccentBrush}"
+                             VerticalAlignment="Center" />
+                    <TextBlock Text="Working"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="12.5"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Grid x:Name="ReadingColumn"
+              Grid.Row="1"
               HorizontalAlignment="Stretch"
               Background="Transparent">
             <StackPanel x:Name="WelcomeHeroPanel"
@@ -720,11 +813,16 @@
                     </ListView.ItemContainerStyle>
                 </ListView>
 
+                <!-- Outside the list so it stays put while the transcript scrolls;
+                     its hover card never takes hit tests (see MessageRailControl). -->
+                <controls:MessageRailControl x:Name="MessageRail"
+                                             Margin="4,0,0,0"
+                                             Visibility="Collapsed" />
             </Grid>
         </Grid>
 
         <Button x:Name="NewMessagesPill"
-                Grid.Row="0"
+                Grid.Row="1"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Bottom"
                 Margin="0,0,0,16"
@@ -760,7 +858,7 @@
              details panel live in one control; the view answers which host is
              showing through AgentSidePanelPolicy. -->
         <controls:AgentSidePanelControl x:Name="SidePanel"
-                                        Grid.Row="0"
+                                        Grid.Row="1"
                                         Grid.RowSpan="2" />
 
         <!-- Approval overlay: declared before the input (XAML parse fails when
@@ -769,7 +867,7 @@
           of shoving them upward. The question card shares the host: a run is
           either waiting for approval or waiting for an answer, never both. -->
         <Grid x:Name="ApprovalHostGrid"
-              Grid.Row="1"
+              Grid.Row="2"
               VerticalAlignment="Bottom"
               HorizontalAlignment="Stretch"
               MaxWidth="820"
@@ -780,7 +878,7 @@
         </Grid>
 
             <Grid x:Name="InputContainer"
-              Grid.Row="1"
+              Grid.Row="2"
               RowDefinitions="Auto,Auto,Auto,Auto"
               MaxWidth="820"
               Margin="16,0"

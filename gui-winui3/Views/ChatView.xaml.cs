@@ -198,6 +198,8 @@ namespace RuApp.Views
             this.Loaded += OnChatViewLoaded;
             InitializeChatHoverEffects();
             InitializeSidePanel();
+            InitializeMessageRail();
+            InitializeChatHeader();
             UpdateViewMode();
         }
 
@@ -351,6 +353,7 @@ namespace RuApp.Views
                 : defaultAgentWorkspace.Trim();
             _defaultAgentWorkspace = defaultWorkspace;
             _agentWorkspace = defaultWorkspace;
+            UpdateChatHeaderWorkspace();
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController == null;
             _groupedCatalogs = groupedProviderCatalogs ?? new GroupedProviderCatalogController(new ProviderCatalogService(apiService));

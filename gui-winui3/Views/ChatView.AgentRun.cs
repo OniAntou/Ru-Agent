@@ -701,6 +701,7 @@ namespace RuApp.Views
                 ?? throw new InvalidOperationException("App root workspace is not configured.");
 
             _agentWorkspace = workspace;
+            UpdateChatHeaderWorkspace();
             // The exact folder this run is created for, so the trust prompt can name it.
             _requestedWorkspaceBySession[_activeSessionId] = workspace;
 

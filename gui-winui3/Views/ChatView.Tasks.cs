@@ -45,6 +45,7 @@ public sealed partial class ChatView
 
         _activeSessionTitle = title;
         SidePanel?.SetSessionTitle(title);
+        UpdateChatHeaderTitle();
     }
 
     private void UpdateSidePanel(bool isRunRunning)
@@ -56,6 +57,7 @@ public sealed partial class ChatView
 
         SidePanel.SetSessionTitle(_activeSessionTitle);
         SidePanel.SetWorkspace(_agentWorkspace);
+        UpdateChatHeaderWorkspace();
         SidePanel.SetTerminalWorkingDirectory(_agentWorkspace);
         ApplySidePanelState();
         UpdateWelcomeWorkspaceText();

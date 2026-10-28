@@ -208,7 +208,10 @@ namespace RuApp.Views
 
         private void OnMessagesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
         {
-            ApplyActivityDisplayPreference(e.NewItems);
+            // A history load replaces the whole list in one Reset, which carries no
+            // NewItems: every message then needs the preference, not none of them.
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) RefreshActivityDisplay();
+            else ApplyActivityDisplayPreference(e.NewItems);
             _transcriptRevision++;
             UpdateViewMode();
         }

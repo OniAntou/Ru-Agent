@@ -90,9 +90,18 @@ still the default. The device-local `Ru/activity-display.json` preference applie
 to open transcripts and newly loaded messages; it does not enter backend settings,
 model context, durable activity records or execution policy.
 
-Each assistant message with activity gets one disclosure line in compact mode.
-It counts recorded non-narration activities, reports failed/waiting states, and
-shows the latest running activity while the turn streams. Reply text stays visible.
+Each assistant message with activity gets one quiet disclosure line in compact mode,
+with no surface or border of its own. A finished turn reads as a sentence of its
+three most frequent kinds of work, ranked by count with ties in first-appearance
+order and no counts ("Edited files, ran commands and read files", "… and more" past
+three); thinking, status and narration rows do not rank. A live turn shows the
+running activity's own text under a sweeping shimmer (off when Windows animations
+are off), holds each title at least 150 ms so fast tool bursts do not flicker, and
+ends in an elapsed clock measured from the reply's creation. Failures and waits add
+a tail ("waiting for you · 1 failed") and tint the line warning or danger. The
+leading glyph names the main kind of work and turns into the disclosure chevron on
+hover, keyboard focus or while open. No total duration is shown for a finished turn,
+because the transcript does not record when a turn ended. Reply text stays visible.
 Expanding the line restores the original interleaved text/activity timeline;
 collapsing filters only activity segments and preserves the same live text objects.
 The legacy replay layout uses the same disclosure. Expansion is per message and

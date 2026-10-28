@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Compact agent activity reads as one quiet line: a sentence of the
+  turn's main kinds of work ("Edited files, ran commands and read files"), a glyph that
+  turns into the disclosure chevron on hover, and, while the turn runs, the current
+  activity under a shimmer with an elapsed clock. Failures and waits tint the line.
+
 - **feat(providers)**: Add any number of named custom providers (ADR 0034): Settings ›
   Providers › Add custom model API takes a provider ID, display name, base URL, OpenAI
   Chat Completions or Anthropic Messages protocol, an optional key and the model list,

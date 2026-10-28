@@ -150,6 +150,14 @@ public static class AgentFailureCopy
             "Provider web search unavailable",
             "the provider refused its hosted web search for this model or account",
             "turn it on for the organization, pick another model, or set provider_web_search_enabled to false");
+        Add(table, ["model_tools_unsupported"],
+            "Model cannot use tools",
+            "this model or its server does not accept tool calls, which Ru needs",
+            "pick a model that supports tool calling, or enable tool calling on the server");
+        Add(table, ["provider_insecure_endpoint"],
+            "Key not sent over plain HTTP",
+            "the endpoint uses http:// to another computer, so the key would travel unencrypted",
+            "use an https:// URL, run the server on this computer, or remove the key");
         Add(table, ["provider_search_paused"],
             "Web search did not finish",
             "the provider paused its search turn too many times",

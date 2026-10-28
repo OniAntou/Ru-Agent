@@ -257,6 +257,9 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
         bool refresh,
         CancellationToken ct)
     {
+        if (selection.IsCustomProvider)
+            return await GetCustomProviderAsync(selection, settings, ct).ConfigureAwait(false);
+
         // Reading only this account also invalidates cached metadata on key changes.
         var credential = selection.Account is null ? "" : await credentials.GetAsync("Ru", selection.Account, ct).ConfigureAwait(false) ?? "";
         var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(credential)));

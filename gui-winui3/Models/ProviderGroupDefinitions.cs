@@ -29,7 +29,9 @@ public static class ProviderGroupDefinitions
 
     /// <summary>
     /// The fixed group plus one group per Models.dev provider, in stable order.
-    /// Unknown entries are skipped; the fixed set never moves.
+    /// Unknown entries are skipped; the fixed set never moves. An entry whose id is
+    /// already a <c>custom:&lt;id&gt;</c> backend is a named custom provider
+    /// (ADR 0034) and keeps that backend as its alias.
     /// </summary>
     public static IReadOnlyList<ProviderGroupDefinition> WithModelsDev(IEnumerable<ModelsDevEntry>? entries)
     {
@@ -48,12 +50,18 @@ public static class ProviderGroupDefinitions
             }
 
             var id = (entry.Id ?? string.Empty).Trim().ToLowerInvariant();
+            var name = string.IsNullOrWhiteSpace(entry.Name) ? id : entry.Name.Trim();
+            if (Services.CustomProviderPolicy.IsCustomChoice(id))
+            {
+                if (seen.Add(id)) result.Add(new(id, id, name, result.Count));
+                continue;
+            }
+
             if (id.Length == 0 || id.Length > 64 || !seen.Add("models.dev:" + id))
             {
                 continue;
             }
 
-            var name = string.IsNullOrWhiteSpace(entry.Name) ? id : entry.Name.Trim();
             result.Add(new("models.dev:" + id, "models.dev:" + id, name, result.Count));
         }
 

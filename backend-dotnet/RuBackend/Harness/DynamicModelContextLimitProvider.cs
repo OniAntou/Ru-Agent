@@ -6,8 +6,11 @@ using RuBackend.Providers;
 
 namespace RuBackend.Harness;
 
-public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvider
+public sealed partial class DynamicModelContextLimitProvider : IModelContextLimitProvider
 {
+    [System.Text.RegularExpressions.GeneratedRegex("(^|[^a-z0-9])o[134]([^a-z0-9]|$)")]
+    private static partial System.Text.RegularExpressions.Regex ReasoningSeriesPattern();
+
     public const long ConservativeUnknownContextWindowTokens = 32_768;
 
     private readonly ISettingsStore? _settings;
@@ -142,7 +145,9 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
             return 200_000;
         }
 
-        if (m.Contains("gpt-4") || m.Contains("o1") || m.Contains("o3") || m.Contains("o4") || m.Contains("codex"))
+        // o1/o3/o4 only as a whole name segment: a bare substring also matched
+        // names such as "llama3-70b-o1x" or a quantization tag ending in "o4".
+        if (m.Contains("gpt-4") || ReasoningSeriesPattern().IsMatch(m) || m.Contains("codex"))
         {
             return 128_000;
         }

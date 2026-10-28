@@ -227,6 +227,11 @@ public sealed partial class SettingsStore : ISettingsStore
             return generic;
         }
 
+        if (CustomProviders.NormalizeBackend(value) is { } custom)
+        {
+            return custom;
+        }
+
         return value.Trim().ToLowerInvariant() switch
         {
             "gguf" or "llama.cpp" => "models.dev:opencode",

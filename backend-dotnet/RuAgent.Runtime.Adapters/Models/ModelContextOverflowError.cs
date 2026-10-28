@@ -45,6 +45,24 @@ internal static class ModelContextOverflowError
 
     internal const string WebSearchUnavailableCode = "provider_web_search_unavailable";
 
+    internal const string ToolCallingUnsupportedCode = "model_tools_unsupported";
+
+    /// <summary>
+    /// The model or server cannot take the tool declarations Ru sends with every
+    /// request (ADR 0034). Matched only on the specific phrasings self-hosted
+    /// servers use: Ollama ("does not support tools") and vLLM (auto tool choice
+    /// not enabled). The error may be an object or a bare string.
+    /// </summary>
+    internal static bool IsToolCallingUnsupported(JsonNode? error)
+    {
+        var message = error is JsonObject body ? Text(body["message"]) : Text(error);
+        if (message is null) return false;
+        return message.Contains("does not support tools", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("tools are not supported", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("tool calling is not supported", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("enable-auto-tool-choice", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>The bounded <c>error</c> object of a 400 or 413 body, or null.</summary>
     internal static async Task<JsonNode?> ReadErrorAsync(HttpResponseMessage response, CancellationToken ct)
     {

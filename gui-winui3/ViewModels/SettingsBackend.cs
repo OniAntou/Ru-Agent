@@ -66,3 +66,28 @@ internal sealed class ProviderCatalogSession(ProviderCatalogController controlle
 
     public Task<bool> RefreshAsync(bool force = false) => controller.RefreshAsync(force);
 }
+
+/// <summary>What the custom provider editor needs from the Host (ADR 0034).</summary>
+internal interface ICustomProviderBackend
+{
+    Task<AppSettingsDto?> GetSettingsAsync();
+
+    Task<CustomProviderSaveResult> SaveAsync(IReadOnlyList<CustomProviderDto> providers, string? keyProviderId, string? apiKey);
+
+    Task<ProviderCatalogSnapshot?> DiscoverAsync(string backend, CancellationToken cancellationToken);
+
+    Task<bool> RemoveKeyAsync(string backend);
+}
+
+internal sealed class ApiCustomProviderBackend(ApiService api) : ICustomProviderBackend
+{
+    public Task<AppSettingsDto?> GetSettingsAsync() => api.GetSettingsAsync();
+
+    public Task<CustomProviderSaveResult> SaveAsync(IReadOnlyList<CustomProviderDto> providers, string? keyProviderId, string? apiKey) =>
+        api.SaveCustomProvidersAsync(providers, keyProviderId, apiKey);
+
+    public Task<ProviderCatalogSnapshot?> DiscoverAsync(string backend, CancellationToken cancellationToken) =>
+        api.DiscoverCustomModelsAsync(backend, cancellationToken);
+
+    public Task<bool> RemoveKeyAsync(string backend) => api.RemoveProviderAsync(backend);
+}

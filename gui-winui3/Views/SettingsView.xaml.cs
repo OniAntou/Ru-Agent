@@ -95,6 +95,9 @@ namespace RuApp.Views
             DisposeOwnedProviderCatalogController();
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController is null;
+            var customEditor = new CustomProviderEditorViewModel(new ApiCustomProviderBackend(apiService));
+            ViewModel.AttachCustomEditor(customEditor);
+            CustomProviderEditor.Attach(customEditor);
             _ = ViewModel.AttachAsync(new ApiSettingsBackend(apiService), new ProviderCatalogSession(_providerCatalogController));
         }
 
@@ -121,6 +124,10 @@ namespace RuApp.Views
                     break;
                 case nameof(SettingsViewModel.PresetChoice):
                     RefreshPresetUI();
+                    break;
+                case nameof(SettingsViewModel.IsCustomEditorOpen):
+                    if (ViewModel.IsCustomEditorOpen)
+                        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, CustomProviderEditor.FocusFirstField);
                     break;
                 case nameof(SettingsViewModel.IsProviderEditorOpen):
                     if (ViewModel.IsProviderEditorOpen) FocusProviderEditor();

@@ -226,8 +226,13 @@ public sealed partial class SqliteAgentRunProviderSelectionStore(HarnessSqliteOp
         value is { Length: > 0 } && value.Length <= maximum && !value.Any(char.IsControl);
 
     private static bool IsCredentialAccount(string value) =>
-        value is { Length: >= 9 and <= 128 }
-        && value.EndsWith("_api_key", StringComparison.Ordinal)
-        && value[..^8].All(character =>
-            character is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-' or '_');
+        (value is { Length: >= 9 and <= 128 }
+            && value.EndsWith("_api_key", StringComparison.Ordinal)
+            && value[..^8].All(character =>
+                character is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-' or '_'))
+        || CustomProviderAccountPattern().IsMatch(value);
+
+    // A named custom provider's own account namespace (ADR 0034), disjoint from "<id>_api_key".
+    [System.Text.RegularExpressions.GeneratedRegex("^custom_provider_[a-z][a-z0-9-]{0,31}_key$")]
+    private static partial System.Text.RegularExpressions.Regex CustomProviderAccountPattern();
 }

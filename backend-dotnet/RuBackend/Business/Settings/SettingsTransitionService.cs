@@ -56,6 +56,9 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
                 payload = ExpandModelSelection(payload);
                 candidate = BuildCandidate(previous, payload);
                 updates = BuildCredentialUpdates(payload);
+                if (await SendsKeyInsecurelyAsync(previous, candidate, updates, cancellationToken).ConfigureAwait(false))
+                    return new(false, "Key not sent: this endpoint uses plain HTTP to another computer. Use HTTPS, or remove the key.",
+                        CustomProviders.InsecureEndpointCode);
                 if (payload.ContainsKey("validate_models_dev_key"))
                 {
                     if (payload["validate_models_dev_key"] is not JsonValue flag || !flag.TryGetValue<bool>(out var validate) || !validate
@@ -258,6 +261,7 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
     private static string ModelFieldForBackend(string backend) => backend switch
     {
         "Custom OpenAI" => "custom_model",
+        _ when CustomProviders.IsCustomBackend(backend) => "model",
         BackendOpenAi => "openai_model",
         BackendAnthropic => "anthropic_model",
         _ when ProviderSelection.IsModelsDevBackend(backend) => "model",
@@ -274,8 +278,8 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
         var model = OptionalString(payload, "model", 256) ?? current.Model;
         var customModel = OptionalString(payload, "custom_model", 256)
             ?? current.CustomModel;
-        var customUrl = OptionalString(payload, "custom_url", 1024)
-            ?? current.CustomUrl;
+        var customUrlValue = OptionalString(payload, "custom_url", 1024);
+        var customUrl = customUrlValue is null ? current.CustomUrl : CustomProviders.NormalizeLegacyUrl(customUrlValue);
         var openAiModel = OptionalString(payload, "openai_model", 256)
             ?? current.OpenAiModel;
         var anthropicModel = OptionalString(payload, "anthropic_model", 256)
@@ -286,6 +290,11 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
         var raw = current.Raw.DeepClone().AsObject();
         Providers.ComputerUsePolicy.Apply(payload, raw);
         Providers.ProviderWebSearchPolicy.Apply(payload, raw);
+        CustomProviders.Apply(payload, raw);
+        // Selecting a named custom provider requires its definition in the same settings.
+        if (backendValue is not null && CustomProviders.IsCustomBackend(backend)
+            && CustomProviders.Find(current with { Raw = raw }, backend) is null)
+            throw new SettingsPayloadException();
         if (payload.ContainsKey("subagents")) throw new SettingsPayloadException();
         raw.Remove("subagents");
         return new SettingsSnapshot(
@@ -324,6 +333,15 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
             updates[AnthropicAccount] = anthropic;
         }
 
+        var customProviderId = OptionalString(payload, "custom_provider_id", 64);
+        var customProviderKey = OptionalSecret(payload, "custom_provider_api_key");
+        if (customProviderId is not null || customProviderKey is not null)
+        {
+            if (!CustomProviders.IsValidId(customProviderId) || customProviderKey is null)
+                throw new SettingsPayloadException();
+            updates[CustomProviders.CredentialAccount(customProviderId!)] = customProviderKey;
+        }
+
         var modelsDevId = OptionalString(payload, "models_dev_provider_id", 64);
         var modelsDevKey = OptionalSecret(payload, "models_dev_api_key");
         if (modelsDevId is not null || modelsDevKey is not null)
@@ -346,6 +364,11 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
         if (ProviderSelection.NormalizeModelsDevBackend(value) is { } generic)
         {
             return generic;
+        }
+
+        if (CustomProviders.NormalizeBackend(value) is { } custom)
+        {
+            return custom;
         }
 
         return value.Trim().ToLowerInvariant() switch

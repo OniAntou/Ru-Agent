@@ -124,6 +124,23 @@ button. The page has two tabs:
 
 The page reloads both tabs each time it is shown and cancels its requests when hidden.
 
+## Custom model API editor
+
+Settings › Providers › "Add custom model API" opens `CustomProviderEditorView`
+(view model `CustomProviderEditorViewModel`) for a named custom provider
+([ADR 0034](../adr/0034-named-custom-providers.md)): Provider ID (fixed once
+saved), display name, base URL, API protocol (OpenAI Chat Completions or
+Anthropic Messages), API key and the model list with optional context windows.
+`CustomProviderPolicy` mirrors the Host's rules so the editor can name the
+first wrong field and warn before a key would go over plain `http://` to another
+computer; the Host still validates every save. A save replaces the whole
+`custom_providers` list and may store one provider's key in the same request.
+"Fetch available models" saves first, then lists what the server serves; adding
+from that list fills the model's context window. Delete removes the key before
+the definition, so no orphaned secret remains. Saved providers appear in "Your
+providers" and as their own groups in the composer's model picker; the legacy
+Custom OpenAI slot stays listed as "(legacy)" while configured.
+
 ## Presentation ownership
 
 WinUI-independent presenters own settings load generations and save ordering,

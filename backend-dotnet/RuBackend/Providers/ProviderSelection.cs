@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using RuBackend.Business.Settings;
 
 namespace RuBackend.Providers;
@@ -16,8 +17,13 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
     {
         "openai" => new Uri("https://api.openai.com/v1/responses"),
         "anthropic" => new Uri("https://api.anthropic.com/v1/messages"),
+        // A named custom provider may speak the Anthropic protocol at its own base (ADR 0034).
+        _ when Protocol == ProviderProtocols.AnthropicMessages => new(BaseUri.AbsoluteUri.TrimEnd('/') + "/messages"),
         _ => new(BaseUri.AbsoluteUri.TrimEnd('/') + "/chat/completions"),
     };
+
+    /// <summary>A named custom provider (ADR 0034); its alias is its canonical backend.</summary>
+    public bool IsCustomProvider => CustomProviders.IsCustomBackend(Backend);
     public string PreferenceKey => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
         $"{Backend}\n{BaseUri.AbsoluteUri}\n{Model}")));
 
@@ -81,6 +87,11 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
             return generic["models.dev:".Length..] + "_api_key";
         }
 
+        if (CustomProviders.NormalizeBackend(backend) is { } custom)
+        {
+            return CustomProviders.CredentialAccount(custom[CustomProviders.BackendPrefix.Length..]);
+        }
+
         return backend switch
         {
             "Custom OpenAI" => "custom_api_key",
@@ -105,11 +116,21 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
         "openai" or "openai api" => "OpenAI",
         "anthropic" or "anthropic claude" or "claude" => "Anthropic",
         _ when NormalizeModelsDevBackend(alias) is { } generic => generic,
+        _ when CustomProviders.NormalizeBackend(alias) is { } custom => custom,
         _ => throw new UnknownProviderAliasException(),
     };
 
     private static ProviderSelection Describe(string backend, SettingsSnapshot settings, IReadOnlyList<ModelsDevProvider>? modelsDevCatalog = null)
     {
+        if (CustomProviders.NormalizeBackend(backend) is { } customBackend)
+        {
+            // A deleted or never-saved provider fails closed; its endpoint is never guessed.
+            var definition = CustomProviders.Find(settings, customBackend)
+                ?? throw new ArgumentException("Unknown custom provider.");
+            return new(customBackend, customBackend, definition.Protocol, new Uri(definition.BaseUrl),
+                settings.Model?.Trim() ?? string.Empty, definition.Account);
+        }
+
         if (NormalizeModelsDevBackend(backend) is { } generic)
         {
             const string prefix = "models.dev:";

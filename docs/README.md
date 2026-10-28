@@ -93,6 +93,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Relational history and database maintenance](adr/0030-relational-history-and-database-maintenance.md)
 - [Computer use through the Broker](adr/0031-computer-use-through-the-broker.md)
 - [Provider-hosted web search](adr/0033-provider-hosted-web-search.md)
+- [Named custom providers](adr/0034-named-custom-providers.md)
 
 Git history is the recovery source for removed dated plans, specifications,
 reviews and verification records.

@@ -44,11 +44,15 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         {
             if (!response.IsSuccessStatusCode)
             {
-                throw response.StatusCode == HttpStatusCode.TooManyRequests
-                    ? await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                    : await ModelContextOverflowError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                        ? new ModelProviderException(ModelContextOverflowError.Code, false)
-                        : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
+                if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                    throw await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false);
+                var error = await ModelContextOverflowError.ReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+                if (ModelContextOverflowError.IsError(error))
+                    throw new ModelProviderException(ModelContextOverflowError.Code, false);
+                // Tools are part of every run; there is no tool-free retry to fall back to.
+                if (request.NativeToolCalling && ModelContextOverflowError.IsToolCallingUnsupported(error))
+                    throw new ModelProviderException(ModelContextOverflowError.ToolCallingUnsupportedCode, false);
+                throw MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
             }
 
             Stream stream;

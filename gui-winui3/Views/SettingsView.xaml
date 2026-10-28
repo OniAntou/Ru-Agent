@@ -631,11 +631,12 @@
                                         </Flyout>
                                     </Button.Flyout>
                                 </Button>
-                            <Button x:Name="AddCustomProviderButton" Content="Add custom Provider"
+                            <Button x:Name="AddCustomProviderButton" Content="Add custom model API"
                                     Command="{x:Bind ViewModel.AddCustomProviderCommand}"
                                     IsEnabled="{x:Bind ViewModel.IsProviderManagementEnabled, Mode=OneWay}"
                                     MinHeight="36" Padding="16,8" CornerRadius="8"
-                                    AutomationProperties.Name="Add custom Provider" />
+                                    ToolTipService.ToolTip="Connect a self-hosted server or relay by its URL, protocol and models"
+                                    AutomationProperties.Name="Add custom model API" />
                         </StackPanel>
                         <ProgressBar IsIndeterminate="True" Visibility="{x:Bind ViewModel.IsLoading, Mode=OneWay}"
                                      AutomationProperties.Name="Loading providers" />
@@ -654,7 +655,7 @@
                                     Visibility="{x:Bind ViewModel.HasNoConfiguredProviders, Mode=OneWay}">
                                 <StackPanel Spacing="6">
                                     <TextBlock Text="No providers added yet" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Add a provider to connect its models, or use a custom OpenAI-compatible server."
+                                    <TextBlock Text="Add a provider to connect its models, or a custom model API for a self-hosted server or relay."
                                                Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
                             </Border>
@@ -850,6 +851,9 @@
                                    Style="{StaticResource SettingDescStyle}" />
                         </StackPanel>
                     </ContentControl>
+                    <!-- Named custom providers (ADR 0034) have their own editor. -->
+                    <views:CustomProviderEditorView x:Name="CustomProviderEditor"
+                                                    Visibility="{x:Bind ViewModel.IsCustomEditorOpen, Mode=OneWay}" />
                 </StackPanel>
             </ScrollViewer>
             <!-- Approval rules: what "Always allow" remembered, and the way to forget it. -->

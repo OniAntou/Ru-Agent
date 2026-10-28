@@ -59,7 +59,16 @@ Per-run provider snapshot creation reads exactly one canonical credential accoun
 Custom OpenAI uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic
 uses `anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
 and `https://api.anthropic.com/v1`. A `models.dev:<provider-id>` backend reads
-`<provider-id>_api_key` and resolves its base URL from the Models.dev catalog. Missing keys stay missing; aliases and other
+`<provider-id>_api_key` and resolves its base URL from the Models.dev catalog.
+A named custom provider ([ADR 0034](../adr/0034-named-custom-providers.md)) is the
+backend and alias `custom:<id>`, reads `custom_provider_<id>_key`, and posts to its
+user-given base URL with its chosen protocol (`{base}/chat/completions`, or
+`{base}/messages` with `x-api-key`). Its definitions live in the non-secret
+`custom_providers` setting; its catalog is that list, so the pinned context window
+is the model's `context_window` with source `user_setting`. For named custom
+providers and the legacy Custom OpenAI slot, a key travels only over `https` or
+`http` to a loopback host; otherwise the save, discovery or snapshot fails as
+`provider_insecure_endpoint` before any request. Missing keys stay missing; aliases and other
 providers' keys are never tried. Before the first model request, successful
 catalog/bootstrap validation pins a secret-free Run Provider Selection in
 SQLite: backend, alias, endpoint, protocol, model, credential account name,

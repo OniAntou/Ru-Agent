@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(providers)**: Add any number of named custom providers (ADR 0034): Settings ›
+  Providers › Add custom model API takes a provider ID, display name, base URL, OpenAI
+  Chat Completions or Anthropic Messages protocol, an optional key and the model list,
+  each with an optional context window. The list is the provider's catalog, so servers
+  without `/models` work; Fetch available models lists what the server serves and
+  doubles as a connection test. Keys go only over https:// or to this computer
+  (`provider_insecure_endpoint`), for the legacy Custom OpenAI slot too. Pasted endpoint
+  URLs are trimmed to their base, a model or server that cannot call tools fails as
+  `model_tools_unsupported`, and vLLM's `max_model_len` is read as the context window.
+
 - **feat(gui)**: A header above the chat shows the workspace and session title as a
   breadcrumb, the permission mode with a risk-coloured dot (Plan, Standard or
   Full Access), and a Working indicator while a run is live. The mode is read-only there;

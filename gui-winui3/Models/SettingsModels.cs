@@ -57,6 +57,19 @@ namespace RuApp.Models
 
         [JsonPropertyName("cloudflare_account_id")]
         public string CloudflareAccountId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Named custom providers (ADR 0034). Null when the Host predates them, and never
+        /// written unless set, so an ordinary settings save cannot clear the list.
+        /// </summary>
+        [JsonPropertyName("custom_providers")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<CustomProviderDto>? CustomProviders { get; set; }
+
+        /// <summary>Ids of the named custom providers with a saved key; read-only.</summary>
+        [JsonPropertyName("custom_provider_keys")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? CustomProviderKeys { get; set; }
     }
 
     /// <summary>
@@ -78,6 +91,7 @@ namespace RuApp.Models
             "anthropic" => settings.AnthropicModel ?? string.Empty,
             "custom" => settings.CustomModel ?? string.Empty,
             _ when ProviderCredential.IsModelsDevChoice(backend) => settings.Model ?? string.Empty,
+            _ when Services.CustomProviderPolicy.IsCustomChoice(backend) => settings.Model ?? string.Empty,
             _ => string.Empty,
         };
     }

@@ -433,20 +433,6 @@
                                     </Button.Flyout>
                                 </Button>
                             </Grid>
-                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                    <TextBlock Text="Computer use" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock x:Name="ComputerUseDescription"
-                                               Text="Lets Ru see your screen and use apps you approve, for new turns with an image-capable model. Press Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) to stop it."
-                                               Style="{StaticResource SettingDescStyle}" />
-                                </StackPanel>
-                                <ToggleSwitch x:Name="ComputerUseToggle"
-                                              Grid.Column="1"
-                                              VerticalAlignment="Center"
-                                              OnContent="" OffContent=""
-                                              Toggled="OnComputerUseToggled"
-                                              AutomationProperties.Name="Computer use" />
-                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>

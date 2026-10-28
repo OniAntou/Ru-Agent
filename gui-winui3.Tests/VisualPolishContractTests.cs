@@ -28,7 +28,7 @@ public sealed class VisualPolishContractTests
 
     private static readonly string[] ThemeViews =
     [
-        "ChatView.xaml", "SettingsView.xaml", "DiagnosticsView.xaml", "LogView.xaml",
+        "ChatView.xaml", "SettingsView.xaml", "DiagnosticsView.xaml", "LogView.xaml", "CustomizeView.xaml",
     ];
 
     [Fact]

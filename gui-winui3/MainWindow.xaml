@@ -164,6 +164,7 @@
                         <VisualState.Setters>
                             <Setter Target="NavNewChat.Padding" Value="10,8"/>
                             <Setter Target="NavChat.Padding" Value="10,7"/>
+                            <Setter Target="NavCustomize.Padding" Value="10,7"/>
                             <Setter Target="NavSettings.Padding" Value="10,7"/>
                             <Setter Target="ThemeToggleButton.Padding" Value="10,7"/>
                         </VisualState.Setters>
@@ -505,6 +506,19 @@
                                 <StackPanel x:Name="ContentNewChat" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <FontIcon x:Name="IconNewChat" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="LabelNewChat" Text="New Chat" Style="{StaticResource RuNavLabelStyle}"/>
+                                </StackPanel>
+                            </Button>
+
+                            <!-- Skills and plugins, below New Chat -->
+                            <Button x:Name="NavCustomize" Tag="customize" Click="OnNavClick" HorizontalAlignment="Stretch"
+                                    Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
+                                    Padding="10,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                    AutomationProperties.AutomationId="CustomizeButton"
+                                    AutomationProperties.Name="Customize"
+                                    ToolTipService.ToolTip="Skills and plugins">
+                                <StackPanel x:Name="ContentCustomize" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                    <FontIcon x:Name="IconCustomize" Glyph="&#xE771;" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="LabelCustomize" Text="Customize" Style="{StaticResource RuNavLabelStyle}"/>
                                 </StackPanel>
                             </Button>
 

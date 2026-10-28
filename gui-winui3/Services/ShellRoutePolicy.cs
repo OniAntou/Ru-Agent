@@ -11,6 +11,7 @@ public enum ShellDestination
     Diagnostics,
     Policy,
     Audit,
+    Customize,
 }
 
 /// <summary>
@@ -26,6 +27,7 @@ public static class ShellRoutePolicy
         "diagnostics" => ShellDestination.Diagnostics,
         "policy" => ShellDestination.Policy,
         "audit" => ShellDestination.Audit,
+        "customize" => ShellDestination.Customize,
         // An unknown or absent tag is the chat surface: navigation never leaves the
         // user on a blank frame.
         _ => ShellDestination.Chat,
@@ -36,6 +38,9 @@ public static class ShellRoutePolicy
 
     public static bool IsLogActive(string? tag) =>
         Resolve(tag) == ShellDestination.Log;
+
+    public static bool IsCustomizeActive(string? tag) =>
+        Resolve(tag) == ShellDestination.Customize;
 
     /// <summary>
     /// Live provider-catalog polling only belongs to the chat surface: the picker

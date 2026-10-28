@@ -107,6 +107,23 @@ button with an accessible action and expanded/collapsed status; it adds no motio
 The stored preference is bounded and written atomically; absent/invalid preferences
 fall back to detailed mode.
 
+## Customize page
+
+**Customize**, directly under New Chat in the sidebar, opens a page in place of the
+chat (`ShellDestination.Customize`); selecting a session or New Chat returns to the
+chat, and `/skills` typed in the composer opens it. The composer carries no skills
+button. The page has two tabs:
+
+- **Skills** lists the active workspace's catalog through `SkillsApiClient`, with
+  search, reload, an enable switch per skill, automatic-selection in each row's
+  menu, and adding or removing local skill folders. **Use in chat** goes back to the
+  open chat with `/skill <id>` in the composer (`ChatView.InsertSkillCommand`).
+- **Plugins** holds computer use ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)),
+  moved out of Settings. The switch saves the Host setting and reverts when the
+  save fails; it applies to new runs.
+
+The page reloads both tabs each time it is shown and cancels its requests when hidden.
+
 ## Presentation ownership
 
 WinUI-independent presenters own settings load generations and save ordering,

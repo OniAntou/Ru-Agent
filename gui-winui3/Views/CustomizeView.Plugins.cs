@@ -1,24 +1,22 @@
-using System;
-using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using RuApp.Services;
 
 namespace RuApp.Views;
 
 /// <summary>
-/// The computer-use opt-in (ADR 0031). The Host owns the setting and pins it into new
-/// runs; this view only shows and saves it, and reverts the switch when a save fails.
+/// The Plugins tab. Computer use (ADR 0031) is its one plugin: the Host owns the
+/// opt-in and pins it into new runs; this tab shows and saves it, and puts the switch
+/// back where the Host has it when a save fails.
 /// </summary>
-public sealed partial class SettingsView
+public sealed partial class CustomizeView
 {
-    private ApiService? _computerUseApi;
     private bool _applyingComputerUse;
 
-    private async Task LoadComputerUseAsync(ApiService apiService)
+    private async Task LoadComputerUseAsync()
     {
-        _computerUseApi = apiService;
-        var settings = await apiService.GetSettingsAsync();
-        DispatchToUi(() => SetComputerUseToggle(settings?.ComputerUseEnabled == true));
+        if (_api is null) return;
+        var settings = await _api.GetSettingsAsync();
+        if (_active) SetComputerUseToggle(settings?.ComputerUseEnabled == true);
     }
 
     private void SetComputerUseToggle(bool enabled)
@@ -30,7 +28,7 @@ public sealed partial class SettingsView
 
     private async void OnComputerUseToggled(object sender, RoutedEventArgs e)
     {
-        if (_applyingComputerUse || _computerUseApi is not { } api) return;
+        if (_applyingComputerUse || _api is not { } api) return;
         var requested = ComputerUseToggle.IsOn;
         ComputerUseToggle.IsEnabled = false;
         try
@@ -40,7 +38,7 @@ public sealed partial class SettingsView
         catch (Exception error)
         {
             // async void: a failed save must leave the switch where the Host has it.
-            GuiDiagnosticWriter.AppendTraceLine($"[Settings] Computer use save failed: {error.GetType().Name}");
+            GuiDiagnosticWriter.AppendTraceLine($"[Customize] Computer use save failed: {error.GetType().Name}");
             SetComputerUseToggle(!requested);
         }
         finally

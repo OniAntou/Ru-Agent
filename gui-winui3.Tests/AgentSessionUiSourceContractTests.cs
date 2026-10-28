@@ -94,10 +94,8 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Same(composerRow, indicator.Parent);
         Assert.Equal(0, GuiSource.IntAttribute(attach, "Column", -1));
         Assert.Equal(1, GuiSource.IntAttribute(indicator, "Column", -1));
-        var skills = GuiSource.Require(document, "SkillsButton");
-        Assert.Same(composerRow, skills.Parent);
-        Assert.Equal(2, GuiSource.IntAttribute(skills, "Column", -1));
-        Assert.Equal("Browse and manage skills", GuiSource.AttributeValue(skills, "Name"));
+        // Skills live on the Customize page, not in the composer.
+        Assert.DoesNotContain(document.Descendants(), element => (string?)element.Attribute(GuiSource.Xaml + "Name") == "SkillsButton");
         Assert.True(
             GuiSource.DocumentOrder(document, attach) < GuiSource.DocumentOrder(document, indicator),
             "The attachment button must precede the agent indicator.");

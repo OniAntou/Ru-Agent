@@ -922,7 +922,7 @@ marked `untrusted`; other content types are counted, not returned. Failures are 
 ## Computer use
 
 [ADR 0031](../adr/0031-computer-use-through-the-broker.md) defines this surface. It is off by
-default: turn it on in **Settings → General → Computer use**, or with `/computer on` in the
+default: turn it on in **Customize → Plugins → Computer use**, or with `/computer on` in the
 terminal UI. The setting is read when a new run pins its provider, and only a model that
 accepts images gets the tool, so a run never changes mid-way.
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: A **Customize** page under New Chat gathers skills and plugins. Its
+  Skills tab searches the workspace skills, enables or disables them, sets automatic
+  use, adds local skill folders and puts `/skill <id>` in the composer; its Plugins tab
+  holds the computer-use switch, which moves out of Settings. The composer's Skills
+  button is gone; `/skills` in the composer opens the page.
 - **feat(web)**: Runs on first-party Anthropic and OpenAI models now search through the
   provider's own hosted web search, as Claude Code and Codex do, instead of scraping
   search-engine pages (ADR 0033). It needs no extra key; each search is billed on the

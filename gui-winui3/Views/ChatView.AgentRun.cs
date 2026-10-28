@@ -550,7 +550,7 @@ namespace RuApp.Views
                 if (attachments.Count == 0 && text.Trim().Equals("/skills", StringComparison.OrdinalIgnoreCase))
                 {
                     Composer.ClearText();
-                    OnSkillsButtonClick(this, new RoutedEventArgs());
+                    CustomizeRequested?.Invoke(this, EventArgs.Empty);
                     return;
                 }
 

@@ -51,7 +51,7 @@ the same request, the first answer wins.
 
 ## Computer use
 
-Computer use is off until you turn it on in **Settings → General → Computer use** or with
+Computer use is off until you turn it on in **Customize → Plugins → Computer use** or with
 `/computer on`. It then applies to new turns with a model that accepts images. Ru asks before
 it controls an app, by name, and the answer lasts for the session. In `standard`, screenshots
 show only the apps you approved; `plan` never controls the desktop; `full_access` controls

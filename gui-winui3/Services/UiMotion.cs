@@ -47,7 +47,7 @@ namespace RuApp.Services
             {
                 var visual = ElementVisual(element);
                 visual.Opacity = 0f;
-                visual.Offset = new Vector3(0f, (float)RiseDistance, 0f);
+                visual.Properties.InsertVector3(TranslationProperty, new Vector3(0f, (float)RiseDistance, 0f));
                 Animate(visual, toOpacity: 1f, translationY: 0f, EntranceMilliseconds);
             }
             catch (Exception error)
@@ -235,9 +235,9 @@ namespace RuApp.Services
             {
                 var visual = ElementVisual(element);
                 visual.StopAnimation("Opacity");
-                visual.StopAnimation("Offset");
+                visual.StopAnimation(TranslationProperty);
                 visual.Opacity = 1f;
-                visual.Offset = Vector3.Zero;
+                visual.Properties.InsertVector3(TranslationProperty, Vector3.Zero);
             }
             catch (Exception error)
             {
@@ -247,13 +247,23 @@ namespace RuApp.Services
         }
 
         /// <summary>
-        /// The XAML element's container visual. <c>GetElementVisual</c> is typed as
-        /// <see cref="Visual"/>, but a XAML element always hands back a container,
-        /// which is what carries <c>Offset</c> — the composition property behind a
-        /// translation (the XAML <c>Translation</c> property has no composition twin).
+        /// The composition property the motion moves. <c>Translation</c> adds to the
+        /// element's layout position; <c>Offset</c> is that position, so animating it
+        /// moved an element away from its column: the content frame, laid out right of
+        /// the sidebar, was drawn from the window's left edge over the sidebar.
         /// </summary>
-        private static ContainerVisual ElementVisual(FrameworkElement element) =>
-            (ContainerVisual)ElementCompositionPreview.GetElementVisual(element);
+        private const string TranslationProperty = "Translation";
+
+        /// <summary>
+        /// The XAML element's container visual, with its translation enabled.
+        /// <c>GetElementVisual</c> is typed as <see cref="Visual"/>, but a XAML element
+        /// always hands back a container.
+        /// </summary>
+        private static ContainerVisual ElementVisual(FrameworkElement element)
+        {
+            ElementCompositionPreview.SetIsTranslationEnabled(element, true);
+            return (ContainerVisual)ElementCompositionPreview.GetElementVisual(element);
+        }
 
         private static void Animate(ContainerVisual visual, float toOpacity, float translationY, double milliseconds)
         {
@@ -269,7 +279,7 @@ namespace RuApp.Services
             var glide = compositor.CreateVector3KeyFrameAnimation();
             glide.InsertKeyFrame(1f, new Vector3(0f, translationY, 0f), ease);
             glide.Duration = duration;
-            visual.StartAnimation("Offset", glide);
+            visual.StartAnimation(TranslationProperty, glide);
         }
 
         /// <summary>

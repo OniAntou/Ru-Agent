@@ -12,9 +12,10 @@ grants permissions from `allowed-tools` or other metadata.
 - In the TUI, `/skills` lists the catalog before a run exists. `/skills search
   review`, `/skills refresh`, `/skills enable verify`, `/skills disable verify`,
   and `/skills implicit verify on|off` manage discovery and selection.
-- The GUI composer **Skills** action opens the searchable picker. Select a skill
-  to fill the composer, then send it with any arguments. It also offers refresh,
-  enable/disable and automatic-selection controls.
+- In the GUI, **Customize** under New Chat (or `/skills` typed in the composer)
+  opens the Skills tab: a searchable list with enable/disable,
+  automatic-selection and reload controls. **Use in chat** returns to the chat
+  with `/skill <id>` in the composer; send it with any arguments.
 - `/skills add-root D:\MySkills` registers an existing directory containing
   skill folders for this workspace; `/skills remove-root D:\MySkills` removes
   that registration. The GUI accepts the same local root paths. This registers

@@ -346,6 +346,8 @@ namespace RuApp
                 _diagnosticsView.Initialize(_apiService);
                 _diagnosticsView.SetActive(false);
 
+                CreateCustomizeView();
+
                 _auditPanel = new AuditLogPanel { Log = _composition.AuditLog };
 
                 // The conversation surface is Agent-only.
@@ -393,6 +395,7 @@ namespace RuApp
         private void InitializeSidebarHoverEffects()
         {
             SetupNavHover(NavChat);
+            SetupNavHover(NavCustomize);
             SetupNavHover(NavSettings);
 
             // Theme toggle button
@@ -437,7 +440,7 @@ namespace RuApp
             var line = (SolidColorBrush)Application.Current.Resources["RuLineBrush"];
             var navCorner = UiCornerRadius.Control;
 
-            foreach (var button in new[] { NavChat, NavSettings })
+            foreach (var button in new[] { NavChat, NavCustomize, NavSettings })
             {
                 Services.UiMotion.FadeBrush(button, Control.BackgroundProperty, null);
                 Services.UiMotion.FadeBrush(button, Control.ForegroundProperty, muted);
@@ -602,6 +605,7 @@ namespace RuApp
             }
             _diagnosticsView?.SetActive(navigation.IsDiagnosticsActive);
             _logView?.SetActive(navigation.IsLogActive);
+            _customizeView?.SetActive(navigation.IsCustomizeActive);
         }
 
         private object? ViewFor(Services.ShellDestination destination) => destination switch
@@ -609,6 +613,7 @@ namespace RuApp
             Services.ShellDestination.Log => _logView,
             Services.ShellDestination.Diagnostics => _diagnosticsView,
             Services.ShellDestination.Audit => _auditPanel,
+            Services.ShellDestination.Customize => _customizeView,
             _ => _chatView,
         };
 
@@ -700,6 +705,7 @@ namespace RuApp
             _settingsView?.Initialize(_apiService, _providerCatalogController);
             _logView?.Initialize(_apiService);
             _diagnosticsView?.Initialize(_apiService);
+            _customizeView?.Initialize(_apiService, () => _chatView?.CurrentWorkspace);
 
             await Sidebar.RefreshAsync();
         }

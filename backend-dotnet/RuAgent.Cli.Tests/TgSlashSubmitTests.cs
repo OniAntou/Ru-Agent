@@ -55,10 +55,8 @@ public sealed class TgSlashSubmitTests
     [InlineData("/", "/model")]
     [InlineData("/model", "/model")]
     [InlineData("/reasoning", "/reasoning")]
-    [InlineData("/clear", "/clear")]
     [InlineData("/status", "/status")]
     [InlineData("/follow", "/follow")]
-    [InlineData("/release", "/release")]
     [InlineData("/exit", "/exit")]
     public void ACompleteCommand_RunsTheMomentItIsPicked(string typed, string expected)
     {

@@ -20,7 +20,7 @@ public sealed class RuInstructionLoaderTests
         File.WriteAllText(Path.Combine(fixture.Parent, "AGENTS.md"), "parent must not load", new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(fixture.Root, "notes.md"), "arbitrary must not load", new UTF8Encoding(false));
 
-        var result = new RuInstructionLoader().Load(fixture.Root);
+        var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot).Load(fixture.Root);
 
         Assert.Equal(
             new[] { "root:AGENTS.md", "root:CONTEXT.md", "ru:AGENTS.md", "ru:CONTEXT.md", "skill:catalog" },
@@ -51,7 +51,7 @@ public sealed class RuInstructionLoaderTests
         File.WriteAllText(Path.Combine(fixture.Root, "CONTEXT.md"), rootContext, new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "CONTEXT.md"), ruContext, new UTF8Encoding(false));
 
-        var result = new RuInstructionLoader().Load(fixture.Root);
+        var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot).Load(fixture.Root);
         var root = result.Blocks.Single(block => block.SourceId == "root:CONTEXT.md");
         var local = result.Blocks.Single(block => block.SourceId == "ru:CONTEXT.md");
 
@@ -115,7 +115,7 @@ public sealed class RuInstructionLoaderTests
             return;
         }
 
-        var result = new RuInstructionLoader().Load(fixture.Root);
+        var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot).Load(fixture.Root);
 
         Assert.DoesNotContain(result.Blocks, block => block.SourceId == "ru:AGENTS.md");
         Assert.Contains(result.Skips, skip => skip.SourceId == "ru:AGENTS.md" && skip.Reason == "outside_root");

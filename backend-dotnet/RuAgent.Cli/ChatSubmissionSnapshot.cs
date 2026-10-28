@@ -21,8 +21,9 @@ internal sealed record ChatSubmissionSnapshot(
     public static bool IsPausedControlCommand(string line)
     {
         var command = line.TrimStart().Split(' ', 2)[0];
-        return command.Equals("/retry", StringComparison.OrdinalIgnoreCase)
+        return command.Equals("/follow", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/backend", StringComparison.OrdinalIgnoreCase)
+            || command.Equals("/provider", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/model", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/key", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/reasoning", StringComparison.OrdinalIgnoreCase)
@@ -38,6 +39,10 @@ internal sealed record ChatSubmissionSnapshot(
         && string.Equals(Preset, preset, StringComparison.Ordinal)
         && string.Equals(Backend, backend, StringComparison.Ordinal)
         && string.Equals(Model, model, StringComparison.Ordinal);
+
+    internal ChatSubmissionSnapshot BindInitialDraft(string currentSession, string? materializedSession) =>
+        SessionId.Length == 0 && materializedSession is not null && currentSession == materializedSession
+            ? this with { SessionId = materializedSession } : this;
 
     public bool MatchesSelection(JsonElement settings)
     {

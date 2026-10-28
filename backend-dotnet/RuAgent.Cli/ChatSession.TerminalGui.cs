@@ -29,11 +29,20 @@ public sealed partial class AgentCommands
         {
             var loop = new TgChatLoop(tgWindow!, cancellationToken);
             tgLoop = loop;
+            tgWindow!.SetWorkspaceContext(CurrentWorkspaceHeading());
+            loop.SetTaskCommandHandler((argument, token) => ShowTasksAsync(argument, token));
+            loop.SetChangesCommandHandler((argument, token) => ShowChangesAsync(argument, token));
+            loop.SetRewindCommandHandler((argument, token) => RewindHistoryAsync(argument, token));
+            loop.SetSubmissionGuard(RewindSubmissionGuard);
+            loop.SetHistoryStateProviders(() => pendingHistoryBranch is not null,
+                line => historyReloadRequired && line.Trim().Equals("/sessions id:" + sessionId, StringComparison.OrdinalIgnoreCase));
             loop.SetShutdownSettlement(runSession.WaitForRunSettlementAsync);
             var guiDispatcher = new ChatLineDispatcher(
                 HandleSlashLineWithDocumentAsync,
                 (prompt, ct) => HandlePromptLineAsync(prompt, ct));
-            loop.SetSubmissionSnapshotFactory(line => submissions.CreateSnapshot(
+            loop.SetSubmissionSnapshotFactory(line => historyReloadRequired && line.TrimStart().Split(' ', 2)[0].Equals("/sessions", StringComparison.OrdinalIgnoreCase)
+                ? ChatSubmissionSnapshot.Create(line, sessionId, canonicalWorkspace, cmd.Preset, backendName ?? string.Empty, activeModel, [], [])
+                : submissions.CreateSnapshot(
                 line, sessionId, canonicalWorkspace, cmd.Preset,
                 backendName ?? string.Empty, activeModel, runSession.ParkedRunId is not null));
             loop.SetSubmissionOwnershipHandlers(
@@ -100,6 +109,7 @@ public sealed partial class AgentCommands
             }
 
             tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName);
+            tgWindow.Composer.SetReasoningEffort(activeReasoningEffort);
             loop.RefreshAttachmentLabel();
             tgApp!.AddTimeout(
                 TimeSpan.FromMilliseconds(200),
@@ -113,7 +123,7 @@ public sealed partial class AgentCommands
                 TimeSpan.FromMilliseconds(TuiHeader.MeteorFrameMilliseconds),
                 () =>
                 {
-                    tgWindow.Landing.Tick();
+                    tgWindow.TickWelcome();
                     sessionRenderer.Width = ChatRenderWidth();
                     var transcriptWidth = tgWindow.Transcript.Viewport.Width;
                     if (transcriptWidth > 0)

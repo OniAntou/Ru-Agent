@@ -12,6 +12,17 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgHintsViewTests
 {
     [Fact]
+    public void Idle_is_silent_but_feedback_remains_visible_without_ready_or_leading_separator()
+    {
+        var hints = new TgHintsView();
+        Assert.Empty(hints.StatusText);
+        hints.SetIdle("C:/workspace"); Assert.Empty(hints.StatusText);
+        hints.ShowFeedback("check failed", true);
+        Assert.Equal("✗ check failed", hints.StatusText);
+        hints.ClearFeedback(); Assert.Empty(hints.StatusText);
+    }
+
+    [Fact]
     public void FeedbackDoesNotChangeTheActualRunState_AndIdleClearsIt()
     {
         var hints = new TgHintsView();

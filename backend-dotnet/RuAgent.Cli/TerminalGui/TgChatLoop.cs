@@ -9,7 +9,7 @@ namespace RuAgent.Cli.TerminalGui;
 /// handler streams into the transcript. Command dispatch stays in
 /// <c>AgentCommands.ChatLineDispatcher</c>; this class only owns input and rendering.
 /// </summary>
-public sealed class TgChatLoop
+public sealed partial class TgChatLoop
 {
     /// <summary>Lines kept for Up/Down navigation; older entries fall off the front.</summary>
     public const int MaxHistory = 100;
@@ -58,6 +58,7 @@ public sealed class TgChatLoop
     private string _draft = string.Empty;
     private int _draftCursor;
     private volatile bool _busy;
+    private volatile bool _localCommandActive;
     private volatile bool _stopped;
     private bool _queuePaused;
 
@@ -67,6 +68,8 @@ public sealed class TgChatLoop
     /// Escape cannot be lost, and it is cleared whenever the loop goes idle.
     /// </summary>
     private bool _cancelRequested;
+    private Func<string, string?>? _submissionGuard;
+    internal void SetSubmissionGuard(Func<string, string?> guard) => _submissionGuard = guard;
 
     public TgChatLoop(TgChatWindow window, CancellationToken cancellationToken = default)
     {
@@ -207,6 +210,30 @@ public sealed class TgChatLoop
     public void Submit()
     {
         var line = _window.Composer.Input.Text?.ToString() ?? string.Empty;
+        if (ChatCommandCatalog.IsRemovedCommand(line))
+        {
+            _window.Hints.ShowFeedback("unknown command · use /help", true);
+            return;
+        }
+        if (_submissionGuard?.Invoke(line) is { } guardMessage)
+        {
+            _window.Hints.ShowFeedback(guardMessage, true);
+            return;
+        }
+        if (TrySubmitTaskControl(line)) return;
+        lock (_queueGate)
+        {
+            if (_historyControlActive)
+            {
+                _window.Hints.ShowFeedback("finish choosing history before sending · esc closes the panel", true);
+                return;
+            }
+            if (_busy && _historyBranchPending?.Invoke() is true)
+            {
+                _window.Hints.ShowFeedback("wait for chat branch creation before sending another request", true);
+                return;
+            }
+        }
         if (_dropHandler is not null)
         {
             var candidate = line.Trim();
@@ -224,14 +251,17 @@ public sealed class TgChatLoop
             return;
         }
 
-        var isRetryWhilePaused = false;
         var isRepairCommandWhilePaused = false;
         lock (_queueGate)
         {
-            isRetryWhilePaused = _queuePaused && !_busy && IsRetryCommand(line);
-            isRepairCommandWhilePaused = _queuePaused && !_busy && ChatSubmissionSnapshot.IsPausedControlCommand(line);
+            var historyRecovery = _historyRecoveryCommand?.Invoke(line) is true;
+            if (historyRecovery && _queued.Count > 0)
+            {
+                _window.Hints.ShowFeedback("queued drafts are held · use /exit and reopen the session", true);
+                return;
+            }
+            isRepairCommandWhilePaused = _queuePaused && !_busy && (ChatSubmissionSnapshot.IsPausedControlCommand(line) || historyRecovery);
             if ((_busy || _queued.Count > 0 || _queuePaused)
-                && !isRetryWhilePaused
                 && !isRepairCommandWhilePaused
                 && _stateChangingCommandClassifier?.Invoke(line) is true)
             {
@@ -266,7 +296,7 @@ public sealed class TgChatLoop
         lock (_queueGate)
         {
             var mustQueue = _busy || _queuePaused || _queued.Count > 0;
-            if (mustQueue && !isRetryWhilePaused && !isRepairCommandWhilePaused)
+            if (mustQueue && !isRepairCommandWhilePaused)
             {
                 if (_queued.Count >= MaxQueueDepth)
                 {
@@ -321,6 +351,11 @@ public sealed class TgChatLoop
         // late Escape (or the handover's Cancel) can never hit a disposed source.
         lock (_queueGate)
         {
+            if (_taskControlCancellation is { } taskControl)
+            {
+                taskControl.Cancel();
+                return;
+            }
             if (_turn is { } turn)
             {
                 turn.Cancel();
@@ -353,13 +388,14 @@ public sealed class TgChatLoop
             // executing the run server-side until the run itself is cancelled,
             // and the caller exits the process right after this returns.
             _turn?.Cancel();
+            _taskControlCancellation?.Cancel();
             while (_queued.TryDequeue(out var submission))
             {
                 _queuedSubmissionBytes -= submission.OwnedBytes;
                 discardedSubmissions.Add(submission);
             }
 
-            turnDone = _turnDone?.Task ?? Task.CompletedTask;
+            turnDone = Task.WhenAll(_turnDone?.Task ?? Task.CompletedTask, _taskControlDone?.Task ?? Task.CompletedTask);
         }
 
         // Release runs temp-file I/O; doing it under the lock blocked the UI thread's key
@@ -408,9 +444,6 @@ public sealed class TgChatLoop
         }
     }
 
-    private static bool IsRetryCommand(string line) =>
-        line.Trim().Equals("/retry", StringComparison.OrdinalIgnoreCase);
-
     private void StartTurn(ChatSubmissionSnapshot submission)
     {
         TaskCompletionSource turnDone;
@@ -429,6 +462,9 @@ public sealed class TgChatLoop
             if (!stoppedBeforeStart)
             {
                 _busy = true;
+                var command = submission.Prompt.TrimStart().Split(' ', 2)[0];
+                _localCommandActive = command.Equals("/backend", StringComparison.OrdinalIgnoreCase) || command.Equals("/key", StringComparison.OrdinalIgnoreCase)
+                    || !command.Equals("/follow", StringComparison.OrdinalIgnoreCase) && ChatCommandCatalog.KnownCommands.Any(item => item.Command.Equals(command, StringComparison.OrdinalIgnoreCase));
                 // Link the session's token: a shutdown outside the window (or a handover)
                 // must stop the in-flight turn too, not only the local Escape path.
                 _turn = CancellationTokenSource.CreateLinkedTokenSource(_outerToken);
@@ -461,8 +497,10 @@ public sealed class TgChatLoop
         // A multiline prompt is split into one row per source line, with the continuation
         // rows aligned under the text after the chevron; a raw newline inside a row would
         // otherwise be interpreted by the terminal outside the view's row model.
+        var localCommand = _localCommandActive;
         Dispatch(() =>
         {
+            if (localCommand) return;
             _window.Transcript.Append(string.Empty, TranscriptStyle.User);
             var promptLines = submission.Prompt
                 .Replace("\r\n", "\n", StringComparison.Ordinal)
@@ -489,7 +527,7 @@ public sealed class TgChatLoop
         string? failure = null;
         try
         {
-            Dispatch(() => _window.Hints.SetRunning(QueuedCount));
+            if (!_localCommandActive) Dispatch(() => _window.Hints.SetRunning(QueuedCount));
             await _submissionHandler(submission, stream, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -555,7 +593,7 @@ public sealed class TgChatLoop
         bool paused;
         int queued;
         lock (_queueGate) { paused = _queuePaused; queued = _queued.Count; }
-        if (_busy)
+        if (_busy && !_localCommandActive)
             _window.Hints.SetQueueCount(queued);
         else if (paused)
             _window.Hints.SetPaused(queued);

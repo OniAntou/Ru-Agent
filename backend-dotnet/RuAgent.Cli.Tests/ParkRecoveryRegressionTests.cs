@@ -139,49 +139,26 @@ public sealed class ParkRecoveryRegressionTests
         }
     }
 
-    [Fact]
-    public async Task Chat_release_allows_the_next_prompt_to_create_a_fresh_run()
+    [Theory]
+    [InlineData("/release")]
+    [InlineData("/retry")]
+    [InlineData("/clear")]
+    [InlineData("/resume")]
+    [InlineData("/delete")]
+    public async Task Removed_chat_commands_report_unknown_without_tool_or_run_mutations(string command)
     {
-        var nextRun = "run_" + new string('c', 32);
-        var createdRuns = 0;
-        var cancelled = false;
-        using var http = new HttpClient(new Handler(req =>
+        var mutations = new List<string>();
+        using var http = new HttpClient(new Handler(request =>
         {
-            var path = req.RequestUri!.AbsolutePath;
-            if (path.EndsWith("/settings")) return Json("{}");
-            if (req.Method == HttpMethod.Post && path.EndsWith("/policies"))
-                return Json(JsonSerializer.Serialize(new { session_id = SessionId, preset = "standard", version = 1 }));
-            if (req.Method == HttpMethod.Post && path.EndsWith("/runs"))
-            {
-                createdRuns++;
-                if (createdRuns == 2) Assert.True(cancelled, "release must finish before the next create");
-                var created = Json(RunJson("running", 0, runId: createdRuns == 1 ? RunId : nextRun));
-                created.StatusCode = HttpStatusCode.Created;
-                return created;
-            }
-            if (req.Method == HttpMethod.Post && path == $"/agent/v1/runs/{RunId}/cancel")
-            { cancelled = true; return Json("{\"status\":\"cancelled\"}"); }
-            if (path.EndsWith("/events"))
-            {
-                if (path.Contains(nextRun))
-                {
-                    var done = Envelope(1, "run.state_changed", "completed", "completed") with { RunId = nextRun };
-                    return Sse(new MemoryStream(Encoding.UTF8.GetBytes($"id: 1\ndata: {JsonSerializer.Serialize(done)}\n\n")));
-                }
-                return Sse(new HeldStream(Frame(1, "continue.requested", "waiting_user", "provider_quota_exhausted")));
-            }
-            if (path.EndsWith(nextRun)) return Json(RunJson("completed", 1, runId: nextRun));
-            if (path.EndsWith(RunId)) return Json(RunJson(cancelled ? "cancelled" : "waiting_user", 1));
-            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+            var path = request.RequestUri!.AbsolutePath;
+            if (request.Method != HttpMethod.Get && !path.EndsWith("/activate")) mutations.Add(path);
+            return Json(path.EndsWith("/settings") ? "{\"status\":\"ok\"}" : "{}");
         }));
-        var output = new StringWriter();
-        using var commands = new AgentCommands(Session(), http, output, new StringWriter(), new StringReader("first\n/release\nsecond\n/exit\n"));
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var exit = await commands.ChatAsync(new ChatCommand(Path.GetTempPath(), SessionId, "standard", false), deadline.Token);
-        Assert.Equal(0, exit);
-        Assert.True(cancelled);
-        Assert.Equal(2, createdRuns);
-        Assert.Contains("run released", TuiText.Strip(output.ToString()));
+        var errors = new StringWriter();
+        using var commands = new AgentCommands(Session(), http, new StringWriter(), errors, new StringReader(command + "\n/exit\n"));
+        Assert.Equal(0, await commands.ChatAsync(new ChatCommand(Path.GetTempPath(), SessionId, "standard", false), default));
+        Assert.Contains("unknown_command: " + command, errors.ToString());
+        Assert.Empty(mutations);
     }
 
     [Theory]
@@ -257,7 +234,7 @@ public sealed class ParkRecoveryRegressionTests
         var text = TuiText.Strip(output.ToString());
         Assert.Contains("still blocked after Continue", text);
         Assert.DoesNotContain("wait before Continue", text);
-        Assert.Contains("/release", text);
+        Assert.Contains("cancel the run from CLI", text);
 
         transcript.ForgetParkHistory(RunId);
         transcript.BeginTurn();

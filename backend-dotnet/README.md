@@ -3,8 +3,8 @@
 `RuBackend` is the only public backend for Ru. When started as
 `RuBackend.exe --managed-runtime`, it asks Kestrel to bind an available loopback
 port and publishes the selected address in its runtime descriptor after bind.
-It owns all 52 HTTP routes
-(24 non-Agent routes plus 28 additive
+It owns all 53 HTTP routes
+(25 non-Agent routes plus 28 additive
 `/agent/v1/*`). Text turns use the current in-process-model-step Agent HTTP/SSE
 contract; no Chat WebSocket is exposed.
 

@@ -45,6 +45,7 @@ public sealed partial class TuiTranscript
     private readonly Queue<string> _settledActivityIds = new();
     private readonly Dictionary<string, ToolDetail> _settledToolRows = new(StringComparer.Ordinal);
     private readonly List<string> _retained = [];
+    private bool _retainedIsThinking;
     private readonly StringBuilder _streamedAssistant = new();
     private readonly Stopwatch _turnWatch = new();
 
@@ -199,6 +200,7 @@ public sealed partial class TuiTranscript
         _settledActivityIds.Clear();
         _settledToolRows.Clear();
         _retained.Clear();
+        _retainedIsThinking = false;
         _markdown.Reset();
         _turnWatch.Restart();
         _streamedAssistant.Clear();
@@ -222,6 +224,7 @@ public sealed partial class TuiTranscript
     public void ClearView()
     {
         _retained.Clear();
+        _retainedIsThinking = false;
         _pendingTools.Clear();
         _settledActivityIds.Clear();
         _settledToolRows.Clear();
@@ -359,12 +362,14 @@ public sealed partial class TuiTranscript
         // Thinking detail belongs to the row that advertises it: replace, never append, so
         // a later thought does not inherit the previous block.
         _retained.Clear();
+        _retainedIsThinking = false;
         foreach (var line in flat.Split('\n'))
         {
             var bounded = TuiText.SafeCut(line, 16_000);
             _retained.Add("    " + (_surface.Presentation is not null ? bounded : TuiPalette.DimPaint(bounded)));
         }
 
+        _retainedIsThinking = _retained.Count > 0;
         TrimRetained();
         if (_fullScreenCards && _surface.Writer is ITranscriptLineWriter screen)
         {
@@ -430,6 +435,7 @@ public sealed partial class TuiTranscript
         if (diffLines.Count > MaxDiffLines)
         {
             _retained.Clear();
+            _retainedIsThinking = false;
             foreach (var line in diffLines)
             {
                 _retained.Add("    " + RetainedPaint("│ ", TuiToken.Line)

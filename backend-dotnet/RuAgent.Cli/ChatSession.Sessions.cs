@@ -112,7 +112,9 @@ public sealed partial class AgentCommands
 
                     await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
                     runSession.RememberFollowable(candidateRunId);
-                    var followNotice = string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase)
+                    var followNotice = string.Equals(run.Status, "waiting_input", StringComparison.OrdinalIgnoreCase)
+                        ? $"run {candidateRunId} is waiting for an answer · use /follow {candidateRunId}"
+                        : string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase)
                         ? $"run {candidateRunId} is waiting for approval · use /follow {candidateRunId}"
                         : $"run {candidateRunId} is still running · attach with 'ru agent attach {candidateRunId}' or follow with '/follow {candidateRunId}'";
                     if (cmd.Json)
@@ -176,7 +178,7 @@ public sealed partial class AgentCommands
                 SwitchSessionAsync,
                 _slashCommands.Picker,
                 // The session card (switch + delete) and the delete call exist only where a panel
-                // can be drawn; the sequential engine keeps the plain list and /resume <id>.
+                // can be drawn; the sequential engine keeps the plain list and /sessions id:<id>.
                 tgMode ? (list, ct) => TgPanelRequests.RequestSessionChoiceAsync(tgWindow!, list, ct) : null,
                 tgMode ? DeleteSessionAsync : null,
                 WriteDiagnosticLineAsync,
@@ -195,9 +197,15 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            if (string.Equals(targetSessionId, sessionId, StringComparison.Ordinal))
+            var sameSession = string.Equals(targetSessionId, sessionId, StringComparison.Ordinal);
+            if (sameSession && !historyReloadRequired)
             {
                 await WriteDiagnosticLineAsync(humanOut, $"already in session {sessionId}").ConfigureAwait(false);
+                return;
+            }
+            if (sameSession && historyReloadRequired)
+            {
+                await ReloadUncertainHistoryAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -208,7 +216,11 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            historyReloadRequired = false;
+
+            pendingHistoryBranch = null;
             sessionId = targetSessionId;
+            RefreshWorkspaceHeading();
             sessionTitle = replay.Title;
             runSession.ResetSession();
             sessionTitleProbes = 0;

@@ -24,11 +24,11 @@ public static class TuiSurfaces
     /// <summary>Groups used by both the help panel and the slash dropdown's vocabulary.</summary>
     private static readonly (string Title, string[] Commands)[] HelpGroups =
     [
-        ("session", ["/new", "/sessions", "/resume", "/delete", "/status", "/preset", "/computer"]),
-        ("run", ["/follow", "/retry", "/release"]),
+        ("session", ["/new", "/sessions", "/status", "/preset", "/computer"]),
+        ("run", ["/follow"]),
         ("skills", ["/skills", "/skill"]),
-        ("model & backend", ["/model", "/backend", "/key", "/reasoning"]),
-        ("terminal", ["/clear", "/help", "/update", "/exit"]),
+        ("model & provider", ["/model", "/provider", "/reasoning"]),
+        ("terminal", ["/help", "/update", "/exit"]),
     ];
 
     /// <summary>
@@ -98,6 +98,9 @@ public static class TuiSurfaces
             new("workspace", ShortenPath(snapshot.Workspace)),
         };
 
+        var pathWidth = Math.Max(1, Math.Clamp(width, TuiPanel.MinWidth, TuiPanel.MaxWidth) - (framed ? 6 : 2));
+        var pathRows = TuiText.HardWrapLine(TuiWorkspaceHeading.DisplayPath(snapshot.Workspace), pathWidth)
+            .Select(line => new PanelRow(line, FullWidth: true)).ToArray();
         return TuiPanel.Compose(
             width,
             "status",
@@ -105,6 +108,7 @@ public static class TuiSurfaces
                 new PanelSection("session", session),
                 new PanelSection("model", model),
                 new PanelSection("run", run),
+                new PanelSection("workspace path", pathRows),
             ],
             PanelHint, framed);
     }

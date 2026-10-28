@@ -47,12 +47,12 @@ internal sealed class ChatSessionCommands
 
     public async Task<bool> TryHandleAsync(string command, string? argument, CancellationToken cancellationToken)
     {
-        if (command is not ("/new" or "/sessions" or "/resume"))
+        if (command is not ("/new" or "/sessions"))
         {
             return false;
         }
 
-        if (command is "/new" or "/resume" && _isBusy())
+        if (command == "/new" && _isBusy())
         {
             await _writeLine(_error, "session_busy: finish or cancel the active run before changing sessions").ConfigureAwait(false);
             return true;
@@ -60,6 +60,14 @@ internal sealed class ChatSessionCommands
 
         if (command == "/sessions")
         {
+            if (argument?.StartsWith("id:", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                var target = argument[3..].Trim();
+                if (_isBusy()) await _writeLine(_error, "session_busy: finish or cancel the active run before changing sessions").ConfigureAwait(false);
+                else if (!ChatSessionWorkflow.IsValidSessionId(target)) await _writeLine(_error, "invalid_session_id").ConfigureAwait(false);
+                else await _switchSession(target).ConfigureAwait(false);
+                return true;
+            }
             // The card picker owns the interactive path; the sequential engine (and --json)
             // keeps the plain list, because it has no panel to draw.
             if (_sessionPicker is null)
@@ -80,50 +88,7 @@ internal sealed class ChatSessionCommands
             return true;
         }
 
-        var targetSessionId = argument?.Trim();
-        if (!string.IsNullOrWhiteSpace(targetSessionId))
-        {
-            await _switchSession(targetSessionId).ConfigureAwait(false);
-            return true;
-        }
-
-        if (_sessionPicker is not null)
-        {
-            await PickSessionAsync(null, cancellationToken).ConfigureAwait(false);
-            return true;
-        }
-
-        if (_json)
-        {
-            await _writeLine(_error, "interactive_required: /resume needs a session id or an interactive picker").ConfigureAwait(false);
-            return true;
-        }
-
-        if (_picker is null)
-        {
-            // The sequential engine has no picker: list the sessions so the operator can
-            // choose one with an explicit /resume <id> argument.
-            await ListSessionsAsync(null, cancellationToken).ConfigureAwait(false);
-            return true;
-        }
-
-        var choices = await ReadChoicesOrEmptyAsync(null, cancellationToken).ConfigureAwait(false);
-        if (choices.Count == 0)
-        {
-            await _writeLine(_output, "no resumable sessions").ConfigureAwait(false);
-            return true;
-        }
-
-        targetSessionId = await _picker(
-            ChatSessionWorkflow.ToChoiceList(choices, _currentSessionId()),
-            cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(targetSessionId))
-        {
-            return true;
-        }
-
-        await _switchSession(targetSessionId).ConfigureAwait(false);
-        return true;
+        return false;
     }
 
     /// <summary>
@@ -339,7 +304,7 @@ internal sealed class ChatSessionCommands
 
             await _writeLine(
                 _output,
-                $"Sessions (showing up to {ChatSessionWorkflow.MaxListedSessions}; use /resume <id> to switch):").ConfigureAwait(false);
+                $"Sessions (showing up to {ChatSessionWorkflow.MaxListedSessions}; use /sessions id:<id> to switch):").ConfigureAwait(false);
             foreach (var choice in choices)
             {
                 var current = string.Equals(choice.Id, _currentSessionId(), StringComparison.Ordinal) ? "  (current)" : string.Empty;

@@ -14,7 +14,7 @@ namespace RuAgent.Cli.TerminalGui;
 /// State changes go through this facade so the run loop never touches views.
 /// Slash suggestions and approval/trust/picker/secret panels float over the transcript.
 /// </summary>
-public sealed class TgChatWindow : Window
+public sealed partial class TgChatWindow : Window
 {
     private sealed record ModalInputState(string Text, int InsertionPoint);
 
@@ -38,6 +38,7 @@ public sealed class TgChatWindow : Window
     private IApplication? _resizeApp;
     private ModalInputState? _modalInputState;
     private bool _relayoutInProgress;
+    private bool _workspaceContextPinned;
 
     private TgChatWindow()
     {
@@ -48,11 +49,12 @@ public sealed class TgChatWindow : Window
         HeaderDivider = new TgRuleView();
         Transcript = new TgTranscriptView { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(TgComposerView.RowCount + 2) };
         Composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(TgComposerView.RowCount + 1), Width = Dim.Fill(), Height = TgComposerView.RowCount };
+        Composer.PresetChanged += preset => { Header.SetPreset(preset); Relayout(); };
         Hints = new TgHintsView { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
         Landing = new TgLandingView();
-        Hints.WorkspaceChanged += () => Header.SetWorkspace(Hints.Workspace);
+        Hints.WorkspaceChanged += () => { if (!_workspaceContextPinned) Header.SetWorkspace(Hints.Workspace); };
 
-        Add(Header, HeaderDivider, Transcript, Landing, Composer, Hints);
+        Add(Transcript, Landing, Header, HeaderDivider, Composer, Hints);
         CanFocus = true;
 
         // The pre-chat wordmark owns the transcript region only while it is empty; the
@@ -93,8 +95,16 @@ public sealed class TgChatWindow : Window
     /// <summary>The aurora/gray wordmark shown until the transcript has content.</summary>
     public TgLandingView Landing { get; }
 
+    internal void TickWelcome()
+    {
+        Landing.AnimationPaused = IsModalPanelOpen || IsDocumentPanelOpen
+            || IsCommandPaletteOpen || IsSlashDropdownOpen;
+        Landing.Tick();
+    }
+
     private void HideLanding()
     {
+        Landing.ClearRasterWordmark();
         Landing.Visible = false;
         Relayout();
         Landing.SetNeedsDraw();
@@ -109,12 +119,18 @@ public sealed class TgChatWindow : Window
 
     public bool IsSlashDropdownOpen => _slashDropdown?.SuperView is not null;
     public bool IsCommandPaletteOpen => _commandPaletteView?.SuperView is not null;
-    public bool IsModalPanelOpen => _panel?.SuperView is not null;
+    public bool IsModalPanelOpen => _panel?.SuperView is not null || _questionPanel?.SuperView is not null;
+    internal SemaphoreSlim ModalRequestGate { get; } = new(1, 1);
     public string CommandPaletteQuery => _commandPalette.Query;
 
     /// <summary>Routes terminal text to the active input without changing a hidden draft.</summary>
     internal bool TryPasteText(string text)
     {
+        if (_questionPanel?.SuperView is not null)
+        {
+            _questionPanel.Paste(text);
+            return true;
+        }
         if (IsCommandPaletteOpen)
         {
             var firstLine = text.Split(['\r', '\n'], 2)[0];
@@ -237,6 +253,12 @@ public sealed class TgChatWindow : Window
     /// Run (or on the first tick) is ignored, which the spike reproduced. Callers use
     /// this from a one-shot timeout once the window is live.
     /// </summary>
+    internal void SetWorkspaceContext(string label)
+    {
+        _workspaceContextPinned = true;
+        Header.SetWorkspace(label);
+    }
+
     public void FocusComposer()
     {
         SetFocus();
@@ -497,6 +519,12 @@ public sealed class TgChatWindow : Window
 
     public void HidePanel()
     {
+        if (_questionPanel?.SuperView is not null)
+        {
+            Remove(_questionPanel);
+            _questionPanel.Dispose();
+            _questionPanel = null;
+        }
         SetApprovalWaiting(false);
         var inputState = _modalInputState;
         _modalInputState = null;

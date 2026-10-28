@@ -5,8 +5,7 @@ using RuAgent.Client;
 namespace RuAgent.Cli;
 
 /// <summary>
-/// Slash handlers extracted from AgentCommands.ChatAsync (slice 1).
-/// Owns /backend + /model display/update. Business logic unchanged.
+/// Provider credentials, model selection and report commands for terminal chat.
 /// </summary>
 public sealed partial class AgentSlashCommands
 {
@@ -93,7 +92,13 @@ public sealed partial class AgentSlashCommands
             return true;
         }
 
-        if (slashCmd is "/model" or "/provider")
+        if (slashCmd is "/provider")
+        {
+            await HandleProviderAsync(arg, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        if (slashCmd is "/model")
         {
             await HandleModelAsync(arg, cancellationToken).ConfigureAwait(false);
             return true;
@@ -136,11 +141,6 @@ public sealed partial class AgentSlashCommands
             return true;
         }
 
-        if (slashCmd is "/delete")
-        {
-            await HandleDeleteAsync(arg, currentSessionId, cancellationToken).ConfigureAwait(false);
-            return true;
-        }
 
         return false;
     }
@@ -738,7 +738,7 @@ public sealed partial class AgentSlashCommands
         }
         else if (IsModelsDevBackend(backend))
         {
-            current.Add(new Tui.PanelRow("api key", "use /key <provider> to sign in"));
+            current.Add(new Tui.PanelRow("api key", "use /provider <name> to sign in"));
         }
 
         var rows = candidates
@@ -772,7 +772,7 @@ public sealed partial class AgentSlashCommands
         }
         else if (IsModelsDevBackend(backend))
         {
-            rows.Add(new Tui.PanelRow("api key", "use /key <provider> to sign in"));
+            rows.Add(new Tui.PanelRow("api key", "use /provider <name> to sign in"));
         }
 
         foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "model", [new Tui.PanelSection(null, rows)], "/model <name>"))
@@ -987,7 +987,7 @@ public sealed partial class AgentSlashCommands
         var snapshot = SnapshotProvider?.Invoke();
 
         var card = new Tui.TuiStatusSnapshot(
-            SessionId: currentSessionId ?? "—",
+            SessionId: currentSessionId ?? snapshot?.SessionId ?? "not started",
             Preset: preset ?? "standard",
             Backend: backend ?? snapshot?.Backend ?? "unknown",
             Model: model ?? snapshot?.Model ?? string.Empty,
@@ -1009,80 +1009,6 @@ public sealed partial class AgentSlashCommands
         {
             _humanOut.WriteLine(line);
         }
-    }
-
-    /// <summary>
-    /// Deletes one session with an explicit confirmation. The current session is refused:
-    /// the REPL's transcript, status card and parked-run tracking all point at it, and a
-    /// deleted session would leave the REPL writing into a session the host no longer has,
-    /// so deletion requires switching first (a bounded refusal, never a prompt).
-    /// The confirm list starts on "keep", so Enter or Escape deletes nothing.
-    /// </summary>
-    private async Task HandleDeleteAsync(string? arg, string? currentSessionId, CancellationToken cancellationToken)
-    {
-        if (Json)
-        {
-            await _err.WriteLineAsync("interactive_required: /delete needs confirmation; run without --json.").ConfigureAwait(false);
-            return;
-        }
-
-        var target = string.IsNullOrWhiteSpace(arg) ? currentSessionId : arg.Trim();
-        if (string.IsNullOrWhiteSpace(target))
-        {
-            await _err.WriteLineAsync("delete_failed: no active session to delete").ConfigureAwait(false);
-            return;
-        }
-
-        if (string.Equals(target, currentSessionId, StringComparison.Ordinal))
-        {
-            await _humanOut.WriteLineAsync(Tui.TuiPalette.Warn(
-                $"delete_refused: {target} is the current session; switch to another session first.")).ConfigureAwait(false);
-            await _humanOut.FlushAsync().ConfigureAwait(false);
-            return;
-        }
-
-        if (_sessionClient is null)
-        {
-            await _err.WriteLineAsync("delete_unavailable: no session client is wired.").ConfigureAwait(false);
-            return;
-        }
-
-        if (Picker is null)
-        {
-            await _err.WriteLineAsync("interactive_required: /delete needs confirmation; run in an interactive terminal.").ConfigureAwait(false);
-            return;
-        }
-
-        var choices = new List<Tui.ChoiceItem>
-        {
-            new("delete", target, "delete"),
-            new("keep", "leave the session in place", "keep"),
-        };
-        var picked = await Picker(new Tui.ChoiceList("delete session", choices, selected: 1), cancellationToken)
-            .ConfigureAwait(false);
-        if (!string.Equals(picked, "delete", StringComparison.Ordinal))
-        {
-            await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
-                $"  cancelled: session {target} was not deleted")).ConfigureAwait(false);
-            await _humanOut.FlushAsync().ConfigureAwait(false);
-            return;
-        }
-
-        try
-        {
-            await _sessionClient.DeleteAsync(target, cancellationToken).ConfigureAwait(false);
-            await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Deleted session {target}")).ConfigureAwait(false);
-        }
-        catch (AgentApiException ex)
-        {
-            await _err.WriteLineAsync(CliErrorText.Format(ex)).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            await _err.WriteLineAsync($"session_delete_error: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
-        }
-
-        await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
 }

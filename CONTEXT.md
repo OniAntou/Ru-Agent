@@ -63,6 +63,14 @@ Implementation: [gui](docs/architecture/gui.md#conversation-session).
 _Avoid_: treating an HTTP 200 response as a successful delete
 
 
+**Conversation Branch**:
+A new conversation identity copied from a selected whole-turn prefix. The source
+conversation remains intact. Branches use current workspace files and do not
+inherit execution grants, approvals, active runs or workflow authority.
+Implementation: [TUI history](docs/architecture/tui.md).
+_Avoid_: file checkpoint, Git branch, restored execution state
+
+
 **Conversation History**:
 Retained, ordered message rows belonging to one Conversation Session. Source
 receipts preserve delivery idempotency even after a rewind removes visible rows.

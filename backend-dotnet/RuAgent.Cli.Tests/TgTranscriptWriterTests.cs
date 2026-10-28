@@ -13,6 +13,47 @@ namespace RuAgent.Cli.Tests;
 /// </summary>
 public sealed class TgTranscriptWriterTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void Completed_footer_hints_thinking_only_when_the_retained_details_are_thinking(bool reasoning, bool laterDiff)
+    {
+        using IApplication app = Application.Create(); app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var renderer = AgentCommands.CreateSessionRenderer(new TgTranscriptWriter(app, window.Transcript));
+        var checkedFooter = false;
+        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        {
+            renderer.BeginTurn();
+            if (reasoning) renderer.Transcript.ApplyActivity(new RuAgent.Client.AgentActivityModel(
+                "act_thinking_hint", RuAgent.Protocol.Harness.AgentActivityKind.Thinking,
+                RuAgent.Protocol.Harness.AgentActivityState.Completed,
+                null, null, null, null, null, null, null, 100, "succeeded", null, null, null,
+                Detail: "reported reasoning example"));
+            if (laterDiff) renderer.Transcript.ApplyDiffText(string.Join('\n', Enumerable.Range(0, 100).Select(i => "+line " + i)), 80);
+            renderer.Transcript.AppendAssistant("Final answer.");
+            renderer.Transcript.EndTurn(TuiTurnOutcome.Completed, null);
+            var footer = window.Transcript.Lines.Last(row => row.Text.TrimStart().StartsWith("✓", StringComparison.Ordinal)).Text;
+            Assert.Contains("0 tools", footer);
+            Assert.Equal(reasoning && !laterDiff, footer.Contains("ctrl+o thinking", StringComparison.Ordinal));
+            Assert.DoesNotContain(window.Transcript.Lines, row => row.Text.Contains("reported reasoning example", StringComparison.Ordinal));
+            if (reasoning && !laterDiff)
+            {
+                window.Transcript.ToggleExpanded();
+                Assert.True(window.Transcript.IsExpanded);
+                Assert.Contains(window.Transcript.CollapsedRows, row => row.Text.Contains("reported reasoning example", StringComparison.Ordinal));
+            }
+            renderer.BeginTurn();
+            renderer.Transcript.AppendAssistant("Next answer without reasoning.");
+            renderer.Transcript.EndTurn(TuiTurnOutcome.Completed, null);
+            var nextFooter = window.Transcript.Lines.Last(row => row.Text.TrimStart().StartsWith("✓", StringComparison.Ordinal)).Text;
+            Assert.DoesNotContain("ctrl+o thinking", nextFooter);
+            checkedFooter = true; app.RequestStop(); return false;
+        });
+        app.Run(window); Assert.True(checkedFooter);
+    }
+
     [Fact]
     public async Task LostHeadRecoveryReplacesTurnProseAndPreservesToolsAndEarlierTurns()
     {

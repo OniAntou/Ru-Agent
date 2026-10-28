@@ -70,7 +70,7 @@ public sealed class TgComposerTests
         {
             var rowsText = TgSnapshot.Capture(app);
             Assert.Equal(Surface, TgSnapshot.CellAttribute(app, rowsText.Length - 6, 40).Background);
-            Assert.Contains("Standard", rowsText[composer.Frame.Y + TgComposerView.MetadataRow]);
+            Assert.DoesNotContain("Standard", rowsText[composer.Frame.Y + TgComposerView.MetadataRow]);
             Assert.Contains("kilo", rowsText[composer.Frame.Y + TgComposerView.MetadataRow]);
             app.RequestStop();
             return false;
@@ -93,25 +93,45 @@ public sealed class TgComposerTests
     }
 
     [Fact]
-    public void Preset_CarriesTheGreenAccentOnTheMetaRow()
+    public void Preset_moves_to_header_next_to_usage_and_keeps_its_green_accent()
     {
-        using IApplication app = Application.Create();
-        app.Init(DriverRegistry.Names.ANSI);
-        using var window = new Window { BorderStyle = LineStyle.None };
-        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = TgComposerView.RowCount };
-        composer.SetMeta("Standard", "model", "provider");
-        window.Add(composer);
+        using IApplication app = Application.Create(); app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        window.Transcript.Append("active conversation", TranscriptStyle.Prose);
+        window.Composer.SetMeta("standard", "model", "provider");
+        window.Header.UpdateUsage(39413, 20, 0.29m);
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var rows = TgSnapshot.Capture(app);
-            var metaRow = composer.Frame.Y + TgComposerView.MetadataRow;
-            var column = rows[metaRow].IndexOf("Standard", StringComparison.Ordinal);
-            Assert.True(column >= 0);
-            Assert.Equal(
-                TgPalette.Attr(TuiToken.Ok, TuiPalette.SurfaceRgb()).Foreground,
-                TgSnapshot.CellAttribute(app, metaRow, column).Foreground);
-            app.RequestStop();
-            return false;
+            var column = rows[0].IndexOf("standard", StringComparison.Ordinal);
+            Assert.True(column >= 0); Assert.True(rows[0].IndexOf("39,413", StringComparison.Ordinal) > column);
+            Assert.Equal("standard", window.Header.Preset);
+            Assert.Equal(TgPalette.ToColor(TuiToken.Ok), TgSnapshot.CellAttribute(app, 0, column).Foreground);
+            Assert.DoesNotContain("standard", rows[window.Composer.Frame.Y + TgComposerView.MetadataRow]);
+            app.RequestStop(); return false;
+        });
+        app.Run(window);
+    }
+
+    [Theory]
+    [InlineData("plan")]
+    [InlineData("standard")]
+    [InlineData("full_access")]
+    public void Preset_remains_visible_in_a_narrow_header_and_updates_after_selection(string preset)
+    {
+        using IApplication app = Application.Create(); app.Init(DriverRegistry.Names.ANSI);
+        using var window = new Window { BorderStyle = LineStyle.None };
+        var header = new TgHeaderView { Width = 32, Height = 2 };
+        header.SetTitle(new string('x', 100)); header.SetPreset("full_access"); header.UpdateUsage(39413, 20, 0.29m);
+        window.Add(header); var step = 0;
+        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        {
+            if (step++ == 0) { header.SetPreset(preset); return true; }
+            var row = TgSnapshot.Capture(app)[0];
+            Assert.Contains(preset, row); Assert.Contains("39.4K", row);
+            Assert.DoesNotContain("20.00%", row); Assert.DoesNotContain("$0.29", row);
+            if (preset != "full_access") Assert.DoesNotContain("full_access", row);
+            app.RequestStop(); return false;
         });
         app.Run(window);
     }

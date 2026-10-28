@@ -245,7 +245,7 @@ public sealed class TgRunLoopTests
             {
                 loop.PauseQueuedSubmissions();
             }
-            else if (submission.Prompt == "/retry")
+            else if (submission.Prompt == "/follow")
             {
                 loop.ResumeQueuedSubmissions();
             }
@@ -277,19 +277,19 @@ public sealed class TgRunLoopTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(800), () =>
         {
-            window.Composer.Input.Text = "/retry";
+            window.Composer.Input.Text = "/follow";
             loop.Submit();
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(1000), () =>
         {
-            window.Composer.Input.Text = "/retry";
+            window.Composer.Input.Text = "/follow";
             loop.Submit();
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(1300), () =>
         {
-            Assert.Equal(["active", "message-1", "/model", "/retry", "message-2", "/retry"], seen);
+            Assert.Equal(["active", "message-1", "/model", "/follow", "message-2", "/follow"], seen);
             Assert.Single(pendingAttachments);
             app.RequestStop();
             return false;

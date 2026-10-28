@@ -4,7 +4,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli;
 
-internal static class ChatRunWorkflow
+internal static partial class ChatRunWorkflow
 {
     public const int MaxApprovalReplayEvents = 2048;
     public const int MaxApprovalReplayFrameChars = 64 * 1024;
@@ -14,6 +14,7 @@ internal static class ChatRunWorkflow
         run.TerminalAt is null
         && (string.Equals(run.Status, "running", StringComparison.OrdinalIgnoreCase)
             || string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(run.Status, "waiting_input", StringComparison.OrdinalIgnoreCase)
             || string.Equals(run.Status, "waiting_subagents", StringComparison.OrdinalIgnoreCase));
 
     public static bool SameSnapshot(GetAgentRunResponse expected, GetAgentRunResponse actual) =>

@@ -37,8 +37,18 @@ a filled prompt surface in the panel tone — the opencode-style block, with no
 frame outline and no accent rail. An empty chat centres the logo above the same
 block. The empty prompt is capped at 80 columns. Active sessions use a padded
 transcript and a full-width bottom prompt with the same side margins as chat; the
-preset, model and provider sit on the meta row inside the block, the preset in
-the same green as the user block's prompt chevron. The composer
+model, selected reasoning effort and provider sit on the meta row inside the block. The permission preset
+appears in green beside the token cluster in the top header during chat; the
+empty welcome screen hides it while keeping the centered workspace label visible.
+The welcome logo keeps its green/blue RU and silver AGENT colors. Terminals that
+report Sixel or enabled Kitty graphics show square tiles, small rims and layered
+shadows behind every letter. Other terminals and small windows use the glyph
+logo. The welcome decoration disappears when chat starts.
+Opening Ru implicitly from your user profile shows `Chưa chọn dự án · ~`; an
+explicit `--workspace` shows that directory. Long paths are shortened in the header
+and shown fully as wrapped rows in `/status`. A missing/inaccessible workspace
+shows `Path không khả dụng`. This label does not change the workspace or
+permissions, and shell `cd` does not move it. The composer
 grows from one to six visible input rows, leaving room for
 the transcript on short screens. It shows “Ask anything…” when empty and uses
 a steady block cursor. Enter sends; Ctrl+J, Shift+Enter where the terminal
@@ -56,7 +66,7 @@ without reading as a slab. Other shortcuts remain available through help.
 The header puts the session title (without a product-name prefix)
 title/known usage on the first row and workspace on the second. Live activity
 occupies a row at the end of the transcript. A colored glyph precedes the readable action; targets
-are muted and elapsed/tool count align right. Ready is quiet, response deltas
+are muted and elapsed/tool count align right. Idle omits status text, response deltas
 show “Writing response”, and parked states have no spinner or running clock.
 Tool rows distinguish action, target and metrics; failure remains explicit even
 when a long command is shortened. Frames
@@ -111,17 +121,24 @@ are replaced together, so preview growth and final commit do not duplicate text.
 
 ## Project context and run continuity
 
+Opening fresh chat or using local commands such as `/model`, `/provider`, `/status`
+and `/help` does not create a saved session. A session is created on the first real
+message or explicit `/new`; `/sessions` can select an existing one. Local native
+commands do not appear as user-message cards or show model-working status. Until
+then status displays `not started`, and session-specific inspections ask you to
+send a message or select a session first.
+
 The TUI focuses on chat and coding, with inline tool activity and expandable
 errors/diffs, approvals, attachments, session/model controls and run recovery.
 The header keeps the live context meter. Plans show compact completed/total
-counts in the transcript; use the GUI for dedicated activity, plan and changes
+counts in the transcript; use the GUI for dedicated activity and plan
 inspection or file browsing. Drop a known file path or use Ctrl+V to add it to
 the composer. Up/Down still recalls previous prompts. `/exit` is the only quit
 command; Escape closes an overlay or interrupts an active turn and never exits
 the chat. An idle Escape preserves the draft.
 
-The interactive vocabulary omits `/activity`, `/todos`, `/changes`, `/files`,
-`/tree`, `/rewind`, `/export`, `/stats`, `/tokens`, `/history`, `/attach`,
+The interactive vocabulary omits `/delete`, `/resume`, `/retry`, `/release`, `/clear`, `/activity`, `/todos`, `/files`,
+`/tree`, `/export`, `/stats`, `/tokens`, `/history`, `/attach`,
 `/attachments`, `/paste`, `/detach`, `/continue` and `/quit`. Headless CLI
 and RPC commands, including session interchange, remain available separately.
 
@@ -130,7 +147,7 @@ show unknown and suppress catalog-based cost/context estimates. Pending approval
 recovery reads a bounded tail of durable events, then rechecks the run version
 before posting an explicit decision. Another client may resolve the approval first.
 
-When a submission is held for `/retry`, queued turns stay ordered and paused.
+After a rejected submission, queued turns stay ordered and paused; exit and reopen the session before submitting fresh work.
 Model/backend/key/reasoning repair commands and help/status remain available;
 they leave draft attachments intact. Settings are checked again before a queued
 run is created. The Host pins provider selection at the first successful model
@@ -169,12 +186,12 @@ agent rpc
   one of them the parser refuses with `json_requires_explicit_flags`. The
   transcript renderer is muted in this mode, so stdout carries durable/transient
   NDJSON frames only; every human line goes to stderr.
-- `chat` (or `repl`) uses Terminal.Gui for interactive streaming, tool/diff rows, approvals, command history and slash completion. `/new` creates a session; `/sessions [query]` searches a bounded list; `/resume [id]` switches explicitly and preserves the current session on failure. Reopening a session prints its newest 20 text messages and discovers retained running, approval and parked runs. `/follow [run-id]` attaches to running output or recovers pending approval interaction; typing `Continue` resumes the tracked parked run. Use `ru agent continue <run-id>` from another terminal for an explicit run target. `/release [run-id]` cancels a parked run in the current session; it retains the run for recovery if cancellation fails. A repeated blocker after Continue offers release instead of repeating the same retry advice. Session switching keeps the operator-selected workspace and warns about a different retained workspace; reopen with `--workspace PATH --session ID` to select that root explicitly.
-- While a turn streams, Enter queues up to eight immutable submissions. Each owns the prompt, session/workspace/preset/model intent, attachment contents and idempotency key captured at admission. The queue retains at most 32 MiB of estimated UTF-16 content; a composed prompt is capped at 16,000 UTF-16 units. Refusal leaves the draft and attachments intact. State-changing commands are refused while busy or queued. `/retry` resubmits the exact rejected submission with its original key. Escape/Ctrl+C interrupts through the existing run-cancel endpoint; pending tool approval takes over the composer with explicit approve/deny choices.
-- Terminal.Gui is the only interactive screen engine. Windows uses its .NET console driver to preserve emoji across split input packets. The append-only path is a printer, not a second renderer: it writes rows and keeps a bounded history, and the cursor tracking, sticky footer, live-row repaint, resize rebuild and framed composer that used to shadow the interactive engine were unreachable (the CLI always suppressed repaints) and have been removed. Bracketed paste targets the active command palette, secret prompt or composer without changing a hidden draft. `--classic` retains compatibility as append-only text with line input between turns; the same fallback serves redirected stdin/stdout, `--json`, `NO_COLOR`, `TERM=dumb` and terminals below 80×24. It has no cursor positioning, screen clearing, resize rebuild, arrow-key picker or framed composer. Bare picker commands show their options; select with an explicit argument. Input history keeps the latest 100 submissions. A trailing backslash continues the prompt on the next line; ordinary prompt quotes are preserved. In text mode `/clear` records a reset marker without erasing terminal scrollback.
+- `chat` (or `repl`) uses Terminal.Gui for interactive streaming, tool/diff rows, approvals, command history and slash completion. `/new` creates a session; `/sessions [query]` searches a bounded list; `/sessions id:<session-id>` switches explicitly and preserves the current session on failure. Reopening a session prints its newest 20 text messages and discovers retained running, approval and parked runs. `/follow [run-id]` attaches to running output or recovers pending approval interaction; typing `Continue` resumes the tracked parked run. Use `ru agent continue <run-id>` from another terminal for an explicit run target. Use `ru agent cancel <run-id>` outside chat to abandon a parked run. A repeated blocker after Continue offers cancellation guidance. Session switching keeps the operator-selected workspace and warns about a different retained workspace; reopen with `--workspace PATH --session ID` to select that root explicitly.
+- While a turn streams, Enter queues up to eight immutable submissions. Each owns the prompt, session/workspace/preset/model intent, attachment contents and idempotency key captured at admission. The queue retains at most 32 MiB of estimated UTF-16 content; a composed prompt is capped at 16,000 UTF-16 units. Refusal leaves the draft and attachments intact. State-changing commands are refused while busy or queued. Rejected submissions are never automatically resubmitted; queued work remains paused until the chat is closed or an existing explicit run continuation settles it. Escape/Ctrl+C interrupts through the existing run-cancel endpoint; pending tool approval takes over the composer with explicit approve/deny choices.
+- Terminal.Gui is the only interactive screen engine. Windows uses its .NET console driver to preserve emoji across split input packets. The append-only path is a printer, not a second renderer: it writes rows and keeps a bounded history, and the cursor tracking, sticky footer, live-row repaint, resize rebuild and framed composer that used to shadow the interactive engine were unreachable (the CLI always suppressed repaints) and have been removed. Bracketed paste targets the active command palette, secret prompt or composer without changing a hidden draft. `--classic` retains compatibility as append-only text with line input between turns; the same fallback serves redirected stdin/stdout, `--json`, `NO_COLOR`, `TERM=dumb` and terminals below 80×24. It has no cursor positioning, screen clearing, resize rebuild, arrow-key picker or framed composer. Bare picker commands show their options; select with an explicit argument. Input history keeps the latest 100 submissions. A trailing backslash continues the prompt on the next line; ordinary prompt quotes are preserved.
 - Attachments travel with the next turn. Images: `--image PATH` (repeatable, max 4), a dropped path, or `Ctrl+V` (clipboard file drop, a screenshot via DIB → temp PNG, a text path, and plain-text paste when no image is present). Images are validated, resized (longest side 2048, `>4MB` re-encoded, BMP/GIF normalised to JPEG, PNG alpha kept, EXIF orientation applied; WebP passes through only when its header proves it fits) and capped exactly like the GUI: 10MB read, 4MB decoded per image, 20MB per turn, 5.6M-char data URL. Text/code files (5MB) inline as fenced blocks ahead of the prompt; a composed prompt over 16k chars is refused before the run is POSTed. The composer shows the pending attachment summary; the list clears when the run owns it and a declined workspace-trust challenge restores it intact. Temp clipboard files (`%TEMP%\ru-img-*`) are deleted on send or chat exit. A vision-name pre-check only warns; the backend remains the source of truth and fails closed with `vision_unsupported`.
 - Office documents (`.docx`, `.xlsx`, `.pptx`) are unsupported as attachments. Keep them in the workspace and ask Ru to process them through installed terminal tools or optional skills. Ru does not bundle an Office converter or authoring suite; tool permissions still apply.
-- The pinned header shows the OpenCode-style usage cluster (`39,413  20%  ($0.29)`) when the active model's catalog publishes a context window and rates: the percent tracks the largest model step this turn (like the GUI meter) and the cost accumulates at the published per-million rates; both need a `models.dev`-style catalog and stay off when it publishes nothing. Session cost is session-level (a `/clear` resets the percent, not the cost).
+- The pinned header shows the OpenCode-style usage cluster (`39,413  20%  ($0.29)`) when the active model's catalog publishes a context window and rates: the percent tracks the largest model step this turn (like the GUI meter) and the cost accumulates at the published per-million rates; both need a `models.dev`-style catalog and stay off when it publishes nothing. Session cost is session-level.
 - The backend `chat`/`run` start is a **managed host** shared by CLI, GUI and RPC: it stops itself after 10 minutes with no request in flight, no recent request and no registered run (`RU_HOST_IDLE_MINUTES`, default `10`, `0` disables), so exiting the terminal no longer leaves a detached backend running. The next command starts it again automatically; a run still in progress (even parked) keeps it alive.
 - An untrusted workspace requires an explicit trust decision before execution. Terminal.Gui shows trust/cancel in the composer with cancel selected by default; Enter or Escape never grants access implicitly. Declining cancels the run, so it stops holding its session. Trust is scoped to the canonical workspace identity; moved or recreated roots require a new decision. Redirected/JSON output reports `workspace_trust_required`; resolve it explicitly with `ru agent trust <run> --approve` or `--deny`.
 - A trust challenge expires after ten minutes, and the host now notices while it is running rather than only at the next startup: the runtime loop cancels the expired run with `terminal_error_code = workspace_trust_expired` and frees the session. Trust is a pre-execution gate, so cancelling cannot roll back a tool side effect. Previously only the startup sweep could do this, so a long-lived desktop host left the run — and its session — parked indefinitely.
@@ -193,29 +210,110 @@ agent rpc
 - `/model` without an argument lists the live provider catalog for the active backend (current model first, then free models, then the rest A–Z, then dimmed unsupported rows; the footer names the backend and the row count as `backend · N rows`), falling back to configured models when the catalog is unreachable with a dim `catalog unavailable (<reason>) - showing configured models` line, the same reasoning `/backend` prints; pick with `↑↓`/digits/`Enter`, `Esc` cancels. Free-tier models carry a `free` tag (OpenRouter `:free` suffix) and long ids keep both ends so shared prefixes stay apart. Dropdown label columns size to the longest label on wide terminals (narrow screens clip with `…`); short lists keep the classic 12-cell column.
 - `/model` and `/backend` without an argument open a picker (`↑↓`, digits, `Enter`, `Esc`); choosing one updates the settings immediately. `/backend openrouter` and `/model <id>` also work with explicit arguments. With no interactive console they print the same information as a panel; `Esc` cancels, and the Terminal.Gui frame reprints a cancelled bare form's options because its picker has no scrollback behind it.
 - Starting `chat` or `run` against a `models.dev:*` backend makes one best-effort catalog check. A model id the live catalog does not list prints one bounded `model_not_in_catalog: <id> - it may fail with a 404; choose another with /model` notice; an unreadable catalog prints `model_check_unavailable: <reason>`. The run continues either way — the catalog can be stale — and OpenAI, Anthropic and custom backends, whose id spaces are not catalog-bound, are not checked.
-- `/backend` reads the provider list live from `GET /models-dev` instead of a fixed list, so every models.dev provider is reachable; rows run base providers first (`openai`, `anthropic`, `custom`), then the current provider, then the ones already signed in, then the rest by id. A line above the picker says either `N providers from models.dev` or `models.dev list unavailable (<reason>) - showing the known providers only`, because a silently short list is indistinguishable from a failed fetch. A failed fetch falls back to the four providers the CLI has always known rather than emptying the picker.
+- `/provider` reads the live provider catalog (`GET /models-dev`), with built-in and fallback choices when the catalog is unavailable. Choose a provider first, then enter its API key in the separate masked box. `/provider <name>` opens the key box directly.
 - Every picker can be filtered by typing: letters and the id separators `-` `_` `.` narrow the rows by substring across label, detail and value, `Backspace` drops one character, and the footer reports `filter: <query> · <matched>/<total>`. Digits stay the numbered-pick shortcut, and with an empty filter every picker behaves exactly as before. A query that matches nothing shows one disabled `no match` row instead of an empty list.
 - `/reasoning` shows or sets the active model's reasoning effort from the live catalog. Bare `/reasoning` opens a picker of `default` plus the levels that model actually publishes, or explains that the model offers none; `/reasoning <effort>` writes it directly and, like `/backend`, needs no terminal. The save is `POST /settings` carrying exactly `reasoning_effort`, `reasoning_model` and `reasoning_identity` — the identity is the catalog snapshot the picker drew, so a save can never land on a different selection. `default` is always accepted, because the host only resolves a non-default effort against the catalog.
-- `/key` manages provider API keys without leaving the terminal: bare `/key` shows the sign-in state (legacy providers plus signed-in `models.dev` ids), `/key <provider>` opens a masked Terminal.Gui panel (one `•` per character, count only, never content); text fallback uses a minimal no-echo prompt and prompts for the key with no echo (`openai`, `anthropic`, `custom`, `openrouter`, or `models.dev:<id>`; `Ctrl+V` pastes from the clipboard since raw console input swallows the terminal's own paste binding, pasted text is trimmed to the first line, `Esc` cancels, empty input saves nothing), and `/key remove <provider>` signs out via `POST /settings/provider/remove`. Keys travel only inside the `POST /settings` body to the Windows Credential Manager and are never printed, logged, or stored in history. Non-interactive runs report `interactive_required` instead of prompting. Choose `/backend`, configure its `/key`, then select a supported `/model` from the current catalog.
-- Scrollback uses PageUp/PageDown, Ctrl+Up/Down for individual rows, Ctrl+Home/End for top/tail, and the mouse wheel. The scrollback hint stays visible while a model turn runs; `/clear` and session replay reset it with the transcript. Retention limits and queued-submission ownership remain the existing ones.
-- A workspace-busy rejection names the blocking run in a persistent hint with `ru agent cancel <run-id>`. Typing, failed retries and `/clear` do not dismiss it; an accepted run or successful session switch does. Transcript diagnostics also retain the blocking run and follow/continue/cancel advice.
+- Provider setup saves the selected provider and key together through one `POST /settings` only after confirmation. `Ctrl+V` pastes the key into the masked box; Escape cancels without changing either. An empty entry keeps a known saved key; otherwise it saves nothing, except for custom endpoints where a key is optional. Keys use existing credential storage and never enter the transcript or command history. `/provider remove <name>` signs out. JSON refuses interactive key entry; without a picker the sequential path lists providers. Legacy `/backend` and `/key` commands remain callable but are hidden from help/completion. `/model` continues to select the model; `/provider` no longer aliases it. Saving a key does not verify it with the provider.
+- Scrollback uses PageUp/PageDown, Ctrl+Up/Down for individual rows, Ctrl+Home/End for top/tail, and the mouse wheel. The scrollback hint stays visible while a model turn runs; Session replay resets it with the transcript. Retention limits and queued-submission ownership remain the existing ones.
+- A workspace-busy rejection names the blocking run in a persistent hint with `ru agent cancel <run-id>`. Typing and failed submissions do not dismiss it; an accepted run or successful session switch does. Transcript diagnostics also retain the blocking run and follow/continue/cancel advice.
 - Explicit OpenAI HTTP 429 quota codes (including insufficient quota and exhausted credits/spend limits) report `provider_quota_exhausted` and park without automatic retries. Restore provider credits or limits before Continue; a zero remaining-request header alone remains ordinary throttling.
 - Provider HTTP 402 and Responses streamed payment errors report `provider_payment_required` without transient retries. The remedy names provider billing/credit instead of assuming a bad key or model. Provider/model selection stays pinned for the run.
 - Terminal.Gui relayouts and redraws after screen-size changes. Startup selection remains 80×24; an already active frame stays available while resizing and hands control to append-only output only after remaining below 20×12 for 400 ms. Transcript bounds and detached scrolling survive layout changes. `RU_TUI_DEBUG=1` writes diagnostic events to `%TEMP%\ru-tui-debug.log`; a file path selects another diagnostic destination. Native terminal resize and IME acceptance are recorded separately from headless tests.
-- `session list`, `session rewind` and `session delete` provide explicit command-line controls for listing sessions, time-travel rewinds, and deletion. `session delete <session-id>` asks for a `y/N` confirmation (default No) and only `--yes` skips it; a partial cleanup from the backend (`Session đã xoá nhưng artifacts còn sót…`) surfaces as `session_delete_failed` bounded to one line instead of reading as success. The TUI's `/delete [session-id]` asks through the same confirm list (default `keep`) and refuses the **current** session with a bounded line — switch first, then delete it.
+- `session list`, `session rewind` and `session delete` provide explicit command-line controls for listing sessions, time-travel rewinds, and deletion. `session delete <session-id>` asks for a `y/N` confirmation (default No) and only `--yes` skips it; a partial cleanup from the backend (`Session đã xoá nhưng artifacts còn sót…`) surfaces as `session_delete_failed` bounded to one line instead of reading as success.
 - `session import <file>` reads Claude Code and Codex JSONL transcripts, Antigravity's `transcript.jsonl`, and opencode's `.db` store (naming the session when more than one is present). JSONL imports are size-checked before read: a file above **16 MiB** is refused with one bounded `import_too_large` line; an opencode `.db` store is checked on the payload after extraction, never on the whole database, and only the CLI reads it. `session export` writes Claude Code and Codex formats only, by design. The desktop picker imports `.jsonl` and points opencode users at `ru agent session import <opencode.db> --harness opencode`.
 - `rpc` runs the stdio JSON-RPC 2.0 bridge for external tools (`ru agent rpc` takes no further arguments); it reuses the same loopback host and bearer as every other command and adds no HTTP route. See [the RPC bridge contract](../../docs/operations/rpc.md).
 - `run` creates a single-shot Agent run. If `--session` is omitted, the tracer creates one dedicated session via `POST /sessions/new`, prints `session_id` and `run_id`, and sends a fresh `idempotency_key` (32-char hex GUID). Workspace is canonicalized and bounded to 512 chars; prompt is bounded to 8192 chars; max argument count is 64.
 - `--preset` selects one canonical, session-scoped profile: `plan` is read-only — workspace read/Web auto, terminal/mutation denied outright, external structured access asks; `standard` auto-allows workspace mutation and executable/shell launches from a workspace cwd; external structured paths and external launch directories ask; `full_access` (alias `full`) is the skip-all mode — external structured files, arbitrary terminal, and structured protected paths (harness key/database files and runtime descriptors) are automatic, while hard-invalid requests remain denied. Repository cleanliness is not an input.
 - Workspace trust is explicit once per canonical identity. `--trust-workspace` approves the returned identity and continues the same run; without it, an untrusted identity returns `workspace_trust_required` without prompting, and the notice names both recovery options. A moved or recreated identity requires trust again: `--trust-workspace` re-approves the new identity in one step, so unattended runs recover the same way.
 - `--preset full_access` requires `--confirm-full-access`; without it the command returns `full_access_confirmation_required` before session creation or preset mutation. With it, the existing policy route receives `X-Interactive-Confirmed: true`. Terminal children run as the current Windows user, can access data outside the workspace and network resources, and have no OS filesystem/network confinement; timeout, output, cancellation, and process-tree controls remain.
-- Inside Ru, `/preset` opens a picker, and `/preset plan` or `/preset standard` selects directly. `/preset full_access` requires a separate confirmation that defaults to keeping the current preset. The choice applies to the next new turn through the same policy update/rollback path; running, queued or retained runs cannot have their permission intent changed in place. The composer and `/status` show the selected next-turn preset.
+- Inside Ru, `/preset` opens a picker, and `/preset plan` or `/preset standard` selects directly. `/preset full_access` requires a separate confirmation that defaults to keeping the current preset. The choice applies to the next new turn through the same policy update/rollback path; running, queued or retained runs cannot have their permission intent changed in place. The top header and `/status` show the selected next-turn preset.
 - Preset updates retry expected versions `0..3` and bind the positive returned version to the run. The CLI creates a durable snapshot token before mutation; the Host persists prior/applied selection and token atomically, enforces capacity without evicting active snapshots, and restores with CAS/single-use semantics. A malformed or lost mutation response uses the known token for safe restore; a lost restore response can replay only while the restored state still matches, otherwise the command fails closed before streaming. Failed creation or trust handling restores the exact prior selection, including a new session with no prior selection.
 - `--json` is accepted with explicit `--trust-workspace` and, for Full Access, explicit `--confirm-full-access`; it never auto-approves an approval or workspace.
 - `attach` streams an existing run's durable events from `after_sequence=0` via `AgentSseClient`.
 - `trust` wraps `POST /agent/v1/runs/{runId}/trust`.
 - `approve` and `deny` wrap `POST /agent/v1/runs/{runId}/approvals/{approvalId}` with `allow_once`, `allow_session_directory` (external folders only), `allow_always` (authorizes once and remembers a bounded pattern as a durable project rule — a terminal command prefix, or an approved external folder as a path pattern; `rule_asks` and `terminal_protected_path_requires_approval` are refused and degrade to `allow_once`), or `deny`. The Host picks the right one-time token from the pending binding (session-scoped directory grant for `external_directory_required`, ephemeral token for `terminal_external_cwd_requires_approval`, `terminal_protected_path_requires_approval`, or `rule_asks`). Any allow also remembers the approved intent in the Host's in-process session ledger (the durable pattern when one was saved, the exact intent otherwise), so a later matching call in the same session authorizes without another prompt (the memory dies with the session or a host restart; external-directory approvals keep the session grant plus the durable rule and write no ledger entry). The interactive approval offers the session folder and the project remember for `external_directory_required`. `terminal_timeout_requires_approval` remains the standard-window gate below `full_access` and `web_approval_required` remains a compatibility reason for explicit ask rules; timeout above the protocol hard maximum is denied. `agent approve --always` sends `allow_always`; no reusable approval token is ever created. Approval is first-writer wins; second concurrent response returns `approval_stale` (409). `--json` cannot confirm approval.
 - `answer` wraps `POST /agent/v1/runs/{runId}/inputs/{inputId}` with the user's answer to an `ask_user` question (1..8192 characters). Without the answer argument it prompts; `--json` requires the argument because it must never prompt, and prints a versioned envelope carrying `run_state`. A replayed, foreign, or already-answered input id returns `input_stale` (409), an unknown run `run_not_found` (404), and an invalid body `invalid_answer` (400).
+
+Interactive Terminal.Gui chat opens `ask_user` questions inside Ru. Tab/Shift+Tab
+cycles suggestions into an editable answer; Enter sends, Ctrl+J/Shift+Enter adds a
+newline, and PageUp/PageDown scrolls a long question. Free text and text paste are
+supported without a suggested option. Escape closes the question without answering
+or cancelling the run and pauses queued prompts. `/follow [run-id]` reopens the
+pending question, including after reopening its session. Answers use the existing
+run/input endpoint and never create a new prompt or change the run's model/preset.
+Stale or uncertain submissions stop for explicit `/follow` recovery instead of
+retrying automatically. Sequential and JSON chat keep the external `agent answer`
+flow; JSON never opens an input panel.
+
+`/tasks` opens the session's background terminal task list, including while a model
+turn streams. Rows show the process label, execution ID, state and available exit
+code. Select a running row, choose **Stop task** (the default is **Keep running**),
+and refresh to observe its final state. Finished rows have no stop action. **Refresh**
+reloads on demand; there is no background polling. Escape closes the current panel.
+`/tasks kill <execution-id>` targets one task directly with the same interactive
+confirmation; `/tasks <run-id>` selects a run in the current session, useful after
+reopening a session. With no retained target, Ru discovers the newest session run.
+Missing Broker/gateway state is reported as unavailable, not an empty task list.
+The task control lane preserves pending attachments and the active model run/queue.
+While task control is open, finish it before submitting another command or prompt.
+Sequential/JSON chat lists tasks as text/JSON; an explicit `kill` argument sends the
+stop without reading stdin. All operations use the existing Host command endpoint
+and Broker session registry; the CLI never kills local process IDs itself.
+
+`/changes [run-id]` summarizes available completed edit activities for the current
+run, or the newest session run when no target is retained. An explicit run must
+belong to the current session. Select a filename group to inspect its recorded
+before/after previews, then Escape returns to the list. Refresh reloads on demand;
+there is no polling, filesystem read, Git diff, restore or model request. It shares
+the task inspection lane and works during streaming without consuming attachments
+or changing the model turn/queue. Preview and question/approval panels are serialized.
+Sequential/JSON chat prints a text/structured summary without opening a panel.
+
+Counts describe completed edit operations, not net changes on disk. A missing
+count stays unknown (`+?`/`−?`, JSON null); duplicate activity IDs use their newest
+state before filtering failures. The existing Host activity API returns filenames
+only and currently caps replay at 200 activities. Groups can combine different
+paths with the same filename; they are not a unique physical-file count. This
+scope is explicit in the UI/JSON. Terminal/external mutations may be absent, and
+previews can be truncated or unavailable. Ru never substitutes current disk data
+for missing historical evidence. The picker shows up to 100 filename groups;
+preview display is bounded to 2000 rows plus an omission notice.
+
+`/history` browses saved **user turns**, newest first (up to 100). Select a turn:
+
+- **View turn** shows saved prompt/reply text and available linked tool/change
+  activity. Evidence is bounded and historical, never a claim about current files.
+- **Edit and try again** restores the saved prompt into the composer and stages
+  a branch **before** that turn. Edit it, then send to create the branch.
+- **Continue from here** stages a branch **after** the selected turn; write your
+  next request and send to create it.
+
+The original session stays intact. Opening, viewing, or cancelling the picker
+creates no session. `/history cancel` discards the staged branch, keeping your
+current input. `/history <turn> view|edit|continue` supports explicit selection
+in sequential/JSON chat; a staged edit prints/returns the saved draft for the
+caller to edit and send. Bare sequential/JSON `/history` only lists turns.
+Numbers refer to available saved user turns, not hidden tool/message rows.
+
+**Branches use current files and current selected model/provider/preset.** They
+copy conversation text only: no old images, runs, approvals, grants, background
+processes or work state. Reattach images when needed. Oversized/control-bearing
+saved prompts cannot be restored into the editor; Continue remains available.
+Finish pending runs/queues first. The hidden `/rewind` TUI alias opens the same
+history workflow; its former numeric `--yes` truncation syntax is refused.
+The separate headless `ru agent session rewind` API remains unchanged.
+
+An authenticated `POST /sessions/{sessionId}/fork` compares `history_revision`
+from session activation and writes the new prefix in one SQLite transaction.
+A changed history is rejected; select again. A lost/invalid acknowledgement is
+never automatically retried and starts no model run. Choose/reload a session via
+`/sessions id:<id>` before sending again; an unacknowledged child may be visible
+in `/sessions`. Current attachments survive recovery and are not copied from old
+turns. A failed branch send requires a validated reload before choosing again.
+The same-session id reload works while paused and returns the failed draft and
+attachments for manual resubmission; it never replays queued prompts. Native
+inspection and branch creation block overlapping sends before attachment admission.
+
 - `policy list` wraps `GET /agent/v1/policies` (scope filter). `policy import --global FILE` validates versioned JSON (rejects unknown version/fields, normalizes and displays matchers/decision before confirmation) and posts each rule with `X-Interactive-Confirmed: true`; sensitive matcher values are encrypted at rest via Host API. `--json` cannot bypass confirmation. `policy remove` wraps `DELETE /agent/v1/policies/{ruleId}` and requires interactive confirmation for global rules.
 - `cancel`/`continue`/`status` are thin HTTP wrappers.
 - `run` and `attach` return exit 2 at a current durable `waiting_user` or `reconciliation_required` boundary. The run stays parked on the Host; use `ru agent continue <run-id>` or `ru agent cancel <run-id>`. Historical park events from a resumed run do not detach the follower. Under `--json`, stdout remains NDJSON and human recovery guidance goes to stderr.
@@ -330,7 +428,7 @@ recovery and approvals (`permission_profile_changed`, `recovery_pre_dispatch`,
 Codes outside the table still name themselves and point at
 `%LOCALAPPDATA%\Ru\logs` plus `/status` instead of rendering bare.
 When a `models.dev:*` backend has no stored credential, the `/model` card says
-`use /key <provider> to sign in` instead of leaving a silent absence.
+`use /provider <name> to sign in` instead of leaving a silent absence.
 
 ## References
 

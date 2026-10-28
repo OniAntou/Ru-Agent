@@ -64,7 +64,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(52, doc.RootElement.GetArrayLength()); // Includes three skill catalog/preferences/package routes.
+        Assert.Equal(53, doc.RootElement.GetArrayLength()); // Includes the skill catalog/preferences/package routes and conversation forks.
     }
 
     [Theory]

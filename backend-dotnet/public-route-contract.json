@@ -23,6 +23,7 @@
   {"method":"POST","path":"/sessions/new","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.CreateSessionAsync"]},
   {"method":"POST","path":"/sessions/{sessionId}/activate","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ActivateSessionAsync"]},
   {"method":"DELETE","path":"/sessions/{sessionId}","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.DeleteSessionAsync"]},
+  {"method":"POST","path":"/sessions/{sessionId}/fork","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/sessions/{sessionId}/rewind","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.RewindSessionAsync"]},
   {"method":"GET","path":"/sessions/{sessionId}/export","transport":"http","source":"backend-dotnet/RuBackend/Business/SessionInterchangeEndpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/sessions/import","transport":"http","source":"backend-dotnet/RuBackend/Business/SessionInterchangeEndpoints.cs","classification":"aspnet-direct","winui_callers":[]},

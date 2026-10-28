@@ -611,9 +611,10 @@ public sealed partial class RuPromptContextProviderTests
     {
         private RuInstructionLoaderTestsRoot(string root) => Root = root;
         public RuInstructionLoader CreateLoader() =>
-            new(localApplicationDataRoot: Path.Combine(Root, "isolated-user-data"));
+            new(localApplicationDataRoot: UserDataRoot);
 
         public string Root { get; }
+        public string UserDataRoot => Path.Combine(Root, "isolated-user");
         public static RuInstructionLoaderTestsRoot Create()
         {
             var root = Path.Combine(Path.GetTempPath(), "ru-prompt-provider-" + Guid.NewGuid().ToString("N"));

@@ -12,6 +12,10 @@ namespace RuAgent.Cli.TerminalGui;
 /// </summary>
 public static class TgPanelRequests
 {
+    internal static Task<string?> RequestQuestionAsync(TgChatWindow window, ChatInputQuestion question,
+        CancellationToken cancellationToken) => RunAsync(window,
+            () => window.ShowQuestion(question), value => value, delete: null, cancelled: null, cancellationToken);
+
     /// <summary>Runs a <see cref="ChoiceList"/> picker over the transcript.</summary>
     public static Task<string?> RequestChoiceAsync(
         TgChatWindow window,
@@ -60,6 +64,16 @@ public static class TgPanelRequests
     /// the transcript, so nothing is lost when it closes.
     /// </summary>
     public static async Task RequestDocumentAsync(
+        TgChatWindow window, string title, IReadOnlyList<string> body, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        try { await window.ModalRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+        try { await RequestDocumentCoreAsync(window, title, body, cancellationToken).ConfigureAwait(false); }
+        finally { window.ModalRequestGate.Release(); }
+    }
+
+    private static async Task RequestDocumentCoreAsync(
         TgChatWindow window,
         string title,
         IReadOnlyList<string> body,
@@ -74,6 +88,7 @@ public static class TgPanelRequests
         {
             window.App!.Invoke(() =>
             {
+                if (closed.Task.IsCompleted) return;
                 window.DocumentClosed += OnClosed;
                 window.ShowDocument(title, body);
             });
@@ -108,6 +123,17 @@ public static class TgPanelRequests
     }
 
     private static async Task<T> RunAsync<T>(
+        TgChatWindow window, Action show, Func<string, T> confirmed, Func<string, T>? delete,
+        T cancelled, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        try { await window.ModalRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return cancelled; }
+        try { return await RunCoreAsync(window, show, confirmed, delete, cancelled, cancellationToken).ConfigureAwait(false); }
+        finally { window.ModalRequestGate.Release(); }
+    }
+
+    private static async Task<T> RunCoreAsync<T>(
         TgChatWindow window,
         Action show,
         Func<string, T> confirmed,
@@ -125,6 +151,7 @@ public static class TgPanelRequests
         {
             window.App!.Invoke(() =>
             {
+                if (decision.Task.IsCompleted) return;
                 window.PanelConfirmed += OnConfirmed;
                 window.PanelCancelled += OnCancelled;
                 if (delete is not null)

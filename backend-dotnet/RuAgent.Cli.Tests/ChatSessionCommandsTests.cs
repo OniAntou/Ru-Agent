@@ -149,7 +149,7 @@ public sealed class ChatSessionCommandsTests
         fake.Sessions.Add(new ChatSessionChoice("s1", "First", 2, "ws", null));
         var commands = fake.Build(withSessionPicker: false, withPicker: false);
 
-        await commands.TryHandleAsync("/resume", null, CancellationToken.None);
+        await commands.TryHandleAsync("/sessions", null, CancellationToken.None);
 
         Assert.Empty(fake.Switched);
         Assert.Contains(fake.Output, line => line.Contains("First", StringComparison.Ordinal));
@@ -161,7 +161,7 @@ public sealed class ChatSessionCommandsTests
         var fake = new FakeSessions();
         var commands = fake.Build();
 
-        await commands.TryHandleAsync("/resume", "s9", CancellationToken.None);
+        await commands.TryHandleAsync("/sessions", "id:s9", CancellationToken.None);
 
         Assert.Equal(["s9"], fake.Switched);
         Assert.Equal(0, fake.SessionPickerCalls);
@@ -175,7 +175,7 @@ public sealed class ChatSessionCommandsTests
         fake.Busy = true;
         var commands = fake.Build();
 
-        await commands.TryHandleAsync("/resume", null, CancellationToken.None);
+        await commands.TryHandleAsync("/sessions", "id:s9", CancellationToken.None);
         Assert.Contains(fake.Errors, line => line.Contains("session_busy", StringComparison.Ordinal));
 
         // The card still opens while a run is live; choosing and deleting are refused.

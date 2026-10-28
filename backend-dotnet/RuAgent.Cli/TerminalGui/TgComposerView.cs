@@ -9,7 +9,7 @@ namespace RuAgent.Cli.TerminalGui;
 /// <summary>
 /// The opencode-style filled prompt surface: one panel-toned block that grows with a
 /// multiline draft. There is no frame and no accent rail — the fill is the shape — and the
-/// preset, model and provider sit on the meta row inside the block.
+/// model and provider sit on the meta row; permission is forwarded to the header.
 /// </summary>
 public sealed class TgComposerView : View
 {
@@ -30,7 +30,9 @@ public sealed class TgComposerView : View
     public int LayoutHeight => InputHeight + 4;
     public event EventHandler? LayoutChanged;
     public string Preset { get; private set; } = string.Empty;
+    public event Action<string>? PresetChanged;
     public string Model { get; private set; } = string.Empty;
+    public string ReasoningEffort { get; private set; } = string.Empty;
     public string Provider { get; private set; } = string.Empty;
 
     public TgComposerView()
@@ -58,7 +60,7 @@ public sealed class TgComposerView : View
             Math.Clamp(count, 0, Images.CliImagePolicy.MaxImageCount)).Select(index => $"[image {index}]"));
         var preview = Labels(pendingCount);
         if (retryCount > 0)
-            preview += (preview.Length > 0 ? " · " : string.Empty) + "/retry: " + Labels(retryCount);
+            preview += (preview.Length > 0 ? " · " : string.Empty) + "held: " + Labels(retryCount);
         if (_imagePreview == preview) return;
         _imagePreview = preview;
         SetNeedsDraw();
@@ -98,11 +100,27 @@ public sealed class TgComposerView : View
 
     public void SetMeta(string preset, string model, string provider)
     {
-        Preset = ChatDisplayText.Sanitize(preset, 32);
-        Model = ChatDisplayText.Sanitize(model, 256);
+        var safePreset = ChatDisplayText.Sanitize(preset, 32);
+        if (Preset != safePreset)
+        {
+            Preset = safePreset;
+            PresetChanged?.Invoke(Preset);
+        }
+        var safeModel = ChatDisplayText.Sanitize(model, 256);
         const string prefix = "models.dev:";
-        Provider = ChatDisplayText.Sanitize(provider.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+        var safeProvider = ChatDisplayText.Sanitize(provider.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             ? provider[prefix.Length..] : provider, 128);
+        if (Model != safeModel || Provider != safeProvider) ReasoningEffort = string.Empty;
+        Model = safeModel;
+        Provider = safeProvider;
+        SetNeedsDraw();
+    }
+
+    public void SetReasoningEffort(string? effort)
+    {
+        var safe = string.IsNullOrWhiteSpace(effort) ? "—" : ChatDisplayText.Sanitize(effort, 32);
+        if (ReasoningEffort == safe) return;
+        ReasoningEffort = safe;
         SetNeedsDraw();
     }
 
@@ -118,16 +136,24 @@ public sealed class TgComposerView : View
         // The block's fill comes from the view's scheme.
         var row = MetaRow;
         if (row >= Viewport.Height) return true;
-        var available = Math.Max(0, width - Inset * 2);
-        var preset = TuiText.Truncate(Preset, Math.Min(12, available));
-        DrawMeta(Inset, preset, TuiToken.Ok, row);
-        var column = Inset + TuiText.VisibleWidth(preset) + 2;
+        var column = Inset;
         var remaining = Math.Max(0, width - Inset - column);
-        var providerWidth = remaining >= 28 ? Math.Min(18, remaining / 3) : 0;
-        var model = TuiText.MiddleTruncate(Model, Math.Max(0, remaining - providerWidth - (providerWidth > 0 ? 2 : 0)));
+        var effort = remaining >= 24 && ReasoningEffort.Length > 0
+            ? TuiText.Truncate("reasoning: " + ReasoningEffort, Math.Max(0, remaining - 10)) : string.Empty;
+        var effortWidth = TuiText.VisibleWidth(effort);
+        var afterEffort = remaining - effortWidth - (effortWidth > 0 ? 2 : 0);
+        var providerWidth = afterEffort >= 28 ? Math.Min(18, afterEffort / 3) : 0;
+        var model = TuiText.MiddleTruncate(Model, Math.Max(0, afterEffort - providerWidth - (providerWidth > 0 ? 2 : 0)));
         DrawMeta(column, model, TuiToken.Ink, row);
+        column += TuiText.VisibleWidth(model);
+        if (effortWidth > 0)
+        {
+            column += 2;
+            DrawMeta(column, effort, TuiToken.Meta, row);
+            column += effortWidth;
+        }
         if (providerWidth > 0)
-            DrawMeta(column + TuiText.VisibleWidth(model) + 2, TuiText.Truncate(Provider, providerWidth), TuiToken.Meta, row);
+            DrawMeta(column + 2, TuiText.Truncate(Provider, providerWidth), TuiToken.Meta, row);
         return true;
     }
 

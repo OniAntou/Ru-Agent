@@ -334,6 +334,7 @@ public sealed partial class TuiTranscript
             // One affordance owns one block: without this, a second diff-bearing tool
             // appended its rows to the previous tool's block and ctrl+o showed a mixture.
             _retained.Clear();
+            _retainedIsThinking = false;
             // The expanded diff keeps its tinted rows between two dim rules, so the
             // block reads as one framed unit instead of loose lines.
             var rule = "    " + RetainedPaint(new string('─', Math.Max(4, Width - 4)), TuiToken.Line);

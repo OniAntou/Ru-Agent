@@ -57,6 +57,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A corrected inline Python verification probe can resolve a direct command
   parse error; actual test failures and expected-exit mismatches stay blocking.
 
+- **fix(history)**: Keep conversation branching compatible with paged SQL
+  history. Bind revisions to the window and rewind epoch, use absolute turn
+  boundaries, and copy retained message rows and receipts atomically while
+  returning a bounded window.
+
+- **style(tui)**: Soften the inner RU tile seams while preserving the full
+  RU AGENT logo, its size, colors, outlines and shadows, and AGENT's grid.
+
+- **style(tui)**: Give welcome meteors bright red heads and fading dark red tails.
+
+- **fix(tui)**: Present the welcome sky and raster logo in one synchronized
+  terminal update to avoid flickering letters between the text and image passes.
+  Close the update after the driver flush and release unfinished updates on
+  disposal, while preserving the logo design and existing animation cadence.
+
+- **feat(tui)**: Add a wide, tilted Braille spiral galaxy to the welcome screen,
+  with a warm core, six colorful spiral arms, dust lanes and inward-moving stars. Keep
+  the Ru wordmark, workspace heading and composer; throttle animation to at most
+  20 FPS and pause it during chat or open welcome overlays.
+  Reserve roughly three quarters of welcome for the galaxy and place input
+  below it, shrinking the sky for short terminals and taller drafts.
+  Add sparse twinkling stars below the galaxy, preserving clear input and hint rows.
+  Occasionally add 2–3 brief falling stars that travel to the bottom of the full
+  welcome screen before their tails exit. Center the logo on the full screen,
+  keeping the composer and command hint clear.
+  Refine the arms with fine filaments, stellar knots and curved dust gaps,
+  plus a loose, softly fading nucleus with an irregular edge and fewer solid
+  Braille blocks at the center.
+  Decorate the centered native welcome wordmark with green/blue RU, silver AGENT,
+  a slow starlight sweep and a thin half-block shadow, using cached colors on the
+  existing welcome clock.
+  On terminals with raster support, render square tiles with rims and layered
+  shadows behind every letter. Preserve the Braille sky through transparent
+  regions and keep the glyph logo on unsupported or constrained terminals.
+
+- **perf(tui)**: Keep ordinary pipe-containing log/code rows on incremental layout
+  instead of rebuilding retained history. Reflow only for verified table changes
+  or the existing expanded/resize/retention paths; preserve streaming separators,
+  column resizing, table limits, row styles and collapsed details.
+
+- **feat(tui)**: Center the current workspace in the top header on welcome and
+  chat screens. Show `Chưa chọn dự án · ~` for an implicit user-profile launch,
+  preserve explicit workspace selection, and keep permission hidden on welcome.
+  Fit narrow/Unicode paths without overwriting usage; show the full wrapped path
+  in `/status`. Keep footer attachments separate from workspace identity.
+
+- **feat(tui)**: Replace destructive chat rewind with `/history` turn browsing,
+  recorded evidence previews and staged edit/continue branches. Create the child
+  only on send, preserve the original conversation and current files, and guard
+  creation with a transactional history revision check. No old permissions or
+  attachments are restored; ambiguous acknowledgements never auto-start a run.
+
+- **ui(tui)**: Show the selected reasoning effort beside the model in composer
+  metadata. Refresh from existing settings reads after selection changes, clear
+  stale levels when model/provider identity changes and mark unknown retained-run
+  effort without changing model requests or permission behavior.
+
+- **ui(tui)**: Add a compact `ctrl+o thinking` hint to completed native turn
+  summaries when the retained detail is model reasoning. Keep reasoning collapsed
+  and omit the hint when absent, replaced by diff details, or from an earlier turn.
+
+- **ui(tui)**: Remove idle `Ready` text and hide the permission header on the
+  empty welcome screen. Keep permission beside tokens during chat and preserve
+  error, approval, queued-work and pending-attachment feedback.
+
+- **ui(tui)**: Move the green permission preset from composer metadata to the top
+  header beside token usage. Keep it visible on the welcome screen and compact
+  layouts, preserve model/provider metadata and draw header chrome above meteors.
+
+- **fix(tui)**: Keep new chat as an unsaved draft until the first real prompt or
+  explicit `/new`. Local slash commands no longer create empty sessions, echo as
+  user messages or show model-working status. Preserve queued submission identity
+  when the first prompt materializes the draft, and refuse automatic create retries.
+
+- **refactor(tui)**: Remove `/delete`, `/resume`, `/retry`, `/release` and `/clear`
+  from terminal command dispatch, help and completion. Refuse retired commands
+  before queue/attachment admission or custom command lookup. Keep history recovery
+  reachable through `/sessions id:<id>` and replace obsolete recovery hints.
+
+- **feat(tui)**: Combine provider selection and masked API-key entry under
+  `/provider`. Confirm both in one settings request; Escape preserves selection,
+  and empty input keeps a known saved key. Help/completion show one command while
+  `/backend` and `/key` retain their legacy behavior as hidden aliases.
+
+- **feat(tui)**: Add `/changes [run-id]` to summarize available completed edit
+  activities and inspect bounded historical before/after previews. Preserve unknown
+  counts, deduplicate replayed edits, and label filename-only/limited-history scope.
+  Inspection works during streaming without claiming attachments or cancelling the run.
+
+- **feat(tui)**: Add `/tasks` to inspect and stop session background terminal tasks,
+  including while a model turn streams. Keep attachment drafts and queued prompts,
+  confirm interactive stops, recheck task ownership/state, and serialize task panels
+  with approvals and model questions. Task status refresh is explicit, without polling.
+
+- **feat(tui)**: Answer `ask_user` inside Ru with suggested choices or free text.
+  Enter sends on the existing run; Escape leaves the question pending for `/follow`.
+  Recover pending questions after session reopen and refuse stale answers without retries.
+
 - **feat(web)**: Runs on first-party Anthropic and OpenAI models now search through the
   provider's own hosted web search, as Claude Code and Codex do, instead of scraping
   search-engine pages (ADR 0033). It needs no extra key; each search is billed on the

@@ -152,7 +152,7 @@ public sealed partial class TuiTranscript
         if (repeated)
             return $"run parked again · {reason ?? "reason pending"} · {ParkAction(runId, reason ?? string.Empty, true)}";
         return reason is null
-            ? $"run parked · resume with Continue (or 'ru agent continue {runId}') · /release to abandon"
+            ? $"run parked · resume with Continue (or 'ru agent continue {runId}') · cancel the run from CLI to abandon"
             : $"run parked · {reason} · {ParkAction(runId, reason)}";
     }
 
@@ -161,12 +161,12 @@ public sealed partial class TuiTranscript
             ? null : code.Trim();
 
     private static string ParkAction(string runId, string reason, bool repeated = false) =>
-        repeated ? "the run is still blocked after Continue · /release to abandon"
+        repeated ? "the run is still blocked after Continue · cancel the run from CLI to abandon"
             : reason == "provider_quota_exhausted"
-                ? "restore provider credits or limits before Continue · /release to abandon"
+                ? "restore provider credits or limits before Continue · cancel the run from CLI to abandon"
                 : reason is "provider_rate_limited" or "provider_timeout" or "provider_server_error" or "provider_transport_error"
-                    ? "provider temporarily unavailable · wait before Continue · /release to abandon"
-                    : $"resume with Continue (or 'ru agent continue {runId}') · /release to abandon";
+                    ? "provider temporarily unavailable · wait before Continue · cancel the run from CLI to abandon"
+                    : $"resume with Continue (or 'ru agent continue {runId}') · cancel the run from CLI to abandon";
 
     /// <summary>
     /// The one line for a run this session already has in flight: the operator can
@@ -195,7 +195,7 @@ public sealed partial class TuiTranscript
         {
             _lastParkReason = reason;
             Notice(reason is null && previousReason is not null
-                ? $"run parked again · reason pending · /release to abandon"
+                ? $"run parked again · reason pending · cancel the run from CLI to abandon"
                 : FormatParkedNotice(envelope.RunId, reason, _repeatedPark), TuiToken.Warn);
         }
         else if (reason is not null && reason != _lastParkReason)

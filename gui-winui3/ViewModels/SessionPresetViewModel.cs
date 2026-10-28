@@ -61,11 +61,7 @@ public sealed partial class SessionPresetViewModel : ObservableObject
 
     /// <summary>Standard until the user or a stored selection says otherwise.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsFullAccess))]
     public partial AgentPermissionPreset Preset { get; private set; } = AgentPermissionPreset.Standard;
-
-    /// <summary>Drives the composer's read-only Full Access notice.</summary>
-    public bool IsFullAccess => Preset == AgentPermissionPreset.FullAccess;
 
     public static string WireName(AgentPermissionPreset preset) => preset switch
     {

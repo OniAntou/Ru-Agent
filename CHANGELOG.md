@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **feat(gui)**: A header above the chat shows the workspace and session title as a
   breadcrumb, the permission mode with a risk-coloured dot (Plan, Standard or
   Full Access), and a Working indicator while a run is live. The mode is read-only there;
-  it still changes in Settings or with Ctrl+K.
+  it still changes in Settings or with Ctrl+K. The composer's own Full Access notice is gone.
 
 - **feat(gui)**: A message rail in the transcript's left gutter shows a tick per
   loaded message. Hovering lifts the tick and previews the message (title and first lines, without

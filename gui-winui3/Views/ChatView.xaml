@@ -1214,34 +1214,6 @@
                                       Foreground="{StaticResource RuMutedBrush}" />
                         </Button>
 
-                        <!--
-                          A notice, not a control (owner decision, 2026-10-22): the composer
-                          still carries no permission selector. Full Access skips approval
-                          prompts, so the composer says so while it is the preset.
-                        -->
-                        <Border x:Name="FullAccessIndicator"
-                                Grid.Column="1"
-                                Visibility="{x:Bind Presets.IsFullAccess, Mode=OneWay}"
-                                Background="{StaticResource RuAccentSoftBrush}"
-                                CornerRadius="{StaticResource AppControlCornerRadius}"
-                                Padding="8,3"
-                                Margin="4,0"
-                                VerticalAlignment="Center"
-                                ToolTipService.ToolTip="Full Access: commands skip approval prompts. Change it in Settings or with Ctrl+K."
-                                AutomationProperties.Name="Permission: Full Access">
-                            <StackPanel Orientation="Horizontal" Spacing="5">
-                                <FontIcon Glyph="&#xE7BA;"
-                                          FontSize="11"
-                                          Foreground="{StaticResource RuWarningBrush}"
-                                          VerticalAlignment="Center" />
-                                <TextBlock Text="Full Access"
-                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                           FontSize="12"
-                                           Foreground="{StaticResource RuInkBrush}"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-
                         <Button x:Name="AgentModeButton"
                                 Grid.Column="1"
                                 Visibility="Collapsed"

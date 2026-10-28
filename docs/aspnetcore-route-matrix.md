@@ -2,8 +2,8 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-51 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
-public owner, and every entry is `aspnet-direct`. The 27 Agent v1 routes under
+52 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
+public owner, and every entry is `aspnet-direct`. The 28 Agent v1 routes under
 `/agent/v1/*` (including the run-independent skills catalog/preferences)
 and the `POST /host/shutdown` route are active alongside the
 settings, session rewind, activity, status, and model routes. They cover
@@ -51,8 +51,9 @@ drive over HTTP. The remaining `/agent/v1/*` routes (run activities, session
 run listing, and the session preset read) do have direct `ApiService` callers.
 The two subagent routes have `AgentRunClientAdapter` callers through the typed
 Client library and drive the chat's read-only Subagents panel.
-The two skill catalog/preferences routes have `ChatView.ShowSkillsAsync` callers
-through `SkillsApiClient`, before a run exists.
+The three skill catalog/preferences/package routes have `CustomizeView` callers
+through `SkillsApiClient`, before a run exists. Package installation is an
+explicit user action, not an advertised model tool.
 
 Empty `winui_callers` is therefore expected for these reserved routes and is not a dead-route signal.
 

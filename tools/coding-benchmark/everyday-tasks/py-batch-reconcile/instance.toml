@@ -1,0 +1,8 @@
+id = "py-batch-reconcile"
+language = "python"
+difficulty = "multi_step"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["header_normalization", "blank_rows", "normalized_keys", "conflict_policy", "stable_order", "iterable_support", "row_width_validation", "header_required", "input_unchanged"]
+pass_to_pass = ["existing_record_id"]
+agent_timeout_sec = 600
+verifier_timeout_sec = 60

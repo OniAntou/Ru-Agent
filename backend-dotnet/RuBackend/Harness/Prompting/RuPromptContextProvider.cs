@@ -101,6 +101,10 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
             WorkspaceLabel(_canonicalRoot),
             ToolInventoryProbe.Probe());
         var runtime = await BuildRuntimeContextAsync(run, modelContext, cancellationToken).ConfigureAwait(false);
+        var projectMemory = await ProjectMemoryReferenceAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (projectMemory is not null)
+            runtime = PromptContextBudget.Append(runtime, projectMemory);
         if (observedPaths.Count > 0)
         {
             runtime = PromptContextBudget.Append(runtime, NestedInstructionReference(instructions, observedPaths));

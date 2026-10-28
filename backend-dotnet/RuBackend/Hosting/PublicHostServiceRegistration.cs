@@ -230,6 +230,8 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton(_ => new RuAgent.Broker.Tools.Mcp.McpServerHost(
             () => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             name => new RuBackend.Business.Settings.WindowsCredentialApi().Read(name)?.Secret));
+        services.AddSingleton(_ => new RuAgent.Broker.Skills.SkillPackageInstaller(
+            RuAgent.Protocol.SkillRoots.UserInstallationRoot()));
         // Computer use (ADR 0031): one desktop controller per Host. The stop hotkey is
         // registered on the first action, and pressing it cancels the controlling run.
         services.AddSingleton(_ => new RuAgent.Broker.Tools.Computer.ComputerStopHotkey());
@@ -252,6 +254,8 @@ internal static class PublicHostServiceRegistration
                 ImageInputAccepted = async (runId, ct) => RuBackend.Providers.ImageInputPolicy.IsPinned(
                     (await services.GetRequiredService<SqliteAgentRunProviderSelectionStore>()
                         .GetAsync(new RunId(runId), ct).ConfigureAwait(false))?.Selection),
+                  ObserveToolResult = (lease, tool, output, ct) => services.GetRequiredService<AgentRuntimeLoopService>()
+                      .ObserveFileToolResultAsync(lease.CanonicalRoot, tool, output, ct),
             });
         services.AddSingleton(sp => new RuBackend.Harness.Git.SqliteRunGitStateStore(
             Path.Combine(

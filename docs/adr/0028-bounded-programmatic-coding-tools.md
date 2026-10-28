@@ -32,9 +32,10 @@ Nested approval-required operations return a named refusal so the model can
 propose the operation directly for normal user approval; code never grants it.
 
 The Host supplies encrypted journal storage and shared budget reservations,
-without owning tool execution or policy. Persist intent before dispatch and
-receipt after execution. A recorded intent without a receipt is unknown and
-must not be dispatched again. Bind journal identity to run and invocation;
+without owning tool execution or policy. Persist preparation intent, then a
+dispatch marker, then a receipt after execution. A dispatch marker without a
+receipt is unknown and must not be dispatched again; prepared-only work may
+resume. Bind journal identity to run and invocation;
 source, SDK or policy mismatches fail closed. Never infer success from program
 output: authoritative nested receipts remain available to completion evidence,
 while provider context receives only the selected result and trace reference.
@@ -42,7 +43,10 @@ while provider context receives only the selected result and trace reference.
 ## Consequences
 
 This adds a managed interpreter dependency and replay overhead. Programs are
-sequential and bounded, with no promises, parallel SDK calls or nested approvals.
+bounded, with no promises or nested approvals. The 2026-10-28 extension allows
+`tools.parallel` batches of up to eight read-only calls, sharing the total
+32-call limit. Reservations are atomic, already-started calls drain before
+return, and indexed receipts retain input order across replay and partial failure.
 Interruption may require inspecting files and making a new direct tool call;
 automatic recovery cannot repeat uncertain effects. No model-quality or latency
 improvement is claimed from interpreter or fake-provider tests alone.

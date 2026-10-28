@@ -38,4 +38,25 @@ public sealed class LineReadProjectionTests
         Assert.False(json.RootElement.TryGetProperty("projection_next_line", out _));
         Assert.False(json.RootElement.TryGetProperty("projection_has_more", out _));
     }
+
+    [Fact]
+    public void Native_projection_preserves_raw_quotes_and_newlines_for_exact_edits()
+    {
+        const string sourceText = "DEFAULTS = {\"labels\": []}\r\ndef configuration():\r\n    return dict(DEFAULTS)\r\n";
+        var source = JsonSerializer.Serialize(new
+        {
+            path = "task/config.py", content = sourceText, start_line = 1, line_count = 3,
+            has_more = false, next_line = (int?)null,
+        });
+
+        var projected = StructuredToolOutputProjector.Project("read_file", null, source, 4_096,
+            ToolOutputProjectionUnit.Utf16Characters, (_, _) => throw new InvalidOperationException());
+        using var json = JsonDocument.Parse(projected);
+        var content = json.RootElement.GetProperty("content").GetString();
+
+        Assert.Equal(sourceText, content);
+        Assert.DoesNotContain("&quot;", projected, StringComparison.Ordinal);
+        Assert.DoesNotContain("&#10;", projected, StringComparison.Ordinal);
+        Assert.DoesNotContain("1: ", content, StringComparison.Ordinal);
+    }
 }

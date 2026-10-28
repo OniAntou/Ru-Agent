@@ -156,6 +156,8 @@ public sealed partial class AgentSlashCommands
         string? query = null;
         var refresh = false;
         SkillSettingsRequest? update = null;
+        string? packageAction = null;
+        string? packageSource = null;
         var parts = (argument ?? string.Empty).Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length > 0)
         {
@@ -188,17 +190,34 @@ public sealed partial class AgentSlashCommands
                 case "search" when parts.Length >= 2:
                     query = string.Join(' ', parts.Skip(1));
                     break;
+                case "install" or "update" when parts.Length == 2:
+                    packageAction = parts[0].ToLowerInvariant();
+                    packageSource = parts[1];
+                    break;
                 case "":
                     break;
                 default:
-                    await _humanOut.WriteLineAsync("Usage: /skills [refresh|search <text>|add-root <path>|remove-root <path>|enable <id>|disable <id>|implicit <id> [off]]").ConfigureAwait(false);
+                    await _humanOut.WriteLineAsync("Usage: /skills [refresh|search <text>|install <pinned-github-tree-url>|update <pinned-github-tree-url>|add-root <path>|remove-root <path>|enable <id>|disable <id>|implicit <id> [off]]").ConfigureAwait(false);
                     return;
             }
         }
 
-        var catalog = update is null
-            ? await _skillsClient.ListAsync(workspacePath, query, refresh, cancellationToken).ConfigureAwait(false)
-            : await _skillsClient.UpdateAsync(update, cancellationToken).ConfigureAwait(false);
+        SkillCatalogResponse catalog;
+        if (packageAction is not null)
+        {
+            var installed = await _skillsClient.InstallPackageAsync(
+                new SkillPackageInstallRequest(workspacePath, packageSource!, packageAction), cancellationToken).ConfigureAwait(false);
+            var receipt = installed.Receipt;
+            await _humanOut.WriteLineAsync($"{receipt.Action}: {receipt.Id} from {receipt.Source}").ConfigureAwait(false);
+            await _humanOut.WriteLineAsync($"  commit {receipt.Commit}; package SHA-256 {receipt.PackageSha256}; {receipt.FileCount} files, {receipt.ExpandedBytes} bytes").ConfigureAwait(false);
+            catalog = installed.Catalog;
+        }
+        else
+        {
+            catalog = update is null
+                ? await _skillsClient.ListAsync(workspacePath, query, refresh, cancellationToken).ConfigureAwait(false)
+                : await _skillsClient.UpdateAsync(update, cancellationToken).ConfigureAwait(false);
+        }
         foreach (var skill in catalog.Items)
         {
             var flags = string.Join(", ", new[]

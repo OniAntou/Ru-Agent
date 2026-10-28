@@ -87,6 +87,8 @@
                 <Button.Flyout>
                     <MenuFlyout Placement="BottomEdgeAlignedRight">
                         <MenuFlyoutItem Text="Local skill folder…" Click="OnAddFolderClick" />
+                        <MenuFlyoutItem Text="Install from GitHub…" Click="OnInstallPackageClick" />
+                        <MenuFlyoutItem Text="Update a GitHub package…" Click="OnUpdatePackageClick" />
                         <MenuFlyoutSeparator />
                         <MenuFlyoutItem Text="Remove a skill folder…" Click="OnRemoveFolderClick" />
                     </MenuFlyout>

@@ -26,6 +26,27 @@ public sealed class SkillsSlashCommandTests
         Assert.Contains("invalid_metadata", output.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Skills_install_uses_the_explicit_pinned_source_and_prints_receipt()
+    {
+        const string source = "https://github.com/acme/repo/tree/0123456789abcdef0123456789abcdef01234567/skills/demo";
+        var handler = new InstallHandler("""
+            {"receipt":{"action":"installed","id":"demo","name":"Demo","description":"Package","source":"https://github.com/acme/repo/tree/0123456789abcdef0123456789abcdef01234567/skills/demo","commit":"0123456789abcdef0123456789abcdef01234567","packageSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","fileCount":2,"expandedBytes":34,"installPath":"C:\\Users\\test\\AppData\\Local\\Ru\\skills\\demo"},"catalog":{"items":[],"diagnostics":[],"truncated":false,"total":0}}
+            """);
+        var settings = new SettingsApiClient(TestSession(), new HttpClient(new JsonHandler("{}")));
+        var skills = new SkillsApiClient(TestSession(), new HttpClient(handler));
+        var output = new StringWriter();
+        var commands = new AgentSlashCommands(settings, null, output, new StringWriter(), skills);
+
+        Assert.True(await commands.TryHandleAsync("/skills", $"install {source}", null, "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.EndsWith("agent/v1/skills/packages", handler.Uri!.AbsolutePath, StringComparison.Ordinal);
+        Assert.Equal("install", handler.Body!.RootElement.GetProperty("action").GetString());
+        Assert.Equal(source, handler.Body.RootElement.GetProperty("source_url").GetString());
+        Assert.Contains("installed: demo", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains(new string('a', 64), output.ToString(), StringComparison.Ordinal);
+    }
+
     private static PublicHostSession TestSession()
     {
         var process = System.Diagnostics.Process.GetCurrentProcess();
@@ -41,5 +62,21 @@ public sealed class SkillsSlashCommandTests
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
             });
+    }
+
+    private sealed class InstallHandler(string body) : HttpMessageHandler
+    {
+        public Uri? Uri { get; private set; }
+        public System.Text.Json.JsonDocument? Body { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Uri = request.RequestUri;
+            Body = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            };
+        }
     }
 }

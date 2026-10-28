@@ -497,6 +497,7 @@ public sealed partial class ToolExecutionService
                 StableCode(error.Message, "invalid_arguments"),
                 error.Message is "read_line_too_long" or "read_line_scan_limit" ? IoRepairHint(error.Message)
                     : error.Message == "edit_overlap" ? "Edits overlap in the original file. Combine them into one exact replacement or use disjoint spans."
+                    : error.Message == "invalid_path" ? "Send a plain workspace-relative path string. Do not include XML wrappers such as </rfl:parameter> in path or pattern. Correct the argument; no path was rewritten or guessed."
                     : "Tool arguments were rejected.",
                 VerificationFailure(binding));
         }
@@ -526,9 +527,9 @@ public sealed partial class ToolExecutionService
             // the match count travels; no file content leaks into the receipt.
             outcome = ToolExecutionOutcome.Failed(
                 error.Code,
-                error.MatchCount > 0
+                error.RepairHint ?? (error.MatchCount > 0
                     ? $"old_string matched {error.MatchCount} times. Set expected_occurrences to {error.MatchCount} to replace all, or narrow old_string to a unique span."
-                    : "old_string was not found in the file. Re-read the file and copy the exact text including whitespace.",
+                    : "old_string was not found in the file. Re-read the file and copy the exact text including whitespace."),
                 VerificationFailure(binding));
         }
         catch (HttpRequestException error) when (binding.Manifest.Id is "web_search" or "web_fetch")

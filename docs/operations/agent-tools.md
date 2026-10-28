@@ -60,7 +60,13 @@ Image reads require a direct `read` call. Oversized nested output stops with
 `program_tool_output_limit`; inspect the tool directly instead of rerunning
 expensive commands to recover output.
 
-Limits: 16 KiB source, 32 sequential calls, 256 KiB selected result, 2 MiB trace,
+`tools.parallel([{tool: 'read_file', arguments: {path: 'a'}}, …])` runs up to
+eight read-only calls (`read`, `read_file`, `list`, `grep`, `glob`) concurrently
+and returns results in input order. It remains a synchronous SDK call; mutations
+and terminal operations cannot enter a batch. The batch shares the normal call
+budget and reserves all members atomically before dispatch.
+
+Limits: 16 KiB source, 32 total calls, 256 KiB selected result or batch result, 2 MiB trace,
 100,000 statements, recursion depth 64, 32 MiB interpreter allocation and 250 ms
 computation per replay. The regex timeout is 50 ms. `timeout_ms` defaults to
 30 seconds and cannot exceed 120 seconds; at most two programs run per authority.
@@ -72,9 +78,11 @@ standalone operation from `blocked_call` to use the normal approval UI. Its
 arguments are omitted by name above 16 KiB. Program code approvals are
 one-time and cannot become remembered path/argv rules.
 
-Intent is stored before dispatch and a receipt afterwards. A replay uses stored,
-redacted receipts; changed source/policy/SDK or an intent without a receipt
-blocks repetition. Interrupted effects can require reconciliation and workspace
+Prepared intent is stored before the dispatch marker and a receipt afterwards.
+A replay uses stored, redacted receipts. Prepared-only calls can resume; a dispatch
+marker without a receipt blocks repetition, as do changed source/policy/SDK pins.
+Indexed batch receipts preserve original positions, including partial failures.
+Interrupted effects can require reconciliation and workspace
 inspection. Nested calls count against the shared 256-tool-call budget window.
 An unresolved program trace blocks verified completion; Continue does not clear
 the journal or authorize repeating it. If the effects cannot be established,
@@ -156,10 +164,20 @@ fail initialization. When full, a new launch returns
 spool quotas and approval rules still apply, and model arguments cannot raise
 the configured capacity.
 
+A foreground inline Python `-c` verification probe that fails during direct
+compilation may be corrected by a later passing probe using the same resolved
+interpreter and canonical working directory. Broker metadata identifies only
+complete, untruncated direct parse diagnostics; imported project syntax errors,
+runtime exceptions, actual test failures, timeouts and negative-test mismatches
+remain outstanding. Exact command identities and failed receipts are retained;
+this completion exception never changes arguments or authorization.
+
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url` plus optional `offset` (0–4194304,
-default 0) and `limit` (1–32000, default 32000); `skill` takes `name` (1–96) and loads one
-workspace SKILL.md body as untrusted prompt guidance. `ask_user` takes
+default 0) and `limit` (1–32000, default 32000); `skill` supports catalog query
+or loading a canonical ID with arguments and a revision check. Its exact body,
+resource base and digest remain untrusted guidance; see [skills](skills.md).
+`ask_user` takes
 `question` (1–2048) plus optional `options` (at most 8 strings of 512 chars) and
 is Host-intercepted before gateway dispatch: it never reaches the Broker, parks
 the run in `WaitingUser` with a durable `input.requested` event, and resumes when
@@ -889,7 +907,8 @@ device.
 
 ## MCP servers
 
-[ADR 0025](../adr/0025-mcp-servers-through-the-broker.md) defines this surface. Servers are
+[ADR 0025](../adr/0025-mcp-servers-through-the-broker.md) and
+[ADR 0035](../adr/0035-mcp-streamable-http.md) define this surface. Servers are
 declared only in the user's own `%USERPROFILE%\.ru\mcp.json`; a workspace file is never read,
 and the file is a structured protected path, so the agent cannot change it in `plan` or
 `standard`:
@@ -907,17 +926,34 @@ generic entry (for example `cmdkey /generic:ru-mcp-github /user:mcp /pass:<token
 only when the server starts. Resolved credential values are redacted from every result and
 error the tool returns.
 
-The Broker execution runtime starts a server on its first `list_tools` or `call`, at most one
+For stdio, the Broker execution runtime starts a server on its first `list_tools` or `call`, at most one
 instance per Host, inside a kill-on-close job object, as the current Windows user with the
 credential-stripped agent environment plus its declared variables. A server whose
 declaration changed or that exited is restarted; all servers stop with the Host. Startup is
 bounded to 20 seconds and each request to the server's `timeout_seconds` (default 60,
 at most 600). `arguments` is a JSON object encoded as a string (at most 64 KB) and follows
-the schema `list_tools` reports. Only text content is returned, bounded to 256 KB and
-marked `untrusted`; other content types are counted, not returned. Failures are named:
+the schema `list_tools` reports. Text, structured content and resource-link metadata
+are returned within the shared 256 KB bound and marked `untrusted`; images and
+other unsupported content are counted, not returned. Failures are named:
 `mcp_server_unknown`, `mcp_server_unavailable` (with the server's last stderr, redacted),
 `mcp_credential_missing`, `mcp_arguments_invalid`, `mcp_timeout`, `mcp_error` and
 `mcp_unavailable`. Ru does not confine what a server does once it runs.
+
+An explicit remote declaration instead uses:
+
+```json
+{"servers":{"remote":{"transport":"streamable_http","url":"https://mcp.example.com/mcp",
+  "bearer_credential":"ru-mcp-remote","timeout_seconds":60}}}
+```
+
+This transport pins MCP **2025-11-25**, supports JSON POST responses and
+request-scoped SSE, and retains the same `ExternalTerminal` approval decision.
+Only HTTPS or loopback HTTP is accepted; redirects and transport fallback are
+disabled. Session and protocol headers are validated. Authentication failure is
+`mcp_auth_required`, an expired session is `mcp_session_expired`; neither replays a
+tool call. Bearer credentials use the existing user credential store. OAuth login
+and refresh, autonomous GET streams, prompts, resource reads and sampling are
+not implemented. Resource links are metadata, not automatically fetched content.
 
 ## Computer use
 

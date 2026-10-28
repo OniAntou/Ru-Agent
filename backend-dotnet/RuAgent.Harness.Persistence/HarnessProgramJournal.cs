@@ -58,7 +58,17 @@ public sealed partial class HarnessPayloadStore : IProgramJournal
         return new(true, (JsonObject)JsonNode.Parse(protectedPayload.Intent.Plaintext.Span)!);
     }
 
-    async Task<bool> IProgramJournal.ReserveToolAsync(string run, string key, CancellationToken ct)
+    Task<bool> IProgramJournal.ReserveToolAsync(string run, string key, CancellationToken ct) =>
+        ReserveProgramToolsAsync(run, key, 1, batch: false, ct);
+
+    Task<bool> IProgramJournal.ReserveToolsAsync(string run, string batchKey, int count, CancellationToken ct)
+    {
+        if (count is < 1 or > ProgramToolContract.MaximumParallelCalls)
+            throw new HarnessStoreException("program_batch_budget_invalid");
+        return ReserveProgramToolsAsync(run, batchKey, count, batch: true, ct);
+    }
+
+    private async Task<bool> ReserveProgramToolsAsync(string run, string key, int amount, bool batch, CancellationToken ct)
     {
         var runId = new RunId(run);
         var options = RequireOptions();
@@ -82,7 +92,7 @@ public sealed partial class HarnessPayloadStore : IProgramJournal
             await transaction.CommitAsync(ct).ConfigureAwait(false);
         }
         return await new SqliteSubagentBudgetStore(options).ReserveAmountAsync(runId, root.BudgetWindow,
-            "program_" + Digest(key), SubagentBudgetKind.ToolCall, 1,
+            "program_" + Digest((batch ? "batch|" : "call|") + key), SubagentBudgetKind.ToolCall, amount,
             root.ModelStepsInWindow, root.ToolCallsInWindow, ct).ConfigureAwait(false);
     }
 

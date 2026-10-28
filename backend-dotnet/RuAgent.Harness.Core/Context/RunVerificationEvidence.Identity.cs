@@ -5,7 +5,8 @@ namespace RuAgent.Harness.Core.Context;
 
 public sealed partial class RunVerificationEvidence
 {
-    private readonly record struct TerminalMetadata(string? CanonicalIdentity, int? CompletedReadExitCode);
+    private readonly record struct TerminalMetadata(string? CanonicalIdentity, int? CompletedReadExitCode,
+        string? RepairIdentity, bool InvocationInvalid);
 
     private static TerminalMetadata ReadTerminalMetadata(string? content)
     {
@@ -27,7 +28,11 @@ public sealed partial class RunVerificationEvidence
                 && exit.TryGetInt32(out var code)
                 && completedState && validBackground && !stillRunning)
                 completedReadExit = code;
-            return new(digest.ToUpperInvariant(), completedReadExit);
+            var repair = StringArg(json.RootElement, "verification_repair_identity");
+            if (repair is not { Length: 64 } || !repair.All(char.IsAsciiHexDigit)) repair = null;
+            var invalid = repair is not null && json.RootElement.TryGetProperty("verification_invocation_invalid", out var flag)
+                && flag.ValueKind == JsonValueKind.True;
+            return new(digest.ToUpperInvariant(), completedReadExit, repair?.ToUpperInvariant(), invalid);
         }
         catch (JsonException) { return default; }
     }

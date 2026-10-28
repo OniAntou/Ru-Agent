@@ -17,6 +17,7 @@ public sealed partial class ModelContextSourceTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
+        await new WorkspaceCoordinatorStore(fixture.Options).GetOrCreateAsync(HarnessStoreTestFixture.Workspace(1).WorkspaceId, default);
         var store = fixture.CreateEventStore();
         var request = fixture.NewRun(1, 1, 1);
         await store.TryCreateRunAsync(request, default);
@@ -68,15 +69,21 @@ public sealed partial class ModelContextSourceTests
         var retest = new HarnessPayloadIntent(HarnessStoreTestFixture.Payload(24), HarnessPayloadKind.AssistantStep,
             HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext, HarnessPayloadEncoding.Json,
             4096, AssistantStepJsonCodec.Serialize(retestStep));
-        var retestRun = NextRun(compactedResult, 5, 6);
+        var retestRun = NextRun(compactedResult, 5, 7);
+        var retestStepId = new ModelStepId("step_22222222222222222222222222222222");
+        var retestCallId = new ToolCallId("call_22222222222222222222222222222222");
+        var retestExecutionId = new ExecutionId("exec_22222222222222222222222222222222");
         var retestCommit = await store.CommitAsync(new HarnessCommit(request.Run.RunId, 4, retestRun,
             [new HarnessEventIntent(HarnessStoreTestFixture.Event(24), HarnessEventKind.ModelStepCompleted,
-                modelStepId: new ModelStepId("step_22222222222222222222222222222222"), payloadId: retest.PayloadId)], [retest], []), default);
+                modelStepId: retestStepId, payloadId: retest.PayloadId),
+             new HarnessEventIntent(HarnessStoreTestFixture.Event(26), HarnessEventKind.ToolExecutionRequested,
+                modelStepId: retestStepId, toolCallId: retestCallId, providerCallId: "retest",
+                executionId: retestExecutionId)], [retest], []), default);
         Assert.Equal(HarnessCommitOutcome.Committed, retestCommit.Outcome);
         if (incremental) await ContextAsync();
         var passing = TextPayload(25, HarnessPayloadKind.ToolOutput, JsonSerializer.Serialize(
             new { exit_code = 0, verification_identity = new string('a', 64) }));
-        var passingCommit = await store.CommitAsync(new HarnessCommit(request.Run.RunId, 5, NextRun(retestRun, 6, 7),
+        var passingCommit = await store.CommitAsync(new HarnessCommit(request.Run.RunId, 5, NextRun(retestRun, 6, 8),
             [new HarnessEventIntent(HarnessStoreTestFixture.Event(25), HarnessEventKind.ToolExecutionCompleted,
                 toolCallId: new ToolCallId("call_22222222222222222222222222222222"), providerCallId: "retest",
                 executionId: new ExecutionId("exec_22222222222222222222222222222222"), payloadId: passing.PayloadId,

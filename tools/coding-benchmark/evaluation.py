@@ -5,8 +5,8 @@ This module imports predictions and verifier outcomes; it never invokes an agent
 import hashlib
 import json
 import math
-from pathlib import Path
 import re
+from pathlib import Path
 
 PINNED_FIELDS = ("agent", "agent_version", "model", "effort", "protocol", "toolchain", "deadline_seconds")
 STATUSES = {"completed", "timeout", "interrupted", "infrastructure_error", "failed"}
@@ -60,7 +60,7 @@ def load_manifest(path, task_store=None):
             raise ValueError("each task needs a lowercase SHA-256 task definition fingerprint")
     if task_store is not None:
         root = Path(task_store).resolve(strict=True)
-        for task_id, task in zip(ids, tasks):
+        for task_id, task in zip(ids, tasks, strict=True):
             if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,160}", task_id) or ".." in Path(task_id).parts:
                 raise ValueError("invalid task ID for task store")
             definition = (root / Path(task_id)).resolve(strict=True)

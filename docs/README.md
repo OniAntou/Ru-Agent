@@ -42,6 +42,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Operations and verification](operations/verification.md)
 - [Agent tools and truthful execution](operations/agent-tools.md)
 - [Skill setup, invocation and continuity](operations/skills.md)
+- [Workspace project memory](operations/project-memory.md)
 - [Coding-agent capability and acceptance map](operations/coding-agent-capabilities.md)
 - [Custom Terminal/SWE/Everyday coding benchmark](../tools/coding-benchmark/README.md)
 - [Logging and diagnostics](operations/logging.md)

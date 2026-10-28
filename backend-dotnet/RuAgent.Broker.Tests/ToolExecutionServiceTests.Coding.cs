@@ -7,6 +7,27 @@ namespace RuAgent.Broker.Tests;
 public sealed partial class ToolExecutionServiceTests
 {
     [Fact]
+    public async Task Xml_contaminated_path_is_rejected_with_plain_json_repair_guidance()
+    {
+        var fixture = CreateFullAccessService("ru-coding-xml-path-");
+        try
+        {
+            var result = await fixture.Service.ExecuteAuthenticatedV2Async(new AgentEnvelope(
+                AgentEnvelopeCodec.ProtocolVersionV2, "xml-path", AgentMessageTypes.ToolExecute,
+                fixture.SessionId, null, 30_000, new JsonObject
+                {
+                    ["tool_id"] = "glob", ["tool_version"] = "1.0.0", ["run_id"] = fixture.RunId,
+                    ["capability_class"] = "internal",
+                    ["arguments"] = new JsonObject { ["path"] = "</rfl:parameter>src", ["pattern"] = "*.py" },
+                }), default);
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.Equal("invalid_path", result.ErrorCode);
+            Assert.Contains("XML wrappers", result.SafeSummary, StringComparison.Ordinal);
+        }
+        finally { await fixture.Service.DisposeAsync(); Directory.Delete(fixture.Root, true); }
+    }
+
+    [Fact]
     public async Task Explicit_windows_terminal_tool_runs_command_without_a_mode_discriminator()
     {
         var fixture = CreateFullAccessService("ru-coding-terminal-");
@@ -74,6 +95,35 @@ public sealed partial class ToolExecutionServiceTests
 
         Task<ToolResult> Call(string toolId, JsonObject arguments) => fixture.Service.ExecuteAuthenticatedV2Async(new AgentEnvelope(
             AgentEnvelopeCodec.ProtocolVersionV2, "coding-" + Guid.NewGuid().ToString("N"), AgentMessageTypes.ToolExecute,
+            fixture.SessionId, null, 30_000, new JsonObject
+            {
+                ["tool_id"] = toolId, ["tool_version"] = "1.0.0", ["run_id"] = fixture.RunId,
+                ["capability_class"] = "internal", ["arguments"] = arguments,
+            }), default);
+    }
+
+    [Fact]
+    public async Task File_path_failures_return_specific_repair_hints()
+    {
+        var fixture = CreateFullAccessService("ru-coding-path-hints-");
+        File.WriteAllText(Path.Combine(fixture.Root, "workspace", "not-a-folder.txt"), "file");
+        try
+        {
+            var listFile = await Call("list", new JsonObject { ["path"] = "not-a-folder.txt" });
+            var missingRead = await Call("read_file", new JsonObject { ["path"] = "missing.txt" });
+            var directoryRead = await Call("read_file", new JsonObject { ["path"] = "." });
+
+            Assert.Equal("not_a_directory", listFile.ErrorCode);
+            Assert.Contains("list and glob require a directory", listFile.SafeSummary, StringComparison.Ordinal);
+            Assert.Equal("file_not_found", missingRead.ErrorCode);
+            Assert.Contains("list its parent directory", missingRead.SafeSummary, StringComparison.Ordinal);
+            Assert.Equal("is_directory", directoryRead.ErrorCode);
+            Assert.Contains("target is a directory", directoryRead.SafeSummary, StringComparison.Ordinal);
+        }
+        finally { await fixture.Service.DisposeAsync(); Directory.Delete(fixture.Root, true); }
+
+        Task<ToolResult> Call(string toolId, JsonObject arguments) => fixture.Service.ExecuteAuthenticatedV2Async(new AgentEnvelope(
+            AgentEnvelopeCodec.ProtocolVersionV2, "path-hint-" + Guid.NewGuid().ToString("N"), AgentMessageTypes.ToolExecute,
             fixture.SessionId, null, 30_000, new JsonObject
             {
                 ["tool_id"] = toolId, ["tool_version"] = "1.0.0", ["run_id"] = fixture.RunId,

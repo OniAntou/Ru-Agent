@@ -222,8 +222,9 @@ public sealed partial class HeadlessCodingLoopTests
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
         Assert.True(await WaitForStatusAsync(client, runId,
             new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)));
-        Assert.Equal("completed", await GetStatusAsync(client, runId));
         var events = await ReadEventsAsync(client, runId);
+        var status = await GetStatusAsync(client, runId);
+        Assert.True(status == "completed", status + ": " + string.Join("; ", events.Select(e => e.GetProperty("event_type").GetString() + "=" + e.GetProperty("safe_summary").GetString())));
         Assert.Equal(4, events.Count(e => e.GetProperty("event_type").GetString() == "tool.execution_completed"));
         Assert.Equal(2, events.Count(e => e.GetProperty("event_type").GetString() == "run.note_added"
             && e.GetProperty("safe_summary").GetString() == "unverified_after_tool_failure"));
@@ -282,9 +283,39 @@ public sealed partial class HeadlessCodingLoopTests
         var content = JsonNode.Parse(failedOutput!)!.AsObject();
         Assert.Equal("edit_no_match", content["error"]!.GetValue<string>());
         Assert.Contains(
-            "old_string was not found in the file",
+            "Re-read the file and copy its exact text",
             content["hint"]!.GetValue<string>(),
             StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Corrected_inline_probe_can_resolve_parse_errors_but_not_actual_test_failures(bool parseError)
+    {
+        using var workspace = GitWorkspace.Create();
+        var runner = new ScriptedRunner();
+        runner.Enqueue(ToolCall("run_process", JsonSerializer.Serialize(new
+        {
+            executable = "python", arguments = new[] { "-c", parseError ? "from a b import value" : "assert False" },
+            purpose = "verification",
+        })));
+        runner.Enqueue(ToolCall("run_process", JsonSerializer.Serialize(new
+        {
+            executable = "python", arguments = new[] { "-c", "from pathlib import Path; assert Path('seed.txt').read_text().startswith('seed')" },
+            purpose = "verification",
+        })));
+        runner.Enqueue(FinalStep("The corrected probe passed."));
+        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
+        using var client = factory.CreateAuthenticatedClient();
+        var runId = await CreateTrustedRunAsync(client, workspace.Path);
+        Assert.True(await WaitForStatusAsync(client, runId,
+            new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)));
+        Assert.Equal(parseError ? "completed" : "failed", await GetStatusAsync(client, runId));
+        var events = await ReadEventsAsync(client, runId);
+        Assert.Equal(2, events.Count(e => e.GetProperty("event_type").GetString() == "tool.execution_completed"));
+        Assert.Contains(events, e => e.GetProperty("event_type").GetString() == "tool.execution_completed"
+            && e.GetProperty("safe_summary").GetString() == "process_exit_nonzero");
     }
 
     [Fact]

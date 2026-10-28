@@ -1,0 +1,8 @@
+id = "py-log-redaction"
+language = "python"
+difficulty = "multi_step"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["nested_mapping", "list_values", "case_insensitive_keys", "preserve_safe_values", "no_mutation", "tuple_shape"]
+pass_to_pass = ["redaction_marker", "input_identity"]
+agent_timeout_sec = 480
+verifier_timeout_sec = 60

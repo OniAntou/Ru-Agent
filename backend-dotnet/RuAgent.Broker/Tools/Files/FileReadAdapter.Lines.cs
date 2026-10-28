@@ -17,9 +17,13 @@ public sealed partial class FileReadAdapter
         var target = _resolver.Resolve(path);
         if (target.IsProtected) throw new UnauthorizedAccessException("protected_path");
         if (target.IsOutsideWorkspace) throw new UnauthorizedAccessException("outside_workspace");
+        if (!File.Exists(target.CanonicalPath))
+        {
+            if (Directory.Exists(target.CanonicalPath)) throw new IOException("is_directory");
+            throw new FileNotFoundException("file_not_found");
+        }
         // A bounded snapshot avoids returning pages assembled from different file revisions.
-        using var stream = HardLinkGuard.OpenRead(target.CanonicalPath, FileMode.Open, FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var stream = OpenRead(target.CanonicalPath);
         using var bytes = new MemoryStream();
         var buffer = new byte[64 * 1024];
         while (true)
@@ -74,6 +78,17 @@ public sealed partial class FileReadAdapter
         output["has_more"] = position < text.Length;
         if (position < text.Length) output["next_line"] = first + returned;
         return output;
+    }
+
+    private static FileStream OpenRead(string path)
+    {
+        try
+        {
+            return HardLinkGuard.OpenRead(path, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        }
+        catch (FileNotFoundException error) { throw new FileNotFoundException("file_not_found", error); }
+        catch (DirectoryNotFoundException error) { throw new FileNotFoundException("file_not_found", error); }
     }
 
     private static int LineArgument(JsonObject arguments, string name, int fallback, int maximum)

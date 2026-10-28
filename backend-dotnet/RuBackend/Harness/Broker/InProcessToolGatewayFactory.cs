@@ -71,6 +71,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
     /// as in hosts without provider selections, every image read fails closed.
     /// </summary>
     public Func<string, CancellationToken, Task<bool>>? ImageInputAccepted { get; init; }
+    public Func<BrokerRunLeaseIdentity, string, JsonObject, CancellationToken, Task>? ObserveToolResult { get; init; }
 
     /// <summary>Always true: the injected runtime is the configured authority.</summary>
     public bool IsConfigured => true;
@@ -196,7 +197,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
                     else
                     {
                         _gateways.TryRemove(runId.Value, out _);
-                        var created = new InProcessToolGateway(Runtime, lease, _approvals, _subagents, ImageInputAccepted);
+                        var created = new InProcessToolGateway(Runtime, lease, _approvals, _subagents, ImageInputAccepted, ObserveToolResult);
                         _gateways[runId.Value] = created;
                         gateway = created;
                     }

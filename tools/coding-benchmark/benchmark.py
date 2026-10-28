@@ -211,7 +211,7 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
 
 def main():
     parser = argparse.ArgumentParser(description="Ru custom Terminal-Bench / SWE-bench-style tooling")
-    parser.add_argument("command", choices=["list", "validate", "prepare", "grade", "self-test", "grade-patch", "export-patch", "export-swe", "run-live", "compare", "compare-cohorts"])
+    parser.add_argument("command", choices=["list", "validate", "prepare", "grade", "self-test", "grade-patch", "export-patch", "export-swe", "run-live", "compare", "compare-cohorts", "make-cohort", "aggregate-cohort"])
     parser.add_argument("--suite", choices=["terminal", "swe", "everyday", "skills", "all"], default="all")
     parser.add_argument("--task")
     parser.add_argument("--destination", type=Path)
@@ -221,6 +221,7 @@ def main():
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--predictions", type=Path)
     parser.add_argument("--cohorts", type=Path)
+    parser.add_argument("--cohort-pins", type=Path, help="JSON file containing exact schema-v2 cohort identity pins")
     parser.add_argument("--task-store", type=Path)
     parser.add_argument("--task-root", type=Path, help="private task definitions for one explicit suite")
     parser.add_argument("--track", choices=["harness", "product"])
@@ -234,7 +235,7 @@ def main():
     try:
         if args.task_root is not None and args.suite == "all":
             raise ValueError("--task-root requires one explicit --suite")
-        if args.command in {"compare", "compare-cohorts"}:
+        if args.command in {"compare", "compare-cohorts", "aggregate-cohort"}:
             selected = []
         elif args.suite == "all":
             selected = tasks("terminal") + tasks("swe") + tasks("everyday")
@@ -270,6 +271,18 @@ def main():
             result = export_patch(selected[0], args.workspace, args.patch)
         elif args.command == "self-test":
             result = self_test(selected, args.attempts)
+        elif args.command == "make-cohort":
+            if args.cohort_pins is None or args.report is None:
+                raise ValueError("make-cohort requires --cohort-pins and --report")
+            from cohort import create_manifest
+            pins = json.loads(args.cohort_pins.read_text(encoding="utf-8"))
+            result = create_manifest(selected, pins, attempts_per_task=args.attempts)
+        elif args.command == "aggregate-cohort":
+            if args.manifest is None or args.predictions is None or args.report is None:
+                raise ValueError("aggregate-cohort requires --manifest, --predictions and --report")
+            from cohort import aggregate, load_observations
+            manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+            result = aggregate(manifest, load_observations(args.predictions))
         elif args.command == "export-swe":
             if args.report is None:
                 raise ValueError("--report required for JSONL export")
@@ -280,19 +293,34 @@ def main():
             from evaluation import compare, load_manifest, load_records
             result = compare(load_manifest(args.manifest, args.task_store), load_records(args.predictions))
         elif args.command == "compare-cohorts":
-            if args.cohorts is None or args.track is None or args.task_store is None or args.report is None:
-                raise ValueError("compare-cohorts requires --cohorts, --track, --task-store and --report")
-            from evaluation import compare_cohorts, load_manifest, load_records
+            if args.cohorts is None or args.track is None or args.report is None:
+                raise ValueError("compare-cohorts requires --cohorts, --track and --report")
             entries = json.loads(args.cohorts.read_text(encoding="utf-8"))
             if not isinstance(entries, list):
                 raise ValueError("cohorts must be an array")
+            schema_versions = set()
             for entry in entries:
                 if not isinstance(entry, dict) or not all(isinstance(entry.get(key), str)
                         for key in ("manifest", "predictions")):
                     raise ValueError("each cohort needs manifest and predictions paths")
-                entry["manifest"] = load_manifest(args.cohorts.parent / entry["manifest"], args.task_store)
-                entry["records"] = load_records(args.cohorts.parent / entry["predictions"])
-            result = compare_cohorts(entries, args.track)
+                entry["manifest_path"] = args.cohorts.parent / entry["manifest"]
+                entry["manifest"] = json.loads(entry["manifest_path"].read_text(encoding="utf-8"))
+                schema_versions.add(entry["manifest"].get("schema_version"))
+            if schema_versions == {2}:
+                from cohort import compare_cohorts, load_observations
+                for entry in entries:
+                    entry["records"] = load_observations(args.cohorts.parent / entry["predictions"])
+                result = compare_cohorts(entries, track=args.track)
+            else:
+                if schema_versions != {1}:
+                    raise ValueError("cohort manifest schemas cannot be mixed")
+                if args.task_store is None:
+                    raise ValueError("schema-v1 compare-cohorts requires --task-store")
+                from evaluation import compare_cohorts, load_manifest, load_records
+                for entry in entries:
+                    entry["manifest"] = load_manifest(entry["manifest_path"], args.task_store)
+                    entry["records"] = load_records(args.cohorts.parent / entry["predictions"])
+                result = compare_cohorts(entries, args.track)
         else:
             result = run_live(selected, args.destination, args.ru_executable, args.allow_live, args.attempts, args.trust_workspace, args.tool_profile)
         if args.report is not None and args.command != "export-swe":

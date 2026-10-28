@@ -22,6 +22,7 @@ public sealed class AgentV1EndpointTests
     {
         ("GET", "/agent/v1/skills"),
         ("POST", "/agent/v1/skills/settings"),
+        ("POST", "/agent/v1/skills/packages"),
         ("POST", "/agent/v1/runs"),
         ("GET", "/agent/v1/runs/{runId}"),
         ("GET", "/agent/v1/runs/{runId}/subagents"),
@@ -63,7 +64,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(51, doc.RootElement.GetArrayLength()); // Includes two skill catalog/preferences routes.
+        Assert.Equal(52, doc.RootElement.GetArrayLength()); // Includes three skill catalog/preferences/package routes.
     }
 
     [Theory]

@@ -22,7 +22,8 @@ public sealed class WorkspaceExternalChangeMonitor
     /// </summary>
     public const int MaxRetainedContentBytes = 1024 * 1024;
 
-    private static readonly string[] VolatileDirectories = [".git", "node_modules", "__pycache__", ".vs"];
+    private static readonly string[] VolatileDirectories =
+        [".git", "node_modules", "__pycache__", ".vs", "bin", "obj", ".pytest_cache", ".mypy_cache", ".ruff_cache"];
 
     private static readonly string[] VolatileSuffixes =
         ["-wal", "-shm", "-journal", ".sqlite", ".sqlite3", ".db", ".log", ".tmp", ".lock"];
@@ -72,6 +73,17 @@ public sealed class WorkspaceExternalChangeMonitor
 
         content = null;
         return false;
+    }
+
+    internal WorkspaceExternalChangeEvent? RefreshObservation(string root, WorkspaceExternalChangeEvent change)
+    {
+        var path = NormalizeRelativePath(change.NormalizedPath);
+        var key = ExpectedKey(root, path);
+        _expectedHashes.TryGetValue(key, out var expected);
+        var fullPath = Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar));
+        var observed = File.Exists(fullPath) ? ComputeHashAndOptionalContent(fullPath).Hash : new string('0', 64);
+        return string.Equals(expected, observed, StringComparison.OrdinalIgnoreCase)
+            ? null : change with { ExpectedSha256 = expected, ObservedSha256 = observed };
     }
 
     /// <summary>

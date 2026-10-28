@@ -42,6 +42,42 @@ public sealed class FileMultiEditTests : IDisposable
         Assert.Equal("newer", File.ReadAllText(Path.Combine(_root, "a.txt")));
     }
 
+    [Fact]
+    public void Html_entity_edit_text_gets_a_targeted_hint_without_decoding_or_mutation()
+    {
+        const string original = "DEFAULTS = {\"labels\": []}\r\ndef configuration():\r\n    return dict(DEFAULTS)\r\n";
+        File.WriteAllText(Path.Combine(_root, "a.txt"), original);
+        var error = Assert.Throws<EditMatchException>(() => Apply((
+            "DEFAULTS = {&quot;labels&quot;: []}&#10;def configuration():&#10;    return dict(DEFAULTS)&#10;",
+            "not applied")));
+
+        Assert.Equal("edit_no_match", error.Code);
+        Assert.Contains("HTML-escaped", error.RepairHint, StringComparison.Ordinal);
+        Assert.Contains("never decodes entities", error.RepairHint, StringComparison.Ordinal);
+        Assert.Equal(original, File.ReadAllText(Path.Combine(_root, "a.txt")));
+    }
+
+    [Fact]
+    public void Flattened_multiline_edit_gets_a_whitespace_hint_without_fuzzy_replacement()
+    {
+        const string original = "def value():\n    return 1\n";
+        File.WriteAllText(Path.Combine(_root, "a.txt"), original);
+        var error = Assert.Throws<EditMatchException>(() => Apply(("def value():    return 1", "def value(): return 2")));
+
+        Assert.Equal("edit_no_match", error.Code);
+        Assert.Contains("matches after whitespace is collapsed", error.RepairHint, StringComparison.Ordinal);
+        Assert.Contains("No fuzzy edit was applied", error.RepairHint, StringComparison.Ordinal);
+        Assert.Equal(original, File.ReadAllText(Path.Combine(_root, "a.txt")));
+    }
+
+    [Fact]
+    public void Literal_html_entity_text_remains_editable_as_literal_content()
+    {
+        File.WriteAllText(Path.Combine(_root, "a.txt"), "literal &quot; text");
+        Apply(("&quot;", "quote"));
+        Assert.Equal("literal quote text", File.ReadAllText(Path.Combine(_root, "a.txt")));
+    }
+
     private JsonObject Apply(params (string Old, string New)[] edits) => new FileEditAdapter(_root).ExecuteMany(Arguments(edits));
 
     private JsonObject Arguments(params (string Old, string New)[] edits) => new()

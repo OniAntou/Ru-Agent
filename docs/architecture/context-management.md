@@ -89,6 +89,36 @@ rows and newer compactions in one read transaction; they do not read all covered
 ciphertexts. Images are queried only for active receipts; current Work State is
 refreshed separately. Restart, eviction or invalidation rebuilds from originals.
 
+Verification receipts retain the recorded tool-request time. Every context load,
+including a warm-cache load, compares required passed checks with workspace
+journal changes at or after that time. Recorded workspace changes during a running check
+make its eventual success stale. Before accepting a no-tool final response, the
+coordinator reloads this host-derived evidence so changes during generation enter
+the existing recovery path. Missing request provenance or incomplete journal
+coverage crossing the check start cannot certify a pass. Pruned changes that all
+precede a fresh check do not make that check stale. Indexed journal high-water
+lookups avoid scanning retained history; missing provenance or an unresolved
+high-water gap makes freshness unknown. Policy-update timestamps alone do not
+represent workspace mutations.
+Checks are conservatively invalidated workspace-wide
+because checks do not currently carry a trustworthy file write set. This observes
+only changes recorded in Ru's journal; direct operating-system writes that Ru does
+not record are outside this freshness signal.
+
+Successful structured file-tool receipts trigger a path-specific observation
+before the tool returns to orchestration. This shares a persistence gate with
+watcher callbacks, which re-read the path against the latest acknowledged hash.
+A delayed notification for the same content cannot become a new post-check
+mutation. This observes results after Broker execution; it adds no execution
+adapter or permission decision to the Host and does not rescan the entire
+workspace on every step.
+
+Broker-authored repair-family metadata distinguishes a direct inline Python
+parse error from a verification that executed and failed. Only a later passing
+verification in the same resolved interpreter/cwd family can retire the invalid
+probe obligation. Failed receipts remain historical failures, and expected-exit
+mismatches or project/runtime test failures cannot use this exception.
+
 The cache admits at most eight runs, 32 MiB estimated weight per run and 64 MiB
 total, with two-minute access validity. Native Responses public-message metadata
 reserves its full envelope bound in that estimate, including annotations beside
@@ -170,6 +200,10 @@ model history. Quoted markers cannot create private hints. Normal containment an
 instruction refresh checks apply before use; see [handoff](harness.md#session-run-handoff).
 
 ## Prompt ownership and verification
+
+An optional [project memory index](../operations/project-memory.md) supplies
+bounded workspace continuity across conversations. It is refreshed runtime data,
+separate from run-local checkpoints, instruction authority and verification.
 
 `RuAgent.Protocol/AgentToolPromptGuidance.cs` owns capability-specific workflow
 hints next to tool definitions. The Core composer emits only hints for advertised

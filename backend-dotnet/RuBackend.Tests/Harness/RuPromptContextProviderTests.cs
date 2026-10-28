@@ -23,7 +23,7 @@ public sealed partial class RuPromptContextProviderTests
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var utc = new DateTimeOffset(2026, 10, 13, 23, 30, 0, TimeSpan.Zero);
-        var provider = new RuPromptContextProvider(fixture.Root, new RuInstructionLoader(),
+        var provider = new RuPromptContextProvider(fixture.Root, fixture.CreateLoader(),
             new StubSettingsStore(Settings()), new FixedTimeProvider(utc));
         var context = await provider.BuildAsync(TestRun(), new ModelContextSnapshot([], Array.Empty<byte>()), CancellationToken.None);
         Assert.Equal(TimeZoneInfo.ConvertTime(utc, TimeZoneInfo.Local).ToString("yyyy-MM-dd"), context.Environment.Date);
@@ -34,7 +34,7 @@ public sealed partial class RuPromptContextProviderTests
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         await File.WriteAllTextAsync(Path.Combine(fixture.Root, "AGENTS.md"), new string('界', 20_000));
-        var provider = new RuPromptContextProvider(fixture.Root, new RuInstructionLoader(),
+        var provider = new RuPromptContextProvider(fixture.Root, fixture.CreateLoader(),
             new StubSettingsStore(Settings()), new FixedTimeProvider(DateTimeOffset.UtcNow));
         var entries = Enumerable.Range(1, 32).Select(index => ModelContextEntry.ToolResult(
             "result-" + index, index, ToolReceipt(index), new string('é', 60_000))).ToArray();
@@ -50,7 +50,7 @@ public sealed partial class RuPromptContextProviderTests
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         await File.WriteAllBytesAsync(Path.Combine(fixture.Root, "AGENTS.md"), [0xff]);
-        var provider = new RuPromptContextProvider(fixture.Root, new RuInstructionLoader(),
+        var provider = new RuPromptContextProvider(fixture.Root, fixture.CreateLoader(),
             new StubSettingsStore(Settings()), new FixedTimeProvider(DateTimeOffset.UtcNow));
         var context = await provider.BuildAsync(TestRun(), new ModelContextSnapshot([], Array.Empty<byte>()), CancellationToken.None);
         var warning = Assert.Single(context.RuntimeContext.References, r => r.Kind == "instruction_skipped");
@@ -64,7 +64,7 @@ public sealed partial class RuPromptContextProviderTests
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             new StubSettingsStore(Settings()),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
             webToolsEnabled: false)
@@ -87,7 +87,7 @@ public sealed partial class RuPromptContextProviderTests
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             new StubSettingsStore(Settings()),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
             webToolsEnabled: false)
@@ -117,7 +117,7 @@ public sealed partial class RuPromptContextProviderTests
             8_192));
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             new ThrowingSettingsStore(),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
             new AgentToolRuntimeAvailability(false, false),
@@ -144,7 +144,7 @@ public sealed partial class RuPromptContextProviderTests
         var time = new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero));
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             settings,
             time,
             webToolsEnabled: false);
@@ -198,7 +198,7 @@ public sealed partial class RuPromptContextProviderTests
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             new StubSettingsStore(Settings()),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
 
@@ -233,13 +233,13 @@ public sealed partial class RuPromptContextProviderTests
 
         var denied = await new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             settings,
             time,
             webToolsEnabled: false).BuildAsync(run, context, CancellationToken.None);
         var allowed = await new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             settings,
             time,
             webToolsEnabled: true).BuildAsync(run, context, CancellationToken.None);
@@ -260,7 +260,7 @@ public sealed partial class RuPromptContextProviderTests
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             new StubSettingsStore(Settings()),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
             new AgentToolRuntimeAvailability(search, fetch));
@@ -294,7 +294,7 @@ public sealed partial class RuPromptContextProviderTests
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             new StubSettingsStore(Settings()),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
 
@@ -337,7 +337,7 @@ public sealed partial class RuPromptContextProviderTests
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             new StubSettingsStore(Settings()),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
 
@@ -373,7 +373,7 @@ public sealed partial class RuPromptContextProviderTests
         using var instructions = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
             instructions.Root,
-            new RuInstructionLoader(),
+            instructions.CreateLoader(),
             new StubSettingsStore(Settings()),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
             workspaceCoordinatorStore: coordinator);
@@ -394,7 +394,7 @@ public sealed partial class RuPromptContextProviderTests
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             new StubSettingsStore(Settings()),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
         var results = new JsonArray();
@@ -448,7 +448,7 @@ public sealed partial class RuPromptContextProviderTests
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             new StubSettingsStore(Settings()),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
         var results = new JsonArray();
@@ -491,7 +491,7 @@ public sealed partial class RuPromptContextProviderTests
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var provider = new RuPromptContextProvider(
             fixture.Root,
-            new RuInstructionLoader(),
+            fixture.CreateLoader(),
             new StubSettingsStore(Settings()),
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
         const string source = "{\"results\":[{\"value\":1}],\"count\":1,\"truncated\":false}";
@@ -610,6 +610,9 @@ public sealed partial class RuPromptContextProviderTests
     private sealed class RuInstructionLoaderTestsRoot : IDisposable
     {
         private RuInstructionLoaderTestsRoot(string root) => Root = root;
+        public RuInstructionLoader CreateLoader() =>
+            new(localApplicationDataRoot: Path.Combine(Root, "isolated-user-data"));
+
         public string Root { get; }
         public static RuInstructionLoaderTestsRoot Create()
         {

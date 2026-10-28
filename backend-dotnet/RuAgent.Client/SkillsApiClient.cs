@@ -49,7 +49,52 @@ public sealed class SkillsApiClient : IDisposable
         return await SendAsync(request, "skills_update_failed", cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<SkillPackageInstallResponse> InstallPackageAsync(
+        SkillPackageInstallRequest package, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+        ArgumentException.ThrowIfNullOrWhiteSpace(package.WorkspacePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(package.SourceUrl);
+        if (package.Action is not ("install" or "update"))
+            throw new ArgumentException("Choose explicit install or update.", nameof(package));
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_session.BaseUri, "agent/v1/skills/packages"))
+        {
+            Content = new StringContent(JsonSerializer.Serialize(package), Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        var body = await SendBodyAsync(request, "skills_install_failed", cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var result = JsonSerializer.Deserialize<SkillPackageInstallResponse>(body, JsonOptions);
+            if (result?.Receipt is null || result.Catalog is null
+                || !RuAgent.Protocol.SkillIdentity.IsValid(result.Receipt.Id)
+                || result.Receipt.Action is not ("installed" or "updated")
+                || result.Receipt.Commit is not { Length: 40 } || result.Receipt.PackageSha256 is not { Length: 64 }
+                || result.Receipt.FileCount is < 1 or > 256 || result.Receipt.ExpandedBytes < 0
+                || string.IsNullOrWhiteSpace(result.Receipt.Source) || string.IsNullOrWhiteSpace(result.Receipt.InstallPath))
+                throw new AgentApiException("invalid_response", "Invalid skill package receipt.");
+            ValidateCatalog(result.Catalog);
+            return result;
+        }
+        catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+    }
+
     private async Task<SkillCatalogResponse> SendAsync(HttpRequestMessage request, string failureCode, CancellationToken cancellationToken)
+    {
+        var body = await SendBodyAsync(request, failureCode, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var result = JsonSerializer.Deserialize<SkillCatalogResponse>(body, JsonOptions);
+            ValidateCatalog(result);
+            return result!;
+        }
+        catch (JsonException ex)
+        {
+            throw new AgentApiException("invalid_response", ex.Message);
+        }
+    }
+
+    private async Task<string> SendBodyAsync(HttpRequestMessage request, string failureCode, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -72,9 +117,13 @@ public sealed class SkillsApiClient : IDisposable
             catch (JsonException) { }
             throw new AgentApiException(code, message, (int)response.StatusCode);
         }
+        return body;
+    }
+
+    private static void ValidateCatalog(SkillCatalogResponse? result)
+    {
         try
         {
-            var result = JsonSerializer.Deserialize<SkillCatalogResponse>(body, JsonOptions);
             if (result?.Items is null || result.Diagnostics is null || result.Total < 0
                 || result.Items.Count > 128 || result.Diagnostics.Count > 128
                 || result.Items.Any(item => item is null || !RuAgent.Protocol.SkillIdentity.IsValid(item.Id)
@@ -83,11 +132,7 @@ public sealed class SkillsApiClient : IDisposable
                     || item.Revision is null || item.Requirements is null)
                 || result.Diagnostics.Any(item => item is null || item.SourcePath is null || string.IsNullOrWhiteSpace(item.Code)))
                 throw new AgentApiException("invalid_response", "Invalid skills catalog response.");
-            return result;
         }
-        catch (JsonException ex)
-        {
-            throw new AgentApiException("invalid_response", ex.Message);
-        }
+        catch (NullReferenceException ex) { throw new AgentApiException("invalid_response", ex.Message); }
     }
 }

@@ -19,6 +19,13 @@ def measure_events(events, *, complete):
         "observed_model_steps": counts["model.step_started"],
         "observed_tool_dispatches": counts["tool.execution_requested"],
         "observed_tool_receipts": counts["tool.execution_completed"],
+        "observed_compactions": counts["context.compacted"] if complete is True and not invalid else None,
+        # Durable safe events do not identify repeated paths or reliably expose
+        # tool failures/recovery notes as structured counters.
+        "tool_errors": None,
+        "repair_attempts": None,
+        "repeated_reads": None,
+        "recovery_attempts": None,
         "observed_approvals": counts["approval.requested"],
         # RPC durable event summaries do not expose an authoritative nested PTC
         # count, error taxonomy, provider latency or token streaming timestamps.

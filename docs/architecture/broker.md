@@ -173,7 +173,7 @@ reconciliation surfaces from Phase 3:
   - `apply_patch` exposes a workspace-scoped unified diff through the existing patch adapter, with
     all-target policy checks, internal preimage hashes and preparation before mutation.
   - See the pinned coding profiles below.
-- Model surface: the Protocol tool definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. The `mcp` tool executes user-declared stdio servers through the Broker under [ADR 0025](../adr/0025-mcp-servers-through-the-broker.md); workspace files cannot declare servers, and subagents cannot use it. The opt-in `computer` tool ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)) captures monitors and sends pointer and keyboard input through `ComputerUseService` behind the same execution authority; `plan` denies it, `standard` grants apps per session, protected apps and Ru's terminal hosts are never targets, and Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) cancels the controlling run. Mail/calendar/task connectors are not advertised Agent tools.
+- Model surface: the Protocol tool definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. The `mcp` tool connects to user-declared stdio or Streamable HTTP servers through the Broker under [ADR 0025](../adr/0025-mcp-servers-through-the-broker.md); workspace files cannot declare servers, and subagents cannot use it. The opt-in `computer` tool ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)) captures monitors and sends pointer and keyboard input through `ComputerUseService` behind the same execution authority; `plan` denies it, `standard` grants apps per session, protected apps and Ru's terminal hosts are never targets, and Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) cancels the controlling run. Mail/calendar/task connectors are not advertised Agent tools.
 - Terminal authority: [ADR 0017](../adr/0017-workspace-terminal-policy.md) replaces
   command-form approval with canonical launch-directory permission. `run` preserves
   literal argv; `shell` explicitly selects PowerShell syntax. Both are automatic
@@ -414,14 +414,17 @@ behind the same execution authority.
 [ADR 0028](../adr/0028-bounded-programmatic-coding-tools.md) adds the opt-in
 `coding_code_v1` profile. `run_code` is a Broker orchestration barrier over the
 existing tool authority. Jint runs pure synchronous computation, yields on each
-uncached SDK call and replays saved JSON results in a fresh interpreter. Nested
+uncached SDK call or read-only batch and replays saved JSON results in a fresh interpreter. Nested
 calls re-enter normal evaluate/execute with the same run lease. Children cannot
 invoke programs, and approval-required nested calls stop for a direct proposal.
 No execution adapter or execution policy moves into the Host.
 
 `HarnessPayloadStore` supplies an encrypted insert-once journal without changing
-the root run's optimistic version. Intent precedes dispatch; receipt follows it.
-Missing receipts never authorize replay. The existing root/family budget pool
+the root run's optimistic version. Prepared intent precedes the dispatch marker;
+receipt follows it. Only prepared-only work may resume; a dispatch marker without
+a receipt never authorizes replay. Up to eight read-only calls may overlap in
+`tools.parallel`; ordered, indexed receipts and atomic batch reservations retain
+the shared 32-call program limit. The existing root/family budget pool
 counts nested calls; a program activates that pool even without child agents.
 Source/SDK/policy binding changes fail closed. All authoritative nested receipts
 feed verification and workstate projection; provider output strips the trace
@@ -451,7 +454,9 @@ local preferences, cache validation and checked on-demand body reads. The Host
 uses the same catalog for prompt descriptors, explicit invocation and client
 listing. `skill` returns a resource base and exact body digest; reading references
 or executing scripts still requires the normal tools and Broker policy.
-There is no executable `SkillManifest` or `skill.json` workflow runtime.
+Grouped discovery and explicit pinned GitHub installation share the catalog. The
+installer stages and verifies managed packages in the Broker; it is a user API,
+not a model tool. There is no executable `SkillManifest` or `skill.json` workflow runtime.
 See [skill operations](../operations/skills.md) and [ADR 0032](../adr/0032-skill-catalog-and-workflow-snapshots.md).
 
 ## Session Grant

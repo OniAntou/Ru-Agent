@@ -156,9 +156,16 @@ internal static class BrokerGatewayContracts
         }
 
         if (output is not null)
-            foreach (var field in new[] { "verification_identity", "verification_cwd", "terminal_effect" })
+        {
+            foreach (var field in new[] { "verification_identity", "verification_cwd", "terminal_effect", "verification_repair_identity" })
                 if (output[field] is JsonValue value && value.TryGetValue<string>(out var metadata)
                     && metadata.Length <= 4096 && !metadata.Contains('\0')) content[field] = metadata;
+            // A direct inline-probe parse error (TerminalVerificationRepair) must reach the
+            // verification evidence, or a corrected probe could never clear it.
+            if (output["verification_invocation_invalid"] is JsonValue invalid
+                && invalid.TryGetValue<bool>(out var isInvalid) && isInvalid)
+                content["verification_invocation_invalid"] = true;
+        }
 
         return new ToolExecutionReceipt(
             execution.ExecutionId,

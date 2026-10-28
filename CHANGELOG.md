@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   URLs are trimmed to their base, a model or server that cannot call tools fails as
   `model_tools_unsupported`, and vLLM's `max_model_len` is read as the context window.
 
+- **feat(agent)**: Discover grouped skill libraries, install and explicitly update
+  commit-pinned GitHub skill packages through Customize or `/skills`, and read a
+  bounded workspace `.ru/memory/MEMORY.md` across conversations.
+- **feat(tools)**: Add bounded read-only `tools.parallel` batches to the experimental
+  program SDK with atomic budgets and durable indexed receipts. MCP supports
+  explicit Streamable HTTP, bearer credentials, structured content and resource
+  links behind the existing approval policy.
+- **fix(agent)**: Optional failed web sources no longer prevent completion when
+  a batch contains usable evidence. Nested instruction scope metadata names real
+  directories; file errors provide specific guidance without changing exact edits.
+- **test(benchmark)**: Add cohort provenance/acceptance reporting and four multi-step
+  coding fixtures; unknown usage and interrupted attempts remain explicit.
+
 - **feat(gui)**: A header above the chat shows the workspace and session title as a
   breadcrumb, the permission mode with a risk-coloured dot (Plan, Standard or
   Full Access), and a Working indicator while a run is live. The mode is read-only there;
@@ -32,6 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use, adds local skill folders and puts `/skill <id>` in the composer; its Plugins tab
   holds the computer-use switch, which moves out of Settings. The composer's Skills
   button is gone; `/skills` in the composer opens the page.
+
+- **fix(agent)**: Verification evidence is compared with the recorded workspace
+  change journal from the check's execution request, including changes made by
+  another run while the check is still running. The coordinator rechecks evidence
+  after final generation. Missing request provenance or a retained journal gap
+  crossing the check start cannot certify a passed check.
+  Structured file mutations are observed before the next check, with queued
+  watcher notifications deduplicated against current content. Schema v32 adds
+  indexed execution-request provenance.
+  A corrected inline Python verification probe can resolve a direct command
+  parse error; actual test failures and expected-exit mismatches stay blocking.
+
 - **feat(web)**: Runs on first-party Anthropic and OpenAI models now search through the
   provider's own hosted web search, as Claude Code and Codex do, instead of scraping
   search-engine pages (ADR 0033). It needs no extra key; each search is billed on the

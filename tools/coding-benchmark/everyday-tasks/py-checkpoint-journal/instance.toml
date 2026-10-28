@@ -1,0 +1,8 @@
+id = "py-checkpoint-journal"
+language = "python"
+difficulty = "multi_step"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["sequence_validation", "duplicate_delivery", "snapshot_copy", "restore_order", "atomic_restore", "format_version"]
+pass_to_pass = ["empty_checkpoint", "event_identity"]
+agent_timeout_sec = 600
+verifier_timeout_sec = 60

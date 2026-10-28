@@ -1,6 +1,7 @@
 [
-  {"method":"GET","path":"/agent/v1/skills","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.Skills.cs","classification":"aspnet-direct","winui_callers":["ChatView.ShowSkillsAsync"]},
-  {"method":"POST","path":"/agent/v1/skills/settings","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.Skills.cs","classification":"aspnet-direct","winui_callers":["ChatView.ShowSkillsAsync"]},
+  {"method":"GET","path":"/agent/v1/skills","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.Skills.cs","classification":"aspnet-direct","winui_callers":["CustomizeView.LoadSkillsAsync"]},
+  {"method":"POST","path":"/agent/v1/skills/settings","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.Skills.cs","classification":"aspnet-direct","winui_callers":["CustomizeView.UpdateSkillsAsync"]},
+  {"method":"POST","path":"/agent/v1/skills/packages","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.Skills.cs","classification":"aspnet-direct","winui_callers":["CustomizeView.InstallSkillPackageAsync"]},
   {"method":"GET","path":"/status","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetStatusAsync"]},
   {"method":"POST","path":"/host/shutdown","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ShutdownHostAsync"]},
   {"method":"GET","path":"/diagnostics/logs","transport":"http","source":"backend-dotnet/RuBackend/Diagnostics/DiagnosticEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetDiagnosticLogsAsync"]},

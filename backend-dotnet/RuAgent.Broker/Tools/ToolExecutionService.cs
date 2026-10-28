@@ -279,11 +279,14 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     /// </summary>
     private static string IoRepairHint(string? code) => code switch
     {
-        "is_directory" => "target is a directory, and file tools address files: list it and act on the files inside, or remove it with an approved terminal command.",
-        "file_not_found" => "file does not exist: list the directory to check the path. Create it with an advertised write_file or apply_patch add-file diff. An edit cannot create files.",
+        "is_directory" => "target is a directory. Use list for its entries and choose an existing file path for read_file/edit_file; do not remove it unless the user requested deletion.",
+        "not_a_directory" => "path is not an existing directory. list and glob require a directory; grep accepts either a file or directory. To read a file, use read_file or read. For a directory, correct the path or list its existing parent; do not retry the same path.",
+        "file_not_found" => "file does not exist: list its parent directory to check the path. Create it with an advertised write_file or apply_patch add-file diff. An edit cannot create files.",
         "read_line_too_long" => "A line exceeds the line-read output limit. Use read with byte paging and its returned cursor instead.",
         "read_line_scan_limit" => "The file exceeds the 4 MiB line snapshot limit. Use read with bounded byte paging instead.",
+        "read_hash_timeout" => "The bounded file read timed out. Do not repeat unchanged; inspect the path and retry once only if the file is now accessible.",
         "file_exists" => "file already exists: read it, then use the advertised file tool for a partial change, or retry write_file with the same path and content and overwrite=true for deliberate replacement.",
+        "io_error" => "The filesystem operation failed. Do not repeat an unchanged mutation. Inspect the current target and parent directory with read/list before deciding whether a retry is safe; if it persists, report the failure.",
         _ => "Tool input or output failed.",
     };
 

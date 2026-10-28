@@ -389,39 +389,60 @@ public sealed partial class AgentRunCoordinator
             return await _steps.HandleCommentaryStepAsync(run, modelStepId, step, modelDroppedCount,
                 context, promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText).ConfigureAwait(false);
 
-        if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode)
-            || AgentRecoveryNotes.TryReadBlockedReply(step, out _))
+        // Workspace journal state may change while the provider is generating a
+        // final answer. Refresh only host-derived verification evidence; the
+        // accepted model input and its context entries remain pinned to this step.
+        var beforeFreshness = await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+        if (beforeFreshness.Version != run.Version || beforeFreshness.State != HarnessRunState.Running)
+            return AgentRunStepResult.Blocked(beforeFreshness, "run_changed_during_generation");
+        var freshContext = await _contextAssembler.AssembleAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+        var afterFreshness = await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+        if (afterFreshness.Version != beforeFreshness.Version || afterFreshness.State != HarnessRunState.Running)
+            return AgentRunStepResult.Blocked(afterFreshness, "run_changed_during_generation");
+        context = new ModelContextSnapshot(context.Entries, context.CanonicalUtf8,
+            context.ObservedFilePaths, freshContext.VerificationEvidence);
+
+        try
         {
-            if (context.VerificationEvidence.HasExitMismatch || !AgentRecoveryNotes.TryReadBlockedReply(step, out _))
+            if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode)
+                || AgentRecoveryNotes.TryReadBlockedReply(step, out _))
+            {
+                if (context.VerificationEvidence.HasExitMismatch || !AgentRecoveryNotes.TryReadBlockedReply(step, out _))
+                    invocation.RetractAssistantText();
+                return await _steps.HandleUnverifiedFailureStepAsync(
+                        run,
+                        modelStepId,
+                        step,
+                        string.IsNullOrEmpty(failureCode) ? "model_reported_blocker" : failureCode,
+                        modelDroppedCount,
+                        context,
+                        promptReceiptPayload,
+                        promptComposedEvent,
+                        cancellationToken,
+                        reasoningText)
+                    .ConfigureAwait(false);
+            }
+
+            if (string.IsNullOrWhiteSpace(step.Text))
                 invocation.RetractAssistantText();
-            return await _steps.HandleUnverifiedFailureStepAsync(
+            return await _steps.HandleFinalStepAsync(
                     run,
                     modelStepId,
                     step,
-                    string.IsNullOrEmpty(failureCode) ? "model_reported_blocker" : failureCode,
                     modelDroppedCount,
                     context,
                     promptReceiptPayload,
                     promptComposedEvent,
                     cancellationToken,
-                    reasoningText)
+                    reasoningText,
+                    providerContinuation)
                 .ConfigureAwait(false);
         }
-
-        if (string.IsNullOrWhiteSpace(step.Text))
-            invocation.RetractAssistantText();
-        return await _steps.HandleFinalStepAsync(
-                run,
-                modelStepId,
-                step,
-                modelDroppedCount,
-                context,
-                promptReceiptPayload,
-                promptComposedEvent,
-                cancellationToken,
-                reasoningText,
-                providerContinuation)
-            .ConfigureAwait(false);
+        catch (InvalidOperationException error) when (error.Message == "run_version_conflict")
+        {
+            var current = await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+            return AgentRunStepResult.Blocked(current, "run_changed_during_generation");
+        }
     }
 
     public Task<AgentRun> AcknowledgeHistoryAsync(

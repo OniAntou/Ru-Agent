@@ -25,10 +25,11 @@ public sealed record McpToolInfo(string Name, string? Description, JsonObject In
 /// fill its pipe and stall. Every request has a deadline, and an id the client did not issue
 /// (numeric or string) is ignored rather than ending the read loop.
 /// </summary>
-public sealed class McpStdioClient : IAsyncDisposable
+public sealed class McpStdioClient : IMcpClient
 {
     public const int MaxFrameChars = 4 * 1024 * 1024;
     public const int MaxTools = 256;
+    public const int MaxToolPages = 64;
     private const int StderrTailChars = 4096;
     public const string ProtocolVersion = "2024-11-05";
 
@@ -120,8 +121,11 @@ public sealed class McpStdioClient : IAsyncDisposable
     {
         var tools = new List<McpToolInfo>();
         string? cursor = null;
+        var pages = 0;
         do
         {
+            if (++pages > MaxToolPages)
+                throw new McpException("mcp_page_limit", "tools/list exceeded its page limit.");
             var parameters = new JsonObject();
             if (cursor is not null) parameters["cursor"] = cursor;
             var result = await RequestAsync("tools/list", parameters, timeout, cancellationToken).ConfigureAwait(false) as JsonObject

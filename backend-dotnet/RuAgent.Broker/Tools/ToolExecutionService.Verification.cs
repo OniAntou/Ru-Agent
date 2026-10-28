@@ -22,5 +22,6 @@ public sealed partial class ToolExecutionService
         output["verification_cwd"] = intent.CanonicalWorkingDirectory;
         output["terminal_effect"] = intent.OperationClass == RuAgent.Protocol.TerminalOperationClass.ReadOnly
             ? "read_only" : "unknown";
+        TerminalVerificationRepair.Annotate(output, intent);
     }
 }

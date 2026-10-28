@@ -8,7 +8,8 @@ public enum VerificationCheckStatus { Pending, Passed, Failed, Stale }
 public sealed record VerificationCheckEvidence(string Identity, string ProviderCallId,
     string? ExecutionId, int ExpectedExitCode, bool IsVerification,
     VerificationCheckStatus Status, string Code, string Command, bool InvalidatedDuringExecution = false,
-    int? ObservedExitCode = null, bool RejectedBeforeLaunch = false);
+    int? ObservedExitCode = null, bool RejectedBeforeLaunch = false,
+    DateTimeOffset? ExecutionStartedAtUtc = null, string? RepairIdentity = null, bool InvocationInvalid = false);
 
 /// <summary>Host-derived original receipt evidence; survives compaction, grants no authority.</summary>
 public sealed partial class RunVerificationEvidence
@@ -77,9 +78,14 @@ public sealed partial class RunVerificationEvidence
             + (pending.Any(check => check.RejectedBeforeLaunch)
                 ? ". A check rejected before launch never ran; a corrected check of the same kind that passes resolves it"
                 : "")
+            + (pending.Any(check => check.InvocationInvalid)
+                ? ". An inline Python verification probe failed to parse. Correct that probe and pass it with the same Python interpreter and working directory; this exception never clears a test failure or expected-exit mismatch"
+                : "")
             + (pending.Any(check => check.Code == "expected_exit_mismatch")
                 ? ". An expected-exit mismatch is an observed result, not a transient tool error. Do not keep rerunning a deliberately failing command to force its expected code. A different invocation does not clear the original check. Report the actual exit and use [BLOCKED] for the incomplete outcome."
-                : ". Inspecting logs does not satisfy a check. Rerun the same check after repairs or report [BLOCKED].");
+                : pending.Any(check => check.InvocationInvalid)
+                    ? ". Inspecting logs alone does not resolve the invalid probe. Report [BLOCKED] if it cannot be corrected."
+                    : ". Inspecting logs does not satisfy a check. Rerun the same check after repairs or report [BLOCKED].");
     }
 
     public static RunVerificationEvidence Project(IEnumerable<ModelContextEntry> originalRunEntries,
@@ -160,7 +166,10 @@ public sealed partial class RunVerificationEvidence
             if (rejectedBeforeLaunch && tracked is { RejectedBeforeLaunch: false }) continue;
             var initial = new VerificationCheckEvidence(identity, providerId, null, expectedExit,
                 purpose == "verification" || tracked?.IsVerification == true,
-                VerificationCheckStatus.Pending, "verification_pending", DescribeCommand(args));
+                VerificationCheckStatus.Pending, "verification_pending", DescribeCommand(args),
+                ExecutionStartedAtUtc: entry.ExecutionStartedAtUtc, RepairIdentity: metadata.RepairIdentity,
+                InvocationInvalid: expectedExit == 0 && purpose == "verification" && metadata.InvocationInvalid
+                    && receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero");
             var assessed = Assess(initial, receipt, entry.Content, providerId, false);
             if (rejectedBeforeLaunch) assessed = assessed with { RejectedBeforeLaunch = true };
             evidence.Store(assessed);
@@ -196,7 +205,8 @@ public sealed partial class RunVerificationEvidence
             {
                 var nestedReceipt = new ToolExecutionReceipt(receipt.ExecutionId, receipt.ToolCallId, nested.Outcome,
                     nested.Code, null, nested.SideEffectsPossible, providerCallId: nested.Call.ProviderCallId);
-                yield return (ModelContextEntry.ToolResult(nested.Call.ProviderCallId, entry.Sequence, nestedReceipt, nested.Output.GetRawText()), nested.Call);
+                yield return (ModelContextEntry.ToolResult(nested.Call.ProviderCallId, entry.Sequence, nestedReceipt,
+                    nested.Output.GetRawText(), entry.ExecutionStartedAtUtc), nested.Call);
             }
         }
     }

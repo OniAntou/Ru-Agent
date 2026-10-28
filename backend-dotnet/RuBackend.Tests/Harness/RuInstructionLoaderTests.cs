@@ -88,7 +88,7 @@ public sealed class RuInstructionLoaderTests
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "AGENTS.md"), new string('x', 64 * 1024 + 1), new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "CONTEXT.md"), "contains\0nul", new UTF8Encoding(false));
 
-        var result = new RuInstructionLoader().Load(fixture.Root);
+        var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot).Load(fixture.Root);
 
         Assert.Equal("skill:catalog", Assert.Single(result.Blocks).SourceId);
         Assert.Equal(

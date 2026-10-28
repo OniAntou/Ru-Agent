@@ -58,14 +58,17 @@ internal sealed class VerificationEvidenceBuffer(int requiredLimit)
     }
 
     /// <summary>
-    /// Clears earlier checks whose launch was rejected before running, once a
-    /// check of the same kind (verification or expected failure) has passed.
+    /// Clears pre-launch rejections after a check of the same kind passes, and
+    /// invalid inline probes only after a passing verification in their exact
+    /// interpreter/cwd repair family. Actual test failures remain outstanding.
     /// Removal rather than a Passed status keeps a later edit from reviving them.
     /// </summary>
     internal void ResolveRejectedBy(VerificationCheckEvidence passed)
     {
         var negative = passed.ExpectedExitCode != 0;
-        foreach (var check in _checks.Values.Where(c => c.RejectedBeforeLaunch
+        foreach (var check in _checks.Values.Where(c => (c.RejectedBeforeLaunch
+                || !negative && c.InvocationInvalid && passed.IsVerification
+                    && passed.RepairIdentity is not null && c.RepairIdentity == passed.RepairIdentity)
             && c.Status != VerificationCheckStatus.Passed && c.Identity != passed.Identity
             && (c.ExpectedExitCode != 0) == negative).ToArray())
             Remove(check.Identity);

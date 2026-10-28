@@ -32,7 +32,7 @@ public interface IAgentRuntimeRunCleanup
 /// dispatcher, then runs model/tool steps for every running run it holds a workspace
 /// root for. Runs stop being driven when they block on approval/history or complete.
 /// </summary>
-public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting.IHostIdleProbe, IAgentRuntimeRunCleanup
+public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting.IHostIdleProbe, IAgentRuntimeRunCleanup
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
 

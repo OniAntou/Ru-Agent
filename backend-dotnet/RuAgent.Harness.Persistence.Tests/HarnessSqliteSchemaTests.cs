@@ -7,6 +7,39 @@ namespace RuAgent.Harness.Persistence.Tests;
 
 public sealed class HarnessSqliteSchemaTests
 {
+    [Fact]
+    public async Task V31_upgrade_preserves_data_and_indexes_execution_request_provenance()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DROP INDEX ix_agent_events_execution_request;
+            INSERT INTO business_settings(id,document) VALUES(1,'{"fixture":"preserved"}');
+            PRAGMA user_version=31;
+            """;
+        await command.ExecuteNonQueryAsync();
+        // The test deliberately downgrades an already opened schema. Discard
+        // pooled handles so initialization models a process opening v31.
+        await using (var pooled = await fixture.Options.OpenConnectionAsync(default))
+            SqliteConnection.ClearPool(pooled);
+        var result = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+        Assert.True(result.IsAvailable, result.ErrorCode);
+        command.CommandText = "SELECT document FROM business_settings WHERE id=1";
+        Assert.Equal("{\"fixture\":\"preserved\"}", await command.ExecuteScalarAsync());
+        command.CommandText = """
+            EXPLAIN QUERY PLAN SELECT occurred_at_utc FROM agent_events
+            WHERE run_id='run' AND kind='tool.execution_requested'
+              AND execution_id='exec' AND tool_call_id='call' AND provider_call_id='provider'
+            ORDER BY sequence LIMIT 1
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        var details = new List<string>();
+        while (await reader.ReadAsync()) details.Add(reader.GetString(3));
+        Assert.Contains(details, detail => detail.Contains("ix_agent_events_execution_request", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData(1, 1)]
     [InlineData(999, 1)]
@@ -110,6 +143,7 @@ public sealed class HarnessSqliteSchemaTests
         "ix_agent_session_preset_snapshots_session",
         "ix_agent_events_provider_continuation",
         "ix_agent_events_session_receipts",
+        "ix_agent_events_execution_request",
     ];
 
     [Fact]

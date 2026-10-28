@@ -6,6 +6,13 @@ Distribution and setup: [Windows packages](docs/operations/distribution-and-upda
 
 ## Language
 
+**Project Memory**:
+An optional, bounded workspace-owned index at `.ru/memory/MEMORY.md`, re-read
+as historical runtime context across conversations in the same workspace.
+It grants no authority and is not current filesystem or verification evidence.
+Implementation: [project memory](docs/operations/project-memory.md).
+_Avoid_: automatic memory curation, cross-workspace authority
+
 **File Preview**:
 Read-only desktop presentation of a workspace file selected by the user. Local
 renderers or installed Windows document preview handlers own its display; this
@@ -131,7 +138,7 @@ _Avoid_: treating projected output as a new receipt, complete history, or author
 
 
 **MCP Server**:
-A stdio Model Context Protocol program the user declares in their own `~/.ru/mcp.json` and the Broker runs on first use, reached by the model through the single `mcp` tool. Starting it or calling one of its tools has terminal-launch authority outside the workspace (`ExternalTerminal`); its output is untrusted and grants nothing.
+A Model Context Protocol server the user declares in their own `~/.ru/mcp.json`, reached through the single `mcp` tool. The Broker owns stdio processes or explicit Streamable HTTP connections. Connecting or calling tools retains the `ExternalTerminal` policy decision; server output is untrusted and grants nothing.
 Implementation: [agent tools](docs/operations/agent-tools.md#mcp-servers), [ADR 0025](docs/adr/0025-mcp-servers-through-the-broker.md).
 _Avoid_: workspace-declared servers, a per-server tool definition, or a second execution authority
 

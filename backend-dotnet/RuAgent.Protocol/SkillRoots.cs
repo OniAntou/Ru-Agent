@@ -14,6 +14,15 @@ public static class SkillRoots
 {
     public const string ConfiguredRootVariable = "RU_SKILLS_ROOT";
 
+    /// <summary>Returns Ru's managed per-user installation root for explicitly installed skill packages.</summary>
+    public static string UserInstallationRoot(string? localApplicationDataRoot = null)
+    {
+        localApplicationDataRoot ??= Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(localApplicationDataRoot))
+            throw new InvalidOperationException("local_application_data_unavailable");
+        return Path.Combine(localApplicationDataRoot, "Ru", "skills");
+    }
+
     public static IReadOnlyList<string> For(
         string workspaceRoot,
         string? localApplicationDataRoot = null,
@@ -44,7 +53,7 @@ public static class SkillRoots
         localApplicationDataRoot ??= Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (!string.IsNullOrWhiteSpace(localApplicationDataRoot))
         {
-            roots.Add(Path.Combine(localApplicationDataRoot, "Ru", "skills"));
+            roots.Add(UserInstallationRoot(localApplicationDataRoot));
         }
 
         return roots;

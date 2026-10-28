@@ -1,0 +1,8 @@
+id = "ts-abortable-coalescer"
+language = "typescript"
+difficulty = "multi_step"
+editable_globs = ["src/**/*.ts"]
+fail_to_pass = ["shared_inflight", "clear_generation", "abort_isolated", "pre_aborted", "settled_cleanup"]
+pass_to_pass = ["retry_after_rejection", "key_identity", "loader_receives_key"]
+agent_timeout_sec = 600
+verifier_timeout_sec = 60

@@ -42,12 +42,18 @@ public static class FailedToolCompletionGuard
 
         string? firstFailureCode = null;
         var onlyFirstDeny = true;
+        var hasOptionalFetchFailure = false;
         for (var i = startIndex + 1; i <= lastIndex; i++)
         {
             var receipt = context.Entries[i].ToolReceipt;
             if (receipt is not null && context.VerificationEvidence.IsExpectedFailure(receipt)) continue;
             if (receipt is null || receipt.Outcome != ToolExecutionOutcome.Succeeded)
             {
+                if (receipt is not null && IsOrdinaryOptionalFetchFailure(receipt))
+                {
+                    hasOptionalFetchFailure = true;
+                }
+
                 var code = receipt?.Code;
                 code = !string.IsNullOrWhiteSpace(code) && IsSafeCode(code)
                     ? code
@@ -64,7 +70,8 @@ public static class FailedToolCompletionGuard
             }
         }
 
-        if (firstFailureCode is null || onlyFirstDeny || HasPartialWebEvidence(context, startIndex, lastIndex))
+        if (firstFailureCode is null || onlyFirstDeny
+            || (hasOptionalFetchFailure && HasPartialWebEvidence(context, startIndex, lastIndex)))
         {
             return false;
         }
@@ -81,7 +88,7 @@ public static class FailedToolCompletionGuard
         if (calls.Count != lastReceipt - assistantIndex) return false;
         var bindings = new HashSet<string>(StringComparer.Ordinal);
         var readable = false;
-        var empty = false;
+        var optionalFailure = false;
         for (var index = 0; index < calls.Count; index++)
         {
             var call = calls[index];
@@ -90,12 +97,38 @@ public static class FailedToolCompletionGuard
                 || !bindings.Add(call.ProviderCallId) || receipt is null || receipt.SideEffectsPossible
                 || receipt.ProviderCallId != call.ProviderCallId) return false;
             if (receipt.Outcome == ToolExecutionOutcome.Succeeded && receipt.Code == "ok") readable = true;
-            else if (receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "web_content_empty") empty = true;
+            else if (IsOrdinaryOptionalFetchFailure(receipt)) optionalFailure = true;
             else return false;
         }
-        // Empty optional pages do not invalidate facts read from other pages.
-        // This exception cannot clear a denial, mutation, cancellation or unknown result.
-        return readable && empty;
+        // An optional fetch failure does not invalidate facts read from another page.
+        // The failed receipt stays in model context; it is never treated as readable evidence.
+        return readable && optionalFailure;
+    }
+
+    private static bool IsOrdinaryOptionalFetchFailure(ToolExecutionReceipt receipt) =>
+        receipt.Outcome == ToolExecutionOutcome.Failed
+        && !receipt.SideEffectsPossible
+        && IsOrdinaryOptionalFetchFailureCode(receipt.Code);
+
+    private static bool IsOrdinaryOptionalFetchFailureCode(string code)
+    {
+        if (code.StartsWith("web_http_", StringComparison.Ordinal)
+            && int.TryParse(code.AsSpan("web_http_".Length), out var status))
+        {
+            return status is >= 400 and <= 599;
+        }
+
+        return code is "web_network_error"
+            or "web_content_empty"
+            or "web_page_blocked"
+            or "web_content_type_not_supported"
+            or "web_pdf_unreadable"
+            or "web_pdf_encrypted"
+            or "web_response_too_large"
+            or "web_extracted_content_too_large"
+            or "web_redirect_limit"
+            or "web_redirect_invalid"
+            or "web_encoding_invalid";
     }
 
     private static bool IsTrailingRecoveryContext(ModelContextEntry entry) =>

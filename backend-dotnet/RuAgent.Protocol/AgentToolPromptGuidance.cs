@@ -16,17 +16,17 @@ public static class AgentToolPromptGuidance
         var tools = toolIds.ToHashSet(StringComparer.Ordinal);
         var lines = new List<string>();
         if (tools.Contains("read_file"))
-            lines.Add("Prefer read_file for UTF-8 text by line. Continue at next_line. Use read for images, very large files or exceptionally long lines with byte paging.");
+            lines.Add("Prefer read_file for UTF-8 text by line. Its content is raw, unprefixed source text with original newlines. For edit_file, use actual source characters; JSON \\n represents a line break, not the literal HTML entity &#10;. Continue at next_line. Use read for images, very large files or exceptionally long lines with byte paging.");
         else if (tools.Contains("read"))
             lines.Add("Use read for text inspection. Continue large outputs with next_offset; an excerpt is not the complete file. read also shows you a workspace image, such as a screenshot, when your model accepts images.");
         if (tools.Contains("grep"))
             lines.Add("Search args: grep needs query (+ optional path, file_glob, is_regex only for real regex). Grep path may be a file or directory.");
         if (tools.Contains("glob"))
-            lines.Add("Glob needs pattern; its path must be a directory.");
+            lines.Add("Glob needs pattern and an existing directory path; use read_file/read for an individual file.");
         if (tools.Contains("web_search"))
             lines.Add("Web_search needs query (max_results 1-10); verify time-sensitive claims against fetched sources when available.");
         if (tools.Contains("edit_file"))
-            lines.Add("Use edit_file for exact partial changes to existing files, with non-overlapping edits copied from a fresh read; it cannot create a file. Preserve newlines as JSON \\n escapes and indentation in old_string/new_string; never flatten multiple source lines into one.");
+            lines.Add("Use edit_file for exact partial changes to existing files, with non-overlapping edits copied from a fresh read; it cannot create a file. Preserve actual indentation and line breaks in old_string/new_string; JSON \\n encodes a line break, not HTML entities such as &quot; or &#10;. Never flatten multiple source lines into one or repeat unchanged text after edit_no_match.");
         if (tools.Contains("write_file"))
             lines.Add("Use write_file to create a new file; overwrite=true is only for deliberate full-file replacement after reading it. overwrite is a boolean property beside content, never text inside content: {\"path\":\"example.py\",\"content\":\"print('ok')\\n\",\"overwrite\":true}. Send JSON arguments, not XML tags.");
         if (tools.Contains("run_process"))

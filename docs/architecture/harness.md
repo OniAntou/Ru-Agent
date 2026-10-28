@@ -53,11 +53,12 @@ implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Dat
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
 batch statements. Release migration tests build the original released v18 DDL and frozen
 development DDL independently of current schema creation. The selected upgrade suffix commits atomically
-at v31. Version 29 consolidated earlier development changes; v30
+at v32. Version 29 consolidated earlier development changes; v30
 normalizes retained conversation history and source receipts. Version 31 adds
-context mutation fences and indexed compaction/intent lookup. Versions below v18 fail with
+context mutation fences and indexed compaction/intent lookup; v32 indexes exact
+execution-request provenance for verification freshness. Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
-v19-v30 databases remain eligible sources; adding a migration extends one ordered
+v19-v31 databases remain eligible sources; adding a migration extends one ordered
 catalog instead of every historical branch. Fresh installs use the same released
 baseline and upgrade batch. Tests cover every retained source, identical schema,
 rollback/retry, restored FKs and two simultaneous initializer processes.

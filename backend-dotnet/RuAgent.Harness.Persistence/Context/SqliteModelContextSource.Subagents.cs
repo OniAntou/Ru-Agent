@@ -55,7 +55,8 @@ public sealed partial class SqliteModelContextSource
             {
                 ModelContextEntryKind.Text => ModelContextEntry.Text(entry.SourceId, sequence, entry.Role, entry.Content!),
                 ModelContextEntryKind.AssistantStep => ModelContextEntry.Assistant(entry.SourceId, sequence, entry.AssistantStep!),
-                ModelContextEntryKind.ToolResult => ModelContextEntry.ToolResult(entry.SourceId, sequence, entry.ToolReceipt!, entry.Content!),
+                ModelContextEntryKind.ToolResult => ModelContextEntry.ToolResult(entry.SourceId, sequence, entry.ToolReceipt!,
+                    entry.Content!, entry.ExecutionStartedAtUtc),
                 ModelContextEntryKind.Summary => ModelContextEntry.Summary(entry.SourceId, sequence, entry.Content!, entry.SummaryRanges!),
                 _ => throw new HarnessStoreException("subagent_context_entry_invalid"),
             });

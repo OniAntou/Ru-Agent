@@ -74,11 +74,14 @@ history rather than reading suppressed prose. This also applies when no follow-u
 messages are queued. Incomplete native dispatch still defers delivery; missing payload
 evidence fails closed instead of being treated as a completed step.
 For web research, a batch containing successful native `web_fetch` reads and only
-`web_content_empty` failures can support a final reply from the readable sources.
-The exception requires matching call/receipt identities, version 1.0.0, at least one
-successful `ok` receipt and no possible side effects. Other failures and batches with
-no readable source retain the normal verification/recovery behavior; unavailable
-pages are not evidence and must not be cited as successfully read.
+ordinary fetch availability or content failures can support a final reply from the
+readable sources. These include HTTP 4xx/5xx responses, network errors, empty or
+blocked pages, unsupported or unreadable content, oversized responses, redirects
+and encoding failures. The exception requires matching call/receipt identities,
+version 1.0.0, at least one successful `ok` receipt and no possible side effects.
+Policy/rule/approval denials, invalid fetch arguments, unknown/cancelled outcomes
+and batches with no readable source retain the normal verification/recovery behavior;
+failed pages remain failures and are not evidence to cite as successfully read.
 
 A child tool needing approval returns `subagent_parent_action_required`. The child reports
 the blocker to its parent. The parent may perform an action under its own normal approval

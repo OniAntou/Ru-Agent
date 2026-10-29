@@ -1,4 +1,3 @@
-using RuAgent.Cli.Tui;
 using Terminal.Gui.Drawing;
 
 namespace RuAgent.Cli.TerminalGui;
@@ -50,15 +49,14 @@ internal sealed class TgSquareWordmarkRaster
             if (!Filled(x, y + 1) && y < 5) Rect(pixels, x * Tile + 2, (y + 1) * Tile, 9, 2, Shade(color, .25));
             if (y == 5) Rect(pixels, x * Tile + 8, 6 * Tile, 9, 6, Shade(color, .30));
         }
-        // Keep the silhouette and AGENT's existing black tile gutters.
+        // Preserve the black outer silhouette beneath the softened inner seams.
         for (var y = 0; y < 6; y++)
         for (var x = 0; x < TgWelcomeWordmark.Width; x++)
             if (Filled(x, y)) Rect(pixels, x * Tile, y * Tile, Tile, Tile, Black);
-        // RU's inner seams represent a subpixel gap by partial coverage. This
+        // All letters' inner seams represent a subpixel gap by partial coverage. This
         // softens the grid without changing the outline or enlarging the raster.
-        var ruWidth = TuiHeader.WordmarkRuRows[0].Length;
         for (var y = 0; y < 6; y++)
-        for (var x = 0; x < ruWidth; x++)
+        for (var x = 0; x < TgWelcomeWordmark.Width; x++)
         {
             if (!Filled(x, y)) continue;
             var color = TgWelcomeWordmark.AttributeAt(y / 2, x, sweep).Foreground;

@@ -42,13 +42,11 @@ public sealed class TgHintsView : View
         _feedbackIsError,
         _busyHint,
         _idleLabel);
-    public event Action? WorkspaceChanged;
 
     public void SetIdle(string workspace)
     {
         Workspace = ChatDisplayText.Sanitize(workspace, 200);
         _idleLabel = TgStatusPresentation.IdleLabel(Workspace);
-        WorkspaceChanged?.Invoke();
         _activeState = TgHintsState.Idle;
         _queuedCount = 0;
         _waveBucket = 0;

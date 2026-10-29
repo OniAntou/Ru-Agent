@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Keep RU AGENT's green tile faces and soft seams stable with a
+  fixed Sixel palette and an opaque black backdrop. Preserve the warm sweep,
+  shadows and logo dimensions while hiding stars and meteors behind the logo.
+
+- **style(tui)**: Match AGENT's tile seams to RU, center the logo on the galaxy
+  core, bring the prompt closer, and use white meteors with longer fading tails.
+
+- **fix(tui)**: Keep the welcome galaxy animating while the slash-command menu
+  is open, without letting the raster logo cover command text.
+
+- **style(tui)**: Remove the top workspace/path heading and display only the
+  reasoning effort value beside the model, without the `reasoning:` prefix.
+  Workspace selection, `/status` and model reasoning behavior are unchanged.
+
 - **fix(history)**: Keep conversation branching compatible with paged SQL
   history. Bind revisions to the window and rewind epoch, use absolute turn
   boundaries, and copy retained message rows and receipts atomically while

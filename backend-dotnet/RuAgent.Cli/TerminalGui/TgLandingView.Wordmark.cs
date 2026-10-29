@@ -10,7 +10,10 @@ public sealed partial class TgLandingView
     private readonly RasterImageCommand _wordmarkCommand = new()
     {
         Id = "ru-welcome-" + Guid.NewGuid().ToString("N"), RenderAfterText = true,
-        Encoder = new SixelEncoder { Quantizer = new ColorQuantizer { MaxColors = 32 } },
+        Encoder = new SixelEncoder
+        {
+            Quantizer = new ColorQuantizer { MaxColors = 32, PaletteBuildingAlgorithm = TgWordmarkPalette.Instance },
+        },
     };
     private TgSquareWordmarkRaster? _wordmarkRaster;
     private readonly KittyGraphicsEncoder _wordmarkKittyEncoder = new();
@@ -42,6 +45,9 @@ public sealed partial class TgLandingView
             top + (TuiHeader.WordmarkRows - rows) / 2, columns, rows);
         if (frame.Top < 1 || frame.Bottom > height || ComposerBounds?.IntersectsWith(frame) == true
             || HintRow is { } hint && hint >= frame.Top && hint < frame.Bottom) return HideSquareWordmark();
+        // Raster images render after text. A slash menu may cover the logo while
+        // the sky keeps animating; let normal glyph clipping preserve the menu.
+        if (IsWordmarkOccluded?.Invoke(frame) == true) return HideSquareWordmark();
 
         _wordmarkRaster ??= new TgSquareWordmarkRaster();
         var source = _wordmarkRaster.Render(_animationTime);
@@ -97,15 +103,22 @@ public sealed partial class TgLandingView
 
     private static void ScaleWordmark(Pixel[,] source, Pixel[,] pixels, int cellWidth)
     {
-        Array.Clear(pixels);
+        var black = new Pixel(0, 0, 0, 255);
+        // Paint the matte into the image too: raster-owned blank text cells may
+        // be skipped by the terminal driver, so a text-only mask can leave stars.
+        for (var y = 0; y < pixels.GetLength(1); y++)
+        for (var x = 0; x < pixels.GetLength(0); x++) pixels[x, y] = black;
         // Scale both axes by the cell's pixel width so the tiles stay square;
-        // leave symmetric transparent padding in the enclosing cell rectangle.
+        // leave symmetric black padding in the enclosing cell rectangle.
         var width = Math.Min(pixels.GetLength(0), (int)Math.Round((double)source.GetLength(0) * cellWidth / TgSquareWordmarkRaster.Tile));
         var height = Math.Min(pixels.GetLength(1), (int)Math.Round((double)source.GetLength(1) * cellWidth / TgSquareWordmarkRaster.Tile));
         var left = (pixels.GetLength(0) - width) / 2; var top = (pixels.GetLength(1) - height) / 2;
         for (var y = 0; y < height; y++)
         for (var x = 0; x < width; x++)
-            pixels[left + x, top + y] = source[x * source.GetLength(0) / width, y * source.GetLength(1) / height];
+        {
+            var color = source[x * source.GetLength(0) / width, y * source.GetLength(1) / height];
+            if (color.A > 0) pixels[left + x, top + y] = color;
+        }
     }
 
     private bool HideSquareWordmark()

@@ -38,7 +38,6 @@ public sealed partial class TgChatWindow : Window
     private IApplication? _resizeApp;
     private ModalInputState? _modalInputState;
     private bool _relayoutInProgress;
-    private bool _workspaceContextPinned;
 
     private TgChatWindow()
     {
@@ -51,8 +50,10 @@ public sealed partial class TgChatWindow : Window
         Composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(TgComposerView.RowCount + 1), Width = Dim.Fill(), Height = TgComposerView.RowCount };
         Composer.PresetChanged += preset => { Header.SetPreset(preset); Relayout(); };
         Hints = new TgHintsView { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
-        Landing = new TgLandingView();
-        Hints.WorkspaceChanged += () => { if (!_workspaceContextPinned) Header.SetWorkspace(Hints.Workspace); };
+        Landing = new TgLandingView
+        {
+            IsWordmarkOccluded = frame => IsSlashDropdownOpen && _slashDropdown!.Frame.IntersectsWith(frame),
+        };
 
         Add(Transcript, Landing, Header, HeaderDivider, Composer, Hints);
         CanFocus = true;
@@ -97,8 +98,7 @@ public sealed partial class TgChatWindow : Window
 
     internal void TickWelcome()
     {
-        Landing.AnimationPaused = IsModalPanelOpen || IsDocumentPanelOpen
-            || IsCommandPaletteOpen || IsSlashDropdownOpen;
+        Landing.AnimationPaused = IsModalPanelOpen || IsDocumentPanelOpen || IsCommandPaletteOpen;
         Landing.Tick();
     }
 
@@ -253,12 +253,6 @@ public sealed partial class TgChatWindow : Window
     /// Run (or on the first tick) is ignored, which the spike reproduced. Callers use
     /// this from a one-shot timeout once the window is live.
     /// </summary>
-    internal void SetWorkspaceContext(string label)
-    {
-        _workspaceContextPinned = true;
-        Header.SetWorkspace(label);
-    }
-
     public void FocusComposer()
     {
         SetFocus();

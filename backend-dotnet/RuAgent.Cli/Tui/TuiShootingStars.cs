@@ -5,8 +5,9 @@ internal static class TuiShootingStars
 {
     internal const int PeriodSeconds = 40;
     internal const int FirstShowerSeconds = 12;
-    internal const int MaxCells = 54;
-    private const double TailFraction = 0.22;
+    private const int TailSteps = 22;
+    internal const int MaxCells = 3 * (TailSteps + 2);
+    private const double TailFraction = 0.29;
     internal readonly record struct Cell(int Column, int Row, byte Dots, byte Color);
 
     // Sparse cells cover the full welcome viewport without another screen-sized
@@ -19,7 +20,8 @@ internal static class TuiShootingStars
         time %= 86400;
         var wave = (int)(time / PeriodSeconds);
         var phase = time % PeriodSeconds - FirstShowerSeconds;
-        if (phase < 0 || phase > 3) return 0;
+        // The last, staggered meteor must finish its extended tail too.
+        if (phase < 0 || phase > 3.1) return 0;
         var width = columns * 2;
         var height = rows * 4;
         var count = 0;
@@ -32,12 +34,12 @@ internal static class TuiShootingStars
             var progress = age / flight;
             var startX = 0.22 + slot * 0.23 + wave % 5 * 0.016;
             var travelX = slot % 2 == 0 ? -0.18 : 0.18;
-            for (var step = 16; step >= 0; step--)
+            for (var step = TailSteps; step >= 0; step--)
             {
-                var u = progress - step / 16d * TailFraction;
+                var u = progress - step / (double)TailSteps * TailFraction;
                 var x = (int)Math.Round(width * (startX + travelX * u));
                 var y = (int)Math.Round(height * (-0.03 + u * 1.03));
-                var shade = step == 0 ? (byte)8 : step < 4 ? (byte)7 : step < 9 ? (byte)6 : (byte)3;
+                var shade = step == 0 ? (byte)8 : step < 5 ? (byte)7 : step < 12 ? (byte)6 : (byte)3;
                 Dot(cells, ref count, columns, rows, x, y, shade);
                 if (step == 0) Dot(cells, ref count, columns, rows, x + 1, y, shade);
             }

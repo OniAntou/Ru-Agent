@@ -65,7 +65,7 @@ internal static class TgWelcomeWordmark
         {
             var color = column < ruWidth
                 ? Mix((112, 225, 187), (100, 187, 226), (double)column / ruWidth)
-                : Mix((215, 232, 236), (161, 193, 219), (double)(column - ruWidth - 1) / (Width - ruWidth - 1));
+                : Mix((100, 180, 135), (72, 156, 112), (double)(column - ruWidth - 1) / (Width - ruWidth - 1));
             if (row == 0) color = Mix(color, (247, 255, 253), 0.16);
             for (var level = 0; level < LightLevels; level++)
                 lights[(row * Width + column) * LightLevels + level] =

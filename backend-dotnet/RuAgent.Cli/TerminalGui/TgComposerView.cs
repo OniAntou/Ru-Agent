@@ -139,7 +139,7 @@ public sealed class TgComposerView : View
         var column = Inset;
         var remaining = Math.Max(0, width - Inset - column);
         var effort = remaining >= 24 && ReasoningEffort.Length > 0
-            ? TuiText.Truncate("reasoning: " + ReasoningEffort, Math.Max(0, remaining - 10)) : string.Empty;
+            ? TuiText.Truncate(ReasoningEffort, Math.Max(0, remaining - 10)) : string.Empty;
         var effortWidth = TuiText.VisibleWidth(effort);
         var afterEffort = remaining - effortWidth - (effortWidth > 0 ? 2 : 0);
         var providerWidth = afterEffort >= 28 ? Math.Min(18, afterEffort / 3) : 0;

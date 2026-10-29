@@ -1,5 +1,60 @@
 # MEMORY — Ru-Agent (máy của anh steal)
 
+## 2026-10-29 — Commit nhóm chỉnh sửa TUI
+
+- Anh yêu cầu commit vào branch hiện tại `casluminous/tui-welcome-polish`. Gom các chỉnh sửa đã làm sau merge dev: logo xanh/khe mềm đồng nhất, căn tâm thiên hà/prompt gần hơn, sao băng trắng đuôi dài, bỏ workspace heading/rút gọn effort, animation khi mởslash, palette Sixel ổn định và black matte che sao xuyên chữ; kèm regression/docs/MEMORY.
+- Rà diff/staged scope và gộp changelog theo trạng thái cuối, bỏ mục màu tím đã được thay thế. Giữ `TONG-KET-CONG-VIEC.md` và `docs/presentation/` ngoài commit; không đưa build/SDK probe/log ở task workspace vào Git. Không thay đổi thêm runtime sau bản đã cài/test; kiểm chứng đã ghi theo từng mục (cuối76 focused+7 docs, header74, meteor94 ở lượt tương ứng), không nhận là full matrix mới. Commit request này không bao gồm push.
+
+## 2026-10-29 — Nền đen che sao xuyên qua logo
+
+- Anh gửi ảnh các chấm li ti quanh/trong chữRU, yêu cầu che bằng phông đen. Thêm black matte theo bounds raster hoặc glyph+shadow: sky/lower stars/meteors không vẽ vào vùng logo; phần ngoài vẫn chạy. Giữ glyph, size/position, màu xanh, seams, bóng, sweep và cache.
+- Bổ sung matte opaque vào scaled output (cả các lỗ/padding alpha0 của source) cho Sixel/Kitty: driver có thể bỏ qua blank text cells do raster sở hữu nên chỉ mask text là chưa đủ tránh chấm cũ. Source prototype vẫn transparent và hai buffers/caches không đổi. Palette cố định giữ exact RGB0/0/0 bằng darkest slot nếu cần, không tăng32-color cap.
+- Cập nhật test cũ vốn yêu cầu sao hiện xuyên padding, kiểm tra backdrop đen/bitmapA255/Sixel opaque header; thêm2case graphics+glyph tại13.25s xác nhận có meteor đi qua logo nhưng không xuất hiện trong backdrop, sao bên ngoài và focus vẫn còn. Lượt mask-text76pass; sau harden bitmap opaque **76pass/0fail/0skip**, **7 docs guards pass**, diff check pass. Sau đó chỉ sửa2 comment và mô tả docs, rebuild/publish để binaries khớp source; không lặp test không cần thiết. Không full matrix/provider thật/manual native UI acceptance.
+- Anh xác nhận đã thoátRu, installer kiểm tra không cònCLI. CLI+Host Release self-contained stage thành công; cập nhật CLI vào lệnhRu, installed hash khớp stage **0516F9DA6A052D6C0C7143C28867FADCCF7A2389A59A80AD04D5A1D706AE44BC**, launcher smoke `0.1.2-preview.1`. Host source/hash không đổi. Evidence `work/tui-logo-black-backdrop` trong task workspace. **Ru đã cập nhật**, không commit/push/dừng cưỡng bức process.
+
+## 2026-10-29 — Ổn định màu/khe logo khi sweep chạy
+
+- Anh báo đang chạy có khối giống design cũ; anh xác nhận xảy ra ngay welcome, không mở menu. Rà renderer/cache và SDK Terminal.Gui2.5.0 pinned source. Thử giả thuyết glyph fallback/menu: fixture partial đầu không tạo đúng geometry, chỉnh fixture thì không tái hiện lỗi nên bỏ test thử này; không đổi menu/fallback production ở task này.
+- Tái hiện đúng lỗi màu Sixel: beam ởRU tại2.5s làm **6920 pixel của AGENT đổi màu sau quantization**, trong khi source pixel vùngAGENT hoàn toàn không đổi. Palette chọn lại mỗiframe làm sắc độ mặt/khe ô thay đổi, tạo cảm giác khối/lưới nhảy. Regression cũ fail; không kết luận đã tái hiện trực tiếp mọi artifact trên Windows Terminal thật.
+- Thêm `TgWordmarkPalette` qua API `IStaticPaletteBuilder`: lấy mẫu quiet+25frame sweep một lần, giữ khe1pixel/giao khe; cache tối đa32 palette theo cap1..32, dùng cùng palette cho ảnh/crop suốt chu kỳ. Chừa tối đa3 warm highlight slots để beam hẹp không bị thuật toán popularity loại bỏ; Kitty giữ fullRGB. Không thay glyph/shape/gradient xanh/layout/timing/engine.
+- Palette cố định đầu giúp ổn định vùng chưa chiếu nhưng focused73pass/1fail vì beam chưa sáng đủ; giữ nguyên assertion chất lượng, bổ sung warm anchors, targeted5pass. Cuối **74 focused pass/0fail/0skip**, **7 docs guards pass**, diff check pass. Test kiểm tra unchanged-region colors, palette qua26frame/reset với cap4/16/32, warm palette lookup zero allocations, mặt xanh/khe mềm/beam sáng, production encoder dùng palette mới. Không full matrix/provider thật/manual native UI acceptance hoặc perf benchmark mới.
+- Stage CLI+Host Release self-contained thành công. Đã hỏi anh thoát Ru; lúc cài kiểm tra không còn CLI process, publish CLI vào lệnhRu; installed SHA256 khớp stage **63C28BED9FC5730087DC0D66938F52A3FFD037AA2B8420A64E33FBC0319900B7**, launcher smoke `0.1.2-preview.1`. Host source/hash không đổi. Evidence/failure logs/SDK source inspect ở `work/tui-wordmark-artifacts` trong task workspace. **Ru đã cập nhật**, không commit/push/dừng cưỡng bức process.
+
+## 2026-10-29 — Giữ AGENT xanh lá theo lựa chọn mới
+
+- Anh báo trước lúc sweep chữ AGENT trông chuyển xanh và đồng ý dùng xanh lá luôn, không về tím. Đổi base AGENT sang gradient xanh RGB100/180/135 →72/156/112, dùng xuyên suốt quiet/sweep; giữ RU, warm beam, timing, seams, bóng và bố cục. Không khẳng định nguyên nhân hiển thị xanh trên bản tím vì chưa tái hiện trên terminal thật.
+- Thêm7 mốc regression sát lúc sweep bắt đầu/lặp lại, xác nhận toàn bộ AGENT giữ base xanh đến khi beam tới; giữ brightness-gain assertion cho beam và zero-allocation cache. **69 focused pass/0fail/0skip**, **7 docs guards pass**, diff check pass. Không full matrix/provider thật/manual native UI acceptance.
+- Build/stage CLI+Host Release self-contained; anh báo thoát Ru, xác nhận CLI process đã đóng rồi publish CLI vào lệnh Ru. Installed hash khớp staging **0655D22E5DE8C790011A39CA9923AA9CDA4ACDEDADE2BFD5E1523F6F294333AC**, launcher smoke `0.1.2-preview.1`. Host source/hash không đổi. Evidence `work/tui-green-agent` trong task workspace. **Ru đã cập nhật**, không commit/push/dừng cưỡng bức process.
+
+## 2026-10-29 — AGENT tím lam, tăng tương phản vệt sáng
+
+- Anh thấy mặt AGENT màu bạc gần màu vệt sáng nên khó thấy hiệu ứng, chọn **tím lam dịu**. Chỉ đổi native AGENT gradient sang RGB151/128/207 →101/128/204 trong `TgWelcomeWordmark`; giữ RU, màu vệt trắng vàng, top highlight16%, sweep2.5s/10s, glyph/raster, seams, bóng, vị trí và thiên hà/sao băng.
+- Cập nhật kiểm tra màu và thêm brightness-headroom assertion trong test sweep hiện có: cả top/body, đầu/cuối AGENT phải tăng độ sáng có trọng số hơn65/255 khi vệt đi qua. **62 focused pass/0fail/0skip**, **7 docs guards pass**, diff check pass. Không full matrix/provider thật/manual native UI acceptance.
+- Stage CLI+Host Release self-contained thành công; anh báo thoát Ru, installer xác nhận không có CLI process rồi publish vào lệnh Ru. Installed CLI hash khớp staging **A6B9E5C97D550A8A8822967B2B3A5518D9E89F4C8376464AFC83CB467494A627**, launcher smoke `0.1.2-preview.1`. Host source/hash không đổi, không dừng process. Evidence `work/tui-violet-agent` trong task workspace. **Ru đã cập nhật**, chưa commit/push.
+
+## 2026-10-29 — Thiên hà tiếp tục chạy khi mở slash menu
+
+- Anh báo bấm `/` thì thiên hà dừng. Nguyên nhân `TickWelcome` gộp slash dropdown vào điều kiện pause; bỏ riêng điều kiện này, giữ pause cho palette/modal/document và khi chat ẩn welcome. Dùng cùng clock/cadence20FPS, không thêm timer.
+- Để raster logo RenderAfterText không đè danh sách lệnh, Landing hỏi geometry dropdown lúc vẽ; nếu giao nhau thì bỏ raster placement, dùng glyph được native clipping, đóng menu phục hồi raster. Sky/meteors/light sweep vẫn tiến lên; không sửa focus/filter/phím chọn lệnh.
+- Thêm regression với cả graphics-supported và glyph fallback: mở `/` clock tiến, menu không dính Braille và giữ nguyên giữa2 frame, nền ngoài menu thực sự thay đổi, đóng menu hồi raster. **66 focused pass**, sau bổ sung assertion pixel nền **2 regression pass**; **7 docs guards pass**, diff check pass. Không full matrix/provider thật/manual Windows Terminal acceptance.
+- Stage CLI+Host Release self-contained thành công; không có CLI process, cập nhật lệnh `Ru` (Host source/hash không đổi). Installed CLI hash khớp staging **F934942D846A49B5E372257536B4E76B335D8DB9F27AE30F0E6CEC855AB856D4**, launcher smoke `0.1.2-preview.1`. Evidence `work/tui-slash-animation` trong task workspace. Không commit/push/dừng cưỡng bức process.
+
+## 2026-10-29 — Bỏ workspace heading, rút gọn reasoning
+
+- Anh yêu cầu bỏ tính năng hiển thị `Chưa chọn dự án · ~`/path phía trên và chỉ hiện giá trị reasoning (`max`, `high`...) thay vì prefix `reasoning:`. Xóa phần vẽ workspace, state/event ghim path, các lần kiểm tra Directory.Exists chỉ phục vụ nhãn và helper phân loại không còn dùng. Giữ workspace thật/parser, `/status` full path, policy, preset/token/cost, subagent strip và model settings.
+- Composer giữ budget/ellipsis/sanitization và thứ tự model → effort → provider, chỉ bỏ prefix. Cập nhật regression kiểm tra không có path trên welcome/chat/reset/feedback, status vẫn hiển thị path, nhãn max và màn hẹp không chứa prefix.
+- Test focused đầu75pass/2fail vì hai test còn yêu cầu path cũ; sửa kỳ vọng thành path không xuất hiện và giữ kiểm tra subagent alignment/token. Bỏ3 test classification vì chức năng đã xóa; lượt cuối **74pass/0fail/0skip**, docs guards **7pass**, diff check pass. Không full matrix/provider thật/manual native UI acceptance.
+- Anh báo đã thoát Ru; CLI process đã tắt, Host cũ vẫn chạy nhưng source/hash không đổi ở task này. Stage CLI+Host Release self-contained thành công, chỉ publish CLI vào đường dẫn lệnh Ru; installed SHA256 khớp staging **8C0F371A1C05B883268C85CBE60E2EC4578F6118510A2688E4F96961E6256725**, launcher version smoke `0.1.2-preview.1`. **Ru đã cập nhật**; không dừng tiến trình Host, không commit/push. Evidence `work/tui-minimal-header` tại task workspace.
+
+## 2026-10-29 — Logo đồng nhất, căn tâm thiên hà, sao băng trắng
+
+- Anh yêu cầu AGENT giống form RU, đưa logo vào tâm thiên hà, prompt gần logo hơn và sao băng trắng/đuôi dài. Áp dụng cùng khe mềm80%/giao64% cho toàn bộ chữ, giữ glyph, kích thước354x84, gradient, sweep, viền/bóng và synchronized output.
+- Tách canvas thiên hà khỏi vị trí prompt: khoảng75% viewport, logo theo core50%/64%, prompt cách2 dòng sau logo3 dòng; clamp và thu canvas khi draft cao/terminal thấp. Sky, lower stars và meteors đều tránh composer/hint. Không ảnh hưởng bố cục chat.
+- Palette meteor trắng/xám; trail fraction .22→.29, samples16→22, stack bound54→72 cells. Giữ tốc độ, paths, wave40s/first12s; chờ tối đa3.1s để đuôi meteor thứ3 không bị cắt. Không thêm timer/engine/provider requests.
+- Lượt focused đầu92pass/2fail: kỳ vọng cũ sky phải kết thúc trước prompt và đuôi hết ở55s. Cập nhật kiểm tra theo thiết kế mới, sửa cutoff wave3→3.1 để đuôi dài thực sự thoát hết; lượt cuối **94pass/0fail/0skip**. Docs guard đầu6pass/1fail vì design spec đặt trong docs/superpowers/specs bị quy định repo cấm; chuyển bản thiết kế sang task workspace, giữ guard nguyên vẹn; cuối **7pass**. Diff check pass. Không full matrix/provider thật/manual native UI acceptance.
+- Anh báo đã thoát Ru; xác nhận không còn CLI/Host process. Build/stage và publish cả CLI/Host Release win-x64 self-contained từ source đã sync, installed hashes khớp staging; launcher `bin/ru.cmd --version`=`0.1.2-preview.1`. **Lệnh Ru đã cập nhật**, CLI SHA256 `3AFFD4B86784EFA404A610DF1EB8AC8610641D85D8159D9C2B0E9BB75158F3BB`, Host `F024F59B50C1098DC9C624762039FC2424D3A51D627E77928CB2677FB681FFBE`.
+- Logs/test scripts/design/staging/install evidence: `work/tui-core-white-meteors` trong task workspace. Không dừng cưỡng bức process, commit hay push. Giữ file phân tích untracked ngoài phạm vi.
+
 ## 2026-10-28 — Sync dev vào branch TUI
 
 - Anh yêu cầu sync code mới nhất. Branch `casluminous/tui-welcome-polish` đã khớp remote ở9f94d33f; `origin/dev` có27 commit mới, target **33d0f92b** (xác nhận lại remote trước khi chốt). Tạo backup local `backup/casluminous-tui-before-sync-20261028`, merge dev vào branch TUI, không reset/rebase hay ghi đè file untracked. Nhận skills discovery/workflow, computer use, provider web search/fetch, paged SQL history và các bản sửa policy/context/GUI từ dev.

@@ -25,13 +25,16 @@ internal static class TgChatLayout
         var homeLeft = Math.Max(0, (columns - width) / 2);
         window.Composer.SetViewportBudget(width, rows - 10);
         window.Composer.Height = window.Composer.LayoutHeight;
-        // Reserve roughly the top three quarters for the galaxy. A taller draft
-        // can grow upward; short terminals still keep input and hints on screen.
-        var homeComposerTop = Math.Max(0, Math.Min((int)(rows * 0.75), rows - window.Composer.LayoutHeight - 2));
-        var skyRows = Math.Max(0, homeComposerTop - 1);
-        var homeTop = Math.Max(0, Math.Min(
-            (rows - TuiHeader.WordmarkRows) / 2,
-            homeComposerTop - TuiHeader.WordmarkRows - 1));
+        // Keep the galaxy's canvas independent of the prompt: moving input up
+        // must not pull the core up again and leave the logo chasing it.
+        var maxComposerTop = Math.Max(0, rows - window.Composer.LayoutHeight - 2);
+        var maxLogoTop = Math.Max(0, maxComposerTop - TuiHeader.WordmarkRows - 1);
+        var skyRows = Math.Clamp(Math.Min((int)(rows * 0.75) - 1,
+            (int)((maxLogoTop + TuiHeader.WordmarkRows / 2d) / TuiGalaxySky.CoreYFraction)),
+            0, TuiGalaxySky.MaxRows);
+        var homeTop = Math.Clamp((int)Math.Round(skyRows * TuiGalaxySky.CoreYFraction
+            - TuiHeader.WordmarkRows / 2d), 0, maxLogoTop);
+        var homeComposerTop = Math.Min(maxComposerTop, homeTop + TuiHeader.WordmarkRows + 2);
         window.Composer.X = homeLeft;
         window.Composer.Width = width;
         window.Composer.Y = home ? homeComposerTop : Pos.AnchorEnd(window.Composer.LayoutHeight + 1);

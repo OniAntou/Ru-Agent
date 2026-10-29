@@ -140,8 +140,12 @@ public sealed class AgentSidePanelUiContractTests
             GuiSource.MethodBody(code, "OnCardChangesRowClick"),
             StringComparison.Ordinal);
         Assert.Contains(
-            "OpenTab",
+            "OpenSidePanelTab(kind)",
             GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OnSidePanelTabOpenRequested"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "_sidePanelPolicy.OpenTab(_activeSessionId, kind)",
+            GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OpenSidePanelTab"),
             StringComparison.Ordinal);
     }
 

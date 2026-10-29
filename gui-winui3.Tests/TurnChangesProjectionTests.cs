@@ -135,21 +135,43 @@ public sealed class TurnChangesProjectionTests
     }
 
     [Fact]
-    public void The_card_and_reader_virtualize_long_lists_and_release_native_subscriptions()
+    public void The_card_bounds_its_file_list_and_releases_native_subscriptions()
     {
         var card = GuiSource.Xml("Controls", "TurnChangesSummaryControl.xaml");
         Assert.Equal("ListView", GuiSource.Require(card, "FilesList").Name.LocalName);
         Assert.Equal("320", (string?)GuiSource.Require(card, "FilesList").Attribute("MaxHeight"));
-        var reader = GuiSource.Xml("Controls", "TurnChangesDetailsControl.xaml");
-        Assert.Equal("ListView", GuiSource.Require(reader, "EditsList").Name.LocalName);
         var code = GuiSource.Text("Controls", "TurnChangesSummaryControl.xaml.cs");
         var cleanup = GuiSource.MethodBody(code, "StopObserving");
         Assert.Contains("PropertyChanged -=", cleanup, StringComparison.Ordinal);
         Assert.Contains("CollectionChanged -=", cleanup, StringComparison.Ordinal);
-        var gate = GuiSource.Text("Services", "ContentDialogGate.cs");
-        var show = GuiSource.MethodBody(gate, "ShowAsync");
-        Assert.True(show.IndexOf("isCurrent?.Invoke()", StringComparison.Ordinal)
-            < show.IndexOf("dialog.ShowAsync()", StringComparison.Ordinal));
+        var navigation = GuiSource.Text("Controls", "TurnChangesSummaryControl.Details.cs");
+        Assert.DoesNotContain("ContentDialog", navigation, StringComparison.Ordinal);
+        Assert.Contains("DetailsRequested?.Invoke", GuiSource.MethodBody(navigation, "RequestDetails"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Turn_cards_navigate_to_the_existing_changes_list_without_a_separate_reader()
+    {
+        var transcript = GuiSource.Xml("Views", "ChatView.xaml");
+        var card = Assert.Single(transcript.Descendants(), element => element.Name.LocalName == "TurnChangesSummaryControl");
+        Assert.Equal("OnTurnChangesRequested", (string?)card.Attribute("DetailsRequested"));
+
+        var panel = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        var changes = GuiSource.Require(panel, "ChangesBody");
+        Assert.Contains(changes, GuiSource.Require(panel, "ChangesList").Ancestors());
+        Assert.DoesNotContain(changes.Descendants(), element => element.Name.LocalName is "ComboBox" or "TurnChangesDetailsControl");
+        Assert.DoesNotContain(changes.Descendants(), element => (string?)element.Attribute("Click") == "OnSessionChangesClick");
+
+        var view = GuiSource.ViewText("ChatView");
+        var open = GuiSource.MethodBody(view, "OnTurnChangesRequested");
+        Assert.Contains("Messages.Contains(owner)", open, StringComparison.Ordinal);
+        Assert.Contains("owner.SessionId, _activeSessionId", open, StringComparison.Ordinal);
+        Assert.Contains("TurnChangesProjection.ForMessage(owner)", open, StringComparison.Ordinal);
+        Assert.Contains("OpenSidePanelTab(SidePanelTabKind.Changes)", open, StringComparison.Ordinal);
+        Assert.Contains("SidePanel.RevealChange(_focusedChangeActivityId)", open, StringComparison.Ordinal);
+        Assert.Contains("ClearChangeNavigation", GuiSource.MethodBody(view, "ResetAgentState"), StringComparison.Ordinal);
+        Assert.Contains("ClearChangeNavigation", GuiSource.MethodBody(view, "Dispose"), StringComparison.Ordinal);
+        Assert.Contains("IsTurnChangesOverlay()", GuiSource.MethodBody(view, "IsSidePanelOverlay"), StringComparison.Ordinal);
     }
 
     [Fact]

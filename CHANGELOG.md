@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Open View changes in the existing right Changes panel instead of
+  a popup. Clicking a file expands and reveals its edit in the normal session list.
+
+- **feat(gui)**: Give Markdown headings a clearer size hierarchy and compact the
+  per-turn changes card with inline line totals, a smaller icon and tighter rows.
+
 - **feat(gui)**: Put the workspace-sidebar toggle at the far left of the title bar
   and the right-panel toggle at the far right of the conversation header.
 

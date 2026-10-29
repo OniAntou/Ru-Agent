@@ -328,6 +328,8 @@ namespace RuApp.Views
 
         private void ResetAgentState(bool preserveTranscript = false)
         {
+            ClearChangeNavigation();
+            _changesPanelExplicitlyOpened = false;
             _sidePanelTasksRunId = null;
             SidePanel.ClearPreview();
             _taskObservation.Reset();

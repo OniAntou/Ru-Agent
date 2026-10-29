@@ -905,6 +905,7 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            ClearChangeNavigation();
             SidePanel.SubagentsChanged -= OnSubagentsChanged;
         SidePanel.DisposeSubagents();
             ModelSelection.PickerProjectionReady -= OnModelSelectionPickerReady;

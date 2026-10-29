@@ -79,7 +79,7 @@ public sealed partial class ChatView
             return;
         }
 
-        var projection = ChangesTabProjection.ProjectSession(Messages, AgentActivities);
+        var projection = ChangesTabProjection.ProjectSession(Messages, AgentActivities, _focusedChangeActivityId);
         SidePanel.RenderChanges(projection.Rows, projection.Added, projection.Removed);
         _sidePanelEditsDirty = false;
     }

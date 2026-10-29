@@ -429,7 +429,7 @@
                                             Visibility="{x:Bind ShowLegacyText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
-                    <controls:TurnChangesSummaryControl Message="{x:Bind}" />
+                    <controls:TurnChangesSummaryControl Message="{x:Bind}" DetailsRequested="OnTurnChangesRequested" />
                     <!--
                       An error that has somewhere to go next offers that place. A
                       missing provider key is the case this exists for: the message

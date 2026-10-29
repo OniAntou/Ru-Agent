@@ -337,6 +337,10 @@ approval matching; nonempty shell argv allow rules use literal, case-sensitive
 whole invocations, so script wildcards cannot widen a remembered permission.
 Deny and ask rules retain pattern matching.
 
+Markdown headings scale from the selected body size: H1 adds 6px, H2 4px,
+H3 2px and H4 1px; H5/H6 retain body size. Semibold weight and heading-specific
+line height distinguish sections while keeping wrapped titles readable.
+
 Markdown embedded code/table frames track the available reading-column width
 without reparsing on resize. Code preserves line boundaries with horizontal
 scrolling; wide tables scroll within the column. Plain table-cell extraction
@@ -612,18 +616,22 @@ ordered edit previews and line offsets instead of concatenating unrelated hunks.
 
 `TurnChangesSummaryControl` sits after the reply text in the assistant template.
 It hides while streaming or without edits, shows four files initially and expands
-into a height-bounded, virtualized list. It observes message/collection changes
+into a height-bounded, virtualized list. Its compact header places line totals
+beside the wrapping title, with a 28px icon, a subdued outline and 32px file rows.
+It observes message/collection changes
 while loaded and item updates only once settled; unloading releases subscriptions.
 The existing run-owned transcript replay restores old turns without adopting the
 next run's edits. The session-wide Changes tab keeps its independent projection.
 
-File clicks and View changes open `TurnChangesDetailsControl`, a read-only native
-reader with a file picker and virtualized edits using `FileEditPreviewControl`.
-Missing previews are explicit. The shared dialog gate rechecks optional ownership
-after waiting, so a queued reader cannot open for a recycled message/session.
-Unloading, rebinding or resuming the message closes the reader; viewport changes
-resize its content. It uses recorded data only, with no file writes, new endpoint
-or permission changes.
+File clicks and View changes raise a navigation request to the owning chat view.
+The view validates the current session/message and opens the existing right-panel
+Changes tab. There is no separate turn reader, file picker or back navigation.
+Clicking a file expands and scrolls to its latest recorded edit in the normal
+session list. An older selected edit can replace the oldest visible row within the
+100-row cap; session totals still cover every edit. Live refreshes retain expanded
+diffs. Explicit turn navigation opens an overlay on narrow windows instead of
+suppressing the panel. Session reset or tab closure clears the navigation target.
+It uses recorded data only, with no file writes, new endpoint or permission changes.
 
 ## Session Side Surface
 

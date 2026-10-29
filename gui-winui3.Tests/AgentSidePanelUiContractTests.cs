@@ -75,7 +75,7 @@ public sealed class AgentSidePanelUiContractTests
             Assert.Equal("OnChipPointerExited", GuiSource.AttributeValue(element, "PointerExited"));
         }
 
-        var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
+        var code = GuiSource.Text("Controls", "AgentSidePanelControl.Tabs.cs");
         Assert.Contains(
             "SetChipHovered",
             GuiSource.MethodBody(code, "OnChipPointerEntered"),
@@ -152,12 +152,13 @@ public sealed class AgentSidePanelUiContractTests
         foreach (var chip in new[] { "ChangesChip", "TasksChip", "FilesChip" })
         {
             var element = GuiSource.Require(document, chip);
-            Assert.Equal("OnChipPointerPressed", GuiSource.AttributeValue(element, "PointerPressed"));
-            Assert.Equal("OnChipPointerMoved", GuiSource.AttributeValue(element, "PointerMoved"));
-            Assert.Equal("OnChipPointerReleased", GuiSource.AttributeValue(element, "PointerReleased"));
+            Assert.Equal(chip.Replace("Chip", string.Empty, StringComparison.Ordinal), GuiSource.AttributeValue(element, "Tag"));
         }
 
-        var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
+        var code = GuiSource.Text("Controls", "AgentSidePanelControl.Tabs.cs");
+        var wiring = GuiSource.MethodBody(code, "InitializeTabInteractions");
+        Assert.Contains("PointerPressedEvent", wiring, StringComparison.Ordinal);
+        Assert.Contains("handledEventsToo: true", wiring, StringComparison.Ordinal);
         Assert.Contains("TabMoved", GuiSource.MethodBody(code, "OnChipPointerMoved"), StringComparison.Ordinal);
         Assert.Contains("Move", GuiSource.MethodBody(code, "SyncChipOrder"), StringComparison.Ordinal);
         Assert.Contains(
@@ -225,10 +226,17 @@ public sealed class AgentSidePanelUiContractTests
     }
 
     [Fact]
-    public void The_title_bar_toggle_sits_beside_the_caption_buttons_and_forwards_input()
+    public void Sidebar_controls_live_at_the_left_title_bar_edge_and_right_chat_header_edge()
     {
         var document = GuiSource.Xml("MainWindow.xaml");
-        GuiSource.Require(document, "SidePanelToggleButton");
+        Assert.DoesNotContain("SidePanelToggleButton", GuiSource.XamlNames(document));
+        var navigation = GuiSource.Require(document, "NavigationSidebarToggleButton");
+        Assert.Same(GuiSource.Require(document, "AppTitleBar"), navigation.Parent);
+        Assert.Equal("Left", GuiSource.AttributeValue(navigation, "HorizontalAlignment"));
+        var chat = GuiSource.Xml("Views", "ChatView.xaml");
+        var toggle = GuiSource.Require(chat, "SidePanelToggleButton");
+        Assert.True(GuiSource.IsDescendantOf(toggle, GuiSource.Require(chat, "ChatHeader")));
+        Assert.Equal("Right", GuiSource.AttributeValue(toggle, "HorizontalAlignment"));
         var update = GuiSource.Require(document, "TitleBarUpdateButton");
         Assert.Equal("OnTitleBarUpdateClick", GuiSource.AttributeValue(update, "Click"));
 
@@ -241,11 +249,12 @@ public sealed class AgentSidePanelUiContractTests
         string region = GuiSource.MethodBody(code, "ApplySidePanelToggleRegion");
         Assert.Contains("SetRegionRects", region, StringComparison.Ordinal);
         Assert.Contains("TitleBarActions", region, StringComparison.Ordinal);
+        Assert.Contains("NavigationSidebarToggleButton", region, StringComparison.Ordinal);
         Assert.Contains("ShowUpdates", GuiSource.MethodBody(code, "OnTitleBarUpdateClick"), StringComparison.Ordinal);
 
         Assert.Contains(
             "ToggleSidePanel",
-            GuiSource.MethodBody(code, "OnSidePanelToggleClick"),
+            GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OnSidePanelToggleClick"),
             StringComparison.Ordinal);
         Assert.Contains(
             "ForgetSidePanelState",
@@ -254,5 +263,13 @@ public sealed class AgentSidePanelUiContractTests
 
         string forget = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ForgetSidePanelState");
         Assert.Contains("Remove", forget, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Summary_card_does_not_add_separate_files_or_terminal_shortcuts()
+    {
+        var names = GuiSource.XamlNames(GuiSource.Xml("Controls", "AgentSidePanelControl.xaml"));
+        Assert.DoesNotContain("CardFilesButton", names);
+        Assert.DoesNotContain("CardTerminalButton", names);
     }
 }

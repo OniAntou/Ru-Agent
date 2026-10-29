@@ -173,8 +173,14 @@ public sealed partial class ChatView
         }
 
         MainWindow.Instance?.UpdateSidePanelToggleState(canShow, mode == AgentSidePanelMode.Hidden);
+        SidePanelToggleButton.IsEnabled = canShow;
+        string toggleLabel = mode == AgentSidePanelMode.Hidden ? "Show side panel" : "Hide side panel";
+        Microsoft.UI.Xaml.Controls.ToolTipService.SetToolTip(SidePanelToggleButton, toggleLabel);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(SidePanelToggleButton, toggleLabel);
         UpdateTaskRefreshTimer(isVisible);
     }
+
+    private void OnSidePanelToggleClick(object sender, RoutedEventArgs e) => ToggleSidePanel();
 
     private double ReserveFor(AgentSidePanelMode mode) =>
         mode switch
@@ -264,6 +270,8 @@ public sealed partial class ChatView
         ApplySidePanelState();
     }
 
+    private readonly System.Collections.Generic.HashSet<(string Run, string Execution)> _taskStopsInFlight = new();
+
     private async void OnSidePanelTaskStopRequested(object? sender, string executionId)
     {
         if (_agentController is null)
@@ -276,6 +284,10 @@ public sealed partial class ChatView
         {
             return;
         }
+
+        var stopKey = (runId, executionId);
+        if (!_taskStopsInFlight.Add(stopKey)) return;
+        SidePanel.SetTaskStopping(executionId, true);
 
         long generation = _sessionOpenGeneration;
         var controller = _agentController;
@@ -296,6 +308,11 @@ public sealed partial class ChatView
             if (generation != _sessionOpenGeneration) return;
             SidePanel.SetTasksStatus("Stop failed; the host did not answer.");
             return;
+        }
+        finally
+        {
+            _taskStopsInFlight.Remove(stopKey);
+            SidePanel.SetTaskStopping(executionId, false);
         }
 
         await RefreshAgentTasksAsync();

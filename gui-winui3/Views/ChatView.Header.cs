@@ -13,8 +13,8 @@ namespace RuApp.Views
     /// <summary>
     /// The conversation header above the transcript: a workspace › title
     /// breadcrumb, a read-only label for the permission preset, and a working
-    /// indicator while a run is active. It shows with the transcript and stays
-    /// away on the welcome screen.
+    /// indicator while a run is active and a right-side panel toggle. It shows
+    /// with the transcript and stays away on the welcome screen.
     /// </summary>
     public sealed partial class ChatView
     {
@@ -31,6 +31,7 @@ namespace RuApp.Views
             ChatHeaderPermission.SizeChanged += OnChatHeaderSizeChanged;
             ChatHeaderWorkspace.SizeChanged += OnChatHeaderSizeChanged;
             ChatHeaderRunStatus.SizeChanged += OnChatHeaderSizeChanged;
+            SidePanelToggleButton.SizeChanged += OnChatHeaderSizeChanged;
             _chatHeaderVisibilityToken = ChatContentGrid.RegisterPropertyChangedCallback(
                 UIElement.VisibilityProperty, OnChatHeaderHostVisibilityChanged);
             UpdateChatHeaderTitle();
@@ -130,11 +131,13 @@ namespace RuApp.Views
         // width the other parts leave rather than pushing them off the bar.
         private void FitChatHeaderTitle()
         {
-            var used = ChatHeaderPermission.ActualWidth + ChatHeaderLeading.Spacing;
+            var used = ChatHeaderPermission.ActualWidth + ChatHeaderPermission.Margin.Left
+                + ChatHeaderPermission.Margin.Right + ChatHeaderLeading.Spacing
+                + SidePanelToggleButton.ActualWidth + 2 * ChatHeader.ColumnSpacing;
             if (ChatHeaderWorkspace.Visibility == Visibility.Visible)
                 used += ChatHeaderWorkspace.ActualWidth + ChatHeaderBreadcrumbSeparator.ActualWidth + 2 * ChatHeaderLeading.Spacing;
             if (ChatHeaderRunStatus.Visibility == Visibility.Visible)
-                used += ChatHeaderRunStatus.ActualWidth + ChatHeaderLeading.Spacing;
+                used += ChatHeaderRunStatus.ActualWidth;
             var available = ChatHeader.ActualWidth - ChatHeader.Padding.Left - ChatHeader.Padding.Right - used;
             ChatHeaderTitle.MaxWidth = Math.Max(ChatHeaderMinTitleWidth, available);
         }
@@ -148,6 +151,7 @@ namespace RuApp.Views
             ChatHeaderPermission.SizeChanged -= OnChatHeaderSizeChanged;
             ChatHeaderWorkspace.SizeChanged -= OnChatHeaderSizeChanged;
             ChatHeaderRunStatus.SizeChanged -= OnChatHeaderSizeChanged;
+            SidePanelToggleButton.SizeChanged -= OnChatHeaderSizeChanged;
             ChatContentGrid.UnregisterPropertyChangedCallback(UIElement.VisibilityProperty, _chatHeaderVisibilityToken);
         }
     }

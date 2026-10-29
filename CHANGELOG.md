@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Put the workspace-sidebar toggle at the far left of the title bar
+  and the right-panel toggle at the far right of the conversation header.
+
+- **feat(gui)**: Polish the floating session card and right details panel: compact
+  task previews, icon tabs with a readable selected label,
+  keyboard tab switching/closing, and refresh/Stop feedback. File refresh retains
+  expanded folders and the previous listing on failure. Rapid tab transitions and
+  folder reopens discard superseded work instead of leaving stale animation or rows.
+
 - **feat(gui)**: Settings chooses the agent activity style with a Verbose / Compact
   segmented control instead of a Compact on/off switch.
 

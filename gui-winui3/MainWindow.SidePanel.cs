@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -7,19 +8,18 @@ using RuApp.Services;
 namespace RuApp
 {
     /// <summary>
-    /// The title bar's side-surface toggle and update action sit left of the
-    /// system caption buttons. Interactive title-bar content needs explicit
-    /// passthrough regions, so the action group's rectangle is registered with the
-    /// window's non-client input source and refreshed whenever the bar's layout
-    /// changes.
+    /// The title bar keeps the workspace-sidebar toggle at the left edge and the
+    /// update action beside the caption buttons. Register separate passthrough
+    /// regions so the space between them remains available for dragging.
     /// </summary>
     public sealed partial class MainWindow
     {
         private Windows.Graphics.RectInt32? _titleBarActionsRegion;
+        private Windows.Graphics.RectInt32? _navigationSidebarRegion;
 
         private void InitializeSidePanelToggle()
         {
-            if (AppTitleBar is null || SidePanelToggleButton is null)
+            if (AppTitleBar is null || NavigationSidebarToggleButton is null)
             {
                 return;
             }
@@ -40,7 +40,7 @@ namespace RuApp
         {
             if (_appWindow is null
                 || AppTitleBar?.XamlRoot is not { } xamlRoot
-                || SidePanelToggleButton is null)
+                || NavigationSidebarToggleButton is null)
             {
                 return;
             }
@@ -49,10 +49,12 @@ namespace RuApp
             double captionHeight = TitleBarLayout.PixelsToLayoutUnits(_appWindow.TitleBar.Height, scale);
             if (captionHeight > 0)
             {
-                SidePanelToggleButton.Height = captionHeight;
                 NavigationSidebarToggleButton.Height = captionHeight;
+                TitleBarActions.Height = captionHeight;
             }
 
+            NavigationSidebarToggleButton.Margin = new Thickness(
+                TitleBarLayout.InsetInLayoutUnits(_appWindow.TitleBar.LeftInset, scale), 0, 0, 0);
             TitleBarActions.Margin = new Thickness(
                 0,
                 0,
@@ -64,51 +66,52 @@ namespace RuApp
         private void ApplySidePanelToggleRegion(double scale)
         {
             if (_appWindow is null
-                || TitleBarActions is null
-                || TitleBarActions.ActualWidth <= 0)
+                || NavigationSidebarToggleButton is null
+                || NavigationSidebarToggleButton.ActualWidth <= 0)
             {
                 return;
             }
 
-            var bounds = TitleBarActions.TransformToVisual(null).TransformBounds(
-                new Windows.Foundation.Rect(
-                    0,
-                    0,
-                    TitleBarActions.ActualWidth,
-                    TitleBarActions.ActualHeight));
-            var region = TitleBarLayout.ToPhysicalRect(bounds, scale);
-            if (_titleBarActionsRegion is { } previous && previous.Equals(region)) return;
+            var navigation = RegionFor(NavigationSidebarToggleButton);
+            var update = TitleBarUpdateButton.Visibility == Visibility.Visible ? RegionFor(TitleBarActions) : null;
+            if (Nullable.Equals(_navigationSidebarRegion, navigation) && Nullable.Equals(_titleBarActionsRegion, update)) return;
+            var regions = new List<Windows.Graphics.RectInt32>();
+            if (navigation is { } left) regions.Add(left);
+            if (update is { } right) regions.Add(right);
             var source = InputNonClientPointerSource.GetForWindowId(_appWindow.Id);
             source.SetRegionRects(
                 NonClientRegionKind.Passthrough,
-                new[] { region });
-            _titleBarActionsRegion = region;
+                regions.ToArray());
+            _navigationSidebarRegion = navigation;
+            _titleBarActionsRegion = update;
+
+            Windows.Graphics.RectInt32? RegionFor(FrameworkElement element)
+            {
+                if (element.ActualWidth <= 0 || element.ActualHeight <= 0) return null;
+                var bounds = element.TransformToVisual(null).TransformBounds(new Windows.Foundation.Rect(
+                    0, 0, element.ActualWidth, element.ActualHeight));
+                return TitleBarLayout.ToPhysicalRect(bounds, scale);
+            }
         }
 
         private void OnWindowActivatedForSidePanelToggle(object sender, WindowActivatedEventArgs args)
         {
-            if (SidePanelToggleButton is null)
+            if (NavigationSidebarToggleButton is null)
             {
                 return;
             }
 
             bool isActive = args.WindowActivationState != WindowActivationState.Deactivated;
-            Services.UiMotion.FadeOpacity(SidePanelToggleButton, isActive ? 1 : 0.55);
             Services.UiMotion.FadeOpacity(NavigationSidebarToggleButton, isActive ? 1 : 0.55);
         }
 
         /// <summary>
         /// The chat reports whether its side panel can show and whether it is hidden;
-        /// the toggle's enabled state and wording are bound to the shell.
+        /// keep the command palette in sync with the conversation header control.
         /// </summary>
         public void UpdateSidePanelToggleState(bool canToggle, bool isHidden)
         {
             Shell.SetSidePanelState(canToggle, isHidden);
-        }
-
-        private void OnSidePanelToggleClick(object sender, RoutedEventArgs e)
-        {
-            _chatView?.ToggleSidePanel();
         }
     }
 }

@@ -17,14 +17,27 @@ namespace RuApp.Controls
     /// </summary>
     public sealed partial class AgentSidePanelControl
     {
-        private const int MaxFileTreeRows = 1500;
+        private const int MaxFileTreeRows = FileTreeSnapshotLoader.MaxRows;
 
         public ObservableCollection<FileTreeRow> Files { get; } = new();
 
         private string? _workspacePath;
         private FileTreeRefreshController? _filesRefresh;
         private FileTreeRefreshController FilesRefresh => _filesRefresh ??= new(
-            root => Task.Run(() => FileTreeLister.List(root, depth: 0)), ApplyFilesListing);
+            root =>
+            {
+                var expanded = Files.Where(row => row.IsExpanded).Select(row => row.FullPath)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                return Task.Run(() => FileTreeSnapshotLoader.Load(root, expanded));
+            }, ApplyFilesListing, SetFilesLoading);
+
+        private void SetFilesLoading(bool loading)
+        {
+            FilesLoadingRing.IsActive = loading;
+            FilesLoadingRing.Visibility = loading ? Visibility.Visible : Visibility.Collapsed;
+            FilesRefreshButton.IsEnabled = !loading && _workspacePath is not null;
+            FilesList.IsEnabled = !loading;
+        }
 
         public void SetWorkspace(string? path)
         {
@@ -57,13 +70,17 @@ namespace RuApp.Controls
 
         private Task RefreshFilesAsync()
         {
-            Files.Clear();
-            ShowFilesStatus(_workspacePath is null ? "No workspace open." : "Loading…");
+            ShowFilesStatus(Files.Count > 0 ? null : _workspacePath is null ? "No workspace open." : "Loading…");
             return FilesRefresh.RefreshAsync(_workspacePath);
         }
 
         private void ApplyFilesListing(FileTreeListing? listing, bool failed)
         {
+            if (failed && Files.Count > 0)
+            {
+                ShowFilesStatus("Refresh failed. Showing the previous listing; refresh to retry.");
+                return;
+            }
             Files.Clear();
             if (listing is null)
             {
@@ -71,7 +88,7 @@ namespace RuApp.Controls
                 return;
             }
             foreach (var row in listing.Rows) Files.Add(row);
-            if (listing.Truncated) Files.Add(FileTreeRow.Note("… more entries not listed", 0));
+            if (listing.Truncated && Files.Count < MaxFileTreeRows) Files.Add(FileTreeRow.Note("… more entries not listed", 0));
             ShowFilesStatus(listing.InstallationFilesHidden
                 ? "Application files hidden. Your files remain visible."
                 : Files.Count == 0 ? "This folder is empty." : null);
@@ -102,6 +119,7 @@ namespace RuApp.Controls
 
                 row.IsExpanded = true;
                 var generation = FilesRefresh.Generation;
+                long expansionVersion = row.ExpansionVersion;
                 FileTreeListing listing;
                 try
                 {
@@ -111,13 +129,15 @@ namespace RuApp.Controls
                 }
                 catch (Exception)
                 {
-                    if (generation != FilesRefresh.Generation) return;
-                    row.IsExpanded = false;
-                    InsertAfter(row, new[] { FileTreeRow.Note("Cannot read this folder.", row.Depth + 1) });
+                    if (generation != FilesRefresh.Generation || expansionVersion != row.ExpansionVersion) return;
+                    // Keep the failed branch expanded so collapsing removes its
+                    // note before a retry; otherwise each failed reopen adds a row.
+                    InsertAfter(row, BoundFileRows(row, new FileTreeListing(
+                        [FileTreeRow.Note("Cannot read this folder. Collapse and reopen to retry.", row.Depth + 1)], false)));
                     return;
                 }
 
-                if (generation != FilesRefresh.Generation || !row.IsExpanded)
+                if (generation != FilesRefresh.Generation || expansionVersion != row.ExpansionVersion || !row.IsExpanded)
                 {
                     return;
                 }
@@ -137,12 +157,14 @@ namespace RuApp.Controls
             int remaining = MaxFileTreeRows - Files.Count;
             if (remaining <= 0)
             {
-                return new[] { FileTreeRow.Note("… more entries not listed", parent.Depth + 1) };
+                parent.IsExpanded = false;
+                ShowFilesStatus("File list limit reached. Collapse other folders or refresh to continue.");
+                return Array.Empty<FileTreeRow>();
             }
 
             var rows = new List<FileTreeRow>();
-            bool overflow = listing.Rows.Count > remaining;
-            int take = overflow ? remaining - 1 : listing.Rows.Count;
+            bool overflow = listing.Rows.Count > remaining || listing.Truncated;
+            int take = Math.Min(listing.Rows.Count, remaining - (overflow ? 1 : 0));
             for (var index = 0; index < take && index < listing.Rows.Count; index++)
             {
                 rows.Add(listing.Rows[index]);

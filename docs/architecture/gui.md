@@ -223,8 +223,8 @@ Workspaces, Recents and CLI Sessions headings pair their labels with decorative
 grid, history and minimal terminal-prompt icons; the labels and existing controls
 remain the accessible interaction targets.
 `SidebarLayoutState` owns one expanded width in the 220–360 px range for every
-window tier. The title-bar workspace-sidebar toggle hides it completely and
-restores its last width. `MainWindow.SidebarLayout.cs` handles pointer identity,
+window tier. The workspace-sidebar toggle at the far left of the title bar hides
+it completely and restores its last width. `MainWindow.SidebarLayout.cs` handles pointer identity,
 capture cancellation and width presentation; the focusable splitter exposes
 RangeValue, arrows and Home/End. Ctrl+Left/Right uses the same bounds; double-click
 resets to 250 px. The splitter has a real 10 px layout column and transparent hit
@@ -285,7 +285,8 @@ preset, read again on every open because the chat can narrow Full Access without
 event; an adopted preset repaints Settings only while its session is still active, and a
 preset chosen in Settings is applied to the chat. A settings save invalidates the catalogs
 and only the newest provider-selection reload applies. The view model also owns the
-theme choice and its persistence and the title bar's update and side-panel entries.
+theme choice and its persistence, the title bar's update entry and the command
+palette's side-panel state.
 `MainWindow` keeps windowing, the title-bar region, the composition of the Host-bound
 services and views, dialogs, layout and every animation. `HostShellBackend` resolves the
 API service, health service and catalog controllers per call, because a reconnect
@@ -512,8 +513,11 @@ side surface and composer. Its left side is a breadcrumb: the workspace folder's
 the other parts leave. After the title a label names the permission preset with the
 Settings names (Plan, Standard, Full Access) and a dot coloured by risk: info, success
 and warning. The label is a notice, not a control: the preset changes only in Settings
-or the command palette. On the right, "Working" with a breathing dot shows while
-a run is live (the dot holds still when animations are off). The header follows the
+or the command palette. At the far right, a panel toggle hides or restores the
+session's side surface, with the same enabled state as its command-palette action.
+Immediately before it, "Working" with a breathing dot shows while a run is live
+(the dot holds still when animations are off). Title trimming reserves both action
+columns so neither control is displaced by a long session name. The header follows the
 transcript's visibility, so the welcome screen has none. The title updates when a
 session opens and when the open session is titled by its first prompt; the workspace
 follows the side surface's workspace and each run's resolved folder; the label follows
@@ -630,6 +634,28 @@ tasks are processes, distinct from the todo plan. Panel mode, active tab and
 fullscreen selection survive temporary hiding on narrow windows. The interactive
 terminal is one user-owned shell that follows the selected workspace, restarting
 on a workspace change; background refreshes do not take input focus.
+The summary card previews at most three processes, prioritizing running ones, with
+an explicit action for the complete list. Files and Terminal open from the panel's
+views menu rather than separate summary-card shortcuts.
+Its change count names recorded edits, not unique files: activities carry safe
+basenames, which cannot distinguish identically named files in different folders.
+The selected panel tab retains its label and close action; inactive tabs keep their
+icons, tooltips and accessible names. The views menu opens every tab. Ctrl+Tab and
+Ctrl+Shift+Tab cycle, and Ctrl+W closes, while focus is within the tab strip only;
+terminal and document keyboard commands keep their own scope. Visibility and body
+transitions have separate cancellation owners, restore opacity on completion or
+unload, and respect Windows animation settings.
+Tab drags observe handled pointer events and release the label button's capture
+before the chip captures the gesture; an ordinary click keeps its normal action.
+Files refresh keeps the current rows visible but disables tree interaction while
+reading. `FileTreeSnapshotLoader` revisits only expanded branches within the 1,500-row
+bound and existing directory filters. A failed same-workspace refresh retains the
+last listing with retry guidance; switching workspace clears it immediately.
+Individual branch reads check both refresh generation and expansion version, so a
+collapse/reopen cannot insert an older result. Status messages occupy a separate row
+from the tree. An unreadable branch retains one collapsible error note rather than
+appending another on every retry. Background-process refresh has a busy indicator; Stop disables that
+process's action until the command settles, and duplicate in-flight stops are ignored.
 `BackgroundTaskObservation` retains last known task identities through read
 failures, labels them stale and retries at 4/8/16/30-second intervals while the
 surface remains visible. An authoritative successful response resets the delay

@@ -43,7 +43,7 @@ public sealed class ChatHeaderTests
     }
 
     [Fact]
-    public void The_header_sits_above_the_transcript_and_offers_no_control()
+    public void The_header_keeps_permissions_read_only_and_places_the_panel_toggle_at_the_end()
     {
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var header = GuiSource.Require(document, "ChatHeader");
@@ -60,9 +60,13 @@ public sealed class ChatHeaderTests
         var permission = GuiSource.Require(document, "ChatHeaderPermission");
         Assert.True(GuiSource.IsDescendantOf(permission, header));
         var controlNames = new[] { "Button", "ToggleButton", "ComboBox", "DropDownButton", "SplitButton", "ToggleSwitch", "MenuFlyout" };
-        Assert.DoesNotContain(header.DescendantsAndSelf(), element => controlNames.Contains(element.Name.LocalName));
-        Assert.DoesNotContain(header.DescendantsAndSelf(), element => element.Attributes().Any(attribute =>
+        Assert.DoesNotContain(permission.DescendantsAndSelf(), element => controlNames.Contains(element.Name.LocalName));
+        Assert.DoesNotContain(permission.DescendantsAndSelf(), element => element.Attributes().Any(attribute =>
             attribute.Name.LocalName is "Click" or "Tapped" or "PointerPressed"));
+        var toggle = GuiSource.Require(document, "SidePanelToggleButton");
+        Assert.Same(header, toggle.Parent);
+        Assert.Equal("2", GuiSource.AttributeValue(toggle, "Grid.Column"));
+        Assert.Equal("OnSidePanelToggleClick", GuiSource.AttributeValue(toggle, "Click"));
     }
 
     [Fact]

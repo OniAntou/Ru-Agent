@@ -22,6 +22,46 @@ namespace RuAgent.Broker.Tests;
 public sealed class BrokerExecutionRuntimeTests
 {
     [Fact]
+    public async Task Valid_replacement_metadata_executes_without_changing_command_identity()
+    {
+        using var fixture = new RuntimeFixture();
+        const string session = "valid-replacement";
+        const string run = "valid-replacement-run";
+        Assert.Null((await fixture.Runtime.OpenRunAsync(
+            RunOpen(run, session, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default)).Error);
+        string? identity = null;
+        foreach (var replacement in new[] { false, true })
+        {
+            var args = new JsonObject { ["executable"] = "dotnet", ["arguments"] = new JsonArray("--version"),
+                ["purpose"] = "verification" };
+            if (replacement) args["supersedes"] = new JsonArray("prior-check");
+            var decision = await fixture.Runtime.EvaluateAsync(Evaluate("valid-" + replacement, session, run, "run_process", args), default);
+            Assert.Equal("allow", decision.Decision!.Decision);
+            var result = await fixture.Runtime.ExecuteAuthorizedAsync(Execute("execute-" + replacement,
+                session, run, "run_process", decision.Decision.AuthorizationToken!, args), default);
+            Assert.Equal(ToolResultStatuses.Succeeded, result.Receipt!.Status);
+            var observed = result.Receipt.Output["verification_identity"]!.GetValue<string>();
+            if (identity is not null) Assert.Equal(identity, observed);
+            identity = observed;
+        }
+    }
+
+    [Fact]
+    public async Task Replacement_metadata_without_verification_is_rejected_before_authorization()
+    {
+        using var fixture = new RuntimeFixture();
+        const string session = "invalid-replacement";
+        const string run = "invalid-replacement-run";
+        Assert.Null((await fixture.Runtime.OpenRunAsync(
+            RunOpen(run, session, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default)).Error);
+        var args = new JsonObject { ["executable"] = "dotnet", ["arguments"] = new JsonArray("--version"),
+            ["purpose"] = "inspection", ["supersedes"] = new JsonArray("probe") };
+        var result = await fixture.Runtime.EvaluateAsync(Evaluate("invalid-replacement", session, run, "run_process", args), default);
+        Assert.Equal("deny", result.Decision!.Decision);
+        Assert.Null(result.Decision.AuthorizationToken);
+    }
+
+    [Fact]
     public async Task Expected_failure_with_zero_exit_is_rejected_before_authorization()
     {
         using var fixture = new RuntimeFixture();

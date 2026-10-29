@@ -38,14 +38,36 @@ public sealed class VerificationInvocationTests
     }
 
     [Fact]
-    public void File_execution_and_other_executables_do_not_receive_the_inline_repair_family()
+    public void File_execution_is_a_possible_repair_but_project_parse_errors_are_still_failures()
     {
         var file = Output("  File \"<string>\", line 1\nSyntaxError: invalid syntax", 1);
         Annotate(file, ["script.py"]);
-        Assert.Null(file["verification_repair_identity"]);
+        Assert.NotNull(file["verification_repair_identity"]);
+        Assert.NotEqual(true, file["verification_invocation_invalid"]?.GetValue<bool>());
         var other = Output("  File \"<string>\", line 1\nSyntaxError: invalid syntax", 1);
         Annotate(other, ["-c", "invalid"], executable: "C:/tools/not-python.exe");
         Assert.Null(other["verification_repair_identity"]);
+    }
+
+    [Theory]
+    [InlineData(5, "no tests ran in 0.01s", 0, true)]
+    [InlineData(1, "1 failed in 0.01s", 0, false)]
+    [InlineData(2, "ERROR collecting test_a.py", 0, false)]
+    [InlineData(5, "no tests ran in 0.01s", 1, false)]
+    [InlineData(5, "custom runner failure", 0, false)]
+    public void Empty_pytest_discovery_is_repairable_but_real_failures_and_incomplete_output_are_not(
+        int exit, string stdout, int dropped, bool invalid)
+    {
+        var output = Output("", exit);
+        output["stdout_head"] = stdout;
+        output["stdout_bytes"] = (long)stdout.Length;
+        output["stdout_dropped_bytes"] = dropped;
+        Annotate(output, ["-m", "pytest", "-v"]);
+        Assert.Equal(invalid, output["verification_invocation_invalid"]?.GetValue<bool>() == true);
+        var corrected = Output("", 0);
+        Annotate(corrected, ["test_implementation.py"]);
+        Assert.Equal(output["verification_repair_identity"]!.ToString(), corrected["verification_repair_identity"]!.ToString());
+        Assert.Equal(exit, output["exit_code"]!.GetValue<int>());
     }
 
     private static JsonObject Output(string stderr, int exit) => new()

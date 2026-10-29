@@ -6,6 +6,7 @@ using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
+using RuAgent.Broker.Tools.LanguageServers;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Subagents;
 
@@ -25,13 +26,17 @@ public sealed partial class PolicyContextFactory
     private readonly string _canonicalRoot;
     private readonly string _sessionId;
     private readonly CommandAnalyzerRegistry _commandAnalyzers;
+    private readonly Func<LanguageServerConfiguration> _languageServerConfiguration;
 
-    public PolicyContextFactory(BrokerRunLease lease, CommandAnalyzerRegistry? commandAnalyzers = null)
+    public PolicyContextFactory(BrokerRunLease lease, CommandAnalyzerRegistry? commandAnalyzers = null, Func<string?>? userHome = null)
     {
         ArgumentNullException.ThrowIfNull(lease);
         _canonicalRoot = lease.CanonicalRoot;
         _sessionId = lease.SessionId;
         _commandAnalyzers = commandAnalyzers ?? new CommandAnalyzerRegistry();
+        _languageServerConfiguration = userHome is null
+            ? () => LanguageServerConfiguration.CurrentUser
+            : () => LanguageServerConfiguration.Load(userHome());
     }
 
     public PolicyContext Create(string toolId, string toolVersion, JsonObject arguments)
@@ -40,6 +45,8 @@ public sealed partial class PolicyContextFactory
         ArgumentNullException.ThrowIfNull(arguments);
         if (toolId is "powershell" or "run_process" && !TerminalWorkflowIntent.HasValidExpectedExitCode(arguments))
             throw new PolicyContextException("invalid_arguments", hint: "expected_failure requires a nonzero signed 32-bit expected_exit_code.");
+        if (toolId is "powershell" or "run_process" && !TerminalWorkflowIntent.HasValidSupersedes(arguments))
+            throw new PolicyContextException("invalid_arguments", hint: "supersedes requires purpose=verification and 1-16 distinct nonempty check references, at most 256 characters each.");
         if (toolId == "apply_patch") return CreatePatchContext(toolVersion, arguments);
         if (toolId == "run_code")
         {
@@ -379,6 +386,19 @@ public sealed partial class PolicyContextFactory
                             ?? throw new PolicyContextException("malformed_call", hint: "focus needs app, an executable name such as notepad.exe.")];
                     }
 
+                    break;
+                case "code_intelligence":
+                    op = OptionalText(arguments, "operation");
+                    var language = OptionalText(arguments, "language");
+                    if (op is not ("diagnostics" or "symbols" or "definition" or "references")
+                        || language is not ("csharp" or "typescript"))
+                        throw new PolicyContextException("malformed_call", hint: "code_intelligence requires a supported operation and language.");
+                    var configuredServer = _languageServerConfiguration().Find(language);
+                    if (configuredServer is null)
+                        throw new PolicyContextException("lsp_server_not_configured", hint: "Install and configure the language server in the user's .ru/lsp.json file.");
+                    resolvedExecutable = configuredServer.Command;
+                    argv = ["lsp", language, op, .. configuredServer.Arguments];
+                    canonicalCwd = _canonicalRoot;
                     break;
                 case var control when SubagentContractValidator.IsControlTool(control):
                     op = control;

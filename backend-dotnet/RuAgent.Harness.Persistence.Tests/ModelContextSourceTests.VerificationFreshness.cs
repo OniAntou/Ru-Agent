@@ -264,7 +264,8 @@ public sealed partial class ModelContextSourceTests
         int workspaceNumber,
         bool includeRequest,
         Func<RunId, Task>? beforeProposal = null,
-        DateTimeOffset? startedAtUtc = null)
+        DateTimeOffset? startedAtUtc = null,
+        string? resultCwd = null)
     {
         var request = fixture.NewRun(runNumber, sessionNumber, workspaceNumber);
         Assert.Equal(CreateRunOutcome.Created, (await store.TryCreateRunAsync(request, default)).Outcome);
@@ -314,7 +315,8 @@ public sealed partial class ModelContextSourceTests
             HarnessPayloadKind.ToolOutput,
             HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
             HarnessPayloadEncoding.Utf8Text, 4096,
-            Encoding.UTF8.GetBytes("{\"exit_code\":0,\"verification_identity\":\"" + new string('a', 64) + "\"}"));
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+                { exit_code = 0, verification_identity = new string('a', 64), verification_cwd = resultCwd })));
         var completed = NextRun(requested, 3, 4);
         Assert.Equal(HarnessCommitOutcome.Committed, (await store.CommitAsync(new HarnessCommit(request.Run.RunId, 2,
             completed, [new HarnessEventIntent(HarnessStoreTestFixture.Event(runNumber * 10 + 3),

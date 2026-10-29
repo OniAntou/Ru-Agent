@@ -59,7 +59,7 @@ internal sealed class VerificationEvidenceBuffer(int requiredLimit)
 
     /// <summary>
     /// Clears pre-launch rejections after a check of the same kind passes, and
-    /// invalid inline probes only after a passing verification in their exact
+    /// invalid Python invocations only after a passing verification in their exact
     /// interpreter/cwd repair family. Actual test failures remain outstanding.
     /// Removal rather than a Passed status keeps a later edit from reviving them.
     /// </summary>

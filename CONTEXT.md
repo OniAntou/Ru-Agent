@@ -56,6 +56,11 @@ A session scope for presets, permissions, grants and skill use. Its preset does 
 Implementation: [broker](docs/architecture/broker.md#agent-session).
 _Avoid_: permanent Agent mode permission or preset-implied trust
 
+**Language Server**:
+A user-configured installed C# or TypeScript program that the Broker starts for semantic diagnostics and navigation. Its stdio requests are bounded and its process runs with the current Windows user's rights; launching it follows external-process approval policy. Workspace configuration and model output cannot select or install a server.
+Implementation: [language-server tools](docs/adr/0037-language-server-tools.md).
+_Avoid_: downloaded dependency, workspace-selected executable, OS-sandboxed process
+
 
 **Conversation Session**:
 The Host-owned conversation and message/source history. A view may detach or switch sessions without cancelling Host work; only a confirmed application-level delete removes its artifacts.
@@ -196,7 +201,8 @@ _Avoid_: one-call-per-step rule, reissuing approved calls
 
 
 **Recovery Note**:
-Durable bounded feedback asking the same pinned model to recover from an eligible failed or incomplete step. It cannot soften an approval decision, reconciliation requirement or execution-policy denial.
+Durable bounded feedback asking the same pinned model to recover from an eligible failed or incomplete step, or to revisit a final reply held once for
+verification, open checklist items or a requirements review. It cannot soften an approval decision, reconciliation requirement or execution-policy denial.
 Implementation: [harness](docs/architecture/harness.md#recovery-note).
 _Avoid_: fallback answer, substitute model, retry on another backend
 
@@ -213,6 +219,10 @@ receipt. Authority-derived read-only completion metadata preserves prior checks
 for observed normal exits, including nonzero exits; a failed lookup or required
 check still retains its own failure. Unknown effects remain conservative. Intent metadata grants no authority and
 does not prove complete correctness.
+An explicit replacement verification may name previously passing stale checks
+through `supersedes`. A fresh pass in the same authority-derived canonical cwd
+satisfies those retired obligations without rewriting their receipts; failures,
+pending checks, negative tests and unknown freshness cannot be superseded.
 Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
 _Avoid_: treating a successful inspection, summary or model claim as a passed check
 

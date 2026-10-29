@@ -1,3 +1,4 @@
+using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
 using RuAgent.Protocol;
@@ -72,6 +73,31 @@ public sealed class ToolCatalogTests
             .ToArray();
         Assert.DoesNotContain(CapabilityProfile.Chat, advertised);
         Assert.Contains(CapabilityProfile.Agent, advertised);
+    }
+
+    /// <summary>
+    /// Every manifest the catalog yields must pass the registry's trust checks on its own.
+    /// The catalog's adapter strings and the registry's trusted-adapter allowlist are two
+    /// separate lists, so an adapter missing from the allowlist breaks composition for
+    /// every consumer of the catalog. Registering into a fresh registry names that seam.
+    /// </summary>
+    [Fact]
+    public void Every_catalog_manifest_is_accepted_by_a_fresh_tool_registry()
+    {
+        var registry = new ToolRegistry();
+
+        foreach (var manifest in ToolCatalog.Manifests(new WebOptions()))
+        {
+            registry.Register(manifest);
+        }
+
+        // ADR 0037: LSP servers are configured programs, so the tool keeps External risk,
+        // terminal-execute scope and approval even though its adapter is language_server.
+        var codeIntelligence = registry.Get("code_intelligence", "1.0.0");
+        Assert.Equal("language_server", codeIntelligence.Adapter);
+        Assert.Equal(RiskClass.External, codeIntelligence.Risk);
+        Assert.True(codeIntelligence.RequiresApproval);
+        Assert.Contains(ToolScope.TerminalExecute, codeIntelligence.Scopes);
     }
 
     [Fact]

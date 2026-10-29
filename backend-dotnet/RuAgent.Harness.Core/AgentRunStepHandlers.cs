@@ -154,6 +154,56 @@ internal sealed partial class AgentRunStepHandlers
         return AgentRunStepResult.Blocked(committed, errorCode);
     }
 
+    /// <summary>Holds a final reply once for a soft recovery case (one note of its kind) and keeps the run stepping.</summary>
+    public Task<AgentRunStepResult> HandleCompletionHoldStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        AssistantStep step,
+        int droppedCount,
+        ModelContextSnapshot context,
+        AgentRecoveryKind kind,
+        string noteText,
+        HarnessPayloadIntent promptReceiptPayload,
+        HarnessEventIntent promptComposedEvent,
+        CancellationToken cancellationToken,
+        string? reasoningText = null) =>
+        HandleRecoveryAdviceStepAsync(
+            run,
+            modelStepId,
+            step,
+            droppedCount,
+            noteText,
+            AgentRecoveryNotes.NoteCount(context, kind),
+            AgentRecoveryNotes.KindMarker(kind),
+            promptReceiptPayload,
+            promptComposedEvent,
+            cancellationToken,
+            reasoningText);
+
+    /// <summary>Holds a final reply once after source edits with no declared verification since, and keeps the run stepping.</summary>
+    public Task<AgentRunStepResult> HandleUnverifiedSourceEditStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        AssistantStep step,
+        int droppedCount,
+        ModelContextSnapshot context,
+        HarnessPayloadIntent promptReceiptPayload,
+        HarnessEventIntent promptComposedEvent,
+        CancellationToken cancellationToken,
+        string? reasoningText = null) =>
+        HandleCompletionHoldStepAsync(
+            run,
+            modelStepId,
+            step,
+            droppedCount,
+            context,
+            AgentRecoveryKind.UnverifiedSourceEdit,
+            AgentRecoveryNotes.BuildUnverifiedSourceEditNote(),
+            promptReceiptPayload,
+            promptComposedEvent,
+            cancellationToken,
+            reasoningText);
+
     /// <summary>
     /// Answers a dead-end model step (prose after a failed receipt, or an empty
     /// final step) with one durable recovery note instead of ending the run: the

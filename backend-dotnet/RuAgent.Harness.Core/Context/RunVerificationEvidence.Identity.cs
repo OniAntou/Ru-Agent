@@ -6,7 +6,7 @@ namespace RuAgent.Harness.Core.Context;
 public sealed partial class RunVerificationEvidence
 {
     private readonly record struct TerminalMetadata(string? CanonicalIdentity, int? CompletedReadExitCode,
-        string? RepairIdentity, bool InvocationInvalid);
+        string? RepairIdentity, bool InvocationInvalid, string? WorkingDirectoryIdentity, string? WorkingDirectory);
 
     private static TerminalMetadata ReadTerminalMetadata(string? content)
     {
@@ -32,7 +32,11 @@ public sealed partial class RunVerificationEvidence
             if (repair is not { Length: 64 } || !repair.All(char.IsAsciiHexDigit)) repair = null;
             var invalid = repair is not null && json.RootElement.TryGetProperty("verification_invocation_invalid", out var flag)
                 && flag.ValueKind == JsonValueKind.True;
-            return new(digest.ToUpperInvariant(), completedReadExit, repair?.ToUpperInvariant(), invalid);
+            var cwd = StringArg(json.RootElement, "verification_cwd");
+            if (string.IsNullOrWhiteSpace(cwd) || cwd.Length > RuAgent.Protocol.TerminalLimits.MaxWorkingDirectoryChars) cwd = null;
+            var directoryIdentity = cwd is null ? null : Convert.ToHexString(SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(Path.TrimEndingDirectorySeparator(cwd).ToUpperInvariant())));
+            return new(digest.ToUpperInvariant(), completedReadExit, repair?.ToUpperInvariant(), invalid, directoryIdentity, cwd);
         }
         catch (JsonException) { return default; }
     }

@@ -16,6 +16,9 @@ public enum AgentRecoveryKind
     OutputTruncated,
     CommentaryOnly,
     ContextOverflow,
+    UnverifiedSourceEdit,
+    OpenTodos,
+    CompletionReview,
 }
 
 /// <summary>
@@ -57,6 +60,16 @@ public static class AgentRecoveryNotes
     public const int MaximumModelRepairableNotes = 4;
     public const int MaximumTruncatedNotes = 3;
 
+    // One-time soft nudge after source edits with no declared check since: it never fails a run.
+    public const int MaximumUnverifiedSourceEditNotes = 1;
+
+    // One-time soft nudges from the completion checklist; like the source-edit nudge, they never fail a run.
+    public const int MaximumOpenTodoNotes = 1;
+    public const int MaximumCompletionReviewNotes = 1;
+
+    private const int MaximumListedOpenTodos = 8;
+    private const int MaximumOpenTodoLength = 120;
+
     // Global cap across every recovery case, counted from the context for the
     // whole run. This bounds recovery across all cases, including truncation.
     public const int MaximumNotesPerRun = 24;
@@ -75,19 +88,84 @@ public static class AgentRecoveryNotes
     {
         var code = string.IsNullOrWhiteSpace(receiptCode) ? "tool_failed" : receiptCode;
         return $"{NotePrefix} {KindMarker(AgentRecoveryKind.UnverifiedAfterToolFailure)} "
-            + $"(code: {code}) - the final reply was suppressed because a tool call failed "
-            + "and its result is still unverified. " + RecoveryAction(code)
-            + " If no safe repair remains, start your final text with [BLOCKED] and explain the blocker or partial outcome. This ends the run as unsuccessful; do not claim the failed action succeeded.";
+            + $"(code: {code}) - the final reply was suppressed {Reason(code)}. " + RecoveryAction(code)
+            + " If no safe repair remains, start your final text with [BLOCKED] and explain the blocker or partial outcome. This ends the run as unsuccessful; do not claim the failed action succeeded."
+            + " Your next reply must be either a tool call that carries out this repair or a final text starting with [BLOCKED]; a plain final reply cannot complete the run.";
     }
+
+    /// <summary>
+    /// The reason names what the receipt reports. A stale or unconfirmed check is not
+    /// a failed tool call, so the note must not say it was one.
+    /// </summary>
+    private static string Reason(string code) => code switch
+    {
+        "verification_stale" or "verification_freshness_unknown" => "because a required check is stale after later changes",
+        "verification_pending" or "verification_result_missing" => "because a required check has no confirmed result",
+        _ => "because a tool call failed and its result is still unverified",
+    };
+
+    /// <summary>
+    /// The one-time nudge held before a final reply after source edits with no declared
+    /// verification since. It is advice; the run continues whatever the model does next.
+    /// </summary>
+    public static string BuildUnverifiedSourceEditNote() =>
+        $"{NotePrefix} {KindMarker(AgentRecoveryKind.UnverifiedSourceEdit)} - the final reply was held once: "
+        + "source files changed and no purpose=verification check has run since the last change. "
+        + "Run a build or test with purpose=verification that exercises the request's stated requirements against the current code, and fix any failure it shows. "
+        + "Then finish, naming any requirement you could not check. If nothing applicable can run, finish again and say verification was not run.";
+
+    /// <summary>
+    /// The one-time nudge held before a final reply while the run's own task list still has
+    /// open items. The item text is model-authored, so each item is bounded and quoted, and
+    /// line breaks are flattened so the note stays one line.
+    /// </summary>
+    public static string BuildOpenTodosNote(IReadOnlyList<string> openItems)
+    {
+        ArgumentNullException.ThrowIfNull(openItems);
+        var listed = string.Join("; ", openItems.Take(MaximumListedOpenTodos)
+            .Select(item => "\"" + BoundedTodoText(item) + "\""));
+        var remainder = openItems.Count - MaximumListedOpenTodos;
+        return $"{NotePrefix} {KindMarker(AgentRecoveryKind.OpenTodos)} - the final reply was held once: "
+            + "your task list still has open items: " + listed
+            + (remainder > 0 ? $" (and {remainder} more)" : string.Empty)
+            + ". Finish and check each one, then mark it completed with todo_write; "
+            + "remove an item only if it is no longer needed and say why in the final reply.";
+    }
+
+    /// <summary>
+    /// Flattens line breaks and bounds one item. A cut never separates a surrogate pair:
+    /// if the last kept character is a high surrogate, its low half is dropped with it.
+    /// </summary>
+    private static string BoundedTodoText(string item)
+    {
+        var flat = item.Replace('\r', ' ').Replace('\n', ' ');
+        if (flat.Length <= MaximumOpenTodoLength) return flat;
+        var length = char.IsHighSurrogate(flat[MaximumOpenTodoLength - 1])
+            ? MaximumOpenTodoLength - 1
+            : MaximumOpenTodoLength;
+        return flat[..length] + "...";
+    }
+
+    /// <summary>
+    /// The one-time review held before a final reply after source edits when the run has no
+    /// completed checklist and no unverified-edit nudge. It asks for the requirement check the
+    /// unverified-edit nudge already asks for, so a run pays for at most one of them.
+    /// </summary>
+    public static string BuildCompletionReviewNote() =>
+        $"{NotePrefix} {KindMarker(AgentRecoveryKind.CompletionReview)} - the final reply was held once for a requirements check. "
+        + "Re-read the original request, then the changed code. For each explicit requirement (behavior, edge and error cases, ordering, return values, allowed files, cleanup), "
+        + "confirm the code meets it and a check exercised it. "
+        + "Fix any gap and rerun the affected purpose=verification check; then give the final reply and name any requirement left unchecked.";
 
     private static string RecoveryAction(string code) => code switch
     {
+        "file_exists" => "The creation call changed nothing: this path already exists. Read that same file, then use edit_file for a partial change or write_file with overwrite=true for an intentional full replacement. Do not repeat create-only writes or change the filename to evade the error.",
         "edit_no_match" => "Re-read the same file, then correct the exact old text before retrying the edit.",
         "edit_not_unique" => "Re-read the same file and narrow old_string or set expected_occurrences to the observed match count.",
         "workspace_changed" => "Inspect the current workspace and reconcile the change; do not overwrite stale content.",
         "process_exit_nonzero" => "For a declared required check, inspect the verification diagnostics, fix the cause and rerun that check. For exploratory work, repair the command or use an alternative relevant source; do not claim the failed command succeeded.",
         "expected_exit_mismatch" => "Report the observed exit code and the unmet expectation. Do not retry a deliberately failing command merely to force the expected code, or claim a different invocation cleared it. Use run_process when a native process's exact exit code matters; PowerShell wrappers can return 1 instead.",
-        "verification_stale" => "Code changed after a successful check. Rerun that same verification against the current changes.",
+        "verification_stale" => "Code changed after a successful check. Rerun it against the current changes. If a previously passing temporary check was retired, use an appropriate final purpose=verification check with supersedes set to its stale check ID from the outstanding-check guidance. Failed, pending and negative checks cannot be replaced.",
         "verification_pending" => "The required check is still running. Read its terminal output until its real exit is known; starting it is not a pass.",
         "verification_result_missing" => "The check has no confirmed terminal exit. Inspect its retained output or rerun it; do not infer success.",
         "process_start_failed" => "Inspect the executable and invocation error, then retry only after correcting it.",
@@ -150,6 +228,9 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.OutputTruncated => "model_output_truncated",
         AgentRecoveryKind.CommentaryOnly => "model_commentary_only",
         AgentRecoveryKind.ContextOverflow => "context_window_exceeded",
+        AgentRecoveryKind.UnverifiedSourceEdit => "unverified_source_edit",
+        AgentRecoveryKind.OpenTodos => "open_todos",
+        AgentRecoveryKind.CompletionReview => "completion_review",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -161,6 +242,9 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.OutputTruncated => MaximumTruncatedNotes,
         AgentRecoveryKind.CommentaryOnly => MaximumCommentaryNotes,
         AgentRecoveryKind.ContextOverflow => MaximumContextOverflowNotes,
+        AgentRecoveryKind.UnverifiedSourceEdit => MaximumUnverifiedSourceEditNotes,
+        AgentRecoveryKind.OpenTodos => MaximumOpenTodoNotes,
+        AgentRecoveryKind.CompletionReview => MaximumCompletionReviewNotes,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

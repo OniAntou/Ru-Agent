@@ -352,7 +352,7 @@ public sealed partial class ToolExecutionService
         {
             return;
         }
-        if (!TerminalWorkflowIntent.HasValidExpectedExitCode(arguments))
+        if (!TerminalWorkflowIntent.HasValidExpectedExitCode(arguments) || !TerminalWorkflowIntent.HasValidSupersedes(arguments))
             throw new ToolSchemaException("invalid_arguments");
 
         if (arguments["background"] is JsonValue backgroundValue

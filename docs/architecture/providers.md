@@ -34,6 +34,11 @@ Rate-limit metadata propagates through Chat Completions, Responses and Anthropic
 errors without changing provider selection. Exhaustion retains the existing
 explicit-Continue behavior; retries never dispatch a partial tool call.
 
+`ProviderRetryPolicy` owns the pure retry admission and delay decisions. The
+runner measures accepted cooldowns separately as `ProviderRetryWait`; this is
+not provider inference latency. The five-attempt and 60-second automatic wait
+bounds, longer server hints and cancellation behavior remain unchanged.
+
 Responses `response.incomplete` is a terminal event: `max_output_tokens`
 preserves usage and returns `length` without parsing partial function arguments;
 `content_filter` discards calls and maps to the existing Harness

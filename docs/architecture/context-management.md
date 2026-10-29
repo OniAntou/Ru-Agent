@@ -114,10 +114,19 @@ adapter or permission decision to the Host and does not rescan the entire
 workspace on every step.
 
 Broker-authored repair-family metadata distinguishes a direct inline Python
-parse error from a verification that executed and failed. Only a later passing
+parse error or confirmed empty pytest discovery from a test that executed and
+failed. Only a later passing
 verification in the same resolved interpreter/cwd family can retire the invalid
 probe obligation. Failed receipts remain historical failures, and expected-exit
 mismatches or project/runtime test failures cannot use this exception.
+
+Explicit `supersedes` bindings between a final verification and a retired,
+previously passing stale check are also projected before compaction. They use
+authority-derived cwd identities and stable check IDs; a provider call ID may
+serve as an alias only when unambiguous. Original checks
+remain in the bounded evidence; a replacement only satisfies them while it is
+passed and fresh. Warm caches and cold history replay apply the same workspace
+journal freshness after reconstructing these bindings.
 
 The cache admits at most eight runs, 32 MiB estimated weight per run and 64 MiB
 total, with two-minute access validity. Native Responses public-message metadata
@@ -139,6 +148,21 @@ bytes and call/result identities remain intact. Valid JSON objects/arrays are le
 existing structured output projector, preserving paging and cursor semantics.
 This stable projection happens before request budgeting or checkpoint generation;
 it does not rewrite previously admitted history merely because a result aged.
+
+For unstructured text only, up to six diagnostic-like lines from the omitted
+middle supplement the unchanged head/tail excerpt. Selection scans at most
+1 MiB of characters and retains at most 300 characters per line with Unicode-safe
+boundaries. It is explicitly labelled heuristic and incomplete; the original
+receipt and existing output cursors remain the source for full diagnostics.
+Structured JSON and small output are unchanged. These samples are context,
+not independent verification evidence.
+
+Outstanding-check guidance identifies each check by stable ID, authority-recorded
+working directory, status and next action. A pending background check points to
+its existing terminal execution rather than suggesting another launch. Required
+failures still require repair and rerun; explicit replacement is offered only
+for eligible retired previously passing stale checks. Scope text cannot grant
+authority or establish equivalence between tests.
 
 ## Provider usage anchors
 

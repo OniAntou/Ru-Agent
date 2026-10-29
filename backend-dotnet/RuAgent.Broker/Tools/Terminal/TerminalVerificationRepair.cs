@@ -14,17 +14,24 @@ internal static class TerminalVerificationRepair
             || executable.Equals("python3", StringComparison.OrdinalIgnoreCase)
             || executable.StartsWith("python3.", StringComparison.OrdinalIgnoreCase)
                 && Version.TryParse(executable[6..], out _);
-        if (!python || intent.Arguments.Count != 2 || intent.Arguments[0] != "-c") return;
+        if (!python || !IsVerificationInvocation(intent.Arguments)) return;
 
-        // A repaired inline probe must use the same resolved interpreter and cwd.
+        // A repaired probe must use the same resolved interpreter and cwd.
         // Its exact invocation/approval identity remains separate and unchanged.
         var family = JsonSerializer.SerializeToUtf8Bytes(new
         {
-            domain = "ru-python-inline-verification-repair-v1",
+            domain = "ru-python-inline-verification-repair-v1", // Keep existing receipt families replayable.
             executable = intent.ResolvedExecutable.ToUpperInvariant(),
             cwd = Path.TrimEndingDirectorySeparator(intent.CanonicalWorkingDirectory).ToUpperInvariant(),
         });
         output["verification_repair_identity"] = Convert.ToHexString(SHA256.HashData(family));
+        if (IsEmptyPytestDiscovery(output, intent.Arguments))
+        {
+            output["verification_invocation_invalid"] = true;
+            output["hint"] = "pytest collected no tests (exit 5); this did not verify the code. Add or select relevant tests and run a meaningful verification with the same Python interpreter and working directory. A real test failure cannot be cleared this way.";
+            return;
+        }
+        if (intent.Arguments.Count != 2 || intent.Arguments[0] != "-c") return;
         if (!Number(output, "exit_code", out var exit) || exit == 0
             || !Number(output, "stdout_bytes", out var stdout) || stdout != 0
             || !Number(output, "stderr_dropped_bytes", out var dropped) || dropped != 0) return;
@@ -41,6 +48,19 @@ internal static class TerminalVerificationRepair
         output["hint"] = "The inline Python verification command did not parse. Correct its syntax and run a meaningful corrected probe "
             + "with the same Python interpreter and working directory. The failed exit remains recorded; project test failures cannot be cleared this way.";
     }
+
+    private static bool IsVerificationInvocation(IReadOnlyList<string> arguments) =>
+        arguments.Count == 2 && arguments[0] == "-c"
+        || arguments.Count >= 2 && arguments[0] == "-m" && !string.IsNullOrWhiteSpace(arguments[1])
+        || arguments.Count >= 1 && !arguments[0].StartsWith('-') && arguments[0].EndsWith(".py", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEmptyPytestDiscovery(JsonObject output, IReadOnlyList<string> arguments) =>
+        arguments.Count >= 2 && arguments[0] == "-m" && arguments[1] == "pytest"
+        && Number(output, "exit_code", out var code) && code == 5
+        && Number(output, "stdout_dropped_bytes", out var stdoutDropped) && stdoutDropped == 0
+        && Number(output, "stderr_dropped_bytes", out var stderrDropped) && stderrDropped == 0
+        && string.IsNullOrWhiteSpace(Text(output, "stderr_head") + Text(output, "stderr_tail"))
+        && (Text(output, "stdout_head") + Text(output, "stdout_tail")).Contains("no tests ran", StringComparison.Ordinal);
 
     private static string Text(JsonObject output, string name) =>
         output[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text : string.Empty;

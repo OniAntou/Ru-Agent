@@ -34,7 +34,7 @@ public sealed partial class RunVerificationEvidence
             };
         }).ToArray();
         return new RunVerificationEvidence(checks, new HashSet<string>(_expectedFailures, StringComparer.Ordinal),
-            Overflowed, HasMutations, _programFailure);
+            Overflowed, HasMutations, _programFailure, SourceEditAwaitingVerification, HasSourceEdits, LatestTodos);
     }
 
     private static bool RequiredForCompletion(VerificationCheckEvidence check) =>

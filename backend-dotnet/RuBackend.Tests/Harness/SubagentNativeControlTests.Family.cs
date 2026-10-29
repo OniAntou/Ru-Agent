@@ -83,6 +83,12 @@ public sealed partial class SubagentNativeControlTests
         Assert.Equal(resumed, await storage.EventStore.GetRunAsync(root.RunId, default));
         Assert.Equal(ToolExecutionOutcome.Succeeded, Assert.Single((await coordinator.RunOneStepAsync(root.RunId, default)).Receipts).Outcome);
         Assert.Equal("child", await File.ReadAllTextAsync(Path.Combine(repo, "a.txt")));
+        var held = await coordinator.RunOneStepAsync(root.RunId, default);
+        Assert.Equal(HarnessRunState.Running, held.Run.State);
+        var heldEvents = new List<HarnessEvent>();
+        await foreach (var envelope in storage.EventStore.ReadEventsAsync(root.RunId, 0, default)) heldEvents.Add(envelope.Event);
+        Assert.Single(heldEvents, e => e.Kind == "run.note_added" && e.SafeCode == "unverified_source_edit");
+        Assert.Contains(heldEvents, e => e.Kind == "model.step_completed" && e.SafeCode == "unverified_source_edit_advised");
         Assert.Equal(HarnessRunState.WaitingHistory, (await coordinator.RunOneStepAsync(root.RunId, default)).Run.State);
         var dispatcher = new AgentConversationOutboxDispatcher(new(storage.Options), storage.PayloadStore, sessions,
             new HarnessModelContextBootstrapper(sessions, storage.PayloadStore, new CryptographicIdGenerator(), TimeProvider.System),
@@ -90,7 +96,8 @@ public sealed partial class SubagentNativeControlTests
         for (var i = 0; i < 4 && (await storage.EventStore.GetRunAsync(root.RunId, default))!.State != HarnessRunState.Completed; i++)
             await dispatcher.DispatchOnceAsync(default);
         Assert.Equal(HarnessRunState.Completed, (await storage.EventStore.GetRunAsync(root.RunId, default))!.State);
-        Assert.Equal(4, model.Calls);
+        // spawn, wait, apply, held final reply, re-finish final reply
+        Assert.Equal(5, model.Calls);
         var snapshot = await new SqliteSubagentSnapshotReader(storage.Options, storage.PayloadStore).ReadAsync(root.RunId, default);
         Assert.All(snapshot.Agents, a => Assert.NotNull(a.Task));
         Assert.All(snapshot.Agents, a => Assert.Equal("fixture-model", Assert.Single(a.Attempts).Model!.Model));
@@ -130,7 +137,8 @@ public sealed partial class SubagentNativeControlTests
                 3 => [Call("family_apply", "agent_apply", new { agent_id = Coding, result_version = 1 })],
                 _ => [],
             };
-            return Task.FromResult(new ModelStepResult(new AssistantStep(Calls == 4 ? "Coding and review completed." : "Delegating tasks",
+            // Call 4 is the final reply that the unverified-source-edit nudge holds once; call 5 re-finishes and completes.
+            return Task.FromResult(new ModelStepResult(new AssistantStep(Calls >= 4 ? "Coding and review completed." : "Delegating tasks",
                 tools, tools.Length == 0 ? AssistantFinishReason.Stop : AssistantFinishReason.ToolCalls, 32),
                 SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt));
         }

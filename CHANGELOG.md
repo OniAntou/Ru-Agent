@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(broker)**: Add opt-in `coding_semantic_v1` with Broker-owned C# and
+  TypeScript language-server diagnostics, symbols, definitions and references.
+  Servers come from user-owned `.ru/lsp.json`; launch follows external-process
+  policy, and bounded LSP responses carry current document identity.
+
+- **fix(harness)**: Allow explicit fresh verification to replace a retired check
+  that previously passed and is now stale, preserving failures, negative tests,
+  workspace freshness, original receipts and restart/compaction behavior.
+  Empty pytest discovery can be repaired by a passing Python verification in
+  the same interpreter/cwd; real failed tests stay outstanding. Clarify file
+  creation versus replacement and provide specific `file_exists` recovery.
+
+- **fix(harness)**: State the specific reason in the unverified tool-failure recovery
+  note (stale check, missing or pending check result, or failed tool call) and
+  require the next reply to be a repair tool call or a `[BLOCKED]` final; a plain
+  final reply cannot complete the run.
+
+- **feat(harness)**: Hold the first non-empty final reply after an unverified structured
+  source edit once per run. Its streamed text is retracted and a durable
+  `unverified_source_edit` note asks for a `purpose=verification` build or test of the
+  request's requirements. Documentation-only `write`/`edit` calls, deletes, restores
+  and terminal commands do not trigger it, and a run that ignores the note still
+  completes as `unverified`. This responds to the 2026-10-29 benchmark triage, which
+  found runs that edited source and finished without running anything after the last
+  edit.
+
+- **feat(harness)**: Ask coding runs to record each explicit requirement of a
+  multi-requirement request as its own `todo_write` item before editing, and to
+  complete an item only after a check exercises it. A final reply after source edits
+  can take up to two more one-time holds, open list items and then a requirements
+  review unless the list is fully completed; both are advice that never fails a run.
+  This responds to the 2026-10-29 benchmark triage, which found most failed runs missed
+  explicit requirement clauses even when the agent's own checks passed.
+
+- **fix(benchmark)**: Accept valid read-only Todo and non-castable immutable
+  ledger snapshots, count scheduler exceptions as failed checks, and cover
+  repeated valid ledger transfers. Prior benchmark records remain unchanged;
+  these three fixture fingerprints change for future comparisons.
+
 - **feat(gui)**: Open View changes in the existing right Changes panel instead of
   a popup. Clicking a file expands and reveals its edit in the normal session list.
 

@@ -424,6 +424,61 @@ public sealed partial class PolicyEvaluationTests
     }
 
     [Theory]
+    [InlineData("plan", "deny", "plan_preset_read_only")]
+    [InlineData("standard", "ask", "lsp_launch_requires_approval")]
+    [InlineData("full_access", "allow", "full_access_allow")]
+    public void Language_server_launch_uses_external_process_policy_and_binds_config(string preset, string decision, string reasonCode)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-lsp-policy-" + Guid.NewGuid().ToString("N"));
+        var profile = Path.Combine(root, "profile");
+        Directory.CreateDirectory(Path.Combine(profile, ".ru"));
+        Directory.CreateDirectory(Path.Combine(root, "workspace", "src"));
+        try
+        {
+            File.WriteAllText(Path.Combine(profile, ".ru", "lsp.json"),
+                """{"servers":{"csharp":{"command":"csharp-ls.exe","args":["--stdio","--flag"]}}}""");
+            var (lease, _) = Bind(PolicyEvalSnapshots.Empty(preset), Path.Combine(root, "workspace"));
+            var factory = new PolicyContextFactory(lease, userHome: () => profile);
+            var arguments = new JsonObject { ["operation"] = "definition", ["language"] = "csharp", ["path"] = "src\\Example.cs", ["line"] = 2, ["character"] = 4 };
+            var context = factory.Create("code_intelligence", "1.0.0", arguments);
+            var evaluation = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, Now);
+
+            Assert.Equal(decision, evaluation.Decision);
+            Assert.Equal(reasonCode, evaluation.ReasonCode);
+            Assert.Equal("csharp-ls.exe", context.ResolvedExecutable);
+            Assert.Equal(new[] { "lsp", "csharp", "definition", "--stdio", "--flag" }, context.Argv);
+            Assert.Equal(Path.GetFullPath(Path.Combine(root, "workspace")), context.CanonicalCwd);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData("standard", "deny", "protected_path")]
+    [InlineData("full_access", "allow", "full_access_allow")]
+    public void Language_server_keeps_existing_protected_path_preset_semantics(string preset, string decision, string reasonCode)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-lsp-protected-" + Guid.NewGuid().ToString("N"));
+        var profile = Path.Combine(root, "profile");
+        var workspace = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(Path.Combine(profile, ".ru"));
+        Directory.CreateDirectory(workspace);
+        try
+        {
+            File.WriteAllText(Path.Combine(profile, ".ru", "lsp.json"),
+                """{"servers":{"csharp":{"command":"csharp-ls.exe","args":["--stdio"]}}}""");
+            var (lease, _) = Bind(PolicyEvalSnapshots.Empty(preset), workspace);
+            var factory = new PolicyContextFactory(lease, userHome: () => profile);
+            var context = factory.Create("code_intelligence", "1.0.0", new JsonObject
+            { ["operation"] = "diagnostics", ["language"] = "csharp", ["path"] = "runtime_descriptor.json" });
+
+            var evaluation = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, Now);
+            Assert.Equal(decision, evaluation.Decision);
+            Assert.Equal(reasonCode, evaluation.ReasonCode);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
     [InlineData("plan")]
     [InlineData("standard")]
     [InlineData("full_access")]

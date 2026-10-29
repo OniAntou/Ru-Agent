@@ -12,6 +12,7 @@ using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Broker.Tools.Web;
 using RuAgent.Broker.Tools.Help;
+using RuAgent.Broker.Tools.LanguageServers;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
@@ -56,6 +57,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private readonly WebSearchAdapter? _webSearch;
     private readonly WebFetchAdapter? _webFetch;
     private readonly HttpClient? _ownedWebHttpClient;
+    private readonly ConcurrentDictionary<string, LanguageServerHost> _languageServers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IReadOnlyDictionary<string, string> _languageServerEnvironment;
 
     public ToolExecutionService(
         BrokerSession session,
@@ -75,6 +78,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ?? TerminalConcurrencyOptions.FromEnvironment(Environment.GetEnvironmentVariable);
         _backgroundTasks = new BackgroundTaskRegistry(terminalLimits.MaxConcurrentTasks);
         _workspace = new WorkspacePathGuard(workspaceRoot);
+        _languageServerEnvironment = new AgentCommandEnvironment().ChildEnvironment;
         _fileList = new FileListAdapter(_workspace.Root);
         _fileGlob = new FileGlobAdapter(_workspace.Root);
         _fileSearch = new FileSearchAdapter(_workspace.Root);
@@ -141,6 +145,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         lock (_terminalLifetimeGate) _stopping = true;
         _backgroundTasks.CancelAll();
         _ownedWebHttpClient?.Dispose();
+        foreach (var host in _languageServers.Values) host.Dispose();
+        _languageServers.Clear();
     }
 
     private void RemoveSessionState(string sessionId)
@@ -209,6 +215,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ["web_search"] = ExecuteWebSearchAsync,
             ["web_fetch"] = ExecuteWebFetchAsync,
             ["mcp"] = ExecuteMcpAsync,
+            ["code_intelligence"] = ExecuteCodeIntelligenceAsync,
             ["computer"] = ExecuteComputerAsync,
         };
 

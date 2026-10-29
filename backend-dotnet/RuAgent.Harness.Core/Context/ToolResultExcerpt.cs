@@ -16,7 +16,8 @@ public static class ToolResultExcerpt
         var tail = content.Length - TailChars;
         if (char.IsHighSurrogate(content[head - 1])) head--;
         if (char.IsLowSurrogate(content[tail])) tail++;
-        return content[..head] + "\n[tool result middle omitted; original durable receipt retained; read the source or output cursor for details]\n" + content[tail..];
+        return content[..head] + "\n[tool result middle omitted; original durable receipt retained; read the source or output cursor for details]\n"
+            + ToolDiagnosticExcerpt.Select(content, head, tail) + content[tail..];
     }
 
     private static bool IsStructured(string content)

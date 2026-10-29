@@ -79,7 +79,7 @@ public sealed class ToolCatalog
             || manifest.RequiresApproval;
     }
 
-    private static IEnumerable<ToolManifest> Manifests(WebOptions webOptions)
+    internal static IEnumerable<ToolManifest> Manifests(WebOptions webOptions)
     {
         yield return Manifest("read", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false,
             maxOutputBytes: Files.FileToolLimits.MaxReadOutputBytes);
@@ -101,6 +101,8 @@ public sealed class ToolCatalog
         yield return Manifest("run_code", ToolScope.SystemRead, RiskClass.Reversible, "builtin", workspace: false);
         // An MCP server is a user-chosen program run with the user's rights (ADR 0025).
         yield return Manifest("mcp", ToolScope.TerminalExecute, RiskClass.External, "connector", workspace: false, requiresApproval: true);
+        // LSP servers are configured programs executed with the user's rights (ADR 0037).
+        yield return Manifest("code_intelligence", ToolScope.TerminalExecute, RiskClass.External, "language_server", workspace: false, requiresApproval: true);
         // Computer use sends input as the user to granted apps (ADR 0031).
         yield return Manifest("computer", ToolScope.TerminalExecute, RiskClass.External, "desktop", workspace: false, requiresApproval: true);
         foreach (var definition in RuAgent.Protocol.Subagents.SubagentToolDefinitions.Get())

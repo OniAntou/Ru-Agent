@@ -44,7 +44,7 @@ public sealed partial class FileEditAdapter
                 throw new ArgumentException("invalid_expected_occurrences");
             var count = CountOccurrences(text, oldText);
             if (count == 0) throw EditMatchException.NoExactMatch(text, oldText);
-            if (count != expectedCount) throw new EditMatchException("edit_not_unique", count);
+            if (count != expectedCount) throw EditMatchException.UnexpectedCount(count, expectedCount);
             for (var offset = 0; offset <= text.Length - oldText.Length;)
             {
                 var start = text.IndexOf(oldText, offset, StringComparison.Ordinal);

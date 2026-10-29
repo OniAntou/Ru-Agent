@@ -17,10 +17,11 @@ declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 
 ## Coding profiles
 
-New runs default to `coding_v2` (25 definitions). `patch_v2` (24) and
-`coding_code_v1` (27) are also supported, and must be selected explicitly for a
-new run; changing the Host setting does not alter an existing run. Set
-`RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1` in a dedicated Host
+New runs default to `coding_v2` (25 definitions). `patch_v2` (24),
+`coding_code_v1` (27) and opt-in `coding_semantic_v1` are also supported, and
+must be selected explicitly for a new run; changing the Host setting does not
+alter an existing run. Set
+`RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1|coding_semantic_v1` in a dedicated Host
 process to choose the profile for new runs. Persisted provider selections must
 include a valid profile pin: a missing pin fails as `tool_profile_required`, and
 an explicit retired or unknown profile fails as `tool_profile_invalid`. Run
@@ -34,6 +35,38 @@ all targets are checked, and patch approval is one-time. For Windows command tex
 use `powershell` with `script`; for literal argv use `run_process`. Read retained
 output with `terminal_read` and stop a background task with `terminal_stop`.
 These operations retain terminal lifetime/output/process-tree bounds.
+
+### Semantic coding calls (opt-in)
+
+`coding_semantic_v1` adds `code_intelligence` for `diagnostics`, `symbols`,
+`definition` and `references` in C# or TypeScript. Configure an installed server
+in the user's `%USERPROFILE%\\.ru\\lsp.json`; Ru reads no workspace server config
+and never downloads or launches an installer. Example:
+
+```json
+{
+  "servers": {
+    "csharp": { "command": "csharp-ls.exe", "args": ["--stdio"] },
+    "typescript": { "command": "typescript-language-server.cmd", "args": ["--stdio"] }
+  }
+}
+```
+
+The `path` is workspace-relative. `line` and `character` are zero-based and
+required for definition and references. Results carry the document SHA-256 and
+LSP version, cap at 128 entries and 512 KiB, and set `truncated=true` when
+narrower queries are needed. Diagnostics without the active version are
+rejected as stale. Returned locations must be file URIs under the canonical run
+workspace.
+
+Starting the configured executable runs as the current Windows user, with the
+sanitized Agent environment and the canonical workspace as cwd. Broker policy
+classifies it as an external-process launch: `plan` denies, `standard` asks, and
+`full_access` follows the existing external-terminal policy. Frame size is 4 MiB;
+requests and writes are bounded to 120 seconds, cancellation sends
+`$/cancelRequest`, and Broker shutdown kills the process tree. The new profile
+does not change existing run pins. Configuration is captured once per Host
+process; restart Ru after editing `.ru/lsp.json`.
 
 Prefer `read_file` with 1-based `start_line` and `line_count`; continue at
 `next_line` (also updated when model context shortens the page). Use `read` for
@@ -142,7 +175,10 @@ Returned JSON is fitted into 4 MiB, including escaping and metadata;
 `max_entries` (1–512); `help` takes `query` (1–256) with optional `max_results`
 (1–5) and searches the five bundled offline documents; `todo_write` replaces the
 session task list (at most 64 rows of `content` plus a `status` of `pending`,
-`in_progress` or `completed`) and touches neither disk nor network.
+`in_progress` or `completed`) and touches neither disk nor network. For a coding
+request with several explicit requirements, record each one as its own row before
+editing, and mark it `completed` only after a check that exercises it passes. A failed
+or unparseable call keeps the previous list.
 `glob` takes `pattern`
 (required) plus optional `path` and `max_results` (1–128, default 128) and returns
 stable sorted relative paths without content access; `grep` takes `query`
@@ -164,10 +200,11 @@ fail initialization. When full, a new launch returns
 spool quotas and approval rules still apply, and model arguments cannot raise
 the configured capacity.
 
-A foreground inline Python `-c` verification probe that fails during direct
-compilation may be corrected by a later passing probe using the same resolved
+A Python verification invocation that fails during direct `-c` compilation, or
+`python -m pytest` exiting 5 with complete output confirming no tests ran, may
+be corrected by a later passing Python verification using the same resolved
 interpreter and canonical working directory. Broker metadata identifies only
-complete, untruncated direct parse diagnostics; imported project syntax errors,
+complete, untruncated direct parse diagnostics or confirmed empty discovery; imported project syntax errors,
 runtime exceptions, actual test failures, timeouts and negative-test mismatches
 remain outstanding. Exact command identities and failed receipts are retained;
 this completion exception never changes arguments or authorization.
@@ -557,14 +594,36 @@ tool batch that contains any failed or unverified receipt, the coordinator suppr
 the prose from the conversation outbox, retains the assistant step internally for audit
 as an `InternalOnly` payload, and answers with a bounded durable `[HARNESS RECOVERY]`
 note in the model context naming the failed receipt code, so the model can redo the
-call, use a different tool, or report the blocker. The unverified case is bounded to
-4 notes and every recovery case shares a global cap of 24 notes per run; once the
+call, use a different tool, or report the blocker. The note states the reason from
+the failed receipt and requires the next reply to be a repair tool call or a final
+`[BLOCKED]` report; a plain final reply cannot complete the run. The unverified
+case is bounded to 4 notes and every recovery case shares a global cap of 24 notes
+per run; once the
 bound is spent the run fails with the receipt error code (falling back to `tool_failed`)
 exactly as before. An unverified success claim is never displayed to the user as a
 completed answer. A subsequent different tool call remains eligible for normal execution
 to allow recovery. A first `policy_denied` is the exception: the run stays alive so
 the model can read the failed receipt plus repair hint and adjust; only a repeated
 identical deny terminates the run.
+
+A final prose reply after an unverified source edit is held once per run. A
+successful or unknown-effect `apply_patch` or `agent_apply` call, or a `write`,
+`edit`, `write_file` or `edit_file` call to a non-documentation path, sets the
+condition until a launched `purpose=verification` check runs. The harness retracts
+that reply and asks for a verification build or test; this is advice, not a
+failure, and a later final reply is not held again.
+
+Two more one-time holds can follow it, in this order, on a non-empty final reply
+that the earlier checks did not take. An `open_todos` hold retracts the reply when the
+latest successful `todo_write` list still has items that are not `completed`; its note
+quotes up to eight of them and asks for each to be finished and checked, marked
+`completed`, or removed with a stated reason. A `completion_review` hold retracts the
+reply when the run edited source, no check is awaiting verification, the source-edit
+hold was never issued, and the list is not fully completed; its note asks the model to
+re-read the request and the changed code, confirm each explicit requirement is met and
+exercised by a check, fix gaps and rerun the affected `purpose=verification` check, then
+name any unchecked requirement. Neither hold fails the run or certifies verification,
+and a fully completed list skips the review.
 
 A non-success outcome, including a failure or clarification, is also kept as
 one bounded in-memory value. It is isolated by session, consumed once by the
@@ -1031,7 +1090,13 @@ The hook runs through `cmd.exe` in the workspace root with the same credential-s
 Use `purpose=verification` for a terminal command whose exit zero verifies the task.
 Its result stays outstanding across unrelated reads, restart and compaction, and
 must be rerun after later known mutations, including edits while a check runs in
-the background. Authenticated receipts identify the actual resolved invocation,
+the background. If a previously passing check was retired, a final verification
+may explicitly name its stable stale-check ID from runtime guidance in
+`supersedes` (an unambiguous provider call ID is also accepted). Only a fresh
+passing check in the same canonical cwd replaces it; failed, pending, negative
+and unknown-freshness checks remain outstanding. Original evidence is retained.
+Clean up temporary scripts before final checks; do not recreate/delete them
+repeatedly just to satisfy a stale command identity. Authenticated receipts identify the actual resolved invocation,
 so cwd aliases do not create unrelated checks. `purpose=inspection` declares read-only intent;
 it is not enforced filesystem confinement. A completed default `command`
 preserves earlier checks only when Broker's resolved executable/argv

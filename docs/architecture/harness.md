@@ -85,6 +85,18 @@ provider continuation data.
 
 ## Agent prompt contract
 
+Verification obligation decisions live in `VerificationObligationPolicy`, shared
+by retained evidence and model-facing guidance. `RunVerificationEvidence` keeps
+receipt projection; separate guidance renders bounded per-check scope and actions.
+This is an internal responsibility split, without a new store or schema migration.
+
+The core contract asks a coding run to record each explicit requirement of a
+multi-requirement request (behavior, edge and error cases, ordering, return values,
+allowed files, cleanup) as its own `todo_write` item before editing, to mark an item
+`completed` only after a check that exercises it passes, and to re-read the request
+and its changes before the final reply. The checklist holds under
+[Recovery Note](#recovery-note) check that the list is closed; they are advice, not gates.
+
 Long-session checkpoint generation, tool excerpts, usage-anchored estimates and
 nested instruction discovery are described in [context management](context-management.md).
 
@@ -712,7 +724,9 @@ the `ModelContext` audience, that answers a dead-end model step instead of
 failing the run; the same model takes the next step with that feedback in
 context. Bounds are per kind — 4 `unverified_after_tool_failure` notes, 4
 `model_repairable` notes, 3 `empty_model_reply` notes and 3 consecutive
-`model_output_truncated` notes, plus 3 `model_commentary_only` notes — under a global cap of
+`model_output_truncated` notes, plus 3 `model_commentary_only` notes, one
+`unverified_source_edit` note, one `open_todos` note and one `completion_review`
+note — under a global cap of
 24 notes per run, measured over the recovery notes visible in the assembled
 context. A note is persisted with the system role and is therefore never folded
 away by compaction, so the cap is cumulative for the whole run rather than
@@ -734,15 +748,56 @@ user deny keeps its fail-closed rule and an ambiguous mutation still pauses
 until explicit reconciliation. A repeated `policy_denied` tool receipt followed
 by prose is a tool outcome, not an approval decision, so it may still take the
 bounded `unverified_after_tool_failure` notes with the denial code as the
-terminal code.
+terminal code. The `unverified_after_tool_failure` note states the reason from the
+failed receipt: a stale or unknown-freshness required check, a required check with
+no confirmed result, or otherwise a failed tool call. It then requires the next
+reply to be a repair tool call or a final `[BLOCKED]` report; a plain final reply
+cannot complete the run.
 Provider `Length` finishes suppress the whole incomplete step, including any
 partial tool calls, before execution; bounded recovery requests smaller output.
 `ContentFilter` and `Error` finishes fail as `model_content_filtered` and
 `model_reply_error` without recovery. Whitespace-only final text counts as empty.
 
+A final text reply after an unverified source edit gets a separate one-time hold,
+not a failure path. A successful or unknown-effect `apply_patch` or `agent_apply`
+call sets the condition, as does a `write`, `edit`, `write_file` or `edit_file` call
+whose path is not `.md`, `.markdown`, `.txt`, `.rst` or `.adoc`. File deletion,
+file restoration and terminal commands never set it. A launched
+`purpose=verification` check clears it; a failing one stays on the outstanding-check
+path. While a declared check is outstanding, that path decides and the hold stays
+silent. Otherwise the first non-empty final text is held once per run: its streamed
+text is retracted and a durable `unverified_source_edit` note asks for a
+`purpose=verification` build or test of the request's requirements, fixes for any
+failure, and a statement of any untested requirement. If nothing applicable can run,
+the model finishes again and says so. A later final reply is not held again, and a
+model that ignores the note still completes, with summary verification
+`unverified`. The condition is projected from original receipts, so it survives
+compaction and restart. Model step safe code `unverified_source_edit_advised`; note
+safe code `unverified_source_edit`. Empty final replies keep their existing recovery.
+
+Two more one-time holds follow it, in this order, on a non-empty final text reply that
+the outstanding-check guard and the source-edit hold did not take. Both are advice,
+never failure paths, and each is a durable `[HARNESS RECOVERY]` system note counted in
+the global cap. `open_todos` fires when the latest successful `todo_write` list still
+has rows that are not `completed`. Its note quotes up to eight open items, each
+flattened to one line and cut at 120 characters, and asks the model to finish and check
+each one, mark it completed, or remove it with a reason. `completion_review` fires when
+the run made source edits, no check is awaiting verification, the source-edit note was
+never issued, and the latest list is not fully completed. Its note asks the model to
+re-read the request and the changed code, confirm each explicit requirement is met and
+exercised by a check, fix any gap and rerun the affected `purpose=verification` check,
+then name any requirement left unchecked. A fully completed list skips this review.
+Model step safe codes are `open_todos_advised` and
+`completion_review_advised`; note safe codes are `open_todos` and `completion_review`.
+Each hold retracts the streamed text, and a later final reply is not held by the same
+hold again. A coding run with source edits therefore normally takes one extra model step
+(`unverified_source_edit` or `completion_review`, never both), and an open checklist can
+add one more.
+
 Streamed text remains provisional until the Harness accepts the step. When a
-step is suppressed (failed-tool recovery, rejected repeated calls, unusable or
-empty output), the Harness retracts that step's text through the existing
+step is suppressed (failed-tool recovery, the source-edit hold, the checklist holds,
+rejected repeated calls, unusable or empty output), the Harness retracts that step's
+text through the existing
 `assistant.delta` reset before publishing recovery feedback or starting another
 step. Retraction follows redaction completion so buffered tails cannot reappear.
 The reset retains the rejected model-step identity and advances its sequence;
@@ -756,10 +811,14 @@ _Avoid_: fallback answer, substitute model, retry on another backend
 before compaction. A fresh process reconstructs the same checks from encrypted
 history; summaries, session handoffs and model claims cannot clear them. The
 projection travels as private context metadata, outside canonical provider history,
-and outstanding commands are supplied in bounded runtime context guidance.
+and outstanding commands are supplied in bounded runtime context guidance. The
+projection also keeps two completion facts: `HasSourceEdits`, sticky once a structured
+source edit succeeds or has an unknown effect and never cleared by a later check, and
+the latest successful `todo_write` list. A failed or unparseable `todo_write` keeps
+the previous list.
 
 For `powershell` and `run_process`, optional `purpose=verification` declares a check requiring observed
-exit zero. Reading another file or passing a different command cannot resolve
+exit zero. Reading another file or passing an unrelated command cannot resolve
 that required check. Unannotated or `purpose=inspection` process failures remain
 failed diagnostic receipts, not new mandatory checks: a failed optional lookup
 may be abandoned for another relevant source. The latest failed result still
@@ -777,6 +836,21 @@ mark pending checks as changed during execution. A later exit zero from such a
 background check becomes stale, rather than certifying the newer code. A fresh
 rerun can resolve it. This tracks observed run-local mutations, not an OS-enforced
 snapshot or proof that another process/session did not change the workspace.
+
+If a previously passing check is intentionally retired (for example its temporary
+script is removed), a final `purpose=verification` call may explicitly list its
+stable check ID from outstanding-check guidance in `supersedes` (1-16 distinct
+references). An unambiguous provider call ID is also accepted; reused IDs never
+retire multiple obligations. Only a passing replacement in
+the same Broker-derived canonical working directory can satisfy a stale check
+with a previously observed exit zero. Failed, pending, negative and
+unknown-freshness checks are never eligible. Both original and replacement
+receipts remain intact. Replacement bindings are reconstructed from original
+proposals, not summaries, and evaluated after authoritative workspace freshness.
+If the replacement becomes stale, fails or has unknown freshness, the earlier
+obligation blocks again. Rerunning the replacement keeps its declared bindings.
+This metadata changes completion bookkeeping only; policy, approval binding and
+execution arguments remain governed by the same authority.
 
 A deliberately failing task may declare `purpose=expected_failure` and an exact
 nonzero signed 32-bit `expected_exit_code` before execution. Only that observed
@@ -809,7 +883,10 @@ checks. This is evidence for declared checks, not a claim that all code is corre
 or every possible verification has run.
 
 Terminal summaries load the same original-receipt evidence before reserving the
-immutable live/late-subscriber summary. A completed edit alone is `unverified`;
+immutable live/late-subscriber summary. A completed edit alone is still
+`unverified`. The first prose final reply after an unverified source edit is held
+once (see Recovery Note), but that hold asks for a check and never certifies one. The
+checklist holds likewise never certify `verified`.
 `verified` requires declared/observed required checks that passed without an
 outstanding failure, pending result or stale check. Runs without mutations or
 required checks use `not_applicable`. Missing history never certifies a check.

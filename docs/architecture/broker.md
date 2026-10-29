@@ -51,6 +51,13 @@ hard-link containment, and the protected-path denial holds in `plan` and
 `standard` (`full_access` is literally full). API keys remain in credential
 storage and diagnostics redact secrets.
 
+Language-server processes use the same Broker authority and sanitized child
+environment. `code_intelligence` is an external-process launch bound to its
+configured executable/argv, operation, canonical workspace and target path.
+The server runs with the canonical run workspace as cwd; path grants cannot
+move that cwd. LSP frames, results, document versions and process-tree lifetime
+are bounded by [ADR 0037](../adr/0037-language-server-tools.md).
+
 The current managed process flow (Phase 2 cutover) is:
 
 ```text

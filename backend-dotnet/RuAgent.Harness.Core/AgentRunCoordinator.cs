@@ -423,6 +423,59 @@ public sealed partial class AgentRunCoordinator
                     .ConfigureAwait(false);
             }
 
+            // Empty final replies keep their own recovery in HandleFinalStepAsync, so only prose is held here.
+            if (!string.IsNullOrWhiteSpace(step.Text) && UnverifiedSourceEditGuard.ShouldAdvise(context))
+            {
+                invocation.RetractAssistantText();
+                return await _steps.HandleUnverifiedSourceEditStepAsync(
+                        run,
+                        modelStepId,
+                        step,
+                        modelDroppedCount,
+                        context,
+                        promptReceiptPayload,
+                        promptComposedEvent,
+                        cancellationToken,
+                        reasoningText)
+                    .ConfigureAwait(false);
+            }
+
+            if (!string.IsNullOrWhiteSpace(step.Text) && CompletionChecklistGuard.ShouldAdviseOpenTodos(context))
+            {
+                invocation.RetractAssistantText();
+                return await _steps.HandleCompletionHoldStepAsync(
+                        run,
+                        modelStepId,
+                        step,
+                        modelDroppedCount,
+                        context,
+                        AgentRecoveryKind.OpenTodos,
+                        AgentRecoveryNotes.BuildOpenTodosNote(context.VerificationEvidence.OpenTodoItems),
+                        promptReceiptPayload,
+                        promptComposedEvent,
+                        cancellationToken,
+                        reasoningText)
+                    .ConfigureAwait(false);
+            }
+
+            if (!string.IsNullOrWhiteSpace(step.Text) && CompletionChecklistGuard.ShouldAdviseCompletionReview(context))
+            {
+                invocation.RetractAssistantText();
+                return await _steps.HandleCompletionHoldStepAsync(
+                        run,
+                        modelStepId,
+                        step,
+                        modelDroppedCount,
+                        context,
+                        AgentRecoveryKind.CompletionReview,
+                        AgentRecoveryNotes.BuildCompletionReviewNote(),
+                        promptReceiptPayload,
+                        promptComposedEvent,
+                        cancellationToken,
+                        reasoningText)
+                    .ConfigureAwait(false);
+            }
+
             if (string.IsNullOrWhiteSpace(step.Text))
                 invocation.RetractAssistantText();
             return await _steps.HandleFinalStepAsync(

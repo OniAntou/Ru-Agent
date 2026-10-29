@@ -9,8 +9,10 @@ public sealed class ToolRegistry
     private static readonly Regex VersionPattern = new("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$", RegexOptions.Compiled);
     // "connector" is the adapter of the mcp tool (ADR 0025), whose servers run
     // through McpServerHost.
+    // "language_server" is the adapter of the code_intelligence tool (ADR 0037), whose
+    // configured servers launch through the Broker external-process policy.
     private static readonly IReadOnlySet<string> TrustedAdapters = new HashSet<string>(
-        ["builtin", "desktop", "terminal", "web", "connector"],
+        ["builtin", "desktop", "terminal", "web", "connector", "language_server"],
         StringComparer.Ordinal);
     private readonly Dictionary<(string Id, string Version), ToolManifest> _manifests = [];
 

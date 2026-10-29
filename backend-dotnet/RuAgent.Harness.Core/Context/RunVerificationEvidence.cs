@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text;
 using System.Text.Json;
 
 namespace RuAgent.Harness.Core.Context;
@@ -9,84 +10,71 @@ public sealed record VerificationCheckEvidence(string Identity, string ProviderC
     string? ExecutionId, int ExpectedExitCode, bool IsVerification,
     VerificationCheckStatus Status, string Code, string Command, bool InvalidatedDuringExecution = false,
     int? ObservedExitCode = null, bool RejectedBeforeLaunch = false,
-    DateTimeOffset? ExecutionStartedAtUtc = null, string? RepairIdentity = null, bool InvocationInvalid = false);
+    DateTimeOffset? ExecutionStartedAtUtc = null, string? RepairIdentity = null, bool InvocationInvalid = false,
+    string? WorkingDirectoryIdentity = null, IReadOnlyList<string>? SupersededCheckIdentities = null,
+    string? WorkingDirectory = null);
 
-/// <summary>Host-derived original receipt evidence; survives compaction, grants no authority.</summary>
+/// <summary>Host-derived original receipt evidence; survives compaction, grants no authority.
+/// It also carries the completion evidence (source edits, latest todo list) used by the completion guards.</summary>
 public sealed partial class RunVerificationEvidence
 {
     public const int MaximumChecks = 256;
+    private const string CompletedTodoStatus = "completed";
     public IReadOnlyList<VerificationCheckEvidence> Checks { get; }
     public bool Overflowed { get; }
     public bool HasMutations { get; }
+
+    /// <summary>
+    /// True from a successful source edit (or unknown effect) until a declared
+    /// purpose=verification check runs. Never set by terminal commands alone.
+    /// </summary>
+    public bool SourceEditAwaitingVerification { get; }
+
+    /// <summary>
+    /// Sticky: true once any source edit ran in this run and no check clears it. The
+    /// completion guards use it to tell an edited run from a read-only one.
+    /// </summary>
+    public bool HasSourceEdits { get; }
+
+    /// <summary>
+    /// Rows of the most recent successful todo_write in this run, or null when none ran.
+    /// A later empty list is a real, empty list rather than null.
+    /// </summary>
+    public IReadOnlyList<AgentTodoRow>? LatestTodos { get; }
+
+    /// <summary>Contents of the latest list's rows that are not completed, in list order.</summary>
+    public IReadOnlyList<string> OpenTodoItems => LatestTodos is null
+        ? Array.Empty<string>()
+        : LatestTodos.Where(row => row.Status != CompletedTodoStatus).Select(row => row.Content).ToArray();
+
+    /// <summary>True when the latest list has at least one row and every row is completed.</summary>
+    public bool HasCompletedTodoList => LatestTodos is { Count: > 0 } rows
+        && rows.All(row => row.Status == CompletedTodoStatus);
+
     private readonly HashSet<string> _expectedFailures;
     private readonly string? _programFailure;
 
     private RunVerificationEvidence(IEnumerable<VerificationCheckEvidence> checks,
-        HashSet<string> expectedFailures, bool overflowed, bool hasMutations, string? programFailure = null)
+        HashSet<string> expectedFailures, bool overflowed, bool hasMutations, string? programFailure = null,
+        bool sourceEditAwaitingVerification = false, bool hasSourceEdits = false,
+        IReadOnlyList<AgentTodoRow>? latestTodos = null)
     {
         Checks = new ReadOnlyCollection<VerificationCheckEvidence>(checks.ToArray());
         _expectedFailures = expectedFailures;
         Overflowed = overflowed;
         HasMutations = hasMutations;
         _programFailure = programFailure;
+        SourceEditAwaitingVerification = sourceEditAwaitingVerification;
+        HasSourceEdits = hasSourceEdits;
+        LatestTodos = latestTodos;
     }
 
     public string? BlockingCode => _programFailure ?? (Overflowed ? "verification_tracking_limit"
-        : Checks.FirstOrDefault(check => (check.IsVerification || check.ExpectedExitCode != 0)
-            && check.Status != VerificationCheckStatus.Passed)?.Code);
+        : OutstandingChecks().FirstOrDefault()?.Code);
 
     public bool IsExpectedFailure(ToolExecutionReceipt receipt) =>
         receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero"
         && receipt.ProviderCallId is { } id && _expectedFailures.Contains(ReceiptIdentity(receipt, id));
-
-    public string? DescribeExitMismatch()
-    {
-        var mismatches = Checks.Where(IsConfirmedExitMismatch).ToArray();
-        if (mismatches.Length == 0) return null;
-        var other = Checks.Where(check => (check.IsVerification || check.ExpectedExitCode != 0)
-            && check.Status != VerificationCheckStatus.Passed && !IsConfirmedExitMismatch(check)).ToArray();
-        return "The run could not complete: a declared negative test returned a different exit code.\n\n"
-            + string.Join("\n", mismatches.Take(8).Select(check =>
-                $"- {check.Command.Replace('\r', ' ').Replace('\n', ' ')}: expected {check.ExpectedExitCode}, observed {check.ObservedExitCode}."))
-            + (mismatches.Length > 8 ? $"\n- {mismatches.Length - 8} additional mismatches." : "")
-            + (other.Length > 0 ? "\n\nOther outstanding checks: "
-                + string.Join(", ", other.Take(8).Select(check => check.Code))
-                + (other.Length > 8 ? $"; {other.Length - 8} more" : "") + "." : "")
-            + (Overflowed ? "\nRequired verification capacity was exceeded." : "")
-            + (_programFailure is not null ? "\nProgram effects are not fully recorded; do not repeat uncertain effects." : "")
-            + "\n\nThese checks remain failed. A successful alternative invocation does not change the original result. "
-            + "For a native executable's exact exit code, use run_process; a PowerShell wrapper can return 1 instead. "
-            + "No automatic retry was scheduled for this final report.";
-    }
-
-    public bool HasExitMismatch => Checks.Any(IsConfirmedExitMismatch);
-
-    private static bool IsConfirmedExitMismatch(VerificationCheckEvidence check) => check.ExpectedExitCode != 0
-        && check.Status == VerificationCheckStatus.Failed && check.Code == "expected_exit_mismatch"
-        && check.ObservedExitCode is not null;
-
-    public string? DescribePending()
-    {
-        if (_programFailure is not null) return _programFailure + ": program effects are not fully recorded. Inspect the workspace; do not repeat uncertain effects. Report [BLOCKED].";
-        var pending = Checks.Where(check => (check.IsVerification || check.ExpectedExitCode != 0)
-            && check.Status != VerificationCheckStatus.Passed).ToArray();
-        if (pending.Length == 0 && !Overflowed) return null;
-        return "Outstanding declared checks: " + string.Join(", ", pending.Take(8)
-            .Select(check => $"{check.ProviderCallId} ({check.Code}): {check.Command}"))
-            + (pending.Length > 8 ? $"; {pending.Length - 8} more" : "")
-            + (Overflowed ? "; verification_tracking_limit" : "")
-            + (pending.Any(check => check.RejectedBeforeLaunch)
-                ? ". A check rejected before launch never ran; a corrected check of the same kind that passes resolves it"
-                : "")
-            + (pending.Any(check => check.InvocationInvalid)
-                ? ". An inline Python verification probe failed to parse. Correct that probe and pass it with the same Python interpreter and working directory; this exception never clears a test failure or expected-exit mismatch"
-                : "")
-            + (pending.Any(check => check.Code == "expected_exit_mismatch")
-                ? ". An expected-exit mismatch is an observed result, not a transient tool error. Do not keep rerunning a deliberately failing command to force its expected code. A different invocation does not clear the original check. Report the actual exit and use [BLOCKED] for the incomplete outcome."
-                : pending.Any(check => check.InvocationInvalid)
-                    ? ". Inspecting logs alone does not resolve the invalid probe. Report [BLOCKED] if it cannot be corrected."
-                    : ". Inspecting logs does not satisfy a check. Rerun the same check after repairs or report [BLOCKED].");
-    }
 
     public static RunVerificationEvidence Project(IEnumerable<ModelContextEntry> originalRunEntries,
         RunVerificationEvidence? previous = null)
@@ -94,9 +82,18 @@ public sealed partial class RunVerificationEvidence
         var evidence = new VerificationEvidenceBuffer(MaximumChecks);
         if (previous is not null) evidence.Seed(previous.Checks, previous._expectedFailures, previous.Overflowed);
         bool hasMutations = previous?.HasMutations ?? false;
+        bool sourceEditAwaitingVerification = previous?.SourceEditAwaitingVerification ?? false;
+        bool hasSourceEdits = previous?.HasSourceEdits ?? false;
+        IReadOnlyList<AgentTodoRow>? latestTodos = previous?.LatestTodos;
         string? programFailure = previous?._programFailure;
         foreach (var (entry, proposed) in ExpandProgramEvidence(originalRunEntries, () =>
-            { programFailure = "program_evidence_unavailable"; hasMutations = true; evidence.Invalidate(); }))
+            {
+                programFailure = "program_evidence_unavailable";
+                hasMutations = true;
+                sourceEditAwaitingVerification = true;
+                hasSourceEdits = true;
+                evidence.Invalidate();
+            }))
         {
             var receipt = entry.ToolReceipt!;
             var providerId = receipt.ProviderCallId!;
@@ -107,10 +104,23 @@ public sealed partial class RunVerificationEvidence
                 || terminal && receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
             if (!terminal)
             {
+                // Same gate as the live todo activity: a successful list replaces the earlier one,
+                // and a payload that does not parse keeps the earlier list rather than erasing it.
+                if (proposed.ToolId == "todo_write" && receipt.Outcome == ToolExecutionOutcome.Succeeded
+                    && entry.Content is { } todoContent
+                    && AgentTodoPayload.TryRead(Encoding.UTF8.GetBytes(todoContent)) is { } todoRows)
+                {
+                    latestTodos = todoRows;
+                }
                 if (effect && (proposed.ToolId is "write" or "edit" or "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "agent_apply" || receipt.SideEffectsPossible))
                 {
                     hasMutations = true;
                     evidence.Invalidate();
+                }
+                if (effect && IsSourceEditCall(proposed))
+                {
+                    sourceEditAwaitingVerification = true;
+                    hasSourceEdits = true;
                 }
                 continue;
             }
@@ -169,10 +179,15 @@ public sealed partial class RunVerificationEvidence
                 VerificationCheckStatus.Pending, "verification_pending", DescribeCommand(args),
                 ExecutionStartedAtUtc: entry.ExecutionStartedAtUtc, RepairIdentity: metadata.RepairIdentity,
                 InvocationInvalid: expectedExit == 0 && purpose == "verification" && metadata.InvocationInvalid
-                    && receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero");
+                    && receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero",
+                WorkingDirectoryIdentity: metadata.WorkingDirectoryIdentity, WorkingDirectory: metadata.WorkingDirectory,
+                SupersededCheckIdentities: SelectSupersededChecks(args, metadata, evidence, identity) ?? tracked?.SupersededCheckIdentities);
             var assessed = Assess(initial, receipt, entry.Content, providerId, false);
             if (rejectedBeforeLaunch) assessed = assessed with { RejectedBeforeLaunch = true };
             evidence.Store(assessed);
+            // A declared check that actually launched answers the awaiting edit, whatever its exit.
+            // A failing one stays outstanding through the check path, so this flag never hides it.
+            if (purpose == "verification" && !rejectedBeforeLaunch) sourceEditAwaitingVerification = false;
             if (assessed.Status == VerificationCheckStatus.Passed) evidence.ResolveRejectedBy(assessed);
             if (negative && assessed.Status == VerificationCheckStatus.Passed
                 && receipt.Outcome == ToolExecutionOutcome.Failed)
@@ -180,7 +195,8 @@ public sealed partial class RunVerificationEvidence
                 evidence.RememberExpectedFailure(ReceiptIdentity(receipt, providerId));
             }
         }
-        return new(evidence.Checks, evidence.ExpectedFailures, evidence.Overflowed, hasMutations, programFailure);
+        return new(evidence.Checks, evidence.ExpectedFailures, evidence.Overflowed, hasMutations, programFailure,
+            sourceEditAwaitingVerification, hasSourceEdits, latestTodos);
     }
 
     private static IEnumerable<(ModelContextEntry Entry, ModelToolCall Call)> ExpandProgramEvidence(
@@ -213,6 +229,20 @@ public sealed partial class RunVerificationEvidence
 
     private static string? StringArg(JsonElement args, string name) =>
         args.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    // Source edits are structured writes outside documentation. A missing or unreadable
+    // target and apply_patch or agent_apply count as source. File deletion and restoration
+    // are never source edits, so cleaning up a scratch file cannot reopen the nudge.
+    private static bool IsSourceEditCall(ModelToolCall call)
+    {
+        if (call.ToolId is "apply_patch" or "agent_apply") return true;
+        if (call.ToolId is not ("write" or "edit" or "write_file" or "edit_file")) return false;
+        var args = call.Arguments;
+        if (args.ValueKind != JsonValueKind.Object) return true;
+        // The legacy write adapter carries delete and restore in op; those are file_delete and file_restore.
+        if (call.ToolId == "write" && StringArg(args, "op") is "delete" or "restore") return false;
+        return StringArg(args, "path") is not { } path || !VerificationObligationPolicy.IsDocumentationPath(path);
+    }
 
     private static string ReceiptIdentity(ToolExecutionReceipt receipt, string providerId) =>
         receipt.ExecutionId.Value + "|" + receipt.ToolCallId.Value + "|" + providerId;

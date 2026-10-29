@@ -3,6 +3,8 @@
 These records are dated evidence, not current operating instructions. [Current verification](../../operations/verification.md) owns commands and acceptance boundaries.
 
 - [undated](undated.md)
+- [2026-10-30](2026-10-30.md) - unverified-source-edit hold, LSP race and catalog-registration fixes, coalescer/pager grader corrections, full matrix 13/13 after one recurring UI flake
+- [2026-10-29](2026-10-29.md) - Kilo coding benchmark, triage-driven repairs and grader corrections
 - [2026-10-24](2026-10-24.md)
 - [2026-10-23](2026-10-23.md)
 - [2026-10-20](2026-10-20.md)

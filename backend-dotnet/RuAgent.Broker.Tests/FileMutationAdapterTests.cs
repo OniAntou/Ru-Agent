@@ -241,6 +241,8 @@ public sealed class FileMutationAdapterTests : IDisposable
         Assert.Equal("edit_not_unique", ex.Message);
         Assert.Equal("edit_not_unique", ex.Code);
         Assert.Equal(2, ex.MatchCount);
+        Assert.Contains("2 matches", ex.RepairHint);
+        Assert.Contains("expected_occurrences", ex.RepairHint);
         Assert.Equal("foo foo", File.ReadAllText(Full("edit2.txt")));
 
         File.WriteAllText(Full("edit3.txt"), "hello");

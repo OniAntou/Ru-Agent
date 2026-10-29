@@ -26,6 +26,12 @@ public sealed class EditMatchException : InvalidOperationException
 
     public string? RepairHint { get; }
 
+    internal static EditMatchException UnexpectedCount(int observed, int expected) => new(
+        "edit_not_unique", observed,
+        $"old_string has {observed} matches, but expected_occurrences was {expected}. No edit was made. "
+        + "Re-read the file and narrow old_string with surrounding source text for a single intended change. "
+        + $"Use expected_occurrences={observed} only when every observed match is an intended replacement.");
+
     internal static EditMatchException NoExactMatch(string source, string candidate)
     {
         if (ContainsEncodedMarkup(candidate))
@@ -110,7 +116,7 @@ public sealed partial class FileEditAdapter
 
         if (count != expectedOccurrences)
         {
-            throw new EditMatchException("edit_not_unique", count);
+            throw EditMatchException.UnexpectedCount(count, expectedOccurrences);
         }
 
         var normalizedUpdated = normalizedText.Replace(normalizedOld, normalizedNew, StringComparison.Ordinal);
@@ -191,7 +197,7 @@ public sealed partial class FileEditAdapter
 
         if (count != expectedOccurrences)
         {
-            throw new EditMatchException("edit_not_unique", count);
+            throw EditMatchException.UnexpectedCount(count, expectedOccurrences);
         }
 
         var normalizedUpdated = normalizedText.Replace(normalizedOld, normalizedNew, StringComparison.Ordinal);

@@ -83,10 +83,25 @@ Provider billing and cache counters remain independent of these display estimate
 The meter button's accessible help includes the total and all three values, so
 the reading remains available even when the flyout opens as a transient hover.
 
+## Activity rows
+
+Each row of the detailed timeline is one line built from three parts. The verb stays
+the named label (`AgentActivityText`, `ThinkingLabel` or `EditPreviewLabel`) that the
+running sweep and settled tone find by name; `ActivityRowGlyph` puts the kind's glyph
+before it (danger or warning when the row failed or waits), and `ActivityRowTail`
+puts the subject, a mono tail and an `exit N` badge after it. The words come from
+`AgentActivityItem.RowVerb`, `RowSubject` and `RowMeta`; `DisplayText` remains the
+whole sentence for tooltips, automation names and the compact summary. Only the
+subject trims, to whatever width the other parts leave. Rows use
+`TranscriptTypography.ActivityFontSize`, which equals the message size; muted ink, not
+size, sets them apart. `ChatMessageItem.UpdateActivityGaps` gives each displayed prose
+slice 12px on the side where an activity row sits.
+
 ## Compact agent activity
 
-Settings includes an opt-in **Compact agent activity** switch. Detailed mode is
-still the default. The device-local `Ru/activity-display.json` preference applies
+Settings › Agent activity offers a two-part **Verbose / Compact** choice
+(`SettingsView.ActivityStyle.cs`) rather than an on/off switch, so neither style reads
+as "off". Verbose (every step) is still the default. The device-local `Ru/activity-display.json` preference applies
 to open transcripts and newly loaded messages; it does not enter backend settings,
 model context, durable activity records or execution policy.
 

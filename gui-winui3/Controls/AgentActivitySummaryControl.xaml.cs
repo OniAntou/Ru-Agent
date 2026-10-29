@@ -169,7 +169,7 @@ public sealed partial class AgentActivitySummaryControl : UserControl
 
         _summary = summary;
         TitleText.Text = summary.Title;
-        LeadingIcon.Glyph = summary.Glyph;
+        ActivityRowGlyphs.Apply(LeadingIcon, summary.Glyph, 13);
         ApplyMeta();
         ApplyTone();
         if (summary.IsLive) StartLive();

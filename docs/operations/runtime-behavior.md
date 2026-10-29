@@ -341,8 +341,8 @@ driven by typed `agent.activity` SSE frames. It renders only safe state,
 basename/line-range, symbol/count,
 edit-count, duration, and safe-code fields; it is cleared on terminal,
 cancellation, failure, disconnect, session replacement, or reset. Activity
-frames do not enter durable history or audit. The projector covers nine kinds,
-including `compaction` (bounded covered-entry count and elapsed time) and
+frames do not enter durable history or audit. The projector covers fourteen kinds
+(see [agent tools](agent-tools.md)), including `compaction` (bounded covered-entry count and elapsed time) and
 `retry` (bounded tool transport retry attempt, any access kind, at most once
 per call), plus a generic
 `status` fallback (status rows can carry a bounded plain-text `detail`, for

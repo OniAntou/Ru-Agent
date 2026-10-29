@@ -61,6 +61,25 @@ namespace RuApp.Models
             }
         }
 
+        /// <summary>
+        /// Room between this prose and an activity row beside it (see
+        /// ChatMessageItem.UpdateActivityGaps); zero where prose meets prose or the edge.
+        /// </summary>
+        public Microsoft.UI.Xaml.Thickness ActivityGap
+        {
+            get => _activityGap;
+            set
+            {
+                if (!_activityGap.Equals(value))
+                {
+                    _activityGap = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private Microsoft.UI.Xaml.Thickness _activityGap;
+
         public bool IsError
         {
             get => _isError;

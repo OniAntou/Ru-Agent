@@ -23,14 +23,17 @@ public sealed class AgentActivityUiSourceContractTests
     {
         var template = ActivityTemplate();
         var header = GuiSource.Require(template.Document!, "ActivityHeader");
-        var detail = GuiSource.Require(template.Document!, "ActivityDetailText");
-        Assert.True(GuiSource.IsDescendantOf(detail, header));
-        Assert.Equal("2", GuiSource.AttributeValue(detail, "Grid.Column"));
+        // The subject, numbers and exit code follow the verb in one tail that spans the
+        // header's remaining columns; only its subject trims (ActivityRowTail).
+        var tail = GuiSource.Require(template.Document!, "ActivityTail");
+        Assert.Equal("ActivityRowTail", tail.Name.LocalName);
+        Assert.True(GuiSource.IsDescendantOf(tail, header));
+        Assert.Equal("1", GuiSource.AttributeValue(tail, "Grid.Column"));
+        Assert.Equal("2", GuiSource.AttributeValue(tail, "Grid.ColumnSpan"));
         Assert.Equal("Auto,Auto,*", GuiSource.AttributeValue(header, "ColumnDefinitions"));
         Assert.Equal("Stretch", GuiSource.AttributeValue(header, "HorizontalAlignment"));
         foreach (var text in header.Descendants().Where(element => element.Name.LocalName == "TextBlock"
-            && (Binds(element, "Detail") || Binds(element, "MetadataText")
-                || Binds(element, "BaseMetadataText") || Binds(element, "DisplayText"))))
+            && (Binds(element, "Detail") || Binds(element, "RowVerb") || Binds(element, "DisplayText"))))
         {
             Assert.Equal("NoWrap", GuiSource.AttributeValue(text, "TextWrapping"));
             Assert.Equal("1", GuiSource.AttributeValue(text, "MaxLines"));
@@ -90,7 +93,9 @@ public sealed class AgentActivityUiSourceContractTests
             Assert.True(Binds(template, state), $"AgentActivityTemplate must bind {state}.");
         }
 
-        Assert.True(Binds(template, "MetadataText"), "AgentActivityTemplate must bind MetadataText.");
+        // Subject and numbers are read from the item by the tail, never from raw payload.
+        Assert.Contains(template.Descendants(), element => element.Name.LocalName == "ActivityRowTail");
+        Assert.Equal(3, template.Descendants().Count(element => element.Name.LocalName == "ActivityRowGlyph"));
 
         // The pill is words only. It used to open with a document glyph, which said
         // nothing the file name beside it did not — and it was the one mark the row
@@ -114,11 +119,9 @@ public sealed class AgentActivityUiSourceContractTests
 
         Assert.True(Binds(template, "Detail"));
 
-        // The plain header and the plain detail line are one decision: a thinking row
-        // carries neither, because its deliberation lives in the collapsible quote
-        // block instead. Binding the detail without the gate is what put a long
-        // deliberation on the row and pushed the answer off screen.
-        Assert.True(Binds(template, "ShowPlainDetail"));
+        // A thinking row has no plain header: its deliberation lives in the collapsible
+        // quote block, and the tail shows plain detail only through ShowPlainDetail
+        // (AgentActivityItem.RowSubject), so a long deliberation never lands on the row.
         Assert.True(Binds(template, "ShowPlainHeader"));
         Assert.True(Binds(template, "EditBeforeText"));
         Assert.True(Binds(template, "EditAfterText"));
@@ -171,7 +174,7 @@ public sealed class AgentActivityUiSourceContractTests
     {
         // A SemiBold label beside the 14px regular message text read as a heading
         // above the reply - bigger than the message it describes. The feed is
-        // metadata: its labels keep the ink color and the two-steps-smaller size,
+        // metadata: its labels keep the ink color at the message's own size,
         // and stay regular weight so the message remains the visual focus.
         var template = ActivityTemplate();
         foreach (var name in new[] { "AgentActivityText", "ThinkingLabel", "EditPreviewLabel" })

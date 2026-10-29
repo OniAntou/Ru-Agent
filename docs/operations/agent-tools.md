@@ -778,11 +778,17 @@ The transcript activity feed is connection-local and transient. Runtime maps the
 Core projection to an `agent.activity` SSE frame whose inner JSON contains only
 the typed fields `activity_id`, `kind`, `state`, optional safe `file_name`
 (basename/line range only), `line_start`/`line_end`, `symbol`, `count`, `added`, `removed`,
-`duration_ms`, and bounded `safe_code`. It does not advance the durable event
+`duration_ms`, bounded `safe_code`, a bounded `tool_display` and `detail`, and for a
+terminal row the process `exit_code` its receipt reported. It does not advance the durable event
 cursor, append to the Harness event store, or enter session history.
 
-The feed projects nine kinds: `thinking`, `explore`, `search`, `analyze`, `edit`,
-`terminal`, `compaction`, `retry`, and a generic `status` fallback. `compaction`
+The feed projects fourteen kinds: `thinking`, `explore`, `search`, `analyze`, `edit`,
+`terminal`, `compaction`, `retry`, `todo`, `web` (`web_search` query or `web_fetch`
+host), `mcp` ("server › tool"), `computer` (the action, never typed text), `skill`
+(a loaded skill's name or a catalog search), `program` (`run_code`, never its source),
+and a generic `status` fallback for unknown tools. `tool_display` tells apart
+listing from globbing (`List`, `Glob`), tool docs (`Docs`) and terminal follow-ups
+(`Output` for `terminal_read`, `Stop` for `terminal_stop`). `compaction`
 reports the bounded number of covered context entries and the elapsed time of a
 context compaction (the summary text never crosses the sink boundary); `retry`
 reports a bounded tool transport retry attempt (any access kind, at most once
@@ -796,15 +802,18 @@ delivers it on the UI dispatcher with `(run, model_step, transient_sequence)`
 deduplication. Raw transient JSON and tool-output deltas are never exposed to
 the UI or durable audit.
 
-Each activity item exposes one of four visual states: a spinner while started,
-a check when completed, an error mark when failed, and an ellipsis while waiting
-for approval or continuation. Thinking items may show only their elapsed
+Each desktop row reads as one line: a glyph for the kind of work, a verb in the
+row's tense ("Running", "Ran"), then the subject it acted on (file, command, query,
+host, tool) and a mono tail of numbers (line range, result count, duration, line
+delta), with an `exit N` badge for a non-zero terminal exit. A running verb sweeps;
+failed rows turn danger-coloured and waiting rows warning-coloured. Thinking items may show only their elapsed
 duration after completion. File edits and analysis show a basename and optional
 line range; search and exploration show bounded symbols or counts. The temporary
 user prompt and activity items use separate collections, so durable assistant
 history remains unchanged when the feed is cleared.
 
-The desktop surface renders every kind. The TUI renders `thinking` through the
+The desktop surface renders every kind. The TUI prints the newer tool kinds
+(`web`, `mcp`, `computer`, `skill`, `program`) as tool rows. It renders `thinking` through the
 live status row and `compaction`, `retry` and non-`frames_dropped` `status` kinds
 as transient status lines; tool kinds are settled by the durable tool events,
 which remain authoritative when transient frames are dropped. Because the

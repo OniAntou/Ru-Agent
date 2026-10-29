@@ -247,7 +247,9 @@ public sealed class AgentActivityLivePublisherTests
     {
         var protocol = Enum.GetNames(typeof(RuAgent.Protocol.Harness.AgentActivityKind));
         Assert.Equal(
-            new[] { "Thinking", "Explore", "Search", "Analyze", "Edit", "Terminal", "Compaction", "Retry", "Status", "Todo", "Narration" },
+            // New kinds are only ever appended, so stored and in-flight tokens keep their meaning.
+            new[] { "Thinking", "Explore", "Search", "Analyze", "Edit", "Terminal", "Compaction", "Retry", "Status", "Todo", "Narration",
+                "Web", "Mcp", "Computer", "Skill", "Program" },
             protocol);
     }
 

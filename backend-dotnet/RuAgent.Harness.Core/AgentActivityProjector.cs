@@ -74,8 +74,14 @@ public static class AgentActivityProjector
         var kind = (proposal.ToolId, op) switch
         {
             ("read", "list") or ("glob", _) => AgentActivityKind.Explore,
-            ("grep", _) or ("web_search", _) => AgentActivityKind.Search,
-            ("read", "read") => AgentActivityKind.Analyze,
+            ("grep", _) => AgentActivityKind.Search,
+            ("read", "read") or ("read", "help") => AgentActivityKind.Analyze,
+            // Each of these used to fall to Status, which strips the row to a bare code.
+            ("web_search", _) or ("web_fetch", _) => AgentActivityKind.Web,
+            ("mcp", _) => AgentActivityKind.Mcp,
+            ("computer", _) => AgentActivityKind.Computer,
+            ("skill", _) => AgentActivityKind.Skill,
+            ("run_code", _) => AgentActivityKind.Program,
             ("write", _) or ("edit", _) or ("apply_patch", _) => AgentActivityKind.Edit,
             ("bash", _) => AgentActivityKind.Terminal,
             // Without this the tool fell to the default below and was reported as a bare
@@ -104,6 +110,8 @@ public static class AgentActivityProjector
                 ? ExtractMcpTarget(proposal)
             : proposal.ToolId == "computer"
                 ? ExtractComputerTarget(proposal)
+            : proposal.ToolId == "skill"
+                ? ExtractSkillTarget(proposal)
             : state == AgentActivityState.Started && kind == AgentActivityKind.Edit
                 ? ExtractEditPreview(proposal)
                 : null;
@@ -122,7 +130,22 @@ public static class AgentActivityProjector
             ClampDuration(durationMs),
             SafeCodeFor(state, safeCode ?? receipt?.Code),
             ToolDisplay: toolDisplay,
-            Detail: detail);
+            Detail: detail,
+            ExitCode: kind == AgentActivityKind.Terminal ? ToolActivityMetadataExtractor.ReadExitCode(receipt) : null);
+    }
+
+    /// <summary>
+    /// The skill a row loaded, or "search: query" for a catalog search. Names are
+    /// bounded slugs; a query is cut rather than allowed to run on.
+    /// </summary>
+    private static string? ExtractSkillTarget(ToolProposal proposal)
+    {
+        if (proposal.Arguments.ValueKind != JsonValueKind.Object) return null;
+        string? Text(string name) => proposal.Arguments.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? new string(value.GetString()!.Where(c => !char.IsControl(c)).Take(80).ToArray()).Trim()
+            : null;
+        if (Text("name") is { Length: > 0 } name) return name;
+        return Text("query") is { Length: > 0 } query ? "search: " + query : null;
     }
 
     /// <summary>
@@ -489,8 +512,10 @@ public static class AgentActivityProjector
     private static string? ToolDisplayFor(ToolProposal proposal) =>
         (proposal.ToolId, ReadOp(proposal)) switch
         {
-            ("read", "list") or ("glob", _) => "Explore",
-            ("grep", _) or ("web_search", _) => "Search",
+            ("read", "list") => "List",
+            ("glob", _) => "Glob",
+            ("grep", _) => "Search",
+            ("web_search", _) => "Web search",
             ("read", "read") => "View",
             ("write", "write") => "Write",
             ("edit", _) => "Edit",
@@ -498,12 +523,27 @@ public static class AgentActivityProjector
             ("write", "delete") => "Delete",
             ("write", "restore") => "Restore",
             ("write", _) => "Write",
-            ("bash", _) => "Terminal",
+            ("bash", _) => ReadMode(proposal) switch
+            {
+                "read_output" => "Output",
+                "kill" => "Stop",
+                _ => "Terminal",
+            },
             ("web_fetch", _) => "Fetch",
             ("read", "help") => "Docs",
             ("todo_write", _) => "Plan",
+            ("mcp", _) => "MCP",
+            ("computer", _) => "Computer",
+            ("skill", _) => "Skill",
+            ("run_code", _) => "Program",
             _ => null,
         };
+
+    private static string? ReadMode(ToolProposal proposal) =>
+        proposal.Arguments.ValueKind == JsonValueKind.Object
+        && proposal.Arguments.TryGetProperty("mode", out var mode) && mode.ValueKind == JsonValueKind.String
+            ? mode.GetString()
+            : null;
 
     private static string? ReadOp(ToolProposal proposal)
     {
@@ -728,6 +768,9 @@ public static class AgentActivityProjector
             var count = value.Count(character => character == '\n');
             return count <= MaximumCount ? count : null;
         }
+
+        /// <summary>The process exit code a terminal receipt reports, when it reports one.</summary>
+        internal static int? ReadExitCode(ToolExecutionReceipt? receipt) => ReadReceiptInt(receipt, "exit_code");
 
         private static int? ReadReceiptInt(ToolExecutionReceipt? receipt, string propertyName)
         {

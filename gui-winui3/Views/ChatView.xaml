@@ -139,7 +139,7 @@
         </DataTemplate>
 
         <DataTemplate x:Key="AgentActivityTemplate" x:DataType="models:AgentActivityItem">
-            <Grid Margin="0,8"
+            <Grid Margin="0,3"
                   HorizontalAlignment="Stretch"
                   Visibility="{x:Bind IsVisibleInFeed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                   Loaded="OnActivityItemLoaded"
@@ -158,19 +158,27 @@
                       ColumnSpacing="8"
                       HorizontalAlignment="Stretch"
                       VerticalAlignment="Center">
-                      <TextBlock Grid.Column="0"
-                                 x:Name="AgentActivityText"
-                                 Text="{x:Bind DisplayText, Mode=OneWay}"
-                                 Visibility="{x:Bind ShowPlainHeader, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                 FontFamily="{StaticResource RuUiFontFamily}"
-                               Foreground="{StaticResource RuInkBrush}"
-                               TextWrapping="NoWrap"
-                               TextTrimming="CharacterEllipsis"
-                               MaxLines="1"
-                               MaxWidth="240"
-                               ToolTipService.ToolTip="{x:Bind DisplayTooltip, Mode=OneWay}"
-                               VerticalAlignment="Center"
-                               Margin="20,0,0,0" />
+                      <!-- Glyph for the kind of work, then the verb. The verb stays a
+                           named TextBlock: the running sweep and settled tone find it by
+                           name (ChatView.ActivityLabelElementName). -->
+                      <StackPanel Grid.Column="0"
+                                  Orientation="Horizontal"
+                                  Spacing="8"
+                                  Margin="20,0,0,0"
+                                  VerticalAlignment="Center"
+                                  Visibility="{x:Bind ShowPlainHeader, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                          <controls:ActivityRowGlyph Item="{x:Bind}" />
+                          <TextBlock x:Name="AgentActivityText"
+                                     Text="{x:Bind RowVerb, Mode=OneWay}"
+                                     FontFamily="{StaticResource RuUiFontFamily}"
+                                     Foreground="{StaticResource RuInkBrush}"
+                                     TextWrapping="NoWrap"
+                                     TextTrimming="CharacterEllipsis"
+                                     MaxLines="1"
+                                     MaxWidth="320"
+                                     ToolTipService.ToolTip="{x:Bind DisplayTooltip, Mode=OneWay}"
+                                     VerticalAlignment="Center" />
+                      </StackPanel>
                       <!--
                         The 20px is the fold chevron's place, kept even when the row has
                         no toggle: a hidden box that still takes width (14px) plus its
@@ -203,8 +211,9 @@
                                             Foreground="{StaticResource RuMutedBrush}"
                                             VerticalAlignment="Center" />
                               </Grid>
+                              <controls:ActivityRowGlyph Item="{x:Bind}" />
                               <TextBlock x:Name="ThinkingLabel"
-                                         Text="{x:Bind DisplayText, Mode=OneWay}"
+                                         Text="{x:Bind RowVerb, Mode=OneWay}"
                                          FontFamily="{StaticResource RuUiFontFamily}"
                                          Foreground="{StaticResource RuInkBrush}"
                                          TextWrapping="NoWrap"
@@ -241,8 +250,9 @@
                                              Foreground="{StaticResource RuMutedBrush}"
                                              VerticalAlignment="Center" />
                                </Grid>
+                               <controls:ActivityRowGlyph Item="{x:Bind}" />
                                <TextBlock x:Name="EditPreviewLabel"
-                                          Text="{x:Bind DisplayText, Mode=OneWay}"
+                                          Text="{x:Bind RowVerb, Mode=OneWay}"
                                           FontFamily="{StaticResource RuUiFontFamily}"
                                           Foreground="{StaticResource RuInkBrush}"
                                           TextWrapping="NoWrap"
@@ -254,86 +264,14 @@
                            </StackPanel>
                        </ToggleButton>
                       <!--
-                        The subject and its line counts are two different things: the pill
-                        frames the file, and the counts stand beside it. A border around both
-                        made the numbers read as part of the frame instead of as the change.
+                        Everything after the verb: the subject it acted on, then the
+                        numbers (range, results, time), the line delta and a failing
+                        exit code. One line; only the subject trims.
                       -->
-                      <StackPanel Grid.Column="1"
-                                  x:Name="ActivityMetaPanel"
-                                  Orientation="Horizontal"
-                                  Spacing="6"
-                                  VerticalAlignment="Center">
-                      <Border Visibility="{x:Bind HasMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                              Background="{StaticResource RuSurfaceBrush}"
-                              BorderBrush="{StaticResource RuLineBrush}"
-                              BorderThickness="1"
-                              CornerRadius="{StaticResource AppControlCornerRadius}"
-                              Padding="8,3"
-                              VerticalAlignment="Center">
-                      <StackPanel Orientation="Horizontal"
-                                  Spacing="4"
-                                  VerticalAlignment="Center">
-                           <TextBlock Text="{x:Bind MetadataText, Mode=OneWay}"
-                                      TextWrapping="NoWrap"
-                                      TextTrimming="CharacterEllipsis"
-                                      MaxLines="1"
-                                      MaxWidth="160"
-                                      ToolTipService.ToolTip="{x:Bind MetadataText, Mode=OneWay}"
-                                      Visibility="{x:Bind HasNoLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                      FontFamily="{StaticResource RuMonoFontFamily}"
-                                      FontSize="12.5"
-                                      FontWeight="SemiBold"
-                                      Foreground="{StaticResource RuInkBrush}"
-                                      VerticalAlignment="Center" />
-                           <TextBlock Text="{x:Bind BaseMetadataText, Mode=OneWay}"
-                                      TextWrapping="NoWrap"
-                                      TextTrimming="CharacterEllipsis"
-                                      MaxLines="1"
-                                      MaxWidth="160"
-                                      ToolTipService.ToolTip="{x:Bind BaseMetadataText, Mode=OneWay}"
-                                      Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                      FontFamily="{StaticResource RuMonoFontFamily}"
-                                      FontSize="12.5"
-                                      FontWeight="SemiBold"
-                                      Foreground="{StaticResource RuInkBrush}"
-                                      VerticalAlignment="Center" />
-                      </StackPanel>
-                      </Border>
-                         <TextBlock Text="·"
-                                    Visibility="{x:Bind HasLineDeltaAndBaseMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                    FontFamily="{StaticResource RuMonoFontFamily}"
-                                    FontSize="11"
-                                    Foreground="{StaticResource RuMutedBrush}"
-                                    VerticalAlignment="Center" />
-                         <TextBlock Text="{x:Bind AddedDeltaText, Mode=OneWay}"
-                                    Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                    FontFamily="{StaticResource RuMonoFontFamily}"
-                                    FontSize="11"
-                                    FontWeight="SemiBold"
-                                    Foreground="{StaticResource RuSuccessBrush}"
-                                    VerticalAlignment="Center" />
-                         <TextBlock Text="{x:Bind RemovedDeltaText, Mode=OneWay}"
-                                    Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                    FontFamily="{StaticResource RuMonoFontFamily}"
-                                    FontSize="11"
-                                    FontWeight="SemiBold"
-                                    Foreground="{StaticResource RuDangerBrush}"
-                                    VerticalAlignment="Center" />
-                      </StackPanel>
-                <!-- Short tool context stays beside its status; growing details
-                     must not add a row and move every following transcript block. -->
-                <TextBlock Grid.Column="2"
-                           x:Name="ActivityDetailText"
-                           Text="{x:Bind Detail, Mode=OneWay}"
-                           Visibility="{x:Bind ShowPlainDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                           FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="11.5"
-                           Foreground="{StaticResource RuMutedBrush}"
-                           TextWrapping="NoWrap"
-                           TextTrimming="CharacterEllipsis"
-                           MaxLines="1"
-                           VerticalAlignment="Center"
-                           ToolTipService.ToolTip="{x:Bind Detail, Mode=OneWay}" />
+                      <controls:ActivityRowTail Grid.Column="1"
+                                                Grid.ColumnSpan="2"
+                                                x:Name="ActivityTail"
+                                                Item="{x:Bind}" />
                 </Grid>
                 <!--
                   Thinking deliberation as a quote block: canvas fill to set it off the
@@ -518,6 +456,7 @@
             <controls:MarkdownBlock MarkdownText="{x:Bind Text, Mode=OneWay}"
                                     IsStreaming="{x:Bind IsLive, Mode=OneWay}"
                                     Visibility="{x:Bind HasText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                    Margin="{x:Bind ActivityGap, Mode=OneWay}"
                                     FontSize="14"
                                     Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                     FontFamily="{StaticResource RuUiFontFamily}" />

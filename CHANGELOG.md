@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Settings chooses the agent activity style with a Verbose / Compact
+  segmented control instead of a Compact on/off switch.
+
+- **feat(gui)**: Agent activity rows read as one line: a glyph for the kind of work, a
+  verb in the row's tense, the subject (file, command, query, host, tool) and a mono
+  tail of line range, result count, duration and line delta, with an `exit N` badge for
+  a failing command. Rows sit closer together. Web fetch and search, MCP calls, computer
+  use, skills and `run_code` programs get their own rows instead of a bare status line,
+  listing, globbing, tool docs and terminal output/stop are told apart, and terminal
+  rows carry the exit code (`exit_code` on `agent.activity`). The TUI prints the new
+  kinds as tool rows. Activity text now reads at the message's own size (the Settings
+  size picker drops its separate activity figure), prose keeps
+  12px of room from the rows beside it, and terminal rows use a plain `>_` prompt.
+
 - **feat(gui)**: Compact agent activity reads as one quiet line: a sentence of the
   turn's main kinds of work ("Edited files, ran commands and read files"), a glyph that
   turns into the disclosure chevron on hover, and, while the turn runs, the current

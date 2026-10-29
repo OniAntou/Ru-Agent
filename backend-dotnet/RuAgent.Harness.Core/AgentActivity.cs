@@ -35,4 +35,5 @@ public sealed record AgentActivity(
     string SafeCode = "succeeded",
     string? ToolDisplay = null,
     string? Detail = null,
-    IReadOnlyList<AgentTodoRow>? Todos = null);
+    IReadOnlyList<AgentTodoRow>? Todos = null,
+    int? ExitCode = null);

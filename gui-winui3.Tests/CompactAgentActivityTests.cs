@@ -186,6 +186,31 @@ public sealed class CompactAgentActivityTests
     }
 
     [Fact]
+    public void Prose_gets_room_only_on_the_side_where_an_activity_row_sits()
+    {
+        var lead = new TextSegment("I will look.");
+        var activity = Activity("read", AgentActivityKind.Explore, AgentActivityState.Completed);
+        var reply = new TextSegment("Found it.");
+        var message = new ChatMessageItem
+        {
+            Role = "assistant",
+            Segments = new() { lead, new ActivitySegment(activity.ActivityId, activity), reply },
+            AgentActivities = new() { activity },
+        };
+
+        Assert.Equal(new Microsoft.UI.Xaml.Thickness(0, 0, 0, 12), lead.ActivityGap);
+        Assert.Equal(new Microsoft.UI.Xaml.Thickness(0, 12, 0, 0), reply.ActivityGap);
+
+        // Collapsed compact turns show prose only, so nothing needs room.
+        message.CompactAgentActivity = true;
+        Assert.Equal(default, lead.ActivityGap);
+        Assert.Equal(default, reply.ActivityGap);
+
+        message.IsActivityDetailsExpanded = true;
+        Assert.Equal(new Microsoft.UI.Xaml.Thickness(0, 12, 0, 0), reply.ActivityGap);
+    }
+
+    [Fact]
     public void An_opened_session_gets_the_preference_although_its_history_arrives_as_a_reset()
     {
         // ReplaceAll raises one Reset without NewItems; applying only NewItems left every
@@ -224,9 +249,15 @@ public sealed class CompactAgentActivityTests
     public void Settings_and_transcript_bind_the_same_presentation_option_and_keep_existing_detail_templates()
     {
         var settings = GuiSource.Xml("Views", "SettingsView.xaml");
-        var toggle = GuiSource.Require(settings, "CompactAgentActivityToggle");
-        Assert.Equal("ToggleSwitch", toggle.Name.LocalName);
-        Assert.Contains("ActivityFeedPreferences.Compact", GuiSource.AttributeValue(toggle, "IsOn"));
+        // Two named styles rather than an on/off switch.
+        Assert.False(GuiSource.NamedElements(settings).ContainsKey("CompactAgentActivityToggle"));
+        var verbose = GuiSource.Require(settings, "VerboseActivityOption");
+        var compact = GuiSource.Require(settings, "CompactActivityOption");
+        Assert.Equal("Verbose", verbose.Attribute("Content")?.Value);
+        Assert.Equal("Compact", compact.Attribute("Content")?.Value);
+        Assert.Same(verbose.Parent, compact.Parent);
+        var code = GuiSource.Text("Views", "SettingsView.ActivityStyle.cs");
+        Assert.Contains("ActivityFeedPreferences.Compact = style == \"compact\"", code);
         var chat = GuiSource.Xml("Views", "ChatView.xaml");
         Assert.Contains(chat.Descendants(), node => node.Name.LocalName == "AgentActivitySummaryControl");
         Assert.Contains("{x:Bind DisplayedSegments, Mode=OneWay}", GuiSource.AttributeValues(chat, "ItemsSource"));

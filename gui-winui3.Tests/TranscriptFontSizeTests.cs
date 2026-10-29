@@ -32,16 +32,16 @@ public sealed class TranscriptFontSizeTests
     }
 
     [Fact]
-    public void Typography_activity_line_runs_two_steps_smaller()
+    public void Typography_activity_line_reads_at_the_message_size()
     {
         var typography = new TranscriptTypography(new TranscriptFontSizeStore(TempPath()));
 
         Assert.Equal(14, typography.MessageFontSize);
-        Assert.Equal(12, typography.ActivityFontSize);
+        Assert.Equal(14, typography.ActivityFontSize);
 
         typography.MessageFontSize = 17;
         Assert.Equal(17, typography.MessageFontSize);
-        Assert.Equal(15, typography.ActivityFontSize);
+        Assert.Equal(17, typography.ActivityFontSize);
     }
 
     [Fact]

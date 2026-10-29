@@ -493,7 +493,8 @@ namespace RuApp.Services
                         DurableSequence: wire.DurableSequence,
                         TransientSequence: null,
                         wire.Detail,
-                        wire.Todos));
+                        wire.Todos,
+                        wire.ExitCode));
                 }
 
                 return new RunActivityReplay(rows, ReadTranscript(document.RootElement));

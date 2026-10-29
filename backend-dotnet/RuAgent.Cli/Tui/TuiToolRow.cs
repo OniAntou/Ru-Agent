@@ -114,7 +114,7 @@ public static class TuiToolRow
     public static string Icon(string display) => DisplayLabel(display) switch
     {
         "View" or "Read" or "Docs" => "→",
-        "Explore" or "Search" => "✱",
+        "Explore" or "Search" or "List" or "Glob" => "✱",
         "Edit" or "Write" or "Delete" => "←",
         "Terminal" or "Run" => "$",
         "Fetch" => "%",
@@ -128,7 +128,9 @@ public static class TuiToolRow
         "write_file" or "write" => "Write",
         "bash" or "terminal" => "Run",
         "web_fetch" or "fetch" => "Fetch",
-        "web_search" or "grep" or "search" => "Search",
+        "web_search" or "web search" or "grep" or "search" => "Search",
+        "list" => "List",
+        "glob" => "Glob",
         "todo" or "plan" => "Plan",
         _ => ChatDisplayText.Sanitize(display, 64),
     };

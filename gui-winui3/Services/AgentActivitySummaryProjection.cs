@@ -125,7 +125,7 @@ internal static class AgentActivitySummaryProjection
         AgentActivityKind.Explore => "\uE8A5",
         AgentActivityKind.Search => "\uE721",
         AgentActivityKind.Edit => "\uE70F",
-        AgentActivityKind.Terminal => "\uE756",
+        AgentActivityKind.Terminal => RuApp.Controls.ActivityRowGlyphs.TerminalPrompt,
         AgentActivityKind.Thinking => "\uE82F",
         AgentActivityKind.Todo => "\uE9D5",
         AgentActivityKind.Compaction => "\uE73F",

@@ -302,8 +302,8 @@ public sealed partial class AgentActivityProjectorTests
             proposal,
             AgentActivityState.Started);
 
-        Assert.Equal(AgentActivityKind.Search, activity.Kind);
-        Assert.Equal("Search", activity.ToolDisplay);
+        Assert.Equal(AgentActivityKind.Web, activity.Kind);
+        Assert.Equal("Web search", activity.ToolDisplay);
         Assert.Null(activity.Symbol);
         Assert.Equal("latest_release", activity.Detail);
     }
@@ -319,7 +319,7 @@ public sealed partial class AgentActivityProjectorTests
             proposal,
             AgentActivityState.Started);
 
-        Assert.Equal(AgentActivityKind.Status, activity.Kind);
+        Assert.Equal(AgentActivityKind.Web, activity.Kind);
         Assert.Equal("Fetch", activity.ToolDisplay);
         Assert.Null(activity.Symbol);
         Assert.Null(activity.FileName);
@@ -591,6 +591,52 @@ public sealed partial class AgentActivityProjectorTests
 
         Assert.Equal(2, activity.Count);
         Assert.Equal(2, activity.Todos!.Count);
+    }
+
+    [Theory]
+    [InlineData("mcp", "{\"op\":\"call\",\"server\":\"github\",\"tool\":\"list_issues\",\"arguments\":\"{}\"}", AgentActivityKind.Mcp, "MCP", "github › list_issues")]
+    [InlineData("computer", "{\"action\":\"key\",\"keys\":\"ctrl+s\"}", AgentActivityKind.Computer, "Computer", "key ctrl+s")]
+    [InlineData("skill", "{\"name\":\"invoice-check\"}", AgentActivityKind.Skill, "Skill", "invoice-check")]
+    [InlineData("skill", "{\"query\":\"pdf\"}", AgentActivityKind.Skill, "Skill", "search: pdf")]
+    [InlineData("run_code", "{\"code\":\"return 1\"}", AgentActivityKind.Program, "Program", null)]
+    public void Tools_that_used_to_fall_to_a_status_line_get_their_own_kind(
+        string toolId, string arguments, AgentActivityKind kind, string display, string? detail)
+    {
+        var activity = AgentActivityProjector.ProjectTool(Proposal(toolId, arguments), AgentActivityState.Started);
+
+        Assert.Equal(kind, activity.Kind);
+        Assert.Equal(display, activity.ToolDisplay);
+        Assert.Equal(detail, activity.Detail);
+        Assert.DoesNotContain("return 1", activity.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("read", "{\"op\":\"list\",\"path\":\"src\"}", AgentActivityKind.Explore, "List")]
+    [InlineData("glob", "{\"path\":\"src\",\"pattern\":\"*.cs\"}", AgentActivityKind.Explore, "Glob")]
+    [InlineData("read", "{\"op\":\"help\",\"topic\":\"tools\"}", AgentActivityKind.Analyze, "Docs")]
+    [InlineData("terminal_read", "{\"execution_id\":\"exec_1\"}", AgentActivityKind.Terminal, "Output")]
+    [InlineData("terminal_stop", "{\"execution_id\":\"exec_1\"}", AgentActivityKind.Terminal, "Stop")]
+    public void Listing_globbing_docs_and_terminal_follow_ups_are_told_apart(
+        string toolId, string arguments, AgentActivityKind kind, string display)
+    {
+        var activity = AgentActivityProjector.ProjectTool(Proposal(toolId, arguments), AgentActivityState.Completed);
+
+        Assert.Equal(kind, activity.Kind);
+        Assert.Equal(display, activity.ToolDisplay);
+    }
+
+    [Fact]
+    public void A_terminal_row_carries_the_exit_code_its_receipt_reports()
+    {
+        var proposal = Proposal("run_process", "{\"executable\":\"python\",\"arguments\":[\"-c\",\"exit(7)\"]}");
+
+        var failed = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Failed, Receipt("{\"exit_code\":7}", code: "process_exit_nonzero"));
+        var read = AgentActivityProjector.ProjectTool(Proposal("read", "{\"op\":\"read\",\"path\":\"a.txt\"}"),
+            AgentActivityState.Completed, Receipt("{\"exit_code\":3}"));
+
+        Assert.Equal(7, failed.ExitCode);
+        Assert.Null(read.ExitCode);
+        Assert.Null(AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started).ExitCode);
     }
 
     private static ToolProposal Proposal(string toolId, string arguments)

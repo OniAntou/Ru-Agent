@@ -5,7 +5,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuApp.Models;
 
-public sealed class AgentActivityItem : INotifyPropertyChanged
+public sealed partial class AgentActivityItem : INotifyPropertyChanged
 {
     private AgentActivityKind _kind;
     private IReadOnlyList<TodoItemModel>? _todos;
@@ -770,6 +770,8 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         DurationMs = activity.DurationMs;
         SafeCode = activity.SafeCode;
         ToolDisplay = activity.ToolDisplay;
+        // A settled frame may omit the code a running one never had; keep the last known.
+        if (activity.ExitCode is { } exitCode) ExitCode = exitCode;
         // Producer only sends the edit preview on Started; Completed carries
         // Detail=null. Keep the preview so a fast edit stays visible after settle.
         if (!string.IsNullOrWhiteSpace(activity.Detail) || !IsEditPreview)
@@ -822,6 +824,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(EditPreviewChevronGlyph));
         OnPropertyChanged(nameof(EditBeforeText));
         OnPropertyChanged(nameof(EditAfterText));
+        OnPropertyChanged(nameof(RowVerb));
     }
 
     private string FormatSearch(string prefix)
@@ -862,6 +865,10 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
         storage = value;
         OnPropertyChanged(propertyName);
+        // The headline verb reads state, kind and tool display; any of them moving
+        // can change its tense or wording.
+        if (propertyName is nameof(State) or nameof(Kind) or nameof(ToolDisplay) or nameof(SafeCode))
+            OnPropertyChanged(nameof(RowVerb));
         return true;
     }
 

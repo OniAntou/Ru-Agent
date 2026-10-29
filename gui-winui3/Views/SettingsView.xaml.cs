@@ -73,6 +73,7 @@ namespace RuApp.Views
             InitializeUpdates();
             InitDropdownOptions();
             InitTranscriptSizeOptions();
+            InitializeActivityStyleChoice();
             InitializeSettingsHoverEffects();
             ViewModel.PropertyChanged += OnViewModelPropertyChanged;
             ViewModel.ProviderPickerCommitted += OnProviderPickerCommitted;
@@ -250,7 +251,7 @@ namespace RuApp.Views
                 });
                 specimen.Children.Add(new TextBlock
                 {
-                    Text = TranscriptSizePickerProjection.LabelWithActivity(size),
+                    Text = TranscriptSizePickerProjection.Label(size),
                     FontFamily = uiFont,
                     FontSize = 11,
                     Foreground = muted,
@@ -264,7 +265,7 @@ namespace RuApp.Views
                     HorizontalContentAlignment = HorizontalAlignment.Center,
                 };
                 AutomationProperties.SetAutomationId(option, TranscriptSizePickerProjection.OptionAutomationId(size));
-                AutomationProperties.SetName(option, $"Conversation text size {TranscriptSizePickerProjection.LabelWithActivity(size)}");
+                AutomationProperties.SetName(option, $"Conversation text size {TranscriptSizePickerProjection.Label(size)}");
                 option.Click += OnTranscriptSizeOptionClick;
                 Grid.SetColumn(option, index);
                 TranscriptSizeOptionsPanel.Children.Add(option);

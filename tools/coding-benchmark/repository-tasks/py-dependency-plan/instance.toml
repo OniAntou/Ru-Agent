@@ -1,0 +1,8 @@
+id = "py-dependency-plan"
+language = "python"
+difficulty = "repository"
+editable_paths = ["src/steps.py", "src/planner.py", "pyproject.toml"]
+fail_to_pass = ["stable_dependency_order", "unknown_dependency_rejected", "cycle_rejected", "duplicate_id_rejected"]
+pass_to_pass = ["input_not_mutated", "empty_plan"]
+agent_timeout_sec = 600
+verifier_timeout_sec = 60

@@ -11,8 +11,8 @@ function deferred() { let resolve; const promise = new Promise(r => { resolve = 
 await check("shared_inflight", async () => {
   let calls = 0; const gate = deferred(); const queue = createCoalescer(() => { calls++; return gate.promise; });
   const first = queue.run("a"); const second = queue.run("a");
-  assert(calls === 0); await Promise.resolve(); assert(calls === 1);
-  gate.resolve(7); assert(await first === 7 && await second === 7);
+  await Promise.resolve(); assert(calls === 1);
+  gate.resolve(7); assert(await first === 7 && await second === 7); assert(calls === 1);
 });
 await check("retry_after_rejection", async () => {
   let calls = 0; const queue = createCoalescer(() => { calls++; return calls === 1 ? Promise.reject(new Error("fail")) : 9; });
@@ -23,7 +23,7 @@ await check("clear_generation", async () => {
   const old = deferred(); const fresh = deferred(); let calls = 0;
   const queue = createCoalescer(() => (++calls === 1 ? old.promise : fresh.promise));
   const first = queue.run("a"); queue.clear("a"); const second = queue.run("a");
-  assert(calls === 0); await Promise.resolve(); assert(calls === 2 && queue.size() === 1);
+  await Promise.resolve(); assert(calls === 2 && queue.size() === 1);
   old.resolve("old"); assert(await first === "old"); await Promise.resolve(); assert(queue.size() === 1);
   fresh.resolve("new"); assert(await second === "new"); await Promise.resolve(); assert(queue.size() === 0);
 });

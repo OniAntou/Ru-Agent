@@ -135,7 +135,7 @@ def main():
         try:
             fn(group)
         except Exception as exc:
-            group.failures.append(f"grader case raised {type(exc).__name__}")
+            group.check(False, f"grader case raised {type(exc).__name__}")
         results.append({"name": name, "passed": not group.failures, "checks": group.checks, "failures": group.failures})
     print(json.dumps({"groups": results}, separators=(",", ":")))
     return 0 if all(result["passed"] for result in results) else 1

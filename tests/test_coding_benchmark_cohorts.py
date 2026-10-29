@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -130,6 +131,154 @@ def test_matched_cohorts_require_identical_task_fixture_prompt_and_matrix():
             {"label": "baseline", "manifest": baseline, "records": [left]},
             {"label": "candidate", "manifest": altered, "records": [altered_record]},
         ])
+
+
+def test_matched_model_requires_provider_match_and_reports_paired_outcomes():
+    baseline_pins = {**pins(), "provider_identity": "provider-a"}
+    candidate_pins = {**baseline_pins, "source_commit": "e" * 40,
+                      "source_tree_sha256": "1" * 64, "artifact_sha256": "f" * 64}
+    baseline = cohort.create_manifest([task()], baseline_pins, attempts_per_task=2)
+    candidate = cohort.create_manifest([task()], candidate_pins, attempts_per_task=2)
+    left = [
+        cohort.record_attempt(baseline, task()["id"], 1, status="completed", grader_accepted=True,
+            unattended_completed=True, intervention=False, wall_seconds=10,
+            usage={"input_tokens": 100, "output_tokens": 10, "cost": None}),
+        cohort.record_attempt(baseline, task()["id"], 2, status="interrupted", grader_accepted=True,
+            unattended_completed=False, intervention=False, wall_seconds=12),
+    ]
+    right = [
+        cohort.record_attempt(candidate, task()["id"], 1, status="completed", grader_accepted=True,
+            unattended_completed=True, intervention=False, wall_seconds=8,
+            usage={"input_tokens": None, "output_tokens": None, "cost": None}),
+        cohort.record_attempt(candidate, task()["id"], 2, status="interrupted", grader_accepted=True,
+            unattended_completed=False, intervention=False, wall_seconds=14),
+    ]
+    result = cohort.compare_cohorts([
+        {"label": "baseline", "manifest": baseline, "records": left},
+        {"label": "candidate", "manifest": candidate, "records": right},
+    ], track="matched-model")
+    assert result["comparable"] is True
+    assert result["paired_outcomes"] == {
+        "candidate": "candidate",
+        "attempts": 2,
+        "correctness": {"both_accepted": 2, "baseline_only": 0, "candidate_only": 0,
+                        "both_rejected": 0, "unknown": 0},
+        "unattended_completion": {"both_completed": 1, "baseline_only": 0,
+                                   "candidate_only": 0, "neither_completed": 1},
+        "correct_but_not_completed": {"baseline": 1, "candidate": 1},
+    }
+    assert result["cohorts"][0]["report"]["usage"]["input_tokens"] is None
+
+
+def test_compare_cohorts_marks_incomplete_attempt_matrices_not_comparable():
+    baseline = cohort.create_manifest([task()], pins(), attempts_per_task=2)
+    candidate_pins = {**pins(), "source_commit": "e" * 40,
+                      "source_tree_sha256": "1" * 64, "artifact_sha256": "f" * 64}
+    candidate = cohort.create_manifest([task()], candidate_pins, attempts_per_task=2)
+    left = cohort.record_attempt(baseline, task()["id"], 1, status="completed", grader_accepted=True,
+        unattended_completed=True, intervention=False, wall_seconds=10)
+    right = cohort.record_attempt(candidate, task()["id"], 1, status="completed", grader_accepted=True,
+        unattended_completed=True, intervention=False, wall_seconds=8)
+    result = cohort.compare_cohorts([
+        {"label": "baseline", "manifest": baseline, "records": [left]},
+        {"label": "candidate", "manifest": candidate, "records": [right]},
+    ], track="matched-model")
+    assert result["comparable"] is False
+    assert result["paired_outcomes"] is None
+    assert result["incomparability_reasons"] == ["incomplete attempt matrix"]
+
+
+@pytest.mark.parametrize("field, value, error", [
+    ("task_sha256", "1" * 64, "identical task"),
+    ("fixture_sha256", "1" * 64, "identical task"),
+    ("prompt_sha256", "1" * 64, "identical task"),
+    ("toolchain", "different-toolchain", "same deadline and toolchain"),
+    ("deadline_seconds", 900, "same deadline and toolchain"),
+])
+def test_matched_comparison_rejects_task_and_runtime_mismatches(field, value, error):
+    baseline = cohort.create_manifest([task()], pins())
+    candidate_pins = {**pins(), "source_commit": "e" * 40,
+                      "source_tree_sha256": "1" * 64, "artifact_sha256": "f" * 64}
+    candidate = cohort.create_manifest([task()], candidate_pins)
+    if field in {"task_sha256", "fixture_sha256", "prompt_sha256"}:
+        candidate["tasks"][0][field] = value
+    else:
+        candidate["cohort"][field] = value
+    left = cohort.record_attempt(baseline, task()["id"], 1, status="completed", grader_accepted=True,
+        unattended_completed=True, intervention=False, wall_seconds=1)
+    right = cohort.record_attempt(candidate, task()["id"], 1, status="completed", grader_accepted=True,
+        unattended_completed=True, intervention=False, wall_seconds=1)
+    with pytest.raises(ValueError, match=error):
+        cohort.compare_cohorts([
+            {"label": "baseline", "manifest": baseline, "records": [left]},
+            {"label": "candidate", "manifest": candidate, "records": [right]},
+        ], track="matched-model")
+
+
+def test_compare_cohorts_rejects_duplicate_attempts():
+    manifest = cohort.create_manifest([task()], pins())
+    record = cohort.record_attempt(manifest, task()["id"], 1, status="completed", grader_accepted=True,
+        unattended_completed=True, intervention=False, wall_seconds=1)
+    with pytest.raises(ValueError, match="unexpected or duplicate attempt"):
+        cohort.compare_cohorts([
+            {"label": "baseline", "manifest": manifest, "records": [record, record]},
+            {"label": "candidate", "manifest": manifest, "records": [record]},
+        ], track="matched-model")
+
+
+def test_matched_model_rejects_provider_identity_mismatch_when_supplied():
+    first_pins = {**pins(), "provider_identity": "provider-a"}
+    second_pins = {**pins(), "provider_identity": "provider-b", "source_commit": "e" * 40,
+                   "source_tree_sha256": "1" * 64, "artifact_sha256": "f" * 64}
+    first = cohort.create_manifest([task()], first_pins)
+    second = cohort.create_manifest([task()], second_pins)
+    records = [cohort.record_attempt(manifest, task()["id"], 1, status="completed",
+        grader_accepted=True, unattended_completed=True, intervention=False, wall_seconds=1)
+        for manifest in (first, second)]
+    with pytest.raises(ValueError, match="provider identity"):
+        cohort.compare_cohorts([
+            {"label": "first", "manifest": first, "records": [records[0]]},
+            {"label": "second", "manifest": second, "records": [records[1]]},
+        ], track="matched-model")
+    product = cohort.compare_cohorts([
+        {"label": "first", "manifest": first, "records": [records[0]]},
+        {"label": "second", "manifest": second, "records": [records[1]]},
+    ], track="native-product")
+    assert product["comparable"] is True
+    assert product["configuration_differences"] == [{
+        "field": "provider_identity",
+        "values": [{"cohort": "first", "value": "provider-a"},
+                   {"cohort": "second", "value": "provider-b"}],
+    }]
+
+
+def test_compare_cohorts_cli_accepts_new_track_names_and_writes_paired_report(tmp_path):
+    manifests, records = [], []
+    for commit in ("a", "e"):
+        cohort_pins = {**pins(), "source_commit": commit * 40,
+                       "source_tree_sha256": ("c" if commit == "a" else "1") * 64,
+                       "artifact_sha256": ("d" if commit == "a" else "f") * 64}
+        manifest = cohort.create_manifest([task()], cohort_pins)
+        record = cohort.record_attempt(manifest, task()["id"], 1, status="completed",
+            grader_accepted=True, unattended_completed=True, intervention=False, wall_seconds=2)
+        manifests.append(manifest)
+        records.append(record)
+        index = len(manifests)
+        (tmp_path / f"manifest-{index}.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (tmp_path / f"records-{index}.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+    index_path = tmp_path / "cohorts.json"
+    index_path.write_text(json.dumps([
+        {"label": "baseline", "manifest": "manifest-1.json", "predictions": "records-1.jsonl"},
+        {"label": "candidate", "manifest": "manifest-2.json", "predictions": "records-2.jsonl"},
+    ]), encoding="utf-8")
+    report_path = tmp_path / "report.json"
+    command = [sys.executable, str(ROOT / "benchmark.py"), "compare-cohorts", "--cohorts",
+               str(index_path), "--track", "matched-model", "--report", str(report_path)]
+    completed = subprocess.run(command, cwd=ROOT.parents[1], capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["track"] == "matched-model"
+    assert report["paired_outcomes"]["correctness"]["both_accepted"] == 1
 
 
 def test_rpc_record_keeps_partial_trajectory_and_usage_unknown():

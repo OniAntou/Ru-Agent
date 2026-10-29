@@ -22,7 +22,8 @@ GIT_ENV = {
 
 
 def tasks(suite, task_root=None):
-    directories = {"terminal": "tasks", "swe": "swe-tasks", "everyday": "everyday-tasks", "skills": "skill-tasks"}
+    directories = {"terminal": "tasks", "swe": "swe-tasks", "everyday": "everyday-tasks",
+                   "skills": "skill-tasks", "repository": "repository-tasks"}
     if suite not in directories:
         raise ValueError("unknown suite")
     directory = Path(task_root) if task_root is not None else ROOT / directories[suite]
@@ -98,10 +99,13 @@ def self_test(selected, attempts):
             "validated": all(result["validated"] for result in results), "runs": results}
 
 
-def patch_for(workspace):
+def patch_for(task, workspace):
     # Patch admission must use the same build/cache exclusions as tree grading,
     # including files the agent has already staged.
-    paths = ["src", *(f":(exclude,glob)src/**/{part}/**" for part in sorted(IGNORED_PARTS))]
+    if task.suite == "repository":
+        paths = list(task.editable_globs)
+    else:
+        paths = ["src", *(f":(exclude,glob)src/**/{part}/**" for part in sorted(IGNORED_PARTS))]
     git(workspace, "add", "--intent-to-add", "--", *paths)
     return git(workspace, "diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--", *paths)
 
@@ -109,13 +113,13 @@ def patch_for(workspace):
 def export_patch(task, workspace, output):
     check_integrity(task, workspace)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(patch_for(workspace), encoding="utf-8", newline="")
+    output.write_text(patch_for(task, workspace), encoding="utf-8", newline="")
     return {"task_id": task.id, "patch": str(output)}
 
 
 def grade_patch(task, patch, destination):
-    if task.suite not in {"swe", "everyday"}:
-        raise ValueError("patch grading requires SWE or Everyday suite")
+    if task.suite not in {"swe", "everyday", "repository"}:
+        raise ValueError("patch grading requires SWE, Everyday or repository suite")
     if patch.stat().st_size > 512 * 1024:
         raise ValueError("patch size limit")
     trial = prepare(task, destination)
@@ -151,7 +155,7 @@ def export_swe(output, include_oracle):
             if include_oracle:
                 workspace = Path(trial["workspace"])
                 apply_reference(task, workspace)
-                record["patch"] = patch_for(workspace)
+                record["patch"] = patch_for(task, workspace)
                 record["test_patch"] = "".join(
                     "".join(difflib.unified_diff([], content.decode("utf-8").splitlines(keepends=True),
                                               fromfile="/dev/null", tofile="b/.benchmark_tests/" + relative))
@@ -195,7 +199,7 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
             if execution["status"] != "completed":
                 result["reward"] = 0
                 result["status"] = "agent_" + execution["status"]
-            patch = patch_for(Path(trial["workspace"]))
+            patch = patch_for(task, Path(trial["workspace"]))
             (trial_dir / "prediction.patch").write_text(patch, encoding="utf-8", newline="")
             write_json(trial_dir / "prediction.json", {
                 "instance_id": "ru-benchmark__" + task.id + "-1",
@@ -212,7 +216,7 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
 def main():
     parser = argparse.ArgumentParser(description="Ru custom Terminal-Bench / SWE-bench-style tooling")
     parser.add_argument("command", choices=["list", "validate", "prepare", "grade", "self-test", "grade-patch", "export-patch", "export-swe", "run-live", "compare", "compare-cohorts", "make-cohort", "aggregate-cohort"])
-    parser.add_argument("--suite", choices=["terminal", "swe", "everyday", "skills", "all"], default="all")
+    parser.add_argument("--suite", choices=["terminal", "swe", "everyday", "skills", "repository", "all"], default="all")
     parser.add_argument("--task")
     parser.add_argument("--destination", type=Path)
     parser.add_argument("--workspace", type=Path)
@@ -224,7 +228,7 @@ def main():
     parser.add_argument("--cohort-pins", type=Path, help="JSON file containing exact schema-v2 cohort identity pins")
     parser.add_argument("--task-store", type=Path)
     parser.add_argument("--task-root", type=Path, help="private task definitions for one explicit suite")
-    parser.add_argument("--track", choices=["harness", "product"])
+    parser.add_argument("--track", choices=["matched-model", "native-product", "harness", "product"])
     parser.add_argument("--attempts", type=int, default=1)
     parser.add_argument("--include-oracle", action="store_true")
     parser.add_argument("--allow-live", action="store_true")
@@ -320,7 +324,8 @@ def main():
                 for entry in entries:
                     entry["manifest"] = load_manifest(entry["manifest_path"], args.task_store)
                     entry["records"] = load_records(args.cohorts.parent / entry["predictions"])
-                result = compare_cohorts(entries, args.track)
+                legacy_track = {"matched-model": "harness", "native-product": "product"}.get(args.track, args.track)
+                result = compare_cohorts(entries, legacy_track)
         else:
             result = run_live(selected, args.destination, args.ru_executable, args.allow_live, args.attempts, args.trust_workspace, args.tool_profile)
         if args.report is not None and args.command != "export-swe":

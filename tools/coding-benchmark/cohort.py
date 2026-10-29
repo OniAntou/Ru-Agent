@@ -66,6 +66,9 @@ def create_manifest(tasks, cohort, *, attempts_per_task=1):
     if any(not isinstance(cohort[key], str) or not cohort[key].strip()
            for key in COHORT_PINS if key != "deadline_seconds"):
         raise ValueError("cohort identity pins must be nonempty strings")
+    if "provider_identity" in cohort and (not isinstance(cohort["provider_identity"], str)
+                                           or not cohort["provider_identity"].strip()):
+        raise ValueError("provider_identity must be a nonempty string when supplied")
     if not isinstance(cohort["source_commit"], str) or COMMIT.fullmatch(cohort["source_commit"]) is None:
         raise ValueError("source_commit must be a full lowercase Git commit hash")
     if not _is_sha256(cohort["artifact_sha256"]):
@@ -299,6 +302,10 @@ def _validate_v2(manifest, records):
         task = task_map[key[0]]
         if any(record.get(field) != cohort[field] for field in COHORT_PINS):
             raise ValueError("incompatible pinned cohort identity")
+        if "provider_identity" in cohort and record.get("provider_identity") != cohort["provider_identity"]:
+            raise ValueError("provider identity does not match pinned cohort")
+        if "provider_identity" not in cohort and "provider_identity" in record:
+            raise ValueError("provider identity must be pinned by the manifest")
         if any(record.get(field) != task[field] for field in
                ("task_sha256", "fixture_sha256", "prompt_sha256")):
             raise ValueError("task, fixture or prompt fingerprint mismatch")
@@ -407,11 +414,16 @@ def aggregate(manifest, records):
 
 def compare_cohorts(entries, *, track="harness"):
     """Compare named baseline/candidate reports with identical task identities."""
-    if track not in {"harness", "product"}:
-        raise ValueError("track must be harness or product")
+    track_aliases = {
+        "harness": "matched-model", "matched-model": "matched-model",
+        "product": "native-product", "native-product": "native-product",
+    }
+    if track not in track_aliases:
+        raise ValueError("track must be matched-model or native-product")
+    normalized_track = track_aliases[track]
     if not isinstance(entries, list) or len(entries) < 2:
         raise ValueError("at least two cohorts are required")
-    normalized, labels, reference = [], set(), None
+    normalized, configurations, labels, reference = [], [], set(), None
     for entry in entries:
         if not isinstance(entry, dict) or not isinstance(entry.get("label"), str) or not entry["label"].strip():
             raise ValueError("each cohort needs a label")
@@ -433,17 +445,84 @@ def compare_cohorts(entries, *, track="harness"):
                 raise ValueError("cohorts must use identical task, fixture and prompt hashes and trial matrices")
             if any(pins.get(key) != expected_pins.get(key) for key in ("toolchain", "deadline_seconds")):
                 raise ValueError("cohorts must use the same deadline and toolchain")
-            if track == "harness" and any(pins.get(key) != expected_pins.get(key)
-                                          for key in ("model", "effort", "protocol", "tool_profile")):
-                raise ValueError("harness track requires matched model, effort, protocol and tool profile")
-        normalized.append({"label": entry["label"], "report": aggregate(manifest, records)})
+            if normalized_track == "matched-model" and any(
+                    pins.get(key) != expected_pins.get(key)
+                    for key in ("model", "effort", "protocol", "tool_profile")):
+                raise ValueError("matched-model track requires matched model, effort, protocol and tool profile")
+            provider_values = (pins.get("provider_identity"), expected_pins.get("provider_identity"))
+            if normalized_track == "matched-model" and any(value is not None for value in provider_values):
+                if not all(isinstance(value, str) and value for value in provider_values) or provider_values[0] != provider_values[1]:
+                    raise ValueError("matched-model track requires matching provider identity when supplied")
+        report = aggregate(manifest, records)
+        normalized.append({"label": entry["label"], "report": report})
+        configurations.append(dict(manifest["cohort"]))
+    incomplete = any(not item["report"]["complete"] for item in normalized)
+    comparable = not incomplete
+    paired = None if not comparable else _paired_outcomes(normalized)
+    differences = []
+    if normalized_track == "native-product":
+        for field in ("agent", "agent_version", "provider_identity", "model", "effort", "protocol", "tool_profile"):
+            values = {item.get(field) for item in configurations}
+            if len(values) > 1:
+                differences.append({
+                    "field": field,
+                    "values": [{"cohort": item["label"], "value": configuration.get(field)}
+                               for item, configuration in zip(normalized, configurations, strict=True)],
+                })
     return {
         "track": track,
-        "comparability": ("matched model/effort/protocol/tool-profile harness comparison"
-                          if track == "harness" else
-                          "product configurations; model, effort, protocol or tool profile may differ"),
+        "comparable": comparable,
+        "incomparability_reasons": ["incomplete attempt matrix"] if incomplete else [],
+        "comparability": ("matched model/provider/effort/protocol/tool-profile comparison"
+                          if normalized_track == "matched-model" else
+                          "native product comparison; configuration differences are reported"),
+        "configuration_differences": differences,
+        "paired_outcomes": paired,
         "cohorts": normalized,
     }
+
+
+def _paired_outcomes(cohorts):
+    """Summarize baseline-to-candidate outcomes without combining correctness and completion."""
+    baseline = cohorts[0]["report"]["attempts"]
+    baseline_by_key = {(record["task_id"], record["attempt"]): record for record in baseline}
+    comparisons = []
+    for candidate in cohorts[1:]:
+        candidate_by_key = {(record["task_id"], record["attempt"]): record
+                            for record in candidate["report"]["attempts"]}
+        correctness = {"both_accepted": 0, "baseline_only": 0, "candidate_only": 0,
+                       "both_rejected": 0, "unknown": 0}
+        completion = {"both_completed": 0, "baseline_only": 0, "candidate_only": 0,
+                      "neither_completed": 0}
+        correct_but_incomplete = {"baseline": 0, "candidate": 0}
+        for key, left in baseline_by_key.items():
+            right = candidate_by_key[key]
+            a, b = left["grader_accepted"], right["grader_accepted"]
+            if a is None or b is None:
+                correctness["unknown"] += 1
+            elif a and b:
+                correctness["both_accepted"] += 1
+            elif a:
+                correctness["baseline_only"] += 1
+            elif b:
+                correctness["candidate_only"] += 1
+            else:
+                correctness["both_rejected"] += 1
+            done_a, done_b = left["unattended_completed"], right["unattended_completed"]
+            if done_a and done_b:
+                completion["both_completed"] += 1
+            elif done_a:
+                completion["baseline_only"] += 1
+            elif done_b:
+                completion["candidate_only"] += 1
+            else:
+                completion["neither_completed"] += 1
+            correct_but_incomplete["baseline"] += int(a is True and not done_a)
+            correct_but_incomplete["candidate"] += int(b is True and not done_b)
+        comparisons.append({"candidate": candidate["label"], "attempts": len(baseline_by_key),
+                            "correctness": correctness, "unattended_completion": completion,
+                            "correct_but_not_completed": correct_but_incomplete})
+    return comparisons[0] if len(comparisons) == 1 else comparisons
 
 
 def _value(record, group, field):

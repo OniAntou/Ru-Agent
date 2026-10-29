@@ -1,0 +1,8 @@
+id = "ts-event-policy"
+language = "typescript"
+difficulty = "repository"
+editable_paths = ["src/model.ts", "src/policy.ts", "src/index.ts", "tsconfig.json"]
+fail_to_pass = ["normalized_event_filter", "safe_default", "result_snapshot"]
+pass_to_pass = ["model_exports", "empty_input", "cross_file_typecheck"]
+agent_timeout_sec = 600
+verifier_timeout_sec = 60

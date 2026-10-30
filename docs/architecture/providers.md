@@ -76,6 +76,10 @@ Custom OpenAI uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic
 uses `anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
 and `https://api.anthropic.com/v1`. A `models.dev:<provider-id>` backend reads
 `<provider-id>_api_key` and resolves its base URL from the Models.dev catalog.
+Provider naming itself lives in one table, `RuAgent.Protocol.Providers.ProviderAliases`:
+the Host, the settings transition, the settings store and both clients normalize a
+typed name through it, so the same name resolves to the same backend and credential
+account everywhere and a provider added there is recognized at once.
 OpenCode is the exception to appending `/models` to that base: both gateways
 publish their chat root (`/inference/openai/v1`, `/inference/go/openai/v1`) where
 `GET /models` answers 404, while the model list sits beside it

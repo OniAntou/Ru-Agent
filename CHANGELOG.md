@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(cli)**: **Một bảng tên provider duy nhất cho Host và hai client.** `ProviderAliases`
+  trong `RuAgent.Protocol` thay bốn bảng alias từng trôi lệch nhau (Host, settings
+  transition, settings store và `ProviderCredential`). `/key opencode`, `/key kilo`,
+  `/key gguf` giờ lưu được key — trước đây CLI báo `unknown_provider` trong khi Host vẫn
+  nhận đúng những tên đó — và mỗi tên trỏ đúng một credential account. Test đối chiếu chéo
+  khoá lại: mỗi alias phải cho cùng backend và cùng account trên Host, CLI và GUI.
+
+- **test(gui)**: **Khoá catalog câu lỗi về một nguồn.** `AgentFailureCopy` đã là bảng chung
+  cho TUI và GUI; hai bề mặt Settings (nút Test connection, editor custom provider) vẫn tự
+  viết switch riêng. Chúng giờ là dictionary kèm test parity: mọi mã chúng diễn giải phải có
+  trong bảng chung, và mọi `catalog_*` trong bảng chung phải được nút Test diễn giải — không
+  mã nào rơi về raw token trong ô key.
+
 - **fix(providers)**: **Thêm được key OpenCode Go và chạy được provider này.** Models.dev
   công bố base *chat* của gateway (`…/inference[/go]/openai/v1`), nơi `GET /models` trả
   404 — nên bước kiểm tra key từ chối mọi key OpenCode Go là `provider_key_unverified` và

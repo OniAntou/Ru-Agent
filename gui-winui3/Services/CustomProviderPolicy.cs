@@ -149,20 +149,38 @@ namespace RuApp.Services
             }).ToList(),
         };
 
+        private static readonly Dictionary<string, string> FailureMessages =
+            new(StringComparer.Ordinal)
+            {
+                ["provider_insecure_endpoint"] =
+                    "The key was not sent: this address uses plain http:// to another computer. Use https://, run the server on this computer, or remove the key.",
+                ["catalog_unauthorized"] = "The server rejected the key. Check the API key.",
+                ["catalog_http_error"] =
+                    "The server answered with an error. It may not list its models at /models; add model IDs by hand instead.",
+                ["catalog_timeout"] =
+                    "The server did not answer within 15 seconds. Check that it is running and the URL is right.",
+                ["catalog_unavailable"] =
+                    "Could not reach the server. Check that it is running and the URL is right.",
+                ["catalog_malformed"] =
+                    "The server's model list was not in the expected format. Add model IDs by hand instead.",
+                ["catalog_too_large"] =
+                    "The server's model list is too large to read. Add model IDs by hand instead.",
+                ["catalog_rate_limited"] = "The server is rate limiting requests. Try again shortly.",
+                ["provider_not_active"] = "Save the provider before fetching its models.",
+            };
+
+        /// <summary>
+        /// The codes this editor phrases; a parity test keeps them cataloged in
+        /// <see cref="RuAgent.Client.AgentFailureCopy"/> so the run-level table and the
+        /// editing surfaces cannot drift apart.
+        /// </summary>
+        internal static IReadOnlyCollection<string> PhrasedCodes => FailureMessages.Keys;
+
         /// <summary>What a Host failure code means for someone editing a custom provider.</summary>
-        public static string FailureMessage(string? code) => code switch
-        {
-            "provider_insecure_endpoint" => "The key was not sent: this address uses plain http:// to another computer. Use https://, run the server on this computer, or remove the key.",
-            "catalog_unauthorized" => "The server rejected the key. Check the API key.",
-            "catalog_http_error" => "The server answered with an error. It may not list its models at /models; add model IDs by hand instead.",
-            "catalog_timeout" => "The server did not answer within 15 seconds. Check that it is running and the URL is right.",
-            "catalog_unavailable" => "Could not reach the server. Check that it is running and the URL is right.",
-            "catalog_malformed" => "The server's model list was not in the expected format. Add model IDs by hand instead.",
-            "catalog_too_large" => "The server's model list is too large to read. Add model IDs by hand instead.",
-            "catalog_rate_limited" => "The server is rate limiting requests. Try again shortly.",
-            "provider_not_active" => "Save the provider before fetching its models.",
-            _ => "Could not save. Check the fields and try again.",
-        };
+        public static string FailureMessage(string? code) =>
+            code is not null && FailureMessages.TryGetValue(code.Trim(), out var message)
+                ? message
+                : "Could not save. Check the fields and try again.";
 
         [GeneratedRegex("^[a-z][a-z0-9-]{0,31}$")]
         private static partial Regex IdPattern();

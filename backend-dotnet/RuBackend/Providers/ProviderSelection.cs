@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using RuAgent.Protocol.Providers;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuBackend.Business.Settings;
 
@@ -50,29 +51,8 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
     /// is not a generic backend. The id is restricted to a bounded slug so it can
     /// safely derive credential account names.
     /// </summary>
-    public static string? NormalizeModelsDevBackend(string? value)
-    {
-        const string prefix = "models.dev:";
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        var trimmed = value.Trim();
-        if (!trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var id = trimmed[prefix.Length..].Trim().ToLowerInvariant();
-        if (id.Length == 0 || id.Length > 64
-            || id.Any(c => !(char.IsLetterOrDigit(c) || c is '-' or '_')))
-        {
-            return null;
-        }
-
-        return prefix + id;
-    }
+    public static string? NormalizeModelsDevBackend(string? value) =>
+        ProviderAliases.NormalizeModelsDev(value);
 
     public static ProviderSelection From(SettingsSnapshot settings) => Describe(settings.Backend, settings);
 
@@ -113,17 +93,20 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
     public static ProviderSelection From(SettingsSnapshot settings, IReadOnlyList<ModelsDevProvider> modelsDevCatalog) =>
         Describe(settings.Backend, settings, modelsDevCatalog);
 
-    private static string NormalizeAlias(string alias) => alias.Trim().ToLowerInvariant() switch
+    private static string NormalizeAlias(string alias)
     {
-        "opencode" or "opencode zen" or "opencode zen api" or "opencode api" or "gguf" or "llama.cpp" => "models.dev:opencode",
-        "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => "models.dev:kilo",
-        "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
-        "openai" or "openai api" => "OpenAI",
-        "anthropic" or "anthropic claude" or "claude" => "Anthropic",
-        _ when NormalizeModelsDevBackend(alias) is { } generic => generic,
-        _ when CustomProviders.NormalizeBackend(alias) is { } custom => custom,
-        _ => throw new UnknownProviderAliasException(),
-    };
+        if (ProviderAliases.Normalize(alias) is { } named)
+        {
+            return named;
+        }
+
+        if (CustomProviders.NormalizeBackend(alias) is { } custom)
+        {
+            return custom;
+        }
+
+        throw new UnknownProviderAliasException();
+    }
 
     private static ProviderSelection Describe(string backend, SettingsSnapshot settings, IReadOnlyList<ModelsDevProvider>? modelsDevCatalog = null)
     {

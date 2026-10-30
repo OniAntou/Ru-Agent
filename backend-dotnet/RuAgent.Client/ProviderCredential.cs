@@ -1,3 +1,5 @@
+using RuAgent.Protocol.Providers;
+
 namespace RuAgent.Client;
 
 /// <summary>What a provider alias means for a credential: how it is named and where it goes.</summary>
@@ -31,33 +33,13 @@ public sealed record ProviderCredentialTarget(
 /// </remarks>
 public static class ProviderCredential
 {
-    public const string ModelsDevPrefix = "models.dev:";
-
-    /// <summary>Every fixed provider the product still names in settings.</summary>
-    private static readonly (string Alias, string DisplayName, string KeyField, bool KeyIsOptional)[] Fixed =
-    [
-        ("openai", "OpenAI", "openai_api_key", false),
-        ("anthropic", "Anthropic", "anthropic_api_key", false),
-        ("custom", "Custom OpenAI", "custom_api_key", true),
-    ];
-
-    /// <summary>Bare names a user may type instead of the canonical alias.</summary>
-    private static readonly (string Spoken, string Alias)[] SpokenNames =
-    [
-        ("openai api", "openai"),
-        ("anthropic claude", "anthropic"),
-        ("claude", "anthropic"),
-        ("custom openai", "custom"),
-        ("custom openai api", "custom"),
-        // OpenRouter is by far the most common catalog provider, and its alias is
-        // awkward to type in full, so the bare name resolves to it.
-        ("openrouter", ModelsDevPrefix + "openrouter"),
-    ];
+    public const string ModelsDevPrefix = ProviderAliases.ModelsDevPrefix;
 
     /// <summary>
     /// Resolves what a user typed, or null when nothing recognises it. Accepts a fixed
-    /// alias, a spoken variant, a bare Models.dev id, or the canonical
-    /// <c>models.dev:id</c> form.
+    /// alias, a spoken variant, or the canonical <c>models.dev:id</c> form. The names
+    /// themselves live in <see cref="ProviderAliases"/> so this surface cannot disagree
+    /// with the Host about what a provider is called.
     /// </summary>
     public static ProviderCredentialTarget? Resolve(string? input)
     {
@@ -72,20 +54,17 @@ public static class ProviderCredential
             return FromModelsDevId(trimmed[ModelsDevPrefix.Length..]);
         }
 
-        string lowered = trimmed.ToLowerInvariant();
-        foreach (var (spoken, alias) in SpokenNames)
+        if (!ProviderAliases.TryGet(trimmed, out var entry))
         {
-            if (!string.Equals(spoken, lowered, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            return alias.StartsWith(ModelsDevPrefix, StringComparison.Ordinal)
-                ? FromModelsDevId(alias[ModelsDevPrefix.Length..])
-                : FromFixedAlias(alias);
+            return null;
         }
 
-        return FromFixedAlias(lowered);
+        return new ProviderCredentialTarget(
+            entry.ClientAlias,
+            entry.DisplayName,
+            entry.KeyField,
+            entry.ModelsDevId,
+            entry.KeyIsOptional);
     }
 
     /// <summary>
@@ -149,18 +128,5 @@ public static class ProviderCredential
         }
 
         return new ProviderCredentialTarget(ModelsDevPrefix + normalized, normalized, null, normalized);
-    }
-
-    private static ProviderCredentialTarget? FromFixedAlias(string alias)
-    {
-        foreach (var (candidate, displayName, keyField, keyIsOptional) in Fixed)
-        {
-            if (string.Equals(candidate, alias, StringComparison.Ordinal))
-            {
-                return new ProviderCredentialTarget(candidate, displayName, keyField, null, keyIsOptional);
-            }
-        }
-
-        return null;
     }
 }

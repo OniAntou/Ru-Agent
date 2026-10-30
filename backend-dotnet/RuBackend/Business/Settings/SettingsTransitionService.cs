@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuAgent.Protocol.Providers;
 using RuBackend.Providers;
 
 namespace RuBackend.Business.Settings;
@@ -361,9 +362,9 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
 
     private static string NormalizeBackend(string value)
     {
-        if (ProviderSelection.NormalizeModelsDevBackend(value) is { } generic)
+        if (ProviderAliases.Normalize(value) is { } named)
         {
-            return generic;
+            return named;
         }
 
         if (CustomProviders.NormalizeBackend(value) is { } custom)
@@ -371,16 +372,7 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
             return custom;
         }
 
-        return value.Trim().ToLowerInvariant() switch
-        {
-            "gguf" or "llama.cpp" => "models.dev:opencode",
-            "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => "models.dev:opencode",
-            "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => "models.dev:kilo",
-            "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
-            "openai" or "openai api" => BackendOpenAi,
-            "anthropic" or "anthropic claude" or "claude" => BackendAnthropic,
-            _ => throw new SettingsPayloadException(),
-        };
+        throw new SettingsPayloadException();
     }
 
     private static string? OptionalSecret(JsonObject payload, string key)

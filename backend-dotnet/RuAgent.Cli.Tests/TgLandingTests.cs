@@ -15,32 +15,23 @@ public sealed class TgLandingTests
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
         var captures = new List<string>();
-
+        var stage = 0;
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             captures.Add(string.Join('\n', TgSnapshot.Capture(app)));
-            window.Transcript.Append(" ▌ xin chào", TranscriptStyle.User);
-            return false;
-        });
-        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
-        {
-            captures.Add(string.Join('\n', TgSnapshot.Capture(app)));
-            window.Transcript.Clear();
-            return false;
-        });
-        app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
-        {
-            captures.Add(string.Join('\n', TgSnapshot.Capture(app)));
-            app.RequestStop();
-            return false;
+            switch (stage++)
+            {
+                case 0: window.Transcript.Append(" ▌ xin chào", TranscriptStyle.User); return true;
+                case 1: window.Transcript.Clear(); return true;
+                default: app.RequestStop(); return false;
+            }
         });
         app.Run(window);
 
         Assert.Contains("█▀▀█ █  █ █▀▀█", captures[0]);
 
-        // The feet row is gone, and U now closes its own bowl so the letter still reads as a U
-        // rather than as two bare stems.
-        Assert.DoesNotContain("▀  ▀ ▀▀▀▀", captures[0]);
+        // The current wordmark has a full-letter shadow below its closed U bowl.
+        Assert.Contains("▀  ▀ ▀▀▀▀", captures[0]);
         Assert.Contains("█  █ █▄▄█", captures[0]);
         Assert.Contains(captures[0], ch => ch is >= '\u2801' and <= '\u28ff');
 

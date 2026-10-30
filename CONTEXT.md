@@ -55,6 +55,13 @@ The Host-owned conversation and message/source history. A view may detach or swi
 Implementation: [gui](docs/architecture/gui.md#conversation-session).
 _Avoid_: treating an HTTP 200 response as a successful delete
 
+**TUI Session Tab**:
+A retained presentation/runtime for one Conversation Session in the current
+terminal workspace. Its draft, queue and run ownership survive view switching;
+closing an idle tab does not delete the conversation or transfer permissions.
+Implementation: [concurrent session tabs](docs/architecture/tui.md#concurrent-session-tabs).
+_Avoid_: extra execution authority, automatic worktree, inherited grants
+
 
 **Conversation Branch**:
 A new conversation identity copied from a selected whole-turn prefix. The source

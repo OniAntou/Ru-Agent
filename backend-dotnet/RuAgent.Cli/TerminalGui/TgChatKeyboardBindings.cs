@@ -146,22 +146,16 @@ internal sealed class TgChatKeyboardBindings
 
     private void OnWindowIsRunningChanged(object? sender, EventArgs<bool> args)
     {
-        if (args.Value)
-        {
-            _keyboardApp = _window.App;
-            if (_keyboardApp is not null)
-            {
-                _keyboardApp.Keyboard.KeyDown += OnApplicationKeyDown;
-            }
+        SetApplicationRouting(args.Value ? _window.App : null);
+    }
 
-            return;
-        }
-
+    internal void SetApplicationRouting(IApplication? app)
+    {
+        if (ReferenceEquals(_keyboardApp, app)) return;
         if (_keyboardApp is not null)
-        {
             _keyboardApp.Keyboard.KeyDown -= OnApplicationKeyDown;
-            _keyboardApp = null;
-        }
+        _keyboardApp = app;
+        if (_keyboardApp is not null) _keyboardApp.Keyboard.KeyDown += OnApplicationKeyDown;
     }
 
     private void OnApplicationKeyDown(object? sender, Key key)

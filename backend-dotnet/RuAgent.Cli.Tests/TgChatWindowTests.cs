@@ -47,14 +47,17 @@ public sealed class TgChatWindowTests
         window.Transcript.ScrollToTop();
         window.Transcript.Append("new background output", TranscriptStyle.Prose);
 
+        var stage = 0;
+        // One repeating timer gives the driver a paint iteration after ScrollToTail.
+        // Independent absolute timers can both be overdue on a slow first frame.
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
-            Assert.Contains("↓ new output", string.Join('\n', TgSnapshot.Capture(app)));
-            window.Transcript.ScrollToTail();
-            return false;
-        });
-        app.AddTimeout(TimeSpan.FromMilliseconds(350), () =>
-        {
+            if (stage++ == 0)
+            {
+                Assert.Contains("↓ new output", string.Join('\n', TgSnapshot.Capture(app)));
+                window.Transcript.ScrollToTail();
+                return true;
+            }
             Assert.DoesNotContain("↓ new output", string.Join('\n', TgSnapshot.Capture(app)));
             app.RequestStop();
             return false;

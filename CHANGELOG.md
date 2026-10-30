@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Run multiple sessions in one terminal with independent drafts,
+  attachments, queues and waiting panels. Add compact tabs, Alt+N, F6/Shift+F6
+  and `/sessions close`; preserve background execution when switching. Bound open
+  tabs to eight and settle every session's owned requests before shutdown.
+
 - **fix(tui)**: Keep RU AGENT's green tile faces and soft seams stable with a
   fixed Sixel palette and an opaque black backdrop. Preserve the warm sweep,
   shadows and logo dimensions while hiding stars and meteors behind the logo.

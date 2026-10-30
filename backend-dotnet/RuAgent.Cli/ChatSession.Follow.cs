@@ -381,6 +381,13 @@ public sealed partial class AgentCommands
         async Task ReportInterruptionAsync()
         {
             var cancelRunId = runSession.InterruptedRunId;
+            if (managedShutdown && cancelRunId is not null && cancelRunId != ownedRunId)
+            {
+                // Closing this TUI detaches an adopted run; it does not take
+                // ownership of work started by another client.
+                await FinishTurnAsync().ConfigureAwait(false);
+                return;
+            }
             await FinishTurnAsync().ConfigureAwait(false);
             if (cancelRunId is null)
             {
@@ -417,7 +424,7 @@ public sealed partial class AgentCommands
         /// as if it were a fresh turn. Without a tracked parked run this is informational,
         /// never an error.
         /// </summary>
-        async Task ContinueParkedRunAsync()
+        async Task ContinueParkedRunAsync(CancellationToken cancellationToken)
         {
             var targetRunId = runSession.ParkedRunId;
             if (string.IsNullOrWhiteSpace(targetRunId))
@@ -430,6 +437,7 @@ public sealed partial class AgentCommands
             // The parked turn already rendered durable frames up to LastSequence; the
             // continue call's own "continued" event is the first frame after it. Resuming
             // from 0 would replay the whole turn into a terminal that cannot unprint.
+            using var retainedSettlement = runSession.RetainRunSettlement();
             GetAgentRunResponse run;
             try
             {
@@ -526,7 +534,7 @@ public sealed partial class AgentCommands
             await _out.FlushAsync().ConfigureAwait(false);
         }
 
-        async Task FollowRetainedRunAsync(string? runIdArg)
+        async Task FollowRetainedRunAsync(string? runIdArg, CancellationToken cancellationToken)
         {
             if (runSession.IsTurnActive)
             {
@@ -534,12 +542,13 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            using var retainedSettlement = runSession.RetainRunSettlement();
             var targetRunId = string.IsNullOrWhiteSpace(runIdArg)
                 ? runSession.FollowableRunId ?? runSession.ActiveRunId
                 : runIdArg.Trim();
             if (string.IsNullOrWhiteSpace(targetRunId))
             {
-                targetRunId = await FindNewestFollowableRunAsync().ConfigureAwait(false);
+                targetRunId = await FindNewestFollowableRunAsync(cancellationToken).ConfigureAwait(false);
             }
 
             if (string.IsNullOrWhiteSpace(targetRunId))
@@ -695,7 +704,7 @@ public sealed partial class AgentCommands
             }
         }
 
-        async Task<string?> FindNewestFollowableRunAsync()
+        async Task<string?> FindNewestFollowableRunAsync(CancellationToken cancellationToken)
         {
             try
             {

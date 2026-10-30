@@ -10,6 +10,7 @@ public sealed class ChatSessionSettlementWiringTests
         var root = FindRepositoryRoot();
         var prompt = File.ReadAllText(Path.Combine(root, "backend-dotnet", "RuAgent.Cli", "ChatSession.Prompt.cs"));
         var terminalGui = File.ReadAllText(Path.Combine(root, "backend-dotnet", "RuAgent.Cli", "ChatSession.TerminalGui.cs"));
+        var manager = File.ReadAllText(Path.Combine(root, "backend-dotnet", "RuAgent.Cli", "TuiSessionManager.cs"));
 
         var retained = prompt.IndexOf("runSettlement = runSession.RetainRunSettlement();", StringComparison.Ordinal);
         var create = prompt.IndexOf("_agentClient.CreateRunAsync(request, runSession.Token)", StringComparison.Ordinal);
@@ -19,10 +20,12 @@ public sealed class ChatSessionSettlementWiringTests
             "Run identity must be retained before create and released only from the prompt handler's finally path.");
 
         Assert.Contains("loop.SetShutdownSettlement(runSession.WaitForRunSettlementAsync);", terminalGui, StringComparison.Ordinal);
-        var uiCompletion = terminalGui.IndexOf("await loop.Completion.ConfigureAwait(false);", StringComparison.Ordinal);
-        var settlementWait = terminalGui.IndexOf("await loop.WaitForShutdownSettlementAsync().ConfigureAwait(false);", StringComparison.Ordinal);
+        var uiCompletion = manager.IndexOf("await Task.WhenAll(sessions.Select(session => session.tgLoop!.Completion))", StringComparison.Ordinal);
+        var settlementWait = manager.IndexOf("await Task.WhenAll(sessions.Select(session => session.tgLoop!.WaitForShutdownSettlementAsync()))", StringComparison.Ordinal);
         Assert.True(uiCompletion >= 0 && uiCompletion < settlementWait,
             "The chat owner must await settlement after the bounded UI completion before returning.");
+        Assert.True(manager.IndexOf("session.runSession.Dispose();", StringComparison.Ordinal) > settlementWait,
+            "Background session owners must remain alive until every create settlement has completed.");
     }
 
     private static string FindRepositoryRoot()

@@ -170,24 +170,25 @@ public sealed partial class AgentCommands
         /// </summary>
         ChatSessionCommands CreateSessionCommands() =>
             new(
-                () => runSession.IsTurnActive,
+                () => multiSessions is null && runSession.IsTurnActive,
                 () => sessionId,
-                ct => _sessionClient.CreateAsync(ct),
+                ct => multiSessions is null ? _sessionClient.CreateAsync(ct) : multiSessions.CreateSessionAsync(this, ct),
                 async (query, ct) => ChatSessionWorkflow.Filter(
                     await _sessionClient.ListAsync(ct).ConfigureAwait(false), query),
-                SwitchSessionAsync,
+                target => multiSessions is null ? SwitchSessionAsync(target) : multiSessions.OpenAsync(this, target),
                 _slashCommands.Picker,
                 // The session card (switch + delete) and the delete call exist only where a panel
                 // can be drawn; the sequential engine keeps the plain list and /sessions id:<id>.
                 tgMode ? (list, ct) => TgPanelRequests.RequestSessionChoiceAsync(tgWindow!, list, ct) : null,
-                tgMode ? DeleteSessionAsync : null,
+                tgMode ? (target, token) => multiSessions is null ? DeleteSessionAsync(target, token)
+                    : multiSessions.DeleteAsync(this, target, token) : null,
                 WriteDiagnosticLineAsync,
                 humanOut,
                 _err,
                 cmd.Json);
 
         Task<bool> HandleSessionWorkflowAsync(string slashCmd, string? arg) =>
-            sessionCommands.TryHandleAsync(slashCmd, arg, cancellationToken);
+            sessionCommands.TryHandleAsync(slashCmd, arg, multiSessions?.LifetimeToken ?? cancellationToken);
 
         async Task SwitchSessionAsync(string targetSessionId)
         {

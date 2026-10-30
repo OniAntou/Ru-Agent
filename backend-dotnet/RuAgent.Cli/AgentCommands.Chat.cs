@@ -64,8 +64,11 @@ public sealed partial class AgentCommands
         }
 
 
-        return await new ChatSession(this, cmd, bootstrap, cancellationToken).RunAsync().ConfigureAwait(false);
+        return await RunPreparedChatAsync(cmd, bootstrap, cancellationToken).ConfigureAwait(false);
     }
+
+    internal Task<int> RunPreparedChatAsync(ChatCommand command, ChatBootstrapContext bootstrap, CancellationToken ct) =>
+        new ChatSession(this, command, bootstrap, ct).RunAsync();
 
     /// <summary>
     /// Routes one submitted line to the slash-command handler or the prompt runner. The

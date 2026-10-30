@@ -61,6 +61,14 @@ public sealed partial class TgChatLoop
     private volatile bool _localCommandActive;
     private volatile bool _stopped;
     private bool _queuePaused;
+    private Func<string, bool>? _sessionCommand;
+    internal bool IsBusy => _busy;
+    internal bool CanCloseSession
+    {
+        get { lock (_queueGate) return !_busy && !_queuePaused && _queued.Count == 0 && _taskControlCancellation is null; }
+    }
+    internal void SetSessionCommandHandler(Func<string, bool> handler) => _sessionCommand = handler;
+    internal void SetViewActive(IApplication? app) => _keyboardBindings.SetApplicationRouting(app);
 
     /// <summary>
     /// A cancel that arrived while no turn source was live (between a settled
@@ -210,6 +218,9 @@ public sealed partial class TgChatLoop
     public void Submit()
     {
         var line = _window.Composer.Input.Text?.ToString() ?? string.Empty;
+        // Navigation belongs to the session host, outside this session's turn and
+        // attachment queue. Switching views must never cancel the active worker.
+        if (_sessionCommand?.Invoke(line) == true) return;
         if (ChatCommandCatalog.IsRemovedCommand(line))
         {
             _window.Hints.ShowFeedback("unknown command · use /help", true);

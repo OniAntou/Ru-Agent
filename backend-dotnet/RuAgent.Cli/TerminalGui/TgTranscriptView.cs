@@ -46,6 +46,7 @@ public sealed partial class TgTranscriptView : View
     private int _tailRows = 1;
     private bool _tailDirty;
     internal long FullWrapRebuildCount { get; private set; }
+    internal bool DeferWrapping { get; set; }
     internal IReadOnlyList<TgTranscriptRow> RenderedRows { get { EnsureWrapped(); return _wrapped; } }
     private bool _historyTruncated;
     internal long RetentionVersion { get; private set; }
@@ -607,6 +608,11 @@ public sealed partial class TgTranscriptView : View
 
     private void EnsureWrapped()
     {
+        if (DeferWrapping)
+        {
+            _wrapWidth = -1;
+            return;
+        }
         var width = Viewport.Width;
         if (width <= 0) return;
         if (width != _wrapWidth)

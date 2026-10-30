@@ -11,7 +11,7 @@ using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
-public sealed class AgentRunIdempotencyTests
+public sealed partial class AgentRunIdempotencyTests
 {
     [Fact]
     public async Task Shared_client_accepts_host_create_projection_and_gets_enriched_run_metadata()

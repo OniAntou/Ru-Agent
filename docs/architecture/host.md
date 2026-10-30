@@ -67,7 +67,7 @@ Closing the GUI sends an authenticated `POST /host/shutdown` so the Host exits g
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../../backend-dotnet/public-route-contract.json):
-53 HTTP method/path pairs with no WebSocket route (28 `/agent/v1/*` and 25
+54 HTTP method/path pairs with no WebSocket route (29 `/agent/v1/*` and 25
 non-Agent routes); REST and SSE clients authenticate with the desktop secret
 (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE
@@ -138,7 +138,7 @@ _Avoid_: Python backend, upstream server
 ## Public Contract
 
 The stable authenticated surface of HTTP method/path pairs with no WebSocket
-route (25 non-Agent plus 28 additive `/agent/v1/*`; Agent v2 is
+route (25 non-Agent plus 29 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC

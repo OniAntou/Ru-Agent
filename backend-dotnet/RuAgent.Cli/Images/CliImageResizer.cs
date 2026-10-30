@@ -31,8 +31,10 @@ public static class CliImageResizer
     public static CliResizedImage ResizeIfNeeded(
         byte[] bytes,
         int maxDimension = DefaultMaxDimension,
-        int maxBytes = DefaultMaxBytes)
+        int maxBytes = DefaultMaxBytes,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(bytes);
 
         if (TryReadDimensions(bytes, out var sourceWidth, out var sourceHeight)
@@ -48,7 +50,10 @@ public static class CliImageResizer
         }
 
         using var source = Decode(bytes);
+        // GDI+ operations are synchronous; observe cancellation between native calls.
+        cancellationToken.ThrowIfCancellationRequested();
         ApplyExifOrientation(source);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var sourceIsPng = source.RawFormat.Guid == ImageFormat.Png.Guid;
         var sourceIsJpeg = source.RawFormat.Guid == ImageFormat.Jpeg.Guid;
@@ -72,6 +77,7 @@ public static class CliImageResizer
         var targetHeight = Math.Max(1, (int)Math.Round(originalHeight * scale));
 
         using var target = new Bitmap(targetWidth, targetHeight);
+        cancellationToken.ThrowIfCancellationRequested();
         using (var graphics = Graphics.FromImage(target))
         {
             graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
@@ -80,14 +86,17 @@ public static class CliImageResizer
             graphics.DrawImage(source, 0, 0, targetWidth, targetHeight);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         using var output = new MemoryStream();
         if (sourceIsPng && Image.IsAlphaPixelFormat(source.PixelFormat))
         {
             target.Save(output, ImageFormat.Png);
+            cancellationToken.ThrowIfCancellationRequested();
             return new CliResizedImage(output.ToArray(), "image/png", targetWidth, targetHeight);
         }
 
         SaveJpeg(target, output);
+        cancellationToken.ThrowIfCancellationRequested();
         return new CliResizedImage(output.ToArray(), "image/jpeg", targetWidth, targetHeight);
     }
 

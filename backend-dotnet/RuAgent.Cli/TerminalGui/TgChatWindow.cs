@@ -38,6 +38,8 @@ public sealed partial class TgChatWindow : Window
     private IApplication? _resizeApp;
     private ModalInputState? _modalInputState;
     private bool _relayoutInProgress;
+    internal bool IsSessionPage { get; set; }
+    internal void RefreshSessionLayout() => Relayout();
 
     private TgChatWindow()
     {
@@ -570,25 +572,30 @@ public sealed partial class TgChatWindow : Window
     protected override void OnIsRunningChanged(bool args)
     {
         base.OnIsRunningChanged(args);
-        if (args)
-        {
-            _resizeApp = App;
-            if (_resizeApp is not null)
-            {
-                _resizeApp.ScreenChanged += OnScreenChanged;
-                Relayout();
-            }
-        }
-        else if (_resizeApp is not null)
-        {
-            _resizeApp.ScreenChanged -= OnScreenChanged;
-            _resizeApp = null;
-        }
+        SetHostedApplication(args ? App : null);
+    }
+
+    internal void SetHostedApplication(IApplication? app)
+    {
+        if (ReferenceEquals(_resizeApp, app)) return;
+        if (_resizeApp is not null) _resizeApp.ScreenChanged -= OnScreenChanged;
+        _resizeApp = app;
+        if (app is not null) { app.ScreenChanged += OnScreenChanged; Relayout(); }
+    }
+
+    internal void FocusSessionInput()
+    {
+        SetFocus();
+        if (_questionPanel?.SuperView is not null) _questionPanel.SetFocus();
+        else if (_panel?.SuperView is not null) _panel.SetFocus();
+        else if (_document?.SuperView is not null) _document.SetFocus();
+        else if (_commandPaletteView?.SuperView is not null) _commandPaletteView.SetFocus();
+        else FocusComposer();
     }
 
     private void OnScreenChanged(object? sender, EventArgs<Rectangle> args)
     {
-        if (IsBelowFloor(args.Value))
+        if (!IsSessionPage && IsBelowFloor(args.Value))
         {
             // Not a handover yet: keep the frame and relayout so it stays usable while the
             // terminal decides whether it really is too small.
@@ -618,7 +625,8 @@ public sealed partial class TgChatWindow : Window
         try
         {
             var driver = _resizeApp?.Driver ?? App?.Driver;
-            TgChatLayout.Apply(this, driver?.Cols ?? Viewport.Width, driver?.Rows ?? Viewport.Height);
+            TgChatLayout.Apply(this, IsSessionPage ? Viewport.Width : driver?.Cols ?? Viewport.Width,
+                IsSessionPage ? Viewport.Height : driver?.Rows ?? Viewport.Height);
             Layout();
             SetNeedsDraw();
         }

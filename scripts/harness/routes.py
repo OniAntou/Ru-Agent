@@ -74,7 +74,7 @@ def _factory_for(method: str, path: str) -> RequestFactory:
             body = {
                 "api_variant": "Default",
             }
-        elif path == "/agent/v1/runs" and method == "POST":
+        elif path in {"/agent/v1/runs", "/agent/v1/runs/selected"} and method == "POST":
             # Minimal valid tracer payload – harness will fill session_id/workspace if available later;
             # generic probe uses synthetic session and a drive-agnostic workspace placeholder
             # (override via RU_HARNESS_WORKSPACE); endpoint validates and may
@@ -86,6 +86,8 @@ def _factory_for(method: str, path: str) -> RequestFactory:
                 "preset": "standard",
                 "idempotency_key": "harness-probe-key",
             }
+            if path.endswith("/selected"):
+                body = {**body, "provider_selection": {"backend": "OpenAI", "model": "fixture-model"}}
         elif path.startswith("/agent/v1/runs/") and path.endswith("/trust"):
             body = {"decision": "approve", "workspace_identity_hash": "probe"}
         elif path.startswith("/agent/v1/runs/") and "/approvals/" in path:

@@ -69,6 +69,10 @@ public sealed partial class SqliteAgentRunProviderSelectionStore(HarnessSqliteOp
             return current;
         }
 
+        var intent = await ReadIntentAsync(connection, transaction, runId, cancellationToken).ConfigureAwait(false);
+        if (intent is not null && (intent.Backend != selection.Backend || intent.Model != selection.Model))
+            throw new HarnessStoreException("provider_intent_mismatch");
+
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """

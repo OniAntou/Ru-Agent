@@ -4,6 +4,26 @@ Interactive and headless client for Ru's coding loop. It delegates runs to the
 Public Host over authenticated HTTP/SSE; model execution and policy remain
 Harness/Broker owned.
 
+## Concurrent chats in one terminal
+
+- `/new` or **Alt+N** opens another session while earlier sessions keep running.
+  Alt+N also preserves the draft in the current tab.
+- **F6** / **Shift+F6** switches next/previous. The tab strip appears with two or
+  more tabs and marks running, waiting, completed or failed/held work.
+- `/sessions` opens saved history or returns to a tab already open.
+- `/sessions close` closes an idle tab without deleting history. Finish retained
+  runs and pending work first; one tab always remains.
+- **Esc** affects the selected session only. `/exit` stops this window's runs
+  and drains pending acknowledgements; it detaches runs adopted from other clients.
+
+Each tab keeps its own draft, attachments, queue, transcript and permission
+selection. Background questions wait in their own tab. This first version permits
+eight open tabs in the same workspace. Model/provider settings are shared defaults
+for new runs; changing them never retargets an admitted run or queued prompt.
+Native submissions retain their provider/model across a change made while
+admission is pending. This requires the matching Host build; an older Host
+reports `provider_selection_unsupported`, with no fallback to another model.
+
 ## Durable history and database maintenance
 
 `ru session list --limit 100 --query TEXT` pages summaries; add `--cursor TOKEN`

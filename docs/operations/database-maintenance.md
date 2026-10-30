@@ -1,6 +1,6 @@
 # Database maintenance
 
-Ru keeps business state and Harness state in one SQLite WAL database. Schema v30
+Ru keeps business state and Harness state in one SQLite WAL database. Schema v33
 upgrades the released v18 floor and retained development versions atomically;
 retain a backup before upgrading. The migration retains messages still present
 in old session documents, not messages already removed by older builds.
@@ -10,7 +10,10 @@ an older installation has no maintenance command, stop every Ru Host before
 making a pre-upgrade raw copy of the database, any outstanding `-wal` file and
 `harness_key.dat` together. Keep that raw snapshot separate from manifest bundles;
 restore it offline with its original build before retrying an upgrade. The new
-Host migrates supported v18–v29 data to v30 on startup.
+Host migrates supported v18–v32 data to v33 on startup, including durable
+provider/model intent for explicit run submissions. The v33 upgrade accepts
+both development v32 shapes (execution-provenance index or provider-intent table)
+and preserves already recorded intents.
 
 Run these commands from a matching Ru installation:
 

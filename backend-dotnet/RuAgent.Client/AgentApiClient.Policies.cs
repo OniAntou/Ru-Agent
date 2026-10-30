@@ -5,6 +5,33 @@ namespace RuAgent.Client;
 
 public sealed partial class AgentApiClient
 {
+    public async Task<(string Preset, long Version)?> GetSessionPresetAsync(string sessionId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            new Uri(_session.BaseUri, $"agent/v1/sessions/{Uri.EscapeDataString(sessionId)}/preset"));
+        EnsureAuth(request);
+        using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(response.Content, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException(ExtractErrorCode(body) ?? "session_preset_read_failed", body, (int)response.StatusCode);
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("session_id", out var owner) || owner.GetString() != sessionId
+                || !root.TryGetProperty("version", out var version) || !version.TryGetInt64(out var number) || number < 0)
+                throw new AgentApiException("invalid_response", "Session preset response does not match its owner.");
+            if (!root.TryGetProperty("preset", out var selection) || selection.ValueKind == JsonValueKind.Null) return null;
+            var preset = selection.GetString();
+            if (preset is not ("plan" or "standard" or "full_access"))
+                throw new AgentApiException("invalid_response", "Unknown session permission preset.");
+            return (preset, number);
+        }
+        catch (JsonException error) { throw new AgentApiException("invalid_response", error.Message); }
+        catch (InvalidOperationException error) { throw new AgentApiException("invalid_response", error.Message); }
+    }
+
     public async Task<IReadOnlyList<JsonElement>> ListPoliciesAsync(string? scope = null, string? workspaceId = null, CancellationToken ct = default)
     {
         var url = new Uri(_session.BaseUri, BuildPolicyListUrl(scope, workspaceId));

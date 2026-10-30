@@ -17,6 +17,7 @@ public static class CliTextFiles
         string workspace,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         string resolved;
         try
         {
@@ -64,7 +65,7 @@ public static class CliTextFiles
         try
         {
             await using var stream = File.OpenRead(resolved);
-            var bounded = await CliImagePolicy.ReadBoundedBytesAsync(stream, cap).ConfigureAwait(false);
+            var bounded = await CliImagePolicy.ReadBoundedBytesAsync(stream, cap, cancellationToken).ConfigureAwait(false);
             if (bounded is null)
             {
                 return (null, $"attachment_too_large: {name} grew past the read cap while being read");
@@ -81,7 +82,10 @@ public static class CliTextFiles
             return (null, $"attachment_unreadable: {name} - {CliErrorText.ShortMessage(ex.Message)}");
         }
 
-        return LoadBytes(name, bytes, length);
+        cancellationToken.ThrowIfCancellationRequested();
+        var result = LoadBytes(name, bytes, length);
+        cancellationToken.ThrowIfCancellationRequested();
+        return result;
     }
 
     internal static (CliTextAttachment? Attachment, string? Error) LoadBytes(string name, byte[] bytes, long sourceLength)

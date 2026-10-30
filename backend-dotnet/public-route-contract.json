@@ -28,6 +28,7 @@
   {"method":"GET","path":"/sessions/{sessionId}/export","transport":"http","source":"backend-dotnet/RuBackend/Business/SessionInterchangeEndpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/sessions/import","transport":"http","source":"backend-dotnet/RuBackend/Business/SessionInterchangeEndpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/agent/v1/runs","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
+  {"method":"POST","path":"/agent/v1/runs/selected","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"GET","path":"/agent/v1/runs/{runId}","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"GET","path":"/agent/v1/runs/{runId}/events","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"GET","path":"/agent/v1/runs/{runId}/activities","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ListRunActivitiesAsync"]},

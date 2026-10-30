@@ -112,7 +112,7 @@ public sealed partial class AgentCommands
                 }
                 try
                 {
-                    await ContinueParkedRunAsync().ConfigureAwait(false);
+                    await ContinueParkedRunAsync(ct).ConfigureAwait(false);
                 }
                 catch (RunParkedException)
                 {
@@ -155,6 +155,11 @@ public sealed partial class AgentCommands
             // A new turn uses the current selection, not the provider pinned by a run that
             // was followed or continued earlier. Reset the composer meta before the run
             // starts; a Continue returned above and keeps the retained run's identity.
+            if (modelUsageRefreshRequired)
+            {
+                await RefreshModelUsageInfoAsync(ct).ConfigureAwait(false);
+                modelUsageRefreshRequired = false;
+            }
             if (tgMode)
             {
                 RunOnTgUi(() =>
@@ -206,7 +211,8 @@ public sealed partial class AgentCommands
                 submissionPreset,
                 presetUpdate.Version,
                 idempotencyKey,
-                imagePayloads);
+                imagePayloads,
+                tgMode ? new CreateRunProviderSelection(submission?.Backend ?? backendName ?? string.Empty, submission?.Model ?? activeModel) : null);
             if (promptText.Length > ChatSubmissionState.MaxComposedPromptChars)
             {
                 HoldSubmissionForRetry(submission);
@@ -242,6 +248,7 @@ public sealed partial class AgentCommands
                 RefreshAttachmentLabels();
                 tgLoop?.ResumeQueuedSubmissions();
                 runSession.AcceptCreatedRun(resp.RunId);
+                ownedRunId = resp.RunId;
 
                 if (submissionImages.Count > 0 || submissionTexts.Count > 0)
                 {
@@ -338,6 +345,7 @@ public sealed partial class AgentCommands
 
                 await FollowRunAsync(resp.RunId, 0, runSession.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
+                ownedRunId = null;
                 runSession.ForgetCompletedRun();
             }
             catch (RunParkedException)
@@ -464,7 +472,9 @@ public sealed partial class AgentCommands
             await _out.FlushAsync().ConfigureAwait(false);
         }
 
-        async Task<bool> HandleSlashLineAsync(string slashLine)
+        Task<bool> HandleSlashLineAsync(string slashLine) => HandleSlashLineAsync(slashLine, cancellationToken);
+
+        async Task<bool> HandleSlashLineAsync(string slashLine, CancellationToken cancellationToken)
         {
             if (!cmd.Json && !tgMode)
             {
@@ -550,7 +560,7 @@ public sealed partial class AgentCommands
             }
             if (slashCmd is "/follow")
             {
-                await FollowRetainedRunAsync(arg).ConfigureAwait(false);
+                await FollowRetainedRunAsync(arg, cancellationToken).ConfigureAwait(false);
                 await _out.FlushAsync().ConfigureAwait(false);
                 return true;
             }
@@ -575,12 +585,12 @@ public sealed partial class AgentCommands
         /// the report is still there to scroll back to. Sequential mode keeps printing
         /// inline: there is no window over a scrolling region to float above.
         /// </summary>
-        async Task<bool> HandleSlashLineWithDocumentAsync(string slashLine)
+        async Task<bool> HandleSlashLineWithDocumentAsync(string slashLine, CancellationToken cancellationToken)
         {
             var command = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)[0];
             if (!tgMode || !Tui.ChatCommandCatalog.IsReportCommand(command))
             {
-                return await HandleSlashLineAsync(slashLine).ConfigureAwait(false);
+                return await HandleSlashLineAsync(slashLine, cancellationToken).ConfigureAwait(false);
             }
 
             var capture = new StringWriter();
@@ -593,7 +603,7 @@ public sealed partial class AgentCommands
             var handled = false;
             try
             {
-                handled = await HandleSlashLineAsync(slashLine).ConfigureAwait(false);
+                handled = await HandleSlashLineAsync(slashLine, cancellationToken).ConfigureAwait(false);
             }
             finally
             {

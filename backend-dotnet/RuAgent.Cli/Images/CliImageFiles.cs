@@ -21,6 +21,7 @@ public static class CliImageFiles
         string workspace,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         string resolved;
         try
         {
@@ -63,19 +64,10 @@ public static class CliImageFiles
                 $"image_too_large: {name} is {CliImageAttachment.FormatBytes(length)} (limit {CliImageAttachment.FormatBytes(CliImagePolicy.MaxImageAttachmentBytes)})");
         }
 
-        byte[] bytes;
         try
         {
             await using var stream = File.OpenRead(resolved);
-            var bounded = await CliImagePolicy
-                .ReadBoundedBytesAsync(stream, CliImagePolicy.MaxImageAttachmentBytes)
-                .ConfigureAwait(false);
-            if (bounded is null)
-            {
-                return (null, $"image_too_large: {name} grew past the read cap while being read");
-            }
-
-            bytes = bounded;
+            return await LoadStreamAsync(name, stream, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -85,16 +77,27 @@ public static class CliImageFiles
         {
             return (null, $"image_unreadable: {name} - {CliErrorText.ShortMessage(ex.Message)}");
         }
-
-        return LoadBytes(name, bytes);
     }
 
-    internal static (CliImageAttachment? Attachment, string? Error) LoadBytes(string name, byte[] bytes)
+    internal static async Task<(CliImageAttachment? Attachment, string? Error)> LoadStreamAsync(
+        string name, Stream stream, CancellationToken cancellationToken)
     {
+        var bytes = await CliImagePolicy.ReadBoundedBytesAsync(
+            stream, CliImagePolicy.MaxImageAttachmentBytes, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return bytes is null
+            ? (null, $"image_too_large: {name} grew past the read cap while being read")
+            : LoadBytes(name, bytes, cancellationToken);
+    }
+
+    internal static (CliImageAttachment? Attachment, string? Error) LoadBytes(
+        string name, byte[] bytes, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         CliResizedImage resized;
         try
         {
-            resized = CliImageResizer.ResizeIfNeeded(bytes);
+            resized = CliImageResizer.ResizeIfNeeded(bytes, cancellationToken: cancellationToken);
         }
         catch (Exception ex) when (ex is InvalidDataException or ArgumentException
             or OutOfMemoryException or System.Runtime.InteropServices.ExternalException)
@@ -102,6 +105,7 @@ public static class CliImageFiles
             return (null, $"invalid_image: {name} - {CliErrorText.ShortMessage(ex.Message)}");
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         if (resized.Bytes.LongLength > CliImagePolicy.MaxDecodedImageBytes)
         {
             return (null,
@@ -109,6 +113,7 @@ public static class CliImageFiles
         }
 
         var base64 = Convert.ToBase64String(resized.Bytes);
+        cancellationToken.ThrowIfCancellationRequested();
         var dataUrlLength = "data:".Length + resized.MimeType.Length + ";base64,".Length + base64.Length;
         if (dataUrlLength > CliImagePolicy.MaxDataUrlChars)
         {

@@ -28,8 +28,13 @@ public sealed partial class AgentCommands
         private AgentApiClient _agentClient => _host._agentClient;
         private AgentSseClient _sseClient => _host._sseClient;
         private SettingsApiClient _settingsClient => _host._settingsClient;
-        private AgentSlashCommands _slashCommands => _host._slashCommands;
-        private RunStartCore _runStartCore => _host._runStartCore;
+        private AgentSlashCommands _slashCommands => tgMode
+            ? sessionSlashCommands ??= new AgentSlashCommands(_settingsClient, _sessionClient,
+                tgWriter!, tgWriter!, _host._skillsClient)
+            : _host._slashCommands;
+        private RunStartCore _runStartCore => tgMode
+            ? sessionRunStartCore ??= new RunStartCore(_sessionClient, _agentClient, tgWriter!, tgWriter!)
+            : _host._runStartCore;
 
         private Task<(string InputId, string Question, IReadOnlyList<string> Options)?> ReadInputRequestAsync(
             string runId, string? inputId, CancellationToken ct) =>

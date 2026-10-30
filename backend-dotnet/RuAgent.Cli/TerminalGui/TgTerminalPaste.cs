@@ -23,7 +23,9 @@ public static class TgTerminalPaste
                 return;
             }
 
-            if (app.TopRunnableView is TgChatWindow window)
+            var window = app.TopRunnableView as TgChatWindow
+                ?? (app.TopRunnableView as TgSessionHostWindow)?.ActivePage;
+            if (window is not null)
             {
                 e.Handled = window.TryPasteText(e.Text);
             }

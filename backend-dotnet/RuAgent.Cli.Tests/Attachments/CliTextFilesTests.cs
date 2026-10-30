@@ -23,6 +23,17 @@ public sealed class CliTextFilesTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_PreCancelledRequestDoesNotLoadAnExistingTextFile()
+    {
+        await File.WriteAllTextAsync(Path.Combine(_workspace, "cancel.md"), "pending text");
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            CliTextFiles.LoadAsync("cancel.md", _workspace, cancelled.Token));
+        Assert.Equal(cancelled.Token, error.CancellationToken);
+    }
+
+    [Fact]
     public async Task LoadAsync_ReadsATextFile()
     {
         await File.WriteAllTextAsync(Path.Combine(_workspace, "notes.md"), "# Hello\nbody");

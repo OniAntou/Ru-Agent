@@ -19,10 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **refactor(approvals)!**: Derive remembered approvals in the Broker. Each approval remembers the target
   its tool class names: file paths, terminal launches (resolved executable, argv and cwd), the MCP server
-  and tool, the exact computer-use app list, and language-server launches. An outside folder remembers
+  and tool, and the exact computer-use app list. An outside folder remembers
   its nearest existing folder, and a drive, volume or share root remembers nothing and degrades to a
   one-time allow. Tools outside that allowlist are never remembered, and `allow_always` on them is
-  refused. Rules saved by earlier builds for MCP, computer use or language servers carry no identity and
+  refused. Rules saved by earlier builds for MCP or computer use carry no identity and
   are ignored, so those calls ask again. A user-written allow without that identity is ignored too. An MCP
   call whose `arguments` is a JSON string, the form the tool requires, is now approvable; the Host used to
   re-parse it and answer `approval_stale`. An allow on an approval the Broker no longer holds now returns
@@ -161,6 +161,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **fix(agent)**: Structured file mutations are observed before the next check, with queued watcher
   notifications deduplicated against current content. Schema v32 adds indexed execution-request provenance;
   verification no longer reads the workspace change journal (ADR 0039).
+
+- **fix(tui)**: Honor cancellation while loading image and dropped-text files;
+  drain session-owned attachment work before teardown and release temporary
+  clipboard images when loading is canceled.
+
+- **fix(tui)**: Preserve a submitted provider/model when another session changes
+  defaults during admission. Persist run intent through restart and idempotent
+  retries; refuse older Hosts instead of falling back to an unselected run.
+  Schema v33 adds this intent after the existing v32 execution-provenance index.
+
+- **feat(tui)**: Run multiple sessions in one terminal with independent drafts,
+  attachments, queues and waiting panels. Add compact tabs, Alt+N, F6/Shift+F6
+  and `/sessions close`; preserve background execution when switching. Bound open
+  tabs to eight and settle every session's owned requests before shutdown.
 
 - **fix(tui)**: Keep RU AGENT's green tile faces and soft seams stable with a
   fixed Sixel palette and an opaque black backdrop. Preserve the warm sweep,

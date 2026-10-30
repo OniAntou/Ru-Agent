@@ -553,6 +553,11 @@ internal sealed class AgentV1CatalogVisionConfigurator(
 {
     public void PostConfigure(string? name, AgentRunCreationService service)
     {
+        service.DeclaredProviderVision = async (backend, model, ct) =>
+        {
+            try { return await catalog.DeclaresVisionAsync(backend, model, ct).ConfigureAwait(false); }
+            catch (Exception error) when (error is not OperationCanceledException) { return null; }
+        };
         service.DeclaredVision = async (model, ct) =>
         {
             // Absence is not a verdict: no settings store means no selected model to

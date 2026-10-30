@@ -32,11 +32,13 @@ public static class CliImagePolicy
         int maximumBytes,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
         var buffer = new byte[Math.Min(maximumBytes, 81920)];
         int read;
         while ((read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (output.Length > maximumBytes - read)
             {
                 return null;
@@ -45,6 +47,7 @@ public static class CliImagePolicy
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         return output.ToArray();
     }
 

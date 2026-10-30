@@ -25,9 +25,12 @@ public sealed partial class AgentCommands
         /// local handlers the sequential loop calls, with their writers redirected to
         /// the transcript.
         /// </summary>
-        async Task RunTerminalGuiChatAsync()
+        private Task RunTerminalGuiChatAsync() => new TuiSessionManager(this).RunAsync();
+
+        private TgChatLoop CreateTerminalGuiLoop()
         {
             var loop = new TgChatLoop(tgWindow!, cancellationToken);
+            if (multiSessions is not null) loop.SetSessionCommandHandler(line => multiSessions.TryHandleCommand(this, line));
             tgLoop = loop;
             loop.SetTaskCommandHandler((argument, token) => ShowTasksAsync(argument, token));
             loop.SetChangesCommandHandler((argument, token) => ShowChangesAsync(argument, token));
@@ -35,10 +38,8 @@ public sealed partial class AgentCommands
             loop.SetSubmissionGuard(RewindSubmissionGuard);
             loop.SetHistoryStateProviders(() => pendingHistoryBranch is not null,
                 line => historyReloadRequired && line.Trim().Equals("/sessions id:" + sessionId, StringComparison.OrdinalIgnoreCase));
-            loop.SetShutdownSettlement(runSession.WaitForRunSettlementAsync);
-            var guiDispatcher = new ChatLineDispatcher(
-                HandleSlashLineWithDocumentAsync,
-                (prompt, ct) => HandlePromptLineAsync(prompt, ct));
+            loop.SetShutdownSettlement(() => Task.WhenAll(
+                runSession.WaitForRunSettlementAsync(), attachmentTasks.StopAsync()));
             loop.SetSubmissionSnapshotFactory(line => historyReloadRequired && line.TrimStart().Split(' ', 2)[0].Equals("/sessions", StringComparison.OrdinalIgnoreCase)
                 ? ChatSubmissionSnapshot.Create(line, sessionId, canonicalWorkspace, cmd.Preset, backendName ?? string.Empty, activeModel, [], [])
                 : submissions.CreateSnapshot(
@@ -56,7 +57,7 @@ public sealed partial class AgentCommands
             {
                 if (submission.Prompt.TrimStart().StartsWith('/'))
                 {
-                    await guiDispatcher.DispatchAsync(submission.Prompt, ct).ConfigureAwait(false);
+                    await HandleSlashLineWithDocumentAsync(submission.Prompt, ct).ConfigureAwait(false);
                 }
                 else
                 {
@@ -66,8 +67,8 @@ public sealed partial class AgentCommands
                 {
                     // /exit and the fatal prompt paths record an exit code; the TG frame
                     // has no natural end, so stop both the loop and the app.
-                    loop.Stop();
-                    tgApp!.Invoke(() => tgApp.RequestStop());
+                    if (multiSessions is not null) multiSessions.Stop(dispatcherExitCode.Value);
+                    else { loop.Stop(); tgApp!.Invoke(() => tgApp.RequestStop()); }
                 }
             });
 
@@ -77,7 +78,7 @@ public sealed partial class AgentCommands
             loop.SetAttachmentLabelProvider(CurrentAttachmentLabel);
             loop.SetAttachmentCountProvider(() => submissions.Count);
             loop.SetImageCountProvider(() => pendingImages.Count, () => submissions.Retryable?.Images.Length ?? 0);
-            loop.SetPasteHandler(ClipboardAttachAsync);
+            loop.SetPasteHandler(() => RunAttachmentAsync(ClipboardAttachAsync));
             loop.SetCopyHandler(Images.CliClipboardTextWriter.TryWriteAsync);
             loop.SetDropHandler(line =>
             {
@@ -95,72 +96,48 @@ public sealed partial class AgentCommands
 
             // The drop attach starts its own task from a synchronous handler; failures
             // that slip past AttachFileAsync's own error rows land in the transcript.
-            async Task RunAttachmentAsync(Func<Task> action)
+            Task RunAttachmentAsync(Func<Task> action) => attachmentTasks.RunAsync(async () =>
             {
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     await action().ConfigureAwait(false);
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
                 catch (Exception ex)
                 {
                     await WriteDiagnosticLineAsync(_err, $"attachment_error: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
                 }
-            }
+            });
 
             tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName);
             tgWindow.Composer.SetReasoningEffort(activeReasoningEffort);
             loop.RefreshAttachmentLabel();
-            tgApp!.AddTimeout(
-                TimeSpan.FromMilliseconds(200),
-                () =>
-                {
-                    tgWindow.FocusComposer();
-                    return false;
-                });
-            var uiClock = System.Diagnostics.Stopwatch.StartNew();
-            tgApp.AddTimeout(
-                TimeSpan.FromMilliseconds(TuiHeader.MeteorFrameMilliseconds),
-                () =>
-                {
-                    tgWindow.TickWelcome();
-                    sessionRenderer.Width = ChatRenderWidth();
-                    var transcriptWidth = tgWindow.Transcript.Viewport.Width;
-                    if (transcriptWidth > 0)
-                    {
-                        var state = sessionRenderer.Status.State;
-                        if (state is Tui.TuiRunState.Idle or Tui.TuiRunState.Failed)
-                        {
-                            tgWindow.Transcript.ClearLive();
-                        }
-                        else
-                        {
-                            // The live row is the running form of the settled tool row that
-                            // will replace it: the timer owns its phase, the writer clears
-                            // it the moment the permanent row lands.
-                            tgWindow.Transcript.UpdateLive(sessionRenderer.PresentActivity(transcriptWidth));
-                        }
-                    }
+            return loop;
+        }
 
-                    tgWindow.Hints.SetWaveClock(uiClock.Elapsed.TotalSeconds);
-                    return true;
-                });
-            tgApp.Run(tgWindow);
-            // A stop that did not come from /exit (window closed under us) must still
-            // release the completion the caller awaits.
-            if (tgWindow.HandOverToSequential)
+        private void TickSession(double elapsedSeconds)
+        {
+            tgWindow!.TickWelcome();
+            sessionRenderer.Width = ChatRenderWidth();
+            var transcriptWidth = tgWindow.Transcript.Viewport.Width;
+            if (transcriptWidth > 0)
             {
-                // The tiny-terminal stop ends the TG frame for good: an in-flight turn
-                // must not keep streaming into a stopped app (a floating panel can no
-                // longer be answered), and Stop() keeps the queue from firing later.
-                loop.Cancel();
+                var state = sessionRenderer.Status.State;
+                if (state is Tui.TuiRunState.Idle or Tui.TuiRunState.Failed)
+                {
+                    tgWindow.Transcript.ClearLive();
+                }
+                else
+                {
+                    // The live row is the running form of the settled tool row that
+                    // will replace it: the timer owns its phase, the writer clears
+                    // it the moment the permanent row lands.
+                    tgWindow.Transcript.UpdateLive(sessionRenderer.PresentActivity(transcriptWidth));
+                }
             }
 
-            loop.Stop();
-            await loop.Completion.ConfigureAwait(false);
-            // Stop releases the native UI on its short bound. A create acknowledgement
-            // may still be reconciling after caller cancellation; keep the run owner alive
-            // until its accepted run has been cancelled or its unknown outcome reported.
-            await loop.WaitForShutdownSettlementAsync().ConfigureAwait(false);
+            tgWindow.Hints.SetWaveClock(elapsedSeconds);
         }
     }
 }

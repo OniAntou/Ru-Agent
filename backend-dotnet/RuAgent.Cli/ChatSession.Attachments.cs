@@ -72,53 +72,61 @@ public sealed partial class AgentCommands
 
         async Task AttachImageAsync(string path, string? tempPath = null)
         {
-            if (pendingImages.Count >= Images.CliImagePolicy.MaxImageCount)
+            var attached = false;
+            try
             {
-                DeleteTempPath(tempPath);
-                if (tgMode) ShowPasteFeedback(Images.CliImagePolicy.TooManyImagesStatus);
-                await WriteDiagnosticLineAsync(humanOut, Images.CliImagePolicy.TooManyImagesStatus).ConfigureAwait(false);
-                return;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                if (pendingImages.Count >= Images.CliImagePolicy.MaxImageCount)
+                {
+                    if (tgMode) ShowPasteFeedback(Images.CliImagePolicy.TooManyImagesStatus);
+                    await WriteDiagnosticLineAsync(humanOut, Images.CliImagePolicy.TooManyImagesStatus).ConfigureAwait(false);
+                    return;
+                }
 
-            var (attachment, imageError) = await Images.CliImageFiles
-                .LoadAsync(path, canonicalWorkspace, cancellationToken)
-                .ConfigureAwait(false);
-            if (attachment is null)
+                var (attachment, imageError) = await Images.CliImageFiles
+                    .LoadAsync(path, canonicalWorkspace, cancellationToken)
+                    .ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (attachment is null)
+                {
+                    await WriteAttachFeedbackAsync(imageError ?? "invalid_image: the attachment could not be loaded").ConfigureAwait(false);
+                    return;
+                }
+
+                var totalBytes = pendingImages.Sum(image => image.ByteSize) + attachment.ByteSize;
+                if (totalBytes > Images.CliImagePolicy.MaxTotalImageBytes)
+                {
+                    await WriteAttachFeedbackAsync(
+                        $"image_too_large: this turn's images would total {Images.CliImageAttachment.FormatBytes(totalBytes)} (limit {Images.CliImageAttachment.FormatBytes(Images.CliImagePolicy.MaxTotalImageBytes)}); this image was not added").ConfigureAwait(false);
+                    return;
+                }
+
+                if (tempPath is not null)
+                {
+                    attachment = attachment with { TempPath = tempPath };
+                }
+
+                submissions.Add(attachment);
+                attached = true; // The pending state now owns cleanup of this image's temp file.
+                RefreshAttachmentLabels();
+                if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
+                {
+                    await WriteAttachFeedbackAsync(
+                        $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
+                }
+
+                var attachedMessage = $"attached [{submissions.Count}] {attachment.Label}";
+                if (tgMode)
+                {
+                    ShowPasteFeedback(attachedMessage, false);
+                }
+
+                await WriteDiagnosticLineAsync(humanOut, attachedMessage).ConfigureAwait(false);
+            }
+            finally
             {
-                DeleteTempPath(tempPath);
-                await WriteAttachFeedbackAsync(imageError ?? "invalid_image: the attachment could not be loaded").ConfigureAwait(false);
-                return;
+                if (!attached) DeleteTempPath(tempPath);
             }
-
-            var totalBytes = pendingImages.Sum(image => image.ByteSize) + attachment.ByteSize;
-            if (totalBytes > Images.CliImagePolicy.MaxTotalImageBytes)
-            {
-                DeleteTempPath(tempPath);
-                await WriteAttachFeedbackAsync(
-                    $"image_too_large: this turn's images would total {Images.CliImageAttachment.FormatBytes(totalBytes)} (limit {Images.CliImageAttachment.FormatBytes(Images.CliImagePolicy.MaxTotalImageBytes)}); this image was not added").ConfigureAwait(false);
-                return;
-            }
-
-            if (tempPath is not null)
-            {
-                attachment = attachment with { TempPath = tempPath };
-            }
-
-            submissions.Add(attachment);
-            RefreshAttachmentLabels();
-            if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
-            {
-                await WriteAttachFeedbackAsync(
-                    $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
-            }
-
-            var attachedMessage = $"attached [{submissions.Count}] {attachment.Label}";
-            if (tgMode)
-            {
-                ShowPasteFeedback(attachedMessage, false);
-            }
-
-            await WriteDiagnosticLineAsync(humanOut, attachedMessage).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -146,6 +154,7 @@ public sealed partial class AgentCommands
             var (attachment, textError) = await Attachments.CliTextFiles
                 .LoadAsync(path, canonicalWorkspace, cancellationToken)
                 .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             if (attachment is null)
             {
                 await WriteAttachFeedbackAsync(textError ?? "unsupported_attachment: the file could not be loaded").ConfigureAwait(false);
@@ -167,6 +176,7 @@ public sealed partial class AgentCommands
             {
                 tgApp!.Invoke(() =>
                 {
+                    if (cancellationToken.IsCancellationRequested || attachmentTasks.IsStopped) return;
                     var input = tgWindow!.Composer.Input;
                     if (!input.TryInsertDraft(text))
                     {
@@ -188,7 +198,11 @@ public sealed partial class AgentCommands
         {
             try
             {
-                tgApp?.Invoke(() => tgWindow?.Hints.ShowFeedback(message, isError));
+                tgApp?.Invoke(() =>
+                {
+                    if (!cancellationToken.IsCancellationRequested && !attachmentTasks.IsStopped)
+                        tgWindow?.Hints.ShowFeedback(message, isError);
+                });
             }
             catch (NotInitializedException)
             {
@@ -207,6 +221,7 @@ public sealed partial class AgentCommands
                 if (tgMode)
                 {
                     var text = Images.CliClipboard.TryReadText();
+                    cancellationToken.ThrowIfCancellationRequested();
                     TuiDebug.Log("paste", $"text read: length={text?.Length ?? 0}");
                     if (!string.IsNullOrWhiteSpace(text))
                     {

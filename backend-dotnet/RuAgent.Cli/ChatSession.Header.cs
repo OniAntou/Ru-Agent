@@ -171,6 +171,7 @@ public sealed partial class AgentCommands
                 {
                     await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
                 }
+                multiSessions?.RememberModelDefaults(this);
             }
             catch (Exception)
             {

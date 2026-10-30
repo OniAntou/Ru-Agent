@@ -8,6 +8,54 @@ uses catalog details only for rates; sequential/data-only chat skips that lookup
 
 ## Core TUI
 
+### Concurrent session tabs
+
+`TuiSessionManager` hosts at most eight open conversations in one canonical
+workspace. `/new` or Alt+N opens another tab even while the current run streams;
+`/sessions` opens saved conversations and reactivates an existing tab by session
+identity. F6 selects the next tab and Shift+F6 the previous one. The strip appears
+only with two or more tabs; overflow keeps the selected tab visible. Its markers
+are `◐` running, `?` waiting, `✓` completed, `!` error/held queue and `·` idle.
+
+There is one `IApplication`, one runnable `TgSessionHostWindow` and one animation
+timer. Each session retains a `TgChatWindow` as a child view container, its own
+`ChatSession`, loop, command writer, run owner, event cursor, bounded transcript,
+usage, drafts/cursor, attachments, scroll state and submission queue. These child
+containers are never run as separate applications. Only the selected page is
+visible and receives application-level key/paste routing. Hidden transcripts defer
+wrap work until selected; their event feeds and semantic projection continue so
+transient deltas and queued work are preserved. Tab summaries refresh at most
+every 200 ms. Small resizes retain the session host rather than terminating all
+workers for a sequential handover; startup engine selection is unchanged.
+
+Background approval and `ask_user` panels belong to their session page and do not
+take the selected session's input. Activation restores that page's modal/editor
+focus. Escape cancels only the selected session's work; switching tabs never
+posts a cancellation. `/sessions close` releases an idle tab without deleting its
+saved conversation. It refuses the last tab, retained runs, held/queued work,
+pending history branches and attachments. Normal confirmed session deletion
+keeps its existing API and rejects open tabs with pending work.
+
+Provider/model settings remain shared defaults for new runs. An idle tab adopts
+changes made in another tab before a fresh submission; already admitted runs
+stay pinned. Queued snapshots retain their original selection and are held when
+global settings no longer match. Native run requests additionally carry the
+submitted provider/model through `POST /agent/v1/runs/selected`. The Host stores
+that intent atomically with admission, includes it in idempotency identity, and
+uses it when resolving the first provider snapshot after a delay or restart.
+Changes made after the client's settings check cannot retarget the submitted
+model. Existing full provider pins remain authoritative. Older Hosts refuse this
+route; the client reports `provider_selection_unsupported` without falling back
+to an unselected create. Permission presets remain session-scoped;
+opening saved history reads its existing preset without copying another tab's
+grants. Known foreign-workspace sessions are refused in this first version.
+
+`/exit` stops all session loops, cancels work started by this TUI, waits for every
+session's acknowledgement/cancellation settlement, then disposes retained owners
+and views. Runs adopted from another client are detached on exit; explicit
+Escape still cancels the selected adopted run. There are no new execution
+authorities or changes to Host worker/membership admission limits.
+
 The composer metadata can display the selected effort alone (for example `max` or `high`) between model and provider.
 Startup and existing selection refreshes use the settings response's selected
 reasoning value, with no extra catalog call or polling. Model/provider changes
@@ -133,6 +181,17 @@ Clipboard decode and image-limit failures also appear in the live status row. Th
 resizer reads the PNG/JPEG/BMP/WebP container header and rejects a source canvas over
 64 MP before GDI+ allocates the decoded surface; the longest side is then capped at 2048
 and the encoded result at 4 MB.
+
+Attachment handlers are registered to their session before starting. Shutdown
+stops new handlers, cancels the session lifetime and awaits the registered work
+before clearing pending attachments or disposing views. An idle tab can be closed,
+or an inactive deleted-session page removed, only after its attachments finish.
+Image and dropped-text reads propagate the caller's cancellation token; image
+decode, resize, encoding and base64 conversion check cancellation between stages.
+GDI+ calls are synchronous and finish the current native call before cancellation
+is observed. A canceled load never becomes an attachment error or enters the
+draft. Clipboard temp images not yet transferred to pending state are released
+on failure/cancellation; pending state owns cleanup after a successful transfer.
 
 Read-only document panels strip legacy ANSI sequences before wrapping into native
 card rows. Their wrap budget includes the card's item indentation, preventing

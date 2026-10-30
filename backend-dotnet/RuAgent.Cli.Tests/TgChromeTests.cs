@@ -21,9 +21,17 @@ public sealed class TgChromeTests
         window.Transcript.Append("answer content", TranscriptStyle.Prose);
         window.Transcript.UpdateLive(new TuiActivityPresentation(
             "◐", "Reading", "a-long-file-name.cs", "1.2s", TuiToken.Brand));
+        var stage = 0;
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var rows = TgSnapshot.Capture(app);
+            if (stage++ > 0)
+            {
+                Assert.DoesNotContain("a-long-file-name.cs", string.Join('\n', rows));
+                Assert.Contains("answer content", rows[window.Transcript.Frame.Y]);
+                app.RequestStop();
+                return false;
+            }
             var liveRow = rows[window.Transcript.Frame.Y + 1];
             Assert.Contains("Reading", liveRow);
             Assert.Contains("a-long-file-name.cs", liveRow);
@@ -39,15 +47,7 @@ public sealed class TgChromeTests
                 $"glyph foreground: expected {TgPalette.ToColor(TuiToken.Brand)} actual {glyph}");
             Assert.EndsWith("1.2s", liveRow.TrimEnd());
             window.Transcript.ClearLive();
-            return false;
-        });
-        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
-        {
-            var rows = TgSnapshot.Capture(app);
-            Assert.DoesNotContain("a-long-file-name.cs", string.Join('\n', rows));
-            Assert.Contains("answer content", rows[window.Transcript.Frame.Y]);
-            app.RequestStop();
-            return false;
+            return true;
         });
         app.Run(window);
     }
@@ -206,8 +206,16 @@ public sealed class TgChromeTests
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
+        var stage = 0;
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
+            if (stage++ > 0)
+            {
+                // A repeating timer permits a paint iteration after the queued commit.
+                Assert.Contains("✓ Read lock.cs", string.Join('\n', TgSnapshot.Capture(app)));
+                app.RequestStop();
+                return false;
+            }
             var writer = new TgTranscriptWriter(app, window.Transcript);
             window.Transcript.UpdateLive(new TuiActivityPresentation(
                 "◐", "Reading", "lock.cs", "1s", TuiToken.Brand));
@@ -216,14 +224,7 @@ public sealed class TgChromeTests
             writer.CommitLine(new[] { "✓ Read lock.cs  0.2s" });
 
             Assert.Null(window.Transcript.Live);
-            return false;
-        });
-        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
-        {
-            // The committed row is drawn on the next loop iteration, like every append.
-            Assert.Contains("✓ Read lock.cs", string.Join('\n', TgSnapshot.Capture(app)));
-            app.RequestStop();
-            return false;
+            return true;
         });
         app.Run(window);
     }

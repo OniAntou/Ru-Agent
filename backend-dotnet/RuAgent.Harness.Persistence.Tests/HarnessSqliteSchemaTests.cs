@@ -16,6 +16,7 @@ public sealed class HarnessSqliteSchemaTests
         await using var command = connection.CreateCommand();
         command.CommandText = """
             DROP INDEX ix_agent_events_execution_request;
+            DROP TABLE agent_run_provider_intents;
             INSERT INTO business_settings(id,document) VALUES(1,'{"fixture":"preserved"}');
             PRAGMA user_version=31;
             """;

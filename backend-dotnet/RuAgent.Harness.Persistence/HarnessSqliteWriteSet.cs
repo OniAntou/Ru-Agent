@@ -182,6 +182,16 @@ internal static class HarnessSqliteWriteSet
         providerSelection.CommandText = "INSERT INTO agent_run_provider_selections(run_id) VALUES($run_id)";
         providerSelection.Parameters.AddWithValue("$run_id", request.Run.RunId.Value);
         await providerSelection.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (request.ProviderIntent is { } intent)
+        {
+            await using var providerIntent = connection.CreateCommand();
+            providerIntent.Transaction = transaction;
+            providerIntent.CommandText = "INSERT INTO agent_run_provider_intents(run_id,backend,model) VALUES($run,$backend,$model)";
+            providerIntent.Parameters.AddWithValue("$run", request.Run.RunId.Value);
+            providerIntent.Parameters.AddWithValue("$backend", intent.Backend);
+            providerIntent.Parameters.AddWithValue("$model", intent.Model);
+            await providerIntent.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     internal static async Task<bool> UpdateRunAsync(

@@ -9,7 +9,8 @@ public sealed record NewAgentRun
         IReadOnlyList<HarnessEventIntent> events,
         IReadOnlyList<HarnessPayloadIntent> payloads,
         IReadOnlyList<ConversationOutboxIntent> conversationOutbox,
-        RunCreationIdentity creationIdentity)
+        RunCreationIdentity creationIdentity,
+        RunProviderIntent? providerIntent = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(events);
@@ -22,6 +23,7 @@ public sealed record NewAgentRun
         ConversationOutbox = new ReadOnlyCollection<ConversationOutboxIntent>(
             conversationOutbox.ToArray());
         CreationIdentity = creationIdentity;
+        ProviderIntent = providerIntent;
     }
 
     public AgentRun Run { get; }
@@ -29,6 +31,7 @@ public sealed record NewAgentRun
     public IReadOnlyList<HarnessPayloadIntent> Payloads { get; }
     public IReadOnlyList<ConversationOutboxIntent> ConversationOutbox { get; }
     public RunCreationIdentity CreationIdentity { get; }
+    public RunProviderIntent? ProviderIntent { get; }
 }
 
 public sealed record RunCreationIdentity

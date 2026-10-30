@@ -43,6 +43,7 @@ public static partial class HarnessSqliteSchema
                     WHERE kind = 'tool.execution_requested';
                 SELECT 1;
                 """),
+            new(32, 33, ProviderIntentMigration),
         ];
     }
 }

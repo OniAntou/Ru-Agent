@@ -129,6 +129,8 @@ public sealed class AgentProviderSnapshotFactory(
     private async Task<ProviderBootstrapData> PinCurrentSelectionAsync(
         RunId runId, SettingsSnapshot current, CancellationToken ct)
     {
+        current = ProviderIntentSettings.Apply(current,
+            await selectionStore.GetIntentAsync(runId, ct).ConfigureAwait(false));
         var proposed = await DescribeSelectionAsync(current, ct).ConfigureAwait(false);
         var stored = await selectionStore.PinAsync(runId, proposed, ct).ConfigureAwait(false);
         var pin = stored.Selection ?? throw new ProviderCatalogException("provider_selection_invalid");

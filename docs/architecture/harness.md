@@ -53,13 +53,17 @@ implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Dat
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
 batch statements. Release migration tests build the original released v18 DDL and frozen
 development DDL independently of current schema creation. The selected upgrade suffix commits atomically
-at v32. Version 29 consolidated earlier development changes; v30
+at v33. Version 29 consolidated earlier development changes; v30
 normalizes retained conversation history and source receipts. Version 31 adds
 context mutation fences and indexed compaction/intent lookup; v32 indexes exact
 execution-request provenance. The schema keeps this index, but verification no longer reads the
-workspace journal. Versions below v18 fail with
+workspace journal. Version 33 adds `agent_run_provider_intents`: an optional
+provider/model choice inserted in the same transaction as its root run, without
+credentials or permission grants. Explicit intent participates in request
+idempotency identity and constrains the initial provider pin; existing pins and
+legacy runs retain their prior behavior. Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
-v19-v31 databases remain eligible sources; adding a migration extends one ordered
+v19-v32 databases remain eligible sources; adding a migration extends one ordered
 catalog instead of every historical branch. Fresh installs use the same released
 baseline and upgrade batch. Tests cover every retained source, identical schema,
 rollback/retry, restored FKs and two simultaneous initializer processes.

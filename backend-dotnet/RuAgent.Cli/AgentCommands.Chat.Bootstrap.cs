@@ -15,7 +15,7 @@ public sealed partial class AgentCommands
     /// so a refused chat cannot leak the frame or delete-tasks of the images it
     /// already loaded.
     /// </summary>
-    private sealed class ChatBootstrapContext(
+    internal sealed class ChatBootstrapContext(
         ChatSubmissionState submissions,
         TextWriter humanOut,
         string canonicalWorkspace,

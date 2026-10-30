@@ -16,7 +16,7 @@ public static class ChatCommandCatalog
         new("/skill", "Run a skill in this turn", "/skill <id> [arguments]"),
         new("/preset", "Choose permissions for new turns", "/preset [plan|standard|full_access]"),
         new("/new", "Start a new session", "/new"),
-        new("/sessions", "Browse sessions or reopen by id", "/sessions [query|id:<session-id>]"),
+        new("/sessions", "Browse sessions, reopen by id or close an idle tab", "/sessions [query|id:<session-id>|close]"),
         new("/subagents", "View child tasks and results", "/subagents [run-id] [agent result [version]]"),
         new("/tasks", "View and stop background terminal tasks", "/tasks [run-id] | /tasks kill <execution-id>"),
         new("/changes", "Summarize recorded file edits and previews", "/changes [run-id]"),

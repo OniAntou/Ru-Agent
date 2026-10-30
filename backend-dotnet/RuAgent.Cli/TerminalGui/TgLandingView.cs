@@ -11,6 +11,8 @@ public sealed partial class TgLandingView : ImageView
     internal int? HintRow { get; set; }
     internal int? SkyRows { get; set; }
     internal System.Drawing.Rectangle? ComposerBounds { get; set; }
+    internal System.Drawing.Rectangle WordmarkBackdropBounds { get; private set; }
+    internal Func<System.Drawing.Rectangle, bool>? IsWordmarkOccluded { get; set; }
     private readonly TuiGalaxySky _sky = new();
     private TimeSpan? _lastTick;
     private double _animationTime;
@@ -39,11 +41,11 @@ public sealed partial class TgLandingView : ImageView
     ];
     private static readonly Terminal.Gui.Drawing.Attribute[] MeteorColors =
     [
-        TgPalette.Attr((0, 0, 0)), TgPalette.Attr((35, 7, 12)),
-        TgPalette.Attr((55, 10, 16)), TgPalette.Attr((82, 16, 24)),
-        TgPalette.Attr((110, 20, 25)), TgPalette.Attr((140, 24, 28)),
-        TgPalette.Attr((170, 29, 30)), TgPalette.Attr((235, 47, 40)),
-        TgPalette.Attr((255, 68, 58)),
+        TgPalette.Attr((0, 0, 0)), TgPalette.Attr((28, 28, 28)),
+        TgPalette.Attr((45, 45, 45)), TgPalette.Attr((70, 70, 70)),
+        TgPalette.Attr((100, 100, 100)), TgPalette.Attr((135, 135, 135)),
+        TgPalette.Attr((175, 175, 175)), TgPalette.Attr((225, 225, 225)),
+        TgPalette.Attr((255, 255, 255)),
     ];
 
     public TgLandingView()
@@ -103,6 +105,10 @@ public sealed partial class TgLandingView : ImageView
         var left = Math.Max(0, (width - TgWelcomeWordmark.Width) / 2);
         var top = WordmarkRow ?? Math.Max(0, (height - TuiHeader.WordmarkRows) / 2);
         var squareWordmark = TryDrawSquareWordmark(width, height, top);
+        // Keep the holes, soft seams and transparent padding quiet as well as
+        // the letter faces. The encoded image also paints this black matte.
+        WordmarkBackdropBounds = squareWordmark ? SquareWordmarkBounds
+            : new System.Drawing.Rectangle(left, top, TgWelcomeWordmark.Width + 1, TuiHeader.WordmarkRows + 1);
         if (squareWordmark) BeginWordmarkFrame();
         _sky.Render(width, Math.Clamp(SkyRows ?? height, 0, height), _animationTime);
         var dots = _sky.Dots;
@@ -116,10 +122,12 @@ public sealed partial class TgLandingView : ImageView
                 var index = r * _sky.Columns + c;
                 // Keep the command hint's entire row quiet, including outside its
                 // centered view bounds where the full-width sky would otherwise show.
-                var inside = c < _sky.Columns && r < _sky.Rows && r != HintRow;
+                var behindWordmark = WordmarkBackdropBounds.Contains(c, r);
+                var inside = !behindWordmark && c < _sky.Columns && r < _sky.Rows && r != HintRow
+                    && ComposerBounds?.Contains(c, r) != true;
                 var bits = inside ? dots[index] : (byte)0;
                 var color = inside ? colors[index] : (byte)0;
-                if (r >= _sky.Rows && r != HintRow && ComposerBounds?.Contains(c, r) != true)
+                if (!behindWordmark && r >= _sky.Rows && r != HintRow && ComposerBounds?.Contains(c, r) != true)
                     (bits, color) = TuiWelcomeStars.At(c, r, _animationTime);
                 if (color != previousColor) { SetAttribute(SkyColors[color]); previousColor = color; }
                 AddStr(Glyphs[bits]);
@@ -167,7 +175,8 @@ public sealed partial class TgLandingView : ImageView
         for (var i = 0; i < count; i++)
         {
             var cell = cells[i];
-            if (cell.Row == HintRow || ComposerBounds?.Contains(cell.Column, cell.Row) == true) continue;
+            if (cell.Row == HintRow || ComposerBounds?.Contains(cell.Column, cell.Row) == true
+                || WordmarkBackdropBounds.Contains(cell.Column, cell.Row)) continue;
             byte bits;
             if (cell.Column < _sky.Columns && cell.Row < _sky.Rows)
             {

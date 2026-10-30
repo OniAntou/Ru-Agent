@@ -11,7 +11,7 @@ public sealed class TuiShootingStarsTests
     [InlineData(15)]
     [InlineData(39)]
     [InlineData(51.99)]
-    [InlineData(55)]
+    [InlineData(55.1)]
     public void Long_gaps_leave_the_existing_sky_unchanged(double time)
     {
         var dots = new byte[80 * 24]; var colors = new byte[dots.Length];
@@ -64,8 +64,21 @@ public sealed class TuiShootingStarsTests
         Assert.Contains(cells[..count].ToArray(), cell => cell.Row == rows - 1 && cell.Color == 8);
         count = TuiShootingStars.Collect(cells, columns, rows, 13.16, out _);
         Assert.Contains(cells[..count].ToArray(), cell => cell.Column < columns * 0.1 && cell.Row >= rows * 0.8);
-        count = TuiShootingStars.Collect(cells, columns, rows, 13.4, out _);
+        count = TuiShootingStars.Collect(cells, columns, rows, 13.5, out _);
         Assert.DoesNotContain(cells[..count].ToArray(), cell => cell.Column < columns * 0.1);
+    }
+
+    [Fact]
+    public void Extended_tail_spans_more_than_a_quarter_of_the_screen()
+    {
+        Span<TuiShootingStars.Cell> cells = stackalloc TuiShootingStars.Cell[TuiShootingStars.MaxCells];
+        var count = TuiShootingStars.Collect(cells, 160, 50, 12.6, out _);
+        var meteor = cells[..count].ToArray();
+        Assert.NotEmpty(meteor);
+        Assert.InRange(meteor.Max(cell => cell.Row) - meteor.Min(cell => cell.Row), 13, 16);
+        // The third meteor must not be cut off by the old three-second shower limit.
+        count = TuiShootingStars.Collect(cells, 160, 50, 55.02, out _);
+        Assert.NotEmpty(cells[..count].ToArray());
     }
 
     [Fact]

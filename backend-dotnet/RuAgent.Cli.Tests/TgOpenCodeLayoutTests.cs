@@ -12,12 +12,13 @@ public sealed class TgOpenCodeLayoutTests
     [InlineData(80, 24)]
     [InlineData(120, 36)]
     [InlineData(160, 50)]
-    public void Welcome_gives_the_galaxy_three_quarters_and_keeps_input_below(int width, int height)
+    public void Welcome_keeps_a_large_galaxy_and_brings_input_close_to_the_logo(int width, int height)
     {
         Render(width, height, false, _ => { }, (_, w, screen) =>
         {
-            Assert.InRange((double)w.Composer.Frame.Y / height, 0.65, 0.76);
-            Assert.Equal(w.Composer.Frame.Y - 1, w.Landing.SkyRows);
+            Assert.InRange((double)w.Landing.SkyRows!.Value / height, 0.70, 0.76);
+            Assert.Equal(w.Landing.WordmarkRow + TuiHeader.WordmarkRows + 2, w.Composer.Frame.Y);
+            Assert.True(w.Composer.Frame.Y < height * 0.75);
             Assert.True(w.Hints.Frame.Bottom <= height);
             Assert.True(w.Landing.WordmarkRow + TuiHeader.WordmarkRows < w.Composer.Frame.Y);
             Assert.Contains("Ask anything", screen[w.Composer.Frame.Y + 1]);
@@ -45,12 +46,13 @@ public sealed class TgOpenCodeLayoutTests
     [InlineData(80, 24)]
     [InlineData(120, 36)]
     [InlineData(160, 50)]
-    public void Welcome_logo_is_centered_on_the_whole_screen(int columns, int rows)
+    public void Welcome_logo_is_centered_on_the_galaxy_core(int columns, int rows)
     {
         Render(columns, rows, false, _ => { }, (app, w, screen) =>
         {
             var top = w.Landing.WordmarkRow!.Value;
-            Assert.InRange(Math.Abs(top * 2 + TuiHeader.WordmarkRows - rows), 0, 1);
+            var coreRow = w.Landing.SkyRows!.Value * TuiGalaxySky.CoreYFraction;
+            Assert.InRange(Math.Abs(top + TuiHeader.WordmarkRows / 2d - coreRow), 0, .5);
             Assert.Contains("█▀▀█ █  █ █▀▀█", screen[top]);
             Assert.True(top + TuiHeader.WordmarkRows < w.Composer.Frame.Y);
             var left = (columns - TgWelcomeWordmark.Width) / 2;
@@ -117,7 +119,7 @@ public sealed class TgOpenCodeLayoutTests
                     var (background, _) = TuiWelcomeStars.At(head.Column, head.Row, w.Landing.AnimationTime);
                     Assert.Equal(((char)(0x2800 + (background | head.Dots))).ToString(),
                         app.Driver!.Contents![head.Row, head.Column].Grapheme);
-                    Assert.Equal(TgPalette.ToColor((255, 68, 58)),
+                    Assert.Equal(TgPalette.ToColor((255, 255, 255)),
                         TgSnapshot.CellAttribute(app, head.Row, head.Column).Foreground);
                 }
             }
@@ -143,7 +145,8 @@ public sealed class TgOpenCodeLayoutTests
                 Assert.True(w.Composer.Frame.Y >= 0);
                 Assert.True(w.Composer.Frame.Bottom <= w.Hints.Frame.Y);
                 Assert.True(w.Hints.Frame.Bottom <= 24);
-                Assert.True(w.Landing.SkyRows < w.Composer.Frame.Y);
+                Assert.InRange(w.Landing.SkyRows!.Value, 0, 16);
+                Assert.True(w.Landing.WordmarkRow + TuiHeader.WordmarkRows < w.Composer.Frame.Y);
             });
     }
 
@@ -235,7 +238,7 @@ public sealed class TgOpenCodeLayoutTests
         Render(140, 36, true, _ => {}, (app, w, rows) =>
         {
             var text = string.Join('\n', rows);
-            Assert.Contains("D:\\LLM", rows[0], StringComparison.Ordinal);
+            Assert.DoesNotContain("D:\\LLM", rows[0], StringComparison.Ordinal);
             Assert.DoesNotContain("Context", text, StringComparison.Ordinal);
             Assert.Contains("39,413", text, StringComparison.Ordinal);
             Assert.True(w.Transcript.Frame.X >= 2);

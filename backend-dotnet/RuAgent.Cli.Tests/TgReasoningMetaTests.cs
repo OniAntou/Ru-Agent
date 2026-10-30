@@ -11,6 +11,7 @@ public sealed class TgReasoningMetaTests
     [InlineData("default")]
     [InlineData("high")]
     [InlineData("xhigh")]
+    [InlineData("max")]
     [InlineData(null)]
     public void Reasoning_selection_renders_beside_model_without_changing_permission(string? effort)
     {
@@ -21,8 +22,9 @@ public sealed class TgReasoningMetaTests
         app.AddTimeout(TimeSpan.FromMilliseconds(180), () =>
         {
             var row = TgSnapshot.Capture(app)[window.Composer.Frame.Y + TgComposerView.MetadataRow];
-            Assert.Contains("my-model", row); Assert.Contains("reasoning: " + (effort ?? "—"), row);
-            Assert.True(row.IndexOf("reasoning:", StringComparison.Ordinal) > row.IndexOf("my-model", StringComparison.Ordinal));
+            Assert.Contains("my-model", row); Assert.Contains(effort ?? "—", row);
+            Assert.DoesNotContain("reasoning:", row);
+            Assert.True(row.IndexOf(effort ?? "—", StringComparison.Ordinal) > row.IndexOf("my-model", StringComparison.Ordinal));
             Assert.Equal("standard", window.Composer.Preset); Assert.True(window.Header.Visible);
             checkedRow = true; app.RequestStop(); return false;
         });
@@ -59,7 +61,8 @@ public sealed class TgReasoningMetaTests
             Assert.Contains("draft", screen[window.Composer.Frame.Y + 1]);
             var row = screen[window.Composer.Frame.Y + TgComposerView.MetadataRow];
             Assert.DoesNotContain('\u001b', row);
-            if (width >= 34) Assert.Contains("reasoning:", row);
+            Assert.DoesNotContain("reasoning:", row);
+            if (width >= 34) Assert.Contains("high", row);
             checkedLayout = true; app.RequestStop(); return false;
         });
         app.Run(window); Assert.True(checkedLayout);

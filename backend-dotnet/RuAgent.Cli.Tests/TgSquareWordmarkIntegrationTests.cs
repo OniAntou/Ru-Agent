@@ -30,24 +30,22 @@ public sealed class TgSquareWordmarkIntegrationTests
                 Assert.All(requests, request =>
                 {
                     Assert.NotNull(request.Pixels); Assert.NotNull(request.Encoder);
+                    Assert.Equal(new Color(0, 0, 0, 255), request.Pixels[0, 0]);
+                    Assert.All(request.Pixels.Cast<Color>(), pixel => Assert.Equal(255, pixel.A));
                     var encoded = request.EncodedSixel ?? request.Encoder.EncodeSixel(request.Pixels);
-                    Assert.StartsWith("\x1bP", encoded); Assert.Contains("q", encoded);
+                    Assert.StartsWith("\x1bP0;0;0q", encoded);
                 });
                 Assert.False(w.Landing.SquareWordmarkBounds.IntersectsWith(w.Composer.Frame));
                 Assert.True(w.Landing.SquareWordmarkBounds.Y >= 1);
                 Assert.True(w.Landing.SquareWordmarkBounds.Bottom <= w.Hints.Frame.Y);
-                var sky = new TuiGalaxySky();
-                sky.Render(app.Driver.Cols, w.Landing.SkyRows!.Value, w.Landing.AnimationTime);
                 var frame = w.Landing.SquareWordmarkBounds;
-                var stars = 0;
                 for (var row = frame.Top; row < frame.Bottom; row++)
+                for (var column = frame.Left; column < frame.Right; column++)
                 {
-                    var bits = sky.Dots[row * sky.Columns + frame.Left];
-                    if (bits == 0) continue;
-                    stars++;
-                    Assert.Equal(((char)(0x2800 + bits)).ToString(), app.Driver.Contents![row, frame.Left].Grapheme);
+                    Assert.True(string.IsNullOrWhiteSpace(app.Driver.Contents![row, column].Grapheme));
+                    Assert.Equal(TgPalette.ToColor((0, 0, 0)), TgSnapshot.CellAttribute(app, row, column).Background);
                 }
-                Assert.True(stars > 0, "The transparent padding must leave underlying Braille stars visible.");
+                Assert.Contains(string.Join('\n', TgSnapshot.Capture(app)), ch => ch is >= '\u2801' and <= '\u28ff');
             }
             else
             {
@@ -60,6 +58,36 @@ public sealed class TgSquareWordmarkIntegrationTests
         });
     }
 
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public void Logo_backdrop_blocks_stars_and_a_crossing_meteor_without_hiding_the_rest_of_the_sky(bool supported)
+    {
+        Run(supported, (app, w, stage) =>
+        {
+            if (stage == 0)
+            {
+                w.Landing.Tick(TimeSpan.Zero);
+                for (var tick = 1; tick <= 133; tick++)
+                    w.Landing.Tick(TimeSpan.FromSeconds(13.25 * tick / 133));
+                w.Landing.SetNeedsDraw();
+                return true;
+            }
+            var backdrop = w.Landing.WordmarkBackdropBounds;
+            Span<TuiShootingStars.Cell> cells = stackalloc TuiShootingStars.Cell[TuiShootingStars.MaxCells];
+            var count = TuiShootingStars.Collect(cells, 120, 36, w.Landing.AnimationTime, out _);
+            Assert.Contains(cells[..count].ToArray(), cell => backdrop.Contains(cell.Column, cell.Row));
+            var screen = TgSnapshot.Capture(app);
+            for (var row = backdrop.Top; row < backdrop.Bottom; row++)
+            {
+                var text = screen[row].PadRight(120).Substring(backdrop.Left, backdrop.Width);
+                Assert.DoesNotContain(text, ch => ch is >= '\u2801' and <= '\u28ff');
+            }
+            Assert.Contains(string.Join('\n', screen), ch => ch is >= '\u2801' and <= '\u28ff');
+            Assert.True(w.Composer.Input.HasFocus);
+            return false;
+        });
+    }
+
     [Fact]
     public void Quiet_redraws_reuse_encoded_data_and_respect_the_terminal_palette_limit()
     {
@@ -67,6 +95,7 @@ public sealed class TgSquareWordmarkIntegrationTests
         Run(true, (app, w, stage) =>
         {
             var image = Assert.Single(app.Driver!.GetOutputBuffer().GetRasterImages());
+            Assert.Same(TgWordmarkPalette.Instance, image.Encoder!.Quantizer.PaletteBuildingAlgorithm);
             if (stage == 0)
             {
                 previous = image; w.Landing.SetNeedsDraw(); return true;
@@ -145,6 +174,57 @@ public sealed class TgSquareWordmarkIntegrationTests
                 default:
                     Assert.True(w.Landing.Visible); Assert.NotEmpty(images); return false;
             }
+        });
+    }
+
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public void Slash_menu_keeps_sky_animating_without_raster_covering_the_commands(bool supported)
+    {
+        var previousTime = 0d;
+        string[]? menuRows = null;
+        string? visibleSky = null;
+        Run(supported, (app, w, stage) =>
+        {
+            if (stage == 0)
+            {
+                w.Composer.Input.Text = "/";
+                w.TickWelcome();
+                Assert.True(w.IsSlashDropdownOpen);
+                Assert.False(w.Landing.AnimationPaused);
+                previousTime = w.Landing.AnimationTime;
+                return true;
+            }
+            w.TickWelcome();
+            Assert.True(w.Landing.AnimationTime > previousTime);
+            previousTime = w.Landing.AnimationTime;
+            Assert.False(w.Landing.AnimationPaused);
+            if (stage <= 2)
+            {
+                var menu = Assert.Single(w.SubViews.OfType<TgSlashDropdown>());
+                Assert.True(menu.Frame.IntersectsWith(new System.Drawing.Rectangle(
+                    0, w.Landing.WordmarkRow!.Value, w.Frame.Width, TuiHeader.WordmarkRows)));
+                Assert.False(w.Landing.SquareWordmarkActive);
+                Assert.Empty(app.Driver!.GetOutputBuffer().GetRasterImages());
+                var screen = TgSnapshot.Capture(app);
+                var currentRows = screen.Skip(menu.Frame.Y).Take(menu.Frame.Height)
+                    .Select(row => row.PadRight(app.Driver.Cols).Substring(menu.Frame.X, menu.Frame.Width)).ToArray();
+                Assert.Contains("commands", string.Join('\n', currentRows));
+                Assert.DoesNotContain(string.Join('\n', currentRows), ch => ch is >= '\u2801' and <= '\u28ff');
+                var outsideMenu = string.Concat(screen.Take(w.Landing.SkyRows!.Value).Select(row =>
+                    row.PadRight(app.Driver.Cols)[..menu.Frame.Left] + row.PadRight(app.Driver.Cols)[menu.Frame.Right..]));
+                if (stage == 1) { menuRows = currentRows; visibleSky = outsideMenu; }
+                else
+                {
+                    Assert.Equal(menuRows, currentRows);
+                    Assert.NotEqual(visibleSky, outsideMenu);
+                    w.Composer.Input.Text = string.Empty;
+                    Assert.False(w.IsSlashDropdownOpen);
+                }
+                return true;
+            }
+            Assert.Equal(supported, w.Landing.SquareWordmarkActive);
+            return false;
         });
     }
 

@@ -8,7 +8,7 @@ uses catalog details only for rates; sequential/data-only chat skips that lookup
 
 ## Core TUI
 
-The composer metadata can display `reasoning: <effort>` between model and provider.
+The composer metadata can display the selected effort alone (for example `max` or `high`) between model and provider.
 Startup and existing selection refreshes use the settings response's selected
 reasoning value, with no extra catalog call or polling. Model/provider changes
 clear the old display until refreshed; preset-only changes preserve it. Missing
@@ -288,37 +288,20 @@ The native permission label is drawn immediately before the top-right usage
 cluster, using the existing green accent, instead of the composer metadata row.
 Composer preset changes forward to the header through one presentation event, so
 startup, selection, session replay and retained-run updates share the same path.
-The header remains visible on the empty welcome screen for the centered workspace
-label, while session title, preset and usage remain hidden until conversation
-content is present. Header chrome is drawn above the landing sky. Idle footer text is empty instead of `Ready`; explicit feedback,
+The header remains blank on the empty welcome screen; session title, preset and
+usage appear when conversation content is present. The workspace/path heading
+is removed. Header chrome is drawn above the landing sky. Idle footer text is empty instead of `Ready`; explicit feedback,
 attachments, approvals and queued/running states remain visible. Narrow headers retain the preset
 and compact token count before optional percentage/cost details. No policy,
 approval, token accounting or command behavior changes.
 
 
-### Workspace heading
+### Workspace display
 
-The top center shows the canonical chat workspace, independently of footer
-feedback and attachment labels. An implicit launch from the user profile shows
-`Chưa chọn dự án · ~`; an explicit `--workspace` pointing to the profile still
-shows its actual path. Other directories are workspaces without searching for
-Git or project manifests. `WorkspaceExplicit` is display provenance only. The
-bare `bin/ru.cmd` launcher leaves workspace selection implicit; parser fallback
-still supplies the same process cwd, with no change to execution/policy scope.
-
-`TuiWorkspaceHeading` classifies availability at startup and interaction boundaries
-(prompt, normal slash dispatch, session switching and turn completion). There is
-no per-frame filesystem check or model/API polling. Missing/inaccessible paths
-show `Path không khả dụng`. A shell tool's cwd does not change the chat workspace;
-opening another session retains the current chat's canonical workspace.
-
-The header uses cell-aware middle truncation and reserves space for preset/tokens;
-expanded cost/percentage detail yields to a readable path. Very narrow chat frames
-put the path on the second header row, avoiding the right-aligned subagent chips.
-Zero/one-cell budgets are bounded locally instead of inheriting the legacy
-`MiddleTruncate` small-width behavior. Ordinary spaces in paths are preserved and
-terminal controls are stripped. `/status` includes a wrapped full workspace-path
-section; each framed line keeps the panel width.
+The native header does not display a workspace path or a no-project placeholder.
+Workspace selection, execution cwd and permissions are unchanged. `/status`
+retains a sanitized full workspace path, wrapped to fit the panel. Feedback and
+attachment labels do not populate a workspace heading.
 
 ### Welcome sky
 
@@ -331,24 +314,35 @@ arm, keeping all six arms detailed rather than tying those patterns to an arm ID
 The sky palette uses dark indigo envelopes, blue/teal ridges, lavender dust,
 muted rose knots and an ivory nucleus. Lower stars also include blue, teal,
 lavender and rose accents; a few foreground stars use warm glints.
-The native welcome wordmark uses a green-to-blue RU gradient and silver AGENT,
+The native welcome wordmark uses a green-to-blue RU gradient and a muted green AGENT,
 with a narrow warm light sweeping across for 2.5 seconds every 10 active welcome
-seconds. Its first sweep starts at two seconds. `TgWelcomeWordmark` caches glyph
+seconds. AGENT's darker green face leaves brightness headroom for that
+warm sweep. Its first sweep starts at two seconds. `TgWelcomeWordmark` caches glyph
 strings and 16 light levels per cell. When the driver reports Sixel or enabled
-Kitty raster support, the centered logo uses square tiles with black gutters,
+Kitty raster support, the centered logo uses square tiles with subtle inner gutters,
 small rims along every letter and four shadow layers cast down/right.
-RU uses low-contrast inner seams with subpixel coverage colors; its outer
-silhouette stays defined. AGENT retains its black tile grid. Glyph shape,
-placement, face colors and raster dimensions remain the same.
+RU and AGENT use matching low-contrast inner seams with subpixel coverage colors; their outer
+silhouettes stay defined. Glyph shapes, face colors and raster dimensions remain
+the same; placement follows the galaxy core.
 `TgSquareWordmarkRaster` reuses two 354x84 pixel buffers, updates at most 10 times
 per active second during the sweep and reuses its quiet frame between sweeps.
+`TgWordmarkPalette` fixes the Sixel palette across the complete light-sweep cycle,
+so lighting RU cannot recolor untouched AGENT faces or make soft seams jump.
+It samples the existing raster's quiet frame and 25 sweep frames once, retaining
+seams and face colors. The palette reserves up to three warm highlights so the
+narrow beam survives quantization. Cached palettes respect the terminal limit
+(up to 32 colors); warm lookup does not allocate or resample the image. Cropped
+Sixel fragments use the same palette; Kitty retains full pixel colors.
 The existing welcome clock owns animation timing; no additional periodic timer or
 background renderer is started. `TgLandingView` inherits `ImageView` for native
 raster ownership and cleanup. It captures the ID of the image command registered
 by the base view once, then places its bounded logo through Terminal.Gui's output
 buffer after text. It does not duplicate the library's private ID format. Sky,
-meteors and logo share the same view, preserving Braille cells beneath transparent
-image regions. Scaled pixels and encoded data are cached; only a changed sweep
+meteors and logo share the same view, keeping a black matte beneath the logo
+image regions. The sky/lower stars and meteors skip that rectangle; scaled output
+pixels also fill holes and padding with opaque black so raster-owned text blanks
+cannot leave old dots behind. The fixed Sixel palette includes exact black.
+Scaled pixels and encoded data are cached; only a changed sweep
 frame, output size, protocol or palette limit requires re-encoding. The Sixel
 palette uses at most 32 colors, respecting a smaller reported terminal limit.
 Sixel placement is re-emitted after text redraws to keep the animated sky from
@@ -378,15 +372,13 @@ into solid blocks. Its seeded edge varies gently and drifts at a quarter of the
 arm rotation speed; the bright central anchor remains fixed.
 These details reuse the same particle loop and cell buffers; tangent links add
 only a bounded secondary dot for a small subset of arm stars.
-The welcome layout reserves roughly the top 75% for the sky and centers the
-wordmark horizontally and vertically on the full welcome viewport. Short
-windows and tall drafts clamp it above the composer rather than overlapping
-input. The composer sits
-below that region, with its hint below;
-short windows or taller drafts shrink the sky to keep input/hints on screen.
-The galaxy raster ends one row before the composer. A separate sparse, fixed
-star field fills the remaining lower space and the sides of the centered input;
-the composer's full bounds and the entire command-hint row remain excluded.
+The welcome layout keeps roughly the top 75% as an independent galaxy canvas.
+The wordmark is centered on its core (50% across / 64% down the sky region),
+and the composer sits two terminal rows below the three-row logo. The sky can
+extend beside and below the composer; input bounds and the whole hint row are
+excluded from its painting. Short windows and tall drafts shrink the sky and
+clamp the logo/prompt to preserve input and hints. A separate sparse star field
+fills the remaining space below the galaxy canvas.
 `TuiWelcomeStars` hashes cell coordinates without particle storage and varies
 only brightness on the existing welcome clock, so positions do not jump.
 The core retains a 1.5x projection scale; arms/halo/rings have an additional 1.1x
@@ -403,26 +395,28 @@ Outer stars are clipped at the edges. Arms rotate at 0.045 rad/s
 and radial phase moves inward at 0.015/s, fading before wrapping to the outside.
 The galaxy remains the primary welcome effect. `TuiShootingStars` adds 2–3 short
 falling streaks per 40 seconds of active welcome time, first appearing at 12
-seconds. Each shower lasts under three seconds, with a bright red head fading
-through red to a dark red tail. Meteor colors use
-a separate cached palette so bright galaxy cells cannot turn the streak white.
+seconds. Each shower lasts at most 3.1 seconds, with a white head fading
+through neutral gray to a dark gray tail, roughly 32% longer than before. Meteor colors use
+a separate cached palette to preserve neutral white/gray streaks over the colored galaxy.
 The head travels to the bottom of the full welcome viewport; the remaining tail
 exits afterwards rather than
-disappearing inside the galaxy's shorter sky region. Up to 54 sparse Braille
+disappearing inside the galaxy's shorter sky region. Up to 72 sparse Braille
 cells are collected on the stack and merged with the sky/lower stars before
 painting the wordmark. Input bounds and the entire hint row stay excluded.
 This does not add a screen-sized buffer or inherit the galaxy raster's dimension
 cap. No retained particle objects, background tasks or extra timer are created, and
 the same hidden/overlay pause stops both effects.
-The terminal font owns glyph metrics. The existing wordmark, workspace heading
-and composer stay above the black sky. No new controls or provider calls are added.
+The terminal font owns glyph metrics. The existing wordmark and composer stay above the black sky. No new controls or provider calls are added.
 The sequential output adapter retains its existing header renderer.
 
 The existing UI timer still owns activity/footer updates. Only the welcome clock
 is throttled to 50 ms (at most 20 FPS; about 18.5 FPS with the shared 18 ms timer);
-it stops advancing while the landing is hidden, has no viewport, or a slash
-dropdown, command palette, modal or document
-panel is open. First transcript/live content hides the landing, including replay
+it stops advancing while the landing is hidden, has no viewport, or a command
+palette, modal or document panel is open. Opening the slash-command dropdown
+keeps the sky, meteors and light sweep running at the same cadence. A raster logo
+is temporarily suppressed only when its bounds intersect that dropdown, because
+raster images render after text. The normal glyph fallback stays behind the menu;
+raster rendering resumes when no longer covered. First transcript/live content hides the landing, including replay
 of an existing conversation; an empty transcript restores it. Typing an unsent
 ordinary draft leaves it visible. Resume caps a delayed step to 100 ms.
 

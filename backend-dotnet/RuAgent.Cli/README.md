@@ -39,16 +39,17 @@ block. The empty prompt is capped at 80 columns. Active sessions use a padded
 transcript and a full-width bottom prompt with the same side margins as chat; the
 model, selected reasoning effort and provider sit on the meta row inside the block. The permission preset
 appears in green beside the token cluster in the top header during chat; the
-empty welcome screen hides it while keeping the centered workspace label visible.
-The welcome logo keeps its green/blue RU and silver AGENT colors. Terminals that
+empty welcome screen hides it. The top workspace/path label is removed.
+The reasoning label shows only its value, for example `max` or `high`.
+The welcome logo uses green/blue RU and muted green AGENT colors, with
+a warm light sweep that visibly brightens the darker AGENT face. Terminals that
 report Sixel or enabled Kitty graphics show square tiles, small rims and layered
-shadows behind every letter. Other terminals and small windows use the glyph
+shadows behind every letter. A solid black backdrop keeps galaxy dots and meteors
+from showing through the logo. Other terminals and small windows use the glyph
 logo. The welcome decoration disappears when chat starts.
-Opening Ru implicitly from your user profile shows `Chưa chọn dự án · ~`; an
-explicit `--workspace` shows that directory. Long paths are shortened in the header
-and shown fully as wrapped rows in `/status`. A missing/inaccessible workspace
-shows `Path không khả dụng`. This label does not change the workspace or
-permissions, and shell `cd` does not move it. The composer
+The selected workspace remains available as a wrapped full path in `/status`.
+Removing its header label does not change workspace selection, tool cwd or
+permissions. The composer
 grows from one to six visible input rows, leaving room for
 the transcript on short screens. It shows “Ask anything…” when empty and uses
 a steady block cursor. Enter sends; Ctrl+J, Shift+Enter where the terminal

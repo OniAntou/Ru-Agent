@@ -17,13 +17,16 @@ public sealed class TgSquareWordmarkRasterTests
         Assert.Equal(new Color(0, 0, 0, 255), pixels[12, 12]);
         Assert.Equal(TgWelcomeWordmark.AttributeAt(0, 0, double.NaN).Foreground, pixels[17, 17]);
         Assert.Equal(TgWelcomeWordmark.AttributeAt(0, 10, double.NaN).Foreground, pixels[117, 17]);
-        // Inner RU joints are subtle; AGENT keeps its original black grid.
+        // Both parts of the wordmark use the same subtle inner joints.
         var seam = pixels[22, 17]; var face = pixels[27, 17];
         Assert.InRange(seam.R / (double)face.R, .75, .85);
         Assert.InRange(seam.G / (double)face.G, .75, .85);
         Assert.InRange(seam.B / (double)face.B, .75, .85);
         Assert.Equal(255, seam.A);
-        Assert.Equal(new Color(0, 0, 0, 255), pixels[122, 17]);
+        var agentSeam = pixels[122, 17]; var agentFace = pixels[127, 17];
+        Assert.InRange(agentSeam.R / (double)agentFace.R, .75, .85);
+        Assert.InRange(agentSeam.G / (double)agentFace.G, .75, .85);
+        Assert.InRange(agentSeam.B / (double)agentFace.B, .75, .85);
         // Empty inter-letter space stays transparent rather than a black image rectangle.
         Assert.Equal(0, pixels[12 + 9 * 10 + 5, 12].A);
     }

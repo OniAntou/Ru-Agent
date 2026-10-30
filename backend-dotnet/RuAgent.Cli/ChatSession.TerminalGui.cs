@@ -29,7 +29,6 @@ public sealed partial class AgentCommands
         {
             var loop = new TgChatLoop(tgWindow!, cancellationToken);
             tgLoop = loop;
-            tgWindow!.SetWorkspaceContext(CurrentWorkspaceHeading());
             loop.SetTaskCommandHandler((argument, token) => ShowTasksAsync(argument, token));
             loop.SetChangesCommandHandler((argument, token) => ShowChangesAsync(argument, token));
             loop.SetRewindCommandHandler((argument, token) => RewindHistoryAsync(argument, token));

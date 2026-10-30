@@ -339,17 +339,44 @@ public sealed partial class AgentCommands
 
     public async Task<int> ApproveAsync(ApproveCommand cmd, CancellationToken cancellationToken)
     {
-        if (cmd.Json)
-        {
-            await _err.WriteLineAsync("interactive_required: --json cannot confirm approval").ConfigureAwait(false);
-            return 1;
-        }
-
         var scopeStr = cmd.Always ? "always" : "once";
 
         try
         {
             var result = await _agentClient.ApproveAsync(cmd.RunId, cmd.ApprovalId, scopeStr, cancellationToken).ConfigureAwait(false);
+            if (cmd.Json)
+            {
+                // A headless orchestrator answers a pending approval by id; --json
+                // is an output format here, not an interactive confirmation.
+                var obj = new JsonObject
+                {
+                    ["v"] = 1,
+                    ["type"] = "approval",
+                    ["run_id"] = cmd.RunId,
+                    ["approval_id"] = cmd.ApprovalId,
+                    ["decision"] = "approve",
+                    ["scope"] = scopeStr,
+                    ["authorized"] = true,
+                };
+                if (result.TryGetProperty("rule_saved", out var ruleSaved))
+                {
+                    obj["rule_saved"] = ruleSaved.ValueKind == JsonValueKind.True;
+                }
+
+                if (result.TryGetProperty("reusable_rule_not_saved", out var notSaved))
+                {
+                    obj["reusable_rule_not_saved"] = notSaved.ValueKind == JsonValueKind.True;
+                }
+
+                if (result.TryGetProperty("matcher_preview", out var previewElement))
+                {
+                    obj["matcher_preview"] = JsonNode.Parse(previewElement.GetRawText());
+                }
+
+                await _out.WriteLineAsync(obj.ToJsonString()).ConfigureAwait(false);
+                return 0;
+            }
+
             // Display matcher preview
             if (result.TryGetProperty("matcher_preview", out var preview))
             {
@@ -377,15 +404,24 @@ public sealed partial class AgentCommands
 
     public async Task<int> DenyAsync(DenyCommand cmd, CancellationToken cancellationToken)
     {
-        if (cmd.Json)
-        {
-            await _err.WriteLineAsync("interactive_required: --json cannot deny approval").ConfigureAwait(false);
-            return 1;
-        }
-
         try
         {
-            var result = await _agentClient.DenyAsync(cmd.RunId, cmd.ApprovalId, cancellationToken).ConfigureAwait(false);
+            _ = await _agentClient.DenyAsync(cmd.RunId, cmd.ApprovalId, cancellationToken).ConfigureAwait(false);
+            if (cmd.Json)
+            {
+                var obj = new JsonObject
+                {
+                    ["v"] = 1,
+                    ["type"] = "approval",
+                    ["run_id"] = cmd.RunId,
+                    ["approval_id"] = cmd.ApprovalId,
+                    ["decision"] = "deny",
+                    ["authorized"] = false,
+                };
+                await _out.WriteLineAsync(obj.ToJsonString()).ConfigureAwait(false);
+                return 0;
+            }
+
             await _out.WriteLineAsync($"approval {cmd.ApprovalId} denied").ConfigureAwait(false);
             return 0;
         }

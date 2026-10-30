@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Protocol.Harness;
 using RuAgent.Client;
 
@@ -19,25 +20,32 @@ public static class NdjsonEventRenderer
         // Ensure envelope contains no forbidden fields (defensive)
         // HarnessSafeEventEnvelope by definition has only safe fields, but we still avoid leaking
 
-        var obj = new
+        var obj = new JsonObject
         {
-            v = Version,
-            type = "event",
-            protocol_version = envelope.ProtocolVersion,
-            event_id = envelope.EventId,
-            run_id = envelope.RunId,
-            session_id = envelope.SessionId,
-            sequence = envelope.Sequence,
-            event_type = envelope.EventType,
-            occurred_at = envelope.OccurredAt,
-            status = envelope.Status,
-            safe_summary = envelope.SafeSummary,
-            payload_ref = envelope.PayloadRef,
-            input_tokens = envelope.InputTokens,
-            output_tokens = envelope.OutputTokens,
-            total_tokens = envelope.TotalTokens,
+            ["v"] = Version,
+            ["type"] = "event",
+            ["protocol_version"] = envelope.ProtocolVersion,
+            ["event_id"] = envelope.EventId,
+            ["run_id"] = envelope.RunId,
+            ["session_id"] = envelope.SessionId,
+            ["sequence"] = envelope.Sequence,
+            ["event_type"] = envelope.EventType,
+            ["occurred_at"] = envelope.OccurredAt,
+            ["status"] = envelope.Status,
+            ["safe_summary"] = envelope.SafeSummary,
+            ["payload_ref"] = envelope.PayloadRef,
+            ["input_tokens"] = envelope.InputTokens,
+            ["output_tokens"] = envelope.OutputTokens,
+            ["total_tokens"] = envelope.TotalTokens,
         };
-        var json = JsonSerializer.Serialize(obj);
+        // A headless consumer waits on an approval it cannot see otherwise: the
+        // id is the only handle `agent approve` accepts.
+        if (!string.IsNullOrEmpty(envelope.ApprovalId))
+        {
+            obj["approval_id"] = envelope.ApprovalId;
+        }
+
+        var json = obj.ToJsonString();
         // Double-check no forbidden substrings
         if (ContainsForbidden(json))
             throw new InvalidOperationException("NDJSON contains forbidden field.");

@@ -89,6 +89,35 @@ public sealed class NdjsonRendererPrivacyTests
     }
 
     [Fact]
+    public void Approval_event_exposes_the_id_a_headless_consumer_must_answer()
+    {
+        var approvalId = "apr_" + new string('d', 32);
+        var env = MakeEnvelope() with
+        {
+            EventType = "approval.requested",
+            ApprovalId = approvalId,
+            SafeSummary = "terminal_timeout_requires_approval",
+        };
+
+        var sw = new StringWriter();
+        NdjsonEventRenderer.Render(env, sw);
+
+        using var doc = JsonDocument.Parse(sw.ToString());
+        Assert.Equal(approvalId, doc.RootElement.GetProperty("approval_id").GetString());
+        Assert.Equal("terminal_timeout_requires_approval", doc.RootElement.GetProperty("safe_summary").GetString());
+    }
+
+    [Fact]
+    public void Ordinary_event_carries_no_approval_id()
+    {
+        var sw = new StringWriter();
+        NdjsonEventRenderer.Render(MakeEnvelope(), sw);
+
+        using var doc = JsonDocument.Parse(sw.ToString());
+        Assert.False(doc.RootElement.TryGetProperty("approval_id", out _));
+    }
+
+    [Fact]
     public void Ndjson_NeverPromptsOrImplicitApprovals()
     {
         var env = MakeEnvelope();

@@ -150,6 +150,62 @@ public sealed class ApprovalCommandTests
     }
 
     [Fact]
+    public async Task Approve_Json_EmitsMachineReadableAuthorization()
+    {
+        var session = CreateSession();
+        var runId = "run_" + new string('a', 32);
+        var approvalId = "apr_" + new string('b', 32);
+        var handler = CreateFakeClient(async req =>
+        {
+            var body = await req.Content!.ReadAsStringAsync();
+            Assert.Equal("allow_once", JsonDocument.Parse(body).RootElement.GetProperty("command").GetString());
+            var respJson = JsonSerializer.Serialize(new
+            {
+                approval_id = approvalId,
+                status = "authorized",
+                rule_saved = false,
+                matcher_preview = new { tool_id = "read", scope = "once" },
+            });
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
+        });
+
+        var outWriter = new StringWriter();
+        var commands = new AgentCommands(session, handler, outWriter, new StringWriter());
+        var exit = await commands.ApproveAsync(
+            new ApproveCommand(runId, approvalId, ApprovalScope.Once, Json: true), CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        using var doc = JsonDocument.Parse(outWriter.ToString().Trim());
+        Assert.Equal("approval", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal("approve", doc.RootElement.GetProperty("decision").GetString());
+        Assert.Equal(approvalId, doc.RootElement.GetProperty("approval_id").GetString());
+        Assert.True(doc.RootElement.GetProperty("authorized").GetBoolean());
+        Assert.Equal("read", doc.RootElement.GetProperty("matcher_preview").GetProperty("tool_id").GetString());
+    }
+
+    [Fact]
+    public async Task Deny_Json_EmitsMachineReadableDecision()
+    {
+        var session = CreateSession();
+        var runId = "run_" + new string('a', 32);
+        var approvalId = "apr_" + new string('f', 32);
+        var handler = CreateFakeClient(_ =>
+        {
+            var respJson = JsonSerializer.Serialize(new { approval_id = approvalId, status = "denied" });
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
+        });
+
+        var outWriter = new StringWriter();
+        var commands = new AgentCommands(session, handler, outWriter, new StringWriter());
+        var exit = await commands.DenyAsync(new DenyCommand(runId, approvalId, Json: true), CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        using var doc = JsonDocument.Parse(outWriter.ToString().Trim());
+        Assert.Equal("deny", doc.RootElement.GetProperty("decision").GetString());
+        Assert.False(doc.RootElement.GetProperty("authorized").GetBoolean());
+    }
+
+    [Fact]
     public void Parser_Approve_DefaultsToOnce()
     {
         var runId = "run_" + new string('a', 32);

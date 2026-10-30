@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(cli)**: **Headless run trả lời được approval mà không cần terminal.** `agent run --json`
+  in `approval_id` trên event `approval.requested` — handle duy nhất mà `agent approve` nhận —
+  và `approve`/`deny` nhận `--json` để trả object `approval` (`decision`, `scope`,
+  `authorized`, matcher preview) thay vì từ chối `interactive_required`. Approval vẫn là
+  single-use, bind đúng canonical args và không tạo token tái dùng; chỉ định dạng đầu ra đổi.
+
 - **fix(prompt)**: **Model tự xưng đúng tên model, không nhận "Ru Agent" là tên mình.** Persona block
   giờ mở đầu bằng `You are <model>, a coding model running inside Ru Agent`, nói rõ Ru Agent là
   sản phẩm/host chứ không phải danh tính, và khi được hỏi model hay version thì trả lời bằng model id

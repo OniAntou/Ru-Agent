@@ -30,7 +30,7 @@ public static class SystemPromptComposer
         ArgumentNullException.ThrowIfNull(context);
         var bodies = new List<(string Id, string Body, string? BoundDigest)>
         {
-            ("ru.persona", RuAgentPromptBlocks.CoreContractBlock(), null),
+            ("ru.persona", RuAgentPromptBlocks.CoreContractBlock(context.Environment.Model), null),
             ("agent.contract", RuAgentPromptBlocks.ExecutionContractBlock(recipe), null),
             ("environment", EnvironmentBlock(context), null),
             ("profile", ProfileBlock(context), null),

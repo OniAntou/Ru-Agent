@@ -227,7 +227,7 @@ public sealed class CompletionChecklistTests
     [Fact]
     public void Core_contract_asks_for_one_todo_per_explicit_requirement_and_a_final_requirement_check()
     {
-        var contract = RuAgentPromptBlocks.CoreContractBlock();
+        var contract = RuAgentPromptBlocks.CoreContractBlock("test-model");
 
         Assert.Contains("When a coding request states several requirements, record each explicit requirement "
             + "(behavior, edge and error cases, ordering, return values, allowed files, cleanup) as its own todo item "
@@ -235,6 +235,20 @@ public sealed class CompletionChecklistTests
         Assert.Contains("Before the final reply, re-read the request and your changes and confirm each requirement is met; "
             + "then report the result and any remaining limits.", contract, StringComparison.Ordinal);
         Assert.DoesNotContain("Once the requested change and relevant verification are complete", contract, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Core_contract_names_the_serving_model_and_refuses_the_product_as_the_persona()
+    {
+        var contract = RuAgentPromptBlocks.CoreContractBlock("test-model");
+
+        Assert.StartsWith(
+            "You are test-model, a coding model running inside Ru Agent.",
+            contract,
+            StringComparison.Ordinal);
+        Assert.Contains("Ru Agent is the host product, not your name", contract, StringComparison.Ordinal);
+        Assert.Contains("state test-model", contract, StringComparison.Ordinal);
+        Assert.DoesNotContain("You are Ru Agent", contract, StringComparison.Ordinal);
     }
 
     private static ModelContextSnapshot Snapshot(IEnumerable<ModelContextEntry> entries) =>

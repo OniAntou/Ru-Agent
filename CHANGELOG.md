@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(prompt)**: **Model tự xưng đúng tên model, không nhận "Ru Agent" là tên mình.** Persona block
+  giờ mở đầu bằng `You are <model>, a coding model running inside Ru Agent`, nói rõ Ru Agent là
+  sản phẩm/host chứ không phải danh tính, và khi được hỏi model hay version thì trả lời bằng model id
+  của run (id đã có trong environment block). Tên sản phẩm trong UI/CLI không đổi; chỉ danh tính
+  model-visible thay đổi.
+
 - **feat(telemetry)**: **Đếm được read trùng và tool fail trước khi quyết định dedup.**
   Broker thêm hai counter trên meter provider của Host: `ru.tool.calls`
   (`tool.id`/`tool.status`/`error.code`) và `ru.tool.read_pages`

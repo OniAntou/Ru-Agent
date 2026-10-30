@@ -22,7 +22,7 @@ public static class AgentToolDescriptorTable
             Risk = AgentToolRisk.Read, RequiresApproval = false, Adapter = AgentToolAdapter.Builtin, WorkspaceRequired = false,
             Access = AgentToolAccess.ReadOnly, MaxOutputBytes = null,
             PolicyFamily = null,
-            Description = "Read one workspace file as UTF-8 bytes or as an image. Prefer read_file for ordinary UTF-8 text by line. Use offset and limit to page through long files. When has_more=true, continue the same path at next_offset; offsets count source bytes. On read_limit_too_small retry with limit at least 4; invalid_utf8_offset means the offset is inside a character, so use the returned cursor. A .png, .jpg, .jpeg or .webp file (at most 4 MiB and 8000 px a side) is returned as an image you can see, read whole without offset, when your model accepts image input; otherwise it fails with image_unsupported_by_model." + FilePathGuidance,
+            Description = "Read one workspace file as UTF-8 bytes or as an image. Prefer read_file for ordinary UTF-8 text by line. Use offset and limit to page through long files. When has_more=true, continue the same path at next_offset; offsets count source bytes. On read_limit_too_small retry with limit at least 4; invalid_utf8_offset means the offset is inside a character, so use the returned cursor. A notice field explains an empty file, an offset at or past the end, or the next page; estimated_tokens estimates the returned content. A .png, .jpg, .jpeg or .webp file (at most 4 MiB and 8000 px a side) is returned as an image you can see, read whole without offset, when your model accepts image input; otherwise it fails with image_unsupported_by_model." + FilePathGuidance,
             InputSchema = AgentToolDefinitionCatalog.FileReadSchema,
             ExampleArguments = () => new JsonObject { ["path"] = "src\\App.cs" },
         },
@@ -216,7 +216,7 @@ public static class AgentToolDescriptorTable
             // Mirrors Broker FileReadAdapter.MaximumLineOutputBytes; a Broker test pins the equality.
             Access = AgentToolAccess.ReadOnly, MaxOutputBytes = 32 * 1024,
             PolicyFamily = "read",
-            Description = "Read UTF-8 text by 1-based start_line and line_count (default 200). Output content is raw, unprefixed file text with original line endings; JSON escapes such as \\n represent real newlines. Continue at next_line when has_more=true. Snapshot scan is limited to 4 MiB. For images, very large files or read_line_too_long, use read with byte paging; never guess byte positions inside Unicode characters. For edit_file, copy actual source characters: do not include line-number/JSON wrappers or HTML entities such as &quot; and &#10;." + FilePathGuidance,
+            Description = "Read UTF-8 text by 1-based start_line and line_count (default 200). Output content is raw, unprefixed file text with original line endings; JSON escapes such as \\n represent real newlines. Continue at next_line when has_more=true. A notice field explains an empty file, a start_line past the last line, or where the next page starts. Snapshot scan is limited to 4 MiB. For images, very large files or read_line_too_long, use read with byte paging; never guess byte positions inside Unicode characters. For edit_file, copy actual source characters: do not include line-number/JSON wrappers or HTML entities such as &quot; and &#10;." + FilePathGuidance,
             InputSchema = AgentToolDefinitionCatalog.ReadFileSchema,
         },
         new()

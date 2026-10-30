@@ -5,6 +5,12 @@ namespace RuAgent.Broker.Tools.Files;
 
 internal static class FileReadOutputBudget
 {
+    /// <summary>
+    /// Space kept for fields the caller adds after fitting (notice, token estimate)
+    /// so the final envelope still respects the same byte cap.
+    /// </summary>
+    private const int EnvelopeReserve = 256;
+
     // Source bytes and encoded JSON bytes differ (Unicode/control escaping).
     // Fit the actual envelope before Broker normalization, preserving a source-byte cursor.
     public static JsonObject Fit(JsonObject output)
@@ -34,5 +40,5 @@ internal static class FileReadOutputBudget
     }
 
     private static bool Fits(JsonObject output) =>
-        Encoding.UTF8.GetByteCount(output.ToJsonString()) <= FileToolLimits.MaxReadOutputBytes;
+        Encoding.UTF8.GetByteCount(output.ToJsonString()) <= FileToolLimits.MaxReadOutputBytes - EnvelopeReserve;
 }

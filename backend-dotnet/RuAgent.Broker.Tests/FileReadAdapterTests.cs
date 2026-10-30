@@ -72,6 +72,29 @@ public sealed class FileReadAdapterTests : IDisposable
     }
 
     [Fact]
+    public void Read_tells_the_model_where_to_continue_instead_of_ending_on_a_bare_flag()
+    {
+        File.WriteAllText(FullPath("truncate.txt"), new string('a', 5000));
+        var result = _adapter.Execute(new JsonObject { ["path"] = "truncate.txt", ["limit"] = 100 });
+
+        Assert.Contains("next_offset", result["notice"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.True(result["estimated_tokens"]!.GetValue<int>() > 0);
+    }
+
+    [Fact]
+    public void Read_explains_an_empty_file_and_an_offset_past_the_end()
+    {
+        File.WriteAllText(FullPath("empty.txt"), string.Empty);
+        File.WriteAllText(FullPath("small.txt"), "hello");
+
+        var empty = _adapter.Execute(new JsonObject { ["path"] = "empty.txt" });
+        Assert.Contains("empty", empty["notice"]!.GetValue<string>(), StringComparison.OrdinalIgnoreCase);
+
+        var past = _adapter.Execute(new JsonObject { ["path"] = "small.txt", ["offset"] = 100, ["limit"] = 10 });
+        Assert.Contains("past the end", past["notice"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Read_utf8_boundary_does_not_split_mid_codepoint_and_marks_truncated()
     {
         // File contains 'a' + 4-byte emoji + 'b' = 6 bytes: 61 F0 9F 98 80 62

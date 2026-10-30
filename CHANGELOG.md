@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tools)**: **Read nói rõ điều gì đã xảy ra thay vì trả trang rỗng.** `read` và
+  `read_file` thêm `notice` cho file rỗng, offset/start_line vượt cuối file, và trang bị
+  cắt kèm hướng dẫn `next_offset`/`next_line`; `read` thêm `estimated_tokens` để model biết
+  trang vừa nhận tốn bao nhiêu token thay vì đoán theo byte. Mô tả tool nói rõ hai field
+  này, và golden lock của tool contract được cập nhật theo.
+
 - **refactor(broker)**: `ToolExecutionService` gộp từ 15 partial còn 4 theo trục trách nhiệm
   (core/dispatch, execution, workspace, external I/O), không đổi hành vi; toàn bộ 1.443 test
   Broker vẫn xanh.

@@ -56,7 +56,8 @@ development DDL independently of current schema creation. The selected upgrade s
 at v32. Version 29 consolidated earlier development changes; v30
 normalizes retained conversation history and source receipts. Version 31 adds
 context mutation fences and indexed compaction/intent lookup; v32 indexes exact
-execution-request provenance for verification freshness. Versions below v18 fail with
+execution-request provenance. The schema keeps this index, but verification no longer reads the
+workspace journal. Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
 v19-v31 databases remain eligible sources; adding a migration extends one ordered
 catalog instead of every historical branch. Fresh installs use the same released
@@ -85,7 +86,7 @@ provider continuation data.
 
 ## Agent prompt contract
 
-Verification obligation decisions live in `VerificationObligationPolicy`, shared
+Outstanding-check decisions (ADR 0039) live in `VerificationObligationPolicy`, shared
 by retained evidence and model-facing guidance. `RunVerificationEvidence` keeps
 receipt projection; separate guidance renders bounded per-check scope and actions.
 This is an internal responsibility split, without a new store or schema migration.
@@ -717,13 +718,52 @@ most eight active, while mutations and terminal calls retain sequential
 barriers. A text-selection provider path still emits exactly one JSON selection.
 _Avoid_: one-call-per-step rule, reissuing approved calls
 
+## Completion policy
+
+`AgentRunCoordinator` routes every returned model step through one ordered, pure policy
+(`CompletionPolicy`, internal). Each rule returns one decision, and each decision maps to an
+existing commit handler, so commit shapes, outbox entries and recovery notes are unchanged.
+Rules R1 to R3 run before the verification refresh, on the pinned step. Rules R4 to R9 run
+after it, on the refreshed evidence, so they see the latest receipts. The first rule that
+applies wins.
+
+Before the refresh:
+
+- R1 `unusable_finish`: a `Length` finish is held while truncation notes remain, then fails as
+  `model_output_truncated`. `ContentFilter` and `Error` finishes fail at once. Streamed text is
+  retracted and partial tool calls are never dispatched.
+- R2 `tool_calls`: the step proceeds to the repetition guard and dispatch.
+- R3 `commentary_only`: commentary stays in model history and is held with up to three notes,
+  then fails as `model_commentary_only`.
+
+After the refresh, for a step without tool calls:
+
+- R4a `blocked_reply`: a `[BLOCKED]` reply keeps the model's own report and fails the run. The
+  error code is the failed receipt's or verification's code, or `model_reported_blocker`.
+- R4c `unverified_advice`: a failed receipt or an outstanding declared check is held with a
+  code-aware note while `unverified_after_tool_failure` notes remain. The cap is three per run,
+  shared by tool-failure and verification holds.
+- R4d `verification_advisory_complete`: once those notes are spent, a verification-bound failure
+  completes the run with state `unverified`. Blank text is not a completion and falls through to R8.
+- R4e `tool_failure_fail`: once those notes are spent, a failed tool receipt with no verification
+  evidence fails the run with its code.
+- R5 `unverified_source_edit`: one hold after source edits with no declared check since them.
+- R6 `open_todos`: one hold while the latest task list has open rows. It quotes up to eight of them.
+- R7 `completion_review`: one hold after source edits, when no declared check is outstanding or
+  awaiting verification, the source-edit hold was not issued and the latest list is not fully completed.
+- R8 `empty_reply`: a blank final reply gets up to three notes, then fails as `empty_model_reply`.
+- R9 `complete`: the reply is accepted.
+
+R5 to R7 are one-time advice and never fail a run. The per-kind caps are listed under
+[Recovery Note](#recovery-note).
+
 ## Recovery Note
 
 A durable `ModelContextNote` beginning with `[HARNESS RECOVERY]`, addressed to
 the `ModelContext` audience, that answers a dead-end model step instead of
 failing the run; the same model takes the next step with that feedback in
-context. Bounds are per kind — 4 `unverified_after_tool_failure` notes, 4
-`model_repairable` notes, 3 `empty_model_reply` notes and 3 consecutive
+context. Bounds are per kind — 3 `unverified_after_tool_failure` notes (shared by tool-failure
+and verification holds), 4 `model_repairable` notes, 3 `empty_model_reply` notes and 3 consecutive
 `model_output_truncated` notes, plus 3 `model_commentary_only` notes, one
 `unverified_source_edit` note, one `open_todos` note and one `completion_review`
 note — under a global cap of
@@ -748,11 +788,12 @@ user deny keeps its fail-closed rule and an ambiguous mutation still pauses
 until explicit reconciliation. A repeated `policy_denied` tool receipt followed
 by prose is a tool outcome, not an approval decision, so it may still take the
 bounded `unverified_after_tool_failure` notes with the denial code as the
-terminal code. The `unverified_after_tool_failure` note states the reason from the
-failed receipt: a stale or unknown-freshness required check, a required check with
-no confirmed result, or otherwise a failed tool call. It then requires the next
-reply to be a repair tool call or a final `[BLOCKED]` report; a plain final reply
-cannot complete the run.
+terminal code. The note states the reason from the failed receipt: an expected-exit
+mismatch, a required check with no confirmed result, or otherwise a failed tool call.
+It then asks for a repair tool call or a final `[BLOCKED]` report. Once its notes are
+spent, a verification-bound failure (an outstanding declared check or the tracking
+limit) completes the run with state `unverified`, and any other failed tool call fails
+the run (completion policy R4d and R4e).
 Provider `Length` finishes suppress the whole incomplete step, including any
 partial tool calls, before execution; bounded recovery requests smaller output.
 `ContentFilter` and `Error` finishes fail as `model_content_filtered` and
@@ -782,8 +823,8 @@ the global cap. `open_todos` fires when the latest successful `todo_write` list 
 has rows that are not `completed`. Its note quotes up to eight open items, each
 flattened to one line and cut at 120 characters, and asks the model to finish and check
 each one, mark it completed, or remove it with a reason. `completion_review` fires when
-the run made source edits, no check is awaiting verification, the source-edit note was
-never issued, and the latest list is not fully completed. Its note asks the model to
+the run made source edits, no declared check is outstanding or awaiting verification, the
+source-edit note was never issued, and the latest list is not fully completed. Its note asks the model to
 re-read the request and the changed code, confirm each explicit requirement is met and
 exercised by a check, fix any gap and rerun the affected `purpose=verification` check,
 then name any requirement left unchecked. A fully completed list skips this review.
@@ -807,90 +848,71 @@ _Avoid_: fallback answer, substitute model, retry on another backend
 
 ## Receipt-backed verification
 
-`RunVerificationEvidence` projects original run-local tool proposals and receipts
-before compaction. A fresh process reconstructs the same checks from encrypted
-history; summaries, session handoffs and model claims cannot clear them. The
-projection travels as private context metadata, outside canonical provider history,
-and outstanding commands are supplied in bounded runtime context guidance. The
-projection also keeps two completion facts: `HasSourceEdits`, sticky once a structured
-source edit succeeds or has an unknown effect and never cleared by a later check, and
-the latest successful `todo_write` list. A failed or unparseable `todo_write` keeps
-the previous list.
+Verification is advisory ([ADR 0039](../adr/0039-advisory-verification.md)). It records
+evidence and holds final replies. It never grants or denies execution.
 
-For `powershell` and `run_process`, optional `purpose=verification` declares a check requiring observed
-exit zero. Reading another file or passing an unrelated command cannot resolve
-that required check. Unannotated or `purpose=inspection` process failures remain
-failed diagnostic receipts, not new mandatory checks: a failed optional lookup
-may be abandoned for another relevant source. The latest failed result still
-requires repair or an honest blocked/partial response; this never marks it passed.
-New authenticated terminal receipts carry an authority-derived
-`verification_identity`: resolved executable, exact argv and canonical cwd,
-independent of timeout and workflow intent. Cwd aliases therefore resolve the
-same check without changing the full approval intent hash. Original receipts
-preserve this metadata through restart and compaction. Legacy receipts without
-the fingerprint retain raw-argument identity until an exact replay supplies
-authority metadata; the Host does not guess an old executable or filesystem identity.
+`RunVerificationEvidence` projects original run-local tool proposals and receipts before
+compaction. A fresh process rebuilds the same declared checks from encrypted history;
+summaries, handoffs and model claims cannot create or clear them. The projection travels as
+private context metadata, outside canonical provider history, and outstanding checks are
+supplied in bounded runtime context guidance. It keeps three completion facts: whether a
+declared check launched after the last structured source edit, whether any structured source
+edit ran (sticky), and the latest successful `todo_write` list. A failed or unparseable
+`todo_write` keeps the previous list.
 
-Successful or ambiguous known run-local mutations invalidate passed checks and
-mark pending checks as changed during execution. A later exit zero from such a
-background check becomes stale, rather than certifying the newer code. A fresh
-rerun can resolve it. This tracks observed run-local mutations, not an OS-enforced
-snapshot or proof that another process/session did not change the workspace.
+- **Declared checks.** For `powershell` and `run_process`, `purpose=verification` declares a
+  required check that must exit zero. `purpose=expected_failure` with an exact nonzero signed
+  32-bit `expected_exit_code` declares a negative test that must exit with that code. Only that
+  observed exit satisfies it, and its original receipt stays failed. Unannotated and
+  `purpose=inspection` process failures remain diagnostics that create no obligation.
+- **Identity.** New authenticated terminal receipts carry an authority-derived
+  `verification_identity` (resolved executable, exact argv and canonical cwd, and the expected
+  exit for a negative test). It is independent of timeout and workflow intent, so cwd aliases
+  resolve the same check. Legacy receipts without it keep raw-argument identity.
+- **Outstanding checks.** A declared check whose latest result is failed or pending, including an
+  expected-exit mismatch, is outstanding. Only the same identity passing later retires it. Other
+  checks, reads and summaries do not. A later result for the same identity replaces the earlier
+  latest result; original receipts remain in history. A pending background check is read through
+  its terminal execution until it exits.
+- **Source edits.** A successful or unknown-effect structured source edit (`write`, `edit`,
+  `write_file`, `edit_file`, `apply_patch` or `agent_apply`, outside documentation paths) marks
+  the run as awaiting verification until a declared check launches. Terminal commands, computer-use
+  input, file deletion and file restoration never mark a source edit. No command or computer input
+  invalidates an earlier check.
+- **`supersedes`.** The Broker checks only its schema bounds (1 to 16 nonempty entries) and does not
+  require `purpose=verification`. Verification ignores it, so it retires nothing.
+- **Rejected before launch.** A declared check rejected before any process started (a malformed
+  call, a policy denial or an unresolvable executable) observed nothing and creates no obligation.
+  Its failed receipt still counts as a tool failure for the tool-failure guard.
+- **Tracking.** Up to 256 required checks are retained separately from 64 recent diagnostics.
+  Overflow of required evidence reports `verification_tracking_limit`, which is verification-bound.
+- **Holds, completion and labels.** Final-reply handling follows the [completion policy](#completion-policy).
+  An outstanding check or the tracking limit holds a final reply up to three times (R4c). When
+  those notes are spent, the run completes (R4d) with its summary verification state `unverified`.
+  A `[BLOCKED]` reply ends the run as failed with the model's own report. Terminal summaries load
+  the same original-receipt evidence before the immutable live and late-subscriber summary is
+  reserved. The summary label is `verified` when no check is outstanding and a declared check
+  launched after the last structured source edit. It is `not_applicable` when the run made no
+  structured source edit and declared no check. Otherwise it is `unverified`. Computer input and
+  other activity never change it.
+- **Recovery note text.** The note names the reason: a missing or pending result ("a required check
+  has no confirmed result"), an expected-exit mismatch ("a declared negative test returned a
+  different exit code"), or otherwise a failed tool call. It asks for a repair tool call or a
+  final `[BLOCKED]` report, and it tells the model that a verification-bound failure completes as
+  `unverified` once the notes are spent.
+- **Workspace journal and `terminal_effect`.** The workspace change journal
+  ([ADR 0008](../adr/0008-shared-workspace-coordination.md)) is not read for verification. Journal
+  freshness therefore does not affect completion or labels, and an edit by a parallel run after a
+  check is not reflected in this run's label. Broker receipts still record `terminal_effect`
+  metadata, but the projection does not read it.
+- **Blocked reports and persistence.** A `[BLOCKED]` report, its `blocked_report` assistant payload
+  and the final conversation outbox intent commit atomically with the Running-to-Failed transition
+  and one failure event. Outbox delivery is fenced and idempotent. It does not move the failed run
+  to Completed, including after restart.
 
-If a previously passing check is intentionally retired (for example its temporary
-script is removed), a final `purpose=verification` call may explicitly list its
-stable check ID from outstanding-check guidance in `supersedes` (1-16 distinct
-references). An unambiguous provider call ID is also accepted; reused IDs never
-retire multiple obligations. Only a passing replacement in
-the same Broker-derived canonical working directory can satisfy a stale check
-with a previously observed exit zero. Failed, pending, negative and
-unknown-freshness checks are never eligible. Both original and replacement
-receipts remain intact. Replacement bindings are reconstructed from original
-proposals, not summaries, and evaluated after authoritative workspace freshness.
-If the replacement becomes stale, fails or has unknown freshness, the earlier
-obligation blocks again. Rerunning the replacement keeps its declared bindings.
-This metadata changes completion bookkeeping only; policy, approval binding and
-execution arguments remain governed by the same authority.
-
-A deliberately failing task may declare `purpose=expected_failure` and an exact
-nonzero signed 32-bit `expected_exit_code` before execution. Only that observed
-`process_exit_nonzero` satisfies it; its original receipt remains failed. Denial,
-unknown outcomes, timeout and cancellation never become expected success.
-Observed exit codes remain attached to check evidence. A confirmed
-`expected_exit_mismatch` is an observed result, not a transient execution error.
-At final prose, the Host publishes one receipt-derived failure report and ends
-the run unsuccessfully rather than regenerating final prose through recovery
-notes. A corrected invocation is a separate check and cannot erase the original
-mismatch. This receipt-derived report also replaces model-authored `[BLOCKED]`
-text; other unresolved checks retain their failure codes and remain outstanding.
-The failed projection, `blocked_report` assistant payload and final conversation
-outbox intent commit atomically. Persistence permits this terminal outbox only
-for a Running-to-Failed transition with one matching report and failure event;
-session identity, same-write-set references and assistant-payload checks remain.
-Outbox delivery is fenced and idempotent; its terminal-run acknowledgement does
-not move the failed run to Completed, including after restart.
-`purpose=inspection` declares read-only intent and does not invalidate earlier
-checks, but is not OS-enforced proof of absence of side effects. Set it explicitly
-for exploratory shell reads: arbitrary PowerShell scripts have unknown effects,
-and omitted `purpose` defaults to `command`, which invalidates earlier checks
-unless authority-derived metadata identifies a completed read-only operation.
-These labels change completion bookkeeping only, never tool authority or approval.
-
-Tracking retains 256 required checks independently from 64 recent diagnostics
-and fails closed if required capacity is exceeded. Except for confirmed negative
-exit mismatches, bounded recovery or an explicit `[BLOCKED]` outcome handles outstanding
-checks. This is evidence for declared checks, not a claim that all code is correct
-or every possible verification has run.
-
-Terminal summaries load the same original-receipt evidence before reserving the
-immutable live/late-subscriber summary. A completed edit alone is still
-`unverified`. The first prose final reply after an unverified source edit is held
-once (see Recovery Note), but that hold asks for a check and never certifies one. The
-checklist holds likewise never certify `verified`.
-`verified` requires declared/observed required checks that passed without an
-outstanding failure, pending result or stale check. Runs without mutations or
-required checks use `not_applicable`. Missing history never certifies a check.
-This definition still does not prove all acceptance criteria were tested.
+Passed checks are evidence for declared checks only. They do not prove that all code is correct or
+that every possible verification has run. Deterministic tests cover the projection, holds and labels.
+They do not establish real-provider outcomes.
 
 ## Repeated Tool Recovery
 
@@ -905,8 +927,8 @@ dispatch. Up to two `[REPETITION GUARD]` notes ask the same model to change its
 arguments; exhaustion parks for explicit Continue. Suppressed assistant steps
 remain audit-only, because they have no tool receipts to pair in native model
 history. Trailing guard notes preserve the failed receipt for both repetition
-checks and the final-answer verification guard. A note cannot turn a failed
-verification into successful completion.
+checks and the final-answer verification guard. A note cannot make a failed verification verified: once its holds are
+spent, the run completes with its verification state reported as `unverified`.
 
 ## Agent Persona Source
 
@@ -927,11 +949,7 @@ roots/coordinators, and `AgentRuntimeCoordinatorFactory` composes a drive.
 approval state only after pending user-apply and child work is cancelled.
 The separation preserves the recovered-approval version race and cleanup order.
 
-`VerificationEvidenceBuffer` retains required checks separately from bounded
-recent diagnostics. Authority-derived `terminal_effect` metadata can identify a
-completed read-only command. A consistent observed normal exit preserves unrelated
-checks even when its exit code is nonzero; the failed diagnostic or required check
-remains failed. Missing/malformed metadata, inconsistent outcome/exit pairs,
-timeout, cancellation and unknown effects remain conservative. This metadata
-does not change execution policy. Check overflow applies to required evidence,
-not the number of optional lookups or already-satisfied negative tests.
+`VerificationEvidenceBuffer` retains required checks separately from up to 64 recent diagnostic
+checks. A check is keyed by its identity, and a later result for that identity replaces the
+earlier latest result. Overflow applies to required evidence, not to optional lookups or to
+already-satisfied negative tests. Execution policy is unaffected by any of this.

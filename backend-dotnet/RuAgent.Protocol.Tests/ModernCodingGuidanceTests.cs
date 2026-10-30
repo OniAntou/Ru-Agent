@@ -22,4 +22,16 @@ public sealed class ModernCodingGuidanceTests
         Assert.Contains("purpose=verification", guidance);
         Assert.Contains("purpose=inspection", guidance);
     }
+
+    [Theory]
+    [InlineData("run_process")]
+    [InlineData("powershell")]
+    public void Terminal_verification_guidance_keeps_failed_checks_outstanding_without_retirement_language(string tool)
+    {
+        var guidance = string.Join("\n", AgentToolPromptGuidance.ForTools([tool]));
+        Assert.Contains("a failed or pending required check stays outstanding until the same check passes", guidance);
+        Assert.Contains("Rerun a check after later edits", guidance);
+        Assert.DoesNotContain("supersedes", guidance);
+        Assert.DoesNotContain("stale", guidance);
+    }
 }

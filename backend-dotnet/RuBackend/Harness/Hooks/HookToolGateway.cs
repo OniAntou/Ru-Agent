@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 
 namespace RuBackend.Harness.Hooks;
@@ -38,7 +39,7 @@ public sealed class HookToolGateway : IToolGateway, IToolRunCancellation, IAppro
             if (result is { Blocks: true })
             {
                 var message = string.IsNullOrWhiteSpace(result.Message) ? "blocked by a PreToolUse hook" : result.Message;
-                return ToolProposalDecision.Deny(AccessKindOf(proposal.ToolId), BlockedCode, "hook: " + message);
+                return ToolProposalDecision.Deny(AccessKindOf(proposal), BlockedCode, "hook: " + message);
             }
         }
 
@@ -125,10 +126,13 @@ public sealed class HookToolGateway : IToolGateway, IToolRunCancellation, IAppro
         return System.Text.Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private static ToolAccessKind AccessKindOf(string toolId) => toolId switch
-    {
-        "powershell" or "run_process" => ToolAccessKind.Terminal,
-        "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "run_code" => ToolAccessKind.Mutation,
-        _ => ToolAccessKind.ReadOnly,
-    };
+    // The same classification the Broker gateway uses (ToolAccessClassification), so a denied call
+    // reports the access class it would have had if it had reached the authority.
+    private static ToolAccessKind AccessKindOf(ToolProposal proposal) =>
+        ToolAccessClassification.Classify(proposal.ToolId, ArgumentsObjectOf(proposal));
+
+    private static JsonObject? ArgumentsObjectOf(ToolProposal proposal) =>
+        proposal.Arguments.ValueKind is JsonValueKind.Object
+            ? JsonNode.Parse(proposal.Arguments.GetRawText()) as JsonObject
+            : null;
 }

@@ -17,8 +17,8 @@ declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 
 ## Coding profiles
 
-New runs default to `coding_v2` (25 definitions). `patch_v2` (24),
-`coding_code_v1` (27) and opt-in `coding_semantic_v1` are also supported, and
+New runs default to `coding_v2` (26 definitions). `patch_v2` (25),
+`coding_code_v1` (28) and opt-in `coding_semantic_v1` (27) are also supported, and
 must be selected explicitly for a new run; changing the Host setting does not
 alter an existing run. Set
 `RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1|coding_semantic_v1` in a dedicated Host
@@ -125,8 +125,8 @@ the shared family pool also counts nested calls. Continue opens a new window.
 
 The full trace remains encrypted audit/completion evidence. Provider context
 always receives selected results without the trace, including when the response
-would fit. Filtering cannot hide failed required checks, and nested mutations
-invalidate earlier verification. See [ADR 0028](../adr/0028-bounded-programmatic-coding-tools.md).
+would fit. Filtering cannot hide failed required checks, and a nested structured
+source edit requires a later declared check (ADR 0039). See [ADR 0028](../adr/0028-bounded-programmatic-coding-tools.md).
 
 ## Incomplete outcomes and model context
 
@@ -154,10 +154,10 @@ Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`,
 `powershell`, `run_process`, `terminal_read`, `terminal_stop`,
 `web_search` and `web_fetch`. Profile and availability filters apply below.
 
-The Protocol catalog contains 28 definitions; the Broker has 27 executable
+The Protocol catalog contains 29 definitions; the Broker has 28 executable
 bindings because `ask_user` is intercepted by the Host. Run-pinned inventories
-contain 26 definitions in `coding_v2`, 25 in `patch_v2` and 28 in
-`coding_code_v1`, before availability/role filtering. There is no selectable
+contain 26 definitions in `coding_v2`, 25 in `patch_v2`, 28 in `coding_code_v1`
+and 27 in `coding_semantic_v1`, before availability/role filtering. There is no selectable
 legacy profile. The model-facing file mutation and terminal tools are
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `powershell`,
 `run_process`, `terminal_read` and `terminal_stop`; `apply_patch` is available
@@ -200,14 +200,10 @@ fail initialization. When full, a new launch returns
 spool quotas and approval rules still apply, and model arguments cannot raise
 the configured capacity.
 
-A Python verification invocation that fails during direct `-c` compilation, or
-`python -m pytest` exiting 5 with complete output confirming no tests ran, may
-be corrected by a later passing Python verification using the same resolved
-interpreter and canonical working directory. Broker metadata identifies only
-complete, untruncated direct parse diagnostics or confirmed empty discovery; imported project syntax errors,
-runtime exceptions, actual test failures, timeouts and negative-test mismatches
-remain outstanding. Exact command identities and failed receipts are retained;
-this completion exception never changes arguments or authorization.
+A Python verification invocation has no special case. A failed `python -c` compile or a `python -m pytest`
+run that exits 5 is a failed check if it was declared `purpose=verification`. It stays outstanding until the
+same identity passes. A different invocation does not clear it. An undeclared failure is a diagnostic only.
+Exact command identities and failed receipts are retained, and no argument or authorization changes.
 
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url` plus optional `offset` (0–4194304,
@@ -306,7 +302,7 @@ they do not make a retired public identity executable.
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | `ask_user` | always advertised (`user.input`) | Host-intercepted: the Broker never receives the call. Parks the run in `WaitingUser` with a durable `input.requested` event; the client answers through `POST /agent/v1/runs/{runId}/inputs/{inputId}`, a replayed or foreign id fails as `input_stale`, and the answer completes the parked call durably before the run resumes |
-| `mcp` (`op=list_servers`, `list_tools`, `call`) | advertised while `~/.ru/mcp.json` declares an enabled server; never to subagents | `list_servers` reads the user's file and is automatic; `list_tools` and `call` start or call a server and take the `ExternalTerminal` decision: `plan` deny, `standard` ask (`mcp_call_requires_approval`), `full_access` automatic; "Always allow" remembers one server and op/tool, never a whole server; the card names the server and tool. See [MCP servers](#mcp-servers) |
+| `mcp` (`op=list_servers`, `list_tools`, `call`) | advertised while `~/.ru/mcp.json` declares an enabled server; never to subagents | `list_servers` reads the user's file and is automatic; `list_tools` and `call` start or call a server and take the `ExternalTerminal` decision: `plan` deny, `standard` ask (`mcp_call_requires_approval`), `full_access` automatic; "Always allow" remembers one server and op/tool (`call` with its tool name, or `list_tools`), never a whole server or another op; the card names the server and tool. See [MCP servers](#mcp-servers) |
 | `computer` (`action=list`, `request_access`, `focus`, `screenshot`, `click`, `move`, `drag`, `scroll`, `type`, `key`) | advertised only to a root run that pinned the computer-use opt-in with image input; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `request_access` takes the `ExternalTerminal` decision: `standard` ask (`computer_access_requires_approval`), `full_access` automatic; other actions are allowed by policy and checked against the session's app grants when they run. Protected apps are refused in every preset (`computer_app_protected`). See [Computer use](#computer-use) |
 | connector libraries | not advertised | experimental/unwired |
 
@@ -457,12 +453,12 @@ cleanup remain. API keys stay in credential storage. See
 [ADR 0017](../adr/0017-workspace-terminal-policy.md).
 
 An explicit absolute structured-file path outside the trusted root asks for
-`external_directory_required` under `standard`. Approving for the session
-records a session-scoped `CanonicalDirectoryIdentity` for structured
-descendants; approving with `allow_always` additionally saves the folder as a
-durable project-scope path pattern (`<folder>\**`) that covers the same
-structured tools and survives restarts and later sessions of the same
-workspace identity. The evaluator honors a matched allow rule for external
+`external_directory_required` under `standard`. Any approval of that request, including a one-time
+allow, records a session-scoped `CanonicalDirectoryIdentity` for structured descendants, because the
+Host sends `allow_session_directory` for any outside-folder approval. Approving with `allow_always` additionally saves the nearest existing
+folder of the approved path as a durable project-scope path pattern (`<folder>\**`) that covers the same
+structured tools and survives restarts and later sessions of the same workspace identity. A drive,
+volume or share root is never saved; its approval is only a one-time token with no folder grant. The evaluator honors a matched allow rule for external
 targets (`external_directory_rule_allow`); deny and ask rules keep precedence,
 the plan read-only gate still applies, and no grant ever authorizes terminal
 intent. Full Access instead selects an ephemeral nearest external
@@ -798,7 +794,7 @@ reason code:
   re-uses the grant on subsequent calls, and new sessions ask again.
 - `terminal_external_cwd_requires_approval` — Lệnh sẽ chạy ở thư mục ngoài
   workspace. Approval authorizes this launch; choosing always additionally
-  remembers the bounded command pattern (requested executable plus at most two
+  remembers the bounded command pattern (resolved executable plus at most two
   leading non-flag argv tokens) with the exact launch directory — không phải
   một folder grant cho terminal.
 - `rule_asks` — Rule của người dùng yêu cầu duyệt lời gọi này.
@@ -929,15 +925,27 @@ first-writer-wins `approval_stale` (including `PendingApprovalStore` and Host
 the model can adjust; only a repeated identical deny terminates the current
 run with `approval_denied`,
 so the model cannot immediately request the same permission again. Changed
-fields and expired or moved-workspace replays return `approval_stale`. The
+fields and expired or moved-workspace replays return `approval_stale`. Before an allow commits, the
+Host asks the Broker whether it still holds the approval pending; if not, the reply is `approval_stale`
+(409) and nothing is committed. The
 Broker reply carries the matcher preview plus one `authorization_token`
 (60s); a durable project rule is produced only for the explicit
 `allow_always` decision, and it carries the bounded pattern that decision
-remembered: a terminal run call stores the requested executable plus at most two
-leading non-flag argv tokens with the exact launch directory (flag-first and
-shell-mode calls stay exact), an external-directory ask stores the approved
-folder as a path pattern, and `rule_asks` / `terminal_protected_path_requires_approval`
-never become a reusable rule. Any allow additionally remembers the approved
+remembered, as the Broker builds it ([Remembered Approval](../architecture/broker.md#remembered-approval)):
+a terminal run call stores the resolved executable plus at most two leading non-flag argv tokens with
+the exact launch directory (flag-first and shell-mode calls stay exact), an external-directory ask on a
+file stores the nearest existing folder as a path pattern (a drive or share root stores nothing), and
+`rule_asks` / `terminal_protected_path_requires_approval` never become a reusable rule.
+
+Per tool, "Always allow" and session memory remember: for file tools, the canonical path, and for an
+outside folder, the nearest existing folder as a durable pattern; for `run_process` and `powershell`,
+the resolved executable, argv and canonical cwd (a `powershell` script exactly); for MCP `call` or
+`list_tools`, the server and tool (a remembered listing never covers a call); for computer use, the exact
+app list, so a request that names other apps is not covered; for a language-server launch, its command,
+argv, cwd and file. `apply_patch`, `file_restore`, `run_code`, terminal read and stop, subagent controls,
+web and skill calls are never remembered, and `allow_always` on them is refused with
+`invalid_approval_command`. Rules saved by earlier builds for MCP, computer use or language servers carry
+no identity and no longer authorize, so those calls ask again. An allow of a rememberable call additionally remembers the approved
 intent in
 the Host's in-process session ledger (the durable pattern when one was saved,
 the exact intent otherwise), and the runtime loop materializes those
@@ -1035,7 +1043,7 @@ accepts images gets the tool, so a run never changes mid-way.
   with access.
 - `request_access` takes 1 to 8 executable names (`notepad.exe`; a bare name gains `.exe`)
   in canonical order. In `standard` it asks once; approving records an **app grant** for the
-  rest of the Agent session. "Always allow" saves a project rule for exactly that app list.
+  rest of the Agent session. "Always allow" saves a project rule for exactly that app list, so a later request that names other apps is not covered by it.
 - `focus` takes one `app` and brings its topmost window to the front, restoring it when
   minimized. In `standard` the app needs a grant. Ru activates the window without sending
   any input to the window it replaces. Use it when another window covers the app.
@@ -1067,7 +1075,7 @@ ends or is idle for two minutes), `computer_desktop_unavailable` (locked or secu
 
 **Ctrl+Alt+Backspace** (or **Ctrl+Alt+Pause** on keyboards that have it) stops computer use at any time: it cancels the action in flight and
 cancels the controlling run. Observation actions report no side effects and may repeat;
-input actions mark earlier verification stale like a terminal command. Ru does not confine
+input actions are not structured source edits and do not change verification (ADR 0039). Ru does not confine
 what a granted application does with the input.
 
 ## Hooks
@@ -1087,50 +1095,49 @@ The hook runs through `cmd.exe` in the workspace root with the same credential-s
 
 ### Declaring terminal checks
 
-Use `purpose=verification` for a terminal command whose exit zero verifies the task.
-Its result stays outstanding across unrelated reads, restart and compaction, and
-must be rerun after later known mutations, including edits while a check runs in
-the background. If a previously passing check was retired, a final verification
-may explicitly name its stable stale-check ID from runtime guidance in
-`supersedes` (an unambiguous provider call ID is also accepted). Only a fresh
-passing check in the same canonical cwd replaces it; failed, pending, negative
-and unknown-freshness checks remain outstanding. Original evidence is retained.
-Clean up temporary scripts before final checks; do not recreate/delete them
-repeatedly just to satisfy a stale command identity. Authenticated receipts identify the actual resolved invocation,
-so cwd aliases do not create unrelated checks. `purpose=inspection` declares read-only intent;
-it is not enforced filesystem confinement. A completed default `command`
-preserves earlier checks only when Broker's resolved executable/argv
-classification marks it read-only and the receipt
-confirms exit zero. Shell scripts, unclassified commands, failures and uncertain
-effects remain conservative. This metadata is derived by the authority and
-cannot be supplied as a model argument; it grants no execution permission.
-Exploratory/default failures remain failed receipts and do not create mandatory
-test obligations; declare required build/test checks with
-`purpose=verification`. A later alternative source does not certify the failed
-command, but can supply the requested information.
-For a task explicitly testing failure, declare `purpose=expected_failure` and the
-exact signed 32-bit nonzero `expected_exit_code` before execution. This satisfies
-only that negative check, preserves its failed receipt, and never accepts denial,
-timeout, cancellation or unknown outcome. See
-[receipt-backed verification](../architecture/harness.md#receipt-backed-verification).
+Set `purpose` on the terminal tools (`powershell`, `run_process`) to declare intent:
 
-Prefer `run_process` for literal executable/argv launches, including Python, Git
-and test runners. It returns the native process exit code. `powershell` uses
-Windows PowerShell 5.1: Bash heredocs and `&&` are not supported, and the wrapper
-can return 1 when its native child returned a different nonzero code. If shell
-execution is necessary and the native exit is required, explicitly propagate
-`$LASTEXITCODE`; never replace an observed exit with the expected value.
+- `purpose=verification` marks a required build or test. Its exit zero verifies the task.
+- `purpose=expected_failure` with an exact nonzero signed 32-bit `expected_exit_code` marks a
+  deliberately failing test. Only that observed exit satisfies it. A zero exit, a denial, a timeout,
+  a cancellation or an unknown outcome never does.
+- `purpose=inspection` marks read-only diagnostics. It is not enforced confinement.
+- The default `command` is for everything else.
 
-Do not retry a matching negative test to obtain zero. An expected-exit mismatch
-remains a failed check even when a different invocation subsequently passes. At
-final prose, the Host emits one report with the observed and expected exits and
-ends the run unsuccessfully, rather than repeating completion recovery.
+Verification is advisory ([ADR 0039](../adr/0039-advisory-verification.md)). It records evidence and
+holds final replies, but it never grants or denies execution:
 
-A declared check whose launch was rejected before any process ran (for example
-`malformed_call`, a policy denial or an unresolvable executable) observed no
-result. It stays outstanding, but because the identical rejected call can never
-pass, a later passing check of the same kind (verification or expected failure)
-resolves it. A rejected rerun never replaces evidence from a check that ran.
+- A failed, pending or result-missing declared check is outstanding. Only the same canonical check
+  passing later retires it. Unrelated reads, other passing checks and summaries do not.
+- A final reply with an outstanding check is held with a recovery note up to three times per run.
+  After that the run completes, and its summary verification state is `unverified`. A `[BLOCKED]`
+  reply still ends the run unsuccessfully.
+- An expected-exit mismatch is an outstanding failed check under the same rule. Report the observed
+  exit. Do not rerun a deliberately failing command to force the expected code, and a different
+  invocation does not clear the original check.
+- A `verified` summary needs a declared check that ran after the last structured source edit and no
+  outstanding check. Structured source edits are `write`, `edit`, `write_file`, `edit_file`,
+  `apply_patch` and `agent_apply` outside documentation paths. Terminal commands, computer input,
+  deletes and restores are not source edits.
+- Commands do not invalidate earlier checks. A background check that is still running is pending:
+  read its terminal output until it exits, and do not start a duplicate.
+- `supersedes` is accepted and ignored. It is not checked for `purpose=verification`, and it retires
+  nothing. Its schema bounds (1 to 16 entries) still apply.
+- A declared check rejected before launch (a malformed call, a policy denial or an unresolvable
+  executable) observed nothing and creates no obligation. Its failed receipt still counts as a tool
+  failure.
+
+Clean up temporary scripts before final checks. Canonical identity is the resolved executable, the
+exact argv and the canonical working directory, so cwd aliases resolve the same check. Authenticated
+receipts identify the actual resolved invocation. Authority-derived metadata grants no execution
+permission. See [receipt-backed verification](../architecture/harness.md#receipt-backed-verification).
+
+The model-facing text describes this behavior. The `purpose` description says that a command is not a
+declared check and that a failed or pending required check stays outstanding until the same check
+passes. The `supersedes` description says that it is deprecated, ignored and retires nothing.
+Verification emits no repair families or repair hints, and it never emits `verification_repair_identity`
+or `verification_invocation_invalid`. Receipts that still carry those fields parse, and the fields are
+ignored.
 
 ### Evidence retention and model continuation
 
@@ -1148,3 +1155,27 @@ Broker receipt bytes are unchanged. A truncated incomplete scan with no source
 cursor has no invented continuation: narrow the query. Offset units remain
 UTF-8 bytes for read, UTF-16 characters for web/terminal output, and match indices
 for grep. Raw SDK results retain their native receipt metadata.
+
+## Registering a model-visible tool
+
+A model-visible tool is one row in `RuAgent.Protocol/Tools/AgentToolDescriptorTable.cs`
+([ADR 0038](../adr/0038-tool-descriptor-table.md)). Its Protocol definition, Broker manifest,
+trusted adapter, session scopes and access class derive from that row. To add a tool:
+
+1. Add one row at its position in model order. Its ordinal equals its index, and it carries the
+   current definition version, primary and extra scopes, risk, approval requirement, adapter,
+   workspace requirement, access class, optional output bound, description and input schema builder.
+   The access class is a literal on the row. Only computer observation actions are refined, in
+   `ToolAccessClassification`.
+2. Write the input schema as a strict object (`additionalProperties: false`). Any example must
+   validate against it. The catalog rejects a non-strict schema or a failing example at construction.
+3. Bind an executor in the Broker execution runtime. `ToolCatalog` rejects an executor without a row
+   and a bound row without an executor.
+4. For a new risk or adapter value, add an explicit arm in `ToolDescriptorMapping`. Unmapped values
+   throw. The trusted adapter allowlist follows the `AgentToolAdapter` enum automatically.
+5. Add deliberate membership where the tool should be advertised: a coding profile in
+   `AgentToolProfiles.Includes`, a subagent role in `SubagentRoleTools`, or a program tool in
+   `ProgramToolContract.SupportedTools`. No tool is advertised by default.
+6. When a schema digest, security column or definition changes, update the golden locks
+   (`AgentToolGoldenLockTests`, `ToolManifestGoldenLockTests`) and the counts on this page and in
+   [broker.md](../architecture/broker.md).

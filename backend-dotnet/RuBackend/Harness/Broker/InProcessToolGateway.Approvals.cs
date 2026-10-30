@@ -12,7 +12,7 @@ public sealed partial class InProcessToolGateway
     /// intent key so the resumed proposal evaluates and executes without a new
     /// ask, exactly like the wire gateway.
     /// </summary>
-    public async Task<(bool Authorized, string? AuthorizationToken)> RespondApprovalAsync(
+    public async Task<(bool Authorized, string? AuthorizationToken, RuAgent.Broker.Policy.ApprovalRememberPlan? RememberPlan)> RespondApprovalAsync(
         string brokerApprovalId,
         string command,
         string argsKey,
@@ -27,7 +27,7 @@ public sealed partial class InProcessToolGateway
         {
             if (IsDisposed)
             {
-                return (false, null);
+                return (false, null, null);
             }
 
             lease = _lease;
@@ -47,13 +47,13 @@ public sealed partial class InProcessToolGateway
         if (result.Refusal is not null
             || !string.Equals(result.Status, "authorized", StringComparison.Ordinal))
         {
-            return (false, null);
+            return (false, null, null);
         }
 
         var token = result.AuthorizationToken;
         if (string.IsNullOrWhiteSpace(token))
         {
-            return (false, null);
+            return (false, null, null);
         }
 
         if (_approvals is not null
@@ -64,10 +64,43 @@ public sealed partial class InProcessToolGateway
                 token,
                 DateTimeOffset.UtcNow.AddSeconds(60)))
         {
-            return (false, null);
+            return (false, null, null);
         }
 
-        return (true, token);
+        return (true, token, result.RememberPlan);
+    }
+
+    /// <summary>
+    /// Reads the pending approval from the runtime without consuming it or issuing a token. Unknown or expired
+    /// approvals answer <see cref="BrokerApprovalProbe.Unknown"/>. The remember plan still comes only from the
+    /// consuming <see cref="RespondApprovalAsync"/> call.
+    /// </summary>
+    public async Task<BrokerApprovalProbe> ProbeApprovalAsync(
+        string brokerApprovalId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(brokerApprovalId);
+        BrokerRunLeaseIdentity lease;
+        lock (_sync)
+        {
+            if (IsDisposed)
+            {
+                return BrokerApprovalProbe.Unknown;
+            }
+
+            lease = _lease;
+        }
+
+        var (known, rememberable) = await _runtime
+            .ApprovalProbeAsync(
+                Request(lease.SessionId, AgentMessageTypes.ApprovalRespond, new JsonObject
+                {
+                    ["run_id"] = _runId,
+                    ["approval_id"] = brokerApprovalId,
+                }),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new BrokerApprovalProbe(known, rememberable);
     }
 
     /// <summary>

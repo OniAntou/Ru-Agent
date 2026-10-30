@@ -291,7 +291,7 @@ public sealed partial class HeadlessCodingLoopTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Corrected_inline_probe_can_resolve_parse_errors_but_not_actual_test_failures(bool parseError)
+    public async Task Corrected_inline_probe_does_not_retire_a_failed_check_with_other_arguments(bool parseError)
     {
         using var workspace = GitWorkspace.Create();
         var runner = new ScriptedRunner();
@@ -311,8 +311,13 @@ public sealed partial class HeadlessCodingLoopTests
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
         Assert.True(await WaitForStatusAsync(client, runId,
             new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)));
-        Assert.Equal(parseError ? "completed" : "failed", await GetStatusAsync(client, runId));
+        // ADR 0039: a failed declared check is retired only by the same identity. The inline parse error
+        // launches python and exits nonzero, so it is a failed check; the corrected probe has other arguments
+        // and cannot retire it. Both variants are held three times, then the run completes as unverified.
+        Assert.Equal("completed", await GetStatusAsync(client, runId));
         var events = await ReadEventsAsync(client, runId);
+        Assert.Equal(AgentRecoveryNotes.MaximumUnverifiedNotes, events.Count(e =>
+            e.GetProperty("safe_summary").GetString() == "unverified_after_tool_failure_advised"));
         Assert.Equal(2, events.Count(e => e.GetProperty("event_type").GetString() == "tool.execution_completed"));
         Assert.Contains(events, e => e.GetProperty("event_type").GetString() == "tool.execution_completed"
             && e.GetProperty("safe_summary").GetString() == "process_exit_nonzero");

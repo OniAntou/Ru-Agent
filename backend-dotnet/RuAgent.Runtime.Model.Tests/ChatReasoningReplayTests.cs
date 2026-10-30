@@ -49,7 +49,6 @@ public sealed class ChatReasoningReplayTests
             {
                 ["tool_id"] = "read", ["tool_version"] = "1.0.0", ["scopes"] = new JsonArray("workspace.read"),
                 ["availability"] = "executable", ["model_enabled"] = true, ["capability_class"] = "tool",
-                ["verification_required"] = false,
                 ["input_schema"] = definition.InputSchema,
             })), new ProviderBootstrapData("fixture", "chat_completions",
                 new Uri("https://provider.invalid/v1/chat/completions"), "fixture", "synthetic", replayChatReasoning: enabled));

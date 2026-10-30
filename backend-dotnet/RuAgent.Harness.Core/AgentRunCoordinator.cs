@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Approval;
+using RuAgent.Harness.Core.Completion;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
@@ -318,76 +319,15 @@ public sealed partial class AgentRunCoordinator
         }
 
         var step = invocation.Step;
-        var promptReceiptPayload = invocation.PromptReceiptPayload;
-        var promptComposedEvent = invocation.PromptComposedEvent;
-        var modelDroppedCount = invocation.ModelDroppedCount;
-        var reasoningText = invocation.ReasoningText;
-        var providerContinuation = invocation.ProviderContinuation;
 
-        // A provider may return partial calls alongside a length/error finish.
-        // Reject the entire step before proposing any side effect.
-        if (step.FinishReason is AssistantFinishReason.Length
-            or AssistantFinishReason.ContentFilter or AssistantFinishReason.Error)
+        // Pre-refresh decisions use the pinned step: R1 unusable finish, R2 tool calls (Proceed
+        // dispatches them through the same switch) and R3 commentary-only.
+        var preRefresh = CompletionPolicy.DecideBeforeRefresh(step, context);
+        if (preRefresh is not null)
         {
-            invocation.RetractAssistantText();
-            return await _steps.HandleUnusableModelStepAsync(
-                    run, modelStepId, step, modelDroppedCount, context,
-                    promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText)
+            return await ExecuteStepDecisionAsync(preRefresh, run, modelStepId, invocation, context, cancellationToken)
                 .ConfigureAwait(false);
         }
-
-        if (step.ToolCalls.Count > 0)
-        {
-            var repetition = ConsecutiveToolCallGuard.Inspect(
-                context,
-                step.ToolCalls,
-                out var receiptCode);
-            if (repetition == RepetitionGuardVerdict.Advise)
-            {
-                invocation.RetractAssistantText();
-                return await _steps.HandleRepetitionAdviceStepAsync(
-                        run,
-                        modelStepId,
-                        step,
-                        receiptCode,
-                        modelDroppedCount,
-                        promptReceiptPayload,
-                        promptComposedEvent,
-                        cancellationToken,
-                        reasoningText)
-                    .ConfigureAwait(false);
-            }
-
-            if (repetition == RepetitionGuardVerdict.Stop)
-            {
-                invocation.RetractAssistantText();
-                return await _steps.HandleRepeatedToolStepAsync(
-                        run,
-                        modelStepId,
-                        step,
-                        promptReceiptPayload,
-                        promptComposedEvent,
-                        cancellationToken,
-                        reasoningText)
-                    .ConfigureAwait(false);
-            }
-
-            return await _steps.HandleToolStepAsync(
-                    run,
-                    modelStepId,
-                    step,
-                    modelDroppedCount,
-                    promptReceiptPayload,
-                    promptComposedEvent,
-                    cancellationToken,
-                    reasoningText,
-                    providerContinuation)
-                .ConfigureAwait(false);
-        }
-
-        if (step.ResponsesMessages?.IsCommentaryOnly == true)
-            return await _steps.HandleCommentaryStepAsync(run, modelStepId, step, modelDroppedCount,
-                context, promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText).ConfigureAwait(false);
 
         // Workspace journal state may change while the provider is generating a
         // final answer. Refresh only host-derived verification evidence; the
@@ -404,91 +344,8 @@ public sealed partial class AgentRunCoordinator
 
         try
         {
-            if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode)
-                || AgentRecoveryNotes.TryReadBlockedReply(step, out _))
-            {
-                if (context.VerificationEvidence.HasExitMismatch || !AgentRecoveryNotes.TryReadBlockedReply(step, out _))
-                    invocation.RetractAssistantText();
-                return await _steps.HandleUnverifiedFailureStepAsync(
-                        run,
-                        modelStepId,
-                        step,
-                        string.IsNullOrEmpty(failureCode) ? "model_reported_blocker" : failureCode,
-                        modelDroppedCount,
-                        context,
-                        promptReceiptPayload,
-                        promptComposedEvent,
-                        cancellationToken,
-                        reasoningText)
-                    .ConfigureAwait(false);
-            }
-
-            // Empty final replies keep their own recovery in HandleFinalStepAsync, so only prose is held here.
-            if (!string.IsNullOrWhiteSpace(step.Text) && UnverifiedSourceEditGuard.ShouldAdvise(context))
-            {
-                invocation.RetractAssistantText();
-                return await _steps.HandleUnverifiedSourceEditStepAsync(
-                        run,
-                        modelStepId,
-                        step,
-                        modelDroppedCount,
-                        context,
-                        promptReceiptPayload,
-                        promptComposedEvent,
-                        cancellationToken,
-                        reasoningText)
-                    .ConfigureAwait(false);
-            }
-
-            if (!string.IsNullOrWhiteSpace(step.Text) && CompletionChecklistGuard.ShouldAdviseOpenTodos(context))
-            {
-                invocation.RetractAssistantText();
-                return await _steps.HandleCompletionHoldStepAsync(
-                        run,
-                        modelStepId,
-                        step,
-                        modelDroppedCount,
-                        context,
-                        AgentRecoveryKind.OpenTodos,
-                        AgentRecoveryNotes.BuildOpenTodosNote(context.VerificationEvidence.OpenTodoItems),
-                        promptReceiptPayload,
-                        promptComposedEvent,
-                        cancellationToken,
-                        reasoningText)
-                    .ConfigureAwait(false);
-            }
-
-            if (!string.IsNullOrWhiteSpace(step.Text) && CompletionChecklistGuard.ShouldAdviseCompletionReview(context))
-            {
-                invocation.RetractAssistantText();
-                return await _steps.HandleCompletionHoldStepAsync(
-                        run,
-                        modelStepId,
-                        step,
-                        modelDroppedCount,
-                        context,
-                        AgentRecoveryKind.CompletionReview,
-                        AgentRecoveryNotes.BuildCompletionReviewNote(),
-                        promptReceiptPayload,
-                        promptComposedEvent,
-                        cancellationToken,
-                        reasoningText)
-                    .ConfigureAwait(false);
-            }
-
-            if (string.IsNullOrWhiteSpace(step.Text))
-                invocation.RetractAssistantText();
-            return await _steps.HandleFinalStepAsync(
-                    run,
-                    modelStepId,
-                    step,
-                    modelDroppedCount,
-                    context,
-                    promptReceiptPayload,
-                    promptComposedEvent,
-                    cancellationToken,
-                    reasoningText,
-                    providerContinuation)
+            var decision = CompletionPolicy.DecideAfterRefresh(step, context);
+            return await ExecuteStepDecisionAsync(decision, run, modelStepId, invocation, context, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (InvalidOperationException error) when (error.Message == "run_version_conflict")

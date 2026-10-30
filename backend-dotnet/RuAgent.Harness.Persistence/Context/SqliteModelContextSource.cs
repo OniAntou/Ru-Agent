@@ -29,16 +29,7 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
                e.execution_id,
                e.safe_code,
                e.tool_outcome,
-               e.side_effects_possible,
-               (SELECT request.occurred_at_utc
-                FROM agent_events AS request
-                WHERE request.run_id = e.run_id
-                  AND request.kind = 'tool.execution_requested'
-                  AND request.execution_id = e.execution_id
-                  AND request.tool_call_id = e.tool_call_id
-                  AND request.provider_call_id = e.provider_call_id
-                ORDER BY request.sequence
-                LIMIT 1) AS execution_started_at_utc
+               e.side_effects_possible
         FROM agent_payloads AS p
         LEFT JOIN agent_events AS e
           ON p.context_scope = 1
@@ -204,16 +195,6 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
             reader.GetBoolean(19),
             contentEncoding: metadata.Encoding,
             providerCallId: reader.GetString(15));
-        DateTimeOffset? executionStartedAtUtc = null;
-        // Session handoff shares the original metadata prefix but does not project
-        // request provenance. Its trailing size column is not a timestamp.
-        if (reader.FieldCount > 20 && reader.GetName(20) == "execution_started_at_utc"
-            && !reader.IsDBNull(20)
-            && DateTimeOffset.TryParse(reader.GetString(20), System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.RoundtripKind, out var parsed))
-        {
-            executionStartedAtUtc = parsed.ToUniversalTime();
-        }
-        return ModelContextEntry.ToolResult(sourceId, sequence, receipt, content, executionStartedAtUtc);
+        return ModelContextEntry.ToolResult(sourceId, sequence, receipt, content);
     }
 }

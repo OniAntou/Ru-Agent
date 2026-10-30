@@ -28,8 +28,7 @@ public sealed record ModelContextEntry
         string? text,
         AssistantStep? assistantStep,
         ToolExecutionReceipt? toolReceipt,
-        IReadOnlyList<ContextEntryRange>? summaryRanges,
-        DateTimeOffset? executionStartedAtUtc = null)
+        IReadOnlyList<ContextEntryRange>? summaryRanges)
     {
         if (!IsSourceId(sourceId))
         {
@@ -56,7 +55,6 @@ public sealed record ModelContextEntry
         AssistantStep = assistantStep;
         ToolReceipt = toolReceipt;
         SummaryRanges = summaryRanges;
-        ExecutionStartedAtUtc = executionStartedAtUtc;
     }
 
     public string SourceId { get; }
@@ -75,9 +73,6 @@ public sealed record ModelContextEntry
 
     public IReadOnlyList<ContextEntryRange>? SummaryRanges { get; }
 
-    /// <summary>Recorded request time for the execution that produced this receipt, when available.</summary>
-    public DateTimeOffset? ExecutionStartedAtUtc { get; }
-
     /// <summary>The image a tool result carries into this request (ADR 0026).</summary>
     public ToolOutputImage? ToolImage { get; private init; }
 
@@ -95,7 +90,7 @@ public sealed record ModelContextEntry
             throw new InvalidOperationException("Only tool results carry images.");
         }
 
-        return new ModelContextEntry(SourceId, Sequence, Role, Kind, Content, null, ToolReceipt, null, ExecutionStartedAtUtc)
+        return new ModelContextEntry(SourceId, Sequence, Role, Kind, Content, null, ToolReceipt, null)
         {
             ToolImage = image,
             ToolImageOmitted = image is null,
@@ -146,8 +141,7 @@ public sealed record ModelContextEntry
         string sourceId,
         long sequence,
         ToolExecutionReceipt receipt,
-        string modelContent,
-        DateTimeOffset? executionStartedAtUtc = null)
+        string modelContent)
     {
         ArgumentNullException.ThrowIfNull(receipt);
         if (receipt.ProviderCallId is null)
@@ -164,8 +158,7 @@ public sealed record ModelContextEntry
             modelContent,
             null,
             receipt,
-            null,
-            executionStartedAtUtc);
+            null);
     }
 
     public static ModelContextEntry Summary(

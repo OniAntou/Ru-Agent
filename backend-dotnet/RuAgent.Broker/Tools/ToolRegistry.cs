@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using RuAgent.Broker.Policy;
+using RuAgent.Protocol.Tools;
 
 namespace RuAgent.Broker.Tools;
 
@@ -7,13 +8,15 @@ public sealed class ToolRegistry
 {
     private static readonly Regex IdPattern = new("^[a-z][a-z0-9_]*(?:\\.[a-z0-9][a-z0-9_-]*)*$", RegexOptions.Compiled);
     private static readonly Regex VersionPattern = new("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$", RegexOptions.Compiled);
-    // "connector" is the adapter of the mcp tool (ADR 0025), whose servers run
-    // through McpServerHost.
-    // "language_server" is the adapter of the code_intelligence tool (ADR 0037), whose
-    // configured servers launch through the Broker external-process policy.
-    private static readonly IReadOnlySet<string> TrustedAdapters = new HashSet<string>(
-        ["builtin", "desktop", "terminal", "web", "connector", "language_server"],
-        StringComparer.Ordinal);
+    // The allowlist is derived from the adapter enum, so a new adapter cannot be used by a
+    // manifest until it is declared there and mapped in ToolDescriptorMapping. "connector" is the
+    // adapter of the mcp tool (ADR 0025), whose servers run through McpServerHost. "language_server"
+    // is the adapter of the code_intelligence tool (ADR 0037), whose configured servers launch
+    // through the Broker external-process policy.
+    private static readonly IReadOnlySet<string> TrustedAdapters = Enum.GetValues<AgentToolAdapter>()
+        .Where(adapter => adapter is not AgentToolAdapter.HostIntercepted)
+        .Select(ToolDescriptorMapping.ToAdapterName)
+        .ToHashSet(StringComparer.Ordinal);
     private readonly Dictionary<(string Id, string Version), ToolManifest> _manifests = [];
 
     public void Register(ToolManifest manifest)

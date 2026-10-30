@@ -6,7 +6,11 @@ namespace RuAgent.Harness.Core;
 
 internal sealed partial class AgentRunStepHandlers
 {
-    private async Task<AgentRunStepResult> HandleBlockedReportAsync(AgentRun run, ModelStepId stepId,
+    /// <summary>
+    /// Commits an explicit blocker: the report is the visible reply, the run fails with
+    /// <paramref name="errorCode"/> and no outcome is claimed as successful.
+    /// </summary>
+    public async Task<AgentRunStepResult> HandleBlockedReportAsync(AgentRun run, ModelStepId stepId,
         AssistantStep step, string report, string errorCode, int droppedCount,
         HarnessPayloadIntent promptPayload, HarnessEventIntent promptEvent, CancellationToken cancellationToken,
         string? reasoningText)

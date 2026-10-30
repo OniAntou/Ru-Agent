@@ -58,6 +58,12 @@ Task-oriented pages for people using Ru; start here before the reference materia
 
 ## Decisions
 
+- [Advisory verification of declared checks](adr/0039-advisory-verification.md)
+- [Tool descriptor table](adr/0038-tool-descriptor-table.md)
+- [Broker-owned language-server tools](adr/0037-language-server-tools.md)
+- [Explicit pinned GitHub skill package installation](adr/0036-explicit-skill-package-installation.md)
+- [Explicit MCP Streamable HTTP behind the existing Broker authority](adr/0035-mcp-streamable-http.md)
+
 - [Shared skill catalog and run-local workflow snapshots](adr/0032-skill-catalog-and-workflow-snapshots.md)
 
 - [Retire the legacy tool surface](adr/0029-retire-legacy-tool-surface.md)

@@ -25,14 +25,6 @@ internal sealed class VerificationEvidenceBuffer(int requiredLimit)
     private static bool Required(VerificationCheckEvidence check) => check.IsVerification
         || check.ExpectedExitCode != 0 && check.Status != VerificationCheckStatus.Passed;
 
-    internal void UpgradeIdentity(string raw, string canonical)
-    {
-        if (raw == canonical || !_checks.TryGetValue(raw, out var old)) return;
-        var existing = Find(canonical);
-        Remove(raw);
-        Store(old with { Identity = canonical, IsVerification = old.IsVerification || existing?.IsVerification == true });
-    }
-
     internal void Store(VerificationCheckEvidence check)
     {
         var old = Find(check.Identity);
@@ -46,32 +38,6 @@ internal sealed class VerificationEvidenceBuffer(int requiredLimit)
         if (Required(check)) _requiredCount++;
         else _diagnosticNodes[check.Identity] = _diagnostics.AddLast(check.Identity);
         while (_diagnostics.Count > DiagnosticLimit) Remove(_diagnostics.First!.Value);
-    }
-
-    internal void Invalidate()
-    {
-        foreach (var check in _checks.Values.Where(c => c.IsVerification
-            && c.Status is VerificationCheckStatus.Passed or VerificationCheckStatus.Pending).ToArray())
-            _checks[check.Identity] = check.Status == VerificationCheckStatus.Pending
-                ? check with { InvalidatedDuringExecution = true }
-                : check with { Status = VerificationCheckStatus.Stale, Code = "verification_stale" };
-    }
-
-    /// <summary>
-    /// Clears pre-launch rejections after a check of the same kind passes, and
-    /// invalid Python invocations only after a passing verification in their exact
-    /// interpreter/cwd repair family. Actual test failures remain outstanding.
-    /// Removal rather than a Passed status keeps a later edit from reviving them.
-    /// </summary>
-    internal void ResolveRejectedBy(VerificationCheckEvidence passed)
-    {
-        var negative = passed.ExpectedExitCode != 0;
-        foreach (var check in _checks.Values.Where(c => (c.RejectedBeforeLaunch
-                || !negative && c.InvocationInvalid && passed.IsVerification
-                    && passed.RepairIdentity is not null && c.RepairIdentity == passed.RepairIdentity)
-            && c.Status != VerificationCheckStatus.Passed && c.Identity != passed.Identity
-            && (c.ExpectedExitCode != 0) == negative).ToArray())
-            Remove(check.Identity);
     }
 
     internal VerificationCheckEvidence[] Pending(string executionId) => _checks.Values

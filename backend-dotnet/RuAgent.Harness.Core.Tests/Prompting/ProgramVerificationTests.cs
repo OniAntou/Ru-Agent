@@ -17,15 +17,18 @@ public sealed class ProgramVerificationTests
     }
 
     [Fact]
-    public void NestedMutationStalesPriorRootCheckAndNestedRerunResolvesIt()
+    public void NestedMutationDoesNotObligateAPriorRootCheckAndNestedEditIsASourceEdit()
     {
         const string args = """{"script":"dotnet test","purpose":"verification"}""";
         var root = VerificationCompletionTests.Batch(1, "root", "powershell", args, ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}""");
         var edit = Receipt("edit_file", """{"path":"x","edits":[{"old_string":"a","new_string":"b"}]}""", "succeeded", null, "{}");
-        var stale = root.Concat(ProgramBatch(3, edit));
-        Assert.Equal("verification_stale", VerificationCompletionTests.Snapshot(stale).VerificationEvidence.BlockingCode);
-        var fixedEntries = root.Concat(ProgramBatch(3, edit, Receipt("powershell", args, "succeeded", null, """{"exit_code":0}""")));
-        Assert.Null(VerificationCompletionTests.Snapshot(fixedEntries).VerificationEvidence.BlockingCode);
+        var edited = VerificationCompletionTests.Snapshot(root.Concat(ProgramBatch(3, edit))).VerificationEvidence;
+        Assert.Null(edited.BlockingCode);
+        Assert.True(edited.HasSourceEdits);
+        Assert.True(edited.SourceEditAwaitingVerification);
+        var rerun = root.Concat(ProgramBatch(3, edit, Receipt("powershell", args, "succeeded", null, """{"exit_code":0}""")));
+        Assert.Null(VerificationCompletionTests.Snapshot(rerun).VerificationEvidence.BlockingCode);
+        Assert.False(VerificationCompletionTests.Snapshot(rerun).VerificationEvidence.SourceEditAwaitingVerification);
     }
 
     [Fact]

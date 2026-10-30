@@ -352,7 +352,7 @@ public sealed partial class ToolExecutionService
         {
             return;
         }
-        if (!TerminalWorkflowIntent.HasValidExpectedExitCode(arguments) || !TerminalWorkflowIntent.HasValidSupersedes(arguments))
+        if (!TerminalWorkflowIntent.HasValidExpectedExitCode(arguments))
             throw new ToolSchemaException("invalid_arguments");
 
         if (arguments["background"] is JsonValue backgroundValue
@@ -478,18 +478,18 @@ public sealed partial class ToolExecutionService
         }
         catch (ToolSchemaException error)
         {
-            outcome = ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", VerificationFailure(binding));
+            outcome = ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", ToolVerificationStates.NotRequired);
         }
         catch (ToolExecutionException error)
         {
-            outcome = ToolExecutionOutcome.Failed(error.Code, "Tool arguments were rejected.", VerificationFailure(binding));
+            outcome = ToolExecutionOutcome.Failed(error.Code, "Tool arguments were rejected.", ToolVerificationStates.NotRequired);
         }
         catch (UnauthorizedAccessException error)
         {
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "access_denied"),
                 "Tool access was denied.",
-                VerificationFailure(binding));
+                ToolVerificationStates.NotRequired);
         }
         catch (ArgumentException error)
         {
@@ -499,14 +499,14 @@ public sealed partial class ToolExecutionService
                     : error.Message == "edit_overlap" ? "Edits overlap in the original file. Combine them into one exact replacement or use disjoint spans."
                     : error.Message == "invalid_path" ? "Send a plain workspace-relative path string. Do not include XML wrappers such as </rfl:parameter> in path or pattern. Correct the argument; no path was rewritten or guessed."
                     : "Tool arguments were rejected.",
-                VerificationFailure(binding));
+                ToolVerificationStates.NotRequired);
         }
         catch (IOException error)
         {
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "io_error"),
                 IoRepairHint(error.Message),
-                VerificationFailure(binding));
+                ToolVerificationStates.NotRequired);
         }
         catch (InvalidDataException error) when (binding.Manifest.Id is "web_search" or "web_fetch")
         {
@@ -518,7 +518,7 @@ public sealed partial class ToolExecutionService
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "invalid_data"),
                 "Tool response data was rejected.",
-                VerificationFailure(binding));
+                ToolVerificationStates.NotRequired);
         }
         catch (EditMatchException error)
         {
@@ -530,7 +530,7 @@ public sealed partial class ToolExecutionService
                 error.RepairHint ?? (error.MatchCount > 0
                     ? $"old_string matched {error.MatchCount} times. Set expected_occurrences to {error.MatchCount} to replace all, or narrow old_string to a unique span."
                     : "old_string was not found in the file. Re-read the file and copy the exact text including whitespace."),
-                VerificationFailure(binding));
+                ToolVerificationStates.NotRequired);
         }
         catch (HttpRequestException error) when (binding.Manifest.Id is "web_search" or "web_fetch")
         {
@@ -545,7 +545,7 @@ public sealed partial class ToolExecutionService
             outcome = ToolExecutionOutcome.Failed(
             "adapter_error",
             "Tool adapter failed. The broker diagnostic log carries the adapter error.",
-            VerificationFailure(binding));
+            ToolVerificationStates.NotRequired);
         }
 
         if (binding.Manifest.Id is "powershell" or "run_process" && context.AuthorizedTerminalIntent is { } terminalIntent)
@@ -640,13 +640,6 @@ public sealed partial class ToolExecutionService
             return ToolExecutionOutcome.Failed("conflicting_output_status", "Tool returned a conflicting status.");
         }
 
-        if (binding.VerificationRequired
-            && outcome.Status == ToolResultStatuses.Succeeded
-            && outcome.VerificationState != ToolVerificationStates.Verified)
-        {
-            return ToolExecutionOutcome.Failed("verification_required", "Tool success was not verified.");
-        }
-
         if (outcome.SafeSummary.Length > 4096)
         {
             return ToolExecutionOutcome.Failed("invalid_safe_summary", "Tool summary was invalid.");
@@ -661,13 +654,13 @@ public sealed partial class ToolExecutionService
         }
         catch (ToolSchemaException error)
         {
-            return ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", VerificationFailure(binding));
+            return ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", ToolVerificationStates.NotRequired);
         }
 
         var outputBytes = Encoding.UTF8.GetByteCount(outcome.Output.ToJsonString());
         if (outputBytes > binding.Manifest.MaxOutputBytes)
         {
-            return ToolExecutionOutcome.Failed("output_too_large", "Tool output exceeded its limit.", VerificationFailure(binding));
+            return ToolExecutionOutcome.Failed("output_too_large", "Tool output exceeded its limit.", ToolVerificationStates.NotRequired);
         }
 
         return outcome;

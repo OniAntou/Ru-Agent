@@ -46,16 +46,9 @@ public sealed partial class SqliteModelContextSource
             ? appended.Prepend(assistant).ToArray() : appended.ToArray();
         var capturedPaths = sessionBase.SelectMany(SessionScopeHints.Decode).ToArray();
         var paths = FileObservationPaths.Read(evidenceEntries, cached?.Paths ?? capturedPaths);
+        // Verification is projected from the run's own receipts only. The workspace journal is not read
+        // here (ADR 0039 item 7); the journal itself stays owned by workspace coordination (ADR 0008).
         var verification = RunVerificationEvidence.Project(evidenceEntries, cached?.Verification);
-        var checkStarts = verification.Checks
-            .Where(check => check.ExecutionStartedAtUtc is not null)
-            .Select(check => check.ExecutionStartedAtUtc!.Value.ToUniversalTime())
-            .Distinct()
-            .ToArray();
-        var workspaceFreshness = await ReadWorkspaceJournalFreshnessAsync(
-                connection, transaction, runId, checkStarts, ct)
-            .ConfigureAwait(false);
-        verification = verification.ApplyWorkspaceFreshness(workspaceFreshness);
         var lastAssistant = appended.LastOrDefault(e => e.AssistantStep is not null) ?? cached?.LastAssistant;
         IReadOnlyList<ModelContextEntry> skillBaseEntries = cached is null ? sessionBase : Array.Empty<ModelContextEntry>();
         IReadOnlyList<ModelContextEntry> skillRunEntries = cached is null ? runLocal : evidenceEntries;
@@ -94,95 +87,6 @@ public sealed partial class SqliteModelContextSource
     }
 
     private sealed record ContextHeader(int BaseCount, long Revision, long Version, long Sequence);
-
-    private sealed record WorkspaceJournalState(
-        long CommitSequence,
-        DateTimeOffset? UpdatedAtUtc,
-        long? LatestRetainedSequence,
-        DateTimeOffset? LatestRetainedAtUtc,
-        bool CommitSequenceKnown);
-
-    private static async Task<IReadOnlyDictionary<DateTimeOffset, WorkspaceCheckFreshness>> ReadWorkspaceJournalFreshnessAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        RunId runId,
-        IReadOnlyList<DateTimeOffset> checkStarts,
-        CancellationToken ct)
-    {
-        if (checkStarts.Count == 0) return new Dictionary<DateTimeOffset, WorkspaceCheckFreshness>();
-
-        var state = await ReadWorkspaceJournalStateAsync(connection, transaction, runId, ct).ConfigureAwait(false);
-        if (state is null) return checkStarts.ToDictionary(start => start, _ => default(WorkspaceCheckFreshness));
-        return checkStarts.ToDictionary(start => start, start =>
-        {
-            if (!state.CommitSequenceKnown) return default;
-            if (state.CommitSequence == 0)
-                return state.LatestRetainedSequence is null
-                    ? new WorkspaceCheckFreshness(IsKnown: true, ChangedAfterStart: false)
-                    : default;
-            if (state.LatestRetainedSequence is { } latestSequence && latestSequence > state.CommitSequence)
-                return default;
-
-            // The coordinator timestamp is an upper bound for all journal writes,
-            // but policy updates also advance it. A retained row at the current
-            // high-water sequence gives the precise latest journal mutation time.
-            if (state.LatestRetainedSequence == state.CommitSequence)
-            {
-                if (state.LatestRetainedAtUtc is { } latestAt)
-                    return new WorkspaceCheckFreshness(IsKnown: true, ChangedAfterStart: latestAt >= start);
-                if (state.UpdatedAtUtc is { } latestCoordinatorUpdate && start <= latestCoordinatorUpdate)
-                    return new WorkspaceCheckFreshness(IsKnown: true, ChangedAfterStart: true);
-            }
-
-            if (state.UpdatedAtUtc is { } updated && start > updated)
-                return new WorkspaceCheckFreshness(IsKnown: true, ChangedAfterStart: false);
-            return default;
-        });
-    }
-
-    private static async Task<WorkspaceJournalState?> ReadWorkspaceJournalStateAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        RunId runId,
-        CancellationToken ct)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            SELECT run.workspace_id,
-                   coordinator.commit_sequence,
-                   coordinator.updated_at_utc,
-                   (SELECT MAX(journal.commit_sequence) FROM workspace_change_journal journal
-                    WHERE journal.workspace_id = run.workspace_id),
-                   (SELECT journal.created_at_utc FROM workspace_change_journal journal
-                    WHERE journal.workspace_id = run.workspace_id
-                    ORDER BY journal.commit_sequence DESC LIMIT 1)
-            FROM agent_runs run
-            LEFT JOIN workspace_coordinators coordinator ON coordinator.workspace_id = run.workspace_id
-            WHERE run.run_id = $run_id
-            """;
-        command.Parameters.AddWithValue("$run_id", runId.Value);
-        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct).ConfigureAwait(false) || reader.IsDBNull(1))
-            return null;
-
-        var commitSequence = reader.GetInt64(1);
-        DateTimeOffset? updatedAtUtc = null;
-        bool commitSequenceKnown = commitSequence >= 0;
-        if (!reader.IsDBNull(2)
-            && DateTimeOffset.TryParse(reader.GetString(2), System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.RoundtripKind, out var updated))
-            updatedAtUtc = updated.ToUniversalTime();
-        long? latestRetainedSequence = reader.IsDBNull(3) ? null : reader.GetInt64(3);
-        DateTimeOffset? latestRetainedAtUtc = null;
-        if (!reader.IsDBNull(4)
-            && DateTimeOffset.TryParse(reader.GetString(4), System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.RoundtripKind, out var latest))
-            latestRetainedAtUtc = latest.ToUniversalTime();
-
-        return new WorkspaceJournalState(commitSequence, updatedAtUtc, latestRetainedSequence,
-            latestRetainedAtUtc, commitSequenceKnown);
-    }
 
     private static void ReplaceSkillInvocationSeeds(List<ModelContextEntry> entries)
     {

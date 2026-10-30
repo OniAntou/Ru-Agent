@@ -6,66 +6,22 @@ namespace RuAgent.Harness.Core;
 
 internal sealed partial class AgentRunStepHandlers
 {
-    public Task<AgentRunStepResult> HandleUnusableModelStepAsync(
+    /// <summary>
+    /// Commits a terminal model-reply failure (unusable finish, commentary-only or empty reply)
+    /// once the policy has decided that no recovery note is left. The model step is audit-only
+    /// and the run fails with <paramref name="errorCode"/>.
+    /// </summary>
+    public async Task<AgentRunStepResult> HandleModelReplyFailureAsync(
         AgentRun run,
         ModelStepId modelStepId,
         AssistantStep step,
         int droppedCount,
-        ModelContextSnapshot context,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken,
-        string? reasoningText)
+        string? reasoningText,
+        string errorCode)
     {
-        var code = step.FinishReason switch
-        {
-            AssistantFinishReason.Length => "model_output_truncated",
-            AssistantFinishReason.ContentFilter => "model_content_filtered",
-            AssistantFinishReason.Error => "model_reply_error",
-            _ => throw new ArgumentOutOfRangeException(nameof(step)),
-        };
-        return HandleModelReplyFailureAsync(run, modelStepId, step, droppedCount,
-            context, promptReceiptPayload, promptComposedEvent, cancellationToken,
-            reasoningText, code, step.FinishReason == AssistantFinishReason.Length
-                ? AgentRecoveryKind.OutputTruncated : null);
-    }
-
-    private async Task<AgentRunStepResult> HandleModelReplyFailureAsync(
-        AgentRun run,
-        ModelStepId modelStepId,
-        AssistantStep step,
-        int droppedCount,
-        ModelContextSnapshot context,
-        HarnessPayloadIntent promptReceiptPayload,
-        HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken,
-        string? reasoningText = null,
-        string errorCode = "empty_model_reply",
-        AgentRecoveryKind? recoveryKind = AgentRecoveryKind.EmptyModelReply)
-    {
-        if (recoveryKind is { } kind && AgentRecoveryNotes.CanAdvise(context, kind))
-        {
-            return await HandleRecoveryAdviceStepAsync(
-                    run,
-                    modelStepId,
-                    step,
-                    droppedCount,
-                    kind switch
-                    {
-                        AgentRecoveryKind.OutputTruncated => AgentRecoveryNotes.BuildTruncatedNote(),
-                        AgentRecoveryKind.CommentaryOnly => AgentRecoveryNotes.BuildCommentaryNote(),
-                        _ => AgentRecoveryNotes.BuildEmptyNote(),
-                    },
-                    AgentRecoveryNotes.NoteCount(context, kind),
-                    errorCode,
-                    promptReceiptPayload,
-                    promptComposedEvent,
-                    cancellationToken,
-                    reasoningText,
-                    retainAssistantContext: kind == AgentRecoveryKind.CommentaryOnly)
-                .ConfigureAwait(false);
-        }
-
         var transition = AgentRunStateMachine.TryTransition(
             run.Status,
             HarnessRunTransition.Fail);

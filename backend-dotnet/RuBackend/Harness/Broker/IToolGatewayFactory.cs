@@ -74,7 +74,19 @@ public interface IToolGatewayFactory : IAsyncDisposable
         string? killExecutionId,
         CancellationToken cancellationToken);
 
-    Task<(bool Authorized, string? AuthorizationToken)> RespondApprovalAsync(
+    /// <summary>
+    /// Reads one pending approval without consuming it or issuing a token. The Host checks <c>Known</c> before it
+    /// commits an allow, and refuses allow_always unless <c>Rememberable</c>. The default answers unknown, so an
+    /// authority that cannot answer fails closed.
+    /// </summary>
+    Task<BrokerApprovalProbe> ProbeApprovalAsync(string runId, string hostApprovalId, CancellationToken cancellationToken) =>
+        Task.FromResult(BrokerApprovalProbe.Unknown);
+
+    /// <summary>
+    /// Resolves a pending approval on the authority. The remember plan the Broker built for that approval comes
+    /// from the same consuming call that issues the one-time token, and is null when nothing was authorized.
+    /// </summary>
+    Task<(bool Authorized, string? AuthorizationToken, RuAgent.Broker.Policy.ApprovalRememberPlan? RememberPlan)> RespondApprovalAsync(
         string runId,
         string hostApprovalId,
         string command,

@@ -7,22 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **sec(approvals)**: Stop one approval from covering a whole tool family. An allow for an MCP tool, a
+  computer-use app grant or a language-server operation used to be saved as a matcher with no server,
+  tool, app or language identity. A null matcher field is a wildcard, so a single `allow_once`
+  (remembered for the session) or `allow_always` (saved as a project rule) silently allowed every later
+  call of that tool. The Broker now builds each remembered matcher from the approved call's identity,
+  and the evaluator ignores allow rules that lack it. Remembered file and terminal approvals use
+  canonical paths and resolved executables, so a sibling path or a same-named executable elsewhere still
+  asks. The Host also used to write a durable rule and session memory before the Broker grant, so a
+  failed grant could leave them behind; both now follow a successful grant.
+
+- **refactor(approvals)!**: Derive remembered approvals in the Broker. Each approval remembers the target
+  its tool class names: file paths, terminal launches (resolved executable, argv and cwd), the MCP server
+  and tool, the exact computer-use app list, and language-server launches. An outside folder remembers
+  its nearest existing folder, and a drive, volume or share root remembers nothing and degrades to a
+  one-time allow. Tools outside that allowlist are never remembered, and `allow_always` on them is
+  refused. Rules saved by earlier builds for MCP, computer use or language servers carry no identity and
+  are ignored, so those calls ask again. A user-written allow without that identity is ignored too. An MCP
+  call whose `arguments` is a JSON string, the form the tool requires, is now approvable; the Host used to
+  re-parse it and answer `approval_stale`. An allow on an approval the Broker no longer holds now returns
+  `409 approval_stale` before anything commits; it used to commit the resolution and then answer `502`.
+
+- **feat(harness)!**: Make declared-check verification advisory (ADR 0039). A failed, pending or
+  result-missing `purpose=verification` check, or a failed `expected_failure` check, holds a final reply
+  with a recovery note up to three times per run. After that the run completes with its summary
+  verification state `unverified`; a `[BLOCKED]` reply still ends the run unsuccessfully. Relative to the
+  last release, an expected-exit mismatch no longer fails the run at once. Commands and computer-use input
+  no longer invalidate passed checks, and computer-use input is not a source edit. Only the same check
+  passing later retires an outstanding one. `supersedes` is accepted and ignored. Stale-check replacement,
+  repair families and workspace-journal freshness no longer affect completion or labels. A declared check
+  rejected before launch creates no obligation. Verification repair families and repair hints are removed,
+  and the Broker no longer emits `verification_repair_identity` or `verification_invocation_invalid`.
+  A terminal call carrying `supersedes` without `purpose=verification` is no longer rejected. Receipts that
+  still carry the removed fields parse, and the fields are ignored.
+
+- **refactor(broker,protocol)!**: Derive every model-visible tool from one descriptor table (ADR 0038):
+  Protocol definitions, Broker manifests, the trusted adapter allowlist, per-tool session scopes and the
+  access class that the Broker and hook gateways share. Hook-denied decisions now report the Broker's
+  access class for `run_code`, the agent tools, `todo_write`, `mcp`, `code_intelligence`, `ask_user`,
+  `terminal_stop`, non-observation `computer` actions and unknown tools. Session grants add each tool's
+  declared scopes: `read`, `read_file` and `run_code` no longer add `workspace.read`, `list` adds
+  `system.read`, and `code_intelligence` adds `terminal.execute`.
+
+- **refactor(harness)**: Route every returned model step through one ordered, internal completion policy.
+  Commit shapes, outbox entries and recovery notes are unchanged; see the completion policy in
+  [harness](docs/architecture/harness.md#completion-policy).
+
 - **feat(broker)**: Add opt-in `coding_semantic_v1` with Broker-owned C# and
   TypeScript language-server diagnostics, symbols, definitions and references.
   Servers come from user-owned `.ru/lsp.json`; launch follows external-process
   policy, and bounded LSP responses carry current document identity.
 
-- **fix(harness)**: Allow explicit fresh verification to replace a retired check
-  that previously passed and is now stale, preserving failures, negative tests,
-  workspace freshness, original receipts and restart/compaction behavior.
-  Empty pytest discovery can be repaired by a passing Python verification in
-  the same interpreter/cwd; real failed tests stay outstanding. Clarify file
-  creation versus replacement and provide specific `file_exists` recovery.
+- **fix(tools)**: Clarify file creation versus replacement and provide specific `file_exists` recovery.
 
-- **fix(harness)**: State the specific reason in the unverified tool-failure recovery
-  note (stale check, missing or pending check result, or failed tool call) and
-  require the next reply to be a repair tool call or a `[BLOCKED]` final; a plain
-  final reply cannot complete the run.
+- **fix(harness)**: State the specific reason in the unverified recovery note (missing or pending check result,
+  expected-exit mismatch, or failed tool call). A failed tool call needs a repair tool call or a `[BLOCKED]`
+  final reply; a verification failure completes as `unverified` once its three notes are spent.
 
 - **feat(harness)**: Hold the first non-empty final reply after an unverified structured
   source edit once per run. Its streamed text is retracted and a durable
@@ -119,16 +159,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holds the computer-use switch, which moves out of Settings. The composer's Skills
   button is gone; `/skills` in the composer opens the page.
 
-- **fix(agent)**: Verification evidence is compared with the recorded workspace
-  change journal from the check's execution request, including changes made by
-  another run while the check is still running. The coordinator rechecks evidence
-  after final generation. Missing request provenance or a retained journal gap
-  crossing the check start cannot certify a passed check.
-  Structured file mutations are observed before the next check, with queued
-  watcher notifications deduplicated against current content. Schema v32 adds
-  indexed execution-request provenance.
-  A corrected inline Python verification probe can resolve a direct command
-  parse error; actual test failures and expected-exit mismatches stay blocking.
+- **fix(agent)**: Structured file mutations are observed before the next check, with queued watcher
+  notifications deduplicated against current content. Schema v32 adds indexed execution-request provenance;
+  verification no longer reads the workspace change journal (ADR 0039).
 
 - **fix(history)**: Keep conversation branching compatible with paged SQL
   history. Bind revisions to the window and rewind epoch, use absolute turn
@@ -294,13 +327,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **docs**: Point broker implementation sections at the CONTEXT.md glossary instead
   of restating definitions, break up the longest paragraphs, and state in the
   permissions guide that a terminal command can read the local service token.
-- **fix(harness)**: A declared verification whose launch was rejected before any
-  process ran (`malformed_call`, policy or resolution failure) no longer blocks
-  the run forever: it stays outstanding until a corrected check of the same kind
-  passes, instead of failing the run after the recovery-note budget. A rejected
-  rerun never replaces evidence from a check that actually ran, and the recovery
-  note for `malformed_call`/`invalid_arguments` tells the model to keep the
-  declared purpose on the corrected call.
+- **fix(harness)**: A declared check rejected before any process launched creates no obligation. Its failed
+  receipt is still handled by the tool-failure guard, and a rejected rerun never replaces evidence from a
+  check that ran.
 - **fix(policy)**: Plan's read-only gate now covers `file_restore`, so a remembered
   allow or ask rule can no longer restore files or prompt in `plan`.
 - **fix(web)**: Only 192.0.0.0/24 and 192.0.2.0/24 are treated as reserved;
@@ -339,9 +368,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Apply a narrow Codex recipe only to its confirmed official native route;
   custom endpoints and unknown models retain neutral guidance.
 
-- **fix(verification)**: Preserve prior checks after authority-identified read-only
-  commands exit nonzero; retain the original failed diagnostic or required check.
-  Clarify explicit inspection intent for PowerShell reads.
+- **fix(verification)**: Commands no longer invalidate earlier declared checks, and the original failed
+  diagnostic or required check stays failed. Clarify explicit inspection intent for PowerShell reads.
 - **fix(approvals)**: Show the total multi-edit count, bounded numbered excerpts
   and omitted-edit notice; preserve Unicode boundaries and full-argument binding.
 - **refactor(policy)**: Share PowerShell wrapper recognition with the resolver,
@@ -351,8 +379,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **fix(tui)**: Reflow long-paragraph storage segments continuously across terminal
   widths, preserving whitespace, inline styles and quote/list indentation.
 
-- **fix(agent)**: Stop final-prose retry loops for confirmed expected-exit
-  mismatches and publish the observed failure without clearing required checks.
+- **fix(agent)**: An expected-exit mismatch is an outstanding failed check, not an immediate failure: a final
+  reply is held up to three times, then the run completes with its verification state `unverified`.
   Clarify native argv/exit handling and multiline JSON edit/write arguments.
 - **fix(history)**: Commit failed-run reports and their final history outbox
   atomically; delivery retains the failed state instead of rejecting the report
@@ -417,10 +445,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or connection errors instead of generic adapter failures.
 - **fix(gui)**: Keep the terminal failure visible when a run ends without a reply.
 
-- **fix(harness)**: Keep background checks stale when code changes during execution;
-  derive terminal check identity from the resolved executable, argv and cwd.
-  Build live and resumed summaries from receipt-backed checks so edits alone
-  cannot claim verified completion.
+- **fix(harness)**: Derive terminal check identity from the resolved executable, argv and cwd. Build live and
+  resumed summaries from receipt-backed checks so edits alone cannot claim verified completion.
 - **fix(search)**: Report files excluded by the per-file size bound as incomplete
   coverage, with explicit exclusion counts.
 - **fix(providers)**: Preserve long Retry-After hints and park before an automatic
@@ -428,9 +454,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **test(runtime)**: Keep the occupied-port startup test independent of existing
   listeners and give SSE deletion checks margin beyond the parked poll interval.
 
-- **fix(harness)**: Keep terminal verification outstanding across unrelated reads,
-  compaction and restart; invalidate passed checks after later mutations. Support
-  explicitly declared negative tests without changing failed execution receipts.
+- **fix(harness)**: Keep declared checks outstanding across unrelated reads, compaction and restart until the
+  same identity passes. Support explicitly declared negative tests without changing failed execution receipts.
 - **fix(providers)**: Restore selected reasoning effort after truncation repair,
   honor bounded Retry-After with jitter, and expose attempt/effective-effort diagnostics.
 - **fix(context)**: Allow one budgeted format repair for malformed checkpoints,

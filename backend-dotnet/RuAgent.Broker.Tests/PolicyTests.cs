@@ -627,6 +627,33 @@ public sealed partial class PolicyEvaluationTests
         Assert.Equal("allow", verdict.Decision);
     }
 
+    /// <remarks>
+    /// Documents current behavior, deliberately unchanged here. The web manifests require approval and
+    /// the v1 engine honours that flag, but the v2 snapshot evaluator allows both web tools under the
+    /// standard preset (standard_web_allow) with no approval. The manifest flag is not consulted on that path.
+    /// </remarks>
+    [Theory]
+    [InlineData("web_search")]
+    [InlineData("web_fetch")]
+    public void Standard_v2_web_tools_skip_approval_although_their_manifest_requires_it(string toolId)
+    {
+        var manifest = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs()).Registry.Get(toolId, "1.0.0").Manifest;
+        Assert.True(manifest.RequiresApproval);
+
+        var arguments = toolId == "web_search"
+            ? new JsonObject { ["query"] = "ru" }
+            : new JsonObject { ["url"] = "https://example.com" };
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var verdict = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry()).Evaluate(
+            lease.Snapshot,
+            factory.Create(toolId, "1.0.0", arguments),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("allow", verdict.Decision);
+        Assert.Equal("standard_web_allow", verdict.ReasonCode);
+    }
+
     [Fact]
     public void Plan_web_allow_rule_does_not_reintroduce_the_old_gate()
     {

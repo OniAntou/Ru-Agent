@@ -156,6 +156,36 @@ private transport remains: tool execution is in process as well (ADR-0012,
 ADR-0014).
 _Avoid_: Runtime HTTP relay
 
+## Approval flow
+
+`AgentApprovalsService` orchestrates a decision and derives no policy. It reads the command
+(`allow_once`, `allow_session_directory`, `allow_always` or `deny`), then:
+
+1. Checks the approval against durable state: the run exists and is `WaitingApproval`, and the
+   approval id is the run's latest persisted `approval.requested` and is unexpired. Otherwise the reply
+   is `409 approval_stale`. The in-process first-writer ledger only guards concurrent HTTP retries.
+2. For an allow with a configured execution authority, probes the Broker without consuming the
+   approval. An approval the Broker no longer holds as pending for the run returns `409 approval_stale`,
+   and nothing is committed. `allow_always` on a tool class the Broker does not remember returns
+   `400 invalid_approval_command`, also before any commit. A deny skips the probe, so a run whose Broker
+   approval has expired can still be ended.
+3. Commits the durable `approval_resolved` transition.
+4. Asks the Broker to consume the approval. The command follows the pending kind: an outside folder
+   always becomes `allow_session_directory`, otherwise `allow_always` or `allow_once`. The Broker
+   returns the authorization token and the remember plan from that same call. Without a token the reply
+   is `502 approval_authorization_failed`, and the committed resolution stands.
+5. Only after authorization: an `allow_always` with a durable matcher saves a project-scope allow rule.
+   A failed save leaves `rule_saved: false` and the session matcher is still remembered. The Host
+   remembers the saved durable matcher, or else the plan's session matcher, in the in-process session
+   ledger. An outside-folder approval writes no ledger entry.
+
+With no configured execution authority, an allow returns `503 broker_gateway_unavailable` before any commit. `allow_session_directory` on an approval that is not for an outside folder returns `400 invalid_approval_command`, also before any commit.
+
+The reply carries `authorization_token` (60 seconds), a `matcher_preview` of the matcher actually
+remembered, `rule_saved`, `reusable_rule_not_saved` and `rule_id`. The matchers come from the Broker
+([Remembered Approval](broker.md#remembered-approval)). The Host copies them into its own matcher type
+and does not parse tool arguments.
+
 ## Run Event Feed
 
 One client-side SSE subscription path owns frame dispatch and bounded reconnect

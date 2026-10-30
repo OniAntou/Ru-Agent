@@ -89,21 +89,7 @@ rows and newer compactions in one read transaction; they do not read all covered
 ciphertexts. Images are queried only for active receipts; current Work State is
 refreshed separately. Restart, eviction or invalidation rebuilds from originals.
 
-Verification receipts retain the recorded tool-request time. Every context load,
-including a warm-cache load, compares required passed checks with workspace
-journal changes at or after that time. Recorded workspace changes during a running check
-make its eventual success stale. Before accepting a no-tool final response, the
-coordinator reloads this host-derived evidence so changes during generation enter
-the existing recovery path. Missing request provenance or incomplete journal
-coverage crossing the check start cannot certify a pass. Pruned changes that all
-precede a fresh check do not make that check stale. Indexed journal high-water
-lookups avoid scanning retained history; missing provenance or an unresolved
-high-water gap makes freshness unknown. Policy-update timestamps alone do not
-represent workspace mutations.
-Checks are conservatively invalidated workspace-wide
-because checks do not currently carry a trustworthy file write set. This observes
-only changes recorded in Ru's journal; direct operating-system writes that Ru does
-not record are outside this freshness signal.
+Verification receipts retain the recorded tool-request time and identity. Context loads project declared checks from original receipts only. They do not compare checks with the workspace change journal, so there is no journal high-water lookup and no workspace-wide invalidation for verification (ADR 0039). The journal itself stays owned by workspace coordination ([ADR 0008](../adr/0008-shared-workspace-coordination.md)).
 
 Successful structured file-tool receipts trigger a path-specific observation
 before the tool returns to orchestration. This shares a persistence gate with
@@ -113,20 +99,7 @@ mutation. This observes results after Broker execution; it adds no execution
 adapter or permission decision to the Host and does not rescan the entire
 workspace on every step.
 
-Broker-authored repair-family metadata distinguishes a direct inline Python
-parse error or confirmed empty pytest discovery from a test that executed and
-failed. Only a later passing
-verification in the same resolved interpreter/cwd family can retire the invalid
-probe obligation. Failed receipts remain historical failures, and expected-exit
-mismatches or project/runtime test failures cannot use this exception.
-
-Explicit `supersedes` bindings between a final verification and a retired,
-previously passing stale check are also projected before compaction. They use
-authority-derived cwd identities and stable check IDs; a provider call ID may
-serve as an alias only when unambiguous. Original checks
-remain in the bounded evidence; a replacement only satisfies them while it is
-passed and fresh. Warm caches and cold history replay apply the same workspace
-journal freshness after reconstructing these bindings.
+Repair-family metadata and `supersedes` retirement are no longer part of verification (ADR 0039). A `supersedes` argument is accepted and ignored. A failed or pending check stays outstanding until the same identity passes. Original receipts remain in durable history, and the projection keeps the latest result for each identity.
 
 The cache admits at most eight runs, 32 MiB estimated weight per run and 64 MiB
 total, with two-minute access validity. Native Responses public-message metadata
@@ -157,12 +130,7 @@ receipt and existing output cursors remain the source for full diagnostics.
 Structured JSON and small output are unchanged. These samples are context,
 not independent verification evidence.
 
-Outstanding-check guidance identifies each check by stable ID, authority-recorded
-working directory, status and next action. A pending background check points to
-its existing terminal execution rather than suggesting another launch. Required
-failures still require repair and rerun; explicit replacement is offered only
-for eligible retired previously passing stale checks. Scope text cannot grant
-authority or establish equivalence between tests.
+Outstanding-check guidance lists each outstanding declared check with its provider call ID, authority-recorded working directory, code and next action: read a pending background check's terminal execution until it exits, repair and rerun a failed check, or report the observed exit of an expected-exit mismatch without forcing the expected code. Inspecting logs does not satisfy a check. The text is bounded and never establishes equivalence between tests.
 
 ## Provider usage anchors
 

@@ -869,7 +869,6 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             ["availability"] = "executable",
             ["model_enabled"] = true,
             ["capability_class"] = "tool",
-            ["verification_required"] = false,
             ["input_schema"] = schema,
         };
     }

@@ -1,7 +1,4 @@
 using System.Collections.Concurrent;
-using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
@@ -29,28 +26,18 @@ namespace RuBackend.Harness;
 
 public sealed class AgentApprovalsService
 {
-    private const int ApprovalToolIdMaxLength = 128;
-    private const int ApprovalToolVersionMaxLength = 32;
-    private const int ApprovalPathMaxLength = 4096;
-    private const int ApprovalExecutableMaxLength = 256;
-    private const int ApprovalCwdMaxLength = 4096;
-    private const int ApprovalArgumentMaxLength = 4096;
-    private const int ApprovalScriptMaxLength = 16_000;
     private readonly IHarnessEventStore _store;
     private readonly HarnessSqliteOptions _options;
     private readonly SqliteWorkspaceStore _workspaceStore;
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
-    private readonly HarnessPayloadStore _payloadStore;
     private readonly IHarnessKeyStore _keyStore;
-    private readonly IAgentRuntimeRootRegistry _runtimeRoots;
     private readonly Broker.IToolGatewayFactory _brokerGateways;
     private readonly AgentV1SubagentGuard _subagentGuard;
 
     public AgentApprovalsService(IHarnessEventStore store, HarnessSqliteOptions options,
         SqliteWorkspaceStore workspaceStore, IIdGenerator ids, ITimeProvider time,
-        HarnessPayloadStore payloadStore, IHarnessKeyStore keyStore,
-        IAgentRuntimeRootRegistry runtimeRoots, Broker.IToolGatewayFactory brokerGateways,
+        IHarnessKeyStore keyStore, Broker.IToolGatewayFactory brokerGateways,
         AgentV1SubagentGuard subagentGuard)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -58,9 +45,7 @@ public sealed class AgentApprovalsService
         _workspaceStore = workspaceStore ?? throw new ArgumentNullException(nameof(workspaceStore));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
         _time = time ?? throw new ArgumentNullException(nameof(time));
-        _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
         _keyStore = keyStore ?? throw new ArgumentNullException(nameof(keyStore));
-        _runtimeRoots = runtimeRoots ?? throw new ArgumentNullException(nameof(runtimeRoots));
         _brokerGateways = brokerGateways ?? throw new ArgumentNullException(nameof(brokerGateways));
         _subagentGuard = subagentGuard ?? throw new ArgumentNullException(nameof(subagentGuard));
     }
@@ -73,11 +58,6 @@ public sealed class AgentApprovalsService
     // in this process, and tests clear it via ClearHostApprovalsForTests.
     private static readonly ConcurrentDictionary<string, DateTimeOffset> HostApprovalLedger = new(StringComparer.Ordinal);
     private static readonly TimeSpan HostApprovalLedgerTtl = TimeSpan.FromMinutes(30);
-
-    // The remembered terminal pattern keeps at most this many leading non-flag
-    // argv tokens: the subcommand shape ("git status", "npm run build"), never
-    // the full argument list the call happened to carry.
-    private const int MaxRememberedArgvTokens = 2;
 
     internal static void ClearHostApprovalsForTests() => HostApprovalLedger.Clear();
 
@@ -178,15 +158,9 @@ public sealed class AgentApprovalsService
         // first-writer-wins guard for HTTP retries.
         ApprovalId? latestPendingId = null;
         HarnessEvent? pendingApprovalEvent = null;
-        var proposedEvents = new Dictionary<string, HarnessEvent>(StringComparer.Ordinal);
         await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
         {
-            if (envelope.Event.Kind == "tool.proposed"
-                && envelope.Event.ToolCallId is { } proposedToolCall)
-            {
-                proposedEvents[proposedToolCall.Value] = envelope.Event;
-            }
-            else if (envelope.Event.Kind == "approval.requested"
+            if (envelope.Event.Kind == "approval.requested"
                 && envelope.Event.ApprovalId is { } id)
             {
                 latestPendingId = id;
@@ -196,7 +170,6 @@ public sealed class AgentApprovalsService
 
         if (latestPendingId is null || !string.Equals(latestPendingId.Value.Value, approvalIdRaw, StringComparison.Ordinal))
         {
-
             return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
         }
 
@@ -206,25 +179,25 @@ public sealed class AgentApprovalsService
             return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
         }
 
-        ToolApprovalBinding? approvalBinding = null;
-        if (pendingApprovalEvent?.ToolCallId is { } pendingToolCallId
-            && proposedEvents.TryGetValue(pendingToolCallId.Value, out var proposedEvent)
-            && proposedEvent.PayloadId is { } proposalPayloadId)
+        // Before anything commits, an allow must still be a pending approval the Broker holds. The Host
+        // answers 409 approval_stale for an approval the Broker no longer knows or has let expire, rather than
+        // committing a resolution the execution authority would then fail to authorize (502). The same
+        // non-consuming read says whether allow_always may remember the tool class. Deny is not gated: it
+        // commits the denial and then makes a best-effort Broker cleanup, so a run whose Broker approval is
+        // gone can still be ended. An unconfigured authority is refused below with 503 instead.
+        if (!isDeny && _brokerGateways is { IsConfigured: true })
         {
-            approvalBinding = await BuildApprovalBindingAsync(
-                    run,
-                    pendingToolCallId,
-                    proposalPayloadId,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
+            var probe = await _brokerGateways.ProbeApprovalAsync(runIdRaw, approvalIdRaw, cancellationToken).ConfigureAwait(false);
+            if (!probe.Known)
+            {
+                return BoundedError(409, "approval_stale", "Approval binding is missing or invalid.");
+            }
 
-        if (approvalBinding is null)
-        {
-            return BoundedError(409, "approval_stale", "Approval binding is missing or invalid.");
+            if (isAllowAlways && !probe.Rememberable)
+            {
+                return BoundedError(400, "invalid_approval_command", "This mutation requires a one-time approval.");
+            }
         }
-        if (isAllowAlways && !CanRememberApproval(approvalBinding))
-            return BoundedError(400, "invalid_approval_command", "This mutation requires a one-time approval.");
 
         // allow_session_directory is only meaningful for external folders;
         // terminal risk stays a one-time token. Anything else fails closed.
@@ -329,29 +302,9 @@ public sealed class AgentApprovalsService
                 "Approval requires the execution authority, which is not configured.");
         }
 
-        // allow_always remembers a bounded pattern as a project-scope allow
-        // rule so a later matching call authorizes without asking. The pattern
-        // is derived from the reviewed intent, never widened past it: a rule
-        // save never widens the current authorization (the Broker token is
-        // still single-use and bound to this exact intent), protected paths
-        // still deny before rules, and a save failure or a one-time-only
-        // reason degrades to allow_once.
-        var durableMatcher = BuildAllowAlwaysMatcher(
-            approvalBinding,
-            pendingApprovalEvent?.SafeCode,
-            externalDirectoryRequested);
-        string? savedRuleId = null;
-        var ruleSaved = false;
-        if (isAllowAlways && durableMatcher is not null)
-        {
-            (ruleSaved, savedRuleId) = await TrySaveAllowAlwaysRuleAsync(
-                run, durableMatcher, cancellationToken).ConfigureAwait(false);
-        }
-
-        // Pi-style: an allow is a decision about this call. The durable
-        // resolution commits first; the exact approved intent is then
-        // remembered for the Agent session, and the Broker grant below
-        // authorizes the call in flight.
+        // Pi-style: an allow is a decision about this call. The durable resolution commits first; the Broker
+        // grant then authorizes the call in flight, and only after that is a reusable rule saved or the intent
+        // remembered for the session.
         var allowTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
         if (!allowTransition.Accepted)
         {
@@ -379,46 +332,28 @@ public sealed class AgentApprovalsService
             return BoundedError(409, "commit_conflict", "Commit conflict.");
         }
 
-        // One allow is remembered for the session: the approved pattern (when
-        // allow_always saved one) or the exact intent is materialized into
-        // later policy snapshots for this Agent session, so a later matching
-        // call evaluates as allowed without another prompt. The decision is
-        // durable at this point, and the memory still only ever allows what
-        // the Broker can match. External-directory approvals keep the Broker
-        // folder grant: the durable rule already covers later runs, so no
-        // session entry is added for them.
-        if (!externalDirectoryRequested && CanRememberApproval(approvalBinding))
-        {
-            SessionApprovalLedger.Remember(
-                run.SessionId.Value,
-                isAllowAlways && ruleSaved && durableMatcher is not null
-                    ? durableMatcher
-                    : BuildApprovalMatcher(approvalBinding),
-                _time.UtcNow);
-        }
-
-        // The grant is issued only after the durable approval resolution is
-        // committed: a commit conflict must not consume a Broker authorization
-        // that the Host then reports as stale.
-        // The Broker command follows the pending kind, never the caller's
-        // wording: external folders become a session grant, everything else
-        // stays a one-time token. allow_always bridges as itself so the
-        // execution authority binds the same exact intent; the reusable rule
-        // is a Host-side project record created above.
-        string? brokerAuthorizationToken = null;
+        // The grant is issued only after the durable approval resolution is committed: a commit conflict must
+        // not consume a Broker authorization that the Host then reports as stale. The Broker command follows the
+        // pending kind, never the caller's wording: external folders become a session grant, everything else
+        // stays a one-time token. The remember plan comes back from this same consuming call, so the Host saves
+        // and remembers only what the Broker decided may be remembered.
         var brokerCommand = externalDirectoryRequested
             ? "allow_session_directory"
             : isAllowAlways ? "allow_always" : "allow_once";
         bool bridged;
+        string? brokerAuthorizationToken;
+        RuAgent.Broker.Policy.ApprovalRememberPlan? rememberPlan;
         try
         {
-            (bridged, brokerAuthorizationToken) = await _brokerGateways
+            (bridged, brokerAuthorizationToken, rememberPlan) = await _brokerGateways
                 .RespondApprovalAsync(runIdRaw, approvalIdRaw, brokerCommand, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (ToolTransportException)
         {
             bridged = false;
+            brokerAuthorizationToken = null;
+            rememberPlan = null;
         }
 
         if (!bridged || string.IsNullOrWhiteSpace(brokerAuthorizationToken))
@@ -430,24 +365,42 @@ public sealed class AgentApprovalsService
                 "The approval was recorded but the execution authority did not authorize it.");
         }
 
-        // The Broker grant or one-time token authorizes this call; the Host
-        // additionally remembers the approved pattern for the session (and, for
-        // allow_always, as the durable project record above). The preview shows
-        // the matcher the rule actually carries, so a client can tell the user
-        // what "always" remembered.
-        var previewMatcher = ruleSaved && durableMatcher is not null
-            ? durableMatcher
-            : BuildApprovalMatcher(approvalBinding);
-        var matcherPreview = new
+        // The Broker grant authorizes this call. Only now is a reusable rule saved, and only for allow_always
+        // with the durable pattern the Broker built; a save failure, or a call the Broker would not remember,
+        // degrades to allow_once.
+        var plan = rememberPlan ?? RuAgent.Broker.Policy.ApprovalRememberPlan.None;
+        var durableMatcher = plan.DurableMatcher is { } durable ? ToHostMatcher(durable) : null;
+        string? savedRuleId = null;
+        var ruleSaved = false;
+        if (isAllowAlways && durableMatcher is not null)
         {
-            tool_id = previewMatcher.ToolId,
-            tool_version = previewMatcher.ToolVersion,
-            canonical_path = previewMatcher.CanonicalPathPattern,
-            resolved_executable = previewMatcher.ResolvedExecutable,
-            argv_pattern = previewMatcher.ArgvPattern,
-            cwd_pattern = previewMatcher.CwdPattern,
-            operation_class = previewMatcher.OperationClass,
-            network_intent = previewMatcher.NetworkIntent,
+            (ruleSaved, savedRuleId) = await TrySaveAllowAlwaysRuleAsync(
+                run, durableMatcher, cancellationToken).ConfigureAwait(false);
+        }
+
+        // The matcher this approval remembers: the saved durable pattern when one was stored, otherwise the exact
+        // intent the Broker plan carries. External-directory approvals add no session entry, because the durable
+        // folder rule already covers later runs.
+        var rememberedMatcher = ruleSaved && durableMatcher is not null
+            ? durableMatcher
+            : plan.SessionMatcher is { } sessionIntent ? ToHostMatcher(sessionIntent) : null;
+        if (!externalDirectoryRequested && rememberedMatcher is not null)
+        {
+            SessionApprovalLedger.Remember(run.SessionId.Value, rememberedMatcher, _time.UtcNow);
+        }
+
+        // The preview shows the matcher the rule actually carries, so a client can tell the user what "always"
+        // remembered.
+        var matcherPreview = rememberedMatcher is null ? null : new
+        {
+            tool_id = rememberedMatcher.ToolId,
+            tool_version = rememberedMatcher.ToolVersion,
+            canonical_path = rememberedMatcher.CanonicalPathPattern,
+            resolved_executable = rememberedMatcher.ResolvedExecutable,
+            argv_pattern = rememberedMatcher.ArgvPattern,
+            cwd_pattern = rememberedMatcher.CwdPattern,
+            operation_class = rememberedMatcher.OperationClass,
+            network_intent = rememberedMatcher.NetworkIntent,
             scope = ruleSaved ? "project" : "once"
         };
 
@@ -508,460 +461,15 @@ public sealed class AgentApprovalsService
     }
 
     /// <summary>
-    /// Builds the bounded pattern an allow_always decision remembers as a
-    /// project-scope allow rule, or null when the ask must stay one-time.
-    /// Terminal run calls remember the resolved executable plus at most two
-    /// leading non-flag argv tokens in the exact launch directory (the
-    /// Claude-style command prefix: "git status", "npm run build"); shell-mode
-    /// scripts and flag-first invocations stay exact because a prefix of them
-    /// would remember more than the user reviewed. An external-directory ask
-    /// remembers the approved folder as a path pattern covering its subtree.
-    /// Protected-path and explicit-ask reasons never become a reusable rule:
-    /// remembering the first grants standing access to a credential directory,
-    /// and an explicit ask outranks any allow rule anyway.
+    /// The Host's stored form of a Broker-built matcher. The Broker derives every field; the Host copies them.
     /// </summary>
-    internal static PolicyMatcher? BuildAllowAlwaysMatcher(
-        ToolApprovalBinding approvalBinding,
-        string? askSafeCode,
-        bool externalDirectoryRequested)
-    {
-        ArgumentNullException.ThrowIfNull(approvalBinding);
-        if (!CanRememberApproval(approvalBinding)) return null;
-        if (!externalDirectoryRequested
-            && askSafeCode is "terminal_protected_path_requires_approval" or "rule_asks")
-        {
-            return null;
-        }
-
-        if (externalDirectoryRequested)
-        {
-            var pattern = BuildExternalDirectoryPattern(approvalBinding.CanonicalPath);
-            return pattern is null
-                ? null
-                : new PolicyMatcher(CanonicalPathPattern: pattern);
-        }
-
-        return new PolicyMatcher(
-            approvalBinding.ToolId,
-            approvalBinding.ToolVersion,
-            approvalBinding.CanonicalPath,
-            approvalBinding.ResolvedExecutable,
-            GeneralizeTerminalArgv(approvalBinding),
-            approvalBinding.Cwd,
-            approvalBinding.OperationClass,
-            approvalBinding.NetworkIntent);
-    }
-
-    // Path/argv matchers cannot bind patch contents, recovery IDs or execution IDs.
-    // Their single-use authority must never turn into a session-wide allow.
-    internal static bool CanRememberApproval(ToolApprovalBinding binding) =>
-        binding.OperationClass is not ("patch" or "restore")
-        && binding.ToolId != "run_code"
-        && !(binding.OperationClass == "read" && binding.ToolId is "bash" or "terminal_read" or "terminal_stop");
-
-    /// <summary>
-    /// A bounded command prefix for a remembered terminal run: keep at most the
-    /// first two argv tokens that do not start with '-', which is the
-    /// subcommand shape. Nothing usable to keep returns the exact argv.
-    /// </summary>
-    private static IReadOnlyList<string> GeneralizeTerminalArgv(ToolApprovalBinding approvalBinding)
-    {
-        var argv = approvalBinding.Argv;
-        if (!IsTerminalRunTool(approvalBinding.ToolId)
-            || IsShellModeInvocation(approvalBinding.ResolvedExecutable, argv))
-        {
-            return argv;
-        }
-
-        var take = 0;
-        while (take < argv.Count
-            && take < MaxRememberedArgvTokens
-            && !IsLeadingFlag(argv[take]))
-        {
-            take++;
-        }
-
-        return take == 0 ? argv : argv.Take(take).ToArray();
-    }
-
-    private static bool IsTerminalRunTool(string toolId) =>
-        string.Equals(toolId, "bash", StringComparison.Ordinal)
-        || string.Equals(toolId, "run_process", StringComparison.Ordinal);
-
-    private static bool IsLeadingFlag(string argument) =>
-        argument.StartsWith("-", StringComparison.Ordinal)
-        || argument.StartsWith("/", StringComparison.Ordinal);
-
-    /// <summary>
-    /// Shell mode is persisted as a known shell wrapper around one script
-    /// string. Recognizing the shape keeps the remembered rule exact: a prefix
-    /// of arbitrary shell text is not a safe pattern.
-    /// </summary>
-    private static bool IsShellModeInvocation(string? executable, IReadOnlyList<string> argv)
-    {
-        if (executable is null || argv.Count < 4)
-        {
-            return false;
-        }
-
-        var name = Path.GetFileName(executable);
-        var isShell = string.Equals(name, "powershell", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(name, "powershell.exe", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(name, "pwsh", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(name, "pwsh.exe", StringComparison.OrdinalIgnoreCase);
-        return isShell
-            && string.Equals(argv[0], "-NoProfile", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(argv[1], "-NonInteractive", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(argv[2], "-Command", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// The approved external path as a bounded directory pattern: the nearest
-    /// existing ancestor directory (a file target grants its parent), resolved
-    /// to its canonical final path so the pattern matches the canonical
-    /// candidate the Broker evaluates, plus a subtree suffix. Null when nothing
-    /// usable or representable exists: the save then degrades to allow_once.
-    /// </summary>
-    internal static string? BuildExternalDirectoryPattern(string? approvedPath)
-    {
-        if (string.IsNullOrWhiteSpace(approvedPath) || approvedPath.Length > ApprovalPathMaxLength)
-        {
-            return null;
-        }
-
-        try
-        {
-            var full = Path.GetFullPath(approvedPath);
-            var directory = Directory.Exists(full) ? full : Path.GetDirectoryName(full);
-            while (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                directory = Path.GetDirectoryName(directory);
-            }
-
-            if (string.IsNullOrEmpty(directory))
-            {
-                return null;
-            }
-
-            // Same canonicalization the terminal cwd binding uses, so the
-            // pattern matches the final-path candidate and cannot be
-            // retargeted by an intermediate link.
-            var canonical = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(directory);
-            // 4096 is the matcher's path-pattern cap; the "\**" suffix must fit.
-            if (string.IsNullOrWhiteSpace(canonical) || canonical.Length + 3 > 4096)
-            {
-                return null;
-            }
-
-            canonical = canonical.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return canonical.Length == 0 ? null : canonical + "\\**";
-        }
-        catch (Exception error) when (error is ArgumentException
-            or NotSupportedException
-            or PathTooLongException
-            or IOException
-            or System.Security.SecurityException)
-        {
-            return null;
-        }
-    }
-
-    private static PolicyMatcher BuildApprovalMatcher(ToolApprovalBinding approvalBinding) => new(
-        approvalBinding.ToolId,
-        approvalBinding.ToolVersion,
-        approvalBinding.CanonicalPath,
-        approvalBinding.ResolvedExecutable,
-        approvalBinding.Argv,
-        approvalBinding.Cwd,
-        approvalBinding.OperationClass,
-        approvalBinding.NetworkIntent);
-
-    private async Task<ToolApprovalBinding?> BuildApprovalBindingAsync(
-        AgentRun run,
-        ToolCallId toolCallId,
-        PayloadId payloadId,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var payload = await _payloadStore
-                .ReadForClientAsync(run.RunId, payloadId, cancellationToken)
-                .ConfigureAwait(false);
-            var envelope = ToolArgumentsCodec.Deserialize(payload.Plaintext);
-            if (!envelope.IsObject || envelope.ToolId is null || envelope.ToolVersion is null || !envelope.HasObjectArguments)
-            {
-                return null;
-            }
-
-            var root = envelope.Root;
-            var arguments = envelope.Arguments;
-            var toolId = ReadString(root, "tool_id", ApprovalToolIdMaxLength);
-            var toolVersion = ReadString(root, "tool_version", ApprovalToolVersionMaxLength);
-            if (toolId is null || toolVersion is null)
-            {
-                return null;
-            }
-            var advertisedToolId = toolId;
-            var originalArguments = arguments;
-            if (RuAgent.Protocol.CodingToolArguments.AdapterToolId(toolId) is { } adapterToolId)
-            {
-                arguments = JsonSerializer.SerializeToElement(RuAgent.Protocol.CodingToolArguments.ToAdapterArguments(toolId,
-                    System.Text.Json.Nodes.JsonNode.Parse(arguments.GetRawText())!.AsObject()));
-                toolId = adapterToolId;
-            }
-
-            var op = arguments.TryGetProperty("op", out var opNode) && opNode.ValueKind == JsonValueKind.String
-                ? opNode.GetString()
-                : null;
-            var mode = arguments.TryGetProperty("mode", out var modeNode) && modeNode.ValueKind == JsonValueKind.String
-                ? modeNode.GetString()
-                : null;
-            var isBash = string.Equals(toolId, "bash", StringComparison.Ordinal);
-            var isLifecycle = isBash && mode is "read_output" or "kill";
-            if (isBash && mode is not ("run" or "shell" or "read_output" or "kill"))
-            {
-                return null;
-            }
-
-            // write still discriminates by op, so it must carry one that maps. read does
-            // not any more: list and help are their own tools, so a missing op on read is
-            // no longer a malformed call.
-            if (string.Equals(toolId, "write", StringComparison.Ordinal) && MapPiOp(toolId, op) is null)
-            {
-                return null;
-            }
-
-            var canonicalPath = ReadString(arguments, "path", ApprovalPathMaxLength);
-            var requestedExecutable = ReadString(arguments, "executable", ApprovalExecutableMaxLength);
-            var shellRuntime = ReadString(arguments, "shell", 32) ?? "powershell";
-            var argv = ReadStringArray(arguments, "arguments");
-            var isShellMode = isBash && string.Equals(mode, "shell", StringComparison.Ordinal);
-            if (isShellMode)
-            {
-                if (!string.Equals(shellRuntime, "powershell", StringComparison.OrdinalIgnoreCase)
-                    && !string.Equals(shellRuntime, "pwsh", StringComparison.OrdinalIgnoreCase))
-                {
-                    return null;
-                }
-
-                var script = ReadString(arguments, "script", ApprovalScriptMaxLength);
-                if (script is null)
-                {
-                    return null;
-                }
-
-                requestedExecutable = shellRuntime;
-                argv = ["-NoProfile", "-NonInteractive", "-Command", script];
-            }
-            else if (isBash
-                && string.Equals(mode, "run", StringComparison.Ordinal)
-                && requestedExecutable is null)
-            {
-                return null;
-            }
-
-            if ((toolId is "read" or "write" or "grep" or "glob") && MapPiOp(toolId, op) is null)
-            {
-                return null;
-            }
-
-            if (toolId is "read" or "list" or "write" or "edit" or "grep" or "glob"
-                && canonicalPath is null
-                && !IsTargetFreePiOp(toolId, op))
-            {
-                return null;
-            }
-
-            var cwd = ReadString(arguments, "working_directory", ApprovalCwdMaxLength);
-            if (isBash && !isLifecycle)
-            {
-                if (!_runtimeRoots.TryGetRoot(run.RunId, out var rootPath)
-                    || string.IsNullOrWhiteSpace(rootPath))
-                {
-                    return null;
-                }
-
-                var trustedRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(rootPath);
-                var requestedCwd = cwd ?? ".";
-                var candidateCwd = Path.IsPathRooted(requestedCwd)
-                    ? Path.GetFullPath(requestedCwd)
-                    : Path.GetFullPath(Path.Combine(trustedRoot, requestedCwd));
-                if (!Directory.Exists(candidateCwd))
-                {
-                    return null;
-                }
-
-                // The gateway stores the final directory identity in its policy
-                // context. Resolve the same identity here so a reusable approval
-                // cannot be silently bound to a lexical path or a retargeted link.
-                cwd = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(candidateCwd);
-            }
-
-            var operationClass = (toolId, MapPiOp(toolId, op), isShellMode, isBash, mode) switch
-            {
-                ("read", "list", _, _, _) => "list",
-                ("read", "read", _, _, _) => "read",
-                ("read", "help", _, _, _) => "read",
-                ("grep", _, _, _, _) => "search",
-                ("glob", _, _, _, _) => "glob",
-                ("web_search", _, _, _, _) => "search",
-                ("web_fetch", _, _, _, _) => "fetch",
-                ("write", "write", _, _, _) => "write",
-                ("write", "delete", _, _, _) => "delete",
-                ("write", "restore", _, _, _) => "restore",
-                ("edit", _, _, _, _) => "edit",
-                ("apply_patch", _, _, _, _) => "patch",
-                (_, _, _, true, "read_output" or "kill") => "read",
-                (_, _, _, true, _) => "terminal",
-                ("files.list", _, _, _, _) => "list",
-                ("files.glob", _, _, _, _) => "glob",
-                ("files.search", _, _, _, _) => "search",
-                ("files.read", _, _, _, _) => "read",
-                ("files.write", _, _, _, _) => "write",
-                ("files.edit", _, _, _, _) => "edit",
-                // Legacy persisted-approval replay only: proposals persisted by
-                // builds that still advertised apply_patch must stay approvable
-                // after an upgrade. Not model-reachable.
-                ("files.apply_patch", _, _, _, _) => "patch",
-                ("files.delete", _, _, _, _) => "delete",
-                ("files.restore", _, _, _, _) => "restore",
-                ("terminal.run", _, _, _, _) => "terminal",
-                ("terminal.shell", _, _, _, _) => "terminal",
-                _ => "mutation",
-            };
-            var networkIntent = "none";
-            if (arguments.TryGetProperty("network_intent", out var network))
-            {
-                if (network.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-                {
-                    return null;
-                }
-
-                networkIntent = network.ValueKind == JsonValueKind.True ? "declared" : "none";
-            }
-            // Legacy field name kept for replay of proposals persisted by older
-            // builds; current proposals declare network_intent.
-            else if (arguments.TryGetProperty("network", out var legacyNetwork))
-            {
-                if (legacyNetwork.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-                {
-                    return null;
-                }
-
-                networkIntent = legacyNetwork.ValueKind == JsonValueKind.True ? "declared" : "none";
-            }
-            var intentHash = HarnessIntentCanonicalizer.ComputeHash(
-                advertisedToolId,
-                toolVersion,
-                originalArguments);
-
-            return new ToolApprovalBinding(
-                run.RunId,
-                toolCallId,
-                advertisedToolId,
-                toolVersion,
-                canonicalPath,
-                requestedExecutable,
-                argv,
-                cwd,
-                operationClass,
-                networkIntent,
-                run.PolicySnapshotVersion,
-                intentHash,
-                _time.UtcNow.AddMinutes(30));
-        }
-        catch (Exception error) when (error is JsonException
-            or InvalidOperationException
-            or ArgumentException
-            or IOException
-            or HarnessStoreException
-            or CryptographicException)
-        {
-            return null;
-        }
-    }
-
-    private static string? MapPiOp(string toolId, string? op) => (toolId, op) switch
-    {
-        // read carries no discriminator since the surface split; list and help are
-        // first-class tools, so there is no (read, op) pair left to map.
-        ("read", _) => "read",
-        ("list", _) => "list",
-        ("help", _) => "help",
-        ("grep", _) => "grep",
-        ("glob", _) => "glob",
-        ("web_search", _) => "web_search",
-        ("web_fetch", _) => "web_fetch",
-        ("write", "write") => "write",
-        ("write", "delete") => "delete",
-        ("write", "restore") => "restore",
-        _ => null,
-    };
-
-    private static bool IsTargetFreePiOp(string toolId, string? op) =>
-        string.Equals(toolId, "help", StringComparison.Ordinal)
-        || string.Equals(toolId, "web_search", StringComparison.Ordinal)
-        || string.Equals(toolId, "web_fetch", StringComparison.Ordinal);
-
-    private static string? ReadString(JsonElement objectNode, string propertyName, int maxLength)
-    {
-        if (!objectNode.TryGetProperty(propertyName, out var value)
-            || value.ValueKind == JsonValueKind.Null)
-        {
-            return null;
-        }
-
-        if (value.ValueKind != JsonValueKind.String)
-        {
-            throw new ArgumentException($"{propertyName} must be a string", propertyName);
-        }
-
-        var text = value.GetString();
-        if (text is null
-            || string.IsNullOrWhiteSpace(text)
-            || text.Length > maxLength
-            || text.Contains('\0'))
-        {
-            throw new ArgumentException($"{propertyName} is invalid", propertyName);
-        }
-
-        return text;
-    }
-
-    private static IReadOnlyList<string> ReadStringArray(JsonElement objectNode, string propertyName)
-    {
-        if (!objectNode.TryGetProperty(propertyName, out var value)
-            || value.ValueKind == JsonValueKind.Null)
-        {
-            return Array.Empty<string>();
-        }
-
-        if (value.ValueKind != JsonValueKind.Array)
-        {
-            throw new ArgumentException("arguments array is invalid", propertyName);
-        }
-
-        var values = new List<string>();
-        if (value.GetArrayLength() > RuAgent.Protocol.TerminalLimits.MaxArguments)
-        {
-            throw new ArgumentException("arguments array is too large", propertyName);
-        }
-
-        foreach (var item in value.EnumerateArray())
-        {
-            if (item.ValueKind != JsonValueKind.String || item.GetString() is not { } text)
-            {
-                throw new ArgumentException("arguments array is invalid", propertyName);
-            }
-
-            if (text.Length > ApprovalArgumentMaxLength || text.Contains('\0'))
-            {
-                throw new ArgumentException("arguments array is invalid", propertyName);
-            }
-
-            values.Add(text);
-        }
-
-        return values;
-    }
+    private static PolicyMatcher ToHostMatcher(BrokerPolicyMatcherWire matcher) => new(
+        matcher.ToolId,
+        matcher.ToolVersion,
+        matcher.CanonicalPathPattern,
+        matcher.ResolvedExecutable,
+        matcher.ArgvPattern,
+        matcher.CwdPattern,
+        matcher.OperationClass,
+        matcher.NetworkIntent);
 }

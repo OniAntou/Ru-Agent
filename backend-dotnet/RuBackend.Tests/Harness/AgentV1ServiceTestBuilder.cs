@@ -94,7 +94,7 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
             queries,
             lifecycle,
             new AgentApprovalsService(fixture.EventStore, fixture.Options, workspaces, ids, time,
-                fixture.PayloadStore, fixture.KeyStore, roots, gateway, guard),
+                fixture.KeyStore, gateway, guard),
             commands,
             new AgentInputsService(fixture.EventStore, ids, time, fixture.PayloadStore, guard),
             new AgentPoliciesService(fixture.EventStore, fixture.Options, workspaces, ids, time,

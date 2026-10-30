@@ -79,15 +79,18 @@ public static class BrokerPolicyContracts
     /// <c>ask_user</c> is excluded because it has no Broker binding and must never be
     /// dispatchable through the execution authority.
     /// </summary>
+    /// <summary>The Broker-bound tools in model order: every row except the host-intercepted ask_user.</summary>
     public static IReadOnlyList<string> AuthoritativeFallbackCapabilities() =>
-        AgentToolDefinitionCatalog.Get()
-            .Where(definition => definition.ToolId is not "ask_user")
-            .Select(definition => definition.ToolId)
+        RuAgent.Protocol.Tools.AgentToolDescriptorTable.BrokerBound
+            .Select(row => row.Id)
             .ToArray();
 
+    /// <summary>
+    /// Read-only means the descriptor's access class is ReadOnly, the same source the gateways classify
+    /// by. An unknown tool is not read-only.
+    /// </summary>
     public static bool IsReadOnlyTool(string toolId) =>
-        IsWebTool(toolId)
-        || toolId is "read" or "read_file" or "list" or "help" or "skill" or "grep" or "glob" or "terminal_read";
+        RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find(toolId) is { Access: RuAgent.Protocol.Tools.AgentToolAccess.ReadOnly };
 
     public static bool IsWebTool(string toolId) =>
         string.Equals(toolId, "web_search", StringComparison.Ordinal)

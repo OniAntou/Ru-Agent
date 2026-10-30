@@ -1214,7 +1214,6 @@ public sealed partial class ModelStepServiceTests
             ["availability"] = "executable",
             ["model_enabled"] = true,
             ["capability_class"] = "tool",
-            ["verification_required"] = false,
         },
     };
 

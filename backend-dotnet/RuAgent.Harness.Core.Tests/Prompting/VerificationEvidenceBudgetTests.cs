@@ -55,11 +55,11 @@ public sealed class VerificationEvidenceBudgetTests
     }
 
     [Theory]
-    [InlineData("read_only", true, false)]
-    [InlineData("read_only", false, true)]
-    [InlineData("unknown", true, true)]
-    [InlineData(null, true, true)]
-    public void Only_authority_identified_read_only_commands_preserve_passed_checks(string? effect, bool identity, bool stale)
+    [InlineData("read_only", true)]
+    [InlineData("read_only", false)]
+    [InlineData("unknown", true)]
+    [InlineData(null, true)]
+    public void Undeclared_commands_with_any_read_only_metadata_never_change_a_passed_check(string? effect, bool identity)
     {
         var verify = Batch(1, "verify", new { executable = "test", purpose = "verification" }, true);
         var content = JsonSerializer.Serialize(new { exit_code = 0, terminal_effect = effect,
@@ -67,7 +67,7 @@ public sealed class VerificationEvidenceBudgetTests
         var read = VerificationCompletionTests.Batch(3, "status", "run_process", "{\"executable\":\"git\",\"arguments\":[\"status\"]}",
             ToolExecutionOutcome.Succeeded, "ok", content);
         var evidence = VerificationCompletionTests.Snapshot(verify.Concat(read)).VerificationEvidence;
-        Assert.Equal(stale ? "verification_stale" : null, evidence.BlockingCode);
+        Assert.Null(evidence.BlockingCode);
     }
 
     [Theory]
@@ -89,7 +89,7 @@ public sealed class VerificationEvidenceBudgetTests
     [InlineData("{\"exit_code\":\"0\"}")]
     [InlineData("{\"exit_code\":0,\"background\":true}")]
     [InlineData("{\"exit_code\":0,\"state\":\"killed\"}")]
-    public void Malformed_or_incomplete_read_metadata_cannot_preserve_passed_checks(string output)
+    public void Malformed_or_incomplete_read_metadata_never_changes_a_passed_check(string output)
     {
         var verify = Batch(1, "verify", new { executable = "test", purpose = "verification" }, true);
         var metadata = System.Text.Json.Nodes.JsonNode.Parse(output)!.AsObject();
@@ -97,15 +97,15 @@ public sealed class VerificationEvidenceBudgetTests
         metadata["verification_identity"] = new string('a', 64);
         var read = VerificationCompletionTests.Batch(3, "status", "run_process", "{\"executable\":\"git\"}",
             ToolExecutionOutcome.Succeeded, "ok", metadata.ToJsonString());
-        Assert.Equal("verification_stale", VerificationCompletionTests.Snapshot(verify.Concat(read)).VerificationEvidence.BlockingCode);
+        Assert.Null(VerificationCompletionTests.Snapshot(verify.Concat(read)).VerificationEvidence.BlockingCode);
     }
 
     [Fact]
-    public void Failed_default_command_invalidates_checks_even_if_failed_receipt_does_not_claim_effects()
+    public void Failed_default_command_does_not_change_a_passed_check_even_without_claimed_effects()
     {
         var entries = Batch(1, "verify", new { executable = "test", purpose = "verification" }, true)
             .Concat(Batch(3, "failed-command", new { executable = "command" }, false));
-        Assert.Equal("verification_stale", VerificationCompletionTests.Snapshot(entries).VerificationEvidence.BlockingCode);
+        Assert.Null(VerificationCompletionTests.Snapshot(entries).VerificationEvidence.BlockingCode);
     }
 
     private static ModelContextEntry[] Batch(long sequence, string id, object arguments, bool success) =>

@@ -70,13 +70,13 @@ public sealed class UnverifiedSourceEditTests
     }
 
     [Fact]
-    public void A_passed_check_followed_by_an_edit_stays_stale_and_is_not_nudged()
+    public void A_passed_check_followed_by_an_edit_is_not_an_obligation_but_is_nudged_once()
     {
         var context = Snapshot(Passing(1).Concat(Edit(3)));
 
         Assert.True(context.VerificationEvidence.SourceEditAwaitingVerification);
-        Assert.Equal("verification_stale", context.VerificationEvidence.BlockingCode);
-        Assert.False(UnverifiedSourceEditGuard.ShouldAdvise(context));
+        Assert.Null(context.VerificationEvidence.BlockingCode);
+        Assert.True(UnverifiedSourceEditGuard.ShouldAdvise(context));
     }
 
     [Fact]
@@ -90,14 +90,14 @@ public sealed class UnverifiedSourceEditTests
     }
 
     [Fact]
-    public void Verification_rejected_before_launch_keeps_the_edit_awaiting_and_the_check_outstanding()
+    public void Verification_rejected_before_launch_keeps_the_edit_awaiting_without_an_obligation()
     {
         var context = Snapshot(Edit(1).Concat(Batch(3, "malformed", "run_process",
             """{"executable":"python","purpose":"verification"}""", ToolExecutionOutcome.Failed, "malformed_call", "{}")));
 
         Assert.True(context.VerificationEvidence.SourceEditAwaitingVerification);
-        Assert.NotNull(context.VerificationEvidence.BlockingCode);
-        Assert.False(UnverifiedSourceEditGuard.ShouldAdvise(context));
+        Assert.Null(context.VerificationEvidence.BlockingCode);
+        Assert.True(UnverifiedSourceEditGuard.ShouldAdvise(context));
     }
 
     [Fact]
@@ -108,6 +108,8 @@ public sealed class UnverifiedSourceEditTests
                 ToolExecutionOutcome.Succeeded, "ok", "{}")));
 
         Assert.False(context.VerificationEvidence.SourceEditAwaitingVerification);
+        Assert.Null(context.VerificationEvidence.BlockingCode);
+        Assert.False(UnverifiedSourceEditGuard.ShouldAdvise(context));
     }
 
     [Fact]
@@ -123,16 +125,13 @@ public sealed class UnverifiedSourceEditTests
     }
 
     [Fact]
-    public void Awaiting_flag_is_carried_through_projection_and_workspace_freshness()
+    public void Awaiting_flag_is_carried_through_projection()
     {
         var previous = RunVerificationEvidence.Project(Edit(1));
         Assert.True(previous.SourceEditAwaitingVerification);
 
         var carried = RunVerificationEvidence.Project(Array.Empty<ModelContextEntry>(), previous);
         Assert.True(carried.SourceEditAwaitingVerification);
-
-        var fresh = carried.ApplyWorkspaceFreshness(new Dictionary<DateTimeOffset, WorkspaceCheckFreshness>());
-        Assert.True(fresh.SourceEditAwaitingVerification);
     }
 
     [Fact]
@@ -163,8 +162,6 @@ public sealed class UnverifiedSourceEditTests
     }
 
     [Theory]
-    [InlineData("verification_stale", "a required check is stale after later changes")]
-    [InlineData("verification_freshness_unknown", "a required check is stale after later changes")]
     [InlineData("verification_pending", "a required check has no confirmed result")]
     [InlineData("verification_result_missing", "a required check has no confirmed result")]
     public void Verification_unverified_notes_name_the_check_state(string code, string reason)

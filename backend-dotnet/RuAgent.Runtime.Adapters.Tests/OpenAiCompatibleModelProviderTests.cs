@@ -244,7 +244,6 @@ public sealed class OpenAiCompatibleModelProviderTests
                 ["availability"] = "executable",
                 ["model_enabled"] = true,
                 ["capability_class"] = "tool",
-                ["verification_required"] = false,
                 ["input_schema"] = JsonNode.Parse(
                     "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"path\":{\"type\":\"string\"}}}"),
             }),

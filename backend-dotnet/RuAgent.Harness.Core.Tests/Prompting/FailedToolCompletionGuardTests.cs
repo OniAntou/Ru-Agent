@@ -266,7 +266,6 @@ public sealed class FailedToolCompletionGuardTests
             "{}",
             null,
             receipt,
-            null,
             null]);
     }
 

@@ -88,9 +88,9 @@ reconciliation surfaces from Phase 3:
     renewed workspace membership while a run is driven, encrypted external-change journal entries,
     and `POST /agent/v1/runs/{runId}/approvals/{approvalId}`.
   - The approval route accepts exactly `allow_once`, `allow_session_directory` for external folders
-    only, `allow_always` which additionally remembers a bounded pattern as a durable project rule — a
-    terminal command prefix or an approved external folder's canonical path pattern — or `deny`.
-  - Any allow also remembers the approved intent for the Agent session in an in-process, expiring
+    only, `allow_always` which additionally saves the durable matcher the Broker built for that approval
+    as a project rule ([Remembered Approval](#remembered-approval)), or `deny`.
+  - An allow of a rememberable call also remembers the approved intent for the Agent session in an in-process, expiring
     ledger that the runtime loop materializes into the session's later policy snapshots — the
     durable pattern when one was saved, the exact intent otherwise, and external-directory approvals
     keep the Broker folder grant and write no entry — so a matching call — including later in the
@@ -113,8 +113,9 @@ reconciliation surfaces from Phase 3:
     marker removed and ends the run as failed, preserving the receipt error code (or
     `model_reported_blocker` when no failed receipt exists), without another recovery note;
   - terminal outbox delivery does not recreate runtime or transition the run to success.
-  - Otherwise, after the case budget (4 unverified notes) or the global cap (24 notes per run) is
-    spent the run fails as before with the tool error code.
+  - Otherwise, after the case budget (3 unverified notes, shared by tool-failure and verification holds) or the
+    global cap (24 notes per run) is spent, a tool failure fails the run with its error code, and a
+    verification failure completes the run with state `unverified` ([completion policy](harness.md#completion-policy)).
   - An empty or whitespace-only final step is answered the same way up to 3 notes before failing as
     `empty_model_reply`;
   - a `Length` finish suppresses the whole incomplete step before tool dispatch and gets up to 3
@@ -154,7 +155,7 @@ reconciliation surfaces from Phase 3:
   - Pending approvals and exact single-use authorization tokens bind to the active lease/snapshot
     (version and canonical SHA-256, since session approval memory can derive a repeated version)
     and cannot be replayed.
-- Tool Definition ownership: `RuAgent.Protocol` owns immutable ID/version/schema/scope/description declarations and run-pinned coding profiles. `AgentModelToolContractCatalog` projects that catalog; the Host selects the pinned profile for both prompt capabilities and native `model_tools`. Broker manifests retain risk/approval/timeout/output policy and validate their schema digests against Protocol. `ask_user` remains Host-intercepted and has no Broker binding. `RuAgentBroker` is the only tool execution authority. Supported tool surfaces are described under [Pinned coding tool profiles](#pinned-coding-tool-profiles).
+- Tool Definition ownership: `RuAgent.Protocol` derives immutable ID/version/schema/scope/description declarations and run-pinned coding profiles from one explicit row per model-visible tool in `AgentToolDescriptorTable` ([ADR 0038](../adr/0038-tool-descriptor-table.md)). `AgentModelToolContractCatalog` projects that catalog; the Host selects the pinned profile for both prompt capabilities and native `model_tools`. Broker manifests are derived from the same rows and retain risk/approval/timeout/output policy; each manifest's schema digest must match Protocol. `ask_user` remains Host-intercepted and has no Broker binding. `RuAgentBroker` is the only tool execution authority. Supported tool surfaces are described under [Pinned coding tool profiles](#pinned-coding-tool-profiles).
 - File tools:
   - `read` returns one file's UTF-8 content with `offset`/`limit` and no discriminator, defaults to
     a 1 MiB source window and accepts up to 4 MiB, fitting serialized output into 4 MiB before
@@ -394,6 +395,8 @@ execution schemas, timeout, output limit, and trust class. Its ID/version and
 proposal schema digest must match the immutable definition in
 `RuAgent.Protocol`; it does not itself make a tool model-visible.
 
+Manifests are derived from `AgentToolDescriptorTable` rather than hand-written. `ToolCatalog` builds one manifest per Broker-bound row (28 of the 29 rows; `ask_user` has none) and requires executors and manifests to match in both directions. The trusted adapter allowlist in `ToolRegistry` comes from the `AgentToolAdapter` enum, with the Host-intercepted member excluded. Risk and adapter values map through explicit arms that throw when unmapped. A session grant adds each advertised tool's manifest scopes. The access class (`ReadOnly`, `Mutation` or `Terminal`) comes from the row through `ToolAccessClassification`, which the Broker gateway and the hook gateway both call. See [ADR 0038](../adr/0038-tool-descriptor-table.md).
+
 ## Tool Definition
 
 Definition: [Tool Definition](../../CONTEXT.md) (glossary).
@@ -412,7 +415,7 @@ The profile is pinned alongside the provider selection and removed from request
 options before provider transport. Missing pins fail as `tool_profile_required`;
 retired or unknown pins fail as `tool_profile_invalid`, without provider access
 or substitution. Run queries return null for unsupported historical labels.
-The catalog has 28 definitions and the Broker 27 bindings (`ask_user` is Host-only).
+The catalog has 29 definitions and the Broker 28 bindings (`ask_user` is Host-only).
 There are no public `write`, `edit` or `bash` bindings. Internal operation tags
 still let saved policy-family deny/ask rules constrain the corresponding modern
 tools; they cannot dispatch a retired tool. Shared file/terminal adapters remain
@@ -540,27 +543,73 @@ auto-recovery never applies to approval decisions or reconciliation: those
 paths keep their exact fail-closed rules and no recovery note can soften them.
 A repeated `policy_denied` tool receipt is not an approval decision: it follows
 the Recovery Note bound above, and when that bound is spent the run terminates
-with the denial code. Any allow decision remembers the approved intent for
+with the denial code. An allow decision on a rememberable call remembers the approved intent for
 the Agent session — materialized into the session's later policy
 snapshots, so a later matching call authorizes without a
 new prompt; the memory is in-process and dies with the session or a host
 restart, and a session allow still passes every protected-path denial (in
-`plan` and `standard`) and Broker evaluation. The explicit `allow_always` decision additionally remembers
-a bounded pattern as a durable project-scope allow rule: a terminal run call
-stores its requested executable plus at most two leading non-flag argv tokens
-with the exact launch directory, while flag-first invocations and shell-mode
-scripts stay exact; an external-directory ask stores the approved folder as a
-path pattern that covers its subtree and survives restarts and later sessions
-of the workspace. `rule_asks` and `terminal_protected_path_requires_approval`
-never become a durable rule (the Host refuses the save and degrades to
-`allow_once`); `allow_once` and session directory grants create no durable rule.
+`plan` and `standard`) and Broker evaluation. The explicit `allow_always` decision additionally saves the durable matcher the Broker built for
+that approval ([Remembered Approval](#remembered-approval)): for a terminal launch, the resolved
+executable, at most two leading non-flag argv tokens and the exact launch directory, with flag-first
+and shell-mode invocations kept exact; for an outside file target, the nearest existing folder as a
+subtree pattern that survives restarts and later sessions of the workspace. `rule_asks` and
+`terminal_protected_path_requires_approval` keep only the session matcher, so no durable rule is
+saved and the approval degrades to `allow_once`; `allow_once` and session directory grants create no
+durable rule.
+
+## Remembered Approval
+
+Definition: [Remembered Approval](../../CONTEXT.md) (glossary).
+
+The Broker decides what an approval may remember. When `approval.respond` consumes a pending approval,
+the same call returns the authorization token and an `ApprovalRememberPlan`, built by
+`ApprovalRememberPolicy` from that approval's own `PolicyContext` and ask reason. The plan has a session
+matcher, remembered for the Agent session on any allow, and a durable matcher, saved as a project allow
+rule only for `allow_always`. A null matcher means that scope remembers nothing. The Host copies the
+matchers it receives and derives none ([Host approval flow](host.md#approval-flow)).
+
+- Allowlist by advertised tool id. File targets (`read`, `list`, `grep`, `glob`, `read_file`,
+  `write_file`, `edit_file`, `file_delete`) bind the canonical path, or the workspace-relative path
+  inside the workspace. Terminal launches (`run_process`, `powershell`) bind the resolved executable,
+  argv and canonical cwd. `mcp` `list_tools` and `call` bind the server (`mcp:<server>`) and its argv
+  (`list_tools`, or `call` with the tool name). `computer` `request_access` and `focus` bind the exact
+  app list or app. `code_intelligence` binds the configured language-server launch and the file it
+  targets. Every other id is not rememberable, including `apply_patch`, `file_restore`, `run_code`,
+  `terminal_read`, `terminal_stop`, the subagent tools, `web_search`, `web_fetch`, `skill`, `help`,
+  `todo_write` and unknown ids.
+- A matcher that cannot bind its identity is not made. That covers an empty argv (an argument-less
+  terminal launch), a missing identity field such as the workspace root, which has no relative path, a
+  wildcard in a path or cwd, and any value beyond the Host matcher limits.
+- Terminal argv: the durable matcher keeps at most two leading non-flag tokens, so `git status` covers
+  `git status -s`. A flag-first argv, a shell-mode invocation or a `powershell` script stays exact in
+  both scopes. The session matcher always keeps the full argv. The executable is the resolved full
+  path, not the name the model typed.
+- Asks: `rule_asks` and `terminal_protected_path_requires_approval` keep only the session matcher.
+- Outside folders: no session matcher, because the Broker's session directory grant already covers the
+  later calls. The durable matcher is the subtree pattern of the nearest existing folder of the
+  approved path, for file targets only. A drive, volume or share root yields no pattern, and such an
+  approval is downgraded to `allow_once`, which registers no folder grant. Every allow of an
+  outside-folder approval is bridged as `allow_session_directory`, so a one-time allow still registers
+  the session folder grant.
+- Evaluator guard: `PolicyRuleMatcher.Matches` ignores an allow rule for `mcp` `list_tools` or `call`,
+  `computer` `request_access` or `focus`, or `code_intelligence` unless the rule names both a resolved
+  executable and a non-empty argv. Deny and ask rules keep wildcard semantics. Rules carry no
+  provenance, so an identity-less allow written by a user for these tools is ignored too.
+- Probe: `ApprovalProbeAsync` reads a pending approval without consuming it or issuing a token. `Known`
+  is true only while the Broker holds the approval pending for the run and before its expiry.
+  `Rememberable` is the tool-class check. It does not predict whether a particular target yields a
+  matcher, so a root folder can be rememberable and still degrade.
+- Open limits: a durable external-folder rule is path-only and does not bind the approved operation. A
+  session matcher for a non-shell, non-flag-first terminal launch or a language-server launch is
+  compared as a prefix, so a later call that appends arguments also matches it. Argv glob matching
+  compares case-insensitively and treats `\` and `/` alike.
 
 ## Session Approval Memory
 
 Definition: [Session Approval Memory](../../CONTEXT.md) (glossary).
 
 The Host-side, in-process ledger that remembers the approved intent of
-every allow decision for the lifetime of one Agent Session — the bounded
+every allow decision on a rememberable call for the lifetime of one Agent Session — the bounded
 pattern when `allow_always` saved one, the exact canonical intent otherwise.
 The runtime loop
 materializes its entries as run-scope allow rules on top of each run's durable
@@ -570,7 +619,8 @@ every call. It creates no durable rule, never outlives its session or a host
 restart, is bounded by a 30-minute entry lifetime and a per-session cap, and is
 cleared when the session is deleted. External-directory approvals keep the
 Broker session directory grant (plus the durable project rule when
-`allow_always` saved one) and write no entry.
+`allow_always` saved one) and write no entry. The fields the exact intent binds depend on the tool
+class ([Remembered Approval](#remembered-approval)).
 Shell policy contexts and Host approval bindings carry the same selected runtime
 and literal invocation prefix/script. Executable resolution stays in execution.
 Nonempty shell argv allow matchers compare the whole invocation literally and
@@ -626,3 +676,10 @@ not confine terminal commands, and clean/dirty repository state does not change
 a decision. An ambiguous mutation outcome pauses for inspection until explicit
 Continue. API keys remain in credential storage and are redacted from
 diagnostics.
+
+Declared terminal checks (`purpose=verification` and `purpose=expected_failure`) are advisory evidence
+that never grants or denies execution ([ADR 0039](../adr/0039-advisory-verification.md)). The Broker
+emits no verification repair families or repair hints and does not emit `verification_repair_identity`
+or `verification_invocation_invalid`. A terminal call carrying `supersedes` without
+`purpose=verification` is accepted, and the argument is ignored. Receipts that still carry the removed
+fields parse, and the fields are ignored.

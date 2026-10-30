@@ -4,15 +4,16 @@ using System.Text.Json;
 
 namespace RuAgent.Harness.Core.Context;
 
-public enum VerificationCheckStatus { Pending, Passed, Failed, Stale }
+public enum VerificationCheckStatus { Pending, Passed, Failed }
 
+/// <summary>
+/// One check identity with its latest result. Identity is the canonical metadata identity when the
+/// receipt carries one, otherwise the raw command identity; no other check can retire it (ADR 0039).
+/// </summary>
 public sealed record VerificationCheckEvidence(string Identity, string ProviderCallId,
     string? ExecutionId, int ExpectedExitCode, bool IsVerification,
-    VerificationCheckStatus Status, string Code, string Command, bool InvalidatedDuringExecution = false,
-    int? ObservedExitCode = null, bool RejectedBeforeLaunch = false,
-    DateTimeOffset? ExecutionStartedAtUtc = null, string? RepairIdentity = null, bool InvocationInvalid = false,
-    string? WorkingDirectoryIdentity = null, IReadOnlyList<string>? SupersededCheckIdentities = null,
-    string? WorkingDirectory = null);
+    VerificationCheckStatus Status, string Code, string Command,
+    int? ObservedExitCode = null, string? WorkingDirectory = null);
 
 /// <summary>Host-derived original receipt evidence; survives compaction, grants no authority.
 /// It also carries the completion evidence (source edits, latest todo list) used by the completion guards.</summary>
@@ -22,19 +23,22 @@ public sealed partial class RunVerificationEvidence
     private const string CompletedTodoStatus = "completed";
     public IReadOnlyList<VerificationCheckEvidence> Checks { get; }
     public bool Overflowed { get; }
-    public bool HasMutations { get; }
 
     /// <summary>
-    /// True from a successful source edit (or unknown effect) until a declared
-    /// purpose=verification check runs. Never set by terminal commands alone.
+    /// True from a successful source edit (or unknown effect) until a declared purpose=verification check
+    /// launches. Never set by terminal commands alone.
     /// </summary>
     public bool SourceEditAwaitingVerification { get; }
 
-    /// <summary>
-    /// Sticky: true once any source edit ran in this run and no check clears it. The
-    /// completion guards use it to tell an edited run from a read-only one.
-    /// </summary>
+    /// <summary>Sticky: true once any structured source edit ran in this run.</summary>
     public bool HasSourceEdits { get; }
+
+    /// <summary>
+    /// True when a declared check (purpose=verification or expected_failure) launched after the last
+    /// structured source edit. Each source edit resets it. With no source edit this means a declared check
+    /// launched at all. Read by the summary label only; it never creates an obligation.
+    /// </summary>
+    public bool DeclaredCheckSinceSourceEdit { get; }
 
     /// <summary>
     /// Rows of the most recent successful todo_write in this run, or null when none ran.
@@ -55,17 +59,17 @@ public sealed partial class RunVerificationEvidence
     private readonly string? _programFailure;
 
     private RunVerificationEvidence(IEnumerable<VerificationCheckEvidence> checks,
-        HashSet<string> expectedFailures, bool overflowed, bool hasMutations, string? programFailure = null,
-        bool sourceEditAwaitingVerification = false, bool hasSourceEdits = false,
-        IReadOnlyList<AgentTodoRow>? latestTodos = null)
+        HashSet<string> expectedFailures, bool overflowed, string? programFailure,
+        bool sourceEditAwaitingVerification, bool hasSourceEdits, bool declaredCheckSinceSourceEdit,
+        IReadOnlyList<AgentTodoRow>? latestTodos)
     {
         Checks = new ReadOnlyCollection<VerificationCheckEvidence>(checks.ToArray());
         _expectedFailures = expectedFailures;
         Overflowed = overflowed;
-        HasMutations = hasMutations;
         _programFailure = programFailure;
         SourceEditAwaitingVerification = sourceEditAwaitingVerification;
         HasSourceEdits = hasSourceEdits;
+        DeclaredCheckSinceSourceEdit = declaredCheckSinceSourceEdit;
         LatestTodos = latestTodos;
     }
 
@@ -81,27 +85,24 @@ public sealed partial class RunVerificationEvidence
     {
         var evidence = new VerificationEvidenceBuffer(MaximumChecks);
         if (previous is not null) evidence.Seed(previous.Checks, previous._expectedFailures, previous.Overflowed);
-        bool hasMutations = previous?.HasMutations ?? false;
         bool sourceEditAwaitingVerification = previous?.SourceEditAwaitingVerification ?? false;
         bool hasSourceEdits = previous?.HasSourceEdits ?? false;
+        bool declaredCheckSinceSourceEdit = previous?.DeclaredCheckSinceSourceEdit ?? false;
         IReadOnlyList<AgentTodoRow>? latestTodos = previous?.LatestTodos;
         string? programFailure = previous?._programFailure;
         foreach (var (entry, proposed) in ExpandProgramEvidence(originalRunEntries, () =>
             {
+                // Unknown nested effects are conservatively a source edit that no check has yet answered.
                 programFailure = "program_evidence_unavailable";
-                hasMutations = true;
                 sourceEditAwaitingVerification = true;
                 hasSourceEdits = true;
-                evidence.Invalidate();
+                declaredCheckSinceSourceEdit = false;
             }))
         {
             var receipt = entry.ToolReceipt!;
             var providerId = receipt.ProviderCallId!;
-            bool terminal = proposed.ToolId is "bash" or "powershell" or "run_process" or "terminal_read" or "terminal_stop"
+            bool terminal = (proposed.ToolId == "bash" || RuAgent.Protocol.CodingToolArguments.AdapterToolId(proposed.ToolId) == "bash")
                 && proposed.ToolVersion == "1.0.0";
-            bool effect = receipt.Outcome == ToolExecutionOutcome.Succeeded || receipt.SideEffectsPossible
-                || receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown
-                || terminal && receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
             if (!terminal)
             {
                 // Same gate as the live todo activity: a successful list replaces the earlier one,
@@ -112,18 +113,18 @@ public sealed partial class RunVerificationEvidence
                 {
                     latestTodos = todoRows;
                 }
-                if (effect && (proposed.ToolId is "write" or "edit" or "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "agent_apply" || receipt.SideEffectsPossible))
-                {
-                    hasMutations = true;
-                    evidence.Invalidate();
-                }
+
+                bool effect = receipt.Outcome is ToolExecutionOutcome.Succeeded or ToolExecutionOutcome.OutcomeUnknown
+                    || receipt.SideEffectsPossible;
                 if (effect && IsSourceEditCall(proposed))
                 {
                     sourceEditAwaitingVerification = true;
                     hasSourceEdits = true;
+                    declaredCheckSinceSourceEdit = false;
                 }
                 continue;
             }
+
             var args = proposed.Arguments;
             if (RuAgent.Protocol.CodingToolArguments.AdapterToolId(proposed.ToolId) == "bash")
             {
@@ -135,6 +136,7 @@ public sealed partial class RunVerificationEvidence
                 args = System.Text.Json.JsonSerializer.SerializeToElement(RuAgent.Protocol.CodingToolArguments.ToAdapterArguments(
                     proposed.ToolId, displayArguments));
             }
+
             string purpose = StringArg(args, "purpose") ?? "command";
             string mode = StringArg(args, "mode") ?? "run";
             if (mode is "read_output" or "kill")
@@ -144,60 +146,47 @@ public sealed partial class RunVerificationEvidence
                     evidence.Store(Assess(prior, receipt, entry.Content, providerId, mode == "kill"));
                 continue;
             }
+
+            // ADR 0039 item 5: a launch rejected before any process started observed nothing. It creates no
+            // check and no obligation. The failed receipt is still handled by the tool-failure guard.
+            bool actualProcessFailure = receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
+            bool rejectedBeforeLaunch = receipt.Outcome == ToolExecutionOutcome.Failed
+                && !receipt.SideEffectsPossible && !actualProcessFailure;
+            if (rejectedBeforeLaunch) continue;
+
             var metadata = ReadTerminalMetadata(entry.Content);
-            // A failed lookup is still read-only. Only a consistent, observed normal
-            // exit can preserve prior checks; uncertain effects remain conservative.
-            var completedRead = metadata.CompletedReadExitCode is { } observedExit
-                && (receipt.Outcome == ToolExecutionOutcome.Succeeded && receipt.Code == "ok" && observedExit == 0
-                    || receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero" && observedExit != 0);
-            if (purpose == "command" && effect && !completedRead)
-            {
-                hasMutations = true;
-                evidence.Invalidate();
-            }
             int expectedExit = 0;
             bool negative = purpose == "expected_failure" && TryExpectedExit(args, out expectedExit);
             if (!negative) expectedExit = 0;
-            string rawIdentity = CommandIdentity(args, expectedExit);
-            string identity = metadata.CanonicalIdentity is { } digest ? "canonical:" + digest + ":" + expectedExit : rawIdentity;
-            // Upgrade a legacy check only after the exact original invocation is
-            // observed again with authority metadata, never by guessing old paths.
-            evidence.UpgradeIdentity(rawIdentity, identity);
+            string identity = metadata.CanonicalIdentity is { } digest
+                ? "canonical:" + digest + ":" + expectedExit
+                : CommandIdentity(args, expectedExit);
             var tracked = evidence.Find(identity);
-            bool actualProcessFailure = receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
             if (tracked is null && purpose != "verification" && !negative && !actualProcessFailure) continue;
-            // A launch rejected before any process started (malformed arguments,
-            // policy or resolution failure) observed nothing. Its declared intent
-            // stays outstanding, but the identical rejected call can never pass,
-            // so a later passing check of the same kind resolves it. It never
-            // replaces evidence from an invocation that actually ran.
-            bool rejectedBeforeLaunch = receipt.Outcome == ToolExecutionOutcome.Failed
-                && !receipt.SideEffectsPossible && !actualProcessFailure;
-            if (rejectedBeforeLaunch && tracked is { RejectedBeforeLaunch: false }) continue;
             var initial = new VerificationCheckEvidence(identity, providerId, null, expectedExit,
                 purpose == "verification" || tracked?.IsVerification == true,
                 VerificationCheckStatus.Pending, "verification_pending", DescribeCommand(args),
-                ExecutionStartedAtUtc: entry.ExecutionStartedAtUtc, RepairIdentity: metadata.RepairIdentity,
-                InvocationInvalid: expectedExit == 0 && purpose == "verification" && metadata.InvocationInvalid
-                    && receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero",
-                WorkingDirectoryIdentity: metadata.WorkingDirectoryIdentity, WorkingDirectory: metadata.WorkingDirectory,
-                SupersededCheckIdentities: SelectSupersededChecks(args, metadata, evidence, identity) ?? tracked?.SupersededCheckIdentities);
+                WorkingDirectory: metadata.WorkingDirectory);
             var assessed = Assess(initial, receipt, entry.Content, providerId, false);
-            if (rejectedBeforeLaunch) assessed = assessed with { RejectedBeforeLaunch = true };
             evidence.Store(assessed);
-            // A declared check that actually launched answers the awaiting edit, whatever its exit.
-            // A failing one stays outstanding through the check path, so this flag never hides it.
-            if (purpose == "verification" && !rejectedBeforeLaunch) sourceEditAwaitingVerification = false;
-            if (assessed.Status == VerificationCheckStatus.Passed) evidence.ResolveRejectedBy(assessed);
+
+            // A declared check that launched answers the awaiting edit, whatever its exit. A failing one
+            // stays outstanding through the check path, so this flag never hides it.
+            if (purpose == "verification") sourceEditAwaitingVerification = false;
+            if (assessed.IsVerification || assessed.ExpectedExitCode != 0) declaredCheckSinceSourceEdit = true;
             if (negative && assessed.Status == VerificationCheckStatus.Passed
                 && receipt.Outcome == ToolExecutionOutcome.Failed)
             {
                 evidence.RememberExpectedFailure(ReceiptIdentity(receipt, providerId));
             }
         }
-        return new(evidence.Checks, evidence.ExpectedFailures, evidence.Overflowed, hasMutations, programFailure,
-            sourceEditAwaitingVerification, hasSourceEdits, latestTodos);
+        return new(evidence.Checks, evidence.ExpectedFailures, evidence.Overflowed, programFailure,
+            sourceEditAwaitingVerification, hasSourceEdits, declaredCheckSinceSourceEdit, latestTodos);
     }
+
+    /// <summary>Outstanding declared checks: failed or pending latest results (ADR 0039 decision 2).</summary>
+    private IEnumerable<VerificationCheckEvidence> OutstandingChecks() =>
+        Checks.Where(VerificationObligationPolicy.IsOutstanding);
 
     private static IEnumerable<(ModelContextEntry Entry, ModelToolCall Call)> ExpandProgramEvidence(
         IEnumerable<ModelContextEntry> source, Action unknown)
@@ -222,7 +211,7 @@ public sealed partial class RunVerificationEvidence
                 var nestedReceipt = new ToolExecutionReceipt(receipt.ExecutionId, receipt.ToolCallId, nested.Outcome,
                     nested.Code, null, nested.SideEffectsPossible, providerCallId: nested.Call.ProviderCallId);
                 yield return (ModelContextEntry.ToolResult(nested.Call.ProviderCallId, entry.Sequence, nestedReceipt,
-                    nested.Output.GetRawText(), entry.ExecutionStartedAtUtc), nested.Call);
+                    nested.Output.GetRawText()), nested.Call);
             }
         }
     }

@@ -129,6 +129,13 @@ The Protocol-owned model-visible schema and metadata for one tool. Advertisement
 Implementation: [broker](docs/architecture/broker.md#tool-definition).
 _Avoid_: treating a Broker manifest or adapter list as the model contract
 
+**Tool Descriptor**:
+The one explicit row per model-visible tool in the Protocol descriptor table. Its Protocol definition,
+Broker manifest, trusted adapter, session scopes and access class all derive from that row (ADR 0038).
+Implementation: [broker](docs/architecture/broker.md#tool-manifest).
+_Avoid_: hand-maintained tool lists, name-based scope or access defaults
+
+
 **Tool Profile**:
 The run-pinned selection of Protocol tool definitions shown to the model.
 Supported profiles select simple file/Windows-terminal operations, unified
@@ -201,30 +208,43 @@ _Avoid_: one-call-per-step rule, reissuing approved calls
 
 
 **Recovery Note**:
-Durable bounded feedback asking the same pinned model to recover from an eligible failed or incomplete step, or to revisit a final reply held once for
-verification, open checklist items or a requirements review. It cannot soften an approval decision, reconciliation requirement or execution-policy denial.
+Durable bounded feedback asking the same pinned model to recover from an eligible failed or incomplete step, or to revisit a final reply held for an outstanding declared check (up to three times), for an
+unverified source edit, for open checklist items or for a requirements review (the last three once each). It cannot soften an approval decision, reconciliation requirement or execution-policy denial.
 Implementation: [harness](docs/architecture/harness.md#recovery-note).
 _Avoid_: fallback answer, substitute model, retry on another backend
 
 
 **Receipt-backed Verification**:
-A bounded projection of original run-local terminal proposals and execution receipts.
-Declared required checks remain outstanding through unrelated reads, compaction
-and restart. Exploratory failures remain bounded diagnostics without consuming required-check
-capacity; known run-local mutations invalidate passed required checks
-and pending checks that would certify older code. New terminal receipts identify
-the canonical executable/argv/cwd; this fingerprint never grants authority. Explicit
-expected nonzero exits can satisfy a negative test without rewriting its failed
-receipt. Authority-derived read-only completion metadata preserves prior checks
-for observed normal exits, including nonzero exits; a failed lookup or required
-check still retains its own failure. Unknown effects remain conservative. Intent metadata grants no authority and
-does not prove complete correctness.
-An explicit replacement verification may name previously passing stale checks
-through `supersedes`. A fresh pass in the same authority-derived canonical cwd
-satisfies those retired obligations without rewriting their receipts; failures,
-pending checks, negative tests and unknown freshness cannot be superseded.
+An advisory projection of original run-local terminal proposals and execution receipts (ADR 0039). It
+rebuilds declared checks and their latest results after compaction and restart, holds final replies for
+outstanding checks, and never grants or denies execution. Only structured source edits make a declared
+check owe a new answer. Terminal commands and computer input do not invalidate checks, and the workspace
+change journal is not read. Intent metadata grants no authority and does not prove complete correctness.
 Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
 _Avoid_: treating a successful inspection, summary or model claim as a passed check
+
+
+**Declared Check**:
+A terminal `purpose=verification` required check, or a `purpose=expected_failure` negative test with its
+exact expected exit code. Other process failures are diagnostics. The identity is the authority-derived
+canonical identity when the receipt carries one.
+Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
+_Avoid_: required check for inspection output, passed command as proof
+
+
+**Outstanding Check**:
+A declared check whose latest result is failed or pending, including an expected-exit mismatch. Only the
+same identity passing later retires it. `supersedes` retires nothing.
+Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
+_Avoid_: stale check, superseded check, retired obligation
+
+
+**Verification State**:
+The summary label `verified`, `unverified` or `not_applicable`. `verified` needs a declared check that ran
+after the last structured source edit and no outstanding check. Otherwise the label is `unverified`,
+including a run that completes after its holds are spent.
+Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
+_Avoid_: certified completion, verified success inferred from prose
 
 
 **Repeated Tool Recovery**:
@@ -249,6 +269,12 @@ _Avoid_: reusable confirmation flag or approval-time reissue
 A bounded in-process ledger of approved intent for one Agent Session. It remains subject to Broker evaluation and protected-path policy and expires on session/Host lifetime boundaries.
 Implementation: [broker](docs/architecture/broker.md#session-approval-memory).
 _Avoid_: global approval cache, persisted permission
+
+
+**Remembered Approval**:
+The reusable scope one approval may grant, decided by the Broker from the approved call's own identity: the exact target for the Agent session on an allow, or a project allow rule for `allow_always`. An outside folder is covered by the session folder grant instead of a session entry. Only allowlisted tool classes qualify, and an identity-less allow never authorizes a process-identity tool.
+Implementation: [broker](docs/architecture/broker.md#remembered-approval).
+_Avoid_: Host-derived matchers, broad tool-family allows, one-time approvals stored as rules
 
 
 **Run Provider Selection**:

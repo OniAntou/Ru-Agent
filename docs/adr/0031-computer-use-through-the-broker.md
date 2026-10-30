@@ -91,7 +91,8 @@ invariants:
    action fails with `computer_busy` until the controlling run ends or stays idle
    for two minutes. Every action is a tool-batch barrier. Input receipts report
    possible side effects, so earlier verification becomes stale, as after any
-   terminal command. Observation actions (`list`, `screenshot`) are exempt from
+   terminal command. Superseded by ADR 0039: computer-use input no longer affects verification.
+   Observation actions (`list`, `screenshot`) are exempt from
    the repeated-tool-call guard.
 9. **Emergency stop.** While computer use is enabled, the Broker registers the
    global hotkey **Ctrl+Alt+Backspace** (or **Ctrl+Alt+Pause** on keyboards that have it). Pressing it cancels the action in flight and

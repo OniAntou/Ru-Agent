@@ -27,7 +27,7 @@ These products differ in architecture and scope. Ru must keep its native .NET ru
 
 | Workflow | Current source evidence | Acceptance gap |
 | --- | --- | --- |
-| Read/edit/run/verify loop | Run-pinned `coding_v2`, `patch_v2` and experimental `coding_code_v1`; separate create/edit tools, literal process argv, bounded programs, receipt-backed check freshness and incomplete-finish rejection | Current end-task success, redundant calls and repair overhead need matched real-provider tasks. A passed command or completed run does not establish acceptance coverage. See [tool policy](agent-tools.md) |
+| Read/edit/run/verify loop | Run-pinned `coding_v2`, `patch_v2` and experimental `coding_code_v1`; separate create/edit tools, literal process argv, bounded programs, advisory declared-check evidence (ADR 0039) and incomplete-finish rejection | Current end-task success, redundant calls and repair overhead need matched real-provider tasks. A passed command or completed run does not establish acceptance coverage. See [tool policy](agent-tools.md) |
 | Multi-tool steps and bounded repair | Tool Batch, durable Recovery Notes, failed period-2/3 cycle guard; real Host/Broker edit/verify and guard scenarios | Real-provider effectiveness of repair advice |
 | Streaming and durable replay | HTTP/SSE, transcript reconciliation, retained run discovery, explicit `/follow` and typed `Continue` | Native rendering and transport interruption acceptance |
 | Approval, trust and presets | Broker authority, single-use tokens, Workspace Trust; pending approval replay and fresh run-version checks | Native approval keyboard acceptance; another client may resolve first |

@@ -169,7 +169,7 @@ public sealed class CompletionChecklistTests
     }
 
     [Fact]
-    public void Seeded_source_edit_and_todos_survive_projection_and_workspace_freshness()
+    public void Seeded_source_edit_and_todos_survive_projection()
     {
         var previous = RunVerificationEvidence.Project(Edit(1).Concat(TodoWrite(3, "todo-1", ("a", "pending"))));
         Assert.True(previous.HasSourceEdits);
@@ -178,11 +178,7 @@ public sealed class CompletionChecklistTests
         var carried = RunVerificationEvidence.Project(Array.Empty<ModelContextEntry>(), previous);
         Assert.True(carried.HasSourceEdits);
         Assert.Equal(new[] { "a" }, carried.OpenTodoItems);
-
-        var fresh = carried.ApplyWorkspaceFreshness(new Dictionary<DateTimeOffset, WorkspaceCheckFreshness>());
-        Assert.True(fresh.HasSourceEdits);
-        Assert.Equal(new[] { "a" }, fresh.OpenTodoItems);
-        Assert.Equal(carried.LatestTodos!.Count, fresh.LatestTodos!.Count);
+        Assert.Equal(previous.LatestTodos!.Count, carried.LatestTodos!.Count);
     }
 
     [Fact]

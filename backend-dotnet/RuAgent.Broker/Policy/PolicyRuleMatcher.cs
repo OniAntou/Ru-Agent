@@ -2,6 +2,7 @@ using System.Globalization;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+using RuAgent.Protocol.Tools;
 
 namespace RuAgent.Broker.Policy;
 
@@ -52,6 +53,13 @@ public static class PolicyRuleMatcher
     public static bool Matches(PolicyRuleSpec rule, PolicyContext context, DateTimeOffset now)
     {
         if (rule.ExpiresAt is { } expiresAt && now >= expiresAt)
+        {
+            return false;
+        }
+
+        // An allow for a process-identity call must name its executable and argv; without them it would
+        // authorize every call of that tool. Deny and ask rules keep their wildcard semantics.
+        if (rule.Decision == "allow" && ApprovalRememberPolicy.AllowRuleLacksProcessIdentity(rule.Matcher, context))
         {
             return false;
         }
@@ -204,7 +212,7 @@ public static class PolicyRuleMatcher
 
     private static bool IsSeparator(char c) => c is '/' or '\\';
 
-    private static string? PatternCandidate(PolicyContext context)
+    internal static string? PatternCandidate(PolicyContext context)
     {
         if (context.RelativePathInsideWorkspace is not null)
         {
@@ -216,37 +224,14 @@ public static class PolicyRuleMatcher
 
     private static bool ToolIdMatches(string matcherId, PolicyContext context)
     {
-        if (matcherId == context.ToolId || LegacyToolIdMatches(matcherId, context.ToolId, context.ToolOp, context.BashMode))
+        if (matcherId == context.ToolId || AgentToolPolicyAliases.Matches(matcherId, context.ToolId, context.ToolOp, context.BashMode))
             return true;
         var adapterId = CodingToolArguments.AdapterToolId(context.ToolId);
         if (context.ToolId == "apply_patch" && context.OperationClass != PolicyOperationClasses.Patch)
             adapterId = context.OperationClass == PolicyOperationClasses.Edit ? "edit" : "write";
         return adapterId is not null && (matcherId == adapterId
-            || LegacyToolIdMatches(matcherId, adapterId, context.ToolOp, context.BashMode));
+            || AgentToolPolicyAliases.Matches(matcherId, adapterId, context.ToolOp, context.BashMode));
     }
-
-    private static bool LegacyToolIdMatches(string matcherToolId, string contextToolId, string? toolOp, string? bashMode) =>
-        (matcherToolId, contextToolId) switch
-        {
-            ("files.list", "read") => toolOp == "list",
-            ("files.glob", "glob") => true,
-            ("files.glob", "read") => toolOp == "list",
-            ("files.search", "grep") => true,
-            ("files.search", "read") => toolOp == "list",
-            ("files.read", "read") => toolOp == "read",
-            ("files.write", "write") => toolOp == "write",
-            ("files.edit", "edit") => true,
-            ("files.delete", "write") => toolOp == "delete",
-            ("files.restore", "write") => toolOp == "restore",
-            ("terminal.run", "bash") => bashMode == "run",
-            ("terminal.shell", "bash") => bashMode == "shell",
-            ("web.search", "read") => toolOp == "web_search",
-            ("web.fetch", "read") => toolOp == "web_fetch",
-            ("web.search", "web_search") => true,
-            ("web.fetch", "web_fetch") => true,
-            ("help.docs", "read") => toolOp == "help",
-            _ => false,
-        };
 
     private static bool ExecutableMatches(string pattern, string? resolvedExecutable)
     {
@@ -263,6 +248,11 @@ public static class PolicyRuleMatcher
         var baseName = Path.GetFileName(resolvedExecutable);
         return string.Equals(pattern, baseName, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>True when an allow of this matcher compares argv exactly, with no glob and no prefix.</summary>
+    internal static bool UsesExactArgv(MatcherSpec matcher, PolicyContext context) =>
+        matcher.ArgvPattern.Count > 0
+        && GetArgvMatchSemantics(isAllowRule: true, matcher, context) == ArgvMatchSemantics.Exact;
 
     private static ArgvMatchSemantics GetArgvMatchSemantics(
         bool isAllowRule,

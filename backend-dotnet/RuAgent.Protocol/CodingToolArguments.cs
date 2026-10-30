@@ -1,18 +1,13 @@
 using System.Text.Json.Nodes;
+using RuAgent.Protocol.Tools;
 
 namespace RuAgent.Protocol;
 
 /// <summary>Internal operation-family normalization for policy and receipt projections, never execution dispatch. Proposals and receipts retain their advertised identity and original arguments.</summary>
 public static class CodingToolArguments
 {
-    public static string? AdapterToolId(string toolId) => toolId switch
-    {
-        "read_file" => "read",
-        "write_file" or "file_delete" or "file_restore" => "write",
-        "edit_file" => "edit",
-        "powershell" or "run_process" or "terminal_read" or "terminal_stop" => "bash",
-        _ => null,
-    };
+    /// <summary>The policy family of an advertised tool id, read from its descriptor row; null when the id has no row or the row has no family.</summary>
+    public static string? AdapterToolId(string toolId) => AgentToolDescriptorTable.Find(toolId)?.PolicyFamily;
 
     public static JsonObject ToAdapterArguments(string toolId, JsonObject arguments)
     {

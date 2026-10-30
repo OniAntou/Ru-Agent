@@ -9,12 +9,8 @@ internal static class VerificationEvidenceGuidance
             ? "report the observed exit mismatch; do not force the expected code"
             : check.Status == VerificationCheckStatus.Pending && check.ExecutionId is { } execution
                 ? $"read terminal {execution} until exit; do not start a duplicate"
-                : VerificationObligationPolicy.CanBeSuperseded(check)
-                    ? "rerun or explicitly supersede this retired passing check with appropriate fresh verification"
-                    : check.Status == VerificationCheckStatus.Stale
-                        ? "rerun this check; freshness is not certified"
-                        : "repair and rerun this check";
-        return $"{OneLine(check.ProviderCallId, 128)} [check ID: {check.Identity}] ({check.Code})"
+                : "repair and rerun this check";
+        return $"{OneLine(check.ProviderCallId, 128)} ({check.Code})"
             + $" [cwd: {OneLine(check.WorkingDirectory ?? "unavailable", 512)}]: {OneLine(check.Command, 1024)}"
             + $" [action: {action}]";
     }

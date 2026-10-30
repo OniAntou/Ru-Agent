@@ -228,7 +228,7 @@ public sealed partial class BrokerExecutionRuntime
                 BoundaryDirectory: approvalKind == "external_directory" ? DeriveGrantDirectory(context) : null,
                 SnapshotSha256: lease.Snapshot.Sha256);
             var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
-            approvalId = _pendingV2.IssueV2(binding, expiresAt);
+            approvalId = _pendingV2.IssueV2(binding, expiresAt, context, evaluation.ReasonCode);
             approvalExpiresAt = expiresAt;
             matcherPreview = PendingApprovalStore.BuildMatcherPreview(binding);
             matcherPreview["safe_summary"] = "approval required for " + toolId;

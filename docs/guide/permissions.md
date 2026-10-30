@@ -39,15 +39,19 @@ Trust is tied to the folder's identity. If you move or recreate the folder, Ru a
 
 Outside what the mode allows, Ru stops and asks. You can:
 
-- **Allow once** for this request.
+- **Allow once** for this request. For a folder outside the workspace, Ru also keeps that folder allowed for the session.
 - **Allow for this session's folder**, when the request is about a folder outside the workspace.
-- **Always allow**, which remembers a bounded pattern as a project rule: a terminal command prefix, or
-  an approved outside folder.
+- **Always allow**, which saves the approved target as a project rule: a terminal command (its program
+  and up to two leading words, or the exact script for PowerShell), an outside folder (its subfolders
+  are covered; a drive or share root is never saved), an MCP server tool, the exact set of computer-use
+  apps, or a language-server launch. A tool outside that list, such as a patch or `run_code`, can only
+  be allowed once.
 - **Deny.**
 
-A remembered approval lasts for the session, and an *always* rule lasts until you remove it. List and
-remove rules with `ru agent policy list` and `ru agent policy remove <rule-id>`. If two windows answer
-the same request, the first answer wins.
+A remembered approval lasts for the session, and an *always* rule lasts until you remove it. Approvals
+that an earlier version of Ru remembered for MCP, computer use or language servers no longer apply, so
+Ru asks again. List and remove rules with `ru agent policy list` and `ru agent policy remove <rule-id>`.
+If two windows answer the same request, the first answer wins.
 
 ## Computer use
 

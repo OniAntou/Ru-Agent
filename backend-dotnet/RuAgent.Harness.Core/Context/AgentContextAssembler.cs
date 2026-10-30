@@ -29,8 +29,7 @@ public sealed class AgentContextAssembler
             {
                 var text = ToolResultExcerpt.Project(original.Content!);
                 return ReferenceEquals(text, original.Content) ? original
-                    : ModelContextEntry.ToolResult(original.SourceId, original.Sequence, original.ToolReceipt!, text,
-                        original.ExecutionStartedAtUtc);
+                    : ModelContextEntry.ToolResult(original.SourceId, original.Sequence, original.ToolReceipt!, text);
             }) : entry).ToArray();
         if (combined.Select(entry => entry.SourceId).Distinct(StringComparer.Ordinal).Count()
             != combined.Length)

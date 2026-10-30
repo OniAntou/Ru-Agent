@@ -45,8 +45,6 @@ public sealed partial class PolicyContextFactory
         ArgumentNullException.ThrowIfNull(arguments);
         if (toolId is "powershell" or "run_process" && !TerminalWorkflowIntent.HasValidExpectedExitCode(arguments))
             throw new PolicyContextException("invalid_arguments", hint: "expected_failure requires a nonzero signed 32-bit expected_exit_code.");
-        if (toolId is "powershell" or "run_process" && !TerminalWorkflowIntent.HasValidSupersedes(arguments))
-            throw new PolicyContextException("invalid_arguments", hint: "supersedes requires purpose=verification and 1-16 distinct nonempty check references, at most 256 characters each.");
         if (toolId == "apply_patch") return CreatePatchContext(toolVersion, arguments);
         if (toolId == "run_code")
         {

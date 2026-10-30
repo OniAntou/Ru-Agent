@@ -274,11 +274,6 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ToolVerificationStates.NotRequired,
             summary));
 
-    private static string VerificationFailure(ToolBinding binding) =>
-        binding.VerificationRequired
-            ? ToolVerificationStates.Failed
-            : ToolVerificationStates.NotRequired;
-
     /// <summary>
     /// What the model can do about a failed file call, in the same shape as
     /// the edit-match hint above: the stable code stays, the summary tells it

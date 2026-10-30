@@ -4,5 +4,4 @@ public sealed record ToolBinding(
     ToolManifest Manifest,
     ToolExecutor Executor,
     bool ModelEnabled,
-    string Availability,
-    bool VerificationRequired);
+    string Availability);

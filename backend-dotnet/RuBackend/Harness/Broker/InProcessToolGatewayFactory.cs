@@ -302,13 +302,38 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
     }
 
     /// <summary>
+    /// Reads a pending approval from the Broker without consuming it. Unknown when the run has no tracked gateway,
+    /// the Host holds no ask for that approval, or the Broker no longer holds it as pending.
+    /// </summary>
+    public async Task<BrokerApprovalProbe> ProbeApprovalAsync(
+        string runId,
+        string hostApprovalId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(hostApprovalId);
+
+        if (!_gateways.TryGetValue(runId, out var gateway))
+        {
+            return BrokerApprovalProbe.Unknown;
+        }
+
+        if (!_approvals.TryGetAsk(runId, gateway.Lease, hostApprovalId, out var brokerApprovalId, out _))
+        {
+            return BrokerApprovalProbe.Unknown;
+        }
+
+        return await gateway.ProbeApprovalAsync(brokerApprovalId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Bridges an approval resolution from the Host approval endpoint to the
     /// runtime pending approval that produced it. Returns false when the run
     /// has no tracked gateway or the authority rejects the resolution; the
     /// authorization token, when issued, stays cached run-scoped until the
-    /// resumed proposal consumes it.
+    /// resumed proposal consumes it. The remember plan comes from the same call.
     /// </summary>
-    public async Task<(bool Authorized, string? AuthorizationToken)> RespondApprovalAsync(
+    public async Task<(bool Authorized, string? AuthorizationToken, RuAgent.Broker.Policy.ApprovalRememberPlan? RememberPlan)> RespondApprovalAsync(
         string runId,
         string hostApprovalId,
         string command,
@@ -320,7 +345,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
 
         if (!_gateways.TryGetValue(runId, out var gateway))
         {
-            return (false, null);
+            return (false, null, null);
         }
 
         var lease = gateway.Lease;
@@ -331,7 +356,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
             out var brokerApprovalId,
             out var argsKey))
         {
-            return (false, null);
+            return (false, null, null);
         }
 
         return await gateway

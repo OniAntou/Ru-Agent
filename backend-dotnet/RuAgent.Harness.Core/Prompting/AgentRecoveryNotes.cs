@@ -55,7 +55,9 @@ public static class AgentRecoveryNotes
     // sizing assumption is a long task: a 40-tool-call run that hits the same
     // edit or verification failure twice per case is ordinary work, not a bad
     // model, and the previous 2/2/1 spent the global cap on exactly that.
-    public const int MaximumUnverifiedNotes = 4;
+    // Shared by tool-failure and verification-evidence holds (ADR 0039). Once spent,
+    // a verification failure completes unverified and a tool failure fails.
+    public const int MaximumUnverifiedNotes = 3;
     public const int MaximumEmptyNotes = 3;
     public const int MaximumModelRepairableNotes = 4;
     public const int MaximumTruncatedNotes = 3;
@@ -84,23 +86,30 @@ public static class AgentRecoveryNotes
     /// Names the failed receipt and gives recovery guidance for known effect codes.
     /// The code comes from the sanitized receipt code, so it is safe text.
     /// </summary>
-    public static string BuildUnverifiedNote(string? receiptCode)
+    /// <param name="verificationBound">
+    /// True when the held failure is verification evidence. Once its notes are spent a plain
+    /// final reply completes the run as unverified, so the closing advice says so.
+    /// </param>
+    public static string BuildUnverifiedNote(string? receiptCode, bool verificationBound = false)
     {
         var code = string.IsNullOrWhiteSpace(receiptCode) ? "tool_failed" : receiptCode;
+        var closing = verificationBound
+            ? " Prefer a tool call that carries out this repair or a final text starting with [BLOCKED]. Once these notes are spent, a plain final reply completes the run with its verification reported as unverified; do not claim the check passed."
+            : " Your next reply must be either a tool call that carries out this repair or a final text starting with [BLOCKED]; a plain final reply cannot complete the run.";
         return $"{NotePrefix} {KindMarker(AgentRecoveryKind.UnverifiedAfterToolFailure)} "
             + $"(code: {code}) - the final reply was suppressed {Reason(code)}. " + RecoveryAction(code)
             + " If no safe repair remains, start your final text with [BLOCKED] and explain the blocker or partial outcome. This ends the run as unsuccessful; do not claim the failed action succeeded."
-            + " Your next reply must be either a tool call that carries out this repair or a final text starting with [BLOCKED]; a plain final reply cannot complete the run.";
+            + closing;
     }
 
     /// <summary>
-    /// The reason names what the receipt reports. A stale or unconfirmed check is not
+    /// The reason names what the receipt reports. An unconfirmed check is not
     /// a failed tool call, so the note must not say it was one.
     /// </summary>
     private static string Reason(string code) => code switch
     {
-        "verification_stale" or "verification_freshness_unknown" => "because a required check is stale after later changes",
         "verification_pending" or "verification_result_missing" => "because a required check has no confirmed result",
+        "expected_exit_mismatch" => "because a declared negative test returned a different exit code",
         _ => "because a tool call failed and its result is still unverified",
     };
 
@@ -165,12 +174,11 @@ public static class AgentRecoveryNotes
         "workspace_changed" => "Inspect the current workspace and reconcile the change; do not overwrite stale content.",
         "process_exit_nonzero" => "For a declared required check, inspect the verification diagnostics, fix the cause and rerun that check. For exploratory work, repair the command or use an alternative relevant source; do not claim the failed command succeeded.",
         "expected_exit_mismatch" => "Report the observed exit code and the unmet expectation. Do not retry a deliberately failing command merely to force the expected code, or claim a different invocation cleared it. Use run_process when a native process's exact exit code matters; PowerShell wrappers can return 1 instead.",
-        "verification_stale" => "Code changed after a successful check. Rerun it against the current changes. If a previously passing temporary check was retired, use an appropriate final purpose=verification check with supersedes set to its stale check ID from the outstanding-check guidance. Failed, pending and negative checks cannot be replaced.",
         "verification_pending" => "The required check is still running. Read its terminal output until its real exit is known; starting it is not a pass.",
         "verification_result_missing" => "The check has no confirmed terminal exit. Inspect its retained output or rerun it; do not infer success.",
         "process_start_failed" => "Inspect the executable and invocation error, then retry only after correcting it.",
         "malformed_call" or "invalid_arguments" =>
-            "The call was rejected before anything ran. Follow the receipt's hint to correct the arguments and run it again; when it declared purpose verification or expected_failure, keep that purpose on the corrected call so its passing result resolves the check.",
+            "The call was rejected before anything ran, so it created no check. Follow the receipt's hint to correct the arguments and run it again; when it declared purpose verification or expected_failure, keep that purpose on the corrected call so its passing result counts as that verification.",
         "side_effects_possible" => "Inspect the affected state before deciding whether any retry is safe.",
         "approval_denied" or "access_denied" or "rule_denied" or "workspace_path_outside_root" =>
             "The action was denied; report the blocker and do not route around the same restriction.",

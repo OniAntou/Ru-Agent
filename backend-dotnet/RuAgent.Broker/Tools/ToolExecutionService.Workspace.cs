@@ -14,6 +14,9 @@ using RuAgent.Broker.Tools.Help;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using BrokerRunLease = RuAgent.Broker.Runtime.BrokerRunLease;
+using RuAgent.Broker.Tools.Todo;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace RuAgent.Broker.Tools;
 
@@ -356,5 +359,155 @@ public sealed partial class ToolExecutionService
         }
 
         return output.ToArray();
+    }
+
+    private ValueTask<ToolExecutionOutcome> ExecutePatchAsync(ToolExecutionContext context, JsonObject arguments, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var tools = ToolsFor(context);
+        var patch = ReadString(arguments, "patch");
+        var files = UnifiedPatchParser.Parse(patch);
+        if (files.Count == 0) throw new ArgumentException("patch_empty");
+        var hashes = new JsonObject();
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        long totalBytes = 0;
+        foreach (var file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (file.Hunks.Count == 0 || file.IsNewFile && file.IsDeletedFile) throw new ArgumentException("invalid_patch_header");
+            if (!file.IsNewFile && !file.IsDeletedFile && !string.Equals(file.SourcePath, file.TargetPath, StringComparison.Ordinal))
+                throw new ArgumentException("patch_rename_unsupported");
+            var target = tools.MutationResolver.Resolve(file.TargetPath);
+            if (target.IsOutsideWorkspace) throw new UnauthorizedAccessException("patch_outside_workspace");
+            if (target.IsProtected) throw new UnauthorizedAccessException("protected_path");
+            if (!paths.Add(target.CanonicalPath)) throw new ArgumentException("patch_duplicate_target");
+            if (File.Exists(target.CanonicalPath)) totalBytes += new FileInfo(target.CanonicalPath).Length;
+            if (totalBytes > FileMutationJournal.MaxTotalBytes) throw new ArgumentException("patch_preimages_too_large");
+            var hash = FileHashService.GetCurrentHash(target.CanonicalPath);
+            if (file.IsNewFile && !FileHashService.IsMissing(hash)) throw new IOException("file_exists");
+            if (!file.IsNewFile && FileHashService.IsMissing(hash)) throw new IOException("file_not_found");
+            if (file.IsDeletedFile)
+            {
+                var original = StrictUtf8.GetString(ReadBoundedBytes(target.CanonicalPath, FileWriteAdapter.MaxInputBytes));
+                if (UnifiedPatchParser.ApplyHunks(original, file.Hunks).Length != 0)
+                    throw new ArgumentException("patch_delete_not_empty");
+            }
+            hashes[file.TargetPath] = hash;
+        }
+        var adapterArguments = new JsonObject { ["patch"] = patch, ["expected_hashes"] = hashes };
+        var profile = ActivePolicyProfile(context);
+        var adapter = new FilePatchAdapter(tools.CanonicalRoot, allowProtectedPaths: profile is not null && AgentPolicyProfileCatalog.OpensProtectedPaths(profile));
+        var output = FileMutationGuard.WithLock(() =>
+        {
+            // Resolve every hunk before the first write, then retain the same preimage hashes.
+            adapter.Prepare(adapterArguments);
+            ct.ThrowIfCancellationRequested();
+            return adapter.Execute(adapterArguments);
+        });
+        return Succeeded(output, "Workspace patch applied.");
+    }
+
+    private async ValueTask<ToolExecutionOutcome> ExecuteLineReadAsync(ToolExecutionContext context, JsonObject arguments, CancellationToken ct) =>
+        ToolExecutionOutcome.Succeeded(await ResolveTools(context, TargetPathOf(arguments)).Read.ExecuteLinesAsync(arguments, ct)
+            .ConfigureAwait(false), ToolVerificationStates.NotRequired, "Workspace file read by line.");
+
+    private ValueTask<ToolExecutionOutcome> ExecuteMultiEditAsync(ToolExecutionContext context, JsonObject arguments, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var tools = ResolveTools(context, TargetPathOf(arguments));
+        return Succeeded(tools.Edit.ExecuteMany(WithInternalExpectedHash(tools.MutationResolver, arguments)), "Workspace file edited atomically.");
+    }
+
+    private readonly TodoStore _todos = new();
+
+    /// <summary>
+    /// Replaces the session's task list with the one the model sent.
+    /// </summary>
+    /// <remarks>
+    /// A rejected list never reaches the store, so a malformed write cannot erase the
+    /// plan the user is reading. The summary returned to the model reports counts
+    /// rather than the list, because it already sent the list and what it cannot derive
+    /// is how much is left.
+    /// </remarks>
+    private ValueTask<ToolExecutionOutcome> ExecuteTodoWriteAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+
+        if (string.IsNullOrWhiteSpace(context.SessionId))
+        {
+            return ValueTask.FromResult(ToolExecutionOutcome.Failed(
+                "todo_session_required",
+                "The task list belongs to a session and this call carried none."));
+        }
+
+        var validation = TodoListValidator.Validate(arguments["todos"]);
+        if (!validation.IsValid)
+        {
+            return ValueTask.FromResult(ToolExecutionOutcome.Failed(
+                validation.ErrorCode!,
+                DescribeRejection(validation.ErrorCode!)));
+        }
+
+        _todos.Replace(context.SessionId, validation.Items);
+
+        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+            new JsonObject
+            {
+                ["todos"] = TodoPayload(validation.Items),
+                ["summary"] = TodoStore.Describe(validation.Items),
+            },
+            ToolVerificationStates.NotRequired,
+            TodoStore.Describe(validation.Items)));
+    }
+
+    /// <summary>
+    /// What the model is told when its list is rejected.
+    /// </summary>
+    /// <remarks>
+    /// Each rejection names the rule it broke, so the next attempt can fix it instead of
+    /// resending the same list. The code travels beside this as the stable handle.
+    /// </remarks>
+    private static string DescribeRejection(string errorCode) => errorCode switch
+    {
+        "todo_list_required" => "A todo_write call needs a todos array.",
+        "todo_too_many" => $"A task list holds at most {TodoListValidator.MaximumItems} items.",
+        "todo_item_invalid" => "Every task must be an object with content and status.",
+        "todo_content_empty" => "Every task needs a non-empty content line.",
+        "todo_content_too_long" =>
+            $"A task line holds at most {TodoListValidator.MaximumContentLength} characters.",
+        "todo_status_unknown" => "Status must be pending, in_progress, or completed.",
+        "todo_content_duplicate" => "Two tasks cannot share the same content.",
+        "todo_multiple_active" => "At most one task may be in_progress.",
+        _ => "The task list was rejected.",
+    };
+
+    private static JsonArray TodoPayload(IReadOnlyList<TodoRow> rows) =>
+        new(rows.Select(row => (JsonNode)new JsonObject
+        {
+            ["content"] = row.Content,
+            ["status"] = row.Status,
+        }).ToArray());
+
+    /// <summary>The task list for a session, for a caller that needs to read it.</summary>
+    public IReadOnlyList<TodoRow> ReadTodos(string sessionId) => _todos.Read(sessionId);
+
+    // Completion bookkeeping only. Approval still uses the full authorized intent,
+    // including timeout and operation class; this digest can never authorize a call.
+    private static void AddVerificationIdentity(JsonObject output, CanonicalCommandIntent intent)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            domain = "ru-terminal-verification-v1",
+            executable = intent.ResolvedExecutable.ToUpperInvariant(),
+            arguments = intent.Arguments,
+            cwd = Path.TrimEndingDirectorySeparator(intent.CanonicalWorkingDirectory).ToUpperInvariant(),
+        });
+        output["verification_identity"] = Convert.ToHexString(SHA256.HashData(bytes));
+        output["verification_cwd"] = intent.CanonicalWorkingDirectory;
+        output["terminal_effect"] = intent.OperationClass == RuAgent.Protocol.TerminalOperationClass.ReadOnly
+            ? "read_only" : "unknown";
     }
 }

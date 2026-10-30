@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(broker)**: `ToolExecutionService` gộp từ 15 partial còn 4 theo trục trách nhiệm
+  (core/dispatch, execution, workspace, external I/O), không đổi hành vi; toàn bộ 1.443 test
+  Broker vẫn xanh.
+
 - **fix(cli)**: **Một bảng tên provider duy nhất cho Host và hai client.** `ProviderAliases`
   trong `RuAgent.Protocol` thay bốn bảng alias từng trôi lệch nhau (Host, settings
   transition, settings store và `ProviderCredential`). `/key opencode`, `/key kilo`,

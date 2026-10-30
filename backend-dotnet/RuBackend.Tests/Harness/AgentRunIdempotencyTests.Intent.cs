@@ -44,13 +44,10 @@ public sealed partial class AgentRunIdempotencyTests
     }
 
     [Fact]
-    public async Task Selected_image_validation_uses_the_submitted_provider_and_model()
+    public async Task Selected_image_admission_keeps_the_submitted_provider_and_model()
     {
         using var tmp = TempWorkspace.Create(); using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
         using var client = factory.CreateAuthenticatedClient(); var session = await CreateSessionAsync(client);
-        var service = factory.Services.GetRequiredService<RuBackend.Harness.AgentRunCreationService>();
-        (string Backend, string Model)? checkedSelection = null;
-        service.DeclaredProviderVision = (backend, model, _) => { checkedSelection = (backend, model); return Task.FromResult<bool?>(true); };
         var settings = factory.Services.GetRequiredService<ISettingsStore>();
         await settings.SaveAsync((await settings.ReadAsync(default)) with { Backend = "Anthropic", AnthropicModel = "text-default" }, default);
         using var created = await client.PostAsJsonAsync("/agent/v1/runs/selected", new {
@@ -58,6 +55,9 @@ public sealed partial class AgentRunIdempotencyTests
             idempotency_key = "image-intent", provider_selection = new { backend = "OpenAI", model = "gpt-4o" },
             image_attachments = new[] { "data:image/png;base64,AA==" } });
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        Assert.Equal(("OpenAI", "gpt-4o"), checkedSelection);
+        var run = await created.Content.ReadFromJsonAsync<JsonElement>();
+        var selections = factory.Services.GetRequiredService<SqliteAgentRunProviderSelectionStore>();
+        var id = new RunId(run.GetProperty("run_id").GetString()!);
+        Assert.Equal(new RunProviderIntent("OpenAI", "gpt-4o"), await selections.GetIntentAsync(id, default));
     }
 }

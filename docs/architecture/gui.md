@@ -268,6 +268,10 @@ Signature detection reads the supplied stream directly and leaves it open for
 the decoder; adapters over managed byte streams do not support cloned substreams.
 Intake failures appear above the composer only while the originating session and
 generation still own the operation.
+Sent user messages keep image/file attachments in a separate right-aligned row
+above the text bubble. Only the typed text receives the bubble background;
+attachment-only messages show no empty bubble. Overflow attachments can scroll
+horizontally within the reading column, and message copy/rewind remains on the group.
 `SessionPresetViewModel` owns the chat's permission preset and the cached version of
 the Host's stored selection. Only two rules narrow it: Full Access does not follow the
 user into a session it was not stored for, and a declined Full Access confirmation

@@ -59,81 +59,82 @@
                 <Grid x:Name="MessageColumn"
                       HorizontalAlignment="Center"
                       Loaded="OnMessageColumnLoaded">
-                <!-- The user bubble is a tail, not a card: the bottom-right
-                     corner pulls in to 4 so the message points back at the
-                     composer. Every other corner stays on the flyout step. -->
-                <Border MaxWidth="620"
-                        HorizontalAlignment="Right"
-                        Background="{StaticResource RuSurfaceBrush}"
-                        BorderBrush="{StaticResource RuLineBrush}"
-                        BorderThickness="1"
-                        CornerRadius="14,14,4,14"
-                        Padding="16,12">
-                    <Border.ContextFlyout>
-                        <MenuFlyout>
-                            <MenuFlyoutItem Text="Copy Content" Click="OnCopyMessageContentClick" Tag="{x:Bind}">
-                                <MenuFlyoutItem.Icon>
-                                    <FontIcon Glyph="&#xE8C8;" />
-                                </MenuFlyoutItem.Icon>
-                            </MenuFlyoutItem>
-                            <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
-                                <MenuFlyoutItem.Icon>
-                                    <FontIcon Glyph="&#xE7A7;" />
-                                </MenuFlyoutItem.Icon>
-                            </MenuFlyoutItem>
-                        </MenuFlyout>
-                    </Border.ContextFlyout>
-                    <StackPanel Spacing="8">
-                        <ItemsControl ItemsSource="{x:Bind Attachments, Mode=OneWay}"
-                                      Visibility="{x:Bind HasAttachments, Mode=OneWay}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal" Spacing="6" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:ImageAttachmentItem">
-                                    <Grid Margin="0,0,0,4">
-                                        <!-- Image Rendering -->
-                                        <Border Visibility="{x:Bind IsImage, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                 MaxWidth="240" MaxHeight="180" Width="140" Height="105" CornerRadius="{StaticResource AppCardCornerRadius}"
-                                                Background="{StaticResource RuCanvasBrush}"
-                                                BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
-                                                ToolTipService.ToolTip="Click to view full image">
-                                            <HyperlinkButton Click="OnImageAttachmentClick" Tag="{x:Bind}"
-                                                             AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}"
-                                                             Padding="0" Background="Transparent" BorderThickness="0"
-                                                             HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                                                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                                                <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" />
-                                            </HyperlinkButton>
-                                        </Border>
+                    <!-- Attachments have their own row; only the typed text gets a bubble. -->
+                    <StackPanel MaxWidth="620" HorizontalAlignment="Right" Spacing="8">
+                        <StackPanel.ContextFlyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="Copy Content" Click="OnCopyMessageContentClick" Tag="{x:Bind}">
+                                    <MenuFlyoutItem.Icon>
+                                        <FontIcon Glyph="&#xE8C8;" />
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+                                <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
+                                    <MenuFlyoutItem.Icon>
+                                        <FontIcon Glyph="&#xE7A7;" />
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+                            </MenuFlyout>
+                        </StackPanel.ContextFlyout>
+                        <ScrollViewer HorizontalAlignment="Right" MaxWidth="620"
+                                      HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled"
+                                      HorizontalContentAlignment="Right"
+                                      Visibility="{x:Bind HasAttachments, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <ItemsControl x:Name="UserMessageAttachments" ItemsSource="{x:Bind Attachments, Mode=OneWay}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="6" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:ImageAttachmentItem">
+                                        <Grid Margin="0,0,0,4">
+                                            <!-- Image Rendering -->
+                                            <Border Visibility="{x:Bind IsImage, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                     MaxWidth="240" MaxHeight="180" Width="140" Height="105" CornerRadius="{StaticResource AppCardCornerRadius}"
+                                                    Background="{StaticResource RuCanvasBrush}"
+                                                    BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+                                                    ToolTipService.ToolTip="Click to view full image">
+                                                <HyperlinkButton Click="OnImageAttachmentClick" Tag="{x:Bind}"
+                                                                 AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}"
+                                                                 Padding="0" Background="Transparent" BorderThickness="0"
+                                                                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                                                 HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                                                    <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" />
+                                                </HyperlinkButton>
+                                            </Border>
 
-                                        <!-- Document / Code File Pill Badge -->
-                                        <Border Visibility="{x:Bind IsDocument, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                CornerRadius="{StaticResource AppControlCornerRadius}"
-                                                Background="{StaticResource RuCanvasBrush}"
-                                                BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
-                                                Padding="10,6">
-                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                <FontIcon Glyph="{x:Bind FileIconGlyph, Mode=OneWay}" FontSize="16" Foreground="{StaticResource RuAccentBrush}" />
-                                                <StackPanel Spacing="1">
-                                                    <TextBlock Text="{x:Bind FileName, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" MaxWidth="180" TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Text="{x:Bind FormattedSize, Mode=OneWay}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                                            <!-- Document / Code File Pill Badge -->
+                                            <Border Visibility="{x:Bind IsDocument, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                    CornerRadius="{StaticResource AppControlCornerRadius}"
+                                                    Background="{StaticResource RuCanvasBrush}"
+                                                    BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+                                                    Padding="10,6">
+                                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                    <FontIcon Glyph="{x:Bind FileIconGlyph, Mode=OneWay}" FontSize="16" Foreground="{StaticResource RuAccentBrush}" />
+                                                    <StackPanel Spacing="1">
+                                                        <TextBlock Text="{x:Bind FileName, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" MaxWidth="180" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{x:Bind FormattedSize, Mode=OneWay}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                                                    </StackPanel>
                                                 </StackPanel>
-                                            </StackPanel>
-                                        </Border>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <controls:MarkdownBlock x:Name="AgentLegacyTextBlock"
-                                                MarkdownText="{x:Bind Content, Mode=OneWay}"
-                                                Foreground="{StaticResource RuInkBrush}"
-                                                FontFamily="{StaticResource RuUiFontFamily}" />
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <Border x:Name="UserTextBubble" MaxWidth="620"
+                                HorizontalAlignment="Right"
+                                Background="{StaticResource RuSurfaceBrush}"
+                                BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+                                CornerRadius="14,14,4,14" Padding="16,12"
+                                Visibility="{x:Bind HasText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <controls:MarkdownBlock x:Name="AgentLegacyTextBlock"
+                                                    MarkdownText="{x:Bind Content, Mode=OneWay}"
+                                                    Foreground="{StaticResource RuInkBrush}"
+                                                    FontFamily="{StaticResource RuUiFontFamily}" />
+                        </Border>
                     </StackPanel>
-                </Border>
                 </Grid>
             </Grid>
         </DataTemplate>

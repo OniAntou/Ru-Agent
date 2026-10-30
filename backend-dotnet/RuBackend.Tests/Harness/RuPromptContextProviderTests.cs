@@ -103,8 +103,10 @@ public sealed partial class RuPromptContextProviderTests
         Assert.DoesNotContain(context.RuntimeContext.References, reference => reference.Kind == "background_tasks");
     }
 
-    [Fact]
-    public async Task Prompt_model_label_comes_from_the_run_pin_without_reading_current_settings()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Prompt_model_label_comes_from_the_run_pin_without_reading_current_settings(bool acceptsImages)
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var resolver = new FixedMetadataResolver(new AgentRunModelMetadata(
@@ -114,7 +116,7 @@ public sealed partial class RuPromptContextProviderTests
             200_000,
             "models.dev",
             "catalog-v1",
-            8_192));
+            8_192, ImageInputAccepted: acceptsImages));
         var provider = new RuPromptContextProvider(
             fixture.Root,
             fixture.CreateLoader(),
@@ -129,6 +131,7 @@ public sealed partial class RuPromptContextProviderTests
             CancellationToken.None);
 
         Assert.Equal("model-a", context.Environment.Model);
+        Assert.Equal(acceptsImages, context.Environment.ImageInputAccepted);
         Assert.Equal(1, resolver.Calls);
         Assert.DoesNotContain("secret", System.Text.Encoding.UTF8.GetString(context.SerializeUtf8()), StringComparison.Ordinal);
     }

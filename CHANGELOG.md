@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Show sent image/file attachments outside the user's text bubble;
+  hide the text bubble for attachment-only messages and retain copy/rewind actions.
+- **fix(agent)**: Preserve image receipt facts in follow-up context, including
+  image-only turns, and declare pinned image capability in the system prompt so
+  unavailable image contents are not confused with a missing attachment.
+
+- **feat(agent)**: Continue chats with image attachments on text-only models.
+  Keep the images in history and give the selected model an explicit notice
+  that it cannot view their contents, allowing it to explain the limitation
+  in its reply. Preserve provider/model selection and image validation bounds.
+
 - **fix(gui)**: Restore image attachments from the picker, drag-and-drop and
   clipboard by reading image signatures without cloning managed streams. Show
   intake failures above the composer instead of only logging them.

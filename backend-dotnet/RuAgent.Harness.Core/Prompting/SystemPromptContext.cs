@@ -20,7 +20,8 @@ public sealed record PromptEnvironment
         string timezone,
         string date,
         string? workspaceLabel,
-        string? toolInventory = null)
+        string? toolInventory = null,
+        bool? imageInputAccepted = null)
     {
         Model = PromptText.Require(model, 256, nameof(model));
         Platform = PromptText.Require(platform, 64, nameof(platform));
@@ -29,6 +30,7 @@ public sealed record PromptEnvironment
         Date = PromptText.Require(date, 32, nameof(date));
         WorkspaceLabel = PromptText.Optional(workspaceLabel, 128, nameof(workspaceLabel));
         ToolInventory = PromptText.Optional(toolInventory, 256, nameof(toolInventory));
+        ImageInputAccepted = imageInputAccepted;
     }
 
     public string Model { get; }
@@ -49,6 +51,20 @@ public sealed record PromptEnvironment
     /// exists instead of guessing pwsh and learning via executable_not_found.
     /// </summary>
     public string? ToolInventory { get; }
+
+    public bool? ImageInputAccepted { get; }
+
+    internal JsonObject SerializeFields()
+    {
+        var fields = new JsonObject
+        {
+            ["model"] = Model, ["platform"] = Platform, ["locale"] = Locale,
+            ["timezone"] = Timezone, ["date"] = Date, ["workspace_label"] = WorkspaceLabel,
+            ["tool_inventory"] = ToolInventory,
+        };
+        if (ImageInputAccepted is { } accepted) fields["image_input"] = accepted;
+        return fields;
+    }
 }
 
 public enum PromptInstructionOrigin
@@ -343,16 +359,7 @@ public sealed record SystemPromptContext
             agent_profile = AgentProfile,
             preset = Preset,
             effective_policy = AgentPolicyProfileCatalog.WriteProfile(EffectivePolicy),
-            environment = new
-            {
-                model = Environment.Model,
-                platform = Environment.Platform,
-                locale = Environment.Locale,
-                timezone = Environment.Timezone,
-                date = Environment.Date,
-                workspace_label = Environment.WorkspaceLabel,
-                tool_inventory = Environment.ToolInventory,
-            },
+            environment = Environment.SerializeFields(),
             instruction_blocks = InstructionBlocks.Select(block => new
             {
                 source_id = block.SourceId,

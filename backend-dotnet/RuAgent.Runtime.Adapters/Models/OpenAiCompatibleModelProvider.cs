@@ -229,7 +229,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
 
     private static string BuildRequestBody(ModelRequest request)
     {
-        if (request.Images.Count > 0 && !ModelImage.IsVisionModel(request.Model))
+        if (request.Images.Count > 0 && !request.AcceptsImageInput)
             throw new ModelProviderException("vision_unsupported", false);
 
         var messages = new JsonArray

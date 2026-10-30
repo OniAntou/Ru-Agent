@@ -173,6 +173,22 @@ a top-level `cache_control: {"type":"ephemeral"}` so each step reads the stable
 prefix from cache. Anthropic-compatible gateways do not receive the field, since
 one that rejects it would fail the run instead of running uncached.
 
+### Client image attachments
+
+Run admission retains validated client images independently of image capability.
+The pinned capability reaches request preparation separately from provider options.
+For a text-only model, preparation projects a bounded textual notice in the user
+message and sends no client image bytes; the model can explain the limitation
+while helping with the text. The original source request and encrypted payloads
+remain intact across retries and restart. A provider declaration overrides name
+hints consistently in the snapshot and all three protocol adapters. See
+[ADR 0040](../adr/0040-text-only-image-attachments.md).
+The system-prompt environment also declares the pinned image-input capability on
+every turn. For a text-only model it explicitly distinguishes receiving an
+attachment from viewing its contents. Historical user turns retain bounded
+image-count facts from visible source messages, including image-only turns;
+the original message text stays unchanged for display.
+
 ### Tool images
 
 A `read` of a workspace image ([ADR 0026](../adr/0026-read-returns-workspace-images.md))

@@ -25,7 +25,8 @@ public sealed partial class InProcessModelStepRunner
                 bootstrap.Endpoint, bootstrap.Model, bootstrap.Credential, bootstrap.RequestOptions, cap,
                 bootstrap.ToolCallingMode, allowNativeResponses: true, allowNativeAnthropic: true,
                 bootstrap.UseMaxCompletionTokens, bootstrap.ContextWindowTokens, cap,
-                replayChatReasoning: bootstrap.ReplayChatReasoning);
+                replayChatReasoning: bootstrap.ReplayChatReasoning,
+                acceptsImageInput: bootstrap.AcceptsImageInput);
             // Reuse protocol-specific continuations, including opaque provider reasoning, without a dispatch loop.
             var generation = new ModelGenerationRequest(source.Prompt, source.ModelMessages, source.SystemPromptContext,
                 source.Settings, summaryBootstrap, source.Images, source.ResponsesInputItems, source.AnthropicMessages,

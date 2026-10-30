@@ -78,7 +78,7 @@ public sealed class SessionHistoryException(string code) : Exception(code)
     public string Code { get; } = code;
 }
 
-public sealed record ConversationTurn(string Prompt, string Response);
+public sealed record ConversationTurn(string Prompt, string Response, string? SourceRunId = null);
 
 public interface ISessionStore
 {

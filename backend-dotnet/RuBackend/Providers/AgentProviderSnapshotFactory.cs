@@ -228,8 +228,7 @@ public sealed class AgentProviderSnapshotFactory(
             throw new ProviderCatalogException("provider_selection_invalid");
         }
         var replayChatReasoning = ChatReasoningReplayPolicy.TakePinnedCapability(options, selected);
-        // The image-input decision gates the read tool, not the provider request (ADR 0026).
-        _ = ImageInputPolicy.TakePinnedCapability(options);
+        var acceptsImageInput = ImageInputPolicy.TakePinnedCapability(options);
         _ = ComputerUsePolicy.TakePinnedCapability(options);
         _ = ProviderWebSearchPolicy.TakePinnedCapability(options);
         AgentToolProfilePin.ValidateAndRemove(options);
@@ -245,7 +244,8 @@ public sealed class AgentProviderSnapshotFactory(
             contextWindowTokens: pin.ContextWindowTokens,
             outputTokenReserve: pin.OutputTokenReserve,
             reducedEffortRequestOptions: ProviderReasoningPreferences.LowestEffortOptions(models, selected.Model, options),
-            replayChatReasoning: replayChatReasoning);
+            replayChatReasoning: replayChatReasoning,
+            acceptsImageInput: acceptsImageInput);
     }
 
     private async Task<string> ReadCredentialAsync(ProviderSelection selected, CancellationToken ct)
@@ -379,7 +379,8 @@ public sealed class AgentProviderSnapshotFactory(
         long? contextWindowTokens = null,
         int? outputTokenReserve = null,
         JsonObject? reducedEffortRequestOptions = null,
-        bool replayChatReasoning = false)
+        bool replayChatReasoning = false,
+        bool? acceptsImageInput = null)
     {
         try
         {
@@ -398,7 +399,8 @@ public sealed class AgentProviderSnapshotFactory(
                 contextWindowTokens,
                 outputTokenReserve,
                 reducedEffortRequestOptions,
-                replayChatReasoning);
+                replayChatReasoning,
+                acceptsImageInput);
         }
         catch (ArgumentException)
         {

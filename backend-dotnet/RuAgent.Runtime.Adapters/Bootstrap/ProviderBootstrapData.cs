@@ -26,7 +26,8 @@ public sealed record ProviderBootstrapData
         long? contextWindowTokens = null,
         int? outputTokenReserve = null,
         JsonObject? reducedEffortRequestOptions = null,
-        bool replayChatReasoning = false)
+        bool replayChatReasoning = false,
+        bool? acceptsImageInput = null)
     {
         Backend = Require(backend, 128, nameof(backend));
         Protocol = ProviderProtocols.Require(protocol);
@@ -38,6 +39,7 @@ public sealed record ProviderBootstrapData
         }
 
         Model = Require(model, 256, nameof(model));
+        AcceptsImageInput = ModelImage.IsVisionModel(model, acceptsImageInput);
         Credential = Require(credential, 4096, nameof(credential), allowEmpty: true);
         Endpoint = endpoint;
         RequestOptions = ProviderRequestOptionsValidator.ValidateAndClone(protocol, requestOptions, nameof(requestOptions));
@@ -77,6 +79,9 @@ public sealed record ProviderBootstrapData
     public Uri Endpoint { get; }
 
     public string Model { get; }
+
+    /// <summary>The pinned image-input decision, independent of model-name hints.</summary>
+    public bool AcceptsImageInput { get; }
 
     public string Credential { get; }
 

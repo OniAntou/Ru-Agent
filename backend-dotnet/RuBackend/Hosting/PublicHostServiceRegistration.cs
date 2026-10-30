@@ -2,7 +2,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.Http;
 using RuBackend.Business;
@@ -304,12 +303,6 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<AgentActivitiesService>();
         services.AddSingleton<AgentCommandsService>();
         services.AddSingleton<AgentInputsService>();
-        // Image-input support follows what the provider's catalog declares for the
-        // selected model. A name check alone read a gateway model carrying no vendor
-        // token as non-vision and rejected its attachments. Wired as a property so
-        // the run service keeps catalog metadata in its focused creation path.
-        services.AddSingleton<IPostConfigureOptions<AgentRunCreationService>, AgentV1CatalogVisionConfigurator>();
-
         // Harness Core adapters: the typed in-process model step service. One
         // Request deadlines end at response headers; the adapters retain an infinite
         // whole-request timeout so healthy long SSE streams are bounded by their idle
@@ -540,39 +533,4 @@ internal sealed class HarnessStoreHealthWarmupService : IHostedService
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-}
-
-/// <summary>
-/// Points <see cref="AgentRunCreationService"/> at the provider catalog so image-input support
-/// follows what the provider declares for the selected model rather than a guess made
-/// from the model name.
-/// </summary>
-internal sealed class AgentV1CatalogVisionConfigurator(
-    ProviderCatalogService catalog,
-    ISettingsStore settingsStore) : IPostConfigureOptions<AgentRunCreationService>
-{
-    public void PostConfigure(string? name, AgentRunCreationService service)
-    {
-        service.DeclaredProviderVision = async (backend, model, ct) =>
-        {
-            try { return await catalog.DeclaresVisionAsync(backend, model, ct).ConfigureAwait(false); }
-            catch (Exception error) when (error is not OperationCanceledException) { return null; }
-        };
-        service.DeclaredVision = async (model, ct) =>
-        {
-            // Absence is not a verdict: no settings store means no selected model to
-            // look up, and a catalog that cannot be read says nothing about the model.
-            // Either way the name check decides rather than this throwing.
-            if (settingsStore is null) return null;
-            var settings = await settingsStore.ReadAsync(ct).ConfigureAwait(false);
-            try
-            {
-                return await catalog.DeclaresVisionAsync(settings.Backend, model, ct).ConfigureAwait(false);
-            }
-            catch (Exception error) when (error is not OperationCanceledException)
-            {
-                return null;
-            }
-        };
-    }
 }

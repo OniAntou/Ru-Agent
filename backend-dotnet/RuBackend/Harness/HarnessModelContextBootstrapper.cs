@@ -56,16 +56,28 @@ public sealed class HarnessModelContextBootstrapper : IHarnessModelContextBootst
         }
 
         var turns = SessionContextTurns.Select(session.Messages, MaximumContextTurns);
+        var imageCounts = await _payloads.ReadSessionImageCountsAsync(sessionId,
+            turns.Where(turn => turn.SourceRunId is not null).Select(turn => turn.SourceRunId!)
+                .Distinct(StringComparer.Ordinal).ToArray(), cancellationToken).ConfigureAwait(false);
         var entries = new List<HarnessBaseContextEntry>(turns.Count * 2);
         long sequence = 1;
         foreach (var turn in turns)
         {
+            int imageCount = turn.SourceRunId is { } source && imageCounts.TryGetValue(source, out var count) ? count : 0;
+            if (string.IsNullOrWhiteSpace(turn.Prompt) && imageCount == 0) continue;
+            var prompt = turn.Prompt;
+            if (imageCount > 0)
+            {
+                var fact = $"[Earlier user attachment: {imageCount} image attachment(s) were received with this message. "
+                    + "Image contents are not included in this historical turn. This confirms receipt, not image understanding.]";
+                prompt = string.IsNullOrWhiteSpace(prompt) ? fact : prompt + "\n\n" + fact;
+            }
             entries.Add(new HarnessBaseContextEntry(
                 _ids.NewPayloadId(),
                 $"base:turn:{sequence}:user",
                 sequence++,
                 ModelContextRole.User,
-                turn.Prompt));
+                prompt));
             entries.Add(new HarnessBaseContextEntry(
                 _ids.NewPayloadId(),
                 $"base:turn:{sequence}:assistant",

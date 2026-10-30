@@ -358,7 +358,7 @@ _Avoid_: mixing session-wide edits or current filesystem content into an older t
 
 
 **Multimodal Image Payload**:
-A validated bounded client image persisted encrypted for authenticated-client and model-context audiences, then projected to a vision-capable provider. Unsupported models fail by name.
+A validated bounded client image persisted encrypted for authenticated-client and model-context audiences. A vision-capable pinned model receives image content; a text-only model receives an explicit notice that the attached image contents are unavailable, so the conversation can continue without dropping the stored attachment.
 Implementation: [host](docs/architecture/host.md#multimodal-image-payload).
 _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 

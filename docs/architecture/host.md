@@ -106,13 +106,17 @@ and run handles.
 
 The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP.NET Core Public Host, the in-process model step, and LLM providers:
 - **Client preparation:** WinUI 3 `ImageAttachmentResizer` scales images exceeding 2048px on their longest dimension down proportionally and compresses them to JPEG (quality 0.85) or PNG (if alpha present). Up to 4 images can be attached per user turn.
-- **Backend validation & persistence:** `POST /agent/v1/runs` has a 26 MiB JSON request-body bound for encoded `image_attachments` data URLs, distinct from decoded image bounds. ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), base64 structure, decoded per-image size (<=4 MiB), total decoded size (<=20 MiB), and vision compatibility of the selected model. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
+- **Backend validation & persistence:** `POST /agent/v1/runs` has a 26 MiB JSON request-body bound for encoded `image_attachments` data URLs, distinct from decoded image bounds. ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), base64 structure, decoded per-image size (<=4 MiB), total decoded size (<=20 MiB), and retains valid images even when the selected model accepts only text. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
 - **Model step integration:** the typed `ModelGenerationRequest.Images` carries decrypted `UserImage` payloads. `ModelStepService` projects these into `ModelRequest.Images` (`IReadOnlyList<ModelImage>`).
 - **Provider projection:** Model adapters project images into provider-native payloads:
   - OpenAI Responses: `{"type": "input_image", "image_url": "data:image/..."}`
   - Anthropic Messages: `{"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}`
   - OpenAI-Compatible: `{"type": "image_url", "image_url": {"url": "data:image/..."}}`
-  Non-vision models fail closed with `vision_unsupported`.
+  Text-only pinned models receive a textual attachment notice instead of image wire parts, allowing the chat to continue and the model to explain that it cannot view the image. Stored images remain available to the authenticated client; MIME/size limits and payload-read failures remain enforced ([ADR 0040](../adr/0040-text-only-image-attachments.md)).
+  Follow-up context preserves image receipt facts for retained user messages,
+  including image-only turns. The prompt environment declares the pinned model's
+  image capability on every turn. Receipt facts contain no image bytes and do
+  not alter the user's displayed message; pruned history is not resurrected.
 - **Workspace images through `read`:** the agent can also look at an image file in the workspace ([ADR 0026](../adr/0026-read-returns-workspace-images.md)). The run's pinned selection records whether its model accepts image input; the in-process gateway sends that decision on the `tool.execute` envelope, and the Broker returns the image beside small JSON metadata or fails with `image_unsupported_by_model`. The pipeline stores it as a model-only, opaque, encrypted `ToolImage` payload (kind 18) whose id is derived from the tool result's payload id, so no event or context row names it. `SqliteModelContextSource` attaches the newest four to their tool results; older results carry an omitted note. See [Providers](providers.md#tool-images) for the per-protocol projection.
 
 
@@ -202,7 +206,7 @@ most 2048px on client, validated against strict MIME and size bounds (max 4
 images, 4 MB decoded per image, 20 MB total decoded), persisted atomically in
 SQLite `agent_payloads` under kind `UserImage` (value 11) with dual audience
 `AuthenticatedClient | ModelContext`, and projected to vision-capable model
-providers through the typed model step and `ModelRequest.Images`.
+providers through the typed model step and `ModelRequest.Images`. Text-only models receive an explicit unavailable-image notice while the original payload remains stored.
 _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 
 ## Protected User Data

@@ -85,9 +85,9 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
         ArgumentNullException.ThrowIfNull(modelContext);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var model = _runModelMetadataResolver is null
-            ? SelectModel(await _settings.ReadAsync(cancellationToken).ConfigureAwait(false))
-            : (await _runModelMetadataResolver.ResolveAsync(run.RunId, cancellationToken).ConfigureAwait(false)).ModelLabel;
+        var metadata = _runModelMetadataResolver is null ? null
+            : await _runModelMetadataResolver.ResolveAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+        var model = metadata?.ModelLabel ?? SelectModel(await _settings.ReadAsync(cancellationToken).ConfigureAwait(false));
         cancellationToken.ThrowIfCancellationRequested();
         var observedPaths = ObservedFilePaths(modelContext);
         var instructions = _instructionLoader.Load(_canonicalRoot, observedPaths);
@@ -99,7 +99,7 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
             TimeZoneInfo.Local.Id,
             now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
             WorkspaceLabel(_canonicalRoot),
-            ToolInventoryProbe.Probe());
+            ToolInventoryProbe.Probe(), metadata?.ImageInputAccepted);
         var runtime = await BuildRuntimeContextAsync(run, modelContext, cancellationToken).ConfigureAwait(false);
         var projectMemory = await ProjectMemoryReferenceAsync(cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();

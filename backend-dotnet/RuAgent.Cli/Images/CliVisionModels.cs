@@ -4,7 +4,7 @@ namespace RuAgent.Cli.Images;
 /// Best-effort vision-name check ported from the provider adapters
 /// (<c>ModelImage.IsVisionModel</c>, name fallback only). The CLI has no catalog capability
 /// metadata, so this only produces a warning, never a gate: the backend stays the source of
-/// truth and fails closed with <c>vision_unsupported</c>.
+/// truth and projects an unavailable-image notice for text-only models.
 /// </summary>
 public static class CliVisionModels
 {

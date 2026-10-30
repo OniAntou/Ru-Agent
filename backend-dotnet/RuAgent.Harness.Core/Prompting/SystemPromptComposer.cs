@@ -84,6 +84,14 @@ public static class SystemPromptComposer
             lines.Add($"tools_available: {environment.ToolInventory}");
         }
 
+        if (environment.ImageInputAccepted is { } imageInput)
+        {
+            lines.Add($"image_input: {(imageInput ? "supported" : "unavailable")}");
+            if (!imageInput)
+                lines.Add("Image attachments can be received and stored, but this model cannot view their contents. "
+                    + "Do not claim to read or see an image. Do not confuse unavailable contents with no attachment.");
+        }
+
         return "ENVIRONMENT\n" + string.Join("\n", lines);
     }
 

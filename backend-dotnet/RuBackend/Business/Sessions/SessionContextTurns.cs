@@ -13,11 +13,12 @@ internal static class SessionContextTurns
         }
 
         string? pendingPrompt = null;
+        string? pendingRunId = null;
         var turns = new List<ConversationTurn>();
         foreach (var message in messages)
         {
             var content = message.Content.Trim();
-            if (content.Length == 0)
+            if (content.Length == 0 && !(message.Role == "user" && message.SourceRunId is not null))
             {
                 continue;
             }
@@ -25,11 +26,13 @@ internal static class SessionContextTurns
             if (message.Role == "user")
             {
                 pendingPrompt = content;
+                pendingRunId = message.SourceRunId;
             }
             else if (message.Role == "ai" && pendingPrompt is not null)
             {
-                turns.Add(new ConversationTurn(pendingPrompt, content));
+                turns.Add(new ConversationTurn(pendingPrompt, content, pendingRunId));
                 pendingPrompt = null;
+                pendingRunId = null;
             }
         }
 

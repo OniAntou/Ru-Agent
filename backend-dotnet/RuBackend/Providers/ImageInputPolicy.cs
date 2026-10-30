@@ -7,8 +7,9 @@ namespace RuBackend.Providers;
 
 /// <summary>
 /// Whether a run's pinned model accepts image input, decided once when the provider
-/// selection is pinned (ADR 0026). The rule is the one run creation applies to
-/// attachments: the catalog's declaration wins, the model-name check is the fallback.
+/// selection is pinned (ADRs 0026 and 0040). The catalog's declaration wins;
+/// the model-name check is the fallback. Text-only runs retain client images but
+/// receive an explicit unavailable-image notice instead of image wire parts.
 /// The decision is stored as a marker in the pinned request options, like the chat
 /// reasoning capability, and removed before any option reaches a provider.
 /// </summary>

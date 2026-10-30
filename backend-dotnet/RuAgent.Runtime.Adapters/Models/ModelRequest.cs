@@ -30,7 +30,8 @@ public sealed record ModelRequest
         string? preparedBodyJson = null,
         string? runtimeContext = null,
         bool promptInHistory = false,
-        bool replayChatReasoning = false)
+        bool replayChatReasoning = false,
+        bool? acceptsImageInput = null)
     {
         if (string.IsNullOrWhiteSpace(model) || model.Length > 256 || model.Contains('\0'))
         {
@@ -148,6 +149,7 @@ public sealed record ModelRequest
         }
 
         Model = model;
+        AcceptsImageInput = ModelImage.IsVisionModel(model, acceptsImageInput);
         SystemPrompt = systemPrompt;
         RuntimeContext = runtimeContext;
         PromptInHistory = promptInHistory;
@@ -170,6 +172,8 @@ public sealed record ModelRequest
     }
 
     public string Model { get; }
+
+    public bool AcceptsImageInput { get; }
 
     public string SystemPrompt { get; }
 
@@ -197,7 +201,7 @@ public sealed record ModelRequest
     public ModelRequest WithPreparedBodyJson(string body) => new(
         Model, SystemPrompt, Prompt, Turns, Settings, Endpoint, Credential, MaximumOutputTokens,
         Images, ResponsesInputItems, NativeToolCalling, AnthropicMessages, UseMaxCompletionTokens,
-        body, RuntimeContext, PromptInHistory, ReplayChatReasoning);
+        body, RuntimeContext, PromptInHistory, ReplayChatReasoning, AcceptsImageInput);
 
     public IReadOnlyList<ModelImage> Images { get; }
 

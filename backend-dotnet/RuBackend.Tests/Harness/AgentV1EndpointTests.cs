@@ -411,8 +411,12 @@ public sealed class AgentV1EndpointTests
         Assert.Equal("image_too_large", err.ErrorCode);
     }
 
-    [Fact]
-    public async Task Create_run_rejects_vision_unsupported_model()
+    [Theory]
+    [InlineData(false, "inspect image")]
+    [InlineData(false, "")]
+    [InlineData(true, "inspect image")]
+    [InlineData(true, "")]
+    public async Task Create_run_retains_images_for_a_text_only_model(bool selected, string prompt)
     {
         using var tmp = TempWorkspace.Create();
         var snapshot = CreateSettingsSnapshot("OpenAI", "deepseek-chat");
@@ -422,20 +426,26 @@ public sealed class AgentV1EndpointTests
 
         var validPngBase64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
         using var response = await client.PostAsJsonAsync(
-            "/agent/v1/runs",
+            selected ? "/agent/v1/runs/selected" : "/agent/v1/runs",
             new
             {
                 session_id = sessionId,
                 workspace_path = tmp.Path,
-                prompt = "inspect image",
+                prompt,
                 preset = "standard",
                 idempotency_key = "image-vision-unsupported-test-" + Guid.NewGuid().ToString("N"),
+                provider_selection = selected ? new { backend = "OpenAI", model = "deepseek-chat" } : null,
                 image_attachments = new[] { validPngBase64 },
             });
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("vision_unsupported", json.GetProperty("error_code").GetString());
+        var runId = new RunId(json.GetProperty("run_id").GetString()!);
+        var payloadStore = factory.Services.GetRequiredService<HarnessPayloadStore>();
+        var imageId = Assert.Single(await payloadStore.ListPayloadIdsAsync(
+            runId, RuAgent.Harness.Core.Persistence.HarnessPayloadKind.UserImage, default));
+        var stored = await payloadStore.ReadForClientAsync(runId, imageId, default);
+        Assert.Equal(validPngBase64, System.Text.Encoding.UTF8.GetString(stored.Plaintext.Span));
     }
 
     [Fact]

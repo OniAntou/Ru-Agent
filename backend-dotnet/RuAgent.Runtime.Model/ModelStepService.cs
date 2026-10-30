@@ -147,23 +147,27 @@ public sealed partial class ModelStepService
             var requestTurns = nativeToolCalling
                 ? request.ModelMessages
                 : ProjectTextTurns(request.ModelMessages, settings);
+            var userImages = UserImageInputProjection.Project(
+                request.Prompt, request.Images, providerBootstrap.AcceptsImageInput);
             modelRequest = new ModelRequest(
                 providerBootstrap.Model,
                 snapshot.Text,
-                request.Prompt,
+                userImages.Prompt,
                 requestTurns,
                 BuildRequestSettings(settings, providerBootstrap.RequestOptions),
                 providerBootstrap.Endpoint,
                 providerBootstrap.Credential,
                 providerBootstrap.MaximumOutputTokens,
-                request.Images,
+                userImages.Images,
                 request.ResponsesInputItems,
                 nativeToolCalling,
                 request.AnthropicMessages,
                 providerBootstrap.UseMaxCompletionTokens,
                 runtimeContext: request.PromptInHistory ? null : snapshot.RuntimeContext,
-                promptInHistory: request.PromptInHistory,
-                replayChatReasoning: nativeToolCalling && providerBootstrap.ReplayChatReasoning);
+                promptInHistory: request.PromptInHistory
+                    && (request.Images.Count == 0 || providerBootstrap.AcceptsImageInput),
+                replayChatReasoning: nativeToolCalling && providerBootstrap.ReplayChatReasoning,
+                acceptsImageInput: providerBootstrap.AcceptsImageInput);
         }
         catch (ModelStepException)
         {

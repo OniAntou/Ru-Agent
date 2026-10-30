@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(telemetry)**: **Đếm được read trùng và tool fail trước khi quyết định dedup.**
+  Broker thêm hai counter trên meter provider của Host: `ru.tool.calls`
+  (`tool.id`/`tool.status`/`error.code`) và `ru.tool.read_pages`
+  (`tool.id`/`repeated`). `repeated` đo xem phiên đã đọc đúng path đó chưa; tracker chỉ
+  đếm, không bao giờ giữ nội dung hay từ chối trả file — dedup thật cần read-state biết
+  compaction của Host nên vẫn là quyết định riêng, giờ có số để biện minh. Tag chỉ là token
+  bounded; path/arguments không bao giờ vào tag.
+
 - **feat(tools)**: **Read nói rõ điều gì đã xảy ra thay vì trả trang rỗng.** `read` và
   `read_file` thêm `notice` cho file rỗng, offset/start_line vượt cuối file, và trang bị
   cắt kèm hướng dẫn `next_offset`/`next_line`; `read` thêm `estimated_tokens` để model biết

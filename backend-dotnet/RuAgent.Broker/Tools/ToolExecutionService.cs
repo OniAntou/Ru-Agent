@@ -44,6 +44,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     // One store per service: recovery ids stay opaque even when several
     // runtimes live in one process.
     private readonly InMemoryRecoveryStore _recoveryStore = new();
+    // Counting only: tells the read counter whether this session already read the path.
+    private readonly ReadRepeatTracker _readRepeats = new();
     private readonly CanonicalPathResolver _mutationResolver;
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);

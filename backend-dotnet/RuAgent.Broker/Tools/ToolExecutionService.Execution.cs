@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using RuAgent.Broker.Diagnostics;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
@@ -61,6 +62,31 @@ public sealed partial class ToolExecutionService
         ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: true, intent);
 
     private async Task<ToolResult> ExecuteAsync(
+        AgentEnvelope request,
+        CancellationToken cancellationToken,
+        bool isAuthenticatedV2Execution,
+        CanonicalCommandIntent? authorizedTerminalIntent = null)
+    {
+        // Two counters, one funnel: every tool entry point ends here, so a call is
+        // counted once whatever route reached it. The read counter answers the
+        // question a dedup would later solve — how often a session re-reads a path.
+        var toolId = ReadString(request.Payload, "tool_id");
+        if (toolId is "read" or "read_file"
+            && request.Payload["arguments"] is JsonObject arguments
+            && arguments["path"] is JsonValue pathValue
+            && pathValue.TryGetValue<string>(out var path)
+            && !string.IsNullOrWhiteSpace(path))
+        {
+            BrokerTelemetry.RecordReadPage(toolId, _readRepeats.Observe(request.SessionId, path.Trim()));
+        }
+
+        var result = await ExecuteCoreAsync(
+            request, cancellationToken, isAuthenticatedV2Execution, authorizedTerminalIntent).ConfigureAwait(false);
+        BrokerTelemetry.RecordToolCall(toolId, result);
+        return result;
+    }
+
+    private async Task<ToolResult> ExecuteCoreAsync(
         AgentEnvelope request,
         CancellationToken cancellationToken,
         bool isAuthenticatedV2Execution,

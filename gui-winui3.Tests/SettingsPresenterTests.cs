@@ -113,7 +113,7 @@ public sealed class SettingsPresenterTests
             return true;
         });
 
-        Task<ProviderCatalogState?> connection = SettingsProviderPresenter.TestConnectionAsync(
+        Task<ProviderConnectionTestRun> connection = SettingsProviderPresenter.TestConnectionAsync(
             async () =>
             {
                 bool saved = await presenter.SaveAsync(() =>
@@ -124,7 +124,7 @@ public sealed class SettingsPresenterTests
                 Assert.True(saved);
                 return saved;
             },
-            () => { order.Add("refresh"); return Task.CompletedTask; },
+            () => { order.Add("refresh"); return Task.FromResult(true); },
             () => null);
 
         await Task.Yield();
@@ -146,15 +146,15 @@ public sealed class SettingsPresenterTests
             return true;
         });
         bool refreshed = false;
-        Task<ProviderCatalogState?> connection = SettingsProviderPresenter.TestConnectionAsync(
+        Task<ProviderConnectionTestRun> connection = SettingsProviderPresenter.TestConnectionAsync(
             () => presenter.SaveAsync(() => Task.FromResult(false)),
-            () => { refreshed = true; return Task.CompletedTask; },
+            () => { refreshed = true; return Task.FromResult(true); },
             () => null);
 
         releaseFirst.SetResult();
         await Task.WhenAll(first, connection);
 
-        Assert.Null(await connection);
+        Assert.Null((await connection).State);
         Assert.False(refreshed);
     }
 

@@ -28,6 +28,39 @@ public sealed partial class ModelStepServiceTests
         Assert.Equal(321, result.Usage.InputTokens);
     }
 
+    [Fact]
+    public void Pinned_session_header_travels_on_the_generated_request()
+    {
+        var service = new ModelStepService(new OpenAiCompatibleModelProvider(new HttpClient()));
+        var bootstrap = new ProviderBootstrapData("models.dev:opencode-go", ProviderProtocols.ChatCompletions,
+            new Uri("https://opencode.ai/inference/go/openai/v1/chat/completions"), "glm-5.3-flash", "synthetic",
+            maximumOutputTokens: 8192, contextWindowTokens: 128_000, outputTokenReserve: 8192,
+            sessionHeaderName: "x-opencode-session");
+
+        var session = new SessionId("0123456789abcdef0123456789abcdef");
+        var prepared = service.PrepareRequest(Request(bootstrap: bootstrap, sessionId: session));
+
+        Assert.Equal(session.Value, prepared.Request.ProviderHeaders["x-opencode-session"]);
+        Assert.StartsWith("RuAgent/", prepared.Request.ProviderHeaders["User-Agent"]);
+        // A provider that pins no session header sends none.
+        Assert.Empty(service.PrepareRequest(Request()).Request.ProviderHeaders);
+    }
+
+    [Fact]
+    public void Pinned_session_header_without_a_conversation_fails_closed()
+    {
+        var service = new ModelStepService(new OpenAiCompatibleModelProvider(new HttpClient()));
+        var bootstrap = new ProviderBootstrapData("models.dev:opencode-go", ProviderProtocols.ChatCompletions,
+            new Uri("https://opencode.ai/inference/go/openai/v1/chat/completions"), "glm-5.3-flash", "synthetic",
+            maximumOutputTokens: 8192, contextWindowTokens: 128_000, outputTokenReserve: 8192,
+            sessionHeaderName: "x-opencode-session");
+
+        var error = Assert.Throws<ModelStepException>(() => service.PrepareRequest(Request(bootstrap: bootstrap)));
+
+        Assert.Equal("provider_session_missing", error.Code);
+        Assert.False(error.Retryable);
+    }
+
     private sealed class ContextUsageHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
@@ -45,7 +78,7 @@ public sealed partial class ModelStepServiceTests
         var bootstrap = new ProviderBootstrapData("fixture", ProviderProtocols.ChatCompletions,
             new Uri("https://provider.invalid/v1/chat/completions"), "fixture-model",
             "credential-must-not-enter-body", maximumOutputTokens: 4096,
-            contextWindowTokens: 32_000, outputTokenReserve: 4096);
+            contextWindowTokens: 32_000, outputTokenReserve: 4096, acceptsImageInput: true);
         var plain = service.PrepareRequest(Request(bootstrap: bootstrap), requireExactProjection: true);
         var imageRequest = Request(bootstrap: bootstrap,
             images: [new ModelImage("image/png", new string('A', 200_000))]);
@@ -1178,7 +1211,8 @@ public sealed partial class ModelStepServiceTests
         ProviderProtocols.ChatCompletions,
         new Uri("http://127.0.0.1"),
         "test-worker",
-        string.Empty);
+        string.Empty,
+        acceptsImageInput: true);
 
     private static ProviderBootstrapData Bootstrap(string protocol, int? maximumOutputTokens = null) => new(
         "test-worker",
@@ -1195,14 +1229,16 @@ public sealed partial class ModelStepServiceTests
         ModelGenerationSettings? settings = null,
         ProviderBootstrapData? bootstrap = null,
         IReadOnlyList<ModelImage>? images = null,
-        IReadOnlyList<ModelTurn>? modelMessages = null) =>
+        IReadOnlyList<ModelTurn>? modelMessages = null,
+        SessionId? sessionId = null) =>
         new(
             prompt,
             modelMessages ?? Array.Empty<ModelTurn>(),
             SystemPromptContext.Empty,
             settings ?? new ModelGenerationSettings(includeTool ? ModelTools(toolId) : null),
             bootstrap ?? DefaultBootstrap,
-            images);
+            images,
+            sessionId: sessionId);
 
     private static JsonArray ModelTools(string toolId) => new()
     {

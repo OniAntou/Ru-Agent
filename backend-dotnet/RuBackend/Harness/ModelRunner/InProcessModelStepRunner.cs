@@ -264,7 +264,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 new ModelGenerationSettings(settings["model_tools"] as JsonArray,
                     providerWebSearch: request.PromptContext.ProviderWebSearch), bootstrap,
                 ParseRunImages(images), history.Responses, history.Anthropic,
-                promptInHistory: nativeText, pendingRuntimeSnapshot: pendingSnapshot);
+                promptInHistory: nativeText, pendingRuntimeSnapshot: pendingSnapshot,
+                sessionId: request.SessionId);
         }
         catch (ArgumentException error)
         {

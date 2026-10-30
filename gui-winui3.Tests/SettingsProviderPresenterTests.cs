@@ -71,11 +71,12 @@ public sealed class SettingsProviderPresenterTests
 
         var result = await SettingsProviderPresenter.TestConnectionAsync(
             () => { order.Add("save"); return Task.FromResult(true); },
-            () => { order.Add("refresh"); return Task.CompletedTask; },
+            () => { order.Add("refresh"); return Task.FromResult(true); },
             () => { order.Add("read"); return state; });
 
         Assert.Equal(new[] { "save", "refresh", "read" }, order);
-        Assert.Same(state, result);
+        Assert.Same(state, result.State);
+        Assert.True(result.Refreshed);
     }
 
     [Fact]
@@ -84,11 +85,26 @@ public sealed class SettingsProviderPresenterTests
         bool refreshed = false;
         var result = await SettingsProviderPresenter.TestConnectionAsync(
             () => Task.FromResult(false),
-            () => { refreshed = true; return Task.CompletedTask; },
+            () => { refreshed = true; return Task.FromResult(true); },
             () => new ProviderCatalogState { Status = "ok" });
 
-        Assert.Null(result);
+        Assert.Null(result.State);
+        Assert.False(result.Refreshed);
         Assert.False(refreshed);
+    }
+
+    [Fact]
+    public async Task Connection_test_reports_a_suppressed_refresh_instead_of_a_stale_state()
+    {
+        // A refresh the catalog suppressed (throttled, canceled) must be visible to the
+        // caller: the state it read is then whatever the editor already had.
+        var result = await SettingsProviderPresenter.TestConnectionAsync(
+            () => Task.FromResult(true),
+            () => Task.FromResult(false),
+            () => new ProviderCatalogState { Status = "error", ErrorCode = "catalog_unauthorized" });
+
+        Assert.False(result.Refreshed);
+        Assert.Equal("catalog_unauthorized", result.State!.ErrorCode);
     }
 
     [Fact]

@@ -50,6 +50,27 @@ public sealed class ModelRequestTests
     }
 
     [Fact]
+    public void Provider_headers_are_kept_verbatim_and_bounded()
+    {
+        var request = new ModelRequest("gpt-4o", "sys", "hi", Array.Empty<ModelTurn>(), new JsonObject(),
+            new Uri("https://api.openai.com/v1"), "sk", 100,
+            providerHeaders: new Dictionary<string, string> { ["x-opencode-session"] = "sess_01" });
+
+        Assert.Equal("sess_01", request.ProviderHeaders["x-opencode-session"]);
+
+        // A header may not take over the credential or the framing the adapter owns.
+        Assert.Throws<ArgumentException>(() => new ModelRequest(
+            "gpt-4o", "sys", "hi", Array.Empty<ModelTurn>(), new JsonObject(),
+            new Uri("https://api.openai.com/v1"), "sk", 100,
+            providerHeaders: new Dictionary<string, string> { ["Authorization"] = "Bearer other" }));
+        // Values travel on the wire, so a line break is refused here, not by the socket.
+        Assert.Throws<ArgumentException>(() => new ModelRequest(
+            "gpt-4o", "sys", "hi", Array.Empty<ModelTurn>(), new JsonObject(),
+            new Uri("https://api.openai.com/v1"), "sk", 100,
+            providerHeaders: new Dictionary<string, string> { ["x-opencode-session"] = "a\r\nb" }));
+    }
+
+    [Fact]
     public void ModelRequest_rejects_null_image_entry()
     {
         var imgs = new ModelImage?[] { new ModelImage("image/png", "a"), null! }.Where(x => true).Select(x => x!).ToList();

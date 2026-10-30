@@ -245,7 +245,8 @@ public sealed class AgentProviderSnapshotFactory(
             outputTokenReserve: pin.OutputTokenReserve,
             reducedEffortRequestOptions: ProviderReasoningPreferences.LowestEffortOptions(models, selected.Model, options),
             replayChatReasoning: replayChatReasoning,
-            acceptsImageInput: acceptsImageInput);
+            acceptsImageInput: acceptsImageInput,
+            sessionHeaderName: ProviderOverrides.SessionHeaderName(selected.Alias));
     }
 
     private async Task<string> ReadCredentialAsync(ProviderSelection selected, CancellationToken ct)
@@ -380,7 +381,8 @@ public sealed class AgentProviderSnapshotFactory(
         int? outputTokenReserve = null,
         JsonObject? reducedEffortRequestOptions = null,
         bool replayChatReasoning = false,
-        bool? acceptsImageInput = null)
+        bool? acceptsImageInput = null,
+        string? sessionHeaderName = null)
     {
         try
         {
@@ -400,7 +402,8 @@ public sealed class AgentProviderSnapshotFactory(
                 outputTokenReserve,
                 reducedEffortRequestOptions,
                 replayChatReasoning,
-                acceptsImageInput);
+                acceptsImageInput,
+                sessionHeaderName);
         }
         catch (ArgumentException)
         {

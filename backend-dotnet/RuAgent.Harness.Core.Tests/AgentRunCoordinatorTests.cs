@@ -346,7 +346,8 @@ public sealed partial class AgentRunCoordinatorTests
         model.Enqueue(ToolStep());
         model.Enqueue(FinalStep("done"));
         var store = new InMemoryHarnessEventStore(trace);
-        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var run = Run(new HarnessRunStatus(HarnessRunState.Running));
+        store.Seed(run);
         var coordinator = Coordinator(model, new FakeToolGateway(trace: trace), store);
 
         await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
@@ -354,6 +355,8 @@ public sealed partial class AgentRunCoordinatorTests
 
         Assert.True(trace.IndexOf("commit:ToolExecutionCompleted") < trace.IndexOf("model:2"));
         Assert.Equal(2, model.Requests.Count);
+        // A provider that routes by conversation needs the run's session on every step.
+        Assert.All(model.Requests, request => Assert.Equal(run.SessionId, request.SessionId));
     }
 
     [Fact]

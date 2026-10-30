@@ -18,6 +18,13 @@ internal sealed record ProviderFilterProjection(
 internal readonly record struct ProviderPickerLayout(double Height);
 
 /// <summary>
+/// What an explicit connection test learned: the catalog state after the refresh,
+/// and whether a refresh actually ran. A suppressed refresh must not be read as a
+/// fresh verdict, so the caller distinguishes the two.
+/// </summary>
+internal sealed record ProviderConnectionTestRun(ProviderCatalogState? State, bool Refreshed);
+
+/// <summary>
 /// Provider-list and provider-action decisions shared by the settings surface.
 /// WinUI remains responsible for rendering rows and status feedback.
 /// </summary>
@@ -113,18 +120,18 @@ internal static class SettingsProviderPresenter
         return modelsDevKeyIds.Contains(id, StringComparer.OrdinalIgnoreCase);
     }
 
-    internal static async Task<ProviderCatalogState?> TestConnectionAsync(
+    internal static async Task<ProviderConnectionTestRun> TestConnectionAsync(
         Func<Task<bool>> savePendingSettings,
-        Func<Task> refreshCatalog,
+        Func<Task<bool>> refreshCatalog,
         Func<ProviderCatalogState?> readState)
     {
         if (!await savePendingSettings())
         {
-            return null;
+            return new ProviderConnectionTestRun(null, Refreshed: false);
         }
 
-        await refreshCatalog();
-        return readState();
+        bool refreshed = await refreshCatalog();
+        return new ProviderConnectionTestRun(readState(), refreshed);
     }
 
     internal static async Task<bool> SignOutAsync(

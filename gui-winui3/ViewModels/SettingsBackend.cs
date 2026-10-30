@@ -31,7 +31,7 @@ internal interface IProviderCatalogSession
 
     void SetBackend(string backend);
 
-    Task<bool> RefreshAsync(bool force = false);
+    Task<bool> RefreshAsync(bool force = false, bool bypassManualThrottle = false);
 }
 
 internal sealed class ApiSettingsBackend(ApiService api) : ISettingsBackend
@@ -64,7 +64,8 @@ internal sealed class ProviderCatalogSession(ProviderCatalogController controlle
 
     public void SetBackend(string backend) => controller.SetBackend(backend);
 
-    public Task<bool> RefreshAsync(bool force = false) => controller.RefreshAsync(force);
+    public Task<bool> RefreshAsync(bool force = false, bool bypassManualThrottle = false) =>
+        controller.RefreshAsync(force, bypassManualThrottle);
 }
 
 /// <summary>What the custom provider editor needs from the Host (ADR 0034).</summary>

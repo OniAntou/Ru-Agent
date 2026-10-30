@@ -9,7 +9,18 @@ public sealed record ModelRequest
     private const int MaxModelMessagesBytes = ModelInputLimits.MaxHistoryBytes;
     private const int MaxAnthropicContentBlocks = 64;
     private const int MaxNativeArgumentsBytes = 64 * 1024;
+    private const int MaximumProviderHeaders = 8;
+    private const int MaximumProviderHeaderValueChars = 1024;
     public const int MaximumSerializedBodyBytes = ModelInputLimits.MaxRequestBytes;
+
+    private static readonly IReadOnlyDictionary<string, string> EmptyProviderHeaders =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Headers the adapter itself owns; a provider cannot replace them.</summary>
+    private static readonly HashSet<string> ReservedProviderHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Authorization", "Host", "Content-Length", "Content-Type", "Transfer-Encoding", "Connection",
+    };
 
     /// <summary>The settings field that asks for the provider's hosted web search (ADR 0033).</summary>
     public const string ProviderWebSearchSetting = "provider_web_search";
@@ -31,7 +42,8 @@ public sealed record ModelRequest
         string? runtimeContext = null,
         bool promptInHistory = false,
         bool replayChatReasoning = false,
-        bool? acceptsImageInput = null)
+        bool? acceptsImageInput = null,
+        IReadOnlyDictionary<string, string>? providerHeaders = null)
     {
         if (string.IsNullOrWhiteSpace(model) || model.Length > 256 || model.Contains('\0'))
         {
@@ -150,6 +162,7 @@ public sealed record ModelRequest
 
         Model = model;
         AcceptsImageInput = ModelImage.IsVisionModel(model, acceptsImageInput);
+        ProviderHeaders = ValidateProviderHeaders(providerHeaders);
         SystemPrompt = systemPrompt;
         RuntimeContext = runtimeContext;
         PromptInHistory = promptInHistory;
@@ -174,6 +187,12 @@ public sealed record ModelRequest
     public string Model { get; }
 
     public bool AcceptsImageInput { get; }
+
+    /// <summary>
+    /// Provider-mandated request headers, already bounded and validated. The Host
+    /// decides which provider needs which header; the adapter only applies them.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ProviderHeaders { get; }
 
     public string SystemPrompt { get; }
 
@@ -201,7 +220,7 @@ public sealed record ModelRequest
     public ModelRequest WithPreparedBodyJson(string body) => new(
         Model, SystemPrompt, Prompt, Turns, Settings, Endpoint, Credential, MaximumOutputTokens,
         Images, ResponsesInputItems, NativeToolCalling, AnthropicMessages, UseMaxCompletionTokens,
-        body, RuntimeContext, PromptInHistory, ReplayChatReasoning, AcceptsImageInput);
+        body, RuntimeContext, PromptInHistory, ReplayChatReasoning, AcceptsImageInput, ProviderHeaders);
 
     public IReadOnlyList<ModelImage> Images { get; }
 
@@ -217,6 +236,50 @@ public sealed record ModelRequest
         && Settings[ProviderWebSearchSetting] is JsonValue value && value.TryGetValue<bool>(out var enabled) && enabled;
 
     public IReadOnlyList<JsonObject> AnthropicMessages { get; }
+
+    /// <summary>
+    /// Provider-mandated headers are a closed, bounded set: an HTTP token name and a
+    /// value with no control characters. The credential, framing and content headers
+    /// stay owned by the adapter and cannot be replaced from here.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> ValidateProviderHeaders(
+        IReadOnlyDictionary<string, string>? headers)
+    {
+        if (headers is null || headers.Count == 0)
+        {
+            return EmptyProviderHeaders;
+        }
+
+        if (headers.Count > MaximumProviderHeaders)
+        {
+            throw new ArgumentException("Provider headers exceed the adapter cap.", nameof(headers));
+        }
+
+        var copy = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in headers)
+        {
+            if (string.IsNullOrWhiteSpace(name) || name.Length > 64
+                || name.Any(character => !(char.IsAsciiLetterOrDigit(character) || character == '-')))
+            {
+                throw new ArgumentException("Provider header name is invalid.", nameof(headers));
+            }
+
+            if (ReservedProviderHeaders.Contains(name))
+            {
+                throw new ArgumentException(
+                    "Provider header would override the adapter's own request.", nameof(headers));
+            }
+
+            if (value is null || value.Length > MaximumProviderHeaderValueChars || value.Any(char.IsControl))
+            {
+                throw new ArgumentException("Provider header value is invalid.", nameof(headers));
+            }
+
+            copy[name] = value;
+        }
+
+        return copy;
+    }
 
     public static long MeasureJsonArrayBytes(IReadOnlyList<JsonObject>? items)
     {

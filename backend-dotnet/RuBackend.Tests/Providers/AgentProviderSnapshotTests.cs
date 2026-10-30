@@ -637,6 +637,87 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
     }
 
+    /// <summary>
+    /// OpenCode Go publishes its chat base, not its catalog base, and refuses a
+    /// completion that carries no conversation id. Both facts are pinned with the
+    /// run: the catalog is read from the gateway's own model list, and the header
+    /// name travels to the step runner.
+    /// </summary>
+    [Fact]
+    public async Task Opencode_go_pins_the_gateway_catalog_and_the_conversation_header()
+    {
+        Directory.CreateDirectory(_root);
+        var entries = Enumerable.Range(0, 60)
+            .Select(i => $"\"prov{i:000}\":{{\"api\":\"https://prov{i:000}.example/v1\"}}");
+        var providers = "{\"opencode-go\":{\"api\":\"https://opencode.ai/inference/go/openai/v1\"},"
+            + string.Join(",", entries) + "}";
+        var cacheFile = Path.Combine(_root, "models-dev.json");
+        await File.WriteAllTextAsync(cacheFile,
+            $$"""{"fetched_at":"2099-01-01T00:00:00+00:00","payload":{{providers}}}""");
+
+        var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
+        await store.SaveAsync((await store.ReadAsync(default)) with
+        { Backend = "models.dev:opencode-go", Model = "glm-5.3-flash" }, default);
+        var credentials = new KeyedCredentials();
+        var handler = new OpencodeGoCatalogHandler();
+        var catalog = new ProviderCatalogService(new HttpClient(handler), credentials, TimeProvider.System, cacheFile);
+        await using var harness = await BackendHarnessTestFixture.CreateAsync();
+        var run = await harness.SeedRunAsync();
+        await using var factory = new AgentProviderSnapshotFactory(
+            store, credentials, catalog, new SqliteAgentRunProviderSelectionStore(harness.Options),
+            (_, _) => Task.FromResult(false));
+
+        var bootstrap = await factory.GetAsync(run.Run.RunId, default);
+
+        Assert.Equal(new Uri("https://opencode.ai/inference/go/v1/models"), handler.LastUri);
+        Assert.Equal(new Uri("https://opencode.ai/inference/go/openai/v1/chat/completions"), bootstrap.Endpoint);
+        Assert.Equal("x-opencode-session", bootstrap.SessionHeaderName);
+    }
+
+    /// <summary>
+    /// The key-save probe asks the gateway's model list, so a rejected credential is
+    /// reported as unauthorized instead of as an unreadable catalog.
+    /// </summary>
+    [Fact]
+    public async Task Opencode_go_candidate_is_checked_against_the_gateway_model_list()
+    {
+        Directory.CreateDirectory(_root);
+        var entries = Enumerable.Range(0, 60)
+            .Select(i => $"\"prov{i:000}\":{{\"api\":\"https://prov{i:000}.example/v1\"}}");
+        var providers = "{\"opencode-go\":{\"api\":\"https://opencode.ai/inference/go/openai/v1\"},"
+            + string.Join(",", entries) + "}";
+        var cacheFile = Path.Combine(_root, "models-dev.json");
+        await File.WriteAllTextAsync(cacheFile,
+            $$"""{"fetched_at":"2099-01-01T00:00:00+00:00","payload":{{providers}}}""");
+        var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
+        var settings = (await store.ReadAsync(default))
+            with { Backend = "models.dev:opencode-go", Model = "glm-5.3-flash" };
+        var catalog = new ProviderCatalogService(
+            new HttpClient(new FailingCatalogHandler(HttpStatusCode.Unauthorized)),
+            new KeyedCredentials(), TimeProvider.System, cacheFile);
+
+        var candidate = await catalog.CheckCandidateCredentialAsync(
+            "models.dev:opencode-go", "candidate-key", settings, default);
+
+        Assert.Equal("catalog_unauthorized", candidate.ErrorCode);
+    }
+
+    /// <summary>A gateway catalog that answers for any URL and records the one it received.</summary>
+    private sealed class OpencodeGoCatalogHandler : HttpMessageHandler
+    {
+        public Uri? LastUri;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastUri = request.RequestUri;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"data":[{"id":"glm-5.3-flash"}]}"""),
+            });
+        }
+    }
+
     /// <summary>A model the catalog does list still dispatches, so the check cannot false-block.</summary>
     private async Task<string> WriteModelsDevCacheAsync()
     {

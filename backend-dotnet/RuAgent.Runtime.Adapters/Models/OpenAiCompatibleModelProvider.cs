@@ -37,6 +37,13 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
             message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.Credential);
         }
 
+        // Provider-mandated headers (a conversation id, a product user-agent) are
+        // validated by ModelRequest; they never replace the credential or framing.
+        foreach (var (name, value) in request.ProviderHeaders)
+        {
+            message.Headers.TryAddWithoutValidation(name, value);
+        }
+
         var response = await ModelHttpTransport.SendAsync(
             _httpClient, message, cancellationToken, _requestTimeout).ConfigureAwait(false);
 

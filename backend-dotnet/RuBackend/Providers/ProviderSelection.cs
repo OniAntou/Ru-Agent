@@ -11,6 +11,11 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
     {
         "openai" => new Uri("https://api.openai.com/v1/models"),
         "anthropic" => new Uri("https://api.anthropic.com/v1/models"),
+        // OpenCode publishes its model list beside the protocol root, so the
+        // published chat base cannot serve /models. The override is keyed by
+        // provider id and applies only on the OpenCode host.
+        _ when ProviderOverrides.CatalogBaseUrl(Alias, BaseUri) is { } catalog =>
+            new(catalog.TrimEnd('/') + "/models"),
         _ => new(BaseUri.AbsoluteUri.TrimEnd('/') + "/models"),
     };
     public Uri CompletionUri => Alias switch

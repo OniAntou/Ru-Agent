@@ -27,7 +27,8 @@ public sealed record ProviderBootstrapData
         int? outputTokenReserve = null,
         JsonObject? reducedEffortRequestOptions = null,
         bool replayChatReasoning = false,
-        bool? acceptsImageInput = null)
+        bool? acceptsImageInput = null,
+        string? sessionHeaderName = null)
     {
         Backend = Require(backend, 128, nameof(backend));
         Protocol = ProviderProtocols.Require(protocol);
@@ -40,6 +41,7 @@ public sealed record ProviderBootstrapData
 
         Model = Require(model, 256, nameof(model));
         AcceptsImageInput = ModelImage.IsVisionModel(model, acceptsImageInput);
+        SessionHeaderName = RequireHeaderName(sessionHeaderName);
         Credential = Require(credential, 4096, nameof(credential), allowEmpty: true);
         Endpoint = endpoint;
         RequestOptions = ProviderRequestOptionsValidator.ValidateAndClone(protocol, requestOptions, nameof(requestOptions));
@@ -82,6 +84,13 @@ public sealed record ProviderBootstrapData
 
     /// <summary>The pinned image-input decision, independent of model-name hints.</summary>
     public bool AcceptsImageInput { get; }
+
+    /// <summary>
+    /// The conversation-id header this provider requires on every generation, or
+    /// null when it needs none. Pinned with the provider so a run cannot drift
+    /// onto a header set the selection did not choose.
+    /// </summary>
+    public string? SessionHeaderName { get; }
 
     public string Credential { get; }
 
@@ -143,6 +152,27 @@ public sealed record ProviderBootstrapData
         var value = options?["reasoning_effort"]?.GetValue<string>()
             ?? options?["reasoning"]?["effort"]?.GetValue<string>();
         return value is "none" or "minimal" or "low" or "medium" or "high" or "xhigh" or "max" ? value : "unknown";
+    }
+
+    /// <summary>
+    /// A provider-supplied header name is an HTTP token: letters, digits and hyphens.
+    /// Anything else is rejected here rather than on the wire.
+    /// </summary>
+    private static string? RequireHeaderName(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length is 0 or > 64
+            || trimmed.Any(character => !(char.IsAsciiLetterOrDigit(character) || character == '-')))
+        {
+            throw new ArgumentException("Provider session header name is invalid.", nameof(value));
+        }
+
+        return trimmed.ToLowerInvariant();
     }
 
     private static string Require(string? value, int maximum, string parameterName, bool allowEmpty = false)

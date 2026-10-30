@@ -89,6 +89,29 @@ public sealed partial class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Test_connection_asks_for_a_fresh_unthrottled_refresh_and_names_the_provider()
+    {
+        var backend = new FakeBackend { Settings = new AppSettingsDto { BackendChoice = "models.dev:opencode-go" } };
+        var catalog = new FakeCatalog
+        {
+            NextState = new ProviderCatalogState
+            {
+                Status = "ok",
+                Backend = "models.dev:opencode-go",
+                Models = ["glm-5.3-flash"],
+            },
+        };
+        using var viewModel = NewViewModel();
+        await viewModel.AttachAsync(backend, catalog);
+
+        await viewModel.TestConnectionCommand.ExecuteAsync(null);
+
+        Assert.True(catalog.LastRefreshBypassedThrottle);
+        Assert.Contains("Connection works. 1 model available.", viewModel.ProviderTestMessage, StringComparison.Ordinal);
+        Assert.StartsWith("opencode-go: ", viewModel.ProviderTestMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_signed_in_provider_leads_the_picker_and_offers_sign_out()
     {
         var backend = new FakeBackend
@@ -450,6 +473,8 @@ public sealed partial class SettingsViewModelTests
 
         public int ForcedRefreshes { get; private set; }
 
+        public bool LastRefreshBypassedThrottle { get; private set; }
+
         public ProviderCatalogState NextState { get; set; } = new();
 
         public Action? OnRefresh { get; set; }
@@ -458,9 +483,10 @@ public sealed partial class SettingsViewModelTests
 
         public void SetBackend(string backend) => Backend = backend;
 
-        public Task<bool> RefreshAsync(bool force = false)
+        public Task<bool> RefreshAsync(bool force = false, bool bypassManualThrottle = false)
         {
             if (force) ForcedRefreshes++;
+            LastRefreshBypassedThrottle = bypassManualThrottle;
             OnRefresh?.Invoke();
             State = NextState;
             return Task.FromResult(true);

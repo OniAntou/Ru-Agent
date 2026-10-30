@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(providers)**: **Thêm được key OpenCode Go và chạy được provider này.** Models.dev
+  công bố base *chat* của gateway (`…/inference[/go]/openai/v1`), nơi `GET /models` trả
+  404 — nên bước kiểm tra key từ chối mọi key OpenCode Go là `provider_key_unverified` và
+  catalog không bao giờ tải được. Catalog (và chính probe kiểm tra key) giờ đọc danh sách
+  model thật của gateway (`…/inference/go/v1/models`, `…/inference/v1/models`), còn chat
+  completions vẫn dùng base đã công bố; key sai vẫn bị `provider_key_rejected`. OpenCode
+  Go cũng từ chối mọi completion thiếu `x-opencode-session` (HTTP 400 `MissingSessionID`)
+  trước khi đọc key, nên header mang session của run được pin cùng provider và gửi kèm
+  User-Agent của Ru ở mỗi lượt gọi; provider cần header mà run không có session thì fail
+  closed bằng `provider_session_missing`.
+
+- **fix(gui)**: **Nút Test connection không còn trả lời bằng catalog cũ.** Một lần refresh bị
+  throttle 30 giây (hoặc bị thay thế) trước đây vẫn được đọc như kết quả mới, nên ngay sau khi
+  lưu key, Test có thể báo `catalog_unauthorized` từ trạng thái trước khi có key dù provider đã
+  chạy được. Test và lần refresh sau khi lưu key giờ bỏ qua throttle phía client (Host vẫn giữ
+  retry throttle của nó), một refresh bị bỏ qua được báo là "could not refresh" thay vì một kết
+  luận cũ, câu kết quả nêu tên provider vừa test, và trace ghi
+  `[provider-test] backend=… refreshed=… code=…`.
+
 - **fix(gui)**: Show sent image/file attachments outside the user's text bubble;
   hide the text bubble for attachment-only messages and retain copy/rewind actions.
 - **fix(agent)**: Preserve image receipt facts in follow-up context, including

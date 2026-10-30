@@ -120,6 +120,22 @@ id fails closed as `catalog_configuration_error`, never a guessed URL — and
 serves its catalog from the Models.dev model list without HTTP. No new route,
 alias, or credential account: the key stays `cloudflare-workers-ai_api_key`.
 
+OpenCode (`models.dev:opencode`) and OpenCode Go (`models.dev:opencode-go`) are
+catalog overrides that still fetch over HTTP. Models.dev publishes each gateway's
+*chat* base (`https://opencode.ai/inference/openai/v1`,
+`https://opencode.ai/inference/go/openai/v1`), where `GET /models` answers 404;
+the live model list sits beside it at `https://opencode.ai/inference/v1/models`
+and `https://opencode.ai/inference/go/v1/models`, which reject a bad key with
+401. `ProviderSelection.ModelsUri` uses those table URLs for the two ids, and
+only while the resolved endpoint still points at `opencode.ai`; chat completions
+keep the published base. The key-check probe reads the same URL, so a wrong key
+is still `provider_key_rejected`, not an unverifiable save. OpenCode Go also
+rejects every completion without `x-opencode-session` (HTTP 400
+`MissingSessionID`) before it reads the key: the header carries the run's
+conversation id, is pinned with the provider, and travels with Ru's User-Agent
+on each generation. A pinned provider that requires it and has no session fails
+closed as `provider_session_missing`.
+
 ## TUI provider and model pickers
 
 The TUI reads the same live `GET /models?backend=` catalog as the desktop

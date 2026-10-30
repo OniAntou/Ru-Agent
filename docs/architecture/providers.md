@@ -76,6 +76,15 @@ Custom OpenAI uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic
 uses `anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
 and `https://api.anthropic.com/v1`. A `models.dev:<provider-id>` backend reads
 `<provider-id>_api_key` and resolves its base URL from the Models.dev catalog.
+OpenCode is the exception to appending `/models` to that base: both gateways
+publish their chat root (`/inference/openai/v1`, `/inference/go/openai/v1`) where
+`GET /models` answers 404, while the model list sits beside it
+(`/inference/v1/models`, `/inference/go/v1/models`). The catalog URL — and the
+candidate-key probe that reads it — is table-driven for those ids; chat
+completions keep the published base. OpenCode Go also refuses a completion that
+carries no conversation id, so `x-opencode-session` (the run's session) and Ru's
+own User-Agent are pinned with that provider and sent on every generation; a step
+without a session fails closed as `provider_session_missing`.
 A named custom provider ([ADR 0034](../adr/0034-named-custom-providers.md)) is the
 backend and alias `custom:<id>`, reads `custom_provider_<id>_key`, and posts to its
 user-given base URL with its chosen protocol (`{base}/chat/completions`, or

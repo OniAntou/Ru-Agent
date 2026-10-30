@@ -12,7 +12,8 @@ public sealed record ModelStepRequest
         ModelContextSnapshot context,
         AgentPermissionPreset preset,
         long policySnapshotVersion,
-        string policySnapshotSha256)
+        string policySnapshotSha256,
+        SessionId? sessionId = null)
         : this(
             runId,
             modelStepId,
@@ -20,7 +21,9 @@ public sealed record ModelStepRequest
             SystemPromptContext.Empty,
             preset,
             policySnapshotVersion,
-            policySnapshotSha256)
+            policySnapshotSha256,
+            null,
+            sessionId)
     {
     }
 
@@ -32,7 +35,8 @@ public sealed record ModelStepRequest
         AgentPermissionPreset preset,
         long policySnapshotVersion,
         string policySnapshotSha256,
-        IPreparedModelStep? preparation = null)
+        IPreparedModelStep? preparation = null,
+        SessionId? sessionId = null)
     {
         _ = runId.Value;
         _ = modelStepId.Value;
@@ -63,6 +67,7 @@ public sealed record ModelStepRequest
         PolicySnapshotVersion = policySnapshotVersion;
         PolicySnapshotSha256 = policySnapshotSha256;
         Preparation = preparation;
+        SessionId = sessionId;
     }
 
     public RunId RunId { get; }
@@ -74,9 +79,17 @@ public sealed record ModelStepRequest
     public string PolicySnapshotSha256 { get; }
     public IPreparedModelStep? Preparation { get; }
 
+    /// <summary>
+    /// The conversation this step belongs to, when the caller knows it. A provider
+    /// that routes by conversation (OpenCode Go) needs a stable value here; a step
+    /// without one fails closed rather than sending an unroutable request.
+    /// </summary>
+    public SessionId? SessionId { get; }
+
     public ModelStepRequest WithPreparation(IPreparedModelStep preparation) => new(
         RunId, ModelStepId, Context, PromptContext, Preset, PolicySnapshotVersion,
-        PolicySnapshotSha256, preparation ?? throw new ArgumentNullException(nameof(preparation)));
+        PolicySnapshotSha256, preparation ?? throw new ArgumentNullException(nameof(preparation)),
+        SessionId);
 }
 
 public sealed record AssistantDelta

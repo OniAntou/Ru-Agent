@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Restore image attachments from the picker, drag-and-drop and
+  clipboard by reading image signatures without cloning managed streams. Show
+  intake failures above the composer instead of only logging them.
+
 - **sec(approvals)**: Stop one approval from covering a whole tool family. An allow for an MCP tool, a
   computer-use app grant or a language-server operation used to be saved as a matcher with no server,
   tool, app or language identity. A null matcher field is a wildcard, so a single `allow_once`

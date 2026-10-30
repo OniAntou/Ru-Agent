@@ -263,6 +263,11 @@ source of the typed text, because WinUI raises `TextChanged` after an edit: meth
 that compare or save text take the box's current value, so text typed while a send
 awaits the Host is never cleared by that send. The view model writes text back only
 through `TextReplaced` (restore and clear), never through a two-way binding.
+Picker, drop and clipboard images share the same bounded preparation path.
+Signature detection reads the supplied stream directly and leaves it open for
+the decoder; adapters over managed byte streams do not support cloned substreams.
+Intake failures appear above the composer only while the originating session and
+generation still own the operation.
 `SessionPresetViewModel` owns the chat's permission preset and the cached version of
 the Host's stored selection. Only two rules narrow it: Full Access does not follow the
 user into a session it was not stored for, and a declined Full Access confirmation

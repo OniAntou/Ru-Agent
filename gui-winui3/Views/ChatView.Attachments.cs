@@ -94,6 +94,9 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error adding attachment: {ex.Message}");
+                ReportAttachmentIntakeFailure(
+                    $"Could not attach '{file.Name}'. Check that the file is readable and the image is not damaged.",
+                    sessionId, sessionGeneration);
             }
         }
 
@@ -153,10 +156,21 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Clipboard image paste error: {ex.Message}");
+                ReportAttachmentIntakeFailure(
+                    "Could not paste the image. Try saving it as PNG or JPEG and attaching the file.",
+                    sessionId, sessionGeneration);
             }
         }
 
         private bool CanAcceptImageAttachment() => Composer.CanAcceptImage();
+
+        private void ReportAttachmentIntakeFailure(string status, string sessionId, long sessionGeneration)
+        {
+            if (ChatAttachmentIntakePresenter.OwnsSession(sessionId, sessionGeneration, _activeSessionId, _sessionOpenGeneration))
+            {
+                ShowAgentInlineStatus(status);
+            }
+        }
 
         private bool TryAddAttachmentToComposer(
             ImageAttachmentItem attachment,
@@ -221,6 +235,9 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error picking files: {ex.Message}");
+                ReportAttachmentIntakeFailure(
+                    "Could not open the file picker. Try dragging a file into the composer.",
+                    sessionId, sessionGeneration);
             }
         }
 
@@ -249,6 +266,9 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error dropping files: {ex.Message}");
+                ReportAttachmentIntakeFailure(
+                    "Could not read the dropped files. Try dropping them again.",
+                    sessionId, sessionGeneration);
             }
         }
     }

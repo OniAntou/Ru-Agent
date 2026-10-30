@@ -107,6 +107,7 @@ internal static class HarnessSqliteSchemaValidator
                 "base_context_captured_at_utc",
                 "base_context_entry_count",
             ],
+            ["agent_run_provider_intents"] = ["run_id", "backend", "model"],
             ["agent_run_provider_selections"] =
             [
                 "run_id",

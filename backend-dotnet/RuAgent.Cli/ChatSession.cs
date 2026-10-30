@@ -86,7 +86,7 @@ public sealed partial class AgentCommands
         private string? ownedRunId;
         private volatile bool managedShutdown;
         private bool modelUsageRefreshRequired;
-        private int attachmentOperations;
+        private readonly ChatAttachmentTasks attachmentTasks = new();
 
         public async Task<int> RunAsync()
         {

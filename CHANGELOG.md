@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Honor cancellation while loading image and dropped-text files;
+  drain session-owned attachment work before teardown and release temporary
+  clipboard images when loading is canceled.
+
+- **fix(tui)**: Preserve a submitted provider/model when another session changes
+  defaults during admission. Persist run intent through restart and idempotent
+  retries; refuse older Hosts instead of falling back to an unselected run.
+
 - **feat(tui)**: Run multiple sessions in one terminal with independent drafts,
   attachments, queues and waiting panels. Add compact tabs, Alt+N, F6/Shift+F6
   and `/sessions close`; preserve background execution when switching. Bound open

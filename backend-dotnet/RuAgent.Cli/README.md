@@ -20,6 +20,9 @@ Each tab keeps its own draft, attachments, queue, transcript and permission
 selection. Background questions wait in their own tab. This first version permits
 eight open tabs in the same workspace. Model/provider settings are shared defaults
 for new runs; changing them never retargets an admitted run or queued prompt.
+Native submissions retain their provider/model across a change made while
+admission is pending. This requires the matching Host build; an older Host
+reports `provider_selection_unsupported`, with no fallback to another model.
 
 ## Durable history and database maintenance
 

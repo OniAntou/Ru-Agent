@@ -22,6 +22,7 @@ public static partial class AgentV1Endpoints
         MapSubagents(app);
         MapSkills(app);
         app.MapPost("/agent/v1/runs", CreateRunAsync);
+        app.MapPost("/agent/v1/runs/selected", CreateSelectedRunAsync);
         app.MapGet("/agent/v1/runs/{runId}", GetRunAsync);
         app.MapGet("/agent/v1/runs/{runId}/events", GetEventsAsync);
         app.MapGet("/agent/v1/runs/{runId}/activities", GetRunActivitiesAsync);
@@ -46,7 +47,13 @@ public static partial class AgentV1Endpoints
         app.MapPost("/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore", PostWorkspaceChangeRestoreAsync);
     }
 
-    private static async Task<IResult> CreateRunAsync(HttpContext context, AgentRunCreationService service, CancellationToken ct)
+    private static Task<IResult> CreateRunAsync(HttpContext context, AgentRunCreationService service, CancellationToken ct) =>
+        CreateRunCoreAsync(context, service, ct, requireProviderSelection: false);
+
+    private static Task<IResult> CreateSelectedRunAsync(HttpContext context, AgentRunCreationService service, CancellationToken ct) =>
+        CreateRunCoreAsync(context, service, ct, requireProviderSelection: true);
+
+    private static async Task<IResult> CreateRunCoreAsync(HttpContext context, AgentRunCreationService service, CancellationToken ct, bool requireProviderSelection)
     {
         CreateAgentRunRequest? dto;
         try
@@ -73,6 +80,8 @@ public static partial class AgentV1Endpoints
         {
             return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
         }
+        if (requireProviderSelection && dto.ProviderSelection is null)
+            return Results.Json(new { error_code = "provider_intent_required" }, statusCode: 400);
 
         var result = await service.CreateRunAsync(dto, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);

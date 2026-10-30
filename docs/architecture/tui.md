@@ -39,15 +39,22 @@ keeps its existing API and rejects open tabs with pending work.
 Provider/model settings remain shared defaults for new runs. An idle tab adopts
 changes made in another tab before a fresh submission; already admitted runs
 stay pinned. Queued snapshots retain their original selection and are held when
-global settings no longer match. Permission presets remain session-scoped;
+global settings no longer match. Native run requests additionally carry the
+submitted provider/model through `POST /agent/v1/runs/selected`. The Host stores
+that intent atomically with admission, includes it in idempotency identity, and
+uses it when resolving the first provider snapshot after a delay or restart.
+Changes made after the client's settings check cannot retarget the submitted
+model. Existing full provider pins remain authoritative. Older Hosts refuse this
+route; the client reports `provider_selection_unsupported` without falling back
+to an unselected create. Permission presets remain session-scoped;
 opening saved history reads its existing preset without copying another tab's
 grants. Known foreign-workspace sessions are refused in this first version.
 
 `/exit` stops all session loops, cancels work started by this TUI, waits for every
 session's acknowledgement/cancellation settlement, then disposes retained owners
 and views. Runs adopted from another client are detached on exit; explicit
-Escape still cancels the selected adopted run. There are no new Host routes,
-execution authorities or changes to Host worker/membership admission limits.
+Escape still cancels the selected adopted run. There are no new execution
+authorities or changes to Host worker/membership admission limits.
 
 The composer metadata can display the selected effort alone (for example `max` or `high`) between model and provider.
 Startup and existing selection refreshes use the settings response's selected
@@ -174,6 +181,17 @@ Clipboard decode and image-limit failures also appear in the live status row. Th
 resizer reads the PNG/JPEG/BMP/WebP container header and rejects a source canvas over
 64 MP before GDI+ allocates the decoded surface; the longest side is then capped at 2048
 and the encoded result at 4 MB.
+
+Attachment handlers are registered to their session before starting. Shutdown
+stops new handlers, cancels the session lifetime and awaits the registered work
+before clearing pending attachments or disposing views. An idle tab can be closed,
+or an inactive deleted-session page removed, only after its attachments finish.
+Image and dropped-text reads propagate the caller's cancellation token; image
+decode, resize, encoding and base64 conversion check cancellation between stages.
+GDI+ calls are synchronous and finish the current native call before cancellation
+is observed. A canceled load never becomes an attachment error or enters the
+draft. Clipboard temp images not yet transferred to pending state are released
+on failure/cancellation; pending state owns cleanup after a successful transfer.
 
 Read-only document panels strip legacy ANSI sequences before wrapping into native
 card rows. Their wrap budget includes the card's item indentation, preventing

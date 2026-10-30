@@ -43,6 +43,7 @@ public sealed class AgentRunCreationService
 
     /// <summary>The selected provider catalog's declaration for image input.</summary>
     public Func<string, CancellationToken, Task<bool?>>? DeclaredVision { get; set; }
+    public Func<string, string, CancellationToken, Task<bool?>>? DeclaredProviderVision { get; set; }
 
     public AgentRunCreationService(IHarnessEventStore store, ISessionStore sessions,
         AgentSessionPermissionStore permissionStore, AgentRunWorkspaceAdmissionService workspaceAdmission,
@@ -72,6 +73,12 @@ public sealed class AgentRunCreationService
             return BoundedError(400, "invalid_request", "Request body required.");
         }
 
+        RunProviderIntent? providerIntent = null;
+        if (request.ProviderSelection is { } requestedProvider)
+        {
+            try { providerIntent = new RunProviderIntent(requestedProvider.Backend, requestedProvider.Model); }
+            catch (ArgumentException) { return BoundedError(400, "invalid_provider_intent", "Provider and model must be bounded nonempty values."); }
+        }
         var hasImages = request.ImageAttachments is { Count: > 0 };
         if (hasImages)
         {
@@ -149,7 +156,7 @@ public sealed class AgentRunCreationService
                 }
             }
 
-            var settings = await _settingsStore.ReadAsync(cancellationToken).ConfigureAwait(false);
+            var settings = ProviderIntentSettings.Apply(await _settingsStore.ReadAsync(cancellationToken).ConfigureAwait(false), providerIntent);
             string model;
             try
             {
@@ -164,9 +171,9 @@ public sealed class AgentRunCreationService
             // A provider's own declaration outranks the name check: a gateway model
             // can carry no vendor token at all, and reading its name as non-vision
             // rejected a model that had published modalities ["text","image"].
-            bool? declared = DeclaredVision is null
-                ? null
-                : await DeclaredVision(model, cancellationToken).ConfigureAwait(false);
+            bool? declared = providerIntent is not null && DeclaredProviderVision is not null
+                ? await DeclaredProviderVision(settings.Backend, model, cancellationToken).ConfigureAwait(false)
+                : DeclaredVision is null ? null : await DeclaredVision(model, cancellationToken).ConfigureAwait(false);
 
             if (!ModelImage.IsVisionModel(model, declared))
             {
@@ -407,9 +414,11 @@ public sealed class AgentRunCreationService
         var imagesPart = hasImages
             ? "|" + string.Join(";", request.ImageAttachments!.Select(ComputeSha256))
             : string.Empty;
-        var normalizedRequestSha = ComputeSha256($"{sessionIdRaw}|{workspaceIdentity.WorkspaceId.Value}|{prompt}|{preset}|{effectiveVersion}{imagesPart}");
+        var providerPart = providerIntent is null ? string.Empty
+            : "|provider-intent-v1:" + ComputeSha256(JsonSerializer.Serialize(new[] { providerIntent.Backend, providerIntent.Model }));
+        var normalizedRequestSha = ComputeSha256($"{sessionIdRaw}|{workspaceIdentity.WorkspaceId.Value}|{prompt}|{preset}|{effectiveVersion}{imagesPart}{providerPart}");
         var creationIdentity = new RunCreationIdentity(idempotencySha, normalizedRequestSha, effectiveVersion);
-        var newRun = new NewAgentRun(run, events, payloads, outbox, creationIdentity);
+        var newRun = new NewAgentRun(run, events, payloads, outbox, creationIdentity, providerIntent);
 
         CreateRunResult storeResult;
         try

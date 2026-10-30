@@ -288,7 +288,7 @@ public sealed partial class AgentCommands
             }
 
             private static bool CanRelease(ChatSession session) => session.tgLoop!.CanCloseSession
-                && Volatile.Read(ref session.attachmentOperations) == 0
+                && !session.attachmentTasks.HasPending
                 && session.runSession.ActiveRunId is null && session.runSession.FollowableRunId is null
                 && session.runSession.ParkedRunId is null && session.submissions.Count == 0
                 && session.pendingHistoryBranch is null && session.submissions.Retryable is null;
@@ -296,12 +296,14 @@ public sealed partial class AgentCommands
             private void CloseDeletedPages()
             {
                 foreach (var session in Snapshot().Where(session => _deleted.Contains(session.sessionId)
-                             && !ReferenceEquals(session, _active) && !session.tgLoop!.IsBusy)) RemoveIdle(session);
+                             && !ReferenceEquals(session, _active) && !session.tgLoop!.IsBusy
+                             && !session.attachmentTasks.HasPending)) RemoveIdle(session);
                 UpdateTabs();
             }
 
             private void RemoveIdle(ChatSession session)
             {
+                _ = session.attachmentTasks.StopAsync();
                 session.tgLoop!.Stop();
                 session.tgWindow!.SetHostedApplication(null);
                 _window.RemovePage(session.tgWindow);
@@ -341,6 +343,7 @@ public sealed partial class AgentCommands
                 foreach (var session in Snapshot())
                 {
                     session.managedShutdown = true;
+                    _ = session.attachmentTasks.StopAsync();
                     session.tgLoop?.Stop();
                 }
                 _lifetime.Cancel();

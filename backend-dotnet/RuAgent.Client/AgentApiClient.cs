@@ -69,7 +69,7 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
     {
         ArgumentNullException.ThrowIfNull(request);
         ct.ThrowIfCancellationRequested();
-        var url = new Uri(_session.BaseUri, "agent/v1/runs");
+        var url = new Uri(_session.BaseUri, request.ProviderSelection is null ? "agent/v1/runs" : "agent/v1/runs/selected");
         var json = JsonSerializer.Serialize(request);
         Exception? lastTransportError = null;
         var hasTransportUncertainty = false;
@@ -128,6 +128,10 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
         if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
             throw new AgentApiException(
                 "unauthorized", "Bearer rejected", (int)resp.StatusCode,
+                isCreateOutcomeUnknown: hasTransportUncertainty);
+        if (resp.StatusCode == HttpStatusCode.NotFound && request.ProviderSelection is not null)
+            throw new AgentApiException("provider_selection_unsupported",
+                "Update the Host before starting a run with an explicit provider/model selection.", 404,
                 isCreateOutcomeUnknown: hasTransportUncertainty);
         if ((int)resp.StatusCode == 409)
         {

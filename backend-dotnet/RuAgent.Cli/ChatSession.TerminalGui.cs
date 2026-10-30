@@ -38,7 +38,8 @@ public sealed partial class AgentCommands
             loop.SetSubmissionGuard(RewindSubmissionGuard);
             loop.SetHistoryStateProviders(() => pendingHistoryBranch is not null,
                 line => historyReloadRequired && line.Trim().Equals("/sessions id:" + sessionId, StringComparison.OrdinalIgnoreCase));
-            loop.SetShutdownSettlement(runSession.WaitForRunSettlementAsync);
+            loop.SetShutdownSettlement(() => Task.WhenAll(
+                runSession.WaitForRunSettlementAsync(), attachmentTasks.StopAsync()));
             loop.SetSubmissionSnapshotFactory(line => historyReloadRequired && line.TrimStart().Split(' ', 2)[0].Equals("/sessions", StringComparison.OrdinalIgnoreCase)
                 ? ChatSubmissionSnapshot.Create(line, sessionId, canonicalWorkspace, cmd.Preset, backendName ?? string.Empty, activeModel, [], [])
                 : submissions.CreateSnapshot(
@@ -95,19 +96,19 @@ public sealed partial class AgentCommands
 
             // The drop attach starts its own task from a synchronous handler; failures
             // that slip past AttachFileAsync's own error rows land in the transcript.
-            async Task RunAttachmentAsync(Func<Task> action)
+            Task RunAttachmentAsync(Func<Task> action) => attachmentTasks.RunAsync(async () =>
             {
-                Interlocked.Increment(ref attachmentOperations);
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     await action().ConfigureAwait(false);
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
                 catch (Exception ex)
                 {
                     await WriteDiagnosticLineAsync(_err, $"attachment_error: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
                 }
-                finally { Interlocked.Decrement(ref attachmentOperations); }
-            }
+            });
 
             tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName);
             tgWindow.Composer.SetReasoningEffort(activeReasoningEffort);

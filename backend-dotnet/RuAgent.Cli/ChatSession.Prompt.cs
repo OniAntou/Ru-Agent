@@ -211,7 +211,8 @@ public sealed partial class AgentCommands
                 submissionPreset,
                 presetUpdate.Version,
                 idempotencyKey,
-                imagePayloads);
+                imagePayloads,
+                tgMode ? new CreateRunProviderSelection(submission?.Backend ?? backendName ?? string.Empty, submission?.Model ?? activeModel) : null);
             if (promptText.Length > ChatSubmissionState.MaxComposedPromptChars)
             {
                 HoldSubmissionForRetry(submission);

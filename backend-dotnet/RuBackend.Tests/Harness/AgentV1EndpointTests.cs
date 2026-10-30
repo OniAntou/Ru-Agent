@@ -23,6 +23,7 @@ public sealed class AgentV1EndpointTests
         ("GET", "/agent/v1/skills"),
         ("POST", "/agent/v1/skills/settings"),
         ("POST", "/agent/v1/runs"),
+        ("POST", "/agent/v1/runs/selected"),
         ("GET", "/agent/v1/runs/{runId}"),
         ("GET", "/agent/v1/runs/{runId}/subagents"),
         ("GET", "/agent/v1/runs/{runId}/subagents/{agentId}"),
@@ -63,11 +64,12 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(52, doc.RootElement.GetArrayLength()); // Includes skill/history routes and conversation forks.
+        Assert.Equal(53, doc.RootElement.GetArrayLength()); // Includes explicit provider/model admission.
     }
 
     [Theory]
     [InlineData("POST", "/agent/v1/runs")]
+    [InlineData("POST", "/agent/v1/runs/selected")]
     [InlineData("GET", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("GET", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/events")]
     [InlineData("GET", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/activities")]
@@ -106,6 +108,7 @@ public sealed class AgentV1EndpointTests
 
     [Theory]
     [InlineData("POST", "/agent/v1/runs")]
+    [InlineData("POST", "/agent/v1/runs/selected")]
     [InlineData("GET", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("GET", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/events")]
     [InlineData("GET", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/activities")]

@@ -62,6 +62,13 @@ closing an idle tab does not delete the conversation or transfer permissions.
 Implementation: [concurrent session tabs](docs/architecture/tui.md#concurrent-session-tabs).
 _Avoid_: extra execution authority, automatic worktree, inherited grants
 
+**Run Provider Intent**:
+The provider identifier and model captured by an explicit run submission and
+stored atomically with that run. It fixes the initial selection even if shared
+defaults change before provider snapshot resolution. It contains no credentials
+and confers no tool permission; the full resolved provider pin remains immutable.
+Implementation: [TUI admission](docs/architecture/tui.md#concurrent-session-tabs).
+
 
 **Conversation Branch**:
 A new conversation identity copied from a selected whole-turn prefix. The source

@@ -10,7 +10,13 @@ public sealed record CreateAgentRunRequest(
     [property: JsonPropertyName("preset_selection_version")] long? PresetSelectionVersion,
     [property: JsonPropertyName("idempotency_key")] string IdempotencyKey,
     /// <summary>Up to 4 data:image/(png|jpeg|webp);base64,... images (decoded total &lt;= 20MB, per-image &lt;= 4MB).</summary>
-    [property: JsonPropertyName("image_attachments")] System.Collections.Generic.IReadOnlyList<string>? ImageAttachments = null);
+    [property: JsonPropertyName("image_attachments")] System.Collections.Generic.IReadOnlyList<string>? ImageAttachments = null,
+    [property: JsonPropertyName("provider_selection")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CreateRunProviderSelection? ProviderSelection = null);
+
+public sealed record CreateRunProviderSelection(
+    [property: JsonPropertyName("backend")] string Backend,
+    [property: JsonPropertyName("model")] string Model);
 
 public sealed record CreateAgentRunResponse(
     [property: JsonPropertyName("run_id")] string RunId,

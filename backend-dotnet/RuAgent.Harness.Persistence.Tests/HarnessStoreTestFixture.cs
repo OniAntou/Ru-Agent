@@ -89,6 +89,7 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
+            DROP TABLE IF EXISTS agent_run_provider_intents;
             DROP TRIGGER IF EXISTS context_payload_updated;
             DROP TRIGGER IF EXISTS context_payload_deleted;
             DROP TRIGGER IF EXISTS context_event_updated;

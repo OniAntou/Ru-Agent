@@ -11,7 +11,7 @@ using Xunit;
 
 namespace RuAgent.Cli.Tests;
 
-public sealed class TuiMultiSessionTests
+public sealed partial class TuiMultiSessionTests
 {
     [Theory]
     [InlineData(false, false)] [InlineData(true, false)] [InlineData(false, true)]
@@ -234,6 +234,10 @@ public sealed class TuiMultiSessionTests
         internal bool BlockSessionCreation;
         internal bool CreateCancelled;
         internal bool RejectSecondRun;
+        internal bool DelayFirstPolicy;
+        internal readonly TaskCompletionSource FirstPolicyEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly TaskCompletionSource AllowFirstPolicy = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly ConcurrentDictionary<string, string> AdmittedModels = new();
         private string? _externalRun;
         internal readonly ConcurrentDictionary<string, string> Streams = new();
         internal readonly ConcurrentDictionary<string, string> Prompts = new();
@@ -281,12 +285,18 @@ public sealed class TuiMultiSessionTests
             {
                 using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
                 var session = body.RootElement.GetProperty("session_id").GetString();
+                if (DelayFirstPolicy && session == "session_1")
+                {
+                    FirstPolicyEntered.TrySetResult(); await AllowFirstPolicy.Task.WaitAsync(ct);
+                }
                 return Json(new { session_id = session, preset = "standard", version = 1 });
             }
-            if (path == "/agent/v1/runs")
+            if (path is "/agent/v1/runs" or "/agent/v1/runs/selected")
             {
                 using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
                 var session = body.RootElement.GetProperty("session_id").GetString()!;
+                AdmittedModels[session] = path.EndsWith("/selected", StringComparison.Ordinal)
+                    ? body.RootElement.GetProperty("provider_selection").GetProperty("model").GetString()! : _model;
                 var run = "run_" + Guid.NewGuid().ToString("N");
                 _runSessions[run] = session;
                 _release[run] = new(TaskCreationOptions.RunContinuationsAsynchronously);

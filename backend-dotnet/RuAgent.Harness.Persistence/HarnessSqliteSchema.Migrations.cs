@@ -37,6 +37,7 @@ public static partial class HarnessSqliteSchema
             new(28, 29, "SELECT 1;"),
             new(29, 30, SessionHistorySchemaMigration),
             new(30, 31, ContextProjectionMigration),
+            new(31, 32, ProviderIntentMigration),
         ];
     }
 }

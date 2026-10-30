@@ -2,6 +2,17 @@
 
 Current reference. [System ownership](../architecture.md) · [Domain glossary](../../CONTEXT.md) · [Tool policy](../operations/agent-tools.md).
 
+Explicit native submissions use `POST /agent/v1/runs/selected` with a required
+provider/model intent. Admission stores it with the root run and its idempotency
+identity. When no full provider pin exists, snapshot resolution overlays those
+two submitted values on a private copy of Host settings; it never rewrites shared
+defaults. Catalogs, endpoints, credentials and request options remain Host owned.
+Persistence rejects a first pin whose provider/model differs from the intent.
+The intent survives Host restart before first resolution; an existing complete
+pin always wins. Legacy creates without intent keep their previous default-selection
+behavior. The separate route makes an older Host fail before creating work rather
+than ignoring an unfamiliar optional field.
+
 Model transport rejects automatic HTTP redirects and reports `redirect_rejected`
 without changing the pinned endpoint. A shared adapter deadline bounds the
 request through response headers to 120 seconds (`provider_timeout`, retryable);

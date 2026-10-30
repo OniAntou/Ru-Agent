@@ -30,12 +30,13 @@ differently.
 2. `AgentToolDefinitionCatalog` builds its definitions from the table. It rejects a row
    whose ordinal, version or identity is wrong, a duplicate, a non-strict input schema and an
    example that does not validate against its schema.
-3. The Broker derives manifests from the rows that it binds (28 rows; the Host-intercepted
+3. The Broker derives manifests from the rows that it binds (27 rows; the Host-intercepted
    `ask_user` has none). `ToolCatalog` requires executors and manifests to match in both
    directions. `ToolDescriptorMapping` maps risk and adapter values through explicit arms
    that throw on any unmapped value. The trusted adapter allowlist in `ToolRegistry` is
-   derived from the `AgentToolAdapter` enum with `HostIntercepted` excluded; the set is the same
-   as before (`builtin`, `desktop`, `terminal`, `web`, `connector`, `language_server`).
+   derived from the `AgentToolAdapter` enum with `HostIntercepted` excluded. After
+   retiring [ADR 0037](0037-language-server-tools.md), the set is `builtin`,
+   `desktop`, `terminal`, `web`, and `connector`.
 4. `BrokerSession` adds to a session grant exactly the scopes of the advertised tool's row.
    An unknown or Host-intercepted id adds nothing.
 5. `ToolAccessClassification` derives a call's access class (`ReadOnly`, `Mutation` or
@@ -47,15 +48,14 @@ Intentional behavior changes:
 
 - Hook-gateway access classes now match the Broker's. `run_code` changes from `Mutation` to
   `Terminal`. `todo_write`, `agent_spawn`, `agent_send`, `agent_cancel` and `agent_apply` change
-  from `ReadOnly` to `Mutation`. `mcp`, `code_intelligence`, `ask_user`, `terminal_stop`,
+  from `ReadOnly` to `Mutation`. `mcp`, `ask_user`, `terminal_stop`,
   non-observation `computer` actions and unknown tools change from `ReadOnly` to `Terminal`.
   The class appears only on a hook-denied decision. Broker access classes are unchanged for
-  all 29 rows.
+  all 28 rows.
 - Per-tool session scopes now equal each tool's declared scopes. `read`, `read_file` and
   `run_code` no longer add `workspace.read`. `list` adds `system.read`. `help`, `todo_write`,
   `skill`, `agent_spawn`, `agent_send`, `agent_wait` and `agent_cancel` move from
-  `workspace.read` to `system.read`. `agent_apply` adds `workspace.write`. `code_intelligence`
-  adds `terminal.execute` instead of the default `workspace.read`. `ask_user` and unknown ids
+  `workspace.read` to `system.read`. `agent_apply` adds `workspace.write`. `ask_user` and unknown ids
   add nothing. Over the full advertised catalog the union of scopes is unchanged; a profile
   that advertises a subset can have a different union.
 
@@ -79,9 +79,8 @@ Positive:
 Negative:
 
 - Hook-denied decisions report a different access class for the tools listed above.
-- Grants for `read`, `read_file` and `run_code` are narrower, and `code_intelligence` now
-  grants `terminal.execute` (the scope its manifest requires). Any saved behavior that relied on
-  the previous grants changes.
+- Grants for `read`, `read_file` and `run_code` are narrower. Any saved behavior
+  that relied on the previous grants changes.
 
 ## Deferred
 

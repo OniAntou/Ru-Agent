@@ -27,7 +27,7 @@ public sealed class PolicyFamilyGoldenTests
     [
         "read", "list", "help", "todo_write", "grep", "glob", "web_search", "web_fetch", "skill", "ask_user",
         "mcp", "computer", "agent_spawn", "agent_send", "agent_wait", "agent_cancel", "agent_apply",
-        "code_intelligence", "run_code", "apply_patch", "read_file", "write_file", "edit_file", "file_delete",
+        "run_code", "apply_patch", "read_file", "write_file", "edit_file", "file_delete",
         "file_restore", "powershell", "run_process", "terminal_read", "terminal_stop",
     ];
 
@@ -171,7 +171,6 @@ A agent_send -
 A agent_wait -
 A agent_cancel -
 A agent_apply -
-A code_intelligence -
 A run_code -
 A apply_patch -
 A read_file read
@@ -205,7 +204,6 @@ M agent_send agent_send *
 M agent_wait agent_wait *
 M agent_cancel agent_cancel *
 M agent_apply agent_apply *
-M code_intelligence code_intelligence *
 M run_code run_code *
 M apply_patch apply_patch *
 M read_file read_file *

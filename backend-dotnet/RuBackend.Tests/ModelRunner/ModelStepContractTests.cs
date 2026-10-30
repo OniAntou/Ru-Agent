@@ -27,17 +27,6 @@ public sealed class ModelStepContractTests
         Assert.DoesNotContain("bash", ids);
     }
 
-    [Fact]
-    public void Semantic_tool_is_projected_only_for_an_explicit_profile_with_configured_server()
-    {
-        Assert.DoesNotContain(AgentToolRuntimeProjection.Select(new AgentToolRuntimeAvailability(false, false,
-            ToolProfile: AgentToolProfiles.Semantic)), tool => tool.ToolId == "code_intelligence");
-        Assert.Contains(AgentToolRuntimeProjection.Select(new AgentToolRuntimeAvailability(false, false,
-            ToolProfile: AgentToolProfiles.Semantic, LanguageServersEnabled: true)), tool => tool.ToolId == "code_intelligence");
-        foreach (var profile in new[] { AgentToolProfiles.Minimal, AgentToolProfiles.Patch, AgentToolProfiles.Programmatic })
-            Assert.DoesNotContain(AgentToolRuntimeProjection.Select(new AgentToolRuntimeAvailability(false, false,
-                ToolProfile: profile, LanguageServersEnabled: true)), tool => tool.ToolId == "code_intelligence");
-    }
 
     [Fact]
     public void Runtime_capabilities_advertise_both_web_tools()

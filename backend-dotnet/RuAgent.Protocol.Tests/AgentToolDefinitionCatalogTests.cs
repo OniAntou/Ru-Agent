@@ -25,7 +25,6 @@ public sealed class AgentToolDefinitionCatalogTests
         "agent_wait",
         "agent_cancel",
         "agent_apply",
-        "code_intelligence",
         "run_code",
         "apply_patch",
         "read_file",
@@ -82,7 +81,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(29, definitions.Count);
+        Assert.Equal(28, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }

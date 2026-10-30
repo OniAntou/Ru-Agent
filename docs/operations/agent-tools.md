@@ -1,7 +1,7 @@
 # Agent tools and truthful execution
 
 This document is the operating contract for Ru's in-process tool authority,
-session policy and headless Agent surfaces, updated 2026-10-25.
+session policy and headless Agent surfaces, updated 2026-10-30.
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
@@ -17,11 +17,11 @@ declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 
 ## Coding profiles
 
-New runs default to `coding_v2` (26 definitions). `patch_v2` (25),
-`coding_code_v1` (28) and opt-in `coding_semantic_v1` (27) are also supported, and
+New runs default to `coding_v2` (26 definitions). `patch_v2` (25) and
+`coding_code_v1` (28) are also supported, and
 must be selected explicitly for a new run; changing the Host setting does not
 alter an existing run. Set
-`RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1|coding_semantic_v1` in a dedicated Host
+`RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1` in a dedicated Host
 process to choose the profile for new runs. Persisted provider selections must
 include a valid profile pin: a missing pin fails as `tool_profile_required`, and
 an explicit retired or unknown profile fails as `tool_profile_invalid`. Run
@@ -35,38 +35,6 @@ all targets are checked, and patch approval is one-time. For Windows command tex
 use `powershell` with `script`; for literal argv use `run_process`. Read retained
 output with `terminal_read` and stop a background task with `terminal_stop`.
 These operations retain terminal lifetime/output/process-tree bounds.
-
-### Semantic coding calls (opt-in)
-
-`coding_semantic_v1` adds `code_intelligence` for `diagnostics`, `symbols`,
-`definition` and `references` in C# or TypeScript. Configure an installed server
-in the user's `%USERPROFILE%\\.ru\\lsp.json`; Ru reads no workspace server config
-and never downloads or launches an installer. Example:
-
-```json
-{
-  "servers": {
-    "csharp": { "command": "csharp-ls.exe", "args": ["--stdio"] },
-    "typescript": { "command": "typescript-language-server.cmd", "args": ["--stdio"] }
-  }
-}
-```
-
-The `path` is workspace-relative. `line` and `character` are zero-based and
-required for definition and references. Results carry the document SHA-256 and
-LSP version, cap at 128 entries and 512 KiB, and set `truncated=true` when
-narrower queries are needed. Diagnostics without the active version are
-rejected as stale. Returned locations must be file URIs under the canonical run
-workspace.
-
-Starting the configured executable runs as the current Windows user, with the
-sanitized Agent environment and the canonical workspace as cwd. Broker policy
-classifies it as an external-process launch: `plan` denies, `standard` asks, and
-`full_access` follows the existing external-terminal policy. Frame size is 4 MiB;
-requests and writes are bounded to 120 seconds, cancellation sends
-`$/cancelRequest`, and Broker shutdown kills the process tree. The new profile
-does not change existing run pins. Configuration is captured once per Host
-process; restart Ru after editing `.ru/lsp.json`.
 
 Prefer `read_file` with 1-based `start_line` and `line_count`; continue at
 `next_line` (also updated when model context shortens the page). Use `read` for
@@ -154,10 +122,10 @@ Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`,
 `powershell`, `run_process`, `terminal_read`, `terminal_stop`,
 `web_search` and `web_fetch`. Profile and availability filters apply below.
 
-The Protocol catalog contains 29 definitions; the Broker has 28 executable
+The Protocol catalog contains 28 definitions; the Broker has 27 executable
 bindings because `ask_user` is intercepted by the Host. Run-pinned inventories
-contain 26 definitions in `coding_v2`, 25 in `patch_v2`, 28 in `coding_code_v1`
-and 27 in `coding_semantic_v1`, before availability/role filtering. There is no selectable
+contain 26 definitions in `coding_v2`, 25 in `patch_v2`, and 28 in `coding_code_v1`,
+before availability/role filtering. There is no selectable
 legacy profile. The model-facing file mutation and terminal tools are
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `powershell`,
 `run_process`, `terminal_read` and `terminal_stop`; `apply_patch` is available
@@ -941,10 +909,10 @@ Per tool, "Always allow" and session memory remember: for file tools, the canoni
 outside folder, the nearest existing folder as a durable pattern; for `run_process` and `powershell`,
 the resolved executable, argv and canonical cwd (a `powershell` script exactly); for MCP `call` or
 `list_tools`, the server and tool (a remembered listing never covers a call); for computer use, the exact
-app list, so a request that names other apps is not covered; for a language-server launch, its command,
-argv, cwd and file. `apply_patch`, `file_restore`, `run_code`, terminal read and stop, subagent controls,
+app list, so a request that names other apps is not covered.
+`apply_patch`, `file_restore`, `run_code`, terminal read and stop, subagent controls,
 web and skill calls are never remembered, and `allow_always` on them is refused with
-`invalid_approval_command`. Rules saved by earlier builds for MCP, computer use or language servers carry
+`invalid_approval_command`. Rules saved by earlier builds for MCP or computer use carry
 no identity and no longer authorize, so those calls ask again. An allow of a rememberable call additionally remembers the approved
 intent in
 the Host's in-process session ledger (the durable pattern when one was saved,

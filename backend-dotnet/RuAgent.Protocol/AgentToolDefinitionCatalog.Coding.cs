@@ -6,11 +6,6 @@ namespace RuAgent.Protocol;
 // Tools/AgentToolDescriptorTable; these builders only shape the arguments.
 public static partial class AgentToolDefinitionCatalog
 {
-    internal static JsonObject CodeIntelligenceSchema() => ObjectSchema(["operation", "language", "path"],
-        ("operation", EnumSchema(["diagnostics", "symbols", "definition", "references"])),
-        ("language", EnumSchema(["csharp", "typescript"])), ("path", StringSchema(4096, 1)),
-        ("line", IntegerSchema(0, 10_000_000)), ("character", IntegerSchema(0, 10_000_000)));
-
     internal static JsonObject RunCodeSchema() => ObjectSchema(["code"], ("code", StringSchema(16 * 1024, 1)), ("timeout_ms", IntegerSchema(1, 120_000)));
 
     internal static JsonObject ApplyPatchSchema() => ObjectSchema(["patch"], ("patch", StringSchema(4 * 1024 * 1024, 1)));

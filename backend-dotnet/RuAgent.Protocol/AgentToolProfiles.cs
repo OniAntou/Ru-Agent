@@ -7,7 +7,6 @@ public static class AgentToolProfiles
     public const string Minimal = "coding_v2";
     public const string Patch = "patch_v2";
     public const string Programmatic = "coding_code_v1";
-    public const string Semantic = "coding_semantic_v1";
     public const string PinField = "ru_tool_profile";
 
     // A versioned profile is an explicit inventory: future catalog additions must
@@ -22,7 +21,7 @@ public static class AgentToolProfiles
     {
         if (!options.ContainsKey(PinField)) throw new AgentProtocolException("tool_profile_required");
         if (options[PinField] is JsonValue value && value.TryGetValue<string>(out var profile)
-            && profile is Minimal or Patch or Programmatic or Semantic) return profile;
+            && profile is Minimal or Patch or Programmatic) return profile;
         throw new AgentProtocolException("tool_profile_invalid");
     }
 
@@ -30,13 +29,12 @@ public static class AgentToolProfiles
     // metadata or invent a replacement pin. Execution always uses ReadPin.
     public static string? ReadSupportedLabel(JsonObject options) =>
         options[PinField] is JsonValue value && value.TryGetValue<string>(out var profile)
-            && profile is Minimal or Patch or Programmatic or Semantic ? profile : null;
+            && profile is Minimal or Patch or Programmatic ? profile : null;
 
     public static bool Includes(string profile, string toolId) => profile switch
     {
         Minimal => Common.Contains(toolId) || Coding.Contains(toolId),
         Programmatic => Common.Contains(toolId) || Coding.Contains(toolId) || toolId is "run_code" or "apply_patch",
-        Semantic => Common.Contains(toolId) || Coding.Contains(toolId) || toolId == "code_intelligence",
         Patch => Common.Contains(toolId) || toolId == "apply_patch"
             || Coding.Contains(toolId) && toolId is not ("write_file" or "edit_file"),
         _ => throw new AgentProtocolException("tool_profile_invalid"),

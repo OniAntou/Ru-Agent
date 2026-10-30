@@ -53,14 +53,13 @@ public sealed class CodingToolContractTests
     }
 
     [Fact]
-    public void Semantic_profile_is_opt_in_and_existing_inventories_stay_unchanged()
+    public void Removed_semantic_profile_is_rejected_without_substitution()
     {
-        Assert.False(AgentToolProfiles.Includes(AgentToolProfiles.Minimal, "code_intelligence"));
-        Assert.False(AgentToolProfiles.Includes(AgentToolProfiles.Patch, "code_intelligence"));
-        Assert.False(AgentToolProfiles.Includes(AgentToolProfiles.Programmatic, "code_intelligence"));
-        Assert.True(AgentToolProfiles.Includes(AgentToolProfiles.Semantic, "code_intelligence"));
-        Assert.Equal(AgentToolProfiles.Semantic, AgentToolProfiles.ReadPin(new JsonObject { [AgentToolProfiles.PinField] = AgentToolProfiles.Semantic }));
+        var pin = new JsonObject { [AgentToolProfiles.PinField] = "coding_semantic_v1" };
+        Assert.Equal("tool_profile_invalid", Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ReadPin(pin)).Message);
+        Assert.Null(AgentToolProfiles.ReadSupportedLabel(pin));
+        Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ForNewRun("coding_semantic_v1"));
         Assert.Equal(AgentToolProfiles.Minimal, AgentToolProfiles.ForNewRun());
-        Assert.Contains("code_intelligence", AgentToolDefinitionCatalog.Get().Select(tool => tool.ToolId));
+        Assert.DoesNotContain(AgentToolDefinitionCatalog.Get(), tool => tool.ToolId == "code_intelligence");
     }
 }

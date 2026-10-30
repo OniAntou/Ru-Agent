@@ -25,8 +25,6 @@ public enum ApprovalIdentityClass
     /// <summary>A computer-use app grant (request_access or focus), bound with its app list.</summary>
     ComputerGrant,
 
-    /// <summary>A configured language server launch, bound with its executable, argv, cwd and file path.</summary>
-    LanguageServer,
 }
 
 /// <summary>
@@ -118,7 +116,6 @@ public static class ApprovalRememberPolicy
         "run_process" or "powershell" => ApprovalIdentityClass.ProcessLaunch,
         "mcp" => ApprovalIdentityClass.McpCall,
         "computer" => ApprovalIdentityClass.ComputerGrant,
-        "code_intelligence" => ApprovalIdentityClass.LanguageServer,
         "apply_patch" or "file_restore" or "run_code" or "terminal_read" or "terminal_stop"
             or "help" or "todo_write" or "web_search" or "web_fetch" or "skill" or "ask_user"
             or "agent_spawn" or "agent_send" or "agent_wait" or "agent_cancel" or "agent_apply"
@@ -133,8 +130,7 @@ public static class ApprovalRememberPolicy
     /// the Host's remembered terminal rules always carry the full identity anyway.
     /// </summary>
     internal static bool RequiresProcessIdentity(PolicyContext context) =>
-        string.Equals(context.ToolId, "code_intelligence", StringComparison.Ordinal)
-        || (string.Equals(context.ToolId, "mcp", StringComparison.Ordinal) && context.ToolOp is "call" or "list_tools")
+        (string.Equals(context.ToolId, "mcp", StringComparison.Ordinal) && context.ToolOp is "call" or "list_tools")
         || (string.Equals(context.ToolId, "computer", StringComparison.Ordinal) && context.ToolOp is "request_access" or "focus");
 
     /// <summary>True when an allow rule is missing the identity that <see cref="RequiresProcessIdentity"/> needs.</summary>
@@ -154,7 +150,7 @@ public static class ApprovalRememberPolicy
 
     private static bool IsRememberableCall(ApprovalIdentityClass identity, PolicyContext context) => identity switch
     {
-        ApprovalIdentityClass.FileTarget or ApprovalIdentityClass.LanguageServer => true,
+        ApprovalIdentityClass.FileTarget => true,
         ApprovalIdentityClass.ProcessLaunch => string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal),
         ApprovalIdentityClass.McpCall => context.ToolOp is "call" or "list_tools",
         ApprovalIdentityClass.ComputerGrant => context.ToolOp is "request_access" or "focus",
@@ -169,7 +165,6 @@ public static class ApprovalRememberPolicy
         ApprovalIdentityClass.ProcessLaunch => new(Path: false, Executable: true, Argv: true, Cwd: true),
         ApprovalIdentityClass.McpCall or ApprovalIdentityClass.ComputerGrant
             => new(Path: false, Executable: true, Argv: true, Cwd: false),
-        ApprovalIdentityClass.LanguageServer => new(Path: true, Executable: true, Argv: true, Cwd: true),
         _ => throw new ArgumentOutOfRangeException(nameof(identity), identity, "not a rememberable identity class"),
     };
 

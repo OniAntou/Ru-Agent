@@ -51,13 +51,6 @@ hard-link containment, and the protected-path denial holds in `plan` and
 `standard` (`full_access` is literally full). API keys remain in credential
 storage and diagnostics redact secrets.
 
-Language-server processes use the same Broker authority and sanitized child
-environment. `code_intelligence` is an external-process launch bound to its
-configured executable/argv, operation, canonical workspace and target path.
-The server runs with the canonical run workspace as cwd; path grants cannot
-move that cwd. LSP frames, results, document versions and process-tree lifetime
-are bounded by [ADR 0037](../adr/0037-language-server-tools.md).
-
 The current managed process flow (Phase 2 cutover) is:
 
 ```text
@@ -415,7 +408,7 @@ The profile is pinned alongside the provider selection and removed from request
 options before provider transport. Missing pins fail as `tool_profile_required`;
 retired or unknown pins fail as `tool_profile_invalid`, without provider access
 or substitution. Run queries return null for unsupported historical labels.
-The catalog has 29 definitions and the Broker 28 bindings (`ask_user` is Host-only).
+The catalog has 28 definitions and the Broker 27 bindings (`ask_user` is Host-only).
 There are no public `write`, `edit` or `bash` bindings. Internal operation tags
 still let saved policy-family deny/ask rules constrain the corresponding modern
 tools; they cannot dispatch a retired tool. Shared file/terminal adapters remain
@@ -573,8 +566,7 @@ matchers it receives and derives none ([Host approval flow](host.md#approval-flo
   inside the workspace. Terminal launches (`run_process`, `powershell`) bind the resolved executable,
   argv and canonical cwd. `mcp` `list_tools` and `call` bind the server (`mcp:<server>`) and its argv
   (`list_tools`, or `call` with the tool name). `computer` `request_access` and `focus` bind the exact
-  app list or app. `code_intelligence` binds the configured language-server launch and the file it
-  targets. Every other id is not rememberable, including `apply_patch`, `file_restore`, `run_code`,
+  app list or app. Every other id is not rememberable, including `apply_patch`, `file_restore`, `run_code`,
   `terminal_read`, `terminal_stop`, the subagent tools, `web_search`, `web_fetch`, `skill`, `help`,
   `todo_write` and unknown ids.
 - A matcher that cannot bind its identity is not made. That covers an empty argv (an argument-less
@@ -592,7 +584,7 @@ matchers it receives and derives none ([Host approval flow](host.md#approval-flo
   outside-folder approval is bridged as `allow_session_directory`, so a one-time allow still registers
   the session folder grant.
 - Evaluator guard: `PolicyRuleMatcher.Matches` ignores an allow rule for `mcp` `list_tools` or `call`,
-  `computer` `request_access` or `focus`, or `code_intelligence` unless the rule names both a resolved
+  `computer` `request_access` or `focus` unless the rule names both a resolved
   executable and a non-empty argv. Deny and ask rules keep wildcard semantics. Rules carry no
   provenance, so an identity-less allow written by a user for these tools is ignored too.
 - Probe: `ApprovalProbeAsync` reads a pending approval without consuming it or issuing a token. `Known`
@@ -600,7 +592,7 @@ matchers it receives and derives none ([Host approval flow](host.md#approval-flo
   `Rememberable` is the tool-class check. It does not predict whether a particular target yields a
   matcher, so a root folder can be rememberable and still degrade.
 - Open limits: a durable external-folder rule is path-only and does not bind the approved operation. A
-  session matcher for a non-shell, non-flag-first terminal launch or a language-server launch is
+  session matcher for a non-shell, non-flag-first terminal launch is
   compared as a prefix, so a later call that appends arguments also matches it. Argv glob matching
   compares case-insensitively and treats `\` and `/` alike.
 

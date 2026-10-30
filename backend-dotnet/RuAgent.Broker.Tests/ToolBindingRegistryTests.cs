@@ -138,7 +138,7 @@ public sealed class ToolBindingRegistryTests
             new[]
             {
                   "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "apply_patch",
-                "code_intelligence", "computer", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp",
+                "computer", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp",
                 "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write_file",
             },
             bound);
@@ -170,7 +170,6 @@ public sealed class ToolBindingRegistryTests
         ["skill"] = Succeeded,
         ["mcp"] = Succeeded,
         ["computer"] = Succeeded,
-        ["code_intelligence"] = Succeeded,
           ["read_file"] = Succeeded,
           ["run_code"] = Succeeded,
           ["apply_patch"] = Succeeded,

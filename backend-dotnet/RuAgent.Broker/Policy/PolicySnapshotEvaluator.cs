@@ -298,12 +298,6 @@ public sealed class PolicySnapshotEvaluator
                 : ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "mcp_call_requires_approval");
         }
 
-        // ADR 0037: the configured language server is a user-selected process with
-        // the same Windows rights as a terminal launch. The configured executable
-        // is started only after this Broker policy decision.
-        if (string.Equals(context.ToolId, "code_intelligence", StringComparison.Ordinal))
-            return ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "lsp_launch_requires_approval");
-
         // ADR 0031: granting an app control runs input with the user's rights, the same
         // authority as an external terminal launch (plan deny, standard ask, full_access
         // allow). Other actions are checked against the session's app grants when they

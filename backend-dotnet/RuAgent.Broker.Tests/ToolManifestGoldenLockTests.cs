@@ -41,7 +41,6 @@ public sealed class ToolManifestGoldenLockTests
         new("agent_spawn", "1.0.0", "builtin", RiskClass.Read, "system.read", false, false, 4194304, 30000, "builtin", false),
         new("agent_wait", "1.0.0", "builtin", RiskClass.Read, "system.read", false, false, 4194304, 30000, "builtin", false),
         new("apply_patch", "1.0.0", "desktop", RiskClass.Reversible, "workspace.write", true, true, 4194304, 30000, "builtin", false),
-        new("code_intelligence", "1.0.0", "language_server", RiskClass.External, "terminal.execute", true, false, 4194304, 30000, "builtin", false),
         new("computer", "1.0.0", "desktop", RiskClass.External, "terminal.execute", true, false, 4194304, 30000, "builtin", false),
         new("edit_file", "1.0.0", "desktop", RiskClass.Reversible, "workspace.write", true, true, 4194304, 30000, "builtin", false),
         new("file_delete", "1.0.0", "desktop", RiskClass.Reversible, "workspace.write", true, true, 4194304, 30000, "builtin", false),
@@ -74,7 +73,6 @@ public sealed class ToolManifestGoldenLockTests
     //   help, todo_write, skill, agent_spawn, agent_send, agent_wait, agent_cancel: workspace.read -> system.read
     //   agent_apply: workspace.read -> workspace.write (its manifest requires workspace.write)
     //   ask_user, future_tool: workspace.read -> none
-    //   code_intelligence (ADR 0037; 9341402b had no arm for it, so it fell back): workspace.read -> terminal.execute, its manifest scope
     // The grant union over the full catalog is unchanged, as is the production lease, which always
     // advertises the whole bound catalog.
     private static readonly SessionLock[] SessionLocks =
@@ -96,7 +94,6 @@ public sealed class ToolManifestGoldenLockTests
         new("agent_wait", "system.read"),
         new("agent_cancel", "system.read"),
         new("agent_apply", "workspace.write"),
-        new("code_intelligence", "terminal.execute"),
         new("run_code", "system.read"),
         new("apply_patch", "workspace.write"),
         new("read_file", "system.read"),
@@ -207,7 +204,7 @@ public sealed class ToolManifestGoldenLockTests
     [Fact]
     public void Trusted_adapter_set_is_locked()
     {
-        var accepted = new[] { "builtin", "desktop", "terminal", "web", "connector", "language_server" };
+        var accepted = new[] { "builtin", "desktop", "terminal", "web", "connector" };
         foreach (var adapter in accepted)
         {
             var registry = new ToolRegistry();

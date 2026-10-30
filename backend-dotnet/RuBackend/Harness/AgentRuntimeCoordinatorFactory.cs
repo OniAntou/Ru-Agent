@@ -146,7 +146,6 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         {
             ChildRole = null,
             McpEnabled = _mcpServers?.Configuration.IsEmpty == false,
-            LanguageServersEnabled = RuAgent.Broker.Tools.LanguageServers.LanguageServerConfiguration.CurrentUser.Servers.Count > 0,
         };
         if (_brokerGateways is not { IsConfigured: true }
             || policySnapshot is null

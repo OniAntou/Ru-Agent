@@ -87,7 +87,6 @@ public sealed class ApprovalRememberPolicyTests
     [InlineData("mcp_list_tools", "tool,version,executable,argv,operation,network")]
     [InlineData("computer_request_access", "tool,version,executable,argv,operation,network")]
     [InlineData("computer_focus", "tool,version,executable,argv,operation,network")]
-    [InlineData("code_intelligence", "tool,version,path,executable,argv,cwd,operation,network")]
     public void Remembered_matchers_match_their_own_context_and_miss_on_each_bound_field(string caseName, string boundFields)
     {
         var context = CaseContext(caseName);
@@ -270,27 +269,6 @@ public sealed class ApprovalRememberPolicyTests
         Assert.False(plan.IsRememberable);
     }
 
-    [Fact]
-    public void External_directory_approval_is_not_offered_for_a_language_server_launch()
-    {
-        var external = Path.Combine(Path.GetTempPath(), "ru-remember-lsp-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(external);
-        try
-        {
-            var context = Context("code_intelligence", new JsonObject
-            {
-                ["operation"] = "diagnostics", ["language"] = "csharp", ["path"] = Path.Combine(external, "Example.cs"),
-            });
-            var plan = ApprovalRememberPolicy.Build(context, "code_intelligence", "1.0.0", "external_directory_required", externalDirectoryRequested: true);
-
-            Assert.False(plan.IsRememberable);
-        }
-        finally
-        {
-            Directory.Delete(external, recursive: true);
-        }
-    }
-
     [Theory]
     [InlineData("D:")]
     [InlineData(@"D:\")]
@@ -404,10 +382,6 @@ public sealed class ApprovalRememberPolicyTests
             ["action"] = "request_access", ["apps"] = new JsonArray("notepad.exe"),
         }),
         "computer_focus" => Context("computer", new JsonObject { ["action"] = "focus", ["app"] = "notepad.exe" }),
-        "code_intelligence" => Context("code_intelligence", new JsonObject
-        {
-            ["operation"] = "definition", ["language"] = "csharp", ["path"] = "src\\Example.cs", ["line"] = 2, ["character"] = 4,
-        }),
         _ => throw new ArgumentOutOfRangeException(nameof(caseName), caseName, "unmapped case"),
     };
 
@@ -419,11 +393,7 @@ public sealed class ApprovalRememberPolicyTests
     private static SharedContexts CreateShared()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-remember-policy-" + Guid.NewGuid().ToString("N"));
-        var profile = Path.Combine(root, "profile");
         Directory.CreateDirectory(Path.Combine(root, "src"));
-        Directory.CreateDirectory(Path.Combine(profile, ".ru"));
-        File.WriteAllText(Path.Combine(profile, ".ru", "lsp.json"),
-            """{"servers":{"csharp":{"command":"csharp-ls.exe","args":["--stdio","--flag"]}}}""");
         var snapshot = PolicyEvalSnapshots.Empty("standard");
         var lease = RuAgent.Broker.Runtime.BrokerRunLease.CreateValidated(
             PolicyEvalSnapshots.RunId,
@@ -438,7 +408,7 @@ public sealed class ApprovalRememberPolicyTests
             BrokerPolicyContracts.ComputeCanonicalSnapshotHash(snapshot),
             DateTimeOffset.UtcNow.AddMinutes(5),
             snapshot);
-        return new SharedContexts(new PolicyContextFactory(lease, userHome: () => profile));
+        return new SharedContexts(new PolicyContextFactory(lease));
     }
 
     private sealed record SharedContexts(PolicyContextFactory Factory);

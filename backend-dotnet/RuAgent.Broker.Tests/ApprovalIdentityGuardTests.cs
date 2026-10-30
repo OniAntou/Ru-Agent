@@ -7,7 +7,7 @@ using Xunit;
 namespace RuAgent.Broker.Tests;
 
 /// <summary>
-/// An allow rule for mcp call/list_tools, computer request_access/focus and code_intelligence is honored
+/// An allow rule for mcp call/list_tools, computer request_access/focus is honored
 /// only when it names the executable and argv it authorizes. Terminal allows are not guarded (a cwd-only
 /// rule is an explicit decision), and deny and ask rules keep their identity-less wildcard semantics.
 /// </summary>
@@ -68,33 +68,6 @@ public sealed class ApprovalIdentityGuardTests
     }
 
     [Fact]
-    public void Path_only_allow_rule_is_not_honored_for_a_code_intelligence_target()
-    {
-        // code_intelligence resolves a workspace Target, so a path-only allow rule would
-        // otherwise match it and authorize a language-server launch without approval.
-        var (lease, factory) = BindWithLanguageServer(PolicyEvalSnapshots.SnapshotWith(
-            PolicyEvalSnapshots.Rule("r-path", "allow", PolicyEvalSnapshots.Matcher(pathPattern: "src/Example.cs"))));
-
-        var evaluation = Evaluate(lease, factory, "code_intelligence", CodeIntelligenceArguments());
-
-        Assert.Equal("ask", evaluation.Decision);
-        Assert.Equal("lsp_launch_requires_approval", evaluation.ReasonCode);
-        Assert.Null(evaluation.MatchedRuleId);
-    }
-
-    [Fact]
-    public void Identity_less_deny_rule_still_denies_a_code_intelligence_target()
-    {
-        var (lease, factory) = BindWithLanguageServer(PolicyEvalSnapshots.SnapshotWith(
-            PolicyEvalSnapshots.Rule("r-deny", "deny", PolicyEvalSnapshots.Matcher(toolId: "code_intelligence"))));
-
-        var evaluation = Evaluate(lease, factory, "code_intelligence", CodeIntelligenceArguments());
-
-        Assert.Equal("deny", evaluation.Decision);
-        Assert.Equal("r-deny", evaluation.MatchedRuleId);
-    }
-
-    [Fact]
     public void Identity_bound_allow_rule_is_honored_for_an_mcp_call()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
@@ -129,24 +102,6 @@ public sealed class ApprovalIdentityGuardTests
 
         Assert.Equal("allow", evaluation.Decision);
         Assert.Equal("r-computer", evaluation.MatchedRuleId);
-    }
-
-    [Fact]
-    public void Identity_bound_allow_rule_is_honored_for_a_code_intelligence_target()
-    {
-        var (lease, factory) = BindWithLanguageServer(PolicyEvalSnapshots.SnapshotWith(
-            PolicyEvalSnapshots.Rule("r-lsp", "allow", PolicyEvalSnapshots.Matcher(
-                toolId: "code_intelligence",
-                pathPattern: "src/Example.cs",
-                resolvedExecutable: "csharp-ls.exe",
-                argvPattern: ["lsp", "csharp", "definition", "--stdio", "--flag"],
-                cwdPattern: null,
-                operationClass: "mutation"))));
-
-        var evaluation = Evaluate(lease, factory, "code_intelligence", CodeIntelligenceArguments());
-
-        Assert.Equal("allow", evaluation.Decision);
-        Assert.Equal("r-lsp", evaluation.MatchedRuleId);
     }
 
     [Fact]
@@ -215,11 +170,6 @@ public sealed class ApprovalIdentityGuardTests
             PolicyRequestInvariants.Valid,
             Now);
 
-    private static JsonObject CodeIntelligenceArguments() => new()
-    {
-        ["operation"] = "definition", ["language"] = "csharp", ["path"] = "src\\Example.cs", ["line"] = 2, ["character"] = 4,
-    };
-
     private static (RuAgent.Broker.Runtime.BrokerRunLease Lease, PolicyContextFactory Factory) Bind(
         BrokerPolicySnapshotWire snapshot,
         string? workspaceRoot = null)
@@ -239,30 +189,6 @@ public sealed class ApprovalIdentityGuardTests
             DateTimeOffset.UtcNow.AddMinutes(5),
             snapshot);
         return (lease, new PolicyContextFactory(lease));
-    }
-
-    private static (RuAgent.Broker.Runtime.BrokerRunLease Lease, PolicyContextFactory Factory) BindWithLanguageServer(
-        BrokerPolicySnapshotWire snapshot)
-    {
-        var root = WorkspaceRoot();
-        var profile = Path.Combine(root, "profile");
-        Directory.CreateDirectory(Path.Combine(profile, ".ru"));
-        File.WriteAllText(Path.Combine(profile, ".ru", "lsp.json"),
-            """{"servers":{"csharp":{"command":"csharp-ls.exe","args":["--stdio","--flag"]}}}""");
-        var lease = RuAgent.Broker.Runtime.BrokerRunLease.CreateValidated(
-            PolicyEvalSnapshots.RunId,
-            PolicyEvalSnapshots.SessionId,
-            PolicyEvalSnapshots.WorkspaceId,
-            root,
-            PolicyEvalSnapshots.VolumeSerial,
-            PolicyEvalSnapshots.RootFileId,
-            PolicyEvalSnapshots.DisplayHash,
-            snapshot.Preset,
-            snapshot.Version,
-            BrokerPolicyContracts.ComputeCanonicalSnapshotHash(snapshot),
-            DateTimeOffset.UtcNow.AddMinutes(5),
-            snapshot);
-        return (lease, new PolicyContextFactory(lease, userHome: () => profile));
     }
 
     private static string WorkspaceRoot()

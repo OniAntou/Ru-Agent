@@ -66,9 +66,6 @@ public sealed partial class ToolExecutionService
         lock (_terminalLifetimeGate) _stopping = true;
         _backgroundTasks.CancelAll();
         await DrainTerminalPumpsAsync().ConfigureAwait(false);
-        foreach (var host in _languageServers.Values)
-            await host.DisposeAsync().ConfigureAwait(false);
-        _languageServers.Clear();
         Dispose();
     }
 }

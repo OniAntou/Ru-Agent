@@ -192,19 +192,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            // The configured language server is an external process launched with the user's rights (ADR 0037),
-            // so it is terminal-class like mcp. The hook gateway previously defaulted it to ReadOnly.
-            Ordinal = 17, Id = "code_intelligence", Version = Version, Scope = AgentToolScopes.TerminalExecute, ExtraScopes = [],
-            Risk = AgentToolRisk.External, RequiresApproval = true, Adapter = AgentToolAdapter.LanguageServer, WorkspaceRequired = false,
-            Access = AgentToolAccess.Terminal, MaxOutputBytes = null,
-            PolicyFamily = null,
-            Description = "Use the user's installed C# or TypeScript language server for diagnostics, document symbols, definitions or references. Servers come only from the user's ~/.ru/lsp.json; Ru never downloads or runs workspace setup scripts. path is workspace-relative, positions are zero-based. Every result includes the exact document content hash/version; truncated results must be narrowed. Starting the configured process requires external-process launch authorization in Broker.",
-            InputSchema = AgentToolDefinitionCatalog.CodeIntelligenceSchema,
-            ExampleArguments = () => new JsonObject { ["operation"] = "diagnostics", ["language"] = "csharp", ["path"] = "src\\App.cs" },
-        },
-        new()
-        {
-            Ordinal = 18, Id = "run_code", Version = Version, Scope = AgentToolScopes.SystemRead, ExtraScopes = [],
+            Ordinal = 17, Id = "run_code", Version = Version, Scope = AgentToolScopes.SystemRead, ExtraScopes = [],
             Risk = AgentToolRisk.Reversible, RequiresApproval = false, Adapter = AgentToolAdapter.Builtin, WorkspaceRequired = false,
             // Terminal: the Broker has always classified it so. The hook gateway previously said Mutation.
             Access = AgentToolAccess.Terminal, MaxOutputBytes = null,
@@ -214,7 +202,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            Ordinal = 19, Id = "apply_patch", Version = Version, Scope = AgentToolScopes.WorkspaceWrite, ExtraScopes = [],
+            Ordinal = 18, Id = "apply_patch", Version = Version, Scope = AgentToolScopes.WorkspaceWrite, ExtraScopes = [],
             Risk = AgentToolRisk.Reversible, RequiresApproval = true, Adapter = AgentToolAdapter.Desktop, WorkspaceRequired = true,
             Access = AgentToolAccess.Mutation, MaxOutputBytes = null,
             PolicyFamily = null,
@@ -223,7 +211,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            Ordinal = 20, Id = "read_file", Version = Version, Scope = AgentToolScopes.SystemRead, ExtraScopes = [],
+            Ordinal = 19, Id = "read_file", Version = Version, Scope = AgentToolScopes.SystemRead, ExtraScopes = [],
             Risk = AgentToolRisk.Read, RequiresApproval = false, Adapter = AgentToolAdapter.Builtin, WorkspaceRequired = false,
             // Mirrors Broker FileReadAdapter.MaximumLineOutputBytes; a Broker test pins the equality.
             Access = AgentToolAccess.ReadOnly, MaxOutputBytes = 32 * 1024,
@@ -233,7 +221,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            Ordinal = 21, Id = "write_file", Version = Version, Scope = AgentToolScopes.WorkspaceWrite, ExtraScopes = [],
+            Ordinal = 20, Id = "write_file", Version = Version, Scope = AgentToolScopes.WorkspaceWrite, ExtraScopes = [],
             Risk = AgentToolRisk.Reversible, RequiresApproval = true, Adapter = AgentToolAdapter.Desktop, WorkspaceRequired = true,
             Access = AgentToolAccess.Mutation, MaxOutputBytes = null,
             PolicyFamily = "write",
@@ -243,7 +231,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            Ordinal = 22, Id = "edit_file", Version = Version, Scope = AgentToolScopes.WorkspaceWrite, ExtraScopes = [],
+            Ordinal = 21, Id = "edit_file", Version = Version, Scope = AgentToolScopes.WorkspaceWrite, ExtraScopes = [],
             Risk = AgentToolRisk.Reversible, RequiresApproval = true, Adapter = AgentToolAdapter.Desktop, WorkspaceRequired = true,
             Access = AgentToolAccess.Mutation, MaxOutputBytes = null,
             PolicyFamily = "edit",
@@ -257,7 +245,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            Ordinal = 23, Id = "file_delete", Version = Version, Scope = AgentToolScopes.WorkspaceWrite, ExtraScopes = [],
+            Ordinal = 22, Id = "file_delete", Version = Version, Scope = AgentToolScopes.WorkspaceWrite, ExtraScopes = [],
             Risk = AgentToolRisk.Reversible, RequiresApproval = true, Adapter = AgentToolAdapter.Desktop, WorkspaceRequired = true,
             Access = AgentToolAccess.Mutation, MaxOutputBytes = null,
             PolicyFamily = "write",
@@ -266,7 +254,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            Ordinal = 24, Id = "file_restore", Version = Version, Scope = AgentToolScopes.WorkspaceWrite, ExtraScopes = [],
+            Ordinal = 23, Id = "file_restore", Version = Version, Scope = AgentToolScopes.WorkspaceWrite, ExtraScopes = [],
             Risk = AgentToolRisk.Reversible, RequiresApproval = true, Adapter = AgentToolAdapter.Desktop, WorkspaceRequired = true,
             Access = AgentToolAccess.Mutation, MaxOutputBytes = null,
             PolicyFamily = "write",
@@ -275,7 +263,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            Ordinal = 25, Id = "powershell", Version = Version, Scope = AgentToolScopes.TerminalExecute, ExtraScopes = [],
+            Ordinal = 24, Id = "powershell", Version = Version, Scope = AgentToolScopes.TerminalExecute, ExtraScopes = [],
             Risk = AgentToolRisk.Reversible, RequiresApproval = true, Adapter = AgentToolAdapter.Terminal, WorkspaceRequired = false,
             Access = AgentToolAccess.Terminal, MaxOutputBytes = null,
             PolicyFamily = "bash",
@@ -284,7 +272,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            Ordinal = 26, Id = "run_process", Version = Version, Scope = AgentToolScopes.TerminalExecute, ExtraScopes = [],
+            Ordinal = 25, Id = "run_process", Version = Version, Scope = AgentToolScopes.TerminalExecute, ExtraScopes = [],
             Risk = AgentToolRisk.Reversible, RequiresApproval = true, Adapter = AgentToolAdapter.Terminal, WorkspaceRequired = false,
             Access = AgentToolAccess.Terminal, MaxOutputBytes = null,
             PolicyFamily = "bash",
@@ -294,7 +282,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            Ordinal = 27, Id = "terminal_read", Version = Version, Scope = AgentToolScopes.TerminalExecute, ExtraScopes = [],
+            Ordinal = 26, Id = "terminal_read", Version = Version, Scope = AgentToolScopes.TerminalExecute, ExtraScopes = [],
             Risk = AgentToolRisk.Reversible, RequiresApproval = true, Adapter = AgentToolAdapter.Terminal, WorkspaceRequired = false,
             Access = AgentToolAccess.ReadOnly, MaxOutputBytes = null,
             PolicyFamily = "bash",
@@ -303,7 +291,7 @@ public static class AgentToolDescriptorTable
         },
         new()
         {
-            Ordinal = 28, Id = "terminal_stop", Version = Version, Scope = AgentToolScopes.TerminalExecute, ExtraScopes = [],
+            Ordinal = 27, Id = "terminal_stop", Version = Version, Scope = AgentToolScopes.TerminalExecute, ExtraScopes = [],
             Risk = AgentToolRisk.Reversible, RequiresApproval = true, Adapter = AgentToolAdapter.Terminal, WorkspaceRequired = false,
             Access = AgentToolAccess.Terminal, MaxOutputBytes = null,
             PolicyFamily = "bash",

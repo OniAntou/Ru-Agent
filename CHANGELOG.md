@@ -44,19 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **refactor(broker,protocol)!**: Derive every model-visible tool from one descriptor table (ADR 0038):
   Protocol definitions, Broker manifests, the trusted adapter allowlist, per-tool session scopes and the
   access class that the Broker and hook gateways share. Hook-denied decisions now report the Broker's
-  access class for `run_code`, the agent tools, `todo_write`, `mcp`, `code_intelligence`, `ask_user`,
+  access class for `run_code`, the agent tools, `todo_write`, `mcp`, `ask_user`,
   `terminal_stop`, non-observation `computer` actions and unknown tools. Session grants add each tool's
   declared scopes: `read`, `read_file` and `run_code` no longer add `workspace.read`, `list` adds
-  `system.read`, and `code_intelligence` adds `terminal.execute`.
+  `system.read`.
 
 - **refactor(harness)**: Route every returned model step through one ordered, internal completion policy.
   Commit shapes, outbox entries and recovery notes are unchanged; see the completion policy in
   [harness](docs/architecture/harness.md#completion-policy).
 
-- **feat(broker)**: Add opt-in `coding_semantic_v1` with Broker-owned C# and
-  TypeScript language-server diagnostics, symbols, definitions and references.
-  Servers come from user-owned `.ru/lsp.json`; launch follows external-process
-  policy, and bounded LSP responses carry current document identity.
+- **Removed:** Broker language-server integration and the semantic coding profile.
+  Code navigation and diagnostics continue through file tools and CLI build/test commands.
+  Retired profile pins fail explicitly; existing user configuration is left untouched.
 
 - **fix(tools)**: Clarify file creation versus replacement and provide specific `file_exists` recovery.
 

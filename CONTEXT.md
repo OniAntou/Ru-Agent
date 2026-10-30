@@ -56,12 +56,6 @@ A session scope for presets, permissions, grants and skill use. Its preset does 
 Implementation: [broker](docs/architecture/broker.md#agent-session).
 _Avoid_: permanent Agent mode permission or preset-implied trust
 
-**Language Server**:
-A user-configured installed C# or TypeScript program that the Broker starts for semantic diagnostics and navigation. Its stdio requests are bounded and its process runs with the current Windows user's rights; launching it follows external-process approval policy. Workspace configuration and model output cannot select or install a server.
-Implementation: [language-server tools](docs/adr/0037-language-server-tools.md).
-_Avoid_: downloaded dependency, workspace-selected executable, OS-sandboxed process
-
-
 **Conversation Session**:
 The Host-owned conversation and message/source history. A view may detach or switch sessions without cancelling Host work; only a confirmed application-level delete removes its artifacts.
 Implementation: [gui](docs/architecture/gui.md#conversation-session).

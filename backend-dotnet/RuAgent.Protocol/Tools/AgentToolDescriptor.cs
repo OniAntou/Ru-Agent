@@ -26,8 +26,6 @@ public enum AgentToolAdapter
     Terminal,
     Web,
     Connector,
-    /// <summary>The configured language server of code_intelligence (ADR 0037).</summary>
-    LanguageServer,
     HostIntercepted,
 }
 

@@ -90,13 +90,6 @@ public sealed class ToolCatalogTests
             registry.Register(manifest);
         }
 
-        // ADR 0037: LSP servers are configured programs, so the tool keeps External risk,
-        // terminal-execute scope and approval even though its adapter is language_server.
-        var codeIntelligence = registry.Get("code_intelligence", "1.0.0");
-        Assert.Equal("language_server", codeIntelligence.Adapter);
-        Assert.Equal(RiskClass.External, codeIntelligence.Risk);
-        Assert.True(codeIntelligence.RequiresApproval);
-        Assert.Contains(ToolScope.TerminalExecute, codeIntelligence.Scopes);
     }
 
     [Fact]

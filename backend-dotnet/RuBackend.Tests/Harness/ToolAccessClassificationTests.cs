@@ -32,8 +32,6 @@ public sealed class ToolAccessClassificationTests
     [InlineData("run_code", "{}", ToolAccessKind.Terminal)]
     [InlineData("computer", "{\"action\":\"click\"}", ToolAccessKind.Terminal)]
     [InlineData("ask_user", "{}", ToolAccessKind.Terminal)]
-    // code_intelligence is not one of the disagreeing ten: the hook side's default would have said ReadOnly.
-    [InlineData("code_intelligence", "{}", ToolAccessKind.Terminal)]
     public async Task Disagreeing_tool_gets_the_chosen_class_through_both_gateways(string toolId, string argumentsJson, ToolAccessKind expected)
     {
         Assert.Equal(expected, BrokerGatewayContracts.AccessKindForTool(toolId, ParseObject(argumentsJson)));

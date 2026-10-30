@@ -33,7 +33,6 @@ flowchart LR
 
 The default product is .NET 10. Media surfaces and the private Runtime Worker are retired. Repository Python is tooling; optional workflow requirements produce a named failure when unavailable. The opt-in programmatic coding profile uses a bounded managed JavaScript interpreter inside Broker ([ADR 0028](adr/0028-bounded-programmatic-coding-tools.md)), without a second execution authority. See [Host implementation](architecture/host.md#coding-core-and-plugins), [runtime boundary](operations/python-runtime-boundary.md) and [ADR 0012](adr/0012-in-process-model-runner.md).
 
-The opt-in `coding_semantic_v1` profile adds Broker-owned C# and TypeScript language-server navigation through user-configured installed executables ([ADR 0037](adr/0037-language-server-tools.md)). A server launch follows external-process policy and remains within the canonical workspace launch context.
 
 ## Contracts and transport
 

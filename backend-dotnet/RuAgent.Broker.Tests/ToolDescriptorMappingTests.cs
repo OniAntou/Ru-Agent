@@ -30,7 +30,7 @@ public sealed class ToolDescriptorMappingTests
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
 
-        Assert.Equal(new[] { "builtin", "connector", "desktop", "language_server", "terminal", "web" }, names);
+        Assert.Equal(new[] { "builtin", "connector", "desktop", "terminal", "web" }, names);
         Assert.Throws<InvalidOperationException>(() => ToolDescriptorMapping.ToAdapterName(AgentToolAdapter.HostIntercepted));
     }
 

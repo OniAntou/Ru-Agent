@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(cli)**: **`agent run --worktree` tách run khỏi cây làm việc của anh.** CLI tạo một git
+  worktree mới tại HEAD (mặc định `%LOCALAPPDATA%\Ru\worktrees`, đổi bằng `RU_WORKTREE_ROOT`),
+  chạy agent trong bản copy đó và in đường dẫn; cây gốc cùng thay đổi chưa commit không bị chạm.
+  Nhánh `ru/worktree/<id>` và worktree được giữ lại để review, xoá bằng `git worktree remove`.
+  Chỉ trạng thái đã commit được copy; workspace mới vẫn cần `--trust-workspace`, và không kết
+  hợp được với `--session`.
+
 - **feat(tools)**: **`list` nói rõ thư mục rỗng thay vì trả mảng trống.** `list` thêm `notice`
   khi thư mục tồn tại nhưng không có entry nào và không có entry bị ẩn (`skipped == 0`), để câu
   "rỗng" không sai khi thực ra có file bị bỏ qua. Thư mục có entry giữ nguyên shape cũ.

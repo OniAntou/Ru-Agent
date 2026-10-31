@@ -151,6 +151,49 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
+    public void ParseRun_AcceptsWorktreeIsolation()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--trust-workspace", "--worktree", "prompt" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        Assert.True(Assert.IsType<RunCommand>(res.Command).Worktree);
+    }
+
+    [Fact]
+    public void ParseRun_RejectsWorktreeWithSession()
+    {
+        // A resumed session keeps the workspace it was created with.
+        var args = new[]
+        {
+            "agent", "run", "--workspace", ValidWorkspace, "--worktree", "--session", new string('a', 32), "prompt",
+        };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("worktree_session_conflict", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseRun_RejectsDuplicateWorktree()
+    {
+        var args = new[]
+        {
+            "agent", "run", "--workspace", ValidWorkspace, "--worktree", "--worktree", "prompt",
+        };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("duplicate_switch", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseChat_RejectsWorktree()
+    {
+        var args = new[] { "agent", "chat", "--workspace", ValidWorkspace, "--worktree" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("unknown_switch", res.ErrorCode);
+    }
+
+    [Fact]
     public void ParseRun_RejectsDuplicateTrustWorkspace()
     {
         var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--trust-workspace", "--trust-workspace", "prompt" };

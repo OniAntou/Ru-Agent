@@ -214,10 +214,18 @@ public static class AgentRecoveryNotes
     public static string BuildModelRepairableNote(string? code)
     {
         var stable = string.IsNullOrWhiteSpace(code) ? "invalid_selection" : code;
+        var guidance = stable switch
+        {
+            "model_tool_call_invalid" =>
+                "Re-issue the call with complete JSON arguments that match the tool's schema.",
+            "model_tool_call_unavailable" or "capability_unavailable" =>
+                "Choose a tool id and version from the advertised tool list, then re-issue the call with complete JSON arguments.",
+            _ =>
+                "Re-issue a valid advertised tool call with complete JSON arguments, or answer in plain text.",
+        };
         return $"{NotePrefix} {KindMarker(AgentRecoveryKind.ModelRepairable)} (code: {stable}) "
             + "- the model reply could not be used: the tool call or selection was rejected "
-            + "as invalid. Re-issue a valid advertised tool call with complete JSON "
-            + "arguments, or answer in plain text.";
+            + "as invalid. " + guidance;
     }
 
     /// <summary>
@@ -226,7 +234,8 @@ public static class AgentRecoveryNotes
     /// Everything else (prompt, provider, history, image) stays terminal.
     /// </summary>
     public static bool IsModelRepairableCode(string? code) =>
-        code is "model_tool_call_invalid" or "model_tool_call_unavailable" or "invalid_selection";
+        code is "model_tool_call_invalid" or "model_tool_call_unavailable" or "capability_unavailable"
+            or "invalid_selection";
 
     public static string KindMarker(AgentRecoveryKind kind) => kind switch
     {

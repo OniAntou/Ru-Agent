@@ -116,7 +116,8 @@ reconciliation surfaces from Phase 3:
   - `ContentFilter` and `Error` finishes fail immediately as `model_content_filtered` and
     `model_reply_error`;
   - a model step the runner rejects with a repairable tool-call/selection code
-    (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is answered the
+    (`model_tool_call_invalid`, `model_tool_call_unavailable`, `capability_unavailable`,
+    `invalid_selection`) is answered the
     same way up to 4 notes before failing with the original code, while a provider-transient code
     whose bounded retries were spent (`provider_rate_limited`, `provider_timeout`,
     `provider_server_error`, `provider_transport_error`) parks the run in `waiting_user` with a

@@ -476,12 +476,13 @@ duplicate dispatch; up to two `[REPETITION GUARD]` notes request changed argumen
 then `repeated_tool_call` parks the run for explicit Continue. Suppressed calls
 remain audit-only and do not create unmatched native-history tool calls. The
 failed receipt remains visible behind advice, so prose alone cannot clear it. An empty or whitespace-only
-final step is answered up to two times with a bounded `[HARNESS RECOVERY]` note before the run fails as
+final step is answered up to three times with a bounded `[HARNESS RECOVERY]` note before the run fails as
 `empty_model_reply`. A runner-rejected tool call or selection
-(`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is
+(`model_tool_call_invalid`, `model_tool_call_unavailable`, `capability_unavailable`,
+`invalid_selection`) is
 likewise answered up to four times before failing with the original runner code.
 A `Length` finish is not a completed turn: the entire step, including partial
-tool calls, is suppressed before any execution and gets up to two recovery notes
+tool calls, is suppressed before any execution and gets up to three recovery notes
 requesting smaller output, then fails as `model_output_truncated`. A
 `ContentFilter` or `Error` finish fails immediately as `model_content_filtered`
 or `model_reply_error`. All recovery kinds share a cumulative 24-note run cap;

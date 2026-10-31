@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)**: **Lỗi dừng run dễ đọc hơn và thêm một lỗi model tự sửa được.** Run park vì provider
+  (`provider_transport_error`, `provider_timeout`, `provider_server_error`, `provider_rate_limited`,
+  `provider_quota_exhausted`), budget, context hay repetition giờ nói lý do bằng câu — "network
+  connection to the provider failed", "the run used its model step budget"… — kèm mã gốc trong ngoặc.
+  Activity row, status line của GUI và notice của TUI dùng chung `AgentParkReasonCopy`, nên cùng một
+  cú pause không còn hiện "Waiting for confirmation" hay mã thô ở một surface và câu giải thích ở
+  surface khác. Thêm `capability_unavailable` (model gọi tool/version không được advertise) vào nhóm
+  `model_repairable`: model nhận note hướng dẫn chọn tool trong danh sách advertise và có 4 lượt sửa
+  thay vì run chết ngay. Sửa luôn số note empty/truncated trong `agent-tools.md` (3, không phải 2).
+
 - **feat(tools)**: **`git_status` cho model đọc trạng thái Git của workspace.** Tool chỉ đọc, không
   nhận tham số, chạy một lệnh cố định `git status --porcelain=v2 --branch` trong run workspace qua
   `IGitCli` và dùng lại `GitStatusParser`, trả `branch`/`detached`/`head_oid`/`upstream`

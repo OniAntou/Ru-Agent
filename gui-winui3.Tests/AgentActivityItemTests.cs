@@ -215,6 +215,17 @@ public sealed class AgentActivityItemTests
         Assert.Equal(AgentWaitPresentation.AnswerHeadline, waitingAnswer.DisplayText);
         Assert.Equal("Waiting for your answer (input_required)", waitingAnswer.DisplayTooltip);
 
+        // A provider park is a pause with a real cause, not a confirmation prompt.
+        // The code stays reachable in the tooltip.
+        var waitingNetwork = new AgentActivityItem(Activity(
+            AgentActivityState.Waiting,
+            kind: AgentActivityKind.Status,
+            safeCode: "provider_transport_error"));
+        Assert.Equal("Paused: Network connection to the provider failed", waitingNetwork.DisplayText);
+        Assert.Equal(
+            "Paused: Network connection to the provider failed (provider_transport_error)",
+            waitingNetwork.DisplayTooltip);
+
         var waitingOther = new AgentActivityItem(Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Edit, safeCode: "something_else"));
         Assert.Equal("Waiting to continue", waitingOther.DisplayText);
         Assert.Equal("something_else", waitingOther.MetadataText);

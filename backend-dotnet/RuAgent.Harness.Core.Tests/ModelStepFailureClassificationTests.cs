@@ -55,6 +55,7 @@ public sealed class ModelStepFailureClassificationTests
     [Theory]
     [InlineData("model_tool_call_invalid")]
     [InlineData("model_tool_call_unavailable")]
+    [InlineData("capability_unavailable")]
     [InlineData("invalid_selection")]
     public async Task Model_repairable_code_routes_to_the_recovery_exception_when_notes_are_spent(
         string code)
@@ -79,6 +80,16 @@ public sealed class ModelStepFailureClassificationTests
         Assert.Equal(code, error.Code);
         Assert.IsType<StableError>(error.InnerException);
         AssertFailedWith(store, code);
+    }
+
+    [Fact]
+    public void Unknown_tool_guidance_names_the_advertised_tool_list()
+    {
+        var unavailable = AgentRecoveryNotes.BuildModelRepairableNote("capability_unavailable");
+
+        Assert.Contains("advertised tool list", unavailable, StringComparison.Ordinal);
+        Assert.Contains("capability_unavailable", unavailable, StringComparison.Ordinal);
+        Assert.DoesNotContain("provider", unavailable, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]

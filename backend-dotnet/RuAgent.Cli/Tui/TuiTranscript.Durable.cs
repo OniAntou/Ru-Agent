@@ -1,3 +1,4 @@
+using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli.Tui;
@@ -142,31 +143,48 @@ public sealed partial class TuiTranscript
         || string.Equals(status, "reconciliation_required", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The one parked-run line: the safe code plus both resume paths. Static so the
-    /// session-open adoption prints the exact same copy a live park does instead of a
-    /// near-duplicate that only looks right.
+    /// The one parked-run line: the human reason with its safe code plus both resume
+    /// paths. Static so the session-open adoption prints the exact same copy a live
+    /// park does instead of a near-duplicate that only looks right.
     /// </summary>
     public static string FormatParkedNotice(string runId, string? summary = null, bool repeated = false)
     {
         var reason = ParkReasonCode(summary);
         if (repeated)
-            return $"run parked again · {reason ?? "reason pending"} · {ParkAction(runId, reason ?? string.Empty, true)}";
+            return $"run parked again · {ParkLabel(reason) ?? "reason pending"} · the run is still blocked after Continue · cancel the run from CLI to abandon";
         return reason is null
             ? $"run parked · resume with Continue (or 'ru agent continue {runId}') · cancel the run from CLI to abandon"
-            : $"run parked · {reason} · {ParkAction(runId, reason)}";
+            : $"run parked · {ParkLabel(reason)} · {ParkAction(runId, reason)}";
     }
 
     private static string? ParkReasonCode(string? code) =>
         string.IsNullOrWhiteSpace(code) || code is "waiting_user" or "reconciliation_required"
             ? null : code.Trim();
 
-    private static string ParkAction(string runId, string reason, bool repeated = false) =>
-        repeated ? "the run is still blocked after Continue · cancel the run from CLI to abandon"
-            : reason == "provider_quota_exhausted"
-                ? "restore provider credits or limits before Continue · cancel the run from CLI to abandon"
-                : reason is "provider_rate_limited" or "provider_timeout" or "provider_server_error" or "provider_transport_error"
-                    ? "provider temporarily unavailable · wait before Continue · cancel the run from CLI to abandon"
-                    : $"resume with Continue (or 'ru agent continue {runId}') · cancel the run from CLI to abandon";
+    /// <summary>
+    /// The human reason plus the machine code it came from. The code stays beside
+    /// it because that token is what a bug report and the logs carry; the sentence
+    /// is what tells a reader that a network call, not the user, failed.
+    /// </summary>
+    private static string? ParkLabel(string? reason) =>
+        reason is not null
+        && AgentParkReasonCopy.TryGet(reason, out var copy)
+        && copy is not null
+            ? $"{copy.Headline} ({reason})"
+            : reason;
+
+    private static string ParkAction(string runId, string reason, bool repeated = false)
+    {
+        if (repeated)
+        {
+            return "the run is still blocked after Continue · cancel the run from CLI to abandon";
+        }
+
+        var advice = AgentParkReasonCopy.TryGet(reason, out var copy) && copy is not null
+            ? copy.Advice + " · "
+            : string.Empty;
+        return advice + $"resume with Continue (or 'ru agent continue {runId}') · cancel the run from CLI to abandon";
+    }
 
     /// <summary>
     /// The one line for a run this session already has in flight: the operator can
@@ -201,7 +219,7 @@ public sealed partial class TuiTranscript
         else if (reason is not null && reason != _lastParkReason)
         {
             _lastParkReason = reason;
-            Notice($"reason: {reason} · {ParkAction(envelope.RunId, reason, _repeatedPark)}", TuiToken.Warn);
+            Notice($"reason: {ParkLabel(reason)} · {ParkAction(envelope.RunId, reason, _repeatedPark)}", TuiToken.Warn);
         }
         if (reason is not null)
         {
@@ -210,7 +228,7 @@ public sealed partial class TuiTranscript
         }
         _status.SetState(TuiRunState.Paused);
         _status.SetDetail(_lastParkReason is null ? "waiting to continue"
-            : _lastParkReason + " · " + ParkAction(envelope.RunId, _lastParkReason, _repeatedPark));
+            : ParkLabel(_lastParkReason) + " · " + ParkAction(envelope.RunId, _lastParkReason, _repeatedPark));
     }
 
     public void ForgetParkHistory(string runId)

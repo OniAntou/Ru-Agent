@@ -111,11 +111,27 @@ public sealed partial class AgentRunController
                     this,
                     new AgentRunContextCompactedEventArgs(model.RunId, model.SessionId, model.Sequence, ownershipGeneration));
             }
+            // A pause reason is a machine token, and a bare state token
+            // ("waiting_user") is not a reason either. Resolve the shared park copy
+            // before the generic summary-to-status assignment, so the line never
+            // flickers through the raw code on its way to the sentence.
+            var pauseText = model.EventType == "continue.requested"
+                && string.Equals(model.Status, "waiting_user", StringComparison.Ordinal)
+                    ? AgentParkReasonCopy.Compose(model.SafeSummary)
+                    : string.Empty;
+            var summaryIsStateToken = model.EventType == "run.state_changed"
+                && model.SafeSummary is "waiting_user" or ReconciliationWaitKind;
             if (!string.IsNullOrEmpty(model.SafeSummary)
+                && pauseText.Length == 0
+                && !summaryIsStateToken
                 && !IsApprovalRequestWithPanel(model)
                 && !IsInputRequestEvent(model))
             {
                 _statusText = model.SafeSummary;
+            }
+            if (pauseText.Length > 0)
+            {
+                _statusText = pauseText;
             }
 
             if (!model.IsTransient
@@ -144,7 +160,9 @@ public sealed partial class AgentRunController
                 && string.Equals(model.SafeSummary, ReconciliationWaitKind, StringComparison.Ordinal))
             {
                 _waitKind = ReconciliationWaitKind;
-                _statusText = "Run paused: the last action was interrupted. Send Continue to resume with a read-only inspection.";
+                _statusText = AgentParkReasonCopy.Compose(ReconciliationWaitKind) is { Length: > 0 } pausedReconciliation
+                    ? pausedReconciliation
+                    : "Run paused: the last action was interrupted. Send Continue to resume with a read-only inspection.";
             }
 
             if (!model.IsTransient

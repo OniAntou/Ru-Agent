@@ -1,7 +1,7 @@
 # Agent tools and truthful execution
 
 This document is the operating contract for Ru's in-process tool authority,
-session policy and headless Agent surfaces, updated 2026-10-30.
+session policy and headless Agent surfaces, updated 2026-10-31.
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
@@ -17,8 +17,8 @@ declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 
 ## Coding profiles
 
-New runs default to `coding_v2` (26 definitions). `patch_v2` (25) and
-`coding_code_v1` (28) are also supported, and
+New runs default to `coding_v2` (27 definitions). `patch_v2` (26) and
+`coding_code_v1` (29) are also supported, and
 must be selected explicitly for a new run; changing the Host setting does not
 alter an existing run. Set
 `RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1` in a dedicated Host
@@ -117,14 +117,14 @@ current user's explicit instructions or the system execution contract.
 
 ## Current capability matrix
 
-Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`,
+Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`, `git_status`,
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `apply_patch`,
 `powershell`, `run_process`, `terminal_read`, `terminal_stop`,
 `web_search` and `web_fetch`. Profile and availability filters apply below.
 
-The Protocol catalog contains 28 definitions; the Broker has 27 executable
+The Protocol catalog contains 29 definitions; the Broker has 28 executable
 bindings because `ask_user` is intercepted by the Host. Run-pinned inventories
-contain 26 definitions in `coding_v2`, 25 in `patch_v2`, and 28 in `coding_code_v1`,
+contain 27 definitions in `coding_v2`, 26 in `patch_v2`, and 29 in `coding_code_v1`,
 before availability/role filtering. There is no selectable
 legacy profile. The model-facing file mutation and terminal tools are
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `powershell`,
@@ -158,6 +158,20 @@ and returns bounded match locations with previews up to 512 characters.
 directory; `powershell` takes a script. Both use the same Broker terminal
 policy and bounded process lifecycle. `terminal_read` pages retained output and
 `terminal_stop` stops a running task.
+
+`git_status` takes no arguments and reports the run workspace's Git state from one
+fixed read-only `git status --porcelain=v2 --branch` invocation: `branch` (null when
+detached), `detached`, `head_oid`, `upstream`, `ahead`/`behind` (null without an
+upstream), and `staged`, `unstaged`, `untracked` and `unmerged` lists. Staged and
+unstaged rows carry the porcelain code and a rename's `original_path`; conflicts
+stay in `unmerged` instead of appearing as ordinary staged work. Paths are
+workspace-relative: when the workspace is a subdirectory of a larger repository,
+only that subtree is reported and nothing outside it appears. The status entry cap
+is 2000 (`truncated: true` marks an incomplete list), `unparsed_lines` counts lines
+the shared parser could not interpret, and `clean: true` carries a `notice`. A
+workspace outside Git answers `is_repository: false` with a notice rather than
+failing the call. The tool never diffs, stages, commits, fetches or runs repository
+hooks; use `run_process` for those reads or a managed Git action.
 
 Every running terminal task reserves a per-session slot when launched, including
 foreground tasks that may later move to background. Promotion keeps that slot;
@@ -262,6 +276,7 @@ they do not make a retired public identity executable.
 | --- | --- | --- |
 | `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external ask; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, protected paths allowed |
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator. An image read also needs the run's pinned model to accept image input, otherwise `image_unsupported_by_model` |
+| `git_status` | always advertised (`workspace.read`) | one fixed read-only `git status --porcelain=v2 --branch` run in the run workspace, bounded by the shared 2000-entry status cap and a workspace-subtree pathspec; no path or revision argument. Automatic in `plan`, `standard` and `full_access`; a workspace outside Git answers `is_repository: false`. It never diffs, stages, commits or fetches |
 | `write_file`, `edit_file`, `file_delete`, `file_restore` | present in supported coding profiles | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, protected paths allowed; preimage mismatch returns `workspace_changed` |
 | `apply_patch` | `patch_v2`, `coding_code_v1` | workspace-scoped unified patches; all targets are checked under the same policy, approval is one-time, and patch rollback preserves intervening edits |
 | `powershell`, `run_process` | present in supported coding profiles | `plan`: deny; `standard`: workspace cwd executable/shell auto, external cwd asks; explicit ask/deny and long foreground rules apply; `full_access`: arbitrary current-Windows-user terminal auto. Children run as the current user without an OS filesystem/network sandbox. Obsolete sandbox arguments are rejected. Output, timeout, cancellation and process-tree bounds apply. |
@@ -461,12 +476,13 @@ duplicate dispatch; up to two `[REPETITION GUARD]` notes request changed argumen
 then `repeated_tool_call` parks the run for explicit Continue. Suppressed calls
 remain audit-only and do not create unmatched native-history tool calls. The
 failed receipt remains visible behind advice, so prose alone cannot clear it. An empty or whitespace-only
-final step is answered up to two times with a bounded `[HARNESS RECOVERY]` note before the run fails as
+final step is answered up to three times with a bounded `[HARNESS RECOVERY]` note before the run fails as
 `empty_model_reply`. A runner-rejected tool call or selection
-(`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is
+(`model_tool_call_invalid`, `model_tool_call_unavailable`, `capability_unavailable`,
+`invalid_selection`) is
 likewise answered up to four times before failing with the original runner code.
 A `Length` finish is not a completed turn: the entire step, including partial
-tool calls, is suppressed before any execution and gets up to two recovery notes
+tool calls, is suppressed before any execution and gets up to three recovery notes
 requesting smaller output, then fails as `model_output_truncated`. A
 `ContentFilter` or `Error` finish fails immediately as `model_content_filtered`
 or `model_reply_error`. All recovery kinds share a cumulative 24-note run cap;
@@ -1140,11 +1156,14 @@ trusted adapter, session scopes and access class derive from that row. To add a 
    validate against it. The catalog rejects a non-strict schema or a failing example at construction.
 3. Bind an executor in the Broker execution runtime. `ToolCatalog` rejects an executor without a row
    and a bound row without an executor.
-4. For a new risk or adapter value, add an explicit arm in `ToolDescriptorMapping`. Unmapped values
+4. Teach `PolicyContextFactory` the tool's policy identity: its operation class, its `op` value and
+   whether it is target-free. Its switch throws `malformed_call` for an id it does not know, which
+   denies every call before execution.
+5. For a new risk or adapter value, add an explicit arm in `ToolDescriptorMapping`. Unmapped values
    throw. The trusted adapter allowlist follows the `AgentToolAdapter` enum automatically.
-5. Add deliberate membership where the tool should be advertised: a coding profile in
+6. Add deliberate membership where the tool should be advertised: a coding profile in
    `AgentToolProfiles.Includes`, a subagent role in `SubagentRoleTools`, or a program tool in
    `ProgramToolContract.SupportedTools`. No tool is advertised by default.
-6. When a schema digest, security column or definition changes, update the golden locks
+7. When a schema digest, security column or definition changes, update the golden locks
    (`AgentToolGoldenLockTests`, `ToolManifestGoldenLockTests`) and the counts on this page and in
    [broker.md](../architecture/broker.md).

@@ -8,7 +8,7 @@ public sealed class HelpDocsTests
 {
     private static readonly string[] CurrentToolIds =
     [
-        "read", "read_file", "list", "help", "grep", "glob",
+        "read", "read_file", "list", "help", "grep", "glob", "git_status",
         "write_file", "edit_file", "file_delete", "file_restore", "apply_patch",
         "powershell", "run_process", "terminal_read", "terminal_stop", "web_search", "web_fetch",
     ];

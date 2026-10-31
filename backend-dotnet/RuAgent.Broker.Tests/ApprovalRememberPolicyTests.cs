@@ -36,6 +36,7 @@ public sealed class ApprovalRememberPolicyTests
     [InlineData("terminal_stop")]
     [InlineData("help")]
     [InlineData("todo_write")]
+    [InlineData("git_status")]
     [InlineData("web_search")]
     [InlineData("web_fetch")]
     [InlineData("skill")]

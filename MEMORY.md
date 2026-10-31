@@ -1,5 +1,13 @@
 # MEMORY — Ru-Agent (máy của anh steal)
 
+## 2026-10-31 — Nhận thêm dev trong lúc kiểm chứng sync
+
+- Đã đóng merge35commit vào `7c4bf90de22ef63197852b2c1b83b9bb05465420` sau bộ kiểm chứng ghi bên dưới. Lần fetch cuối thấy dev vừa có thêm3commit (`cde7fa60`, `002a8af1`, `b98ba871`), nên tiếp tục merge tới `b98ba8714ea9c2c9064a373413f4798609085cf3` để đáp ứng sync mới nhất, không bỏ qua code mới xuất hiện trong lúc chạy test.
+- Phần mới thêm read-only `git_status` qua Broker, cập nhật tool manifest/profile/policy và shared park-reason copy giữa GUI/TUI, thêm recovery cho capability unavailable; public routes/schema vẫn54/v33. Chỉ1conflict CHANGELOG, giữ cả hai nhóm thay đổi. Không khôi phục lệnh skill TUI hoặc engine cũ. Bằng chứng9455test bên dưới thuộc snapshot18e31046 trước lượt cập nhật này.
+- Kiểm chứng riêng snapshot cuối `b98ba871`: full13project .NET **9493pass/0fail/0skip**, gồm Broker1474, CLI2057, Client304, Core906, Persistence366, Host1615, GUI1996. Chạy serial dưới mutex với hang collector120s/test; không có failure hay abort trong lượt này. Vẫn2 warning xUnit2012 từ upstream như lượt trước.
+- Full tooling `pytest tests -q -rs`: **266pass/3skip/0fail**, gồm docs/route/contract guards. Ba skip đúng như lượt trước (POSIX-only và2 filesystem-link fixtures thiếu quyền Windows). ConPTY bản cuối **6/6pass**, build probe thành công. Logs/TRX/summary riêng ở `work/commit-sync-20261031/latest-dev`, không trộn với snapshot cũ hoặc ghi đè failure đầu.
+- Tổng cộng nhận38commit dev kể từ44ab02f2, giữ2 file/thư mục untracked của anh ngoài commit. `7c4bf90d` đã push và xác nhận remote trước lượt cuối. Diff/marker checks sạch. Không gọi provider thật hoặc manual native UI acceptance; không publish runtime. Đọc lại SHA256 xác nhận CLI publish vẫn079752FE… và Host vẫnB02C3DA9…, profile/DB không bị thao tác bởi bước sync.
+
 ## 2026-10-31 — Commit nhóm TUI rồi sync dev
 
 - Anh yêu cầu commit lên branch rồi sync code mới nhất. Chốt nhóm thay đổi từ `44ab02f2` trên `casluminous/tui-multi-session`: một conversation controller/native UI + line/JSON adapters, bỏ renderer/history/loop cũ, guard shutdown/navigation/Esc, sửa gap khi gõ partial `/model`, bỏ2 lệnh skill trong chat và tests/docs đi kèm. Giữ `TONG-KET-CONG-VIEC.md`, `docs/presentation/` và artifacts/logs ngoài commit.

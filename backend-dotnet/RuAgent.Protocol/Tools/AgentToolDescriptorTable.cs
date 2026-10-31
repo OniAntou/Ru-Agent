@@ -298,6 +298,17 @@ public static class AgentToolDescriptorTable
             Description = "Stop a background terminal task belonging to this session by its execution_id.",
             InputSchema = AgentToolDefinitionCatalog.TerminalStopSchema,
         },
+        new()
+        {
+            // Broker-bound: the read-only adapter runs fixed git status argv through the
+            // same execution authority, so the Host never runs a second copy of it.
+            Ordinal = 28, Id = "git_status", Version = Version, Scope = AgentToolScopes.WorkspaceRead, ExtraScopes = [],
+            Risk = AgentToolRisk.Read, RequiresApproval = false, Adapter = AgentToolAdapter.Builtin, WorkspaceRequired = false,
+            Access = AgentToolAccess.ReadOnly, MaxOutputBytes = null,
+            PolicyFamily = null,
+            Description = "Report the workspace's Git state without modifying it: the current branch or detached HEAD, upstream, ahead/behind counts, and bounded staged, unstaged, untracked and unmerged paths relative to the workspace. Call it before editing to see work in progress, and after changes to confirm what changed. It runs status only and never diffs, stages, commits, fetches or runs hooks. A workspace outside a Git repository answers is_repository=false instead of failing. At most 2000 entries are read; truncated=true means the lists are incomplete, and unparsed_lines above zero means some lines were not understood. ahead and behind are null without an upstream.",
+            InputSchema = AgentToolDefinitionCatalog.GitStatusSchema,
+        },
     ];
 
     /// <summary>Every model-visible tool, in model order, including the Host-intercepted ask_user.</summary>

@@ -1,3 +1,5 @@
+using RuAgent.Client;
+
 namespace RuApp.Services;
 
 /// <summary>
@@ -34,6 +36,9 @@ public static class AgentWaitPresentation
             return ApprovalHeadline;
         }
 
-        return null;
+        // A provider or budget park is a pause the user can act on, not a prompt
+        // for confirmation. Without this the row read "Waiting for confirmation"
+        // beside a raw code that never said a network call had failed.
+        return AgentParkReasonCopy.Headline(code) is { Length: > 0 } paused ? paused : null;
     }
 }

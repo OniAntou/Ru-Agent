@@ -256,7 +256,7 @@ public sealed class AgentRunControllerTests
             TransientSequence: null,
             TransientData: null);
 
-    private static AgentEventModel ContinueRequestedEvent(long seq, string status) =>
+    private static AgentEventModel ContinueRequestedEvent(long seq, string status, string summary = "continue") =>
         new(
             EventId: "e" + seq,
             RunId: RunId,
@@ -264,7 +264,7 @@ public sealed class AgentRunControllerTests
             EventType: "continue.requested",
             OccurredAt: "2026",
             Status: status,
-            SafeSummary: "continue",
+            SafeSummary: summary,
             PayloadRef: null,
             ApprovalId: null,
             Sequence: seq,
@@ -1757,6 +1757,41 @@ public sealed class AgentRunControllerTests
         await WaitForAdoptSettleAsync(controller);
         Assert.True(controller.CanContinue);
         Assert.True(controller.IsCurrentRunParked);
+    }
+
+    [Fact]
+    public async Task Network_park_says_the_connection_failed_instead_of_showing_the_code()
+    {
+        // The park reason is a machine token. The status line is the one place a
+        // desktop user reads why the run stopped, so it must name the failure.
+        var run = MakeRunWith("running", lastSequence: 3);
+        var fake = new FakeClient { Run = run, ThrowOnGetRun = true };
+        fake.Stream.Add(ContinueRequestedEvent(1, "waiting_user", "provider_transport_error"));
+        var controller = new AgentRunController(fake);
+        var seenStatuses = new List<string?>();
+        controller.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(AgentRunController.StatusText), StringComparison.Ordinal))
+            {
+                seenStatuses.Add(controller.StatusText);
+            }
+        };
+
+        await controller.AdoptRunAsync(run);
+
+        await WaitForAdoptSettleAsync(controller);
+        Assert.True(controller.CanContinue);
+        // The park frame set the sentence directly; the raw code never reached
+        // the status line, not even as a transient value.
+        Assert.Contains(
+            seenStatuses,
+            status => status is not null
+                && status.Contains("Network connection to the provider failed", StringComparison.Ordinal)
+                && status.Contains("Check your network", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            seenStatuses,
+            status => status is not null
+                && status.Contains("provider_transport_error", StringComparison.Ordinal));
     }
 
     [Fact]

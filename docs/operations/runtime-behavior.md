@@ -335,9 +335,14 @@ native final-path, volume and directory file-ID evidence; an unavailable lookup
 fails instead of substituting a hash of the path. Full Access requires the GUI gate or
 CLI `--confirm-full-access`. Workspace trust, approval, Stop, Continue, and
 bounded Agent status remain inline above the input. The terminal client keeps
-the same parked-run path: the status row reads `▲ run paused · <code> · Continue`
+the same parked-run path: the status row reads `▲ run paused · <reason> (<code>) · Continue`
 and one notice carries `resume with Continue (or 'ru agent continue <run-id>')`,
-cleared when the resumed run moves again. While a run is active, the transcript
+cleared when the resumed run moves again. The reason comes from one shared
+catalog (`AgentParkReasonCopy`): a provider transport failure reads as a network
+connection failure, a timeout as an unresponsive provider, and a spent budget as
+a spent window, instead of showing only the raw code. The desktop activity row
+and status line resolve the same copy, so both surfaces explain a pause the same
+way. While a run is active, the transcript
 may also show a separate transient activity feed above the assistant content,
 driven by typed `agent.activity` SSE frames. It renders only safe state,
 basename/line-range, symbol/count,
@@ -482,7 +487,8 @@ mood state, or public diagnostics.
 A dead-end model step does not end the run by default. Ordinary prose after a
 failed or unverified tool receipt is suppressed and answered with a durable
 `[HARNESS RECOVERY]` note (up to 3 notes, shared with verification holds); empty final text gets up to 3 notes,
-and a runner-rejected malformed, unavailable or invalid selection gets up to 4.
+and a runner-rejected malformed, unavailable or invalid selection (including an
+unknown tool id or version, `capability_unavailable`) gets up to 4.
 Incomplete `Length` finishes get up to 3 truncation notes in a row (a later truncation after progress starts a new count). These kinds share a
 cumulative cap of 24 notes per run. System recovery notes remain visible through
 compaction. Feedback keeps the same model/provider; spent bounds fail with the

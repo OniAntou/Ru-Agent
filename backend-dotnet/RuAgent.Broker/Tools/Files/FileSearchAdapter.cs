@@ -213,7 +213,7 @@ public sealed class FileSearchAdapter
         var incomplete = traversalCapped || searchIncomplete || excludedBySize > 0;
         int? nextOffset = hasMore && offset + final.Count <= FileToolLimits.MaxOffset ? offset + final.Count : null;
         stopwatch.Stop();
-        return new JsonObject
+        var output = new JsonObject
         {
             ["results"] = new JsonArray(final.Select(result => (JsonNode)result).ToArray()),
             ["count"] = final.Count,
@@ -228,6 +228,14 @@ public sealed class FileSearchAdapter
             ["excluded_by_size"] = excludedBySize,
             ["duration_ms"] = (int)stopwatch.ElapsedMilliseconds,
         };
+        // An empty complete scan explains itself. A partial scan must not claim
+        // there were no matches: scan_incomplete/excluded_by_size describe it.
+        if (final.Count == 0 && !incomplete)
+        {
+            output["notice"] = "no matches were found for the query.";
+        }
+
+        return output;
     }
 
     private async Task<FileSearchOutcome> SearchCandidateAsync(string path, string relative, string query, Regex? queryRegex, bool caseSensitive, int collectLimit, int skipMatches, Stopwatch budget, CancellationToken cancellationToken)

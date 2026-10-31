@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tools)**: **`list` nói rõ thư mục rỗng thay vì trả mảng trống.** `list` thêm `notice`
+  khi thư mục tồn tại nhưng không có entry nào và không có entry bị ẩn (`skipped == 0`), để câu
+  "rỗng" không sai khi thực ra có file bị bỏ qua. Thư mục có entry giữ nguyên shape cũ.
+
+- **feat(tools)**: **`glob` nói rõ khi không khớp file nào.** `glob` thêm `notice` nêu pattern
+  không khớp gì; kết quả có file giữ nguyên shape cũ. Mô tả tool và golden lock cập nhật theo.
+
+- **feat(tools)**: **Grep nói rõ kết quả rỗng thay vì trả `count: 0` trống.** `grep` thêm `notice`
+  `no matches were found for the query.` khi scan hoàn tất và không khớp gì; scan thiếu
+  (`scan_incomplete`/`excluded_by_size`) giữ nguyên mô tả coverage và không nhận notice,
+  kết quả có match cũng không. Mô tả tool, golden lock và `docs/architecture/broker.md`
+  ghi lại quy ước notice này.
+
 - **feat(cli)**: **Headless run trả lời được approval mà không cần terminal.** `agent run --json`
   in `approval_id` trên event `approval.requested` — handle duy nhất mà `agent approve` nhận —
   và `approve`/`deny` nhận `--json` để trả object `approval` (`decision`, `scope`,

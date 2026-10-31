@@ -399,6 +399,13 @@ description, canonical scope, strict proposal schema, example,
 and stable ordering. The Host runtime projection selects the pinned profile's
 available definitions for both the prompt and the model-step `model_tools`.
 
+Tool results carry a bounded `notice` string when an outcome would otherwise be
+empty or self-explanatory, such as a `grep` scan that completed with zero
+matches. A notice never replaces the fields that describe coverage:
+`scan_incomplete`, `excluded_by_size`, `truncated` and `next_offset` stay
+authoritative, so a partial scan states its coverage rather than claiming there
+were no matches.
+
 ## Pinned coding tool profiles
 
 [ADR 0027](../adr/0027-pinned-coding-tool-profiles.md) introduced run-pinned

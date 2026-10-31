@@ -30,6 +30,11 @@ internal sealed class ChatAttachmentTasks
         }
     }
 
+    internal Task WaitForIdleAsync()
+    {
+        lock (_gate) return Task.WhenAll(_pending);
+    }
+
     private async Task RunOwnedAsync(Func<Task> action, TaskCompletionSource completion)
     {
         try { await action().ConfigureAwait(false); }

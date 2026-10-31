@@ -486,7 +486,7 @@ public sealed class TuiInteractiveTests
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
             {
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             }
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs/") && uri.EndsWith("/cancel"))
             {
@@ -609,7 +609,7 @@ public sealed class TuiInteractiveTests
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
             {
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             }
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs/") && uri.EndsWith("/cancel"))
             {
@@ -717,7 +717,7 @@ public sealed class TuiInteractiveTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"cancelled\"}", Encoding.UTF8, "application/json") };
             }
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
                 using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
@@ -793,7 +793,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
                 using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
@@ -873,7 +873,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
                 using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
@@ -935,7 +935,7 @@ public sealed class TuiInteractiveTests
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
             {
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             }
             if (req.Method == HttpMethod.Post && uri.Contains("/sessions/new"))
             {
@@ -998,7 +998,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust") && !uri.EndsWith("/cancel"))
@@ -1063,7 +1063,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
                 using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
@@ -1253,7 +1253,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.EndsWith("/cancel"))
@@ -1378,7 +1378,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runId}/continue"))
@@ -1496,7 +1496,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Get && uri.Contains("/agent/v1/sessions/sess_123/runs"))
             {
                 var items = JsonSerializer.Serialize(new
@@ -1584,7 +1584,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Get && uri.EndsWith("/sessions/sess_123", StringComparison.Ordinal))
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -1636,7 +1636,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/sessions/sess_123/activate", StringComparison.Ordinal))
             {
                 activateCalls++;
@@ -1688,7 +1688,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/sessions/sess_123/activate", StringComparison.Ordinal))
                 return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{}") };
             if (req.Method == HttpMethod.Get && uri.Contains("/agent/v1/sessions/sess_123/runs"))
@@ -1766,7 +1766,7 @@ public sealed class TuiInteractiveTests
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runB}/continue"))

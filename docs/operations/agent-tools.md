@@ -609,9 +609,10 @@ global flag list; noninteractive operation and timeout/cancellation remain.
 
 The shared metadata catalog advertises canonical IDs and descriptions, and the
 `skill` tool loads a workflow on demand. `/skill <id> [arguments]` explicitly
-activates a workflow in a chat turn; `/skills` and the GUI composer picker work
-before a run exists. The picker and `/skills` management actions support local
-root registration, enable/disable, automatic-selection controls and refresh.
+activates a workflow in GUI chat. The GUI composer picker works before a run
+exists and supports local root registration, enable/disable, automatic-selection
+controls and refresh. Terminal chat uses ordinary skill requests in prompts;
+its `/skills` and `/skill` commands have been removed.
 See [skill setup, requirements, versioning and diagnostics](skills.md).
 
 Skill bodies are untrusted guidance. `allowed-tools` is descriptive metadata

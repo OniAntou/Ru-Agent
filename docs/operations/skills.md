@@ -6,18 +6,17 @@ grants permissions from `allowed-tools` or other metadata.
 
 ## Invoke and manage
 
-- In chat, send `/skill verify src/main.cs` to load the `verify` workflow with
+- In GUI chat, send `/skill verify src/main.cs` to load the `verify` workflow with
   `src/main.cs` as arguments. `$ARGUMENTS` in the rendered workflow receives that
   text. The visible conversation keeps the concise command.
-- In the TUI, `/skills` lists the catalog before a run exists. `/skills search
-  review`, `/skills refresh`, `/skills enable verify`, `/skills disable verify`,
-  and `/skills implicit verify on|off` manage discovery and selection.
+- In terminal chat, ask in an ordinary prompt, for example `Use the verify skill
+  to check src/main.cs`. `/skills` and `/skill` are no longer terminal chat
+  commands. Model-side loading retains the package's invocation policy.
 - The GUI composer **Skills** action opens the searchable picker. Select a skill
   to fill the composer, then send it with any arguments. It also offers refresh,
   enable/disable and automatic-selection controls.
-- `/skills add-root D:\MySkills` registers an existing directory containing
-  skill folders for this workspace; `/skills remove-root D:\MySkills` removes
-  that registration. The GUI accepts the same local root paths. This registers
+- The GUI can register or remove a local root such as `D:\MySkills` containing
+  skill folders for this workspace. This registers
   files in place; it does not copy, download, update or execute a package.
 
 Default root precedence is workspace `skills`, `.ru/skills`, `.agents/skills`,

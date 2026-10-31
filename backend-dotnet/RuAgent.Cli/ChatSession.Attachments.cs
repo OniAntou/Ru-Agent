@@ -28,7 +28,7 @@ public sealed partial class AgentCommands
 
             submissions.HoldForRetry(submission);
             RefreshAttachmentLabels();
-            tgLoop?.PauseQueuedSubmissions();
+            chatEngine?.PauseQueuedSubmissions();
         }
 
         static void DeleteTempPath(string? path)
@@ -60,14 +60,7 @@ public sealed partial class AgentCommands
 
         void RefreshAttachmentLabels()
         {
-            var label = CurrentAttachmentLabel();
-
-            // The TG composer does not read TopLabel: push the same count/workspace
-            // wording into its hint row after every mutation.
-            if (tgMode)
-            {
-                tgLoop?.RefreshAttachmentLabel();
-            }
+            chatEngine?.RefreshAttachmentLabel();
         }
 
         async Task AttachImageAsync(string path, string? tempPath = null)

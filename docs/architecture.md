@@ -26,7 +26,7 @@ flowchart LR
 | [Harness](architecture/harness.md) | Run state, encrypted durable evidence, model context, recovery, subagent orchestration and schema evolution. |
 | [Broker](architecture/broker.md) | Canonical argument/path validation, trust/policy enforcement, exact approvals and bounded file/terminal/network execution. |
 | [GUI](architecture/gui.md) | Session presentation, drafts, transcript, approvals and side surfaces; no direct execution authority. |
-| [TUI](architecture/tui.md) | Terminal presentation and shared HTTP/SSE consumption; RPC/headless behavior remains independent. |
+| [TUI](architecture/tui.md) | One chat controller with native Terminal.Gui and line/JSON adapters; shared HTTP/SSE consumption. RPC remains independent. |
 | [Providers](architecture/providers.md) | Pinned model selection, credential-scoped catalogs, native request projection and bounded generation. |
 
 ## Coding core and plugins

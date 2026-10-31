@@ -381,36 +381,11 @@ public sealed class TgChromeTests
             return false;
         });
         app.Run(window);
-        // 100x30 is still above the 80x24 floor: the TG frame must not hand over.
-        Assert.False(window.HandOverToSequential);
+
     }
 
     /// <summary>
-    /// The handover floor, pinned directly rather than through the screen. The test driver
-    /// silently refuses the very small sizes a handover needs, so driving the app to them makes
-    /// for a test that proves nothing; the rule itself is pure arithmetic and belongs here.
-    /// </summary>
-    [Theory]
-    [InlineData(80, 24, false)]
-    [InlineData(79, 23, false)]
-    [InlineData(60, 20, false)]
-    [InlineData(45, 14, false)]
-    [InlineData(24, 13, false)]
-    [InlineData(20, 12, false)]
-    [InlineData(20, 11, true)]
-    [InlineData(19, 12, true)]
-    [InlineData(16, 9, true)]
-    public void Handover_FiresOnlyBelowTheSizeTheLayoutCanDraw(int width, int height, bool tooSmall)
-    {
-        // Anything the startup engine floor accepts, and a good deal below it, must keep the
-        // Terminal.Gui frame: an operator narrowing the window is not asking to change engine.
-        Assert.Equal(tooSmall, TgChatWindow.IsTooSmallToDraw(width, height));
-    }
-
-    /// <summary>
-    /// Dragging a window edge sweeps the width through small values for a moment. The handover
-    /// is one-way for the life of the window, so a terminal that only dips below the drawable
-    /// floor must keep the Terminal.Gui surface instead of losing it permanently.
+    /// A temporary narrow resize keeps the native surface and restores its layout.
     /// </summary>
     [Fact]
     public void Window_KeepsTheFrameWhenTheTerminalOnlyBlinksBelowTheFloor()
@@ -426,11 +401,11 @@ public sealed class TgChromeTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(250), () =>
         {
-            // 20x11 is one row under the drawable floor, and the smallest the driver accepts.
+            // Exercise a short native layout before restoring the window.
             ResizeTo(app, 20, 11, () =>
                 ResizeTo(app, 110, 34, () =>
                 {
-                    Assert.False(window.HandOverToSequential);
+
                     // The composer is still the last region on screen: the frame never went away.
                     var rows = TgSnapshot.Capture(app);
                     Assert.Equal(
@@ -442,21 +417,18 @@ public sealed class TgChromeTests
             return false;
         });
         app.Run(window);
-        Assert.False(window.HandOverToSequential);
+
     }
 
     /// <summary>
-    /// The regression: the handover used to use the same 80x24 floor that selects the engine at
-    /// startup, so narrowing the window below 80 columns tore down the whole surface for good,
-    /// even though the layout still draws perfectly well at 60x20. Only a size the layout
-    /// genuinely cannot fit may hand over.
+    /// The startup presentation threshold must not tear down an existing native session.
     /// </summary>
     [Theory]
     [InlineData(60, 20)]
     [InlineData(79, 23)]
     [InlineData(45, 14)]
     [InlineData(120, 24)]
-    public void Window_KeepsTheFrameBelowTheStartupEngineFloor(int width, int height)
+    public void Window_KeepsTheFrameBelowTheStartupPresentationThreshold(int width, int height)
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
@@ -473,7 +445,7 @@ public sealed class TgChromeTests
             {
                 Assert.Equal(width, app.Driver!.Cols);
                 Assert.Equal(height, app.Driver.Rows);
-                Assert.False(window.HandOverToSequential);
+
                 var rows = TgSnapshot.Capture(app);
                 Assert.Equal(
                     TgPalette.Attr(TuiToken.Ink, TuiPalette.SurfaceRgb()).Background,
@@ -484,7 +456,7 @@ public sealed class TgChromeTests
             return false;
         });
         app.Run(window);
-        Assert.False(window.HandOverToSequential);
+
     }
 
     [Fact]

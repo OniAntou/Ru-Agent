@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace RuAgent.Cli.Tui;
 
 /// <summary>
@@ -12,27 +10,12 @@ namespace RuAgent.Cli.Tui;
 /// production (the CLI always suppressed repaints) and have been removed, so the
 /// interactive engine is Terminal.Gui alone.
 ///
-/// <para>Writes are serialized: a background stream continuation and the key loop both
-/// append here, and a torn line would corrupt both sinks. The retained history is bounded
-/// by rows and characters, matching the Terminal.Gui transcript.</para>
+/// <para>Writes to a sink are serialized: a background stream continuation and the key loop both
+/// append here. Transcript history and retention belong to the selected view.</para>
 /// </summary>
 public sealed class TuiSurface
 {
-    /// <summary>Lines kept so a rebuilt screen can show what it had on it.</summary>
-    public const int HistoryCapacity = 2000;
-
-    /// <summary>Character budget for the retained history and the cap for one retained line.</summary>
-    public const int HistoryCharacterCapacity = 200_000;
-
-    /// <summary>Longest single line kept in the history, in UTF-16 units.</summary>
-    public const int MaxLineCharacters = 16_000;
-
-    // One process, one console: a single gate serializes every component.
-    private static readonly object Gate = new();
-
-    private readonly Queue<string> _history = new();
-    private readonly StringBuilder _pending = new();
-    private int _historyCharacters;
+    private readonly object Gate = new();
 
     public TuiSurface(TextWriter writer)
     {
@@ -45,29 +28,22 @@ public sealed class TuiSurface
 
     public ITranscriptPresentationWriter? Presentation => Writer as ITranscriptPresentationWriter;
 
-    /// <summary>Recorded lines, for diagnostics and tests.</summary>
-    public int HistoryCount
-    {
-        get { lock (Gate) { return _history.Count; } }
-    }
-
     public void CommitPresentation(IReadOnlyList<TranscriptLine> rows)
     {
         lock (Gate)
         {
             Presentation!.CommitPresentation(rows);
-            foreach (var row in rows) CompleteLine(row.Text);
         }
     }
 
     public void AppendPresentation(TranscriptLine row)
     {
-        lock (Gate) { Presentation!.AppendPresentation(row); CompleteLine(row.Text); }
+        lock (Gate) { Presentation!.AppendPresentation(row); }
     }
 
     public void AppendPresentationChunk(TranscriptLine row)
     {
-        lock (Gate) { Presentation!.AppendPresentationChunk(row); Record(row.Text); }
+        lock (Gate) { Presentation!.AppendPresentationChunk(row); }
     }
 
     public void AppendActivityPresentation(string activityId, TranscriptLine row, IReadOnlyList<string>? details)
@@ -75,7 +51,6 @@ public sealed class TuiSurface
         lock (Gate)
         {
             Presentation!.AppendActivityPresentation(activityId, row, details);
-            CompleteLine(row.Text);
         }
     }
 
@@ -86,7 +61,6 @@ public sealed class TuiSurface
             if (Writer is ITranscriptActivityWriter screen)
             {
                 screen.AppendToolRow(activityId, text);
-                CompleteLine(text);
             }
             else WriteLine(text);
         }
@@ -125,30 +99,11 @@ public sealed class TuiSurface
             if (Writer is ITranscriptLineWriter projection)
             {
                 projection.CommitLine(rows);
-                foreach (var row in rows) CompleteLine(row);
             }
             else
             {
-                foreach (var row in rows) { Writer.WriteLine(row); CompleteLine(row); }
+                foreach (var row in rows) { Writer.WriteLine(row); }
             }
-        }
-    }
-
-    /// <summary>The last <paramref name="maxLines"/> finished lines, oldest first, clipped to width.</summary>
-    public IReadOnlyList<string> SnapshotTail(int maxLines, int width)
-    {
-        lock (Gate)
-        {
-            var take = Math.Clamp(maxLines, 0, _history.Count);
-            if (take == 0)
-            {
-                return [];
-            }
-
-            return _history
-                .Skip(_history.Count - take)
-                .Select(line => TuiText.Truncate(line, width))
-                .ToList();
         }
     }
 
@@ -157,7 +112,6 @@ public sealed class TuiSurface
         lock (Gate)
         {
             Writer.Write(text);
-            Record(text);
         }
     }
 
@@ -171,14 +125,12 @@ public sealed class TuiSurface
                 foreach (var part in parts)
                 {
                     Writer.WriteLine(part);
-                    CompleteLine(part);
                 }
 
                 return;
             }
 
             Writer.WriteLine(text);
-            CompleteLine(text);
         }
     }
 
@@ -188,8 +140,6 @@ public sealed class TuiSurface
         lock (Gate)
         {
             Writer.WriteLine();
-            // Whatever was written without a newline is the row that just ended.
-            CompleteLine(_pending.ToString());
         }
     }
 
@@ -202,7 +152,6 @@ public sealed class TuiSurface
             foreach (var line in lines)
             {
                 Writer.WriteLine(line);
-                CompleteLine(line);
             }
 
             Writer.Flush();
@@ -214,53 +163,6 @@ public sealed class TuiSurface
         lock (Gate)
         {
             Writer.Flush();
-        }
-    }
-
-    /// <summary>Splits written text into finished lines and records them.</summary>
-    private void Record(string text)
-    {
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        var start = 0;
-        while (true)
-        {
-            var newline = text.IndexOf('\n', start);
-            if (newline < 0)
-            {
-                _pending.Append(text, start, text.Length - start);
-                return;
-            }
-
-            _pending.Append(text, start, newline - start);
-            CompleteLine(_pending.ToString());
-            start = newline + 1;
-            if (start >= text.Length)
-            {
-                return;
-            }
-        }
-    }
-
-    private void CompleteLine(string line)
-    {
-        _pending.Clear();
-        var bounded = line.Length > MaxLineCharacters
-            ? TuiText.SafeCut(line, MaxLineCharacters)
-            : line;
-        _history.Enqueue(bounded);
-        _historyCharacters += bounded.Length;
-        while (_history.Count > HistoryCapacity)
-        {
-            _historyCharacters -= _history.Dequeue().Length;
-        }
-
-        while (_history.Count > 1 && _historyCharacters > HistoryCharacterCapacity)
-        {
-            _historyCharacters -= _history.Dequeue().Length;
         }
     }
 }

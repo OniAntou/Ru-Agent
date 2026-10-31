@@ -131,6 +131,8 @@ public sealed class AgentSlashCommandSurfaceTests
     [InlineData("/retry")]
     [InlineData("/release")]
     [InlineData("/clear")]
+    [InlineData("/skills")]
+    [InlineData("/skill")]
     public async Task RemovedCommands_AreAbsentFromHelpAndDoNotCallTheHost(string command)
     {
         var output = new StringWriter();

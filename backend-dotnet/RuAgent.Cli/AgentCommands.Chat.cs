@@ -39,7 +39,7 @@ public sealed partial class AgentCommands
     public async Task<int> ChatAsync(ChatCommand cmd, CancellationToken cancellationToken)
     {
         // Validate at the entry and carry the canonical wire value forward.
-        // Snapshot factories, header meta and handover presets all read
+        // Snapshot factories and header metadata read
         // cmd.Preset downstream, so a loosely-accepted "Standard" or
         // " standard" must not survive as the raw string and push the real
         // failure onto the server's response binding.
@@ -71,41 +71,7 @@ public sealed partial class AgentCommands
         new ChatSession(this, command, bootstrap, ct).RunAsync();
 
     /// <summary>
-    /// Routes one submitted line to the slash-command handler or the prompt runner. The
-    /// sequential and Terminal.Gui loops both call this so command behaviour
-    /// (attachments, /model, trust prompts) cannot drift between engines.
-    /// </summary>
-    public sealed record ChatLineDispatcher
-    {
-        public ChatLineDispatcher(
-            Func<string, Task<bool>> handleSlash,
-            Func<string, CancellationToken, Task> handlePrompt)
-        {
-            HandleSlash = handleSlash;
-            HandlePrompt = handlePrompt;
-        }
-
-        public Func<string, Task<bool>> HandleSlash { get; init; }
-
-        public Func<string, CancellationToken, Task> HandlePrompt { get; init; }
-
-        public async Task<bool> DispatchAsync(string line, CancellationToken cancellationToken)
-        {
-            if (line.TrimStart().StartsWith('/'))
-            {
-                return await HandleSlash(line).ConfigureAwait(false);
-            }
-
-            await HandlePrompt(line, cancellationToken).ConfigureAwait(false);
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Picks the writer a diagnostic line lands on. While Terminal.Gui owns the frame the
-    /// bridge writer keeps the line in the transcript; once the tiny-terminal handover has
-    /// disposed the app (or no bridge exists) the plain writer must take over, or every
-    /// line after the handover disappears into a stopped bridge.
+    /// Creates the shared semantic renderer; only a native sink requests screen cards.
     /// </summary>
     internal static Tui.TuiSessionRenderer CreateSessionRenderer(TextWriter writer)
     {
@@ -113,6 +79,7 @@ public sealed partial class AgentCommands
         renderer.Transcript.FullScreenCards = writer is TgTranscriptWriter;
         return renderer;
     }
+    /// <summary>Native diagnostics use the transcript; line/JSON diagnostics use their text sink.</summary>
     public static TextWriter ResolveDiagnosticWriter(bool tgMode, TextWriter? tgWriter, TextWriter fallback) =>
         tgMode && tgWriter is not null ? tgWriter : fallback;
 

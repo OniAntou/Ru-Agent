@@ -583,9 +583,8 @@ public sealed class TgRunLoopTests
     }
 
     /// <summary>
-    /// Task 14's parked finding: Stop must not release Completion while the cancelled turn's
-    /// teardown still runs, and queued lines must be dropped instead of dispatching after a
-    /// handover. The in-flight turn is held open, then released after Stop; Completion must
+    /// Stop waits for a cooperative turn's teardown and drops queued work on exit.
+    /// The in-flight turn is held open, then released after Stop; Completion must
     /// only complete once that turn ended and the queued line must never run.
     /// </summary>
     [Fact]
@@ -642,9 +641,7 @@ public sealed class TgRunLoopTests
     }
 
     /// <summary>
-    /// Probe for the handover early-dispose path: the chat command disposes tgApp once when
-    /// it leaves the TG frame and the using declaration disposes it again at scope exit, so
-    /// a second Dispose must be a no-op.
+    /// Application disposal remains idempotent after leaving the native frame.
     /// </summary>
     [Fact]
     public void ApplicationDispose_IsIdempotent()
@@ -652,8 +649,8 @@ public sealed class TgRunLoopTests
         var app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
-        // Handover disposes after leaving a running frame. Disposing directly
-        // after Init races the ANSI driver's native input startup on Windows.
+        // Dispose after leaving a running frame. Disposing directly after Init races
+        // the ANSI driver's native input startup on Windows.
         app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
         {
             app.RequestStop();
@@ -727,7 +724,7 @@ public sealed class TgRunLoopTests
 
     /// <summary>
     /// M2: the per-turn CTS is disposed once its handler settles, so a late Cancel (Escape
-    /// after the turn, or the handover) must not throw on a disposed source.
+    /// after the turn or during shutdown) must not throw on a disposed source.
     /// </summary>
     [Fact]
     public async Task Cancel_AfterTheTurnSettled_DoesNotThrow()

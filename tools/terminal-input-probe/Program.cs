@@ -57,8 +57,8 @@ if (args.Length > 0 && args[0] == "child")
             text, expected = target, submissions, pastes, rawPaste,
             cursor = window.Composer.Input.InsertionPoint,
             loadedCli = typeof(TgTerminalPaste).Assembly.Location,
-            structuredTranscriptRows = presentation.Surface.HistoryCount,
-            passed = submissions == 0 && pastes == 1 && presentation.Surface.HistoryCount >= 4,
+            structuredTranscriptRows = window.Transcript.RetainedRowCount,
+            passed = submissions == 0 && pastes == 1 && window.Transcript.RetainedRowCount >= 4,
         }, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(Path.Combine(root, "result.tmp"), Path.Combine(root, "result.json"));
         app.RequestStop();

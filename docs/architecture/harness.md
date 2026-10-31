@@ -677,11 +677,13 @@ while `body_sha256` identifies the exact loaded body. Expected revision/digest
 arguments can reject a changed definition. Source path and resource base accompany
 body loads; references and scripts are never automatically read or executed.
 
-`/skill <id> [arguments]` is a real explicit chat invocation: the Host validates
+`/skill <id> [arguments]` is an explicit GUI chat invocation: the Host validates
 user invocation policy and requirements, then atomically persists a model-only
 `SkillInvocation` payload with the visible user prompt. Run command invocation
 also appends that durable workflow. `$ARGUMENTS` expansion happens only in the
 rendered workflow, preserving the original body digest. It does not launch tools.
+Terminal chat has removed these slash controls and accepts ordinary skill requests
+through its prompt; model invocation rules remain unchanged.
 
 Active skill projection validates successful native receipts and Host invocation
 provenance before compaction, retaining at most four complete workflows within

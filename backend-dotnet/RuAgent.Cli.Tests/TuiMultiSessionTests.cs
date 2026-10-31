@@ -27,7 +27,7 @@ public sealed partial class TuiMultiSessionTests
         var submissions = new ChatSubmissionState();
         var path = Path.GetTempPath();
         var bootstrap = new AgentCommands.ChatBootstrapContext(submissions, writer, path, path, string.Empty,
-            "OpenAI", "gpt-4o", "high", null, TuiEngine.TerminalGui, true, writer, pageA, app);
+            "OpenAI", "gpt-4o", "high", null, ChatPresentationMode.Native, true, writer, pageA, app);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         Exception? failure = null;
         var stage = 0;
@@ -134,7 +134,7 @@ public sealed partial class TuiMultiSessionTests
         var writer = new TgTranscriptWriter(app, pageA.Transcript);
         var path = Path.GetTempPath();
         var bootstrap = new AgentCommands.ChatBootstrapContext(new ChatSubmissionState(), writer, path, path, string.Empty,
-            "OpenAI", "gpt-4o", "high", null, TuiEngine.TerminalGui, true, writer, pageA, app);
+            "OpenAI", "gpt-4o", "high", null, ChatPresentationMode.Native, true, writer, pageA, app);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         Exception? failure = null; var stage = 0; TgChatWindow? pageB = null;
         app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
@@ -187,7 +187,7 @@ public sealed partial class TuiMultiSessionTests
         using var commands = new AgentCommands(ChatRewindWorkflowTests.Host.Session, http, TextWriter.Null, TextWriter.Null);
         var writer = new TgTranscriptWriter(app, page.Transcript); var path = Path.GetTempPath();
         var bootstrap = new AgentCommands.ChatBootstrapContext(new ChatSubmissionState(), writer, path, path, "session_1",
-            "OpenAI", "gpt-4o", "high", null, TuiEngine.TerminalGui, true, writer, page, app);
+            "OpenAI", "gpt-4o", "high", null, ChatPresentationMode.Native, true, writer, page, app);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var stage = 0;
         app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
@@ -212,7 +212,7 @@ public sealed partial class TuiMultiSessionTests
         using var commands = new AgentCommands(ChatRewindWorkflowTests.Host.Session, http, TextWriter.Null, TextWriter.Null);
         var writer = new TgTranscriptWriter(app, page.Transcript); var path = Path.GetTempPath();
         var bootstrap = new AgentCommands.ChatBootstrapContext(new ChatSubmissionState(), writer, path, path, string.Empty,
-            "OpenAI", "gpt-4o", "high", null, TuiEngine.TerminalGui, true, writer, page, app);
+            "OpenAI", "gpt-4o", "high", null, ChatPresentationMode.Native, true, writer, page, app);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var stage = 0;
         app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>

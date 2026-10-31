@@ -90,7 +90,6 @@ public sealed class TgCopyParityTests
     [Fact]
     public void Header_ReproducesTheClassicTitleAndUsageRow()
     {
-        var classic = Visible(TuiHeader.Compose(Width, "Fix the busy lock", 39413, 20, 0.29));
         var header = new TgHeaderView { X = 0, Y = 0, Width = Dim.Fill() };
         header.SetTitle("Fix the busy lock");
         header.UpdateUsage(39413, 20, 0.29m);

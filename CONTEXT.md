@@ -55,6 +55,15 @@ The Host-owned conversation and message/source history. A view may detach or swi
 Implementation: [gui](docs/architecture/gui.md#conversation-session).
 _Avoid_: treating an HTTP 200 response as a successful delete
 
+**Chat Session Engine**:
+The CLI's single conversation controller for submission admission, bounded prompt
+history, queueing, turn cancellation and inspection lifetime. Terminal.Gui and
+line/JSON I/O bind to this same controller. It consumes the Public Contract;
+model generation, durable conversation storage and execution authority remain
+Host/Broker responsibilities.
+Implementation: [shared chat controller](docs/architecture/tui.md#shared-chat-controller).
+_Avoid_: second model engine, client-side execution authority, separate classic chat loop
+
 **TUI Session Tab**:
 A retained presentation/runtime for one Conversation Session in the current
 terminal workspace. Its draft, queue and run ownership survive view switching;

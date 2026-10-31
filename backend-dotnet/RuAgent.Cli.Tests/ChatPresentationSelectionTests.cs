@@ -1,14 +1,19 @@
-using RuAgent.Cli.TerminalGui;
 using Xunit;
 
 namespace RuAgent.Cli.Tests;
 
-public sealed class TgEngineSelectionTests
+public sealed class ChatPresentationSelectionTests
 {
+    [Fact]
+    public void RedirectedInputUsesLineIoEvenWhenOutputIsInteractive() =>
+        Assert.Equal(ChatPresentationMode.Plain, ChatPresentationSelection.Resolve(
+            outputRedirected: false, json: false, columns: 120, rows: 40,
+            noColor: null, term: "xterm-256color", classic: false, inputRedirected: true));
+
     [Fact]
     public void Resolve_LiveTerminal_ReturnsTerminalGui()
     {
-        Assert.Equal(TuiEngine.TerminalGui, TuiEngineSelection.Resolve(
+        Assert.Equal(ChatPresentationMode.Native, ChatPresentationSelection.Resolve(
             outputRedirected: false, json: false,
             columns: 120, rows: 40, noColor: null, term: "xterm-256color", classic: false));
     }
@@ -16,7 +21,7 @@ public sealed class TgEngineSelectionTests
     [Fact]
     public void Resolve_AtTheMinimumViewport_ReturnsTerminalGui()
     {
-        Assert.Equal(TuiEngine.TerminalGui, TuiEngineSelection.Resolve(
+        Assert.Equal(ChatPresentationMode.Native, ChatPresentationSelection.Resolve(
             outputRedirected: false, json: false,
             columns: 80, rows: 24, noColor: null, term: "xterm-256color", classic: false));
     }
@@ -31,10 +36,10 @@ public sealed class TgEngineSelectionTests
     [InlineData(false, false, null, 120, 40, null, true)]     // classic flag
     [InlineData(false, false, null, 120, 40, "dumb", false)]  // TERM=dumb
     [InlineData(false, false, null, 120, 40, "DUMB", false)]  // TERM=DUMB
-    public void Resolve_GateFails_ReturnsSequential(
+    public void Resolve_GateFails_ReturnsPlainAdapter(
         bool outputRedirected, bool json, string? noColor, int columns, int rows, string? term, bool classic)
     {
-        Assert.Equal(TuiEngine.Sequential, TuiEngineSelection.Resolve(
+        Assert.Equal(ChatPresentationMode.Plain, ChatPresentationSelection.Resolve(
             outputRedirected, json, columns, rows, noColor, term, classic));
     }
 }

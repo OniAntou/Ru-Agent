@@ -224,10 +224,12 @@ grant tools, permissions, approvals, paths, network access, or preset changes.
 The `allowed-tools` field is descriptive only; the optional `requires:` field is enforced on every body load — the model's `skill` tool and the Host's `/skill` command (only `python` is recognized: absent Python fails closed with `python_unavailable`). Runtime
 references and tool/search results remain explicitly untrusted.
 
-The `/skills` command lists workspace skill name + description and `/skill <name>`
+The Host's `/skills` run command lists workspace skill name + description and `/skill <name>`
 loads one SKILL.md body as untrusted guidance; neither executes tools or grants
 anything. The in-process execution authority remains the sole owner of path
 canonicalization, capability policy, approvals, and tool execution.
+Terminal chat omits these two slash commands; ordinary prompts can still request
+skills under the existing model invocation policy.
 
 The model step returns a typed `AssistantStep(text, tool_calls, finish_reason)`
 together with a schema-validated, versioned prompt receipt. Core validates the

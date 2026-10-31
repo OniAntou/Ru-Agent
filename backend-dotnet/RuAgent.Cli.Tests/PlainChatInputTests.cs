@@ -16,7 +16,7 @@ public sealed class PlainChatInputTests
         Assert.Equal("hello", await reader.ReadLineWithContinuationAsync(input, output, "> ", "... "));
         Assert.Equal("/exit", await reader.ReadLineWithContinuationAsync(input, output, "> ", "... "));
         Assert.Equal("> > ", output.ToString());
-        Assert.Equal(new[] { "hello", "/exit" }, reader.History);
+
     }
 
     [Fact]
@@ -39,55 +39,16 @@ public sealed class PlainChatInputTests
         cancelled.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             reader.ReadLineWithContinuationAsync(input, output, "> ", "... ", cancelled.Token));
-        Assert.Empty(reader.History);
-        Assert.Empty(output.ToString());
-    }
 
-    [Fact]
-    public void HistoryIsBoundedAndOnlyDeduplicatesConsecutiveSubmissions()
-    {
-        var reader = new PlainChatInput();
-        for (var i = 0; i < 120; i++) reader.AddToHistory($"prompt {i}");
-        reader.AddToHistory("prompt 119");
-        reader.AddToHistory(" ");
-        Assert.Equal(100, reader.History.Count);
-        Assert.Equal("prompt 20", reader.History[0]);
-        Assert.Equal("prompt 119", reader.History[^1]);
+        Assert.Empty(output.ToString());
     }
 
     [Fact]
     public void RedirectedStdinDoesNotStartTerminalGui()
     {
-        Assert.Equal(TuiEngine.Sequential, TuiEngineSelection.Resolve(
+        Assert.Equal(ChatPresentationMode.Plain, ChatPresentationSelection.Resolve(
             false, false, 120, 40, null, "xterm-256color", false, inputRedirected: true));
     }
-    [Fact]
-    public async Task LoopPreservesQuotesAndStopsBeforeTheNextSubmission()
-    {
-        var reader = new PlainChatInput();
-        using var input = new StringReader("\"quoted prompt\"\n/exit\nnot submitted\n");
-        using var output = new StringWriter();
-        var submitted = new List<string>();
-        var exit = await reader.RunAsync(input, output, (line, _) =>
-        {
-            submitted.Add(line);
-            return Task.FromResult<int?>(line == "/exit" ? 7 : null);
-        });
-        Assert.Equal(7, exit);
-        Assert.Equal(new[] { "\"quoted prompt\"", "/exit" }, submitted);
-        Assert.Equal("not submitted", await input.ReadLineAsync());
-    }
-
-    [Fact]
-    public async Task EmptyInputDoesNotSubmitOrAskForMoreInput()
-    {
-        using var input = new StringReader("");
-        using var output = new StringWriter();
-        var exit = await new PlainChatInput().RunAsync(input, output,
-            (_, _) => throw new InvalidOperationException("must not submit at EOF"));
-        Assert.Equal(0, exit);
-    }
-
     [Fact]
     public void EchoPreservesLinesAndAttachmentsWithoutTerminalControls()
     {

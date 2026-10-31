@@ -107,9 +107,12 @@ tools under Broker policy. A registered external root does not grant external
 file or terminal access.
 
 Models can use `skill` with `query` instead of `name` to search metadata omitted
-from the prompt listing. The query result is bounded and discloses truncation;
-exact-ID lookup can load a skill beyond the listing limit. Disabled and
-explicit-only workflows are excluded from this implicit search.
+from the prompt listing. A query is split on whitespace and every token must
+appear in the id, name or description, so word order does not matter. `total`
+counts matching entries, `hidden` counts matches that are disabled or
+explicit-only and therefore cannot be loaded implicitly, and `truncated`
+reports a real scan or listing bound rather than a filtered-out match. Exact-ID
+lookup can load a skill beyond the listing limit.
 
 Discovery reads bounded metadata, independently of the 64 KiB package body cap.
 One budgeted prompt listing replaces per-skill instruction slots. The shared

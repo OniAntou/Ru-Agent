@@ -8,6 +8,12 @@ namespace RuAgent.Broker.Skills;
 public sealed record SkillCatalogItem(string Id, string Name, string Description, string SourcePath, string ResourceBase,
     string Revision, bool Enabled, bool ModelInvocable, bool UserInvocable, IReadOnlyList<string> Requires, string? Compatibility);
 public sealed record SkillCatalogDiagnostic(string SourcePath, string Code);
+
+/// <summary>
+/// <paramref name="Total"/> counts the entries that match the query (the whole catalog when the
+/// query is null), before any caller-side visibility filter. <paramref name="Truncated"/> reports
+/// a scan or listing bound, never a filtered-out entry.
+/// </summary>
 public sealed record SkillCatalogResult(IReadOnlyList<SkillCatalogItem> Items, IReadOnlyList<SkillCatalogDiagnostic> Diagnostics, bool Truncated, int Total);
 public sealed record SkillPreferenceResult(bool Success, string Code, string Message);
 public sealed record SkillBody(string Name, string Description, string Body, string BodySha256, string SourcePath,
@@ -17,7 +23,8 @@ public sealed record SkillBody(string Name, string Description, string Body, str
 /// <summary>Workspace-scoped, metadata-only skill catalog and bounded on-demand body reader.</summary>
 public sealed partial class SkillCatalog
 {
-    private const int MaxRoots = 16, MaxDirectoriesPerRoot = 256, MaxItems = 128, MaxDiagnostics = 128, MaxBodyBytes = 64 * 1024;
+    private const int MaxRoots = 16, MaxDirectoriesPerRoot = 256, MaxItems = 128, MaxDiagnostics = 128, MaxBodyBytes = 64 * 1024,
+        MaxQueryTokens = 8;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly string _workspaceRoot;
     private readonly string _preferencesPath;
@@ -136,7 +143,7 @@ public sealed partial class SkillCatalog
             && IsFresh(cached, roots, cancellationToken)) return cached.Result;
         var preferences = ReadPreferences();
         var diagnostics = new List<SkillCatalogDiagnostic>(); var items = new List<SkillCatalogItem>(); var seen = new HashSet<string>(StringComparer.Ordinal);
-        var truncated = false; var total = 0;
+        var truncated = false; var total = 0; var queryTokens = QueryTokens(query);
         if (query is not null && SkillIdentity.IsValid(query.ToLowerInvariant()))
         {
             var exact = FindById(query.ToLowerInvariant(), cancellationToken);
@@ -176,8 +183,9 @@ public sealed partial class SkillCatalog
                 var metadata = ReadMetadata(file, out var metadataError);
                 if (metadata is null) { AddDiagnostic(file, metadataError ?? "unreadable_or_invalid"); continue; }
                 var parsedMetadata = metadata.Value.Metadata;
-                seen.Add(id); total++;
-                if (query is not null && !(parsedMetadata.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || parsedMetadata.Description.Contains(query, StringComparison.OrdinalIgnoreCase) || id.Contains(query, StringComparison.OrdinalIgnoreCase))) continue;
+                seen.Add(id);
+                if (!MatchesQuery(id, parsedMetadata, queryTokens)) continue;
+                total++;
                 if (items.Count >= MaxItems) { truncated = true; continue; }
                 items.Add(new SkillCatalogItem(id, parsedMetadata.Name, parsedMetadata.Description, file, directory, metadata.Value.Revision,
                     !preferences.Enabled.TryGetValue(id, out var enabled) || enabled,
@@ -196,6 +204,34 @@ public sealed partial class SkillCatalog
         }
         return result;
         void AddDiagnostic(string source, string code) { if (diagnostics.Count < MaxDiagnostics) diagnostics.Add(new(source, code)); else truncated = true; }
+    }
+
+    /// <summary>
+    /// A query is a bounded set of whitespace-separated tokens, not one literal substring: a
+    /// model searching "debug worktrees" must find a skill whose id, name and description spread
+    /// those words. Every token has to match somewhere (AND), so a longer query narrows results.
+    /// </summary>
+    private static string[] QueryTokens(string? query) =>
+        string.IsNullOrWhiteSpace(query)
+            ? []
+            : query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(MaxQueryTokens)
+                .ToArray();
+
+    private static bool MatchesQuery(string id, SkillMetadata metadata, IReadOnlyList<string> tokens)
+    {
+        foreach (var token in tokens)
+        {
+            if (!id.Contains(token, StringComparison.OrdinalIgnoreCase)
+                && !metadata.Name.Contains(token, StringComparison.OrdinalIgnoreCase)
+                && !metadata.Description.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
 }

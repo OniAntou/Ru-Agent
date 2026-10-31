@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: **`skill` query nhiều từ không còn trả rỗng, và `total`/`truncated` không còn gây
+  hiểu nhầm.** Query giờ tách theo khoảng trắng và mọi token phải khớp id/tên/mô tả (AND), nên
+  "debug worktrees" tìm được skill thay vì đòi đúng một chuỗi con. `total` đếm số entry khớp query
+  (trước đây là toàn bộ catalog), `truncated` chỉ báo giới hạn scan/liệt kê thật, và field mới
+  `hidden` cho biết bao nhiêu kết quả khớp bị loại vì disabled hoặc explicit-only — trước đây một
+  match như vậy trả `items: []`, `total: 53`, `truncated: true` mà không giải thích.
+
 - **fix(agent)**: **Thiếu policy identity không còn bị báo như lỗi model.** Một tool đã advertise và
   Broker-bound nhưng `PolicyContextFactory` không có nhánh giờ trả `tool_policy_unconfigured` kèm hint
   "product defect" thay vì `malformed_call` / "unknown tool id"; id không tồn tại vẫn là

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(git)**: **Một cách gọi git nhất quán cho worktree và dirty probe.** Host đọc trạng thái
+  bằng `git status --porcelain=v2 --branch` qua `GitStatusParser` của Broker (bỏ parser đếm dòng
+  riêng); cả Host và CLI đặt `GIT_TERMINAL_PROMPT=0`/`LC_ALL=C`, probe thêm `GIT_OPTIONAL_LOCKS=0`
+  để không treo ở credential prompt và không đua index với git của user. CLI kiểm tra `git --version`
+  ≥ 2.20 trước khi tạo worktree và báo lỗi có mã (`worktree_git_missing`/`worktree_git_too_old`).
+
 - **feat(prompt)**: **Agent biết workspace đang dơ trước khi sửa.** Environment block thêm
   `workspace_git: clean | dirty (N changed, M untracked) | not_a_repository` — chỉ đếm, không
   tên file, cache ngắn để không tốn một lần `git status` mỗi model step. Contract yêu cầu model

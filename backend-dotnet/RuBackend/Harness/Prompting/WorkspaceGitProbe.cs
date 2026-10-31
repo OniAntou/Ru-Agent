@@ -1,12 +1,15 @@
 using System.Diagnostics;
 using System.Text;
+using RuAgent.Broker.Tools.Git;
+using RuAgent.Protocol.Harness;
 
 namespace RuBackend.Harness.Prompting;
 
 /// <summary>
 /// Reports a bounded git state for the prompt environment. The model needs to know
 /// that the workspace holds work in progress before it edits anything; the probe
-/// returns counts only, never file names, so the prompt stays free of paths.
+/// returns counts only, never file names, so the prompt stays free of paths. Counts
+/// come from the Broker's porcelain-v2 parser instead of a second ad-hoc parser.
 /// </summary>
 internal static class WorkspaceGitProbe
 {
@@ -25,38 +28,22 @@ internal static class WorkspaceGitProbe
             return "not_a_repository";
         }
 
-        var status = Run(root, ["status", "--porcelain"]);
+        var status = Run(root, ["status", "--porcelain=v2", "--branch"]);
         if (status.ExitCode != 0)
         {
             return "unknown";
         }
 
-        var changed = 0;
-        var untracked = 0;
-        foreach (var raw in status.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var line = raw.TrimEnd('\r');
-            if (line.Length < 2)
-            {
-                continue;
-            }
-
-            if (line.StartsWith("??", StringComparison.Ordinal))
-            {
-                untracked++;
-            }
-            else
-            {
-                changed++;
-            }
-        }
-
+        var parsed = GitStatusParser.Parse(status.Stdout);
+        var untracked = parsed.Entries.Count(entry => entry.Kind == RunGitEntryKind.Untracked);
+        var changed = parsed.Entries.Count - untracked;
         if (changed == 0 && untracked == 0)
         {
-            return "clean";
+            return parsed.Truncated ? "unknown" : "clean";
         }
 
-        return $"dirty ({changed} changed, {untracked} untracked)";
+        var suffix = parsed.Truncated ? "+" : string.Empty;
+        return $"dirty ({changed}{suffix} changed, {untracked}{suffix} untracked)";
     }
 
     private static (int ExitCode, string Stdout) Run(string workingDirectory, IReadOnlyList<string> arguments)
@@ -72,6 +59,11 @@ internal static class WorkspaceGitProbe
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        // Localized messages and optional locks would only add noise: this probe
+        // reads and nothing else, and it must not race the user's own git commands.
+        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        startInfo.Environment["GIT_OPTIONAL_LOCKS"] = "0";
+        startInfo.Environment["LC_ALL"] = "C";
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);

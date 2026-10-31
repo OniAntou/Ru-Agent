@@ -42,6 +42,22 @@ public static class GitWorktreeIsolation
             return (null, "worktree_workspace_missing: the workspace directory does not exist.");
         }
 
+        // Worktrees and the porcelain parser this feature shares need a 2.20-era
+        // git; a clear version error beats a confusing failure from an old binary.
+        var version = await RunGitAsync(
+            fullWorkspace, ["--version"], InspectTimeout, cancellationToken).ConfigureAwait(false);
+        if (version.ExitCode != 0)
+        {
+            return (null, version.Missing
+                ? "worktree_git_missing: git was not found on PATH."
+                : "worktree_git_unavailable: git could not report its version.");
+        }
+
+        if (!MeetsMinimumVersion(version.Stdout))
+        {
+            return (null, $"worktree_git_too_old: git {FirstLine(version.Stdout)} is too old; 2.20 or newer is required.");
+        }
+
         var inspect = await RunGitAsync(
             fullWorkspace, ["rev-parse", "--show-toplevel"], InspectTimeout, cancellationToken).ConfigureAwait(false);
         if (inspect.ExitCode != 0)
@@ -130,6 +146,19 @@ public static class GitWorktreeIsolation
         || stderr.Contains("not a valid object name", StringComparison.OrdinalIgnoreCase)
         || stderr.Contains("fatal: bad revision", StringComparison.OrdinalIgnoreCase);
 
+    private static bool MeetsMinimumVersion(string versionText)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            versionText, @"git version (\d+)\.(\d+)");
+        return match.Success
+            && int.TryParse(match.Groups[1].Value, out var major)
+            && int.TryParse(match.Groups[2].Value, out var minor)
+            && (major > 2 || (major == 2 && minor >= 20));
+    }
+
+    private static string FirstLine(string value) =>
+        Truncate(value.Replace("\r", " ").Replace("\n", " ").Trim());
+
     private static string Truncate(string value)
     {
         var singleLine = value.Replace("\r", " ").Replace("\n", " ").Trim();
@@ -153,6 +182,10 @@ public static class GitWorktreeIsolation
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        // A background agent must never wait for a credential prompt, and the
+        // localized output is parsed by callers: force the stable C locale.
+        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        startInfo.Environment["LC_ALL"] = "C";
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);

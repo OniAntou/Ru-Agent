@@ -1,5 +1,14 @@
 # MEMORY — Ru-Agent (máy của anh steal)
 
+## 2026-10-31 — Điều tra typing bị khựng ở slash menu
+
+- Anh báo typing TUI bị khựng, xác nhận rõ nhất khi gõ `/`/mở menu lệnh. Chỉ điều tra; không thay source production, publish hoặc dừng phiên Ru. Source sản phẩm được đo ở2479e248, bản CLI publish hash vẫn079752FE… như trước.
+- Dựng probe ngoài repo qua ConPTY, driver .NET và native session host/views production; dùng named pipe đo timestamp từ parent gửi phím, UI nhận phím, ContentsChanged tới driver flush. 15 lượt/723 phím giả lập, welcome chữ thường/slash/UpDown, glyph/Sixel, clock có/không chạy, chat100row và viewport180×48/100×30. Không Host/provider hoặc đọc nội dung phiên thật. Tất cả đo serial dưới mutex; harness build đầu thiếu namespace Drawing rồi sửa, giữ log riêng.
+- Nút thắt có bằng chứng: `TgChatWindow.ShowSlashDropdown` và `HideSlashDropdown` gọi SetNeedsDraw trên toàn window mỗi edit, cả khi kết quả menu/chiều cao không đổi hoặc menu đã đóng. Lọc catalog16lệnh median~0,15ms. Root paint kéo cả landing/transcript; welcome180×48 median~25,6MB cấp phát trong đoạn nhận phím→flush, riêng landing~13,6MB/10,2ms; dropdown~0,79MB/0,42ms. Đây là allocation, chưa đo retained RAM/memory leak.
+- Runtime main loop cap mặc định25, CLI chưa cấu hình; timer18ms không đồng nghĩa55FPS. Lượt confirmed welcome25: median67,6ms/P9590,4ms; thử cap60 trong harness:48,5ms/P9581,7ms. Lượt measured trước:72,5→44,5ms; chat71,6→42,1ms. Có baseline max161,5ms. Chưa thay cap sản phẩm. Repaint counter ban đầu dùng DrawComplete có thể đếm view không paint; lượt confirmed đã dùng ClearingViewport, chỉ dùng counter mới để kết luận.
+- Hướng sửa ưu tiên nhỏ: no-op hide khi đã đóng; không refresh menu khi matches/geometry không đổi; chỉ dirty menu cho thay đổi selection/nội dung, giữ repaint xóa vùng cũ khi geometry/open/close đổi; sau đó cân nhắc cap60 tách khỏi clock thiên hà. Giữ thiết kế, animation, keyboard semantics và quyền model. Chưa triển khai ở lượt điều tra.
+- Report gốc `outputs/TUI-TYPING-INVESTIGATION-2026-10-31.md`, evidence `work/tui-typing-investigation` trong task workspace. Khi anh yêu cầu commit, đưa bản báo cáo vào `docs/history/verification/2026-10-31-tui-typing.md` để đọc được ngay trên branch, cùng MEMORY. Chưa đo manual Windows Terminal pixels/GPU/IME/fast burst, nhiều session đang stream hoặc picker model hàng trăm item; không chạy full/unit matrix vì source sản phẩm không đổi. Commit chỉ gồm báo cáo và MEMORY, không có bản sửa runtime hoặc artifacts/binary.
+
 ## 2026-10-31 — Nhận thêm dev trong lúc kiểm chứng sync
 
 - Đã đóng merge35commit vào `7c4bf90de22ef63197852b2c1b83b9bb05465420` sau bộ kiểm chứng ghi bên dưới. Lần fetch cuối thấy dev vừa có thêm3commit (`cde7fa60`, `002a8af1`, `b98ba871`), nên tiếp tục merge tới `b98ba8714ea9c2c9064a373413f4798609085cf3` để đáp ứng sync mới nhất, không bỏ qua code mới xuất hiện trong lúc chạy test.

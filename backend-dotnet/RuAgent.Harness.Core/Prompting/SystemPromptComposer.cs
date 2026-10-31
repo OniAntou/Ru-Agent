@@ -84,6 +84,11 @@ public static class SystemPromptComposer
             lines.Add($"tools_available: {environment.ToolInventory}");
         }
 
+        if (environment.WorkspaceGit is not null)
+        {
+            lines.Add($"workspace_git: {environment.WorkspaceGit}");
+        }
+
         if (environment.ImageInputAccepted is { } imageInput)
         {
             lines.Add($"image_input: {(imageInput ? "supported" : "unavailable")}");

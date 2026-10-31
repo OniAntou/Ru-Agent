@@ -251,6 +251,15 @@ public sealed class CompletionChecklistTests
         Assert.DoesNotContain("You are Ru Agent", contract, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Execution_contract_requires_a_choice_before_changing_a_dirty_workspace()
+    {
+        var contract = RuAgentPromptBlocks.ExecutionContractBlock();
+
+        Assert.Contains("workspace_git as dirty", contract, StringComparison.Ordinal);
+        Assert.Contains("never create or switch a workspace on your own", contract, StringComparison.Ordinal);
+    }
+
     private static ModelContextSnapshot Snapshot(IEnumerable<ModelContextEntry> entries) =>
         VerificationCompletionTests.Snapshot(entries);
 

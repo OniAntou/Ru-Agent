@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(prompt)**: **Agent biết workspace đang dơ trước khi sửa.** Environment block thêm
+  `workspace_git: clean | dirty (N changed, M untracked) | not_a_repository` — chỉ đếm, không
+  tên file, cache ngắn để không tốn một lần `git status` mỗi model step. Contract yêu cầu model
+  báo trước lần ghi đầu tiên và đưa lựa chọn: commit/stash trước, làm tiếp tại chỗ, hoặc chạy
+  trong worktree — chờ anh chọn, không tự tạo hay đổi workspace.
+
 - **feat(cli)**: **`agent run --worktree` tách run khỏi cây làm việc của anh.** CLI tạo một git
   worktree mới tại HEAD (mặc định `%LOCALAPPDATA%\Ru\worktrees`, đổi bằng `RU_WORKTREE_ROOT`),
   chạy agent trong bản copy đó và in đường dẫn; cây gốc cùng thay đổi chưa commit không bị chạm.

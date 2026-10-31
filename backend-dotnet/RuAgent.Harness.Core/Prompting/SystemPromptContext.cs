@@ -21,7 +21,8 @@ public sealed record PromptEnvironment
         string date,
         string? workspaceLabel,
         string? toolInventory = null,
-        bool? imageInputAccepted = null)
+        bool? imageInputAccepted = null,
+        string? workspaceGit = null)
     {
         Model = PromptText.Require(model, 256, nameof(model));
         Platform = PromptText.Require(platform, 64, nameof(platform));
@@ -31,6 +32,7 @@ public sealed record PromptEnvironment
         WorkspaceLabel = PromptText.Optional(workspaceLabel, 128, nameof(workspaceLabel));
         ToolInventory = PromptText.Optional(toolInventory, 256, nameof(toolInventory));
         ImageInputAccepted = imageInputAccepted;
+        WorkspaceGit = PromptText.Optional(workspaceGit, 160, nameof(workspaceGit));
     }
 
     public string Model { get; }
@@ -54,6 +56,14 @@ public sealed record PromptEnvironment
 
     public bool? ImageInputAccepted { get; }
 
+    /// <summary>
+    /// Bounded git state of the workspace at composition time, such as
+    /// <c>dirty (2 changed, 1 untracked)</c>. It lets the model warn before the
+    /// first mutation instead of discovering the user's in-progress work by
+    /// overwriting it. Null when the probe is unavailable.
+    /// </summary>
+    public string? WorkspaceGit { get; }
+
     internal JsonObject SerializeFields()
     {
         var fields = new JsonObject
@@ -63,6 +73,7 @@ public sealed record PromptEnvironment
             ["tool_inventory"] = ToolInventory,
         };
         if (ImageInputAccepted is { } accepted) fields["image_input"] = accepted;
+        if (WorkspaceGit is not null) fields["workspace_git"] = WorkspaceGit;
         return fields;
     }
 }

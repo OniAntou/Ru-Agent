@@ -40,6 +40,22 @@ public sealed class RequestBoundaryTests
     }
 
     [Fact]
+    public async Task Unauthenticated_websocket_upgrade_is_rejected_as_unauthorized()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/agent/v1/runs");
+        request.Headers.TryAddWithoutValidation("Connection", "Upgrade");
+        request.Headers.TryAddWithoutValidation("Upgrade", "websocket");
+        request.Headers.TryAddWithoutValidation("Sec-WebSocket-Version", "13");
+        request.Headers.TryAddWithoutValidation("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task DeclaredOversizedBodyIsRejected()
     {
         using var factory = new BackendWebApplicationFactory();

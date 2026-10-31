@@ -49,8 +49,7 @@ public sealed record RunCommand(
     bool Json,
     bool TrustWorkspace = false,
     bool ConfirmFullAccess = false,
-    IReadOnlyList<string>? Images = null,
-    bool Worktree = false) : AgentCommand(CliCommandKind.Run, Json);
+    IReadOnlyList<string>? Images = null) : AgentCommand(CliCommandKind.Run, Json);
 
 public sealed record AttachCommand(
     string RunId,

@@ -7,10 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **chore(cli)**: **Bỏ `agent run --worktree`.** Đây là tiện ích dogfood/headless, không phải tính
+  năng cho GUI; script nào cần isolation thì dùng `git worktree add` thủ công. Xoá switch, helper
+  `GitWorktreeIsolation`, các mã lỗi `worktree_*`, test và đoạn README tương ứng. Worktree riêng của
+  subagent vẫn giữ nguyên.
+
+- **chore(cleanup)**: **Xoá tàn dư WebSocket và member chết.** Contract đã 0 route WebSocket từ lâu;
+  bỏ `app.UseWebSockets()` và nhánh `4401` trong `DesktopTokenMiddleware` (upgrade chưa auth giờ trả
+  401 JSON, không còn handshake WS), kèm test hồi quy. Xoá `SystemPromptReceipt.Empty` — không còn
+  caller nào; `SystemPromptContext.Empty` vẫn giữ vì đang được dùng.
+
 - **feat(agent)!**: **Gỡ tích hợp git khỏi Ru.** Bỏ tool `git_status` (catalog còn 28 tool), dòng
   `workspace_git` trong prompt, managed commit và store `run_git_state`; Host không còn tự chạy git cho
   prompt hay reconciliation. Model vẫn gọi `git` qua terminal như lệnh thường theo Broker policy;
-  worktree của subagent và `--worktree` của CLI giữ nguyên.
+  worktree riêng của subagent giữ nguyên.
   - `git commit` giờ là commit thường: có thể gồm cả thay đổi người dùng đã stage (guard
     `index_not_empty` không còn), không tự stage file đã sửa, và chạy hook của repo như bình thường.
   - `snapshot_hash` của `POST .../reconcile` giờ là hash của yêu cầu reconciliation đã lưu, không còn

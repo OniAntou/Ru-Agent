@@ -203,7 +203,6 @@ static async Task<InProcessExecutionAuthority> ResolveExecutionAuthorityAsync(We
     }
 }
 
-app.UseWebSockets();
 app.UseMiddleware<CorrelationMiddleware>();
 app.UseMiddleware<DesktopTokenMiddleware>();
 app.UseMiddleware<RequestSizeMiddleware>();

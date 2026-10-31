@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui/host)**: **Đổi preset rồi gửi không còn tạo run "mồ côi".** GUI cache version
+  theo *lựa chọn đang xem* thay vì *giá trị đã lưu*: mở session (adopt `plan`), chọn `standard`,
+  rồi gửi — nó tưởng đã lưu `standard` nên bỏ qua bước ghi, gửi `standard` + version cũ. Host
+  tạo run bằng `plan` (stored thắng), trả response `plan`; client strict-check từ chối binding
+  nên GUI báo "Coding Agent could not start" trong khi run vẫn chạy và session bị queue. Giờ
+  cache chỉ được tái dùng khi preset đã lưu khớp lựa chọn hiện tại; Host trả `409 preset_mismatch`
+  trước khi tạo bất cứ thứ gì nếu request pin version nhưng preset khác stored. Request legacy
+  không pin version giữ nguyên hành vi.
+
 - **feat(agent)**: **Run dài tự mở cửa sổ budget, không dừng ở 128 bước đầu.** Một root run giờ tự mở
   cửa sổ tiếp theo (128 model step / 256 tool call mỗi cửa sổ) tối đa 8 cửa sổ — 1.024 bước / 2.048
   tool call — trước khi park `waiting_user` và cần Continue; mỗi cửa sổ sau đó là manual. Subagent

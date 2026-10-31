@@ -310,6 +310,63 @@ public sealed partial class AgentRunIdempotencyTests
     }
 
     [Fact]
+    public async Task Pinned_preset_that_no_longer_matches_the_stored_selection_is_rejected_before_creating_a_run()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var session = await CreateSessionAsync(client);
+
+        // The first pinned create stores standard at version 1.
+        var firstBody = new
+        {
+            session_id = session,
+            workspace_path = tmp.Path,
+            prompt = "preset pin first",
+            preset = "standard",
+            idempotency_key = "pin-1-" + Guid.NewGuid().ToString("N"),
+            preset_selection_version = 1,
+        };
+        using var first = await client.PostAsJsonAsync("/agent/v1/runs", firstBody);
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        var firstJson = await first.Content.ReadFromJsonAsync<JsonElement>();
+        await client.PostAsync($"/agent/v1/runs/{firstJson.GetProperty("run_id").GetString()}/cancel", null);
+
+        // A stale client still pins version 1 but asks for plan. No run may be
+        // created: a live run carrying a preset the caller cannot bind would be
+        // impossible for that caller to cancel.
+        var staleBody = new
+        {
+            session_id = session,
+            workspace_path = tmp.Path,
+            prompt = "preset pin stale",
+            preset = "plan",
+            idempotency_key = "pin-2-" + Guid.NewGuid().ToString("N"),
+            preset_selection_version = 1,
+        };
+        using var stale = await client.PostAsJsonAsync("/agent/v1/runs", staleBody);
+        Assert.Equal((HttpStatusCode)409, stale.StatusCode);
+        var staleJson = await stale.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("preset_mismatch", staleJson.GetProperty("error_code").GetString());
+
+        // The rejection did not consume the session or its pinned version.
+        var retryBody = new
+        {
+            session_id = session,
+            workspace_path = tmp.Path,
+            prompt = "preset pin retry",
+            preset = "standard",
+            idempotency_key = "pin-3-" + Guid.NewGuid().ToString("N"),
+            preset_selection_version = 1,
+        };
+        using var retry = await client.PostAsJsonAsync("/agent/v1/runs", retryBody);
+        Assert.Equal(HttpStatusCode.Created, retry.StatusCode);
+        var retryJson = await retry.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("standard", retryJson.GetProperty("preset").GetString());
+        await client.PostAsync($"/agent/v1/runs/{retryJson.GetProperty("run_id").GetString()}/cancel", null);
+    }
+
+    [Fact]
     public async Task Legacy_full_preset_without_version_creates_standard_run()
     {
         using var tmp = TempWorkspace.Create();

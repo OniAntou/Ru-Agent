@@ -745,6 +745,11 @@ and no workspace editor. The `Full Access` choice needs one explicit
 confirmation per session, is stored server-side with a monotonic version, and
 flows into runs;
 a version conflict surfaces as `preset_mismatch` / `preset_version_conflict`.
+A run request that pins a preset version but names a different preset than the
+stored selection is rejected as `preset_mismatch` before any run is created: the
+stored selection stays authoritative, and a stale client cannot leave a live run
+it is unable to bind or cancel. Legacy requests without a pinned version keep the
+stored-selection rule.
 The sidebar
 keeps only primary conversation surfaces; Log, Diagnostics, Policy, and
 Audit remain reachable from the `Công cụ` flyout. Agent prompts are

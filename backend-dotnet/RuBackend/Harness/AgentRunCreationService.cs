@@ -192,8 +192,9 @@ public sealed class AgentRunCreationService
         // means standard; the request string validates only and never elevates
         // a run — the stored session selection (see below) decides the preset.
         AgentPermissionPreset preset = AgentPermissionPreset.Standard;
+        string requestedPresetWire = string.Empty;
         if (!string.IsNullOrWhiteSpace(request.Preset)
-            && !AgentPolicyProfileCatalog.TryNormalizePresetInput(request.Preset, out _))
+            && !AgentPolicyProfileCatalog.TryNormalizePresetInput(request.Preset, out requestedPresetWire))
         {
             return BoundedError(400, "invalid_preset", "preset must be plan, standard, or full_access.");
         }
@@ -264,6 +265,19 @@ public sealed class AgentRunCreationService
         if (existingSelection is not null)
         {
             preset = existingSelection.Preset;
+        }
+
+        // A caller that pins a selection version also expects the run to carry
+        // that preset. If the stored selection changed underneath it, creating a
+        // run under a different preset would leave the caller with a live run it
+        // cannot bind (and likely cannot cancel). Fail before anything is created;
+        // legacy callers that do not pin a version keep the stored-selection rule.
+        if (clientVersion is not null
+            && requestedPresetWire.Length != 0
+            && !string.Equals(requestedPresetWire, AgentPermissionPresetMapper.ToWireValue(preset), StringComparison.Ordinal))
+        {
+            return BoundedError(409, "preset_mismatch",
+                "The session preset changed. Refresh the session preset and try again.");
         }
 
         var workspaceAdmission = await _workspaceAdmission

@@ -277,7 +277,9 @@ the Host's stored selection. Only two rules narrow it: Full Access does not foll
 user into a session it was not stored for, and a declined Full Access confirmation
 falls back to Standard. Opening a session adopts the stored selection (read only, best
 effort, dropped if the session changed meanwhile) and seeds the version cache, so the
-next send does not rewrite it; a write that completes after a switch fails as
+next send does not rewrite it; the cached version is reused only while the stored
+preset still matches the user's choice, so choosing a different preset after adoption
+writes it instead of sending a stale pin. A write that completes after a switch fails as
 `session_changed`. An unknown stored value reads as Standard. Transcript loading, run
 adoption and the activity feed remain in `ChatView` partials and their presenters.
 `ShellViewModel` owns the window shell's state and decisions. Startup resolves the

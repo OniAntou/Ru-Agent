@@ -53,6 +53,7 @@ public sealed partial class SessionPresetViewModel : ObservableObject
     private readonly ISessionPresetBackend _backend;
     private string? _storedSessionId;
     private long? _storedVersion;
+    private AgentPermissionPreset? _storedPreset;
 
     public SessionPresetViewModel(ISessionPresetBackend backend)
     {
@@ -89,6 +90,7 @@ public sealed partial class SessionPresetViewModel : ObservableObject
     {
         _storedSessionId = null;
         _storedVersion = null;
+        _storedPreset = null;
     }
 
     /// <summary>
@@ -141,6 +143,7 @@ public sealed partial class SessionPresetViewModel : ObservableObject
         Preset = FromWire(stored.Preset);
         _storedSessionId = sessionId;
         _storedVersion = stored.Version;
+        _storedPreset = FromWire(stored.Preset);
         return Preset;
     }
 
@@ -156,7 +159,7 @@ public sealed partial class SessionPresetViewModel : ObservableObject
         CancellationToken cancellationToken)
     {
         if (string.Equals(_storedSessionId, sessionId, StringComparison.Ordinal)
-            && Preset == preset
+            && _storedPreset == preset
             && _storedVersion is long knownVersion)
         {
             return knownVersion;
@@ -171,6 +174,7 @@ public sealed partial class SessionPresetViewModel : ObservableObject
         _storedSessionId = sessionId;
         Preset = preset;
         _storedVersion = version;
+        _storedPreset = preset;
         return version;
     }
 }

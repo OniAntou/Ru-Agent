@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tools)**: **Grep nói rõ kết quả rỗng thay vì trả `count: 0` trống.** `grep` thêm `notice`
+  `no matches were found for the query.` khi scan hoàn tất và không khớp gì; scan thiếu
+  (`scan_incomplete`/`excluded_by_size`) giữ nguyên mô tả coverage và không nhận notice,
+  kết quả có match cũng không. Mô tả tool, golden lock và `docs/architecture/broker.md`
+  ghi lại quy ước notice này.
+
 - **feat(cli)**: **Headless run trả lời được approval mà không cần terminal.** `agent run --json`
   in `approval_id` trên event `approval.requested` — handle duy nhất mà `agent approve` nhận —
   và `approve`/`deny` nhận `--json` để trả object `approval` (`decision`, `scope`,

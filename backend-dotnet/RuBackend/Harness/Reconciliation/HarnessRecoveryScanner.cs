@@ -148,10 +148,24 @@ public sealed class HarnessRecoveryScanner(
             string? ProviderCallId)>();
         var completed = new HashSet<string>(StringComparer.Ordinal);
         var hasToolProposal = false;
+        // The last model step admission that has no completion event. A host that
+        // stops mid-generation leaves this behind; the reply was never committed,
+        // so resuming would silently start a second step on every restart.
+        string? pendingModelStepId = null;
         await foreach (var envelope in store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
         {
             var item = envelope.Event;
-            if (item.Kind == "tool.execution_requested" && item.ExecutionId is { } executionId)
+            if (item.Kind == "model.step_started" && item.ModelStepId is { } startedStep)
+            {
+                pendingModelStepId = startedStep.Value;
+            }
+            else if (item.Kind == "model.step_completed"
+                     && item.ModelStepId is { } finishedStep
+                     && string.Equals(pendingModelStepId, finishedStep.Value, StringComparison.Ordinal))
+            {
+                pendingModelStepId = null;
+            }
+            else if (item.Kind == "tool.execution_requested" && item.ExecutionId is { } executionId)
             {
                 requested.Add((
                     executionId,
@@ -174,6 +188,12 @@ public sealed class HarnessRecoveryScanner(
         var incomplete = requested
             .Where(item => !completed.Contains(item.ExecutionId.Value))
             .ToList();
+
+        if (incomplete.Count == 0 && pendingModelStepId is not null)
+        {
+            return await FailOrphanedModelStepAsync(run, pendingModelStepId, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         if (requested.Count == 0)
         {
@@ -294,10 +314,62 @@ public sealed class HarnessRecoveryScanner(
             ? new RecoveredRunSummary(run.RunId, safeCode switch
             {
                 "recovery_read_only_incomplete" => "failed_read_only_incomplete",
+                "recovery_model_step_incomplete" => "failed_model_step_incomplete",
                 "approval_expired" => "failed_approval_expired",
                 "permission_profile_changed" => "failed_permission_profile_changed",
                 _ => "failed_pre_dispatch",
             })
+            : null;
+    }
+
+    /// <summary>
+    /// Fails a run whose model step was in flight when the host process stopped.
+    /// The provider reply was never committed, so there is nothing to resume: the
+    /// orphaned step is closed as interrupted and the run fails by name. Leaving
+    /// the step open made every restart start another step on top of it and kept
+    /// the session's active-run ownership, so new prompts queued behind a turn
+    /// whose model was already gone.
+    /// </summary>
+    private async Task<RecoveredRunSummary?> FailOrphanedModelStepAsync(
+        AgentRun run,
+        string modelStepId,
+        CancellationToken cancellationToken)
+    {
+        var transition = AgentRunStateMachine.TryTransition(
+            run.Status,
+            HarnessRunTransition.Fail);
+        if (!transition.Accepted)
+        {
+            return null;
+        }
+
+        const string safeCode = "recovery_model_step_incomplete";
+        // Two events: the interrupted step completion keeps the stream balanced,
+        // and the failure releases the session.
+        var next = Advance(run, transition.Next, 2, time.UtcNow, safeCode);
+        var result = await store.CommitAsync(
+                new HarnessCommit(
+                    run.RunId,
+                    run.Version,
+                    next,
+                    new[]
+                    {
+                        new HarnessEventIntent(
+                            new RuAgent.Harness.Core.EventId($"evt_{Guid.NewGuid():N}"),
+                            HarnessEventKind.ModelStepCompleted,
+                            modelStepId: new ModelStepId(modelStepId),
+                            safeCode: "interrupted"),
+                        new HarnessEventIntent(
+                            new RuAgent.Harness.Core.EventId($"evt_{Guid.NewGuid():N}"),
+                            HarnessEventKind.RunFailed,
+                            safeCode: safeCode),
+                    },
+                    Array.Empty<HarnessPayloadIntent>(),
+                    Array.Empty<ConversationOutboxIntent>()),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return result.Outcome == HarnessCommitOutcome.Committed
+            ? new RecoveredRunSummary(run.RunId, "failed_model_step_incomplete")
             : null;
     }
 

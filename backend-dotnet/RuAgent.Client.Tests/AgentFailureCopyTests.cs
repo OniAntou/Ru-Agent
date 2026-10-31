@@ -21,6 +21,7 @@ public sealed class AgentFailureCopyTests
     [InlineData("permission_profile_changed")]
     [InlineData("recovery_pre_dispatch")]
     [InlineData("recovery_read_only_incomplete")]
+    [InlineData("recovery_model_step_incomplete")]
     [InlineData("commit_conflict")]
     [InlineData("broker_gateway_unavailable")]
     [InlineData("approval_authorization_failed")]

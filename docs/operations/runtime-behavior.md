@@ -73,6 +73,16 @@ The Continue path is the same on both clients: a parked run
 (`waiting_user`, `reconciliation_required`) resumes only when the client
 continues or reconciles it.
 
+Startup recovery compares the durable event stream with dispatch boundaries: a
+crash before any dispatch fails the run as `recovery_pre_dispatch`, an incomplete
+read-only execution as `recovery_read_only_incomplete`, an ambiguous
+side-effecting execution parks it for reconciliation, and a model step that
+started but never completed — the host stopped while the provider was
+generating — fails as `recovery_model_step_incomplete`. That last reply was
+never committed, so resuming it would silently open a second step on every
+restart and keep the session's active-run ownership; failing it by name releases
+the session for a fresh prompt.
+
 The runtime polls the conversation outbox and registered runs independently of
 long model/tool work. A new registration, a successful client POST to a run
 (trust, approval, answer, continue, cancel) and a drive pass that changed the run

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: **Đóng app giữa lúc model đang trả lời không còn để run treo `running`.** Khi host dừng
+  trong lúc chờ provider, run giữ `model.step_started` mà không có completion; lần mở sau startup
+  recovery thấy mọi tool đã có receipt nên coi run là "mid-flight", mở thêm một bước model nữa và giữ
+  session ownership — prompt mới vào queue, session cứ hiện đang chạy. Recovery giờ theo dõi bước model
+  cuối: nếu nó chưa completion, scanner ghi completion `interrupted` cho đúng step rồi fail run với
+  `recovery_model_step_incomplete` (copy UI "Model reply interrupted"), trả session về rảnh. Run có
+  bước model đã completion và receipt đầy đủ vẫn được để chạy tiếp như cũ.
+
 - **feat(agent)**: **Lỗi dừng run dễ đọc hơn và thêm một lỗi model tự sửa được.** Run park vì provider
   (`provider_transport_error`, `provider_timeout`, `provider_server_error`, `provider_rate_limited`,
   `provider_quota_exhausted`), budget, context hay repetition giờ nói lý do bằng câu — "network

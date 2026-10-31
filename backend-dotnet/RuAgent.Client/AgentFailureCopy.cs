@@ -360,6 +360,10 @@ public static class AgentFailureCopy
             "Read-only check incomplete",
             "the host stopped during a read-only step, so its result is unknown",
             "send the request again; no workspace change was left behind");
+        Add(table, ["recovery_model_step_incomplete"],
+            "Model reply interrupted",
+            "the app stopped while the model was replying, so its answer was never saved",
+            "send the request again");
 
         // Web tools.
         Add(table, ["web_response_too_large"],

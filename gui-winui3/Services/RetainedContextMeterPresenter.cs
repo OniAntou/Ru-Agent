@@ -22,6 +22,9 @@ public sealed class RetainedContextMeterPresenter
     private int? _preparedInputTokens;
     public ContextTokenBreakdown? ContextTokens { get; private set; }
 
+    /// <summary>Whether the provider reported real prompt usage for this scope.</summary>
+    public bool HasReportedUsage => _reportedPromptTokens is not null;
+
     public void RestoreUsage(string runId, string sessionId, string? protocol, AgentModelUsage usage)
     {
         if (!Owns(runId, sessionId) || _usageSequence > 0 || _estimateSequence > 0) return;

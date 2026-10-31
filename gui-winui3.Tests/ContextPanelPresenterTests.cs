@@ -41,6 +41,31 @@ public sealed class ContextPanelPresenterTests
     }
 
     [Fact]
+    public void A_failed_request_without_reported_usage_labels_the_next_estimate()
+    {
+        var reading = ContextPanelPresenter.Project(
+            new(8800, 6200, 251), 10, 15261, true,
+            requestFailed: true,
+            hasReportedUsage: false);
+
+        Assert.True(reading.NextRequestOnly);
+        Assert.Contains("Last request failed", reading.Note, StringComparison.Ordinal);
+        Assert.DoesNotContain("of context used", reading.Note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_failed_request_with_reported_usage_keeps_the_normal_estimate_note()
+    {
+        var reading = ContextPanelPresenter.Project(
+            new(8800, 6200, 251), 10, 15261, true,
+            requestFailed: true,
+            hasReportedUsage: true);
+
+        Assert.False(reading.NextRequestOnly);
+        Assert.Contains("Estimated", reading.Note, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compaction_scope_and_out_of_order_frames_cannot_restore_an_old_breakdown()
     {
         var meter = new RetainedContextMeterPresenter();

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: **Context popup không còn gọi estimate là "used" sau khi provider từ chối.** Khi run
+  failed trước khi có usage, popup ghi "estimated for next request", thêm `(estimated)` cạnh token và
+  note "Last request failed · no provider usage reported" thay vì "1.5% of context used".
+
 - **feat(gui)**: **Agent activity mặc định Compact; turn Verbose tự gập sau khi xong.** Cài mới mặc
   định thấy một dòng process mỗi turn (mở được); file preference cũ vẫn giữ lựa chọn trước đó. Chế độ
   Verbose vẫn stream từng row khi đang chạy, rồi tự gập turn đã có câu trả lời và không còn row

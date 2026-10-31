@@ -78,6 +78,9 @@ optional metadata on durable model usage restores them when a chat is reopened.
 Restoration reads the originating run's pinned identity and context capacity.
 Missing legacy metadata shows `—` for System prompt and Tool definitions, with
 only a visible-message estimate available. Unknown capacity is stated explicitly.
+When the last request failed before reporting provider usage, the same numbers are
+labelled as an estimate for the next request and the note says the last request
+failed; the popup never calls those tokens "used".
 Run/session ownership, sequence guards and compaction invalidate stale categories.
 Provider billing and cache counters remain independent of these display estimates.
 The meter button's accessible help includes the total and all three values, so

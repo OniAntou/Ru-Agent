@@ -413,6 +413,33 @@ public sealed partial class AgentRunIdempotencyTests
         Assert.Equal(1, json.GetProperty("policy_snapshot_version").GetInt64());
     }
 
+    [Fact]
+    public async Task Create_without_a_workspace_allocates_a_marked_scratch_workspace()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+
+        using var created = await client.PostAsJsonAsync("/agent/v1/runs", new
+        {
+            session_id = sessionId,
+            workspace_path = "",
+            prompt = "scratch chat",
+            preset = "standard",
+            idempotency_key = "scratch-" + Guid.NewGuid().ToString("N"),
+        });
+
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var json = await created.Content.ReadFromJsonAsync<JsonElement>();
+        var path = json.GetProperty("workspace_path").GetString();
+        Assert.Equal("scratch", json.GetProperty("workspace_kind").GetString());
+        Assert.NotNull(path);
+        var expected = Path.Combine(tmp.DataPaths.BusinessDataRoot, "workspaces", sessionId);
+        Assert.Equal(Path.GetFullPath(expected), Path.GetFullPath(path!), ignoreCase: true);
+        Assert.True(File.Exists(Path.Combine(path!, RuBackend.Harness.Workspace.ScratchWorkspaceStore.MarkerFileName)));
+    }
+
     private static async Task<string> CreateSessionAsync(HttpClient client)
     {
         using var resp = await client.PostAsync("/sessions/new", null);

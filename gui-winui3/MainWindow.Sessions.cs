@@ -74,6 +74,67 @@ namespace RuApp
             }
         }
 
+        /// <summary>
+        /// Deletes every session in one workspace after one explicit confirmation. The workspace
+        /// folder on disk is untouched: only Ru's chat records and its own scratch folders go.
+        /// </summary>
+        private async void OnWorkspaceDeleteClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is not FrameworkElement { Tag: string key }
+                    || ShellRoot.XamlRoot is null)
+                {
+                    return;
+                }
+
+                var plan = Sidebar.PlanWorkspaceDeletion(key);
+                if (plan is null)
+                {
+                    SetSessionActionError("This workspace has no chats to delete");
+                    return;
+                }
+
+                bool deletedActiveSession = Sidebar.ActiveSessionId is { } active
+                    && plan.SessionIds.Contains(active, StringComparer.OrdinalIgnoreCase);
+                var dialog = new ContentDialog
+                {
+                    Title = plan.SessionIds.Count == 1
+                        ? "Delete this chat?"
+                        : $"Delete {plan.SessionIds.Count} chats?",
+                    Content = $"Every chat in {plan.Label} is removed, along with Ru's own scratch "
+                        + "folders for those chats. The workspace folder on disk is not deleted. "
+                        + "This cannot be undone.",
+                    PrimaryButtonText = "Delete",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = ShellRoot.XamlRoot,
+                };
+                if (await ContentDialogGate.ShowAsync(dialog) != ContentDialogResult.Primary)
+                {
+                    return;
+                }
+
+                var result = await Sidebar.DeleteWorkspaceSessionsAsync(plan);
+                if (deletedActiveSession && Sidebar.ActiveSessionId is null)
+                {
+                    // The open chat is gone; land on a fresh draft instead of a dead view.
+                    OnNewChatClick(NavNewChat, new RoutedEventArgs());
+                }
+
+                SetSessionActionError(result.Failed == 0
+                    ? result.Partial == 0
+                        ? $"Deleted {result.Deleted} chat(s)"
+                        : $"Deleted {result.Deleted} chat(s); {result.Partial} still cleaning up"
+                    : $"Deleted {result.Deleted} of {result.Total} chat(s); {result.Failed} failed");
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Workspace delete failed: {ex.Message}");
+                SetSessionActionError("Could not delete this workspace's chats");
+            }
+        }
+
         private async void OnWorkspaceGroupAddClick(object sender, RoutedEventArgs e)
         {
             try

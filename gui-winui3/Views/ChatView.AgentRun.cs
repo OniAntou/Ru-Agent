@@ -718,9 +718,9 @@ namespace RuApp.Views
             }
 
             await EnsureAgentSessionAsync(cancellationToken);
-            string workspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
-                ?? _defaultAgentWorkspace
-                ?? throw new InvalidOperationException("App root workspace is not configured.");
+            // Empty means "no project chosen": the Host allocates a Ru-owned scratch workspace
+            // and returns its canonical path with the created run.
+            string workspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace) ?? string.Empty;
 
             _agentWorkspace = workspace;
             UpdateChatHeaderWorkspace();
@@ -784,6 +784,16 @@ namespace RuApp.Views
                 }
 
                 _activeWorkspaceId = _agentController.CurrentRun?.WorkspaceId;
+
+                // Adopt the Host's canonical workspace: for a scratch run this is the path the
+                // Host allocated, so later turns, the header and the trust prompt all name it.
+                var createdWorkspace = _agentController.CurrentRun?.WorkspacePath;
+                if (!string.IsNullOrWhiteSpace(createdWorkspace))
+                {
+                    _agentWorkspace = createdWorkspace;
+                    _requestedWorkspaceBySession[submittedSessionId!] = createdWorkspace;
+                    UpdateChatHeaderWorkspace();
+                }
             }
             catch (AgentApiException error)
             {

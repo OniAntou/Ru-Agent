@@ -216,6 +216,7 @@ public static partial class BusinessEndpoints
         HarnessSqliteOptions sqliteOptions,
         SqliteWorkspaceStore workspaceStore,
         WorkspaceTrustService trustService,
+        RuBackend.Harness.Workspace.ScratchWorkspaceStore scratchWorkspaces,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
@@ -227,7 +228,7 @@ public static partial class BusinessEndpoints
                 .ToArray();
             var isTruncated = listing.IsTruncated || listing.Sessions.Count > values.Length;
             var rows = await ProjectSessionSummariesAsync(values, sqliteOptions, workspaceStore,
-                trustService, cancellationToken).ConfigureAwait(false);
+                trustService, scratchWorkspaces, cancellationToken).ConfigureAwait(false);
             return Results.Ok(new { status = "ok", sessions_truncated = isTruncated, sessions = rows });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

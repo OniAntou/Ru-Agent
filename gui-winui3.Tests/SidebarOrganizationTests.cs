@@ -29,6 +29,35 @@ public sealed class SidebarOrganizationTests : IDisposable
     }
 
     [Fact]
+    public void Scratch_sessions_share_one_group_regardless_of_their_session_folder()
+    {
+        var preferences = new SidebarOrganizationPreferences();
+        var first = new SessionInfo
+        {
+            Id = "a",
+            WorkspacePath = @"C:\Users\USER\AppData\Local\Ru\workspaces\aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            WorkspaceKind = "scratch",
+        };
+        var second = new SessionInfo
+        {
+            Id = "b",
+            WorkspacePath = @"C:\Users\USER\AppData\Local\Ru\workspaces\bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            WorkspaceKind = "scratch",
+        };
+
+        var group = SidebarSessionOrganization.GroupFor(first, appRoot: null, preferences);
+        Assert.Equal(SidebarSessionOrganization.ScratchKey, group.Key);
+        Assert.Equal("Scratch", group.Label);
+        Assert.Equal(group.Key, SidebarSessionOrganization.GroupFor(second, appRoot: null, preferences).Key);
+
+        var projection = WorkspaceSessionProjection.Project(
+            [first, second],
+            row => SidebarSessionOrganization.GroupFor(row, appRoot: null, preferences));
+        var only = Assert.Single(projection.Groups);
+        Assert.Equal(2, only.Sessions.Count);
+    }
+
+    [Fact]
     public void Source_change_invalidates_sidebar_poll_fingerprint()
     {
         var session = new SessionInfo { Id = "s", MessageCount = 2 };

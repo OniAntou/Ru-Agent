@@ -2,12 +2,15 @@ namespace RuApp.Services;
 
 internal static class AgentWorkspaceSelection
 {
-    // Backend discovery needs the application root; new user work does not.
-    // Explicit workspaces and restored session paths never pass through this rule.
-    public static string DefaultForApplication(string applicationRoot, bool isHarness = false)
+    /// <summary>
+    /// The GUI has no project of its own: a chat that never chose a folder must not inherit the
+    /// application directory or its parent drive. The Host allocates a Ru-owned scratch workspace
+    /// for that session, and only the harness keeps its explicit fixture root.
+    /// </summary>
+    public static string? DefaultForApplication(string applicationRoot, bool isHarness = false)
     {
         string root = Path.GetFullPath(applicationRoot);
-        return isHarness ? root : Directory.GetParent(Path.TrimEndingDirectorySeparator(root))?.FullName ?? root;
+        return isHarness ? root : null;
     }
 
     public static string? Resolve(string? requestedWorkspace, string? defaultWorkspace)

@@ -41,6 +41,19 @@ internal sealed record SessionListPageBatch(
     string? NextCursor,
     int PageCount);
 
+/// <summary>One workspace group's planned bulk delete: the exact sessions and its label.</summary>
+internal sealed record WorkspaceDeletionPlan(
+    string Key,
+    string Label,
+    IReadOnlyList<string> SessionIds);
+
+/// <summary>Bulk delete counts. <paramref name="Partial"/> chats are gone with cleanup pending.</summary>
+internal sealed record WorkspaceDeletionResult(
+    int Total,
+    int Deleted,
+    int Partial,
+    int Failed);
+
 /// <summary>The confirmations and notices a delete may need; the view owns the dialogs.</summary>
 internal interface ISessionDeletionPrompts
 {
@@ -651,6 +664,57 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         if (row is null) return;
         Sessions.Remove(row);
         Render();
+    }
+
+    /// <summary>The sessions one workspace group would delete, resolved before confirmation.</summary>
+    internal WorkspaceDeletionPlan? PlanWorkspaceDeletion(string key)
+    {
+        var group = _groups.FirstOrDefault(candidate => string.Equals(candidate.Key, key, StringComparison.Ordinal));
+        if (group is null || group.Sessions.Count == 0)
+        {
+            return null;
+        }
+
+        return new WorkspaceDeletionPlan(
+            group.Key,
+            group.Label,
+            group.Sessions.Select(session => session.Id).ToArray());
+    }
+
+    /// <summary>
+    /// Deletes every session of one workspace. Each delete still goes through the Host's
+    /// single-session path, so scratch folders, approvals and tombstones keep their own rules;
+    /// this method only batches work the user already confirmed and reports the counts. The
+    /// workspace folder on disk is never deleted.
+    /// </summary>
+    internal async Task<WorkspaceDeletionResult> DeleteWorkspaceSessionsAsync(
+        WorkspaceDeletionPlan plan,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        var deleted = 0;
+        var partial = 0;
+        var failed = 0;
+        foreach (var sessionId in plan.SessionIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var outcome = await _backend.DeleteSessionAsync(sessionId).ConfigureAwait(false);
+            if (outcome.Deleted || outcome.Partial)
+            {
+                deleted++;
+                if (outcome.Partial) partial++;
+                _drafts.Remove(sessionId);
+                _organization.Remove(sessionId);
+                RemoveRow(sessionId);
+            }
+            else
+            {
+                failed++;
+            }
+        }
+
+        await RefreshLatestAsync().ConfigureAwait(false);
+        return new WorkspaceDeletionResult(plan.SessionIds.Count, deleted, partial, failed);
     }
 
     /// <summary>

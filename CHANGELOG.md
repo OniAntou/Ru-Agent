@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui/host)**: **Chat không chọn folder dùng scratch workspace, và xoá chat/workspace xoá luôn
+  folder scratch.** GUI không còn lấy thư mục cha của app làm workspace mặc định (trước đây `D:\LLM`
+  thành `D:\`). Run tạo với `workspace_path` rỗng sẽ được Host cấp scratch workspace dưới data root
+  (`workspaces/<sessionId>`) kèm marker sở hữu; response trả `workspace_path`/`workspace_kind`, sidebar
+  gom mọi scratch session vào một nhóm **Scratch**, và trust request của scratch được duyệt im lặng.
+  Xoá session xoá folder scratch của nó; sweeper lúc Host khởi động dọn folder mồ côi. Folder không có
+  marker thì không bao giờ bị xoá. Thêm **Delete workspace…** trong menu workspace group của GUI: xoá
+  toàn bộ chat của nhóm qua đúng đường xoá từng session, không xoá folder project trên đĩa. CLI vẫn chỉ
+  xoá từng session như cũ, nhưng session delete giờ cũng dọn scratch folder qua Host.
+
 - **fix(agent)**: **`skill` query nhiều từ không còn trả rỗng, và `total`/`truncated` không còn gây
   hiểu nhầm.** Query giờ tách theo khoảng trắng và mọi token phải khớp id/tên/mô tả (AND), nên
   "debug worktrees" tìm được skill thay vì đòi đúng một chuỗi con. `total` đếm số entry khớp query

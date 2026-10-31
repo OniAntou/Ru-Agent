@@ -325,6 +325,12 @@
                     ToolTipService.ToolTip="{x:Bind Group.Path}">
                 <Button.ContextFlyout>
                     <MenuFlyout>
+                        <MenuFlyoutItem Text="Delete workspace…" Click="OnWorkspaceDeleteClick" Tag="{x:Bind Group.Key}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE74D;" Foreground="{StaticResource AppDangerBrush}"/>
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutSeparator/>
                         <MenuFlyoutItem Text="Remove workspace" Click="OnWorkspaceRemoveClick" Tag="{x:Bind Group.Key}">
                             <MenuFlyoutItem.Icon>
                                 <FontIcon Glyph="&#xE74D;" Foreground="{StaticResource AppDangerBrush}"/>

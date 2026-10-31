@@ -119,7 +119,7 @@ namespace RuApp.Views
         private AgentRunController? _agentController;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
         private bool _agentBusySeen;
-        private string _agentWorkspace = Environment.CurrentDirectory;
+        private string _agentWorkspace = string.Empty;
         private string? _defaultAgentWorkspace;
         private string? _requestedWorkspace;
         /// <summary>Last approved identity hash per workspace path; drives the re-trust copy only.</summary>
@@ -351,11 +351,13 @@ namespace RuApp.Views
             _harnessEvents = harnessEvents;
             _harnessScenario = harnessScenario;
             _agentController = agentController;
-            string defaultWorkspace = string.IsNullOrWhiteSpace(defaultAgentWorkspace)
-                ? Environment.CurrentDirectory
+            // A chat without a chosen folder has no workspace yet: the Host allocates a scratch
+            // workspace when the first run is created. Never fall back to the install directory.
+            string? defaultWorkspace = string.IsNullOrWhiteSpace(defaultAgentWorkspace)
+                ? null
                 : defaultAgentWorkspace.Trim();
             _defaultAgentWorkspace = defaultWorkspace;
-            _agentWorkspace = defaultWorkspace;
+            _agentWorkspace = defaultWorkspace ?? string.Empty;
             UpdateChatHeaderWorkspace();
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController == null;

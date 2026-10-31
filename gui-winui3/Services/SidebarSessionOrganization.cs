@@ -8,6 +8,7 @@ internal static class SidebarSessionOrganization
     internal const string RecentsKey = "recents";
     internal const string CliKey = "cli";
     internal const string WorkspacesKey = "workspaces";
+    internal const string ScratchKey = "scratch";
 
     internal static bool SamePath(string? first, string? second) =>
         !string.IsNullOrWhiteSpace(first) && !string.IsNullOrWhiteSpace(second)
@@ -19,6 +20,10 @@ internal static class SidebarSessionOrganization
     internal static WorkspaceGroupIdentity GroupFor(SessionInfo session, string? appRoot, SidebarOrganizationPreferences preferences)
     {
         if (session.ClientSource == "cli") return new(CliKey, "CLI Session", null);
+        // Every scratch session has its own folder, but they are one place in the sidebar:
+        // one group per session id would bury the real projects.
+        if (string.Equals(session.WorkspaceKind, "scratch", StringComparison.Ordinal))
+            return new(ScratchKey, "Scratch", null);
         var path = preferences.Groups.TryGetValue(session.Id, out var placement) ? placement : session.WorkspacePath;
         if (string.IsNullOrEmpty(path) || SamePath(path, appRoot)) return new(RecentsKey, "Recents", null);
         return new(PathKey(path), WorkspaceSessionProjection.LabelForPath(path), path);

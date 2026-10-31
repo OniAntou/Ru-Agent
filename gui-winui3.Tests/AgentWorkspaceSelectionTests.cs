@@ -6,13 +6,13 @@ namespace RuApp.Tests;
 public sealed class AgentWorkspaceSelectionTests
 {
     [Theory]
-    [InlineData(@"C:\User\Ru Agent", @"C:\User")]
-    [InlineData(@"C:\User\Ru Agent\", @"C:\User")]
-    [InlineData(@"D:\LLM", @"D:\")]
-    [InlineData(@"C:\", @"C:\")]
-    public void New_gui_work_uses_application_parent(string applicationRoot, string expected)
+    [InlineData(@"C:\User\Ru Agent")]
+    [InlineData(@"C:\User\Ru Agent\")]
+    [InlineData(@"D:\LLM")]
+    [InlineData(@"C:\")]
+    public void New_gui_work_has_no_implicit_project(string applicationRoot)
     {
-        Assert.Equal(expected, AgentWorkspaceSelection.DefaultForApplication(applicationRoot));
+        Assert.Null(AgentWorkspaceSelection.DefaultForApplication(applicationRoot));
     }
 
     [Fact]

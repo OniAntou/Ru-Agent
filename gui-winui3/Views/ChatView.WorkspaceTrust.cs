@@ -103,6 +103,26 @@ namespace RuApp.Views
             Exception? failure = null;
             try
             {
+                // A scratch workspace is a folder Ru created under its own data root for a chat
+                // with no chosen project. Asking the user to trust Ru's own scratch space adds
+                // noise, so approve it silently; the return still runs the finally that releases
+                // the prompt guard. A failure falls through to the normal dialog.
+                if (string.Equals(run.WorkspaceKind, "scratch", StringComparison.Ordinal))
+                {
+                    try
+                    {
+                        await controller.TrustAsync(approve: true);
+                        _workspaceTrustMemory.Remember(_agentWorkspace, run.DisplayIdentityHash);
+                        Composer.ForgetAcceptedSend(run.SessionId);
+                        return;
+                    }
+                    catch (Exception exception)
+                    {
+                        GuiDiagnosticWriter.AppendTraceLine(
+                            $"[ChatView] scratch trust approval failed: {exception.GetType().Name}");
+                    }
+                }
+
                 var prompt = WorkspaceTrustPromptPolicy.For(
                     _workspaceTrustMemory.IsReTrust(_agentWorkspace, run.DisplayIdentityHash),
                     ResolveRunWorkspacePath(run.SessionId));

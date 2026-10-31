@@ -7,6 +7,15 @@ reach the existing inline error and bounded exception-category/HRESULT trace.
 The selected path is pinned through the existing sidebar store; selecting a
 folder does not grant workspace trust or execution permission.
 
+A new chat has no implicit project. The app never falls back to its install
+directory or that directory's parent: the run request carries an empty
+`workspace_path`, the Host allocates a scratch workspace for the session, and
+the client adopts the returned canonical path. Scratch sessions share one
+**Scratch** sidebar group, and their trust request is approved silently because
+Ru created the folder; the explicit trust endpoint still records the decision.
+The workspace group's **Delete workspace…** action deletes the group's chats
+through the single-session endpoint and never deletes the folder on disk.
+
 Terminal failures keep their actionable inline status above the composer even
 when no assistant reply was rendered. The transcript does not add a terminal
 summary card; settled thinking rows alone must not hide a failed run.

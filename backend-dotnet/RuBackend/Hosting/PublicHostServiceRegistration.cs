@@ -93,6 +93,8 @@ internal static class PublicHostServiceRegistration
     {
         services.AddSingleton(services => new HarnessSqliteOptions(
             services.GetRequiredService<DataPaths>().AgentHarnessDatabase));
+        services.AddSingleton(services => new RuBackend.Harness.Workspace.ScratchWorkspaceStore(
+            services.GetRequiredService<DataPaths>()));
         services.AddSingleton<WindowsWorkspaceIdentityResolver>();
         services.AddSingleton<RuBackend.Harness.Prompting.RuInstructionLoader>();
         services.AddSingleton<SqliteWorkspaceStore>(services =>

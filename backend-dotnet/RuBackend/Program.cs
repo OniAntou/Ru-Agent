@@ -69,6 +69,13 @@ builder.Services
     .AddRuHarnessStores()
     .AddRuAgentRuntime(isManagedRuntime)
     .AddRuActivityAndDiagnostics();
+if (isManagedRuntime)
+{
+    // Scratch-folder reclamation is desktop/CLI maintenance, not part of the
+    // request path. Test factories and standalone development hosts keep their
+    // own data roots and do not run a sweeper.
+    builder.Services.AddHostedService<RuBackend.Harness.Workspace.ScratchWorkspaceSweeper>();
+}
 // The Public Contract is a loopback-only surface guarded by a bearer token that
 // desktop clients read from local files. A misconfigured or edited BindUrl must
 // not silently widen it to every interface on the machine. Standalone hosts keep

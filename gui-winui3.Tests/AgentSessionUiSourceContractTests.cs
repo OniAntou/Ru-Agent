@@ -414,7 +414,10 @@ public sealed class AgentSessionUiSourceContractTests
         var code = GuiSource.ViewText("ChatView");
         var body = GuiSource.MethodBody(code, "SendAgentTurnAsync");
         Assert.Contains("_requestedWorkspace", body, StringComparison.Ordinal);
-        Assert.Contains("App root workspace is not configured", body, StringComparison.Ordinal);
+        Assert.Contains("AgentWorkspaceSelection.Resolve", body, StringComparison.Ordinal);
+        // A chat without a chosen folder sends an empty workspace and the Host allocates a
+        // scratch one; the install directory (or its parent drive) is never a fallback.
+        Assert.DoesNotContain("App root workspace is not configured", body, StringComparison.Ordinal);
 
         // The send/stop glyph must stay legible on the solid accent fill in both
         // themes, so the face update paints OnAccent — never Ink or Danger.
@@ -511,16 +514,26 @@ public sealed class AgentSessionUiSourceContractTests
         var dialog = GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync");
         int show = RequiredSourceIndex(dialog, "await ContentDialogGate.ShowAsync(dialog)");
         var invocations = ReadTrustInvocations(dialog);
+        var decisions = invocations.Where(invocation => invocation.Index > show).ToArray();
 
-        Assert.Equal(2, invocations.Count);
-        Assert.Equal(1, invocations.Count(invocation => invocation.Decision == "true"));
-        Assert.Equal(1, invocations.Count(invocation => invocation.Decision == "false"));
-        Assert.All(invocations, invocation =>
+        Assert.Equal(2, decisions.Length);
+        Assert.Equal(1, decisions.Count(invocation => invocation.Decision == "true"));
+        Assert.Equal(1, decisions.Count(invocation => invocation.Decision == "false"));
+        Assert.All(decisions, invocation =>
         {
             Assert.True(invocation.IsAwaited, "Every TrustAsync invocation must be awaited.");
             Assert.False(invocation.IsAssigned, "An awaited TrustAsync invocation must not be assigned/discarded.");
-            Assert.True(invocation.Index > show, "Trust decisions must wait for the dialog result.");
         });
+
+        // Scratch workspaces are approved silently before the dialog: Ru created the folder, so
+        // asking the user to trust it is noise. The fast path is gated by the workspace kind and
+        // returns, leaving the dialog decisions as the only post-dialog invocations.
+        var silent = Assert.Single(invocations.Where(invocation => invocation.Index < show));
+        Assert.Equal("true", silent.Decision);
+        Assert.True(silent.IsAwaited);
+        Assert.False(silent.IsAssigned);
+        int scratchGate = RequiredSourceIndex(dialog, "run.WorkspaceKind");
+        Assert.True(scratchGate < silent.Index, "The silent approval must be gated by the scratch workspace kind.");
     }
 
     [Fact]

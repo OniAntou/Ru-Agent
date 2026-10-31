@@ -27,6 +27,9 @@ namespace RuBackend.Harness;
 
 public sealed class AgentRunCreationService
 {
+    public const string WorkspaceKindProject = "project";
+    public const string WorkspaceKindScratch = "scratch";
+
     private readonly IHarnessEventStore _store;
     private readonly ISessionStore _sessions;
     private readonly AgentSessionPermissionStore _permissionStore;
@@ -37,15 +40,18 @@ public sealed class AgentRunCreationService
     private readonly AgentV1SubagentGuard _subagentGuard;
     private readonly ILogger<AgentRunCreationService>? _logger;
     private readonly Hooks.RunLifecycleHooks? _lifecycleHooks;
+    private readonly Workspace.ScratchWorkspaceStore? _scratchWorkspaces;
 
     public AgentRunCreationService(IHarnessEventStore store, ISessionStore sessions,
         AgentSessionPermissionStore permissionStore, AgentRunWorkspaceAdmissionService workspaceAdmission,
         IAgentRuntimeRootRegistry runtimeRoots, IIdGenerator ids, ITimeProvider time,
         AgentV1SubagentGuard subagentGuard,
         ILogger<AgentRunCreationService>? logger = null,
-        Hooks.RunLifecycleHooks? lifecycleHooks = null)
+        Hooks.RunLifecycleHooks? lifecycleHooks = null,
+        Workspace.ScratchWorkspaceStore? scratchWorkspaces = null)
     {
         _lifecycleHooks = lifecycleHooks;
+        _scratchWorkspaces = scratchWorkspaces;
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _permissionStore = permissionStore ?? throw new ArgumentNullException(nameof(permissionStore));
@@ -166,10 +172,33 @@ public sealed class AgentRunCreationService
         }
 
         var workspacePath = request.WorkspacePath?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(workspacePath) || workspacePath.Length > 4096)
+        if (workspacePath.Length == 0)
+        {
+            // No chosen project: allocate a Ru-owned scratch workspace for this session. It is a
+            // normal workspace for policy, trust and tools; only its origin and lifecycle differ.
+            if (_scratchWorkspaces is null)
+            {
+                return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
+            }
+
+            try
+            {
+                workspacePath = _scratchWorkspaces.Ensure(sessionIdRaw);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                _logger?.LogWarning(error, "scratch workspace could not be created");
+                return BoundedError(503, "scratch_workspace_unavailable", "Scratch workspace could not be created.");
+            }
+        }
+        else if (workspacePath.Length > 4096)
         {
             return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
         }
+
+        var workspaceKind = _scratchWorkspaces?.IsScratchPath(workspacePath) == true
+            ? WorkspaceKindScratch
+            : WorkspaceKindProject;
 
         var prompt = request.Prompt ?? string.Empty;
         if (string.IsNullOrWhiteSpace(prompt))
@@ -417,8 +446,9 @@ public sealed class AgentRunCreationService
         {
             _runtimeRoots.Register(storeResult.Run.RunId, canonicalWorkspacePath, policySnapshot);
             var resp = isTrusted
-                ? MapCreateRun(storeResult.Run)
-                : MapCreateRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
+                ? MapCreateRun(storeResult.Run, canonicalWorkspacePath, workspaceKind)
+                : MapCreateRun(storeResult.Run, canonicalWorkspacePath, workspaceKind,
+                    pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
             return new AgentServiceResult(201, resp);
         }
 
@@ -430,8 +460,9 @@ public sealed class AgentRunCreationService
                 _runtimeRoots.Register(storeResult.Run.RunId, canonicalWorkspacePath, policySnapshot);
             }
             var resp = isTrusted
-                ? MapCreateRun(storeResult.Run)
-                : MapCreateRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
+                ? MapCreateRun(storeResult.Run, canonicalWorkspacePath, workspaceKind)
+                : MapCreateRun(storeResult.Run, canonicalWorkspacePath, workspaceKind,
+                    pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
             return new AgentServiceResult(200, resp);
         }
 
@@ -451,6 +482,8 @@ public sealed class AgentRunCreationService
 
     private static CreateAgentRunResponse MapCreateRun(
         AgentRun run,
+        string workspacePath,
+        string workspaceKind,
         string? trustRequestId = null,
         string? displayIdentityHash = null) => new(
         RunId: run.RunId.Value,
@@ -468,6 +501,8 @@ public sealed class AgentRunCreationService
         TerminalAt: run.TerminalAt?.ToUniversalTime().ToString("O"),
         TerminalErrorCode: run.TerminalErrorCode,
         TrustRequestId: trustRequestId,
-        DisplayIdentityHash: displayIdentityHash);
+        DisplayIdentityHash: displayIdentityHash,
+        WorkspacePath: workspacePath,
+        WorkspaceKind: workspaceKind);
 
 }

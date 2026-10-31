@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tools)**: **`git_status` cho model đọc trạng thái Git của workspace.** Tool chỉ đọc, không
+  nhận tham số, chạy một lệnh cố định `git status --porcelain=v2 --branch` trong run workspace qua
+  `IGitCli` và dùng lại `GitStatusParser`, trả `branch`/`detached`/`head_oid`/`upstream`
+  cùng `ahead`/`behind` và các danh sách `staged`, `unstaged`, `untracked`, `unmerged` (kèm status
+  code và `original_path` khi rename). Path luôn tương đối với workspace và bị giới hạn trong cây
+  workspace kể cả khi repo nằm ở thư mục cha; tối đa 2000 entry (`truncated`). Workspace ngoài Git
+  trả `is_repository: false` kèm notice thay vì fail, nên câu hỏi hợp lệ không tiêu vào ngân sách
+  recovery. Scope `workspace.read`, không cần approval, tự động trong `plan`/`standard`/`full_access`
+  và không advertise cho subagent. Golden lock, manifest/policy golden, inventory `coding_v2`
+  (27/26/29) và tài liệu công cụ cập nhật theo.
+
 - **refactor(git)**: **Một cách gọi git nhất quán cho worktree và dirty probe.** Host đọc trạng thái
   bằng `git status --porcelain=v2 --branch` qua `GitStatusParser` của Broker (bỏ parser đếm dòng
   riêng); cả Host và CLI đặt `GIT_TERMINAL_PROMPT=0`/`LC_ALL=C`, probe thêm `GIT_OPTIONAL_LOCKS=0`

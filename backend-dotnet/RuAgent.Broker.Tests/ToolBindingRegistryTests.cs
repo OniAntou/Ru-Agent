@@ -16,7 +16,7 @@ public sealed class ToolBindingRegistryTests
 
         // list, help, todo_write and skill are read-only, so the Chat profile advertises them too.
         Assert.Equal(
-            new HashSet<string> { "read", "read_file", "list", "help", "todo_write", "skill", "grep", "glob", "web_fetch", "web_search" },
+            new HashSet<string> { "read", "read_file", "list", "help", "todo_write", "skill", "grep", "glob", "git_status", "web_fetch", "web_search" },
             ids);
     }
 
@@ -138,7 +138,7 @@ public sealed class ToolBindingRegistryTests
             new[]
             {
                   "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "apply_patch",
-                "computer", "edit_file", "file_delete", "file_restore", "glob", "grep", "help", "list", "mcp",
+                "computer", "edit_file", "file_delete", "file_restore", "git_status", "glob", "grep", "help", "list", "mcp",
                 "powershell", "read", "read_file", "run_code", "run_process", "skill", "terminal_read", "terminal_stop", "todo_write", "web_fetch", "web_search", "write_file",
             },
             bound);
@@ -165,6 +165,7 @@ public sealed class ToolBindingRegistryTests
         ["todo_write"] = Succeeded,
         ["grep"] = Succeeded,
         ["glob"] = Succeeded,
+        ["git_status"] = Succeeded,
         ["web_search"] = Succeeded,
         ["web_fetch"] = Succeeded,
         ["skill"] = Succeeded,

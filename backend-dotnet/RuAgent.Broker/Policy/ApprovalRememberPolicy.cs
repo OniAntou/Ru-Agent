@@ -117,7 +117,7 @@ public static class ApprovalRememberPolicy
         "mcp" => ApprovalIdentityClass.McpCall,
         "computer" => ApprovalIdentityClass.ComputerGrant,
         "apply_patch" or "file_restore" or "run_code" or "terminal_read" or "terminal_stop"
-            or "help" or "todo_write" or "web_search" or "web_fetch" or "skill" or "ask_user"
+            or "help" or "todo_write" or "git_status" or "web_search" or "web_fetch" or "skill" or "ask_user"
             or "agent_spawn" or "agent_send" or "agent_wait" or "agent_cancel" or "agent_apply"
             => ApprovalIdentityClass.NotRememberable,
         _ => ApprovalIdentityClass.Unknown,

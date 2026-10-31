@@ -155,6 +155,9 @@ public static partial class AgentToolDefinitionCatalog
         ("path", StringSchema()), ("max_results", IntegerSchema(1, 128)),
     ];
     internal static JsonObject FileListSchema() => ObjectSchema(properties: [("path", StringSchema()), ("max_entries", IntegerSchema(1, 512))]);
+    // git_status reports the current workspace repository only; it takes no
+    // arguments, so no caller-selected path or revision can widen the read.
+    internal static JsonObject GitStatusSchema() => ObjectSchema();
     internal static JsonObject FileReadSchema() => ObjectSchema(["path"], [("path", StringSchema()), ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 4 * 1024 * 1024))]);
     internal static JsonObject HelpDocsSchema() => ObjectSchema(["query"], [("query", StringSchema(minLength: 1, maxLength: 256)), ("max_results", IntegerSchema(1, 5))]);
 

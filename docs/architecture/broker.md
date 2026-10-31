@@ -173,6 +173,12 @@ reconciliation surfaces from Phase 3:
   - recovery caps are configurable below a 4 MiB hard maximum.
   - `apply_patch` exposes a workspace-scoped unified diff through the existing patch adapter, with
     all-target policy checks, internal preimage hashes and preparation before mutation.
+  - `git_status` reads the run workspace's repository state through one fixed, bounded
+    `git status --porcelain=v2 --branch` invocation and the shared porcelain-v2 parser
+    (`GitStatusParser`). The pathspec is the workspace subtree, so a workspace that is a
+    subdirectory of a larger repository never reports paths outside it; there is no path or
+    revision argument, and it never diffs, stages, commits, fetches or runs repository hooks.
+    A workspace outside Git answers `is_repository: false` rather than failing the call.
   - See the pinned coding profiles below.
 - Model surface: the Protocol tool definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. The `mcp` tool connects to user-declared stdio or Streamable HTTP servers through the Broker under [ADR 0025](../adr/0025-mcp-servers-through-the-broker.md); workspace files cannot declare servers, and subagents cannot use it. The opt-in `computer` tool ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)) captures monitors and sends pointer and keyboard input through `ComputerUseService` behind the same execution authority; `plan` denies it, `standard` grants apps per session, protected apps and Ru's terminal hosts are never targets, and Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) cancels the controlling run. Mail/calendar/task connectors are not advertised Agent tools.
 - Terminal authority: [ADR 0017](../adr/0017-workspace-terminal-policy.md) replaces
@@ -415,7 +421,7 @@ The profile is pinned alongside the provider selection and removed from request
 options before provider transport. Missing pins fail as `tool_profile_required`;
 retired or unknown pins fail as `tool_profile_invalid`, without provider access
 or substitution. Run queries return null for unsupported historical labels.
-The catalog has 28 definitions and the Broker 27 bindings (`ask_user` is Host-only).
+The catalog has 29 definitions and the Broker 28 bindings (`ask_user` is Host-only).
 There are no public `write`, `edit` or `bash` bindings. Internal operation tags
 still let saved policy-family deny/ask rules constrain the corresponding modern
 tools; they cannot dispatch a retired tool. Shared file/terminal adapters remain
@@ -511,7 +517,7 @@ Hard-invalid requests remain denied; structured protected paths stay denied in
 default; `full_access` requires a GUI confirmation or CLI
 `--confirm-full-access`. The model-visible tool list remains the runtime projection of
 Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
-`list` (`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
+`list` (`max_entries`), `grep`, `glob`, `git_status`, `help` (five bundled offline documents),
 `todo_write`, `write_file`, `edit_file`, `file_delete`, `file_restore`,
 `powershell`, `run_process`, `terminal_read`, `terminal_stop`, `skill`,
 standalone `web_search`/`web_fetch`, and Host-intercepted `ask_user` (it parks
@@ -574,7 +580,7 @@ matchers it receives and derives none ([Host approval flow](host.md#approval-flo
   argv and canonical cwd. `mcp` `list_tools` and `call` bind the server (`mcp:<server>`) and its argv
   (`list_tools`, or `call` with the tool name). `computer` `request_access` and `focus` bind the exact
   app list or app. Every other id is not rememberable, including `apply_patch`, `file_restore`, `run_code`,
-  `terminal_read`, `terminal_stop`, the subagent tools, `web_search`, `web_fetch`, `skill`, `help`,
+  `terminal_read`, `terminal_stop`, `git_status`, the subagent tools, `web_search`, `web_fetch`, `skill`, `help`,
   `todo_write` and unknown ids.
 - A matcher that cannot bind its identity is not made. That covers an empty argv (an argument-less
   terminal launch), a missing identity field such as the workspace root, which has no relative path, a

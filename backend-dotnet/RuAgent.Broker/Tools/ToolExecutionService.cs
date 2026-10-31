@@ -198,6 +198,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
                     token).ConfigureAwait(false),
                 ToolVerificationStates.NotRequired,
                 "Workspace glob completed."),
+            ["git_status"] = ExecuteGitStatusAsync,
             ["apply_patch"] = ExecutePatchAsync,
             ["read_file"] = ExecuteLineReadAsync,
             ["write_file"] = (context, arguments, _) => Succeeded(ExecuteFileWrite(context, arguments), "Workspace file written."),

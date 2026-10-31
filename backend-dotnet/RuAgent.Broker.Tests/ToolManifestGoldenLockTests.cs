@@ -45,6 +45,7 @@ public sealed class ToolManifestGoldenLockTests
         new("edit_file", "1.0.0", "desktop", RiskClass.Reversible, "workspace.write", true, true, 4194304, 30000, "builtin", false),
         new("file_delete", "1.0.0", "desktop", RiskClass.Reversible, "workspace.write", true, true, 4194304, 30000, "builtin", false),
         new("file_restore", "1.0.0", "desktop", RiskClass.Reversible, "workspace.write", true, true, 4194304, 30000, "builtin", false),
+        new("git_status", "1.0.0", "builtin", RiskClass.Read, "workspace.read", false, false, 4194304, 30000, "builtin", false),
         new("glob", "1.0.0", "builtin", RiskClass.Read, "system.read, workspace.read", false, false, 4194304, 30000, "builtin", false),
         new("grep", "1.0.0", "builtin", RiskClass.Read, "system.read, workspace.read", false, false, 4194304, 30000, "builtin", false),
         new("help", "1.0.0", "builtin", RiskClass.Read, "system.read", false, false, 4194304, 30000, "builtin", false),
@@ -105,6 +106,7 @@ public sealed class ToolManifestGoldenLockTests
         new("run_process", "terminal.execute"),
         new("terminal_read", "terminal.execute"),
         new("terminal_stop", "terminal.execute"),
+        new("git_status", "workspace.read"),
         new("future_tool", ""),
     ];
 

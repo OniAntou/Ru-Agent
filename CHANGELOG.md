@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: **Agent activity mặc định Compact; turn Verbose tự gập sau khi xong.** Cài mới mặc
+  định thấy một dòng process mỗi turn (mở được); file preference cũ vẫn giữ lựa chọn trước đó. Chế độ
+  Verbose vẫn stream từng row khi đang chạy, rồi tự gập turn đã có câu trả lời và không còn row
+  running/waiting; turn lỗi không có answer vẫn mở để thấy lỗi ngay.
+
 - **chore(cli)**: **Bỏ `agent run --worktree`.** Đây là tiện ích dogfood/headless, không phải tính
   năng cho GUI; script nào cần isolation thì dùng `git worktree add` thủ công. Xoá switch, helper
   `GitWorktreeIsolation`, các mã lỗi `worktree_*`, test và đoạn README tương ứng. Worktree riêng của

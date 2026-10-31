@@ -16,15 +16,18 @@ public sealed class AgentActivityDisplayPreferenceStore
         try
         {
             var bytes = PreferenceFile.ReadOrNull(_filePath);
-            if (bytes is null) return false;
+            // A new install starts compact, matching the grouped process view; an
+            // existing file keeps whatever the user last chose.
+            if (bytes is null) return true;
             using var document = JsonDocument.Parse(bytes);
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("compact", out var compact)
-                && compact.ValueKind == JsonValueKind.True;
+            var root = document.RootElement;
+            return root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("compact", out var compact)
+                || compact.ValueKind != JsonValueKind.False;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
         {
-            return false;
+            return true;
         }
     }
 

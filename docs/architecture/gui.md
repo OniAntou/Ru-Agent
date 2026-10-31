@@ -101,9 +101,16 @@ slice 12px on the side where an activity row sits.
 
 Settings › Agent activity offers a two-part **Verbose / Compact** choice
 (`SettingsView.ActivityStyle.cs`) rather than an on/off switch, so neither style reads
-as "off". Verbose (every step) is still the default. The device-local `Ru/activity-display.json` preference applies
-to open transcripts and newly loaded messages; it does not enter backend settings,
-model context, durable activity records or execution policy.
+as "off". Compact (one grouped process line per turn) is the default for a new
+install; an existing preference file keeps the user's last choice. The device-local
+`Ru/activity-display.json` preference applies to open transcripts and newly loaded
+messages; it does not enter backend settings, model context, durable activity records
+or execution policy.
+
+Verbose still streams every row while a turn runs, then auto-collapses that turn once
+it has an answer and no row remains running or waiting. A failed turn without an
+answer stays expanded so the failure is visible without a click; expanding a collapsed
+turn is per-message and survives new activity.
 
 Each assistant message with activity gets one quiet disclosure line in compact mode,
 with no surface or border of its own. A finished turn reads as a sentence of its

@@ -11,7 +11,7 @@ namespace RuApp.Tests;
 public sealed class CompactAgentActivityTests
 {
     [Fact]
-    public void Detailed_is_the_default_and_compact_disclosure_preserves_the_original_timeline()
+    public void Compact_disclosure_preserves_the_original_timeline()
     {
         var before = new TextSegment("I will inspect the file.");
         var live = new TextSegment("Result") { IsLive = true, IsError = true };
@@ -63,6 +63,66 @@ public sealed class CompactAgentActivityTests
     }
 
     [Fact]
+    public void A_finished_verbose_turn_collapses_its_own_process_rows()
+    {
+        var activity = Activity("read", AgentActivityKind.Explore, AgentActivityState.Completed);
+        var segments = new ObservableCollection<AssistantSegment>
+        {
+            new TextSegment("I inspected the file."),
+            new ActivitySegment(activity.ActivityId, activity),
+        };
+        var message = new ChatMessageItem
+        {
+            Role = "assistant",
+            IsStreaming = true,
+            Segments = segments,
+            AgentActivities = new() { activity },
+        };
+
+        message.Content = "The answer is 42.";
+        Assert.False(message.ShowActivitySummary);
+        Assert.False(message.ActivityDetailsCollapsed);
+
+        message.IsStreaming = false;
+
+        Assert.True(message.AutoCollapseCompleted);
+        Assert.True(message.ShowActivitySummary);
+        Assert.True(message.ActivityDetailsCollapsed);
+        Assert.DoesNotContain(message.DisplayedSegments!, segment => segment is ActivitySegment);
+
+        message.IsActivityDetailsExpanded = true;
+        Assert.False(message.ActivityDetailsCollapsed);
+        Assert.Contains(message.DisplayedSegments!, segment => segment is ActivitySegment);
+    }
+
+    [Fact]
+    public void A_turn_without_an_answer_or_with_a_running_row_stays_verbose()
+    {
+        var activity = Activity("read", AgentActivityKind.Explore, AgentActivityState.Started);
+        var message = new ChatMessageItem
+        {
+            Role = "assistant",
+            IsStreaming = true,
+            Content = "Still working.",
+            Segments = new() { new ActivitySegment(activity.ActivityId, activity) },
+            AgentActivities = new() { activity },
+        };
+
+        message.IsStreaming = false;
+        Assert.False(message.AutoCollapseCompleted);
+        Assert.False(message.ActivityDetailsCollapsed);
+
+        var noAnswer = new ChatMessageItem
+        {
+            Role = "assistant",
+            IsStreaming = false,
+            AgentActivities = new() { Activity("read", AgentActivityKind.Explore, AgentActivityState.Completed) },
+        };
+        Assert.False(noAnswer.AutoCollapseCompleted);
+        Assert.False(noAnswer.ActivityDetailsCollapsed);
+    }
+
+    [Fact]
     public void An_expanded_turn_stays_expanded_when_new_activity_arrives()
     {
         var message = new ChatMessageItem
@@ -77,7 +137,7 @@ public sealed class CompactAgentActivityTests
     }
 
     [Fact]
-    public void Legacy_replay_keeps_the_reply_and_reveals_the_same_feed_on_disclosure()
+    public void Legacy_replay_collapses_the_finished_turn_and_reveals_the_same_feed_on_disclosure()
     {
         var message = new ChatMessageItem
         {
@@ -86,13 +146,16 @@ public sealed class CompactAgentActivityTests
                 Activity("old", AgentActivityKind.Thinking, AgentActivityState.Completed)
             }
         };
-        Assert.True(message.ShowLegacyActivityFeed);
-        message.CompactAgentActivity = true;
+        Assert.True(message.ShowActivitySummary);
         Assert.False(message.ShowLegacyActivityFeed);
         Assert.True(message.ShowLegacyText);
         Assert.Equal("The answer", message.Content);
         message.IsActivityDetailsExpanded = true;
         Assert.True(message.ShowLegacyActivityFeed);
+
+        message.IsActivityDetailsExpanded = false;
+        message.CompactAgentActivity = true;
+        Assert.False(message.ShowLegacyActivityFeed);
     }
 
     [Fact]

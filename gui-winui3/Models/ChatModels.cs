@@ -48,6 +48,7 @@ namespace RuApp.Models
                     OnPropertyChanged(nameof(RoleLabel));
                     OnPropertyChanged(nameof(ShowTypingDots));
                     OnPropertyChanged(nameof(ShowContent));
+                    AutoCollapseCompletedTurn();
                 }
             }
         }
@@ -62,6 +63,7 @@ namespace RuApp.Models
                     OnPropertyChanged(nameof(ShowTypingDots));
                     OnPropertyChanged(nameof(ShowContent));
                     OnPropertyChanged(nameof(HasText));
+                    AutoCollapseCompletedTurn();
                 }
             }
         }
@@ -87,6 +89,10 @@ namespace RuApp.Models
                 {
                     OnPropertyChanged(nameof(ShowTypingDots));
                     OnPropertyChanged(nameof(ShowContent));
+                    if (!value)
+                    {
+                        AutoCollapseCompletedTurn();
+                    }
                 }
             }
         }
@@ -184,6 +190,7 @@ namespace RuApp.Models
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasAgentActivities));
                 OnPropertyChanged(nameof(ShowLegacyActivityFeed));
+                AutoCollapseCompletedTurn();
             }
         }
 
@@ -326,6 +333,7 @@ namespace RuApp.Models
         {
             OnPropertyChanged(nameof(HasAgentActivities));
             OnPropertyChanged(nameof(ShowLegacyActivityFeed));
+            AutoCollapseCompletedTurn();
         }
 
         protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

@@ -8,6 +8,7 @@ using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Subagents;
+using RuAgent.Protocol.Tools;
 
 namespace RuAgent.Broker.Policy;
 
@@ -391,9 +392,7 @@ public sealed partial class PolicyContextFactory
                     op = control;
                     break;
                 default:
-                    throw new PolicyContextException(
-                        "malformed_call",
-                        hint: "unknown tool id; select an advertised tool and follow its schema.");
+                    throw UnconfiguredTool(advertisedToolId);
             }
 
             if (IsTargetFreeOp(toolId, op!))
@@ -573,6 +572,22 @@ public sealed partial class PolicyContextFactory
         names.Sort(StringComparer.Ordinal);
         return names.ToArray();
     }
+
+    /// <summary>
+    /// The fallback when no switch arm claims a tool id. An advertised, Broker-bound
+    /// tool that reaches this point is a host registration defect — the model
+    /// followed a schema the host publishes — so it gets a code that names the
+    /// defect instead of the malformed-call code reserved for an id the model
+    /// invented. Both fail closed.
+    /// </summary>
+    internal static PolicyContextException UnconfiguredTool(string advertisedToolId) =>
+        AgentToolDescriptorTable.Find(advertisedToolId) is { IsBrokerBound: true }
+            ? new PolicyContextException(
+                "tool_policy_unconfigured",
+                hint: "the host advertises this tool but has no policy identity for it; report this product defect and stop this path instead of retrying or routing around it.")
+            : new PolicyContextException(
+                "malformed_call",
+                hint: "unknown tool id; select an advertised tool and follow its schema.");
 
     private static bool IsSpoolRead(JsonObject arguments) =>
         string.Equals(OptionalText(arguments, "mode"), "read_output", StringComparison.Ordinal);

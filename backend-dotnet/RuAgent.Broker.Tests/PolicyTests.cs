@@ -5,6 +5,7 @@ using RuAgent.Protocol.Harness;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Tools;
 using BrokerRunLease = RuAgent.Broker.Runtime.BrokerRunLease;
 using Xunit;
 
@@ -599,6 +600,53 @@ public sealed partial class PolicyEvaluationTests
             Now);
 
         Assert.Equal("allow", verdict.Decision);
+    }
+
+    [Fact]
+    public void Unknown_tool_id_stays_a_malformed_model_call()
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+
+        var error = Assert.Throws<PolicyContextException>(
+            () => factory.Create("not_a_ru_tool", "1.0.0", new JsonObject()));
+
+        Assert.Equal("malformed_call", error.Code);
+        Assert.Contains("unknown tool id", error.Hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_advertised_tool_without_a_policy_branch_is_a_named_host_defect()
+    {
+        // "read" is advertised and Broker-bound; this pins the classification a
+        // future missing switch arm receives without needing an unconfigured tool.
+        var error = PolicyContextFactory.UnconfiguredTool("read");
+
+        Assert.Equal("tool_policy_unconfigured", error.Code);
+        Assert.Contains("product defect", error.Hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Every_broker_evaluated_advertised_tool_has_a_policy_branch()
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+
+        // ask_user is Host-intercepted and agent_apply is evaluated by the Host's
+        // apply service before gateway dispatch; the Broker never builds a policy
+        // context for either, so they are outside this invariant.
+        foreach (var tool in AgentToolDescriptorTable.BrokerBound
+                     .Where(tool => tool.Id is not "agent_apply"))
+        {
+            try
+            {
+                factory.Create(tool.Id, "1.0.0", new JsonObject());
+            }
+            catch (PolicyContextException error)
+            {
+                Assert.True(
+                    error.Code != "tool_policy_unconfigured",
+                    $"{tool.Id} has no PolicyContextFactory branch.");
+            }
+        }
     }
 
     /// <remarks>

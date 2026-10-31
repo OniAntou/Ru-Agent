@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: **Thiếu policy identity không còn bị báo như lỗi model.** Một tool đã advertise và
+  Broker-bound nhưng `PolicyContextFactory` không có nhánh giờ trả `tool_policy_unconfigured` kèm hint
+  "product defect" thay vì `malformed_call` / "unknown tool id"; id không tồn tại vẫn là
+  `malformed_call`. Prompt phân biệt hai ca: gặp `tool_policy_unconfigured` thì báo lỗi sản phẩm và dừng
+  đường đó, không đi vòng bằng tool khác; GUI/CLI có copy "Tool registration incomplete". Thêm test parity
+  buộc mọi tool do Broker đánh giá phải có nhánh policy.
+
 - **fix(agent)**: **Tool `skill` không còn bị Broker policy từ chối.** `skill` được advertise trong mọi
   tool profile nhưng `PolicyContextFactory` không có nhánh cho id này, nên mọi call rơi vào
   `malformed_call` / "unknown tool id" trước khi chạm executor — đúng lúc model cần nó để liệt kê các

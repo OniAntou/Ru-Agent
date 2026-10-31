@@ -260,6 +260,16 @@ public sealed class CompletionChecklistTests
         Assert.Contains("Never create or switch a workspace on your own", contract, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Execution_contract_names_an_unconfigured_advertised_tool_as_a_host_defect()
+    {
+        var contract = RuAgentPromptBlocks.ExecutionContractBlock();
+
+        Assert.Contains("tool_policy_unconfigured", contract, StringComparison.Ordinal);
+        Assert.Contains("host defect in an advertised tool", contract, StringComparison.Ordinal);
+        Assert.Contains("never route around it with another tool", contract, StringComparison.Ordinal);
+    }
+
     private static ModelContextSnapshot Snapshot(IEnumerable<ModelContextEntry> entries) =>
         VerificationCompletionTests.Snapshot(entries);
 

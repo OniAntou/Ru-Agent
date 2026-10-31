@@ -10,6 +10,7 @@ public sealed class AgentFailureCopyTests
     // one of these must have cataloged copy, not fall through to a raw token.
     [Theory]
     [InlineData("policy_denied")]
+    [InlineData("tool_policy_unconfigured")]
     [InlineData("context_limit_reached")]
     [InlineData("model_step_budget_exhausted")]
     [InlineData("tool_call_budget_exhausted")]

@@ -314,6 +314,10 @@ public static class AgentFailureCopy
             "Blocked by policy",
             "the permission preset denied this tool call",
             "switch preset or rephrase the request, then retry");
+        Add(table, ["tool_policy_unconfigured"],
+            "Tool registration incomplete",
+            "Ru advertised this tool but the execution authority has no policy identity for it",
+            "report this product defect; retrying the same tool cannot succeed");
         Add(table, ["model_step_budget_exhausted"],
             "Model step budget used up",
             "the run reached its 128 model steps for this budget window",

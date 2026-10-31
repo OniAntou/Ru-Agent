@@ -1152,8 +1152,11 @@ trusted adapter, session scopes and access class derive from that row. To add a 
 3. Bind an executor in the Broker execution runtime. `ToolCatalog` rejects an executor without a row
    and a bound row without an executor.
 4. Teach `PolicyContextFactory` the tool's policy identity: its operation class, its `op` value and
-   whether it is target-free. Its switch throws `malformed_call` for an id it does not know, which
-   denies every call before execution.
+   whether it is target-free. Its fallback denies before execution and separates the two causes: an
+   unadvertised id fails as `malformed_call`, while an advertised Broker-bound id with no branch fails
+   as `tool_policy_unconfigured`, which names a host registration defect rather than a model error.
+   `Every_broker_evaluated_advertised_tool_has_a_policy_branch` pins the parity; `agent_apply` and
+   `ask_user` are Host-evaluated and outside it.
 5. For a new risk or adapter value, add an explicit arm in `ToolDescriptorMapping`. Unmapped values
    throw. The trusted adapter allowlist follows the `AgentToolAdapter` enum automatically.
 6. Add deliberate membership where the tool should be advertised: a coding profile in

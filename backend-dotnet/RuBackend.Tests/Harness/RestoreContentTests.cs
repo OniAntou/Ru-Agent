@@ -32,4 +32,35 @@ public sealed class RestoreContentTests
         Assert.True(AgentV1Shared.TryReadRestoreContent(Encoding.UTF8.GetBytes(payload), out var content));
         Assert.Equal("abc"u8.ToArray(), content);
     }
+
+    [Theory]
+    [InlineData("aa", "aa", true)]
+    [InlineData("aa", "ab", false)]
+    [InlineData("0000000000000000000000000000000000000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000000", true)]
+    [InlineData("aa", "0000000000000000000000000000000000000000000000000000000000000000", false)]
+    public void Restore_target_comparison_is_exact(string current, string expected, bool matches)
+    {
+        Assert.Equal(matches, AgentWorkspaceService.RestoreTargetMatches(current, expected));
+    }
+
+    [Fact]
+    public void Restore_rechecks_the_target_immediately_before_replacing_it()
+    {
+        // The first SHA check runs before journal decryption/encryption; the
+        // last-moment check is what stops a concurrent edit from being overwritten.
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "backend-dotnet", "RuBackend", "Harness", "AgentWorkspaceService.cs")))
+        {
+            dir = dir.Parent;
+        }
+        Assert.NotNull(dir);
+        var text = File.ReadAllText(Path.Combine(dir!.FullName, "backend-dotnet", "RuBackend", "Harness", "AgentWorkspaceService.cs"));
+
+        var recheck = text.IndexOf("var targetAtReplace", StringComparison.Ordinal);
+        var move = text.IndexOf("File.Move(temporary, target, overwrite: true)", StringComparison.Ordinal);
+
+        Assert.True(recheck >= 0, "the restore target must be re-read before the replace");
+        Assert.True(move > recheck, "the re-check must run before File.Move");
+    }
 }

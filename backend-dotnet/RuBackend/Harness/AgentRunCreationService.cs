@@ -183,7 +183,7 @@ public sealed class AgentRunCreationService
                 return BoundedError(400, "invalid_prompt", "prompt invalid.");
             }
         }
-        else if (prompt.Length > 16000)
+        else if (prompt.Length > AgentRunLimits.MaxPromptChars)
         {
             return BoundedError(400, "invalid_prompt", "prompt invalid.");
         }

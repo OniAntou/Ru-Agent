@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using RuAgent.Protocol.Harness;
 using RuApp.Models;
 using RuApp.Services;
 
@@ -259,6 +261,19 @@ public sealed partial class ChatComposerViewModel : ObservableObject
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// The error shown when the composed prompt would exceed the Host's bound. The
+    /// Host rejects the whole create call, so the GUI must refuse before sending
+    /// rather than let a 5 MiB text attachment turn into a failed turn.
+    /// </summary>
+    public static string? PromptLimitStatus(string effectivePrompt)
+    {
+        var length = effectivePrompt.Length;
+        return length <= AgentRunLimits.MaxPromptChars
+            ? null
+            : $"Prompt is {length.ToString("N0", CultureInfo.InvariantCulture)} / {AgentRunLimits.MaxPromptChars.ToString("N0", CultureInfo.InvariantCulture)} characters. Shorten the message or attach a smaller file.";
     }
 
     /// <summary>

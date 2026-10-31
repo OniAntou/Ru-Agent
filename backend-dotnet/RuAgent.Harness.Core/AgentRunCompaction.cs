@@ -300,10 +300,12 @@ internal sealed partial class AgentRunCompaction
             var callsLeft = 4;
             for (var inputAttempt = 0; ; inputAttempt++)
             {
-                var beforeCalls = run.ModelStepsInWindow;
                 var checkpoint = await BuildCheckpointAsync(run, plan, cancellationToken, Math.Min(2, callsLeft)).ConfigureAwait(false);
                 run = checkpoint.Run;
-                callsLeft -= run.ModelStepsInWindow - beforeCalls;
+                // Count admissions, not a counter delta: an automatic budget window
+                // resets ModelStepsInWindow, and subtracting that reset would hand
+                // the checkpoint more calls than the documented four.
+                callsLeft -= checkpoint.AdmittedCalls;
                 if (checkpoint.ErrorCode is null) { plan = checkpoint.Plan!; break; }
                 if (checkpoint.ErrorCode is "checkpoint_input_too_large" or "checkpoint_context_overflow"
                     && inputAttempt < 2 && callsLeft > 0)

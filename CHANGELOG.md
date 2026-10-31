@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: **Compaction không còn vượt 4 checkpoint call khi budget window tự mở.** Bộ đếm
+  `ModelStepsInWindow` reset khi auto window, nên `callsLeft -= run.ModelStepsInWindow - beforeCalls`
+  tăng allowance thay vì giảm (có thể tới 6 call). Giờ đếm số admission trả về từ
+  `BuildCheckpointAsync`, giữ đúng trần 4 call/compaction kể cả khi cửa sổ đổi giữa chừng.
+
+- **fix(gui/host)**: **Prompt limit và body cap khớp Host.** GUI inline file văn bản tới 5 MiB vào
+  prompt nhưng Host chỉ nhận 16.000 ký tự, nên turn chết ở create; GUI giờ kiểm tra prompt đã ghép
+  (text + mọi tài liệu) trước khi gửi và trước khi queue, giữ nguyên composer kèm thông báo. Cùng lúc,
+  `/agent/v1/runs/selected` không còn bị middleware cap 8 MiB trong khi `/runs` được bound lớn hơn —
+  hai route dùng chung một luồng ảnh và một endpoint reader.
+
+- **fix(host)**: **Restore không ghi đè chỉnh sửa đến sau SHA check.** Restore kiểm tra SHA trước khi
+  giải mã/mã hóa journal rồi mới ghi file; một editor hoặc run khác sửa trong khoảng đó bị mất. Giờ
+  Host đọc lại SHA ngay trước `File.Move` (sau decrypt/encrypt và temp write) và trả
+  `workspace_restore_stale` thay vì overwrite nội dung mới hơn.
+
 - **fix(gui/host)**: **Đổi preset rồi gửi không còn tạo run "mồ côi".** GUI cache version
   theo *lựa chọn đang xem* thay vì *giá trị đã lưu*: mở session (adopt `plan`), chọn `standard`,
   rồi gửi — nó tưởng đã lưu `standard` nên bỏ qua bước ghi, gửi `standard` + version cũ. Host

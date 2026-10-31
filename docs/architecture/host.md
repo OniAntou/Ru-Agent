@@ -29,8 +29,17 @@ Host measures it with the same serializer used for the response and returns
 413 `export_too_large` before sending an oversized success. CLI and GUI use
 `ResponseHeadersRead` and parse a bounded JSON stream, independently of the
 general API reader's 8 MiB cap. Declared and actual stream lengths are checked.
+Both run-create routes (`/agent/v1/runs` and `/agent/v1/runs/selected`) use the
+larger run body bound; only the selected route's path check used to fall back to
+the general 8 MiB cap.
 Format file contents and the parsed JSON still live in memory; this is bounded
 buffering, not a constant-memory export directly to disk.
+
+Workspace change restore re-reads the target hash after journal decryption and
+the temp write, immediately before the replace. A target that changed since the
+client's expected hash returns `workspace_restore_stale` instead of overwriting
+the newer editor or run content; the first hash check still fails early when the
+file was already stale before the expensive work.
 
 The coding core is the product: Public Host, Broker execution authority, the
 in-process Agent v2 model runner, the durable Agent SSE stream, and the

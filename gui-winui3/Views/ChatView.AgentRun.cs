@@ -549,6 +549,16 @@ namespace RuApp.Views
 
                 if (snapshot.IsEmpty) return;
 
+                // The Host rejects a prompt over its bound after the run request is
+                // already in flight, so check the composed text (typed text plus every
+                // inlined document) before the composer enters its sending face.
+                string effectivePrompt = ChatComposerViewModel.BuildEffectivePrompt(text, attachments);
+                if (ChatComposerViewModel.PromptLimitStatus(effectivePrompt) is { } promptLimit)
+                {
+                    ShowAgentInlineStatus(promptLimit);
+                    return;
+                }
+
                 if (attachments.Count == 0 && text.Trim().Equals("/skills", StringComparison.OrdinalIgnoreCase))
                 {
                     Composer.ClearText();
@@ -584,7 +594,7 @@ namespace RuApp.Views
                     () => _activeSessionId);
                 bool accepted = await ChatSubmissionPresenter.SubmitAsync(
                     onAccepted => SendAgentTurnAsync(
-                        ChatComposerViewModel.BuildEffectivePrompt(text, attachments),
+                        effectivePrompt,
                         CancellationToken.None,
                         attachments: attachments,
                         displayUserText: text,
@@ -620,8 +630,18 @@ namespace RuApp.Views
         /// Takes what the composer holds and puts it behind the run in hand. False
         /// means the text stayed where it was: nothing to queue, or the queue is full.
         /// </summary>
-        private bool QueueCurrentComposerTurn() =>
-            Composer.QueueCurrent(_activeSessionId, ChatInputTextBox?.Text ?? string.Empty);
+        private bool QueueCurrentComposerTurn()
+        {
+            var snapshot = Composer.TakeSnapshot(ChatInputTextBox?.Text ?? string.Empty);
+            string effectivePrompt = ChatComposerViewModel.BuildEffectivePrompt(snapshot.Text, snapshot.Attachments);
+            if (ChatComposerViewModel.PromptLimitStatus(effectivePrompt) is { } promptLimit)
+            {
+                ShowAgentInlineStatus(promptLimit);
+                return false;
+            }
+
+            return Composer.QueueCurrent(_activeSessionId, snapshot.Text);
+        }
 
         /// <summary>
         /// Shows a row's fold chevron while the pointer is on it, or while it holds focus.

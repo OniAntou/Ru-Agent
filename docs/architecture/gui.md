@@ -263,7 +263,11 @@ source of the typed text, because WinUI raises `TextChanged` after an edit: meth
 that compare or save text take the box's current value, so text typed while a send
 awaits the Host is never cleared by that send. The view model writes text back only
 through `TextReplaced` (restore and clear), never through a two-way binding.
-Picker, drop and clipboard images share the same bounded preparation path.
+The composed prompt (typed text plus every inlined document) is checked against
+`AgentRunLimits.MaxPromptChars` before the send and before a turn is queued; an
+oversized prompt stays in the composer with a named status instead of failing the
+Host's create call. Picker, drop and clipboard images share the same bounded
+preparation path.
 Signature detection reads the supplied stream directly and leaves it open for
 the decoder; adapters over managed byte streams do not support cloned substreams.
 Intake failures appear above the composer only while the originating session and

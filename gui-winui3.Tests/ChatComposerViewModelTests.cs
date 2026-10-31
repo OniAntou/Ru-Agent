@@ -260,6 +260,24 @@ public sealed class ChatComposerViewModelTests
     }
 
     [Fact]
+    public void A_composed_prompt_over_the_host_bound_is_reported_before_sending()
+    {
+        var document = new ImageAttachmentItem
+        {
+            FileName = "big.txt",
+            IsImage = false,
+            TextContent = new string('x', RuAgent.Protocol.Harness.AgentRunLimits.MaxPromptChars),
+        };
+
+        var prompt = ChatComposerViewModel.BuildEffectivePrompt("go", [document]);
+        var status = ChatComposerViewModel.PromptLimitStatus(prompt);
+
+        Assert.NotNull(status);
+        Assert.Contains("16,000", status);
+        Assert.Null(ChatComposerViewModel.PromptLimitStatus("short"));
+    }
+
+    [Fact]
     public void The_effective_prompt_inlines_documents_above_the_text_and_leaves_images_out()
     {
         var document = new ImageAttachmentItem { FileName = "Notes.MD", IsImage = false, TextContent = "# plan", ByteSize = 6 };

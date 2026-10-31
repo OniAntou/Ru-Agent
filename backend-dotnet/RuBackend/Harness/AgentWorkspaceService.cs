@@ -357,8 +357,8 @@ public sealed class AgentWorkspaceService
             // client echoing that value must match a file that is still missing.
             var matchesMissingMarker = !targetExists
                 && string.Equals(request.ExpectedCurrentSha256, MissingFileSha256, StringComparison.Ordinal);
-            if (!matchesMissingMarker
-                && !string.Equals(currentSha, request.ExpectedCurrentSha256, StringComparison.Ordinal))
+            var expectedSha = matchesMissingMarker ? MissingFileSha256 : request.ExpectedCurrentSha256;
+            if (!RestoreTargetMatches(currentSha, expectedSha))
             {
                 return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_stale"));
             }
@@ -395,6 +395,18 @@ public sealed class AgentWorkspaceService
             try
             {
                 await File.WriteAllBytesAsync(temporary, restoredBytes, cancellationToken).ConfigureAwait(false);
+                // Journal decrypt/encrypt and the temp write can take long enough for an
+                // editor or another run to change the target after the first check. Check
+                // again at the last moment; a changed target is a stale restore, never a
+                // silent overwrite of the newer content.
+                var targetAtReplace = File.Exists(target)
+                    ? await ComputeFileSha256Async(target, cancellationToken).ConfigureAwait(false)
+                    : MissingFileSha256;
+                if (!RestoreTargetMatches(targetAtReplace, expectedSha))
+                {
+                    return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_stale"));
+                }
+
                 File.Move(temporary, target, overwrite: true);
             }
             finally
@@ -449,6 +461,15 @@ public sealed class AgentWorkspaceService
             return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_io_failed"));
         }
     }
+
+    /// <summary>
+    /// The restore target must still hold exactly the bytes the client saw. There is
+    /// no atomic compare-and-swap for a file, so both the first check and the
+    /// last-moment check use this exact comparison; the second one is what keeps a
+    /// concurrent editor or run from being overwritten.
+    /// </summary>
+    internal static bool RestoreTargetMatches(string currentSha, string expectedSha) =>
+        string.Equals(currentSha, expectedSha, StringComparison.Ordinal);
 
     private static async Task<string> ComputeFileSha256Async(
         string path,

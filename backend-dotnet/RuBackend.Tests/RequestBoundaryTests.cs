@@ -21,6 +21,24 @@ public sealed class RequestBoundaryTests
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("/agent/v1/runs")]
+    [InlineData("/agent/v1/runs/selected")]
+    public async Task Agent_run_routes_share_the_larger_body_bound(string path)
+    {
+        // Both create routes accept the optional image payloads and share one
+        // endpoint reader; the per-route middleware must not cap the selected route
+        // at the general 8 MiB bound.
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+        using var content = new ByteArrayContent(new byte[9 * 1024 * 1024]);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+        using var response = await client.PostAsync(path, content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [Fact]
     public async Task DeclaredOversizedBodyIsRejected()
     {

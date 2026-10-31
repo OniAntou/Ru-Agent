@@ -31,7 +31,9 @@ Empty, malformed, truncated, filtered or tool-producing responses return named
 one repair per source span using the original covered history and at most 4,000 characters of
 the rejected candidate as untrusted data. Input-window rejection can select a
 smaller complete source span: at most three
-spans and four admitted calls total per compaction, including format repairs.
+spans and four admitted calls total per compaction, including format repairs,
+counted by admission rather than by the window counter. An automatic budget
+window therefore does not extend the allowance.
 An unchanged or irreducible span is not retried. Other failures are not
 format-retried. Production does not
 substitute deterministic excerpts after a failed provider summary. Test/scripted

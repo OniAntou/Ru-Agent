@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: **Tool `skill` không còn bị Broker policy từ chối.** `skill` được advertise trong mọi
+  tool profile nhưng `PolicyContextFactory` không có nhánh cho id này, nên mọi call rơi vào
+  `malformed_call` / "unknown tool id" trước khi chạm executor — đúng lúc model cần nó để liệt kê các
+  skill bị omit khỏi prompt. Giờ `skill` là target-free read op như `help`/`todo_write`: metadata và body
+  vẫn chỉ đọc từ skill roots, `allowed-tools` vẫn không cấp quyền gì.
+
 - **fix(gui)**: **Context popup không còn gọi estimate là "used" sau khi provider từ chối.** Khi run
   failed trước khi có usage, popup ghi "estimated for next request", thêm `(estimated)` cạnh token và
   note "Last request failed · no provider usage reported" thay vì "1.5% of context used".

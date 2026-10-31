@@ -572,6 +572,35 @@ public sealed partial class PolicyEvaluationTests
         Assert.Equal("allow", verdict.Decision);
     }
 
+    [Fact]
+    public void Skill_tool_is_a_target_free_read_context()
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+
+        var context = factory.Create("skill", "1.0.0", new JsonObject { ["query"] = "pdf" });
+
+        Assert.Null(context.Target);
+        Assert.Null(context.RelativePathInsideWorkspace);
+        Assert.Equal(PolicyOperationClasses.Read, context.OperationClass);
+    }
+
+    [Theory]
+    [InlineData("plan")]
+    [InlineData("standard")]
+    [InlineData("full_access")]
+    public void Skill_tool_is_allowed_by_every_preset(string preset)
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
+
+        var verdict = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry()).Evaluate(
+            lease.Snapshot,
+            factory.Create("skill", "1.0.0", new JsonObject { ["name"] = "pdf.analyzer" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("allow", verdict.Decision);
+    }
+
     /// <remarks>
     /// Documents current behavior, deliberately unchanged here. The web manifests require approval and
     /// the v1 engine honours that flag, but the v2 snapshot evaluator allows both web tools under the

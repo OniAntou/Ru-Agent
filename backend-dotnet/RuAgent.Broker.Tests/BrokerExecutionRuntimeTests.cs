@@ -189,6 +189,40 @@ public sealed class BrokerExecutionRuntimeTests
     }
 
     [Fact]
+    public async Task Evaluate_then_execute_skill_loads_a_workspace_workflow()
+    {
+        using var fixture = new RuntimeFixture();
+        var skill = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills", "demo"));
+        File.WriteAllText(
+            Path.Combine(skill.FullName, "SKILL.md"),
+            "---\nname: Demo\ndescription: Demo workflow\n---\nDemo body.",
+            new System.Text.UTF8Encoding(false));
+        const string sessionId = "session-runtime-skill";
+        const string runId = "run_runtime_skill1111111111111";
+
+        var opened = await fixture.Runtime.OpenRunAsync(
+            RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()),
+            default);
+        Assert.Null(opened.Error);
+
+        var arguments = new JsonObject { ["name"] = "demo" };
+        var decision = await fixture.Runtime.EvaluateAsync(
+            Evaluate("evaluate-runtime-skill", sessionId, runId, "skill", arguments),
+            default);
+        Assert.Null(decision.Error);
+        Assert.NotNull(decision.Decision);
+        Assert.Equal("allow", decision.Decision!.Decision);
+        Assert.False(string.IsNullOrWhiteSpace(decision.Decision.AuthorizationToken));
+
+        var execution = await fixture.Runtime.ExecuteAuthorizedAsync(
+            Execute("execute-runtime-skill", sessionId, runId, "skill", decision.Decision.AuthorizationToken!, arguments),
+            default);
+        Assert.NotNull(execution.Receipt);
+        Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
+        Assert.Contains("Demo body", execution.Receipt.Output["body"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Ask_approval_once_authorizes_execute_and_replayed_token_is_stale()
     {
         using var fixture = new RuntimeFixture();

@@ -260,6 +260,13 @@ public sealed partial class PolicyContextFactory
                     // through, so its "op" is its own tool id and it is target-free.
                     op = "todo_write";
                     break;
+                case "skill":
+                    // Skill metadata and bodies come from the run lease's workspace
+                    // roots, keyed by name or query. The call names no user-provided
+                    // path, so it is target-free like the help surface; its identity
+                    // stays tool id + full argument hash.
+                    op = "skill";
+                    break;
                 case "write":
                     var writeOp = OptionalText(arguments, "op")
                         ?? throw new PolicyContextException(
@@ -515,6 +522,9 @@ public sealed partial class PolicyContextFactory
         "list" => PolicyOperationClasses.List,
         "help" or "run_code" => PolicyOperationClasses.Read,
         "todo_write" => PolicyOperationClasses.Read,
+        // Reading skill metadata and a SKILL.md body is a read of workspace/user
+        // skill roots; allowed-tools inside the body grants nothing.
+        "skill" => PolicyOperationClasses.Read,
         "grep" => PolicyOperationClasses.Search,
         "glob" => PolicyOperationClasses.Glob,
         "write" => WriteOpClass(OptionalText(arguments, "op")),
@@ -580,7 +590,7 @@ public sealed partial class PolicyContextFactory
 
     private static bool IsTargetFreeOp(string toolId, string op) =>
         toolId is "help" or "run_code"
-        || toolId is "todo_write"
+        || toolId is "todo_write" or "skill"
         || toolId is "web_search" or "web_fetch" or "mcp" or "computer"
         || SubagentContractValidator.IsControlTool(toolId)
         // A spool read names a session-scoped output id, not a path; a task

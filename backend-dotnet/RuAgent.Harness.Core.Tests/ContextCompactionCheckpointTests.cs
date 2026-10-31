@@ -48,13 +48,33 @@ public sealed partial class ContextCompactionCoordinatorTests
     }
 
     [Fact]
-    public async Task Format_repair_cannot_dispatch_after_first_call_spends_remaining_budget()
+    public async Task Format_repair_opens_an_automatic_window_when_the_first_call_spends_the_budget()
     {
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run(AgentBudgetPolicy.ModelStepLimit - 1));
         var model = new CheckpointModel(store) { MalformedFirst = true };
         var result = await CheckpointCoordinator(model, store).CompactAsync(
             RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
+
+        Assert.Equal(ContextCompactionOutcome.Committed, result.Outcome);
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(2, result.Run!.BudgetWindow);
+        Assert.Equal(1, result.Run.ModelStepsInWindow);
+        Assert.Equal(2, model.Calls);
+        Assert.Contains(store.Commits, commit => commit.ContextCompaction is not null);
+    }
+
+    [Fact]
+    public async Task Format_repair_cannot_dispatch_after_the_automatic_window_cap()
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(
+            AgentBudgetPolicy.ModelStepLimit - 1,
+            budgetWindow: AgentBudgetPolicy.AutomaticWindowLimit));
+        var model = new CheckpointModel(store) { MalformedFirst = true };
+        var result = await CheckpointCoordinator(model, store).CompactAsync(
+            RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
+
         Assert.Equal("model_step_budget_exhausted", result.ErrorCode);
         Assert.Equal(HarnessRunState.WaitingUser, result.Run!.State);
         Assert.Equal(AgentBudgetPolicy.ModelStepLimit, result.Run.ModelStepsInWindow);
@@ -81,10 +101,28 @@ public sealed partial class ContextCompactionCoordinatorTests
     }
 
     [Fact]
-    public async Task Checkpoint_never_dispatches_when_budget_is_spent()
+    public async Task Checkpoint_opens_an_automatic_window_at_the_step_limit()
     {
         var store = new InMemoryHarnessEventStore();
-        var run = Run(AgentBudgetPolicy.ModelStepLimit);
+        store.Seed(Run(AgentBudgetPolicy.ModelStepLimit));
+        var model = new CheckpointModel(store);
+        var result = await CheckpointCoordinator(model, store).CompactAsync(
+            RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
+
+        Assert.Equal(ContextCompactionOutcome.Committed, result.Outcome);
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(2, result.Run!.BudgetWindow);
+        Assert.Equal(1, result.Run.ModelStepsInWindow);
+        Assert.Equal(1, model.Calls);
+    }
+
+    [Fact]
+    public async Task Checkpoint_never_dispatches_when_the_automatic_window_cap_is_reached()
+    {
+        var store = new InMemoryHarnessEventStore();
+        var run = Run(
+            AgentBudgetPolicy.ModelStepLimit,
+            budgetWindow: AgentBudgetPolicy.AutomaticWindowLimit);
         store.Seed(run);
         var model = new CheckpointModel(store);
         var result = await CheckpointCoordinator(model, store).CompactAsync(RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
@@ -92,6 +130,42 @@ public sealed partial class ContextCompactionCoordinatorTests
         Assert.Equal(HarnessRunState.WaitingUser, result.Run!.State);
         Assert.Equal(0, model.Calls);
         Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events), evt => evt.SafeCode == "checkpoint_started");
+    }
+
+    [Fact]
+    public async Task Automatic_window_continues_the_step_without_asking_for_continue()
+    {
+        // The first window is spent, but a root run opens the next one itself: the
+        // step must run, not park, and no continue.requested event may be written.
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(AgentBudgetPolicy.ModelStepLimit));
+        var model = new FakeModelStepRunner();
+        model.Enqueue(new AssistantStep(
+            "done",
+            Array.Empty<ModelToolCall>(),
+            AssistantFinishReason.Stop,
+            estimatedInputTokens: 16));
+        var snapshot = Snapshot(ModelContextEntry.Text(
+            "current",
+            1,
+            ModelContextRole.User,
+            "current request"));
+        var coordinator = Coordinator(
+            model,
+            store,
+            new ReloadingSource(snapshot, snapshot),
+            limitTokens: 2_000);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), default);
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(2, result.Run!.BudgetWindow);
+        Assert.Equal(1, result.Run.ModelStepsInWindow);
+        Assert.Equal(HarnessRunState.WaitingHistory, result.Run.State);
+        Assert.Single(model.Requests);
+        Assert.DoesNotContain(
+            store.Commits.SelectMany(commit => commit.Events),
+            evt => evt.Kind == HarnessEventKind.ContinueRequested);
     }
 
     [Fact]
@@ -111,7 +185,9 @@ public sealed partial class ContextCompactionCoordinatorTests
     public async Task Automatic_budget_exhaustion_waits_for_continue_without_a_summary_call()
     {
         var store = new InMemoryHarnessEventStore();
-        store.Seed(Run(AgentBudgetPolicy.ModelStepLimit));
+        store.Seed(Run(
+            AgentBudgetPolicy.ModelStepLimit,
+            budgetWindow: AgentBudgetPolicy.AutomaticWindowLimit));
         var model = new CheckpointModel(store);
         var result = await CheckpointCoordinator(model, store).RunOneStepAsync(RunId(), default);
         Assert.Equal(HarnessRunState.WaitingUser, result.Run.State);

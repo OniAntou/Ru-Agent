@@ -211,7 +211,7 @@ public sealed partial class AgentRunCoordinator
         context = preflight.Context ?? context;
 
         var reservation = _internalRun ? Subagents.SubagentBudgetPolicy.ReserveModelStep(run, _time.UtcNow)
-            : AgentBudgetPolicy.ReserveModelStep(run, _time.UtcNow);
+            : AgentBudgetPolicy.ReserveModelStep(run, _time.UtcNow, allowAutomaticWindow: true);
         if (reservation.Granted && _familyBudget is not null
             && !await _familyBudget.ReserveModelAsync(run, modelStepId, cancellationToken).ConfigureAwait(false))
             reservation = Subagents.SubagentBudgetPolicy.Reject(run, _internalRun, "subagent_family_budget_exhausted", _time.UtcNow);

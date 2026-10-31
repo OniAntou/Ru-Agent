@@ -93,15 +93,21 @@ internal sealed partial class AgentRunCompaction
     private async Task<(AgentRun Run, string? ErrorCode)> AdmitCheckpointCallAsync(
         AgentRun run, ModelStepId stepId, CancellationToken ct)
     {
-        var limit = _internalRun ? RuAgent.Protocol.Subagents.SubagentLimits.MaxModelSteps : AgentBudgetPolicy.ModelStepLimit;
-        if (run.ModelStepsInWindow >= limit)
-            return (run, _internalRun ? "subagent_model_step_limit" : "model_step_budget_exhausted");
-        if (_familyBudget is not null && !await _familyBudget.ReserveCheckpointAsync(run, stepId, ct).ConfigureAwait(false))
+        // A checkpoint is a model call: it takes the same root window as any other
+        // step, and a root run may open the next window by itself. Internal
+        // children keep their own limit and never take the automatic path.
+        var admission = _internalRun
+            ? Subagents.SubagentBudgetPolicy.ReserveModelStep(run, _time.UtcNow)
+            : AgentBudgetPolicy.ReserveModelStep(run, _time.UtcNow, allowAutomaticWindow: true);
+        if (!admission.Granted)
+            return (run, admission.ErrorCode!);
+        if (_familyBudget is not null && !await _familyBudget.ReserveCheckpointAsync(admission.NextRun, stepId, ct).ConfigureAwait(false))
             return (run, "subagent_family_budget_exhausted");
 
-        // Reserve and persist before each provider dispatch, including a format repair.
-        var started = run.Advance(run.Status, run.BudgetWindow, run.ModelStepsInWindow + 1,
-            run.ToolCallsInWindow, 1, _time.UtcNow);
+        // The reservation supplied the (possibly new) window counters; this commit
+        // records the checkpoint admission beside them before provider dispatch.
+        var started = run.Advance(run.Status, admission.NextRun.BudgetWindow,
+            admission.NextRun.ModelStepsInWindow, admission.NextRun.ToolCallsInWindow, 1, _time.UtcNow);
         var admitted = await _store.CommitAsync(new HarnessCommit(run.RunId, run.Version, started,
             [new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunNoteAdded,
                 modelStepId: stepId, safeCode: "checkpoint_started")], [], []), ct).ConfigureAwait(false);

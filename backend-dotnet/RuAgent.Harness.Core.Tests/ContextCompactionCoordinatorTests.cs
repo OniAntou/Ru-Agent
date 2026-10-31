@@ -358,7 +358,7 @@ public sealed partial class ContextCompactionCoordinatorTests
     private static ModelContextSourceSnapshot Snapshot(params ModelContextEntry[] entries) =>
         new(Array.Empty<ModelContextEntry>(), entries);
 
-    private static AgentRun Run(int modelSteps = 0) =>
+    private static AgentRun Run(int modelSteps = 0, int budgetWindow = 1) =>
         new(
             RunId(),
             new SessionId("22222222222222222222222222222222"),
@@ -366,7 +366,7 @@ public sealed partial class ContextCompactionCoordinatorTests
             new HarnessRunStatus(HarnessRunState.Running),
             0,
             0,
-            1,
+            budgetWindow,
             modelSteps,
             0,
             AgentPermissionPreset.Standard,

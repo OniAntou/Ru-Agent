@@ -59,6 +59,71 @@ public sealed class AgentBudgetTests
         // many exploratory tool calls plus edit/verify cycles, not just a few steps.
         Assert.True(AgentBudgetPolicy.ModelStepLimit >= 128);
         Assert.True(AgentBudgetPolicy.ToolCallLimit >= 256);
+        Assert.True(AgentBudgetPolicy.AutomaticWindowLimit >= 8);
+    }
+
+    [Fact]
+    public void A_root_run_opens_an_automatic_window_instead_of_stopping()
+    {
+        var run = Run(modelSteps: AgentBudgetPolicy.ModelStepLimit, budgetWindow: 1);
+
+        var admitted = AgentBudgetPolicy.ReserveModelStep(run, Now.AddSeconds(1), allowAutomaticWindow: true);
+
+        Assert.True(admitted.Granted);
+        Assert.Null(admitted.ErrorCode);
+        Assert.Equal(2, admitted.NextRun.BudgetWindow);
+        Assert.Equal(1, admitted.NextRun.ModelStepsInWindow);
+        Assert.Equal(0, admitted.NextRun.ToolCallsInWindow);
+        Assert.Equal(HarnessRunState.Running, admitted.NextRun.State);
+    }
+
+    [Fact]
+    public void Automatic_windows_stop_at_the_limit_and_need_an_explicit_continue()
+    {
+        var run = Run(
+            modelSteps: AgentBudgetPolicy.ModelStepLimit,
+            budgetWindow: AgentBudgetPolicy.AutomaticWindowLimit);
+
+        var refused = AgentBudgetPolicy.ReserveModelStep(run, Now.AddSeconds(1), allowAutomaticWindow: true);
+
+        Assert.False(refused.Granted);
+        Assert.Equal("model_step_budget_exhausted", refused.ErrorCode);
+        Assert.Equal(HarnessRunState.WaitingUser, refused.NextRun.State);
+        Assert.Equal(AgentBudgetPolicy.AutomaticWindowLimit, refused.NextRun.BudgetWindow);
+        Assert.Equal(AgentBudgetPolicy.ModelStepLimit, refused.NextRun.ModelStepsInWindow);
+    }
+
+    [Fact]
+    public void An_internal_run_never_takes_an_automatic_window()
+    {
+        var run = Run(modelSteps: AgentBudgetPolicy.ModelStepLimit, budgetWindow: 1);
+
+        var refused = AgentBudgetPolicy.ReserveModelStep(run, Now.AddSeconds(1));
+
+        Assert.False(refused.Granted);
+        Assert.Equal("model_step_budget_exhausted", refused.ErrorCode);
+        Assert.Equal(HarnessRunState.WaitingUser, refused.NextRun.State);
+    }
+
+    [Fact]
+    public void A_tool_batch_opens_an_automatic_window_only_when_it_fits_one()
+    {
+        var run = Run(toolCalls: AgentBudgetPolicy.ToolCallLimit - 1, budgetWindow: 1);
+
+        var admitted = AgentBudgetPolicy.ReserveToolCalls(run, 2, Now.AddSeconds(1), allowAutomaticWindow: true);
+        var oversized = AgentBudgetPolicy.ReserveToolCalls(
+            Run(toolCalls: AgentBudgetPolicy.ToolCallLimit - 1),
+            AgentBudgetPolicy.ToolCallLimit + 1,
+            Now.AddSeconds(1),
+            allowAutomaticWindow: true);
+
+        Assert.True(admitted.Granted);
+        Assert.Equal(2, admitted.NextRun.BudgetWindow);
+        Assert.Equal(0, admitted.NextRun.ModelStepsInWindow);
+        Assert.Equal(2, admitted.NextRun.ToolCallsInWindow);
+        Assert.False(oversized.Granted);
+        Assert.Equal("tool_call_budget_exhausted", oversized.ErrorCode);
+        Assert.Equal(HarnessRunState.WaitingUser, oversized.NextRun.State);
     }
 
     [Fact]

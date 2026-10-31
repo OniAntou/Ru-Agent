@@ -483,14 +483,20 @@ barriers. Receipts retain model order. An observed unknown outcome stops new
 starts; every already-started read drains, including reads admitted before that
 outcome was known. Cancellation or failure also drains owned work before return.
 See [phase timing and Host benchmarks](agent-performance.md).
-Exhausting a window moves the run to `WaitingUser`; only an
-explicit Continue opens a fresh window, and the TUI offers the same path: the
-parked run shows a `▲ run paused` row plus `resume with Continue (or 'ru
-agent continue <run-id>')`. Typing `Continue` while a parked run is known
-POSTs the resume and follows that tracked run from its
-durable cursor. Native calls, text-selected JSON,
-arguments, and outputs never enter the visible transcript as execution markup,
-mood state, or public diagnostics.
+
+A root run does not stop at its first full window. It opens the next window
+automatically, up to **8 windows** (1,024 model steps / 2,048 tool calls) in one
+run, so a single long prompt does not pause for a click. Only after that
+automatic allowance does it move to `WaitingUser` with
+`model_step_budget_exhausted` / `tool_call_budget_exhausted`; an explicit
+Continue then opens one further window, and every later window is manual. The
+per-window counters, not a wall-clock timer, bound the loop. Internal subagent
+runs never take an automatic window: their own limits fail them. When a park
+happens, the TUI shows a `▲ run paused` row plus `resume with Continue (or 'ru
+agent continue <run-id>')`; typing `Continue` while a parked run is known POSTs
+the resume and follows that tracked run from its durable cursor. Native calls,
+text-selected JSON, arguments, and outputs never enter the visible transcript
+as execution markup, mood state, or public diagnostics.
 
 A dead-end model step does not end the run by default. Ordinary prose after a
 failed or unverified tool receipt is suppressed and answered with a durable

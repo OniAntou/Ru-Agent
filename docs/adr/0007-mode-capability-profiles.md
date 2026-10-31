@@ -57,6 +57,10 @@ retired in 2026-09-04; the current pending-approval model exposes
 
 > Amended: superseded in part by [ADR-0012](0012-in-process-model-runner.md)
 > (the worker process was merged into the host on 2026-09-30).
+>
+> Amended 2026-10-31: a root run now opens up to eight budget windows by itself
+> before it parks for an explicit Continue; internal child runs keep their bound.
+> See [runtime behavior](../operations/runtime-behavior.md).
 
 ## Superseded history
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)**: **Run dài tự mở cửa sổ budget, không dừng ở 128 bước đầu.** Một root run giờ tự mở
+  cửa sổ tiếp theo (128 model step / 256 tool call mỗi cửa sổ) tối đa 8 cửa sổ — 1.024 bước / 2.048
+  tool call — trước khi park `waiting_user` và cần Continue; mỗi cửa sổ sau đó là manual. Subagent
+  không auto, vẫn fail ở limit riêng. Checkpoint/compaction dùng cùng quy tắc này. Đây là điểm giống
+  cách OpenCode/Gemini/Cursor xử lý (không có trần per-turn hiển thị), nhưng Ru vẫn giữ một chốt chặn
+  runaway thay vì chạy vô hạn; bộ đếm cửa sổ vẫn là thứ chặn, không phải đồng hồ.
+
 - **fix(agent)**: **Đóng app giữa lúc model đang trả lời không còn để run treo `running`.** Khi host dừng
   trong lúc chờ provider, run giữ `model.step_started` mà không có completion; lần mở sau startup
   recovery thấy mọi tool đã có receipt nên coi run là "mid-flight", mở thêm một bước model nữa và giữ

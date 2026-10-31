@@ -5,8 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Reconciliation;
-using RuBackend.Harness.Git;
-using RuBackend.Harness.Reconciliation;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Harness.Core.Workspace;
@@ -98,6 +96,7 @@ public sealed class AgentReconcileEndpointTests
             Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
             var json = await response.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal("reconcile_stale", json.GetProperty("error_code").GetString());
+            Assert.Matches("^[0-9a-f]{64}$", json.GetProperty("snapshot_hash").GetString());
             var store = factory.Services.GetRequiredService<IHarnessEventStore>();
             var run = await store.GetRunAsync(new RunId(ReconciledRunId), CancellationToken.None);
             Assert.Equal(HarnessRunState.ReconciliationRequired, run!.State);
@@ -115,8 +114,7 @@ public sealed class AgentReconcileEndpointTests
         try
         {
             await SeedRunAsync(factory, HarnessRunState.ReconciliationRequired);
-            var service = factory.Services.GetRequiredService<WorkspaceStateSnapshotService>();
-            var hash = await service.ComputeFreshHashAsync(new RunId(ReconciledRunId), CancellationToken.None);
+            var hash = await ReadSnapshotHashAsync(factory);
             Assert.False(string.IsNullOrWhiteSpace(hash));
 
             using var client = factory.CreateAuthenticatedClient();
@@ -142,14 +140,60 @@ public sealed class AgentReconcileEndpointTests
     }
 
     [Fact]
+    public async Task Snapshot_hash_needs_no_live_workspace_and_changes_with_the_request()
+    {
+        var factory = await CreateHostAsync();
+        try
+        {
+            // No runtime root and no Git repository are registered for this seeded run,
+            // the same state a restarted host sees.
+            await SeedRunAsync(factory, HarnessRunState.ReconciliationRequired);
+            var first = await ReadSnapshotHashAsync(factory);
+            Assert.Equal(first, await ReadSnapshotHashAsync(factory));
+
+            var store = factory.Services.GetRequiredService<IHarnessEventStore>();
+            var run = await store.GetRunAsync(new RunId(ReconciledRunId), CancellationToken.None);
+            var newer = new HarnessEventIntent(
+                new EventId("evt_77777777777777777777777777777777"),
+                HarnessEventKind.ReconciliationRequired,
+                safeCode: "recovery_ambiguous");
+            var commit = await store.CommitAsync(
+                new HarnessCommit(
+                    run!.RunId,
+                    run.Version,
+                    RuBackend.Harness.AgentV1Shared.AdvanceRun(
+                        run, run.Status, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1,
+                        BackendHarnessTestFixture.Timestamp),
+                    new[] { newer },
+                    Array.Empty<HarnessPayloadIntent>(),
+                    Array.Empty<ConversationOutboxIntent>()),
+                CancellationToken.None);
+            Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
+
+            using var client = factory.CreateAuthenticatedClient();
+            using var response = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{ReconciledRunId}/reconcile",
+                new { outcome = "applied", snapshot_hash = first });
+
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("reconcile_stale", json.GetProperty("error_code").GetString());
+            Assert.NotEqual(first, json.GetProperty("snapshot_hash").GetString());
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task Applied_resolution_accepts_an_uppercase_snapshot_hash()
     {
         var factory = await CreateHostAsync();
         try
         {
             await SeedRunAsync(factory, HarnessRunState.ReconciliationRequired);
-            var service = factory.Services.GetRequiredService<WorkspaceStateSnapshotService>();
-            var hash = await service.ComputeFreshHashAsync(new RunId(ReconciledRunId), CancellationToken.None);
+            var hash = await ReadSnapshotHashAsync(factory);
             Assert.False(string.IsNullOrWhiteSpace(hash));
 
             using var client = factory.CreateAuthenticatedClient();
@@ -177,8 +221,7 @@ public sealed class AgentReconcileEndpointTests
                 factory,
                 HarnessRunState.ReconciliationRequired,
                 knownExecution: true);
-            var service = factory.Services.GetRequiredService<WorkspaceStateSnapshotService>();
-            var hash = await service.ComputeFreshHashAsync(new RunId(ReconciledRunId), CancellationToken.None);
+            var hash = await ReadSnapshotHashAsync(factory);
             using var client = factory.CreateAuthenticatedClient();
             using var response = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{ReconciledRunId}/reconcile",
@@ -213,8 +256,7 @@ public sealed class AgentReconcileEndpointTests
         try
         {
             await SeedRunAsync(factory, HarnessRunState.ReconciliationRequired);
-            var service = factory.Services.GetRequiredService<WorkspaceStateSnapshotService>();
-            var hash = await service.ComputeFreshHashAsync(new RunId(ReconciledRunId), CancellationToken.None);
+            var hash = await ReadSnapshotHashAsync(factory);
 
             using var client = factory.CreateAuthenticatedClient();
             using var response = await client.PostAsJsonAsync(
@@ -242,8 +284,7 @@ public sealed class AgentReconcileEndpointTests
         try
         {
             await SeedRunAsync(factory, HarnessRunState.ReconciliationRequired);
-            var service = factory.Services.GetRequiredService<WorkspaceStateSnapshotService>();
-            var hash = await service.ComputeFreshHashAsync(new RunId(ReconciledRunId), CancellationToken.None);
+            var hash = await ReadSnapshotHashAsync(factory);
 
             using var client = factory.CreateAuthenticatedClient();
             using var response = await client.PostAsJsonAsync(
@@ -269,7 +310,7 @@ public sealed class AgentReconcileEndpointTests
     public async Task Continue_on_a_parked_run_resolves_reconciliation_without_a_snapshot_hash()
     {
         // The desktop client exposes only Continue for a parked run (it has no
-        // reconcile call and cannot obtain the workspace hash), so Continue must
+        // reconcile call and cannot obtain the snapshot hash), so Continue must
         // be the decision instead of answering invalid_run_transition and
         // leaving the run stuck forever.
         var factory = await CreateHostAsync();
@@ -325,6 +366,18 @@ public sealed class AgentReconcileEndpointTests
         return new TestHost(factory, root, dataPaths.AgentHarnessDatabase);
     }
 
+    // The same info round-trip the CLI uses: a placeholder hash answers with the fresh one.
+    private static async Task<string> ReadSnapshotHashAsync(TestHost host)
+    {
+        using var client = host.CreateAuthenticatedClient();
+        using var response = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{ReconciledRunId}/reconcile",
+            new { outcome = "applied", snapshot_hash = new string('0', 64) });
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        return json.GetProperty("snapshot_hash").GetString()!;
+    }
+
     private static async Task SeedRunAsync(
         TestHost host,
         HarnessRunState state,
@@ -345,27 +398,6 @@ public sealed class AgentReconcileEndpointTests
                 workspace,
                 BackendHarnessTestFixture.Timestamp,
                 BackendHarnessTestFixture.Timestamp.AddMinutes(10)),
-            CancellationToken.None);
-
-        // The durable Git state gives the snapshot service something fresh to hash.
-        var options = host.Factory.Services.GetRequiredService<HarnessSqliteOptions>();
-        var gitStateDirectory = Path.GetDirectoryName(options.DatabasePath)!;
-        using var gitStore = new SqliteRunGitStateStore(Path.Combine(gitStateDirectory, "agent_git_state.db"));
-        await gitStore.SaveStartSnapshotAsync(
-            ReconciledRunId,
-            new RuAgent.Protocol.Harness.RunGitWorktreeSnapshot(
-                RepositoryRoot: wsPlaceholder,
-                HeadOid: new string('1', 40),
-                BranchName: "main",
-                IsDetached: false,
-                IndexHash: new string('2', 64),
-                HasStagedChanges: false,
-                ManagedCommitEligible: true,
-                Entries: Array.Empty<RuAgent.Protocol.Harness.RunGitStatusEntry>(),
-                ObservedFileHashes: new Dictionary<string, string>(),
-                StatusTruncated: false,
-                FileHashesTruncated: false,
-                CapturedAtUtc: BackendHarnessTestFixture.Timestamp),
             CancellationToken.None);
 
         var store = host.Factory.Services.GetRequiredService<IHarnessEventStore>();
@@ -406,8 +438,6 @@ public sealed class AgentReconcileEndpointTests
         var result = await store.TryCreateRunAsync(request, CancellationToken.None);
         Assert.Equal(CreateRunOutcome.Created, result.Outcome);
     }
-
-    private const string wsPlaceholder = @"C:\workspace\placeholder";
 
     private sealed record TestHost(
         BackendWebApplicationFactory Factory,

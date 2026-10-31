@@ -256,17 +256,6 @@ internal static class PublicHostServiceRegistration
                   ObserveToolResult = (lease, tool, output, ct) => services.GetRequiredService<AgentRuntimeLoopService>()
                       .ObserveFileToolResultAsync(lease.CanonicalRoot, tool, output, ct),
             });
-        services.AddSingleton(sp => new RuBackend.Harness.Git.SqliteRunGitStateStore(
-            Path.Combine(
-                Path.GetDirectoryName(sp.GetRequiredService<HarnessSqliteOptions>().DatabasePath)!,
-                "agent_git_state.db")));
-        services.AddSingleton(sp => new RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService(
-            sp.GetRequiredService<RuBackend.Harness.Git.SqliteRunGitStateStore>(),
-            runId => sp.GetRequiredService<IAgentRuntimeRootRegistry>()
-                .Snapshot()
-                .Where(pair => string.Equals(pair.RunId, runId.Value, StringComparison.Ordinal))
-                .Select(pair => pair.WorkspaceRoot)
-                .FirstOrDefault()));
         services.AddHostedService<RuBackend.Harness.Reconciliation.HarnessRecoveryStartupService>();
         return services;
     }

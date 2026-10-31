@@ -303,11 +303,6 @@ public sealed partial class PolicyContextFactory
                 case "glob":
                     op = "glob";
                     break;
-                case "git_status":
-                    // The report is bound to the run's canonical workspace, so it has no
-                    // path argument and no target: its identity is the tool id only.
-                    op = "git_status";
-                    break;
                 case "web_search":
                     op = "web_search";
                     break;
@@ -522,7 +517,6 @@ public sealed partial class PolicyContextFactory
         "todo_write" => PolicyOperationClasses.Read,
         "grep" => PolicyOperationClasses.Search,
         "glob" => PolicyOperationClasses.Glob,
-        "git_status" => PolicyOperationClasses.Read,
         "write" => WriteOpClass(OptionalText(arguments, "op")),
         "edit" => PolicyOperationClasses.Edit,
         // A spool read or a background-task kill executes nothing: the read
@@ -586,7 +580,7 @@ public sealed partial class PolicyContextFactory
 
     private static bool IsTargetFreeOp(string toolId, string op) =>
         toolId is "help" or "run_code"
-        || toolId is "todo_write" or "git_status"
+        || toolId is "todo_write"
         || toolId is "web_search" or "web_fetch" or "mcp" or "computer"
         || SubagentContractValidator.IsControlTool(toolId)
         // A spool read names a session-scoped output id, not a path; a task

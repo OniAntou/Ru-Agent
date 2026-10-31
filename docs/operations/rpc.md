@@ -133,7 +133,8 @@ Details that are easy to get wrong:
 - `run.approve` — `decision` is one of `allow_once`, `allow_session_directory`,
   `allow_always`, `deny`.
 - `run.command` — `command` text is bounded to 8192 characters.
-- `run.reconcile` — both `outcome` and `hash` are required; `hash` must be exactly 64
+- `run.reconcile` — `hash` proves the caller decided on the current durable
+  reconciliation request, not the state of the workspace files. Both `outcome` and `hash` are required; `hash` must be exactly 64
   characters. Accepted outcomes are `applied`, `not_applied` (or `not-applied`) and
   `unknown_continue` (or `unknown`).
 - `policy.import` and `policy.remove` require `confirm: true`; without it the call is

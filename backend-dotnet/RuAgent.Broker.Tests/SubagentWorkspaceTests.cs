@@ -10,6 +10,13 @@ using Xunit;
 
 namespace RuAgent.Broker.Tests;
 
+/// <summary>
+/// These tests spawn real git processes against temporary repositories; disabling
+/// parallelization keeps their timing isolated from the rest of the suite.
+/// </summary>
+[CollectionDefinition(nameof(GitProcessHeavyCollection), DisableParallelization = true)]
+public sealed class GitProcessHeavyCollection;
+
 [Collection(nameof(GitProcessHeavyCollection))]
 public sealed partial class SubagentWorkspaceTests : IAsyncLifetime
 {

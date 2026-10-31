@@ -571,9 +571,7 @@ never become instructions. `grep`
 searches the workspace, `web_search` searches the public web, and `help`
 searches only bundled Ru documentation. Unbound connectors and `app.open`
 remain outside the model-visible catalog.
-The managed Git commit workflow is shipped inside terminal execution, using a
-temporary index and refusing dirty user index state. Other Git commands remain
-ordinary terminal requests governed by Broker policy. The
+Git commands are ordinary terminal requests governed by Broker policy. The
 GUI renders the actual `agent.session` grant received from the Host. Managed
 startup enables the bounded WebOptions instance with Google HTML as its primary
 search engine, so standalone `web_search` and `web_fetch` are advertised as

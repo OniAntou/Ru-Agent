@@ -126,9 +126,8 @@ filesystem/network sandbox (ADR 0015); Standard authorizes the canonical
 launch directory (ADR 0017). Hard timeout, output cap,
 cancellation, redaction, and process-tree cleanup still apply. Web is automatic in all canonical
 profiles; `web_approval_required` remains available only to an explicit ask
-rule. `files.apply_patch` is not advertised or model-usable. The managed Git
-workflow retains temporary-index isolation, path rollback attribution, and
-refusal on dirty user index state.
+rule. `files.apply_patch` is not advertised or model-usable. Ru has no Git tool:
+Git commands are ordinary terminal requests governed by Broker policy.
 
 Background terminal tasks are session-scoped and Broker-owned: `background: true`
 returns immediately with an `execution_id` and `state=running`, a foreground

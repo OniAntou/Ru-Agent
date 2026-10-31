@@ -10,15 +10,15 @@ This page owns the operating permission matrix; the executable source is the
 Other guides link here instead of maintaining a separate preset matrix.
 
 This checkpoint includes declarative Skills, bounded headless terminal execution
-(`powershell` and `run_process`), session rewind, managed Git commit workflow,
-and dynamic model context compaction. MCP servers the user
+(`powershell` and `run_process`), session rewind and dynamic model context
+compaction. MCP servers the user
 declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 [MCP servers](#mcp-servers)); connector libraries are not advertised Agent tools.
 
 ## Coding profiles
 
-New runs default to `coding_v2` (27 definitions). `patch_v2` (26) and
-`coding_code_v1` (29) are also supported, and
+New runs default to `coding_v2` (26 definitions). `patch_v2` (25) and
+`coding_code_v1` (28) are also supported, and
 must be selected explicitly for a new run; changing the Host setting does not
 alter an existing run. Set
 `RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1` in a dedicated Host
@@ -117,14 +117,14 @@ current user's explicit instructions or the system execution contract.
 
 ## Current capability matrix
 
-Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`, `git_status`,
+Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`,
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `apply_patch`,
 `powershell`, `run_process`, `terminal_read`, `terminal_stop`,
 `web_search` and `web_fetch`. Profile and availability filters apply below.
 
-The Protocol catalog contains 29 definitions; the Broker has 28 executable
+The Protocol catalog contains 28 definitions; the Broker has 27 executable
 bindings because `ask_user` is intercepted by the Host. Run-pinned inventories
-contain 27 definitions in `coding_v2`, 26 in `patch_v2`, and 29 in `coding_code_v1`,
+contain 26 definitions in `coding_v2`, 25 in `patch_v2`, and 28 in `coding_code_v1`,
 before availability/role filtering. There is no selectable
 legacy profile. The model-facing file mutation and terminal tools are
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `powershell`,
@@ -159,19 +159,10 @@ directory; `powershell` takes a script. Both use the same Broker terminal
 policy and bounded process lifecycle. `terminal_read` pages retained output and
 `terminal_stop` stops a running task.
 
-`git_status` takes no arguments and reports the run workspace's Git state from one
-fixed read-only `git status --porcelain=v2 --branch` invocation: `branch` (null when
-detached), `detached`, `head_oid`, `upstream`, `ahead`/`behind` (null without an
-upstream), and `staged`, `unstaged`, `untracked` and `unmerged` lists. Staged and
-unstaged rows carry the porcelain code and a rename's `original_path`; conflicts
-stay in `unmerged` instead of appearing as ordinary staged work. Paths are
-workspace-relative: when the workspace is a subdirectory of a larger repository,
-only that subtree is reported and nothing outside it appears. The status entry cap
-is 2000 (`truncated: true` marks an incomplete list), `unparsed_lines` counts lines
-the shared parser could not interpret, and `clean: true` carries a `notice`. A
-workspace outside Git answers `is_repository: false` with a notice rather than
-failing the call. The tool never diffs, stages, commits, fetches or runs repository
-hooks; use `run_process` for those reads or a managed Git action.
+Ru has no Git tool. Run `git` through `run_process` or `powershell` like any other
+command; the terminal policy above decides whether it may run, and it does what Git
+does. `git commit` commits what is staged, including anything the user staged, and
+runs the repository's hooks.
 
 Every running terminal task reserves a per-session slot when launched, including
 foreground tasks that may later move to background. Promotion keeps that slot;
@@ -276,7 +267,6 @@ they do not make a retired public identity executable.
 | --- | --- | --- |
 | `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external ask; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, protected paths allowed |
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator. An image read also needs the run's pinned model to accept image input, otherwise `image_unsupported_by_model` |
-| `git_status` | always advertised (`workspace.read`) | one fixed read-only `git status --porcelain=v2 --branch` run in the run workspace, bounded by the shared 2000-entry status cap and a workspace-subtree pathspec; no path or revision argument. Automatic in `plan`, `standard` and `full_access`; a workspace outside Git answers `is_repository: false`. It never diffs, stages, commits or fetches |
 | `write_file`, `edit_file`, `file_delete`, `file_restore` | present in supported coding profiles | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, protected paths allowed; preimage mismatch returns `workspace_changed` |
 | `apply_patch` | `patch_v2`, `coding_code_v1` | workspace-scoped unified patches; all targets are checked under the same policy, approval is one-time, and patch rollback preserves intervening edits |
 | `powershell`, `run_process` | present in supported coding profiles | `plan`: deny; `standard`: workspace cwd executable/shell auto, external cwd asks; explicit ask/deny and long foreground rules apply; `full_access`: arbitrary current-Windows-user terminal auto. Children run as the current user without an OS filesystem/network sandbox. Obsolete sandbox arguments are rejected. Output, timeout, cancellation and process-tree bounds apply. |
@@ -645,9 +635,7 @@ while the model was working is noticed without polling; the GUI's compact
 right-hand card lists the same session tasks, and its details panel stops one
 through the `/tasks` command.
 
-The managed Git commit workflow retains temporary-index isolation, path rollback
-attribution, and refusal when the real index already contains staged user
-changes. A zero exit is `succeeded`; non-zero exit and start failure are
+A zero exit is `succeeded`; non-zero exit and start failure are
 `failed`; timeout is `timed_out`. Standard structured-file tools use the trusted
 root, a session-scoped canonical folder grant, or a remembered project folder
 pattern; Full Access uses an ephemeral

@@ -29,18 +29,6 @@ public sealed class SystemPromptComposerTests
     }
 
     [Fact]
-    public void Workspace_git_state_is_rendered_only_when_the_probe_reports_it()
-    {
-        var dirtyContext = PromptFixtures.ValidContext(workspaceGit: "dirty (2 changed, 1 untracked)");
-        var dirty = SystemPromptComposer.Compose(dirtyContext);
-        Assert.Contains("workspace_git: dirty (2 changed, 1 untracked)", dirty.Text, StringComparison.Ordinal);
-        dirty.Receipt.ValidateAgainst(dirtyContext, dirty.Text);
-
-        var clean = SystemPromptComposer.Compose(PromptFixtures.ValidContext());
-        Assert.DoesNotContain("workspace_git:", clean.Text, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void Native_history_deduplicates_tool_data_but_text_mode_retains_it_and_its_schema()
     {
         var capability = new PromptCapability("read", "1.0.0", "Read.", "workspace.read",
@@ -391,14 +379,12 @@ public sealed class SystemPromptComposerTests
             string displayName = "AGENTS.md",
             PromptInstructionOrigin origin = PromptInstructionOrigin.Workspace,
             string preset = "standard",
-            int schemaVersion = SystemPromptContext.PromptContextSchemaVersion,
-            string? workspaceGit = null) =>
+            int schemaVersion = SystemPromptContext.PromptContextSchemaVersion) =>
             new(
                 schemaVersion,
                 "ru-agent",
                 preset,
-                new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM",
-                    workspaceGit: workspaceGit),
+                new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
                 new[]
                 {
                     new PromptInstructionBlock(

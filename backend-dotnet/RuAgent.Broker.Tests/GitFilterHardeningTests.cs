@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json.Nodes;
 using RuAgent.Broker.Tools.Git;
 using Xunit;
 
@@ -7,15 +6,18 @@ namespace RuAgent.Broker.Tests;
 
 /// <summary>
 /// A repository can configure a clean filter that Git runs while it computes
-/// status. Read-only plan work must never execute that program, even when the
-/// adapter prefixes its argv with <c>-c</c>, and the child environment must not
+/// status. A read through the Broker channel must never execute that program, even
+/// when its argv starts with <c>-c</c>, and the child environment must not
 /// hand it Host secrets.
 /// </summary>
 [Collection(nameof(GitProcessHeavyCollection))]
 public sealed class GitFilterHardeningTests
 {
+    private static readonly string[] PrefixedStatus =
+        ["-c", "status.relativePaths=true", "status", "--porcelain=v2"];
+
     [Fact]
-    public async Task Git_status_adapter_does_not_run_a_repo_filter_or_expose_host_secrets()
+    public async Task Prefixed_status_read_does_not_run_a_repo_filter_or_expose_host_secrets()
     {
         const string secretName = "RU_DESKTOP_TOKEN";
         var previous = Environment.GetEnvironmentVariable(secretName);
@@ -38,7 +40,7 @@ public sealed class GitFilterHardeningTests
             File.Delete(marker);
 
             ModifySameSize(root, "a.txt", "abcf");
-            var report = await new GitStatusAdapter().ExecuteAsync(root, CancellationToken.None);
+            var report = await new StreamingGitCli().RunAsync(PrefixedStatus, root, CancellationToken.None);
 
             Assert.True(report.Succeeded);
             Assert.False(File.Exists(marker), "the Broker read must not execute a repository clean filter");
@@ -76,7 +78,7 @@ public sealed class GitFilterHardeningTests
             File.Delete(Path.Combine(root, "upper-marker.txt"));
             File.Delete(Path.Combine(root, "equals-marker.txt"));
 
-            var report = await new GitStatusAdapter().ExecuteAsync(root, CancellationToken.None);
+            var report = await new StreamingGitCli().RunAsync(PrefixedStatus, root, CancellationToken.None);
 
             Assert.True(report.Succeeded);
             Assert.False(File.Exists(Path.Combine(root, "upper-marker.txt")));
@@ -105,12 +107,10 @@ public sealed class GitFilterHardeningTests
                 File.WriteAllText(Path.Combine(root, $"f{index:D3}-{new string('x', 100)}.txt"), "b");
             }
 
-            var report = await new GitStatusAdapter().ExecuteAsync(root, CancellationToken.None);
+            var report = await new StreamingGitCli().RunAsync(PrefixedStatus, root, CancellationToken.None);
 
-            Assert.True(report.Succeeded, report.ErrorCode);
-            var output = Assert.IsType<JsonObject>(report.Output);
-            Assert.False(output["truncated"]!.GetValue<bool>());
-            Assert.Equal(300, output["unstaged"]!.AsArray().Count);
+            Assert.True(report.Succeeded, report.FailureReason);
+            Assert.Equal(300, report.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
         }
         finally
         {

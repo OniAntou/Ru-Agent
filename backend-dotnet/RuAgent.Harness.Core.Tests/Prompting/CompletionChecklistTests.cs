@@ -252,12 +252,12 @@ public sealed class CompletionChecklistTests
     }
 
     [Fact]
-    public void Execution_contract_requires_a_choice_before_changing_a_dirty_workspace()
+    public void Execution_contract_forbids_creating_or_switching_a_workspace()
     {
         var contract = RuAgentPromptBlocks.ExecutionContractBlock();
 
-        Assert.Contains("workspace_git as dirty", contract, StringComparison.Ordinal);
-        Assert.Contains("never create or switch a workspace on your own", contract, StringComparison.Ordinal);
+        Assert.DoesNotContain("workspace_git", contract, StringComparison.Ordinal);
+        Assert.Contains("Never create or switch a workspace on your own", contract, StringComparison.Ordinal);
     }
 
     private static ModelContextSnapshot Snapshot(IEnumerable<ModelContextEntry> entries) =>

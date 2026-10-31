@@ -7,14 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **fix(agent)**: **Git read không còn treo, đọc secret hoặc chạy filter của repo.** `WorkspaceGitProbe`
-  dùng `StreamingGitCli` thay cho `Process.ReadToEnd` (timeout 5s thật, env sạch, output bound), và
-  việc nhận diện verb bỏ qua global option (`-c ... status`) nên `GitStatusAdapter` cũng được bảo vệ.
-  Read/unknown verb tắt `core.fsmonitor` và các clean/smudge/process filter ở **local/worktree scope**
-  (filter global như LFS vẫn chạy), qua `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`; `add`/`commit`/worktree
-  giữ filter vì đó là một phần của write. Runner dùng full-head thay vì 8k+8k, nên status 300 file
-  (~38k) không còn bị coi là truncated; probe timeout trả `unknown` thay vì `not_a_repository`. Snapshot
-  reconciliation dùng cùng channel.
+- **feat(agent)!**: **Gỡ tích hợp git khỏi Ru.** Bỏ tool `git_status` (catalog còn 28 tool), dòng
+  `workspace_git` trong prompt, managed commit và store `run_git_state`; Host không còn tự chạy git cho
+  prompt hay reconciliation. Model vẫn gọi `git` qua terminal như lệnh thường theo Broker policy;
+  worktree của subagent và `--worktree` của CLI giữ nguyên.
+  - `git commit` giờ là commit thường: có thể gồm cả thay đổi người dùng đã stage (guard
+    `index_not_empty` không còn), không tự stage file đã sửa, và chạy hook của repo như bình thường.
+  - `snapshot_hash` của `POST .../reconcile` giờ là hash của yêu cầu reconciliation đã lưu, không còn
+    phát hiện thay đổi file trong workspace. Bù lại, reconcile chạy được sau khi Host khởi động lại
+    và với workspace không có git; trước đây các trường hợp đó luôn trả `reconcile_stale`.
+  - File `agent_git_state.db` trong thư mục dữ liệu không còn được dùng, có thể xoá thủ công.
 
 - **fix(agent)**: **SSE cap 32 MiB thay vì 5 MiB.** Một reply dài chia nhiều delta có thể vượt cap cũ
   dù text còn dưới 1M ký tự; cap mới vẫn chặn provider không dừng, line/event vẫn 256 KiB.
@@ -22,8 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **fix(cli/broker)**: **Prompt bound 16.000 dùng chung cho Host, CLI và RPC**, CLI đếm **ký tự** thay
   vì byte nên prompt tiếng Việt không bị từ chối sớm; README CLI cập nhật theo. `RU_PROTECTED_PATHS`
   resolve junction/symlink ở cả entry lẫn thư mục cha; `WebPolicy` chặn thêm `::/96`,
-  `::ffff:0:0/96`, `64:ff9b:1::/48`, `192.88.99.0/24`; managed commit có 120s cho pre-commit hook thay
-  vì 30s.
+  `::ffff:0:0/96`, `64:ff9b:1::/48`, `192.88.99.0/24`.
 
 - **fix(agent)**: **Compaction không còn vượt 4 checkpoint call khi budget window tự mở.** Bộ đếm
   `ModelStepsInWindow` reset khi auto window, nên `callsLeft -= run.ModelStepsInWindow - beforeCalls`

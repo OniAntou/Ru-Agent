@@ -5,7 +5,7 @@ namespace RuAgent.Broker.Policy.Commands;
 
 /// <summary>
 /// Recognized local Git forms. Reads allow; local mutations ask; push/fetch/pull/clone/remote
-/// are external network mutations that never join the managed commit workflow.
+/// are external network mutations.
 /// </summary>
 public sealed class GitCommandAnalyzer : ICommandAnalyzer
 {

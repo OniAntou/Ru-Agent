@@ -36,7 +36,6 @@ public sealed partial class AgentCommandsService
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
     private readonly IAgentRuntimeRootRegistry _runtimeRoots;
-    private readonly RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService _snapshots;
     private readonly ReconciliationInspectionGate _inspectionGate;
     private readonly Broker.IToolGatewayFactory _brokerGateways;
     private readonly AgentV1SubagentGuard _subagentGuard;
@@ -45,7 +44,6 @@ public sealed partial class AgentCommandsService
 
     public AgentCommandsService(IHarnessEventStore store, IIdGenerator ids, ITimeProvider time,
         IAgentRuntimeRootRegistry runtimeRoots,
-        RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService snapshots,
         ReconciliationInspectionGate inspectionGate, Broker.IToolGatewayFactory brokerGateways,
         AgentV1SubagentGuard subagentGuard)
     {
@@ -53,7 +51,6 @@ public sealed partial class AgentCommandsService
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _runtimeRoots = runtimeRoots ?? throw new ArgumentNullException(nameof(runtimeRoots));
-        _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
         _inspectionGate = inspectionGate ?? throw new ArgumentNullException(nameof(inspectionGate));
         _brokerGateways = brokerGateways ?? throw new ArgumentNullException(nameof(brokerGateways));
         _subagentGuard = subagentGuard ?? throw new ArgumentNullException(nameof(subagentGuard));
@@ -81,8 +78,9 @@ public sealed partial class AgentCommandsService
 
     /// <summary>
     /// Applies the typed user reconciliation decision. The snapshot hash the client
-    /// presents must equal this host's freshly computed workspace/Git hash; anything
-    /// else fails closed with reconcile_stale and leaves the run untouched.
+    /// presents must equal the hash of the durable reconciliation request, proving the
+    /// caller decided on that request; anything else fails closed with reconcile_stale
+    /// and leaves the run untouched. It does not describe the workspace files.
     /// </summary>
     public async Task<AgentServiceResult> ReconcileAsync(
         string runIdRaw,
@@ -134,13 +132,13 @@ public sealed partial class AgentCommandsService
         }
 
         var intentCode = reconciliation.IntentCode;
-        var freshHash = await _snapshots.ComputeFreshHashAsync(runId, cancellationToken).ConfigureAwait(false);
+        var freshHash = ComputeReconciliationHash(runId, reconciliation);
         if (freshHash is null || !string.Equals(freshHash, normalizedSnapshotHash, StringComparison.Ordinal))
         {
             return new AgentServiceResult(409, new
             {
                 error_code = "reconcile_stale",
-                message = "Workspace snapshot changed; re-read before deciding.",
+                message = "Reconciliation request changed; re-read before deciding.",
                 snapshot_hash = freshHash,
                 intent_code = intentCode,
             });
@@ -158,7 +156,7 @@ public sealed partial class AgentCommandsService
     /// <summary>
     /// Commits one accepted reconciliation decision. Shared by the strict
     /// reconcile endpoint (which first proves the caller saw the current
-    /// workspace hash) and by Continue on a parked run, where the user's
+    /// reconciliation request) and by Continue on a parked run, where the user's
     /// explicit continue is itself the decision and no snapshot proof is
     /// required.
     /// </summary>
@@ -214,6 +212,7 @@ public sealed partial class AgentCommandsService
         CancellationToken cancellationToken)
     {
         string? intentCode = null;
+        long? requestSequence = null;
         ReconciliationResolutionTarget? target = null;
         var isMalformed = false;
         await foreach (var envelope in _store
@@ -227,6 +226,7 @@ public sealed partial class AgentCommandsService
             }
 
             intentCode = item.SafeCode ?? intentCode;
+            requestSequence = item.Sequence;
             if (item.ModelStepId is null && item.ToolCallId is null && item.ExecutionId is null)
             {
                 target = null;
@@ -244,7 +244,30 @@ public sealed partial class AgentCommandsService
             target = new ReconciliationResolutionTarget(modelStepId, toolCallId, executionId);
         }
 
-        return new ReconciliationContext(intentCode, target, isMalformed);
+        return new ReconciliationContext(intentCode, requestSequence, target, isMalformed);
+    }
+
+    /// <summary>
+    /// Hashes the durable reconciliation request, so the proof survives a host restart
+    /// and works for any workspace. Null without a request, which fails closed.
+    /// </summary>
+    private static string? ComputeReconciliationHash(RunId runId, ReconciliationContext reconciliation)
+    {
+        if (reconciliation.RequestSequence is not { } requestSequence)
+        {
+            return null;
+        }
+
+        var canonical = JsonSerializer.Serialize(new
+        {
+            run_id = runId.Value,
+            request_sequence = requestSequence,
+            intent_code = reconciliation.IntentCode,
+            model_step_id = reconciliation.Target?.ModelStepId.Value,
+            tool_call_id = reconciliation.Target?.ToolCallId.Value,
+            execution_id = reconciliation.Target?.ExecutionId.Value,
+        });
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 
     private sealed record ReconciliationResolutionTarget(
@@ -254,6 +277,7 @@ public sealed partial class AgentCommandsService
 
     private sealed record ReconciliationContext(
         string? IntentCode,
+        long? RequestSequence,
         ReconciliationResolutionTarget? Target,
         bool IsMalformed);
 

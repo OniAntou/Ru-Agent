@@ -46,20 +46,15 @@ public sealed class StreamingGitCli : IGitCli
     private readonly StreamingProcessRunner _runner;
     private readonly IReadOnlyDictionary<string, string> _environment;
     private readonly int _outputLimitBytes;
-    private readonly int _timeoutMs;
 
     public StreamingGitCli(
         StreamingProcessRunner? runner = null,
         IReadOnlyDictionary<string, string>? environment = null,
-        int outputLimitBytes = DefaultOutputLimitBytes,
-        int timeoutMs = TimeoutMs)
+        int outputLimitBytes = DefaultOutputLimitBytes)
     {
         if (outputLimitBytes is < 1 or > MaximumOutputLimitBytes)
             throw new ArgumentOutOfRangeException(nameof(outputLimitBytes));
-        if (timeoutMs < 1)
-            throw new ArgumentOutOfRangeException(nameof(timeoutMs));
         _outputLimitBytes = outputLimitBytes;
-        _timeoutMs = timeoutMs;
         // Git status is line-oriented and callers need the whole bounded answer:
         // the runner's 8k+8k default would report a 300-file status as truncated.
         _runner = runner ?? new StreamingProcessRunner(
@@ -71,8 +66,7 @@ public sealed class StreamingGitCli : IGitCli
 
     /// <summary>
     /// Finds the subcommand after any global options (<c>-c name=value</c>,
-    /// <c>--git-dir=...</c>, ...). Checking only <c>arguments[0]</c> missed
-    /// <c>GitStatusAdapter</c>, whose argv starts with <c>-c</c>.
+    /// <c>--git-dir=...</c>, ...), because an argv may start with <c>-c</c>.
     /// </summary>
     private static string? GitVerb(IReadOnlyList<string> arguments)
     {
@@ -145,10 +139,8 @@ public sealed class StreamingGitCli : IGitCli
                 ],
                 workingDirectory,
                 _environment,
-                _timeoutMs,
-                _outputLimitBytes,
-                HeadCapacityChars: _outputLimitBytes,
-                TailCapacityChars: 0);
+                TimeoutMs,
+                _outputLimitBytes);
             var result = await _runner.RunAsync(spec, onDelta: null, cancellationToken).ConfigureAwait(false);
             if (result.Status == "cancelled")
             {
@@ -306,10 +298,8 @@ public sealed class StreamingGitCli : IGitCli
             argv,
             workingDirectory,
             environment,
-            _timeoutMs,
-            _outputLimitBytes,
-            HeadCapacityChars: _outputLimitBytes,
-            TailCapacityChars: 0);
+            TimeoutMs,
+            _outputLimitBytes);
         var result = await _runner.RunAsync(spec, onDelta: null, cancellationToken);
 
         if (result.Status == "timed_out")

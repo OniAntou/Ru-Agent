@@ -72,7 +72,7 @@ public static class AgentToolDescriptorTable
             Risk = AgentToolRisk.Read, RequiresApproval = false, Adapter = AgentToolAdapter.Builtin, WorkspaceRequired = false,
             Access = AgentToolAccess.ReadOnly, MaxOutputBytes = null,
             PolicyFamily = null,
-            Description = "Find workspace files by glob pattern. path must be an existing directory; use read_file or read for an individual file. Use glob to locate files by name before reading them. Bounded ordinal results with traversal caps; narrow the pattern when a result is truncated." + FilePathGuidance,
+            Description = "Find workspace files by glob pattern. path must be an existing directory; use read_file or read for an individual file. Use glob to locate files by name before reading them. Bounded ordinal results with traversal caps; narrow the pattern when a result is truncated. When nothing matches, the result includes a notice field saying nothing matched the pattern." + FilePathGuidance,
             InputSchema = AgentToolDefinitionCatalog.GlobSchema,
             ExampleArguments = () => new JsonObject { ["pattern"] = "**/*.cs", ["path"] = "." },
         },

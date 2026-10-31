@@ -107,6 +107,26 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
+    public void Glob_reports_a_notice_when_nothing_matches()
+    {
+        var result = _glob.Execute(new JsonObject { ["path"] = "src", ["pattern"] = "*.nomatch" });
+        Assert.Equal(0, result["count"]!.GetValue<int>());
+        var notice = result["notice"]?.GetValue<string>();
+        Assert.NotNull(notice);
+        Assert.Contains("nothing matched the pattern", notice, StringComparison.Ordinal);
+        Assert.Contains("*.nomatch", notice, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Glob_omits_the_notice_when_a_file_matches()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "match.txt"), "m");
+        var result = _glob.Execute(new JsonObject { ["path"] = "src", ["pattern"] = "*.txt" });
+        Assert.Equal(1, result["count"]!.GetValue<int>());
+        Assert.False(result.ContainsKey("notice"));
+    }
+
+    [Fact]
     public async Task Search_deterministic_ordinal_relative_paths_then_line()
     {
         Directory.CreateDirectory(Path.Combine(_root, "src", "sub"));

@@ -9,7 +9,10 @@ public static class BoundedSseReader
 {
     private const int MaxLineBytes = 256 * 1024;
     private const int MaxEventBytes = 256 * 1024;
-    private const int MaxTotalBytes = 5 * 1024 * 1024;
+    // Raw SSE bytes include framing, not just response text. A 1M-character reply
+    // delivered in many small deltas can exceed a few MiB of framing; 32 MiB keeps
+    // that healthy while still bounding a provider that never stops.
+    private const int MaxTotalBytes = 32 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     /// <summary>

@@ -75,7 +75,7 @@ public static class SessionInterchangeEndpoints
             var document = await sessions.GetAsync(sessionId, cancellationToken).ConfigureAwait(false);
             if (document is null)
             {
-                return Results.Ok(new { status = "error", message = "Không tìm thấy session để export." });
+                return Results.Ok(new { status = "error", message = "Session not found." });
             }
 
             var history = await ReadFullHistoryAsync(sessions, document, cancellationToken).ConfigureAwait(false);

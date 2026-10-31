@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: **Git read không còn treo, đọc secret hoặc chạy filter của repo.** `WorkspaceGitProbe`
+  dùng `StreamingGitCli` thay cho `Process.ReadToEnd` (timeout 5s thật, env sạch, output bound), và
+  việc nhận diện verb bỏ qua global option (`-c ... status`) nên `GitStatusAdapter` cũng được bảo vệ.
+  Read/unknown verb tắt `core.fsmonitor` và các clean/smudge/process filter ở **local/worktree scope**
+  (filter global như LFS vẫn chạy), qua `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`; `add`/`commit`/worktree
+  giữ filter vì đó là một phần của write. Runner dùng full-head thay vì 8k+8k, nên status 300 file
+  (~38k) không còn bị coi là truncated; probe timeout trả `unknown` thay vì `not_a_repository`. Snapshot
+  reconciliation dùng cùng channel.
+
+- **fix(agent)**: **SSE cap 32 MiB thay vì 5 MiB.** Một reply dài chia nhiều delta có thể vượt cap cũ
+  dù text còn dưới 1M ký tự; cap mới vẫn chặn provider không dừng, line/event vẫn 256 KiB.
+
+- **fix(cli/broker)**: **Prompt bound 16.000 dùng chung cho Host, CLI và RPC**, CLI đếm **ký tự** thay
+  vì byte nên prompt tiếng Việt không bị từ chối sớm; README CLI cập nhật theo. `RU_PROTECTED_PATHS`
+  resolve junction/symlink ở cả entry lẫn thư mục cha; `WebPolicy` chặn thêm `::/96`,
+  `::ffff:0:0/96`, `64:ff9b:1::/48`, `192.88.99.0/24`; managed commit có 120s cho pre-commit hook thay
+  vì 30s.
+
 - **fix(agent)**: **Compaction không còn vượt 4 checkpoint call khi budget window tự mở.** Bộ đếm
   `ModelStepsInWindow` reset khi auto window, nên `callsLeft -= run.ModelStepsInWindow - beforeCalls`
   tăng allowance thay vì giảm (có thể tới 6 call). Giờ đếm số admission trả về từ

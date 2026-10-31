@@ -76,10 +76,29 @@ public sealed class WebPolicy
                 || (bytes[0] == 198 && bytes[1] is >= 18 and <= 19)
                 || (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100)
                 || (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113)
+                || (bytes[0] == 192 && bytes[1] == 88 && bytes[2] == 99)
                 || bytes[0] >= 240;
         }
 
         var segments = address.GetAddressBytes();
+
+        // RFC 6052 local-use NAT64 prefix 64:ff9b:1::/48.
+        if (segments[0] == 0x00 && segments[1] == 0x64 && segments[2] == 0xff && segments[3] == 0x9b
+            && segments[4] == 0 && segments[5] == 1)
+        {
+            return true;
+        }
+
+        // IPv4-compatible ::/96 and IPv4-translated ::ffff:0:0/96. Both are
+        // deprecated transition forms; a public IPv4 literal here must not be
+        // treated as a plain public host.
+        if (segments[..12].All(static b => b == 0)
+            || (segments[..8].All(static b => b == 0)
+                && segments[8] == 0xff && segments[9] == 0xff
+                && segments[10] == 0 && segments[11] == 0))
+        {
+            return true;
+        }
 
         // RFC 6052: NAT64 Well-Known Prefix 64:ff9b::/96 embedding private IPv4
         if (segments[0] == 0x00 && segments[1] == 0x64 && segments[2] == 0xff && segments[3] == 0x9b

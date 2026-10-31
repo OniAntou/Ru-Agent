@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Text;
 using RuAgent.Broker.Tools.Git;
 using RuAgent.Protocol.Harness;
 
@@ -13,22 +11,36 @@ namespace RuBackend.Harness.Prompting;
 /// </summary>
 internal static class WorkspaceGitProbe
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
+    private const int TimeoutMs = 5_000;
+    private const int OutputLimitBytes = 256 * 1024;
 
-    public static string Describe(string root)
+    // The Broker channel, not Process directly: it sanitizes the inherited env,
+    // pins fsmonitor, bounds output, and streams stdout/stderr with a real timeout
+    // instead of blocking on ReadToEnd before WaitForExit.
+    private static readonly IGitCli Git = new StreamingGitCli(
+        outputLimitBytes: OutputLimitBytes,
+        timeoutMs: TimeoutMs);
+
+    public static Task<string> DescribeAsync(string root, CancellationToken cancellationToken = default) =>
+        DescribeAsync(root, Git, cancellationToken);
+
+    internal static async Task<string> DescribeAsync(
+        string root,
+        IGitCli git,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
         {
             return "unknown";
         }
 
-        var top = Run(root, ["rev-parse", "--show-toplevel"]);
+        var top = await git.RunAsync(["rev-parse", "--show-toplevel"], root, cancellationToken).ConfigureAwait(false);
         if (top.ExitCode != 0)
         {
-            return "not_a_repository";
+            return IsNotARepository(top) ? "not_a_repository" : "unknown";
         }
 
-        var status = Run(root, ["status", "--porcelain=v2", "--branch"]);
+        var status = await git.RunAsync(["status", "--porcelain=v2", "--branch"], root, cancellationToken).ConfigureAwait(false);
         if (status.ExitCode != 0)
         {
             return "unknown";
@@ -46,58 +58,12 @@ internal static class WorkspaceGitProbe
         return $"dirty ({changed}{suffix} changed, {untracked}{suffix} untracked)";
     }
 
-    private static (int ExitCode, string Stdout) Run(string workingDirectory, IReadOnlyList<string> arguments)
-    {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "git",
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-        // Localized messages and optional locks would only add noise: this probe
-        // reads and nothing else, and it must not race the user's own git commands.
-        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
-        startInfo.Environment["GIT_OPTIONAL_LOCKS"] = "0";
-        startInfo.Environment["LC_ALL"] = "C";
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        try
-        {
-            using var process = Process.Start(startInfo);
-            if (process is null)
-            {
-                return (-1, string.Empty);
-            }
-
-            var stdout = process.StandardOutput.ReadToEnd();
-            _ = process.StandardError.ReadToEnd();
-            if (!process.WaitForExit(Timeout))
-            {
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch (InvalidOperationException)
-                {
-                    // The process exited between the timeout and the kill.
-                }
-
-                return (-1, string.Empty);
-            }
-
-            return (process.ExitCode, stdout);
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            return (-1, string.Empty);
-        }
-    }
+    /// <summary>
+    /// A timeout, a filter guard failure or a truncated answer is "unknown", not
+    /// "not a repository": the difference matters because the prompt would otherwise
+    /// claim the workspace has no repository history.
+    /// </summary>
+    private static bool IsNotARepository(GitCliResult result) =>
+        string.Equals(result.FailureReason, "git_exit_128", StringComparison.Ordinal)
+        && result.Stderr.Contains("not a git repository", StringComparison.OrdinalIgnoreCase);
 }

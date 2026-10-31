@@ -1,11 +1,12 @@
 using RuAgent.Cli.Attachments;
 using RuAgent.Cli.Images;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli;
 
 internal sealed class ChatSubmissionState : IDisposable
 {
-    public const int MaxComposedPromptChars = 16_000;
+    public const int MaxComposedPromptChars = AgentRunLimits.MaxPromptChars;
     private readonly List<CliImageAttachment> _images = [];
     private readonly List<CliTextAttachment> _texts = [];
 

@@ -1,4 +1,7 @@
+extern alias Broker;
+
 using System.Diagnostics;
+using Broker::RuAgent.Broker.Tools.Git;
 using RuBackend.Harness.Prompting;
 using Xunit;
 
@@ -12,12 +15,12 @@ namespace RuBackend.Tests.Harness;
 public sealed class WorkspaceGitProbeTests
 {
     [Fact]
-    public void Reports_clean_for_a_committed_repository()
+    public async Task Reports_clean_for_a_committed_repository()
     {
         var repository = CreateRepository();
         try
         {
-            Assert.Equal("clean", WorkspaceGitProbe.Describe(repository));
+            Assert.Equal("clean", await WorkspaceGitProbe.DescribeAsync(repository));
         }
         finally
         {
@@ -26,7 +29,7 @@ public sealed class WorkspaceGitProbeTests
     }
 
     [Fact]
-    public void Counts_changed_and_untracked_files_without_naming_them()
+    public async Task Counts_changed_and_untracked_files_without_naming_them()
     {
         var repository = CreateRepository();
         try
@@ -34,7 +37,7 @@ public sealed class WorkspaceGitProbeTests
             File.WriteAllText(Path.Combine(repository, "a.txt"), "changed");
             File.WriteAllText(Path.Combine(repository, "new.txt"), "untracked");
 
-            var state = WorkspaceGitProbe.Describe(repository);
+            var state = await WorkspaceGitProbe.DescribeAsync(repository);
 
             Assert.Equal("dirty (1 changed, 1 untracked)", state);
             Assert.DoesNotContain("a.txt", state, StringComparison.Ordinal);
@@ -47,18 +50,78 @@ public sealed class WorkspaceGitProbeTests
     }
 
     [Fact]
-    public void Reports_not_a_repository_outside_git()
+    public async Task Reports_not_a_repository_outside_git()
     {
         var directory = Path.Combine(Path.GetTempPath(), "ru-git-probe-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
         {
-            Assert.Equal("not_a_repository", WorkspaceGitProbe.Describe(directory));
+            Assert.Equal("not_a_repository", await WorkspaceGitProbe.DescribeAsync(directory));
         }
         finally
         {
             Delete(directory);
         }
+    }
+
+    [Fact]
+    public async Task Large_dirty_tree_reports_counts_not_unknown()
+    {
+        var repository = CreateRepository();
+        try
+        {
+            for (var index = 0; index < 300; index++)
+            {
+                File.WriteAllText(Path.Combine(repository, $"f{index:D3}-{new string('x', 100)}.txt"), "a");
+            }
+
+            Assert.Equal(0, Git(repository, "add", "-A").ExitCode);
+            Assert.Equal(0, Git(repository, "commit", "-m", "bulk", "--quiet").ExitCode);
+            for (var index = 0; index < 300; index++)
+            {
+                File.WriteAllText(Path.Combine(repository, $"f{index:D3}-{new string('x', 100)}.txt"), "b");
+            }
+
+            Assert.Equal("dirty (300 changed, 0 untracked)", await WorkspaceGitProbe.DescribeAsync(repository));
+        }
+        finally
+        {
+            Delete(repository);
+        }
+    }
+
+    [Fact]
+    public async Task Timeout_is_unknown_not_not_a_repository()
+    {
+        var state = await WorkspaceGitProbe.DescribeAsync(
+            Path.GetTempPath(),
+            new FakeGit(new GitCliResult(false, -1, string.Empty, string.Empty, "git_timed_out")),
+            CancellationToken.None);
+
+        Assert.Equal("unknown", state);
+    }
+
+    [Fact]
+    public async Task A_real_non_repository_is_not_a_repository()
+    {
+        var state = await WorkspaceGitProbe.DescribeAsync(
+            Path.GetTempPath(),
+            new FakeGit(new GitCliResult(
+                false, 128, string.Empty, "fatal: not a git repository (or any of the parent directories): .git",
+                "git_exit_128")),
+            CancellationToken.None);
+
+        Assert.Equal("not_a_repository", state);
+    }
+
+    private sealed class FakeGit(GitCliResult result) : IGitCli
+    {
+        public Task<GitCliResult> RunAsync(
+            IReadOnlyList<string> arguments,
+            string workingDirectory,
+            CancellationToken cancellationToken,
+            IReadOnlyDictionary<string, string>? additionalEnvironment = null) =>
+            Task.FromResult(result);
     }
 
     private static string CreateRepository()

@@ -34,7 +34,7 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
     private readonly AgentToolRuntimeAvailability _availability;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly IAgentRunModelMetadataResolver? _runModelMetadataResolver;
-    private readonly object _gitStateGate = new();
+    private readonly SemaphoreSlim _gitStateGate = new(1, 1);
     private static readonly TimeSpan GitStateLifetime = TimeSpan.FromSeconds(3);
     private (string? Value, DateTimeOffset ObservedAt) _gitState;
 
@@ -95,6 +95,7 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
         var observedPaths = ObservedFilePaths(modelContext);
         var instructions = _instructionLoader.Load(_canonicalRoot, observedPaths);
         var now = TimeZoneInfo.ConvertTime(_time.UtcNow, TimeZoneInfo.Local);
+        var gitState = await WorkspaceGitStateAsync(cancellationToken).ConfigureAwait(false);
         var environment = new PromptEnvironment(
             model,
             Environment.OSVersion.Platform.ToString(),
@@ -102,7 +103,7 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
             TimeZoneInfo.Local.Id,
             now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
             WorkspaceLabel(_canonicalRoot),
-            ToolInventoryProbe.Probe(), metadata?.ImageInputAccepted, WorkspaceGitState());
+            ToolInventoryProbe.Probe(), metadata?.ImageInputAccepted, gitState);
         var runtime = await BuildRuntimeContextAsync(run, modelContext, cancellationToken).ConfigureAwait(false);
         var projectMemory = await ProjectMemoryReferenceAsync(cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
@@ -414,11 +415,13 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
     /// <summary>
     /// Reports the workspace git state for the prompt. Cached briefly so a multi-step
     /// run does not pay one git process per model step, while still noticing edits the
-    /// agent made a few seconds ago.
+    /// agent made a few seconds ago. The probe is asynchronous and bounded; the model
+    /// step must not block a thread on a git process that can hang.
     /// </summary>
-    private string? WorkspaceGitState()
+    private async Task<string?> WorkspaceGitStateAsync(CancellationToken cancellationToken)
     {
-        lock (_gitStateGate)
+        await _gitStateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
             if (_gitState.Value is not null
                 && _time.UtcNow - _gitState.ObservedAt < GitStateLifetime)
@@ -426,9 +429,13 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
                 return _gitState.Value;
             }
 
-            var value = WorkspaceGitProbe.Describe(_canonicalRoot);
+            var value = await WorkspaceGitProbe.DescribeAsync(_canonicalRoot, cancellationToken).ConfigureAwait(false);
             _gitState = (value, _time.UtcNow);
             return value;
+        }
+        finally
+        {
+            _gitStateGate.Release();
         }
     }
 }

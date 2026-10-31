@@ -12,4 +12,6 @@ public sealed record ProcessRunSpec(
     string WorkingDirectory,
     IReadOnlyDictionary<string, string> Environment,
     int TimeoutMs,
-    int OutputLimitBytes);
+    int OutputLimitBytes,
+    int? HeadCapacityChars = null,
+    int? TailCapacityChars = null);

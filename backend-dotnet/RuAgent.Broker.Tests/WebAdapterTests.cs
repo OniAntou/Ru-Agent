@@ -384,6 +384,11 @@ public sealed class WebAdapterTests
     [InlineData("64:ff9b::169.254.169.254")]
     [InlineData("2002:7f00:1::")]
     [InlineData("100::1")]
+    [InlineData("::127.0.0.1")]
+    [InlineData("::8.8.8.8")]
+    [InlineData("64:ff9b:1::192.168.1.1")]
+    [InlineData("::ffff:0:10.0.0.1")]
+    [InlineData("192.88.99.1")]
     public async Task Fetch_rejects_mapped_and_reserved_hosts(string host)
     {
         using var http = new HttpClient(new FakeHandler("text/html", "not reached"));

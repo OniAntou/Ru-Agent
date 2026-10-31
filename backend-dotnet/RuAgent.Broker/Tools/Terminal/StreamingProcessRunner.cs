@@ -110,8 +110,15 @@ public sealed class StreamingProcessRunner
         using var registered = started.Process;
         using var stdoutReader = started.StandardOutput;
         using var stderrReader = started.StandardError;
-        var stdoutBuffer = new HeadTailOutputBuffer(_headCapacityChars, _tailCapacityChars);
-        var stderrBuffer = new HeadTailOutputBuffer(_headCapacityChars, _tailCapacityChars);
+        var headCapacity = spec.HeadCapacityChars ?? _headCapacityChars;
+        var tailCapacity = spec.TailCapacityChars ?? _tailCapacityChars;
+        if (headCapacity < 0 || tailCapacity < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(spec), "output capacities must be non-negative");
+        }
+
+        var stdoutBuffer = new HeadTailOutputBuffer(headCapacity, tailCapacity);
+        var stderrBuffer = new HeadTailOutputBuffer(headCapacity, tailCapacity);
         long framesEmitted = 0;
         long framesDropped = 0;
         long nextSequence = 1;
@@ -300,12 +307,10 @@ public sealed class StreamingProcessRunner
     }
 
     // No git config hardening on this path, deliberately. This runner also
-    // carries the Broker's own managed-commit calls, and those compare a
-    // `git diff --cached` hash against the preview before committing -- an extra
-    // -c that changes diff behaviour breaks that check instead of hardening it.
-    // GitCli already pins core.fsmonitor for the reads the Broker performs
-    // itself. The terminal path is left alone and the gap is recorded in
-    // docs/architecture.md as an accepted limitation.
+    // carries the Broker's own managed-commit calls and user terminal commands;
+    // a filter override here would change what `git add`/`commit` must do (LFS,
+    // content transforms). GitCli applies read-only hardening for the reads the
+    // Broker performs itself; the terminal path keeps the user's git semantics.
 
     private async Task<long> DrainAsync(
         StreamReader reader,

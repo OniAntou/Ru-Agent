@@ -18,7 +18,10 @@ without changing the pinned endpoint. A shared adapter deadline bounds the
 request through response headers to 120 seconds (`provider_timeout`, retryable);
 caller cancellation remains cancellation. The whole-response HTTP timeout stays
 infinite, with the existing 120-second SSE idle watchdog governing body reads,
-so an active long generation is not cut off by the request deadline.
+so an active long generation is not cut off by the request deadline. The SSE
+reader bounds one line/event to 256 KiB and the whole raw stream (framing
+included) to 32 MiB, leaving room for a 1M-character reply split into many small
+deltas while still stopping a provider that never ends.
 
 The model runner preserves a provider's `length` finish before parsing or
 promoting native or text-encoded tool calls. An incomplete step returns no

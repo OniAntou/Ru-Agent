@@ -60,7 +60,11 @@ public sealed class TerminalAdapter
         _resolver = intentResolver ?? new CommandIntentResolver(_workspace.Root);
         _analyzers = analyzers ?? new CommandAnalyzerRegistry();
         _gitCli = gitCli ?? new StreamingGitCli(_runner, _environment.ChildEnvironment);
-        _managedCommit = managedCommit ?? new ManagedCommitService(_gitCli);
+        // A managed commit may run the repository's pre-commit hook; the read
+        // timeout is intentionally shorter than the commit budget. An injected
+        // client keeps its own timeout so tests and alternate authorities decide.
+        _managedCommit = managedCommit ?? new ManagedCommitService(
+            gitCli ?? new StreamingGitCli(_runner, _environment.ChildEnvironment, timeoutMs: 120_000));
         _gitLocator = new GitRepositoryLocator(_gitCli);
     }
 

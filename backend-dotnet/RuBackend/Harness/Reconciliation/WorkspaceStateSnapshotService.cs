@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using RuAgent.Broker.Tools.Git;
 using RuAgent.Harness.Core;
 using RuBackend.Harness.Git;
 
@@ -17,7 +18,9 @@ namespace RuBackend.Harness.Reconciliation;
 public sealed class WorkspaceStateSnapshotService
 {
     private const int MaxGitOutputBytes = 1 * 1024 * 1024;
-    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+    private static readonly IGitCli Git = new StreamingGitCli(
+        outputLimitBytes: MaxGitOutputBytes,
+        timeoutMs: 10_000);
     private readonly SqliteRunGitStateStore _gitStateStore;
     private readonly Func<RunId, string?>? _rootResolver;
 
@@ -84,145 +87,22 @@ public sealed class WorkspaceStateSnapshotService
 
     private static async Task<string?> TryGitFingerprintAsync(string root, CancellationToken cancellationToken)
     {
-        var head = await RunGitAsync(root, cancellationToken, "rev-parse", "HEAD").ConfigureAwait(false);
-        if (head is null)
+        var head = await Git.RunAsync(["rev-parse", "HEAD"], root, cancellationToken).ConfigureAwait(false);
+        if (head.ExitCode != 0)
         {
             return null;
         }
 
-        var branch = await RunGitAsync(root, cancellationToken, "symbolic-ref", "--quiet", "--short", "HEAD").ConfigureAwait(false)
-                     ?? "(detached)";
-        var status = await RunGitAsync(root, cancellationToken, "status", "--porcelain=v2").ConfigureAwait(false);
-        if (status is null)
+        var branchResult = await Git.RunAsync(
+            ["symbolic-ref", "--quiet", "--short", "HEAD"], root, cancellationToken).ConfigureAwait(false);
+        var branch = branchResult.ExitCode == 0 ? branchResult.Stdout : "(detached)";
+        var status = await Git.RunAsync(["status", "--porcelain=v2"], root, cancellationToken).ConfigureAwait(false);
+        if (status.ExitCode != 0)
         {
             return null;
         }
 
-        var payload = $"{head}\n{branch}\n{status}";
+        var payload = $"{head.Stdout}\n{branch}\n{status.Stdout}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
-    }
-
-    private static async Task<string?> RunGitAsync(
-        string workingDirectory,
-        CancellationToken cancellationToken,
-        params string[] arguments)
-    {
-        try
-        {
-            var startInfo = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "git",
-                WorkingDirectory = workingDirectory,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = StrictUtf8,
-                StandardErrorEncoding = StrictUtf8,
-            };
-            startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
-            // Same hardening as the Broker's git paths: this runs against a
-            // user-supplied workspace automatically, so configuration that can
-            // select a program (core.fsmonitor) is pinned off before any
-            // subcommand, and optional index locks stay off.
-            startInfo.ArgumentList.Add("--no-optional-locks");
-            startInfo.ArgumentList.Add("-c");
-            startInfo.ArgumentList.Add("core.fsmonitor=false");
-            foreach (var argument in arguments)
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            using var process = System.Diagnostics.Process.Start(startInfo);
-            if (process is null)
-            {
-                return null;
-            }
-
-            var stdoutTask = ReadBoundedAsync(process.StandardOutput, MaxGitOutputBytes, cancellationToken);
-            var stderrTask = ReadBoundedAsync(process.StandardError, MaxGitOutputBytes, cancellationToken);
-            try
-            {
-                await process.WaitForExitAsync(cancellationToken)
-                    .WaitAsync(TimeSpan.FromSeconds(10), cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                TryKill(process);
-                // Observe the pipe readers after the kill: leaving them unawaited
-                // risks an unobserved faulted task and leaks the read buffers.
-                try
-                {
-                    await stdoutTask.ConfigureAwait(false);
-                    await stderrTask.ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
-                }
-
-                return null;
-            }
-
-            var stdout = await stdoutTask.ConfigureAwait(false);
-            _ = await stderrTask.ConfigureAwait(false);
-            return process.ExitCode == 0 ? stdout : null;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception error) when (
-            error is InvalidOperationException or System.ComponentModel.Win32Exception
-                or IOException or DecoderFallbackException)
-        {
-            return null;
-        }
-    }
-
-    private static async Task<string?> ReadBoundedAsync(
-        StreamReader reader,
-        int maxBytes,
-        CancellationToken cancellationToken)
-    {
-        var builder = new StringBuilder();
-        var chars = new char[4096];
-        var bytes = 0;
-        var exceeded = false;
-        while (true)
-        {
-            var read = await reader.ReadAsync(chars.AsMemory(), cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                break;
-            }
-
-            var chunkBytes = StrictUtf8.GetByteCount(chars.AsSpan(0, read));
-            if (bytes <= maxBytes - chunkBytes)
-            {
-                builder.Append(chars, 0, read);
-                bytes += chunkBytes;
-            }
-            else
-            {
-                exceeded = true;
-            }
-        }
-
-        return exceeded ? null : builder.ToString();
-    }
-
-    private static void TryKill(System.Diagnostics.Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-        }
     }
 }

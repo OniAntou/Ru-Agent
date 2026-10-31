@@ -113,9 +113,7 @@ public static class ProtectedPathCatalog
             string root;
             try
             {
-                root = Path.GetFullPath(rawEntry.TrimEnd(
-                    Path.DirectorySeparatorChar,
-                    Path.AltDirectorySeparatorChar));
+                root = CanonicalizeConfiguredRoot(rawEntry);
             }
             catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
             {
@@ -129,6 +127,51 @@ public static class ProtectedPathCatalog
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// A configured root can sit below a junction or symlink; the canonical file path
+    /// the tools see is the final target, so comparing the link path would leave the
+    /// target unprotected. Resolve every existing ancestor and the entry itself; a
+    /// missing tail keeps its path, because there is nothing to resolve yet.
+    /// </summary>
+    private static string CanonicalizeConfiguredRoot(string rawEntry)
+    {
+        var separators = new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
+        var full = Path.GetFullPath(rawEntry.Trim().TrimEnd(separators));
+        try
+        {
+            return ResolveExistingPath(full, depth: 0).TrimEnd(separators);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Keep the unresolved path; the catalog still has its literal entry.
+            return full.TrimEnd(separators);
+        }
+    }
+
+    private static string ResolveExistingPath(string path, int depth)
+    {
+        if (depth > 32)
+        {
+            return path;
+        }
+
+        var parent = Path.GetDirectoryName(path);
+        if (string.IsNullOrEmpty(parent))
+        {
+            return path;
+        }
+
+        var resolvedParent = ResolveExistingPath(parent, depth + 1);
+        var candidate = Path.Combine(resolvedParent, Path.GetFileName(path));
+        FileSystemInfo info = Directory.Exists(candidate) ? new DirectoryInfo(candidate) : new FileInfo(candidate);
+        if (info.Exists && info.ResolveLinkTarget(returnFinalTarget: true) is { } target)
+        {
+            return Path.GetFullPath(target.FullName);
+        }
+
+        return candidate;
     }
 
     private static bool IsAtOrBelow(string candidate, string root) =>

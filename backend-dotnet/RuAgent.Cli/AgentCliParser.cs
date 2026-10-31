@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli;
 
@@ -210,7 +211,7 @@ public static partial class AgentCliParser
 {
     public const int MaxArgCount = 64;
     public const int MaxWorkspacePathLength = 512;
-    public const int MaxPromptLength = 8192;
+    public const int MaxPromptLength = AgentRunLimits.MaxPromptChars;
     public const int MaxSessionIdLength = 64;
     public const int MaxRunIdLength = 36;
     public const int MaxPresetLength = 16;
@@ -234,12 +235,12 @@ public static partial class AgentCliParser
         if (args.Length > MaxArgCount)
             return Fail("too_many_arguments", $"Argument count {args.Length} exceeds maximum {MaxArgCount}.");
 
-        var maxArgumentBytes = args.Length > 1 && string.Equals(args[1], "command", StringComparison.Ordinal)
+        var maxArgumentChars = args.Length > 1 && string.Equals(args[1], "command", StringComparison.Ordinal)
             ? 16 * 1024
             : MaxPromptLength;
         foreach (var a in args)
         {
-            if (a is not null && Encoding.UTF8.GetByteCount(a) > maxArgumentBytes)
+            if (a is not null && a.Length > maxArgumentChars)
             {
                 return Fail("argument_too_long", $"Argument too long ({a.Length}).");
             }

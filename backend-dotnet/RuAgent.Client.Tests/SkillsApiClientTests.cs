@@ -54,6 +54,29 @@ public sealed class SkillsApiClientTests
         Assert.False(handler.Body.RootElement.GetProperty("enabled").GetBoolean());
     }
 
+    [Fact]
+    public async Task Install_package_posts_explicit_pinned_source_and_returns_reviewable_receipt()
+    {
+        var handler = new StubHandler("""
+            {"receipt":{"action":"installed","id":"demo","name":"Demo","description":"Package","source":"https://github.com/acme/repo/tree/0123456789abcdef0123456789abcdef01234567/skills/demo","commit":"0123456789abcdef0123456789abcdef01234567","packageSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","fileCount":2,"expandedBytes":34,"installPath":"C:\\Users\\test\\AppData\\Local\\Ru\\skills\\demo"},"catalog":{"items":[],"diagnostics":[],"truncated":false,"total":0}}
+            """);
+        using var http = new HttpClient(handler);
+        using var client = new SkillsApiClient(Session(), http);
+
+        var response = await client.InstallPackageAsync(new SkillPackageInstallRequest(
+            "D:\\LLM", "https://github.com/acme/repo/tree/0123456789abcdef0123456789abcdef01234567/skills/demo", "install"));
+
+        Assert.Equal(HttpMethod.Post, handler.Method);
+        Assert.EndsWith("agent/v1/skills/packages", handler.Uri!.AbsolutePath, StringComparison.Ordinal);
+        Assert.Equal("Bearer", handler.AuthorizationScheme);
+        Assert.Equal(new string('e', 64), handler.AuthorizationParameter);
+        Assert.Equal("install", handler.Body!.RootElement.GetProperty("action").GetString());
+        Assert.Equal("https://github.com/acme/repo/tree/0123456789abcdef0123456789abcdef01234567/skills/demo",
+            handler.Body.RootElement.GetProperty("source_url").GetString());
+        Assert.Equal("demo", response.Receipt.Id);
+        Assert.Equal(new string('a', 64), response.Receipt.PackageSha256);
+    }
+
     [Theory]
     [InlineData("{\"items\":[null],\"diagnostics\":[],\"total\":1,\"truncated\":false}")]
     [InlineData("{\"items\":[],\"diagnostics\":[null],\"total\":0,\"truncated\":false}")]

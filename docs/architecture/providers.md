@@ -45,6 +45,11 @@ Rate-limit metadata propagates through Chat Completions, Responses and Anthropic
 errors without changing provider selection. Exhaustion retains the existing
 explicit-Continue behavior; retries never dispatch a partial tool call.
 
+`ProviderRetryPolicy` owns the pure retry admission and delay decisions. The
+runner measures accepted cooldowns separately as `ProviderRetryWait`; this is
+not provider inference latency. The five-attempt and 60-second automatic wait
+bounds, longer server hints and cancellation behavior remain unchanged.
+
 Responses `response.incomplete` is a terminal event: `max_output_tokens`
 preserves usage and returns `length` without parsing partial function arguments;
 `content_filter` discards calls and maps to the existing Harness
@@ -70,7 +75,29 @@ Per-run provider snapshot creation reads exactly one canonical credential accoun
 Custom OpenAI uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic
 uses `anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
 and `https://api.anthropic.com/v1`. A `models.dev:<provider-id>` backend reads
-`<provider-id>_api_key` and resolves its base URL from the Models.dev catalog. Missing keys stay missing; aliases and other
+`<provider-id>_api_key` and resolves its base URL from the Models.dev catalog.
+Provider naming itself lives in one table, `RuAgent.Protocol.Providers.ProviderAliases`:
+the Host, the settings transition, the settings store and both clients normalize a
+typed name through it, so the same name resolves to the same backend and credential
+account everywhere and a provider added there is recognized at once.
+OpenCode is the exception to appending `/models` to that base: both gateways
+publish their chat root (`/inference/openai/v1`, `/inference/go/openai/v1`) where
+`GET /models` answers 404, while the model list sits beside it
+(`/inference/v1/models`, `/inference/go/v1/models`). The catalog URL — and the
+candidate-key probe that reads it — is table-driven for those ids; chat
+completions keep the published base. OpenCode Go also refuses a completion that
+carries no conversation id, so `x-opencode-session` (the run's session) and Ru's
+own User-Agent are pinned with that provider and sent on every generation; a step
+without a session fails closed as `provider_session_missing`.
+A named custom provider ([ADR 0034](../adr/0034-named-custom-providers.md)) is the
+backend and alias `custom:<id>`, reads `custom_provider_<id>_key`, and posts to its
+user-given base URL with its chosen protocol (`{base}/chat/completions`, or
+`{base}/messages` with `x-api-key`). Its definitions live in the non-secret
+`custom_providers` setting; its catalog is that list, so the pinned context window
+is the model's `context_window` with source `user_setting`. For named custom
+providers and the legacy Custom OpenAI slot, a key travels only over `https` or
+`http` to a loopback host; otherwise the save, discovery or snapshot fails as
+`provider_insecure_endpoint` before any request. Missing keys stay missing; aliases and other
 providers' keys are never tried. Before the first model request, successful
 catalog/bootstrap validation pins a secret-free Run Provider Selection in
 SQLite: backend, alias, endpoint, protocol, model, credential account name,
@@ -158,6 +185,22 @@ on request: requests to the first-party `https://api.anthropic.com` endpoint car
 a top-level `cache_control: {"type":"ephemeral"}` so each step reads the stable
 prefix from cache. Anthropic-compatible gateways do not receive the field, since
 one that rejects it would fail the run instead of running uncached.
+
+### Client image attachments
+
+Run admission retains validated client images independently of image capability.
+The pinned capability reaches request preparation separately from provider options.
+For a text-only model, preparation projects a bounded textual notice in the user
+message and sends no client image bytes; the model can explain the limitation
+while helping with the text. The original source request and encrypted payloads
+remain intact across retries and restart. A provider declaration overrides name
+hints consistently in the snapshot and all three protocol adapters. See
+[ADR 0040](../adr/0040-text-only-image-attachments.md).
+The system-prompt environment also declares the pinned image-input capability on
+every turn. For a text-only model it explicitly distinguishes receiving an
+attachment from viewing its contents. Historical user turns retain bounded
+image-count facts from visible source messages, including image-only turns;
+the original message text stays unchanged for display.
 
 ### Tool images
 

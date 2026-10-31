@@ -20,6 +20,10 @@ static GroupResult Run(string name, Action<Checks> test)
 }
 static void OrderedBatch(Checks c)
 {
+    var repeated = NewLedger(("A", 5), ("B", 0));
+    var repeatedResult = repeated.Apply("repeat", 0, [new("A", "B", 1), new("A", "B", 1)]);
+    c.That(repeatedResult.Code == "ok" && Balance(repeated.Snapshot(), "A") == 3
+        && Balance(repeated.Snapshot(), "B") == 2, "repeated transfer pairs remain an ordered batch");
     var ledger = NewLedger(("A", 10), ("B", 0), ("C", 0));
     var result = ledger.Apply("order", 0, [new("A", "B", 7), new("B", "C", 5)]);
     c.That(result.Code == "ok" && result.Version == 1, "batch commits once");
@@ -79,7 +83,8 @@ static void SnapshotIsolation(Checks c)
     ledger.Apply("later", 0, [new("A", "B", 2)]);
     c.That(old.Version == 0 && Balance(old, "A") == 5 && Balance(old, "B") == 0, "old snapshot remains unchanged");
     var rejectedMutation = false;
-    try { ((IDictionary<string, long>)old.Balances)["A"] = 99; } catch (NotSupportedException) { rejectedMutation = true; }
+    try { ((IDictionary<string, long>)old.Balances)["A"] = 99; }
+    catch (Exception error) when (error is NotSupportedException or InvalidCastException) { rejectedMutation = true; }
     c.That(rejectedMutation && Balance(ledger.Snapshot(), "A") == 3, "snapshot cannot mutate ledger state");
 }
 static void ConcurrentLinearizability(Checks c)

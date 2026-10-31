@@ -68,9 +68,9 @@ other collections retain parallel execution. This prevents unrelated test load
 from interfering with process startup, pipe drains and cancellation probes.
 ANSI snapshot fixtures wait for view coordinates to match the driver's resized
 buffer before asserting cells; a fixed timer alone does not guarantee layout.
-Terminal.Gui handover-disposal fixtures enter and leave a running frame before
-checking repeated disposal, matching the product handover lifecycle and avoiding
-the Windows ANSI native-input startup race from disposing immediately after Init.
+Terminal.Gui disposal and diagnostic-writer fixtures enter and leave a running
+frame before disposal, matching native startup/shutdown and avoiding the Windows
+ANSI native-input startup race from disposing immediately after Init.
 ConPTY fixtures retain their process-exit assertions and allow up to five seconds
 for Windows to release sharing locks on their own temporary directory during cleanup.
 

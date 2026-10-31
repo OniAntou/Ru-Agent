@@ -352,7 +352,7 @@ public sealed partial class InProcessModelStepRunnerTests
             Deltas(new ModelDelta("mo ta", [], completed: true, finishReason: "stop")));
         var runner = new InProcessModelStepRunner(new ModelStepService(provider))
         {
-            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap(acceptsImageInput: true)),
             LoadRunImagesAsync = (_, _) =>
                 Task.FromResult<IReadOnlyList<string>>(["data:image/png;base64,aGVsbG8="]),
         };
@@ -412,13 +412,14 @@ public sealed partial class InProcessModelStepRunnerTests
             CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
         };
 
-    private static ProviderBootstrapData Bootstrap() => new(
+    private static ProviderBootstrapData Bootstrap(bool acceptsImageInput = false) => new(
         "Kilo",
         "chat_completions",
         new Uri("https://step-provider.invalid/v1"),
         "model-b",
         "step-secret",
-        contextWindowTokens: 32_768);
+        contextWindowTokens: 32_768,
+        acceptsImageInput: acceptsImageInput);
 
     private static ModelStepRequest Request(SystemPromptContext? promptContext = null) => new(
         new RunId("run_" + new string('a', 32)),

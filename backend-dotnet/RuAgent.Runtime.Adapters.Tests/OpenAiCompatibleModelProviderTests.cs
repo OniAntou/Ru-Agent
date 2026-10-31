@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 using Xunit;
 
@@ -25,6 +26,29 @@ public sealed class OpenAiCompatibleModelProviderTests
 
         var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
         Assert.Equal(8192, body["max_tokens"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task GenerateAsync_applies_the_provider_session_and_user_agent_headers()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+        var request = new ModelRequest("glm-5.3-flash", "system", "hello", [], new JsonObject(),
+            new Uri("https://opencode.ai/inference/go/openai/v1/chat/completions"), "synthetic", 8192,
+            providerHeaders: new Dictionary<string, string>
+            {
+                ["x-opencode-session"] = "sess_01",
+                [ProviderWireIdentity.UserAgentHeaderName] = ProviderWireIdentity.UserAgent,
+            });
+
+        _ = await provider.GenerateAsync(request, CancellationToken.None).ToListAsync();
+
+        Assert.Equal("sess_01", Assert.Single(handler.Request.Headers.GetValues("x-opencode-session")));
+        Assert.Equal(ProviderWireIdentity.UserAgent, Assert.Single(handler.Request.Headers.GetValues("User-Agent")));
+        Assert.Equal("synthetic", handler.Request.Headers.Authorization?.Parameter);
     }
 
     [Fact]
@@ -244,7 +268,6 @@ public sealed class OpenAiCompatibleModelProviderTests
                 ["availability"] = "executable",
                 ["model_enabled"] = true,
                 ["capability_class"] = "tool",
-                ["verification_required"] = false,
                 ["input_schema"] = JsonNode.Parse(
                     "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"path\":{\"type\":\"string\"}}}"),
             }),

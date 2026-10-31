@@ -220,8 +220,10 @@ public sealed class ContextCompactionPlannerTests
         Assert.DoesNotContain(plan.CoveredEntries, entry => entry.SourceId == "current");
     }
 
-    [Fact]
-    public async Task Planner_protects_actual_user_request_when_runtime_snapshot_is_last_user_entry()
+    [Theory]
+    [InlineData("\nobserved_path_b64: abc")]
+    [InlineData("\nobserved_dir_b64: abc")]
+    public async Task Planner_protects_actual_user_request_when_runtime_scope_snapshot_is_last_user_entry(string scopeMetadata)
     {
         var requestSource = "event:request";
         var snapshotSource = RuntimeContextSnapshot.SourcePrefix + "paths";
@@ -229,7 +231,7 @@ public sealed class ContextCompactionPlannerTests
             ModelContextEntry.Text(requestSource, 1, ModelContextRole.User, new string('r', 500)),
             ModelContextEntry.Assistant("event:old-answer", 2,
                 new AssistantStep(new string('a', 2_000), [], AssistantFinishReason.Stop, 0)),
-            ModelContextEntry.Text(snapshotSource, 3, ModelContextRole.User, "\nobserved_path_b64: abc"));
+            ModelContextEntry.Text(snapshotSource, 3, ModelContextRole.User, scopeMetadata));
         var decision = new ContextBudgetDecision(10_000, 1, 1, 1, 1, true, ContextCompactionStrategy.Normal);
 
         var plan = ContextCompactionPlanner.Plan(

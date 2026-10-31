@@ -1295,8 +1295,8 @@ public sealed class ReadOnlyTracerTests
         Assert.Equal("interactive_required", trustJson.ErrorCode);
 
         var approveJson = AgentCliParser.Parse(new[] { "agent", "approve", "run_" + new string('a', 32), "apr_" + new string('b', 32), "--json" });
-        Assert.False(approveJson.Success);
-        Assert.Equal("interactive_required", approveJson.ErrorCode);
+        // Approval by id is explicit: --json chooses the output format, not a prompt.
+        Assert.True(approveJson.Success);
 
         var importJson = AgentCliParser.Parse(new[] { "agent", "policy", "import", "--global", "file.json", "--json" });
         Assert.False(importJson.Success);

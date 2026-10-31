@@ -32,4 +32,10 @@ public sealed class SkillRootsTests
         Assert.Equal(3, roots.Count);
         Assert.All(roots, root => Assert.StartsWith("w", root, StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void User_installation_root_is_the_existing_local_application_data_skill_root()
+    {
+        Assert.Equal(Path.Combine("local", "Ru", "skills"), SkillRoots.UserInstallationRoot("local"));
+    }
 }

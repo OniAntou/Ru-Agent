@@ -1,113 +1,130 @@
 using System.Collections.ObjectModel;
+using System.Text;
 using System.Text.Json;
 
 namespace RuAgent.Harness.Core.Context;
 
-public enum VerificationCheckStatus { Pending, Passed, Failed, Stale }
+public enum VerificationCheckStatus { Pending, Passed, Failed }
 
+/// <summary>
+/// One check identity with its latest result. Identity is the canonical metadata identity when the
+/// receipt carries one, otherwise the raw command identity; no other check can retire it (ADR 0039).
+/// </summary>
 public sealed record VerificationCheckEvidence(string Identity, string ProviderCallId,
     string? ExecutionId, int ExpectedExitCode, bool IsVerification,
-    VerificationCheckStatus Status, string Code, string Command, bool InvalidatedDuringExecution = false,
-    int? ObservedExitCode = null, bool RejectedBeforeLaunch = false);
+    VerificationCheckStatus Status, string Code, string Command,
+    int? ObservedExitCode = null, string? WorkingDirectory = null);
 
-/// <summary>Host-derived original receipt evidence; survives compaction, grants no authority.</summary>
+/// <summary>Host-derived original receipt evidence; survives compaction, grants no authority.
+/// It also carries the completion evidence (source edits, latest todo list) used by the completion guards.</summary>
 public sealed partial class RunVerificationEvidence
 {
     public const int MaximumChecks = 256;
+    private const string CompletedTodoStatus = "completed";
     public IReadOnlyList<VerificationCheckEvidence> Checks { get; }
     public bool Overflowed { get; }
-    public bool HasMutations { get; }
+
+    /// <summary>
+    /// True from a successful source edit (or unknown effect) until a declared purpose=verification check
+    /// launches. Never set by terminal commands alone.
+    /// </summary>
+    public bool SourceEditAwaitingVerification { get; }
+
+    /// <summary>Sticky: true once any structured source edit ran in this run.</summary>
+    public bool HasSourceEdits { get; }
+
+    /// <summary>
+    /// True when a declared check (purpose=verification or expected_failure) launched after the last
+    /// structured source edit. Each source edit resets it. With no source edit this means a declared check
+    /// launched at all. Read by the summary label only; it never creates an obligation.
+    /// </summary>
+    public bool DeclaredCheckSinceSourceEdit { get; }
+
+    /// <summary>
+    /// Rows of the most recent successful todo_write in this run, or null when none ran.
+    /// A later empty list is a real, empty list rather than null.
+    /// </summary>
+    public IReadOnlyList<AgentTodoRow>? LatestTodos { get; }
+
+    /// <summary>Contents of the latest list's rows that are not completed, in list order.</summary>
+    public IReadOnlyList<string> OpenTodoItems => LatestTodos is null
+        ? Array.Empty<string>()
+        : LatestTodos.Where(row => row.Status != CompletedTodoStatus).Select(row => row.Content).ToArray();
+
+    /// <summary>True when the latest list has at least one row and every row is completed.</summary>
+    public bool HasCompletedTodoList => LatestTodos is { Count: > 0 } rows
+        && rows.All(row => row.Status == CompletedTodoStatus);
+
     private readonly HashSet<string> _expectedFailures;
     private readonly string? _programFailure;
 
     private RunVerificationEvidence(IEnumerable<VerificationCheckEvidence> checks,
-        HashSet<string> expectedFailures, bool overflowed, bool hasMutations, string? programFailure = null)
+        HashSet<string> expectedFailures, bool overflowed, string? programFailure,
+        bool sourceEditAwaitingVerification, bool hasSourceEdits, bool declaredCheckSinceSourceEdit,
+        IReadOnlyList<AgentTodoRow>? latestTodos)
     {
         Checks = new ReadOnlyCollection<VerificationCheckEvidence>(checks.ToArray());
         _expectedFailures = expectedFailures;
         Overflowed = overflowed;
-        HasMutations = hasMutations;
         _programFailure = programFailure;
+        SourceEditAwaitingVerification = sourceEditAwaitingVerification;
+        HasSourceEdits = hasSourceEdits;
+        DeclaredCheckSinceSourceEdit = declaredCheckSinceSourceEdit;
+        LatestTodos = latestTodos;
     }
 
     public string? BlockingCode => _programFailure ?? (Overflowed ? "verification_tracking_limit"
-        : Checks.FirstOrDefault(check => (check.IsVerification || check.ExpectedExitCode != 0)
-            && check.Status != VerificationCheckStatus.Passed)?.Code);
+        : OutstandingChecks().FirstOrDefault()?.Code);
 
     public bool IsExpectedFailure(ToolExecutionReceipt receipt) =>
         receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero"
         && receipt.ProviderCallId is { } id && _expectedFailures.Contains(ReceiptIdentity(receipt, id));
-
-    public string? DescribeExitMismatch()
-    {
-        var mismatches = Checks.Where(IsConfirmedExitMismatch).ToArray();
-        if (mismatches.Length == 0) return null;
-        var other = Checks.Where(check => (check.IsVerification || check.ExpectedExitCode != 0)
-            && check.Status != VerificationCheckStatus.Passed && !IsConfirmedExitMismatch(check)).ToArray();
-        return "The run could not complete: a declared negative test returned a different exit code.\n\n"
-            + string.Join("\n", mismatches.Take(8).Select(check =>
-                $"- {check.Command.Replace('\r', ' ').Replace('\n', ' ')}: expected {check.ExpectedExitCode}, observed {check.ObservedExitCode}."))
-            + (mismatches.Length > 8 ? $"\n- {mismatches.Length - 8} additional mismatches." : "")
-            + (other.Length > 0 ? "\n\nOther outstanding checks: "
-                + string.Join(", ", other.Take(8).Select(check => check.Code))
-                + (other.Length > 8 ? $"; {other.Length - 8} more" : "") + "." : "")
-            + (Overflowed ? "\nRequired verification capacity was exceeded." : "")
-            + (_programFailure is not null ? "\nProgram effects are not fully recorded; do not repeat uncertain effects." : "")
-            + "\n\nThese checks remain failed. A successful alternative invocation does not change the original result. "
-            + "For a native executable's exact exit code, use run_process; a PowerShell wrapper can return 1 instead. "
-            + "No automatic retry was scheduled for this final report.";
-    }
-
-    public bool HasExitMismatch => Checks.Any(IsConfirmedExitMismatch);
-
-    private static bool IsConfirmedExitMismatch(VerificationCheckEvidence check) => check.ExpectedExitCode != 0
-        && check.Status == VerificationCheckStatus.Failed && check.Code == "expected_exit_mismatch"
-        && check.ObservedExitCode is not null;
-
-    public string? DescribePending()
-    {
-        if (_programFailure is not null) return _programFailure + ": program effects are not fully recorded. Inspect the workspace; do not repeat uncertain effects. Report [BLOCKED].";
-        var pending = Checks.Where(check => (check.IsVerification || check.ExpectedExitCode != 0)
-            && check.Status != VerificationCheckStatus.Passed).ToArray();
-        if (pending.Length == 0 && !Overflowed) return null;
-        return "Outstanding declared checks: " + string.Join(", ", pending.Take(8)
-            .Select(check => $"{check.ProviderCallId} ({check.Code}): {check.Command}"))
-            + (pending.Length > 8 ? $"; {pending.Length - 8} more" : "")
-            + (Overflowed ? "; verification_tracking_limit" : "")
-            + (pending.Any(check => check.RejectedBeforeLaunch)
-                ? ". A check rejected before launch never ran; a corrected check of the same kind that passes resolves it"
-                : "")
-            + (pending.Any(check => check.Code == "expected_exit_mismatch")
-                ? ". An expected-exit mismatch is an observed result, not a transient tool error. Do not keep rerunning a deliberately failing command to force its expected code. A different invocation does not clear the original check. Report the actual exit and use [BLOCKED] for the incomplete outcome."
-                : ". Inspecting logs does not satisfy a check. Rerun the same check after repairs or report [BLOCKED].");
-    }
 
     public static RunVerificationEvidence Project(IEnumerable<ModelContextEntry> originalRunEntries,
         RunVerificationEvidence? previous = null)
     {
         var evidence = new VerificationEvidenceBuffer(MaximumChecks);
         if (previous is not null) evidence.Seed(previous.Checks, previous._expectedFailures, previous.Overflowed);
-        bool hasMutations = previous?.HasMutations ?? false;
+        bool sourceEditAwaitingVerification = previous?.SourceEditAwaitingVerification ?? false;
+        bool hasSourceEdits = previous?.HasSourceEdits ?? false;
+        bool declaredCheckSinceSourceEdit = previous?.DeclaredCheckSinceSourceEdit ?? false;
+        IReadOnlyList<AgentTodoRow>? latestTodos = previous?.LatestTodos;
         string? programFailure = previous?._programFailure;
         foreach (var (entry, proposed) in ExpandProgramEvidence(originalRunEntries, () =>
-            { programFailure = "program_evidence_unavailable"; hasMutations = true; evidence.Invalidate(); }))
+            {
+                // Unknown nested effects are conservatively a source edit that no check has yet answered.
+                programFailure = "program_evidence_unavailable";
+                sourceEditAwaitingVerification = true;
+                hasSourceEdits = true;
+                declaredCheckSinceSourceEdit = false;
+            }))
         {
             var receipt = entry.ToolReceipt!;
             var providerId = receipt.ProviderCallId!;
-            bool terminal = proposed.ToolId is "bash" or "powershell" or "run_process" or "terminal_read" or "terminal_stop"
+            bool terminal = (proposed.ToolId == "bash" || RuAgent.Protocol.CodingToolArguments.AdapterToolId(proposed.ToolId) == "bash")
                 && proposed.ToolVersion == "1.0.0";
-            bool effect = receipt.Outcome == ToolExecutionOutcome.Succeeded || receipt.SideEffectsPossible
-                || receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown
-                || terminal && receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
             if (!terminal)
             {
-                if (effect && (proposed.ToolId is "write" or "edit" or "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" or "agent_apply" || receipt.SideEffectsPossible))
+                // Same gate as the live todo activity: a successful list replaces the earlier one,
+                // and a payload that does not parse keeps the earlier list rather than erasing it.
+                if (proposed.ToolId == "todo_write" && receipt.Outcome == ToolExecutionOutcome.Succeeded
+                    && entry.Content is { } todoContent
+                    && AgentTodoPayload.TryRead(Encoding.UTF8.GetBytes(todoContent)) is { } todoRows)
                 {
-                    hasMutations = true;
-                    evidence.Invalidate();
+                    latestTodos = todoRows;
+                }
+
+                bool effect = receipt.Outcome is ToolExecutionOutcome.Succeeded or ToolExecutionOutcome.OutcomeUnknown
+                    || receipt.SideEffectsPossible;
+                if (effect && IsSourceEditCall(proposed))
+                {
+                    sourceEditAwaitingVerification = true;
+                    hasSourceEdits = true;
+                    declaredCheckSinceSourceEdit = false;
                 }
                 continue;
             }
+
             var args = proposed.Arguments;
             if (RuAgent.Protocol.CodingToolArguments.AdapterToolId(proposed.ToolId) == "bash")
             {
@@ -119,6 +136,7 @@ public sealed partial class RunVerificationEvidence
                 args = System.Text.Json.JsonSerializer.SerializeToElement(RuAgent.Protocol.CodingToolArguments.ToAdapterArguments(
                     proposed.ToolId, displayArguments));
             }
+
             string purpose = StringArg(args, "purpose") ?? "command";
             string mode = StringArg(args, "mode") ?? "run";
             if (mode is "read_output" or "kill")
@@ -128,51 +146,47 @@ public sealed partial class RunVerificationEvidence
                     evidence.Store(Assess(prior, receipt, entry.Content, providerId, mode == "kill"));
                 continue;
             }
+
+            // ADR 0039 item 5: a launch rejected before any process started observed nothing. It creates no
+            // check and no obligation. The failed receipt is still handled by the tool-failure guard.
+            bool actualProcessFailure = receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
+            bool rejectedBeforeLaunch = receipt.Outcome == ToolExecutionOutcome.Failed
+                && !receipt.SideEffectsPossible && !actualProcessFailure;
+            if (rejectedBeforeLaunch) continue;
+
             var metadata = ReadTerminalMetadata(entry.Content);
-            // A failed lookup is still read-only. Only a consistent, observed normal
-            // exit can preserve prior checks; uncertain effects remain conservative.
-            var completedRead = metadata.CompletedReadExitCode is { } observedExit
-                && (receipt.Outcome == ToolExecutionOutcome.Succeeded && receipt.Code == "ok" && observedExit == 0
-                    || receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "process_exit_nonzero" && observedExit != 0);
-            if (purpose == "command" && effect && !completedRead)
-            {
-                hasMutations = true;
-                evidence.Invalidate();
-            }
             int expectedExit = 0;
             bool negative = purpose == "expected_failure" && TryExpectedExit(args, out expectedExit);
             if (!negative) expectedExit = 0;
-            string rawIdentity = CommandIdentity(args, expectedExit);
-            string identity = metadata.CanonicalIdentity is { } digest ? "canonical:" + digest + ":" + expectedExit : rawIdentity;
-            // Upgrade a legacy check only after the exact original invocation is
-            // observed again with authority metadata, never by guessing old paths.
-            evidence.UpgradeIdentity(rawIdentity, identity);
+            string identity = metadata.CanonicalIdentity is { } digest
+                ? "canonical:" + digest + ":" + expectedExit
+                : CommandIdentity(args, expectedExit);
             var tracked = evidence.Find(identity);
-            bool actualProcessFailure = receipt.Code is "process_exit_nonzero" or "process_timed_out" or "process_cancelled";
             if (tracked is null && purpose != "verification" && !negative && !actualProcessFailure) continue;
-            // A launch rejected before any process started (malformed arguments,
-            // policy or resolution failure) observed nothing. Its declared intent
-            // stays outstanding, but the identical rejected call can never pass,
-            // so a later passing check of the same kind resolves it. It never
-            // replaces evidence from an invocation that actually ran.
-            bool rejectedBeforeLaunch = receipt.Outcome == ToolExecutionOutcome.Failed
-                && !receipt.SideEffectsPossible && !actualProcessFailure;
-            if (rejectedBeforeLaunch && tracked is { RejectedBeforeLaunch: false }) continue;
             var initial = new VerificationCheckEvidence(identity, providerId, null, expectedExit,
                 purpose == "verification" || tracked?.IsVerification == true,
-                VerificationCheckStatus.Pending, "verification_pending", DescribeCommand(args));
+                VerificationCheckStatus.Pending, "verification_pending", DescribeCommand(args),
+                WorkingDirectory: metadata.WorkingDirectory);
             var assessed = Assess(initial, receipt, entry.Content, providerId, false);
-            if (rejectedBeforeLaunch) assessed = assessed with { RejectedBeforeLaunch = true };
             evidence.Store(assessed);
-            if (assessed.Status == VerificationCheckStatus.Passed) evidence.ResolveRejectedBy(assessed);
+
+            // A declared check that launched answers the awaiting edit, whatever its exit. A failing one
+            // stays outstanding through the check path, so this flag never hides it.
+            if (purpose == "verification") sourceEditAwaitingVerification = false;
+            if (assessed.IsVerification || assessed.ExpectedExitCode != 0) declaredCheckSinceSourceEdit = true;
             if (negative && assessed.Status == VerificationCheckStatus.Passed
                 && receipt.Outcome == ToolExecutionOutcome.Failed)
             {
                 evidence.RememberExpectedFailure(ReceiptIdentity(receipt, providerId));
             }
         }
-        return new(evidence.Checks, evidence.ExpectedFailures, evidence.Overflowed, hasMutations, programFailure);
+        return new(evidence.Checks, evidence.ExpectedFailures, evidence.Overflowed, programFailure,
+            sourceEditAwaitingVerification, hasSourceEdits, declaredCheckSinceSourceEdit, latestTodos);
     }
+
+    /// <summary>Outstanding declared checks: failed or pending latest results (ADR 0039 decision 2).</summary>
+    private IEnumerable<VerificationCheckEvidence> OutstandingChecks() =>
+        Checks.Where(VerificationObligationPolicy.IsOutstanding);
 
     private static IEnumerable<(ModelContextEntry Entry, ModelToolCall Call)> ExpandProgramEvidence(
         IEnumerable<ModelContextEntry> source, Action unknown)
@@ -196,13 +210,28 @@ public sealed partial class RunVerificationEvidence
             {
                 var nestedReceipt = new ToolExecutionReceipt(receipt.ExecutionId, receipt.ToolCallId, nested.Outcome,
                     nested.Code, null, nested.SideEffectsPossible, providerCallId: nested.Call.ProviderCallId);
-                yield return (ModelContextEntry.ToolResult(nested.Call.ProviderCallId, entry.Sequence, nestedReceipt, nested.Output.GetRawText()), nested.Call);
+                yield return (ModelContextEntry.ToolResult(nested.Call.ProviderCallId, entry.Sequence, nestedReceipt,
+                    nested.Output.GetRawText()), nested.Call);
             }
         }
     }
 
     private static string? StringArg(JsonElement args, string name) =>
         args.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    // Source edits are structured writes outside documentation. A missing or unreadable
+    // target and apply_patch or agent_apply count as source. File deletion and restoration
+    // are never source edits, so cleaning up a scratch file cannot reopen the nudge.
+    private static bool IsSourceEditCall(ModelToolCall call)
+    {
+        if (call.ToolId is "apply_patch" or "agent_apply") return true;
+        if (call.ToolId is not ("write" or "edit" or "write_file" or "edit_file")) return false;
+        var args = call.Arguments;
+        if (args.ValueKind != JsonValueKind.Object) return true;
+        // The legacy write adapter carries delete and restore in op; those are file_delete and file_restore.
+        if (call.ToolId == "write" && StringArg(args, "op") is "delete" or "restore") return false;
+        return StringArg(args, "path") is not { } path || !VerificationObligationPolicy.IsDocumentationPath(path);
+    }
 
     private static string ReceiptIdentity(ToolExecutionReceipt receipt, string providerId) =>
         receipt.ExecutionId.Value + "|" + receipt.ToolCallId.Value + "|" + providerId;

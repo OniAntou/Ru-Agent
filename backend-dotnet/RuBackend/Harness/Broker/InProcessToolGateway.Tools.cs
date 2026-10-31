@@ -249,6 +249,8 @@ public sealed partial class InProcessToolGateway
         }
 
         var result = reply.Receipt;
+        if (_observeToolResult is not null && result.Status == ToolResultStatuses.Succeeded)
+            await _observeToolResult(Lease, pending.ToolId, result.Output, cancellationToken).ConfigureAwait(false);
         if (pending.ToolId == "run_code")
             return new ToolExecutionReceipt(execution.ExecutionId, execution.ToolCallId,
                 result.Output["effects_unknown"]?.GetValue<bool>() == true ? ToolExecutionOutcome.OutcomeUnknown

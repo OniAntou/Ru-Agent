@@ -5,6 +5,10 @@ namespace RuAgent.Protocol;
 /// <summary>Workflow metadata validation, separate from execution permission.</summary>
 public static class TerminalWorkflowIntent
 {
+    // Schema bounds only. The deprecated supersedes field is accepted and ignored (ADR 0039).
+    public const int MaximumSupersededChecks = 16;
+    public const int MaximumSupersededCallIdChars = 256;
+
     public static bool HasValidExpectedExitCode(JsonObject arguments)
     {
         var expectedFailure = arguments["purpose"] is JsonValue purpose

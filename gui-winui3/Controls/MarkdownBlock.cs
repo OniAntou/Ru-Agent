@@ -445,6 +445,14 @@ namespace RuApp.Controls
 
             private Paragraph Heading(HeadingBlock heading, int indent)
             {
+                double size = bodySize + (heading.Level switch
+                {
+                    1 => 6,
+                    2 => 4,
+                    3 => 2,
+                    4 => 1,
+                    _ => 0,
+                });
                 var paragraph = new Paragraph
                 {
                     Margin = heading.Level switch
@@ -453,15 +461,11 @@ namespace RuApp.Controls
                         2 => new Thickness(0, 16, 0, 6),
                         _ => new Thickness(0, 14, 0, 6),
                     },
-                    LineHeight = TextLineHeight,
+                    // Wrapped headings need room for their larger glyphs without
+                    // changing the reading rhythm of ordinary paragraphs.
+                    LineHeight = Math.Max(TextLineHeight, Math.Round(size * 1.4)),
                 };
-                double size = heading.Level switch
-                {
-                    1 => bodySize + 1,
-                    _ => bodySize,
-                };
-                var weight = heading.Level <= 2 ? FontWeights.Bold : FontWeights.SemiBold;
-                AddInlines(paragraph, heading.Inline, size, weight, DisplayFont);
+                AddInlines(paragraph, heading.Inline, size, FontWeights.SemiBold, DisplayFont);
                 return paragraph;
             }
 

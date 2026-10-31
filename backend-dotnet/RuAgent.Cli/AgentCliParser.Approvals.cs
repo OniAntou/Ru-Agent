@@ -188,9 +188,6 @@ public static partial class AgentCliParser
         if (approvalId is null)
             return Fail("missing_approval_id", "Missing required <approval-id> for 'agent approve'.");
 
-        if (json)
-            return Fail("interactive_required", "--json cannot confirm approval; interactive required.");
-
         return Success(new ApproveCommand(runId, approvalId, ApprovalScope.Once, json, always));
     }
 
@@ -236,9 +233,6 @@ public static partial class AgentCliParser
             return Fail("missing_run_id", "Missing required <run-id> for 'agent deny'.");
         if (approvalId is null)
             return Fail("missing_approval_id", "Missing required <approval-id> for 'agent deny'.");
-
-        if (json)
-            return Fail("interactive_required", "--json cannot confirm approval denial; interactive required.");
 
         return Success(new DenyCommand(runId, approvalId, json));
     }

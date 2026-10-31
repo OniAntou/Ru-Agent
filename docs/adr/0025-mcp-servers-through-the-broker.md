@@ -5,6 +5,10 @@ date: 2026-10-22
 
 # MCP servers run through the Broker behind one `mcp` tool
 
+> Transport extension: [ADR 0035](0035-mcp-streamable-http.md) adds explicit
+> Streamable HTTP and bounded structured/resource-link results. The original
+> stdio decision below remains applicable to local server processes.
+
 ## Context
 
 Power users coming from Claude Code and Codex expect to attach Model Context

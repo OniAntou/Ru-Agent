@@ -37,6 +37,13 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
             message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.Credential);
         }
 
+        // Provider-mandated headers (a conversation id, a product user-agent) are
+        // validated by ModelRequest; they never replace the credential or framing.
+        foreach (var (name, value) in request.ProviderHeaders)
+        {
+            message.Headers.TryAddWithoutValidation(name, value);
+        }
+
         var response = await ModelHttpTransport.SendAsync(
             _httpClient, message, cancellationToken, _requestTimeout).ConfigureAwait(false);
 
@@ -44,11 +51,15 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         {
             if (!response.IsSuccessStatusCode)
             {
-                throw response.StatusCode == HttpStatusCode.TooManyRequests
-                    ? await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                    : await ModelContextOverflowError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
-                        ? new ModelProviderException(ModelContextOverflowError.Code, false)
-                        : MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
+                if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                    throw await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false);
+                var error = await ModelContextOverflowError.ReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+                if (ModelContextOverflowError.IsError(error))
+                    throw new ModelProviderException(ModelContextOverflowError.Code, false);
+                // Tools are part of every run; there is no tool-free retry to fall back to.
+                if (request.NativeToolCalling && ModelContextOverflowError.IsToolCallingUnsupported(error))
+                    throw new ModelProviderException(ModelContextOverflowError.ToolCallingUnsupportedCode, false);
+                throw MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
             }
 
             Stream stream;
@@ -225,7 +236,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
 
     private static string BuildRequestBody(ModelRequest request)
     {
-        if (request.Images.Count > 0 && !ModelImage.IsVisionModel(request.Model))
+        if (request.Images.Count > 0 && !request.AcceptsImageInput)
             throw new ModelProviderException("vision_unsupported", false);
 
         var messages = new JsonArray

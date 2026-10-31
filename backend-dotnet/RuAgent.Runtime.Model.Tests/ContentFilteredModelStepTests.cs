@@ -18,7 +18,7 @@ public sealed class ContentFilteredModelStepTests
             {
                 ["tool_id"] = "files.read", ["tool_version"] = "1.0.0",
                 ["scopes"] = new JsonArray("workspace.read"), ["availability"] = "executable",
-                ["model_enabled"] = true, ["capability_class"] = "tool", ["verification_required"] = false,
+                ["model_enabled"] = true, ["capability_class"] = "tool",
             })),
             new ProviderBootstrapData("fixture", ProviderProtocols.ChatCompletions,
                 new Uri("https://provider.invalid/v1/chat/completions"), "fixture-model", "synthetic"));

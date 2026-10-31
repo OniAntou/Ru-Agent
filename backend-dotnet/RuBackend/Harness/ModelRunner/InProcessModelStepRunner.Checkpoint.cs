@@ -17,7 +17,8 @@ public sealed partial class InProcessModelStepRunner
         {
             var context = ContextCheckpoint.WithDirective(request.Context);
             var source = await BuildGenerationRequestAsync(new ModelStepRequest(request.RunId, request.ModelStepId,
-                context, request.PromptContext, request.Preset, request.PolicySnapshotVersion, request.PolicySnapshotSha256),
+                context, request.PromptContext, request.Preset, request.PolicySnapshotVersion, request.PolicySnapshotSha256,
+                sessionId: request.SessionId),
                 null, timeout.Token, preparingSnapshot: true).ConfigureAwait(false);
             var bootstrap = source.ProviderBootstrap.WithReducedEffort();
             var cap = Math.Min(4096, bootstrap.MaximumOutputTokens ?? 4096);
@@ -25,11 +26,13 @@ public sealed partial class InProcessModelStepRunner
                 bootstrap.Endpoint, bootstrap.Model, bootstrap.Credential, bootstrap.RequestOptions, cap,
                 bootstrap.ToolCallingMode, allowNativeResponses: true, allowNativeAnthropic: true,
                 bootstrap.UseMaxCompletionTokens, bootstrap.ContextWindowTokens, cap,
-                replayChatReasoning: bootstrap.ReplayChatReasoning);
+                replayChatReasoning: bootstrap.ReplayChatReasoning,
+                acceptsImageInput: bootstrap.AcceptsImageInput,
+                sessionHeaderName: bootstrap.SessionHeaderName);
             // Reuse protocol-specific continuations, including opaque provider reasoning, without a dispatch loop.
             var generation = new ModelGenerationRequest(source.Prompt, source.ModelMessages, source.SystemPromptContext,
                 source.Settings, summaryBootstrap, source.Images, source.ResponsesInputItems, source.AnthropicMessages,
-                source.PromptInHistory, source.PendingRuntimeSnapshot);
+                source.PromptInHistory, source.PendingRuntimeSnapshot, source.SessionId);
             var prepared = _stepService.PrepareRequest(generation, request.ModelStepId.Value);
             if (prepared.EstimatedInputTokens > prepared.MaxPromptTokens - RequestSafetyMarginTokens)
                 throw new ContextCheckpointException("checkpoint_input_too_large");

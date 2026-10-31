@@ -4,7 +4,7 @@ import json
 import re
 import tomllib
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 MAX_FILES = 512
 MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -68,6 +68,7 @@ def tree_hash(root):
 
 def load_task(path, suite):
     is_terminal = suite == "terminal"
+    is_repository = suite == "repository"
     config_path = path / ("task.toml" if is_terminal else "instance.toml")
     config = tomllib.loads(config_path.read_text(encoding="utf-8-sig"))
     metadata = config.get("metadata", config)
@@ -96,10 +97,25 @@ def load_task(path, suite):
         raise ValueError("missing or duplicate grader groups")
     if not is_terminal and (not fail or not passed):
         raise ValueError("SWE requires both fail_to_pass and pass_to_pass")
-    globs = tuple(metadata["editable_globs"])
+    if is_repository:
+        editable_paths = metadata.get("editable_paths")
+        if (not isinstance(editable_paths, list) or len(editable_paths) < 2 or
+                not all(isinstance(item, str) and item and "\\" not in item and
+                            ":" not in item and not PurePosixPath(item).is_absolute() and
+                            PurePosixPath(item).as_posix() == item and
+                            not any(part in {"", ".", "..", "tests", "solution", ".git",
+                                            "bin", "obj", "node_modules", "__pycache__", ".pytest_cache"}
+                                    for part in PurePosixPath(item).parts)
+                        for item in editable_paths) or len(set(editable_paths)) != len(editable_paths)):
+            raise ValueError("repository tasks need safe, unique editable_paths")
+        globs = tuple(editable_paths)
+    else:
+        globs = tuple(metadata["editable_globs"])
     extension = {"csharp": "cs", "python": "py", "typescript": "ts"}[language]
-    if globs != (f"src/**/*.{extension}",):
+    if not is_repository and globs != (f"src/**/*.{extension}",):
         raise ValueError("task edits must be restricted to its source language")
+    if is_repository and not any(item.startswith("src/") for item in globs):
+        raise ValueError("repository tasks must allow at least one source path")
     inventory(seed)
     inventory(path / "solution/src")
     instruction = instruction_path.read_text(encoding="utf-8")
@@ -107,9 +123,11 @@ def load_task(path, suite):
         raise ValueError("missing or oversized task instruction")
     instruction += (
         "\n\nFinal workspace constraints:\n"
-        "Only source files matching " + ", ".join(globs) + " may be changed or added. "
-        "All other existing files must remain unchanged, including project files and public smoke tests. "
-        "Remove scratch files before finishing; run scratch checks inside the workspace and remove their files afterwards.\n"
+        + ("Only the declared repository paths " if is_repository else "Only source files matching ") +
+        ", ".join(globs) + " may be changed or added. "
+        + ("All other existing files must remain unchanged, including tests and grader files. " if is_repository else
+           "All other existing files must remain unchanged, including project files and public smoke tests. ")
+        + "Remove scratch files before finishing; run scratch checks inside the workspace and remove their files afterwards.\n"
     )
     required = ["tests/test.sh", "environment/Dockerfile", "solution/solve.sh"] if is_terminal else []
     grader = "tests/Grader.csproj" if language == "csharp" else f"tests/grade.{extension}"

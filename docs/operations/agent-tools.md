@@ -1,7 +1,7 @@
 # Agent tools and truthful execution
 
 This document is the operating contract for Ru's in-process tool authority,
-session policy and headless Agent surfaces, updated 2026-10-25.
+session policy and headless Agent surfaces, updated 2026-10-30.
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
@@ -17,9 +17,10 @@ declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 
 ## Coding profiles
 
-New runs default to `coding_v2` (25 definitions). `patch_v2` (24) and
-`coding_code_v1` (27) are also supported, and must be selected explicitly for a
-new run; changing the Host setting does not alter an existing run. Set
+New runs default to `coding_v2` (26 definitions). `patch_v2` (25) and
+`coding_code_v1` (28) are also supported, and
+must be selected explicitly for a new run; changing the Host setting does not
+alter an existing run. Set
 `RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1` in a dedicated Host
 process to choose the profile for new runs. Persisted provider selections must
 include a valid profile pin: a missing pin fails as `tool_profile_required`, and
@@ -60,7 +61,13 @@ Image reads require a direct `read` call. Oversized nested output stops with
 `program_tool_output_limit`; inspect the tool directly instead of rerunning
 expensive commands to recover output.
 
-Limits: 16 KiB source, 32 sequential calls, 256 KiB selected result, 2 MiB trace,
+`tools.parallel([{tool: 'read_file', arguments: {path: 'a'}}, …])` runs up to
+eight read-only calls (`read`, `read_file`, `list`, `grep`, `glob`) concurrently
+and returns results in input order. It remains a synchronous SDK call; mutations
+and terminal operations cannot enter a batch. The batch shares the normal call
+budget and reserves all members atomically before dispatch.
+
+Limits: 16 KiB source, 32 total calls, 256 KiB selected result or batch result, 2 MiB trace,
 100,000 statements, recursion depth 64, 32 MiB interpreter allocation and 250 ms
 computation per replay. The regex timeout is 50 ms. `timeout_ms` defaults to
 30 seconds and cannot exceed 120 seconds; at most two programs run per authority.
@@ -72,9 +79,11 @@ standalone operation from `blocked_call` to use the normal approval UI. Its
 arguments are omitted by name above 16 KiB. Program code approvals are
 one-time and cannot become remembered path/argv rules.
 
-Intent is stored before dispatch and a receipt afterwards. A replay uses stored,
-redacted receipts; changed source/policy/SDK or an intent without a receipt
-blocks repetition. Interrupted effects can require reconciliation and workspace
+Prepared intent is stored before the dispatch marker and a receipt afterwards.
+A replay uses stored, redacted receipts. Prepared-only calls can resume; a dispatch
+marker without a receipt blocks repetition, as do changed source/policy/SDK pins.
+Indexed batch receipts preserve original positions, including partial failures.
+Interrupted effects can require reconciliation and workspace
 inspection. Nested calls count against the shared 256-tool-call budget window.
 An unresolved program trace blocks verified completion; Continue does not clear
 the journal or authorize repeating it. If the effects cannot be established,
@@ -84,8 +93,8 @@ the shared family pool also counts nested calls. Continue opens a new window.
 
 The full trace remains encrypted audit/completion evidence. Provider context
 always receives selected results without the trace, including when the response
-would fit. Filtering cannot hide failed required checks, and nested mutations
-invalidate earlier verification. See [ADR 0028](../adr/0028-bounded-programmatic-coding-tools.md).
+would fit. Filtering cannot hide failed required checks, and a nested structured
+source edit requires a later declared check (ADR 0039). See [ADR 0028](../adr/0028-bounded-programmatic-coding-tools.md).
 
 ## Incomplete outcomes and model context
 
@@ -115,8 +124,8 @@ Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`,
 
 The Protocol catalog contains 28 definitions; the Broker has 27 executable
 bindings because `ask_user` is intercepted by the Host. Run-pinned inventories
-contain 26 definitions in `coding_v2`, 25 in `patch_v2` and 28 in
-`coding_code_v1`, before availability/role filtering. There is no selectable
+contain 26 definitions in `coding_v2`, 25 in `patch_v2`, and 28 in `coding_code_v1`,
+before availability/role filtering. There is no selectable
 legacy profile. The model-facing file mutation and terminal tools are
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `powershell`,
 `run_process`, `terminal_read` and `terminal_stop`; `apply_patch` is available
@@ -134,7 +143,10 @@ Returned JSON is fitted into 4 MiB, including escaping and metadata;
 `max_entries` (1–512); `help` takes `query` (1–256) with optional `max_results`
 (1–5) and searches the five bundled offline documents; `todo_write` replaces the
 session task list (at most 64 rows of `content` plus a `status` of `pending`,
-`in_progress` or `completed`) and touches neither disk nor network.
+`in_progress` or `completed`) and touches neither disk nor network. For a coding
+request with several explicit requirements, record each one as its own row before
+editing, and mark it `completed` only after a check that exercises it passes. A failed
+or unparseable call keeps the previous list.
 `glob` takes `pattern`
 (required) plus optional `path` and `max_results` (1–128, default 128) and returns
 stable sorted relative paths without content access; `grep` takes `query`
@@ -156,10 +168,17 @@ fail initialization. When full, a new launch returns
 spool quotas and approval rules still apply, and model arguments cannot raise
 the configured capacity.
 
+A Python verification invocation has no special case. A failed `python -c` compile or a `python -m pytest`
+run that exits 5 is a failed check if it was declared `purpose=verification`. It stays outstanding until the
+same identity passes. A different invocation does not clear it. An undeclared failure is a diagnostic only.
+Exact command identities and failed receipts are retained, and no argument or authorization changes.
+
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url` plus optional `offset` (0–4194304,
-default 0) and `limit` (1–32000, default 32000); `skill` takes `name` (1–96) and loads one
-workspace SKILL.md body as untrusted prompt guidance. `ask_user` takes
+default 0) and `limit` (1–32000, default 32000); `skill` supports catalog query
+or loading a canonical ID with arguments and a revision check. Its exact body,
+resource base and digest remain untrusted guidance; see [skills](skills.md).
+`ask_user` takes
 `question` (1–2048) plus optional `options` (at most 8 strings of 512 chars) and
 is Host-intercepted before gateway dispatch: it never reaches the Broker, parks
 the run in `WaitingUser` with a durable `input.requested` event, and resumes when
@@ -251,7 +270,7 @@ they do not make a retired public identity executable.
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | `ask_user` | always advertised (`user.input`) | Host-intercepted: the Broker never receives the call. Parks the run in `WaitingUser` with a durable `input.requested` event; the client answers through `POST /agent/v1/runs/{runId}/inputs/{inputId}`, a replayed or foreign id fails as `input_stale`, and the answer completes the parked call durably before the run resumes |
-| `mcp` (`op=list_servers`, `list_tools`, `call`) | advertised while `~/.ru/mcp.json` declares an enabled server; never to subagents | `list_servers` reads the user's file and is automatic; `list_tools` and `call` start or call a server and take the `ExternalTerminal` decision: `plan` deny, `standard` ask (`mcp_call_requires_approval`), `full_access` automatic; "Always allow" remembers one server and op/tool, never a whole server; the card names the server and tool. See [MCP servers](#mcp-servers) |
+| `mcp` (`op=list_servers`, `list_tools`, `call`) | advertised while `~/.ru/mcp.json` declares an enabled server; never to subagents | `list_servers` reads the user's file and is automatic; `list_tools` and `call` start or call a server and take the `ExternalTerminal` decision: `plan` deny, `standard` ask (`mcp_call_requires_approval`), `full_access` automatic; "Always allow" remembers one server and op/tool (`call` with its tool name, or `list_tools`), never a whole server or another op; the card names the server and tool. See [MCP servers](#mcp-servers) |
 | `computer` (`action=list`, `request_access`, `focus`, `screenshot`, `click`, `move`, `drag`, `scroll`, `type`, `key`) | advertised only to a root run that pinned the computer-use opt-in with image input; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `request_access` takes the `ExternalTerminal` decision: `standard` ask (`computer_access_requires_approval`), `full_access` automatic; other actions are allowed by policy and checked against the session's app grants when they run. Protected apps are refused in every preset (`computer_app_protected`). See [Computer use](#computer-use) |
 | connector libraries | not advertised | experimental/unwired |
 
@@ -402,12 +421,12 @@ cleanup remain. API keys stay in credential storage. See
 [ADR 0017](../adr/0017-workspace-terminal-policy.md).
 
 An explicit absolute structured-file path outside the trusted root asks for
-`external_directory_required` under `standard`. Approving for the session
-records a session-scoped `CanonicalDirectoryIdentity` for structured
-descendants; approving with `allow_always` additionally saves the folder as a
-durable project-scope path pattern (`<folder>\**`) that covers the same
-structured tools and survives restarts and later sessions of the same
-workspace identity. The evaluator honors a matched allow rule for external
+`external_directory_required` under `standard`. Any approval of that request, including a one-time
+allow, records a session-scoped `CanonicalDirectoryIdentity` for structured descendants, because the
+Host sends `allow_session_directory` for any outside-folder approval. Approving with `allow_always` additionally saves the nearest existing
+folder of the approved path as a durable project-scope path pattern (`<folder>\**`) that covers the same
+structured tools and survives restarts and later sessions of the same workspace identity. A drive,
+volume or share root is never saved; its approval is only a one-time token with no folder grant. The evaluator honors a matched allow rule for external
 targets (`external_directory_rule_allow`); deny and ask rules keep precedence,
 the plan read-only gate still applies, and no grant ever authorizes terminal
 intent. Full Access instead selects an ephemeral nearest external
@@ -539,14 +558,36 @@ tool batch that contains any failed or unverified receipt, the coordinator suppr
 the prose from the conversation outbox, retains the assistant step internally for audit
 as an `InternalOnly` payload, and answers with a bounded durable `[HARNESS RECOVERY]`
 note in the model context naming the failed receipt code, so the model can redo the
-call, use a different tool, or report the blocker. The unverified case is bounded to
-4 notes and every recovery case shares a global cap of 24 notes per run; once the
+call, use a different tool, or report the blocker. The note states the reason from
+the failed receipt and requires the next reply to be a repair tool call or a final
+`[BLOCKED]` report; a plain final reply cannot complete the run. The unverified
+case is bounded to 4 notes and every recovery case shares a global cap of 24 notes
+per run; once the
 bound is spent the run fails with the receipt error code (falling back to `tool_failed`)
 exactly as before. An unverified success claim is never displayed to the user as a
 completed answer. A subsequent different tool call remains eligible for normal execution
 to allow recovery. A first `policy_denied` is the exception: the run stays alive so
 the model can read the failed receipt plus repair hint and adjust; only a repeated
 identical deny terminates the run.
+
+A final prose reply after an unverified source edit is held once per run. A
+successful or unknown-effect `apply_patch` or `agent_apply` call, or a `write`,
+`edit`, `write_file` or `edit_file` call to a non-documentation path, sets the
+condition until a launched `purpose=verification` check runs. The harness retracts
+that reply and asks for a verification build or test; this is advice, not a
+failure, and a later final reply is not held again.
+
+Two more one-time holds can follow it, in this order, on a non-empty final reply
+that the earlier checks did not take. An `open_todos` hold retracts the reply when the
+latest successful `todo_write` list still has items that are not `completed`; its note
+quotes up to eight of them and asks for each to be finished and checked, marked
+`completed`, or removed with a stated reason. A `completion_review` hold retracts the
+reply when the run edited source, no check is awaiting verification, the source-edit
+hold was never issued, and the list is not fully completed; its note asks the model to
+re-read the request and the changed code, confirm each explicit requirement is met and
+exercised by a check, fix gaps and rerun the affected `purpose=verification` check, then
+name any unchecked requirement. Neither hold fails the run or certifies verification,
+and a fully completed list skips the review.
 
 A non-success outcome, including a failure or clarification, is also kept as
 one bounded in-memory value. It is isolated by session, consumed once by the
@@ -722,7 +763,7 @@ reason code:
   re-uses the grant on subsequent calls, and new sessions ask again.
 - `terminal_external_cwd_requires_approval` — Lệnh sẽ chạy ở thư mục ngoài
   workspace. Approval authorizes this launch; choosing always additionally
-  remembers the bounded command pattern (requested executable plus at most two
+  remembers the bounded command pattern (resolved executable plus at most two
   leading non-flag argv tokens) with the exact launch directory — không phải
   một folder grant cho terminal.
 - `rule_asks` — Rule của người dùng yêu cầu duyệt lời gọi này.
@@ -761,11 +802,17 @@ The transcript activity feed is connection-local and transient. Runtime maps the
 Core projection to an `agent.activity` SSE frame whose inner JSON contains only
 the typed fields `activity_id`, `kind`, `state`, optional safe `file_name`
 (basename/line range only), `line_start`/`line_end`, `symbol`, `count`, `added`, `removed`,
-`duration_ms`, and bounded `safe_code`. It does not advance the durable event
+`duration_ms`, bounded `safe_code`, a bounded `tool_display` and `detail`, and for a
+terminal row the process `exit_code` its receipt reported. It does not advance the durable event
 cursor, append to the Harness event store, or enter session history.
 
-The feed projects nine kinds: `thinking`, `explore`, `search`, `analyze`, `edit`,
-`terminal`, `compaction`, `retry`, and a generic `status` fallback. `compaction`
+The feed projects fourteen kinds: `thinking`, `explore`, `search`, `analyze`, `edit`,
+`terminal`, `compaction`, `retry`, `todo`, `web` (`web_search` query or `web_fetch`
+host), `mcp` ("server › tool"), `computer` (the action, never typed text), `skill`
+(a loaded skill's name or a catalog search), `program` (`run_code`, never its source),
+and a generic `status` fallback for unknown tools. `tool_display` tells apart
+listing from globbing (`List`, `Glob`), tool docs (`Docs`) and terminal follow-ups
+(`Output` for `terminal_read`, `Stop` for `terminal_stop`). `compaction`
 reports the bounded number of covered context entries and the elapsed time of a
 context compaction (the summary text never crosses the sink boundary); `retry`
 reports a bounded tool transport retry attempt (any access kind, at most once
@@ -779,15 +826,18 @@ delivers it on the UI dispatcher with `(run, model_step, transient_sequence)`
 deduplication. Raw transient JSON and tool-output deltas are never exposed to
 the UI or durable audit.
 
-Each activity item exposes one of four visual states: a spinner while started,
-a check when completed, an error mark when failed, and an ellipsis while waiting
-for approval or continuation. Thinking items may show only their elapsed
+Each desktop row reads as one line: a glyph for the kind of work, a verb in the
+row's tense ("Running", "Ran"), then the subject it acted on (file, command, query,
+host, tool) and a mono tail of numbers (line range, result count, duration, line
+delta), with an `exit N` badge for a non-zero terminal exit. A running verb sweeps;
+failed rows turn danger-coloured and waiting rows warning-coloured. Thinking items may show only their elapsed
 duration after completion. File edits and analysis show a basename and optional
 line range; search and exploration show bounded symbols or counts. The temporary
 user prompt and activity items use separate collections, so durable assistant
 history remains unchanged when the feed is cleared.
 
-The desktop surface renders every kind. The TUI renders `thinking` through the
+The desktop surface renders every kind. The TUI prints the newer tool kinds
+(`web`, `mcp`, `computer`, `skill`, `program`) as tool rows. It renders `thinking` through the
 live status row and `compaction`, `retry` and non-`frames_dropped` `status` kinds
 as transient status lines; tool kinds are settled by the durable tool events,
 which remain authoritative when transient frames are dropped. Because the
@@ -844,15 +894,27 @@ first-writer-wins `approval_stale` (including `PendingApprovalStore` and Host
 the model can adjust; only a repeated identical deny terminates the current
 run with `approval_denied`,
 so the model cannot immediately request the same permission again. Changed
-fields and expired or moved-workspace replays return `approval_stale`. The
+fields and expired or moved-workspace replays return `approval_stale`. Before an allow commits, the
+Host asks the Broker whether it still holds the approval pending; if not, the reply is `approval_stale`
+(409) and nothing is committed. The
 Broker reply carries the matcher preview plus one `authorization_token`
 (60s); a durable project rule is produced only for the explicit
 `allow_always` decision, and it carries the bounded pattern that decision
-remembered: a terminal run call stores the requested executable plus at most two
-leading non-flag argv tokens with the exact launch directory (flag-first and
-shell-mode calls stay exact), an external-directory ask stores the approved
-folder as a path pattern, and `rule_asks` / `terminal_protected_path_requires_approval`
-never become a reusable rule. Any allow additionally remembers the approved
+remembered, as the Broker builds it ([Remembered Approval](../architecture/broker.md#remembered-approval)):
+a terminal run call stores the resolved executable plus at most two leading non-flag argv tokens with
+the exact launch directory (flag-first and shell-mode calls stay exact), an external-directory ask on a
+file stores the nearest existing folder as a path pattern (a drive or share root stores nothing), and
+`rule_asks` / `terminal_protected_path_requires_approval` never become a reusable rule.
+
+Per tool, "Always allow" and session memory remember: for file tools, the canonical path, and for an
+outside folder, the nearest existing folder as a durable pattern; for `run_process` and `powershell`,
+the resolved executable, argv and canonical cwd (a `powershell` script exactly); for MCP `call` or
+`list_tools`, the server and tool (a remembered listing never covers a call); for computer use, the exact
+app list, so a request that names other apps is not covered.
+`apply_patch`, `file_restore`, `run_code`, terminal read and stop, subagent controls,
+web and skill calls are never remembered, and `allow_always` on them is refused with
+`invalid_approval_command`. Rules saved by earlier builds for MCP or computer use carry
+no identity and no longer authorize, so those calls ask again. An allow of a rememberable call additionally remembers the approved
 intent in
 the Host's in-process session ledger (the durable pattern when one was saved,
 the exact intent otherwise), and the runtime loop materializes those
@@ -890,7 +952,8 @@ device.
 
 ## MCP servers
 
-[ADR 0025](../adr/0025-mcp-servers-through-the-broker.md) defines this surface. Servers are
+[ADR 0025](../adr/0025-mcp-servers-through-the-broker.md) and
+[ADR 0035](../adr/0035-mcp-streamable-http.md) define this surface. Servers are
 declared only in the user's own `%USERPROFILE%\.ru\mcp.json`; a workspace file is never read,
 and the file is a structured protected path, so the agent cannot change it in `plan` or
 `standard`:
@@ -908,22 +971,39 @@ generic entry (for example `cmdkey /generic:ru-mcp-github /user:mcp /pass:<token
 only when the server starts. Resolved credential values are redacted from every result and
 error the tool returns.
 
-The Broker execution runtime starts a server on its first `list_tools` or `call`, at most one
+For stdio, the Broker execution runtime starts a server on its first `list_tools` or `call`, at most one
 instance per Host, inside a kill-on-close job object, as the current Windows user with the
 credential-stripped agent environment plus its declared variables. A server whose
 declaration changed or that exited is restarted; all servers stop with the Host. Startup is
 bounded to 20 seconds and each request to the server's `timeout_seconds` (default 60,
 at most 600). `arguments` is a JSON object encoded as a string (at most 64 KB) and follows
-the schema `list_tools` reports. Only text content is returned, bounded to 256 KB and
-marked `untrusted`; other content types are counted, not returned. Failures are named:
+the schema `list_tools` reports. Text, structured content and resource-link metadata
+are returned within the shared 256 KB bound and marked `untrusted`; images and
+other unsupported content are counted, not returned. Failures are named:
 `mcp_server_unknown`, `mcp_server_unavailable` (with the server's last stderr, redacted),
 `mcp_credential_missing`, `mcp_arguments_invalid`, `mcp_timeout`, `mcp_error` and
 `mcp_unavailable`. Ru does not confine what a server does once it runs.
 
+An explicit remote declaration instead uses:
+
+```json
+{"servers":{"remote":{"transport":"streamable_http","url":"https://mcp.example.com/mcp",
+  "bearer_credential":"ru-mcp-remote","timeout_seconds":60}}}
+```
+
+This transport pins MCP **2025-11-25**, supports JSON POST responses and
+request-scoped SSE, and retains the same `ExternalTerminal` approval decision.
+Only HTTPS or loopback HTTP is accepted; redirects and transport fallback are
+disabled. Session and protocol headers are validated. Authentication failure is
+`mcp_auth_required`, an expired session is `mcp_session_expired`; neither replays a
+tool call. Bearer credentials use the existing user credential store. OAuth login
+and refresh, autonomous GET streams, prompts, resource reads and sampling are
+not implemented. Resource links are metadata, not automatically fetched content.
+
 ## Computer use
 
 [ADR 0031](../adr/0031-computer-use-through-the-broker.md) defines this surface. It is off by
-default: turn it on in **Settings → General → Computer use**, or with `/computer on` in the
+default: turn it on in **Customize → Plugins → Computer use**, or with `/computer on` in the
 terminal UI. The setting is read when a new run pins its provider, and only a model that
 accepts images gets the tool, so a run never changes mid-way.
 
@@ -932,7 +1012,7 @@ accepts images gets the tool, so a run never changes mid-way.
   with access.
 - `request_access` takes 1 to 8 executable names (`notepad.exe`; a bare name gains `.exe`)
   in canonical order. In `standard` it asks once; approving records an **app grant** for the
-  rest of the Agent session. "Always allow" saves a project rule for exactly that app list.
+  rest of the Agent session. "Always allow" saves a project rule for exactly that app list, so a later request that names other apps is not covered by it.
 - `focus` takes one `app` and brings its topmost window to the front, restoring it when
   minimized. In `standard` the app needs a grant. Ru activates the window without sending
   any input to the window it replaces. Use it when another window covers the app.
@@ -964,7 +1044,7 @@ ends or is idle for two minutes), `computer_desktop_unavailable` (locked or secu
 
 **Ctrl+Alt+Backspace** (or **Ctrl+Alt+Pause** on keyboards that have it) stops computer use at any time: it cancels the action in flight and
 cancels the controlling run. Observation actions report no side effects and may repeat;
-input actions mark earlier verification stale like a terminal command. Ru does not confine
+input actions are not structured source edits and do not change verification (ADR 0039). Ru does not confine
 what a granted application does with the input.
 
 ## Hooks
@@ -984,44 +1064,49 @@ The hook runs through `cmd.exe` in the workspace root with the same credential-s
 
 ### Declaring terminal checks
 
-Use `purpose=verification` for a terminal command whose exit zero verifies the task.
-Its result stays outstanding across unrelated reads, restart and compaction, and
-must be rerun after later known mutations, including edits while a check runs in
-the background. Authenticated receipts identify the actual resolved invocation,
-so cwd aliases do not create unrelated checks. `purpose=inspection` declares read-only intent;
-it is not enforced filesystem confinement. A completed default `command`
-preserves earlier checks only when Broker's resolved executable/argv
-classification marks it read-only and the receipt
-confirms exit zero. Shell scripts, unclassified commands, failures and uncertain
-effects remain conservative. This metadata is derived by the authority and
-cannot be supplied as a model argument; it grants no execution permission.
-Exploratory/default failures remain failed receipts and do not create mandatory
-test obligations; declare required build/test checks with
-`purpose=verification`. A later alternative source does not certify the failed
-command, but can supply the requested information.
-For a task explicitly testing failure, declare `purpose=expected_failure` and the
-exact signed 32-bit nonzero `expected_exit_code` before execution. This satisfies
-only that negative check, preserves its failed receipt, and never accepts denial,
-timeout, cancellation or unknown outcome. See
-[receipt-backed verification](../architecture/harness.md#receipt-backed-verification).
+Set `purpose` on the terminal tools (`powershell`, `run_process`) to declare intent:
 
-Prefer `run_process` for literal executable/argv launches, including Python, Git
-and test runners. It returns the native process exit code. `powershell` uses
-Windows PowerShell 5.1: Bash heredocs and `&&` are not supported, and the wrapper
-can return 1 when its native child returned a different nonzero code. If shell
-execution is necessary and the native exit is required, explicitly propagate
-`$LASTEXITCODE`; never replace an observed exit with the expected value.
+- `purpose=verification` marks a required build or test. Its exit zero verifies the task.
+- `purpose=expected_failure` with an exact nonzero signed 32-bit `expected_exit_code` marks a
+  deliberately failing test. Only that observed exit satisfies it. A zero exit, a denial, a timeout,
+  a cancellation or an unknown outcome never does.
+- `purpose=inspection` marks read-only diagnostics. It is not enforced confinement.
+- The default `command` is for everything else.
 
-Do not retry a matching negative test to obtain zero. An expected-exit mismatch
-remains a failed check even when a different invocation subsequently passes. At
-final prose, the Host emits one report with the observed and expected exits and
-ends the run unsuccessfully, rather than repeating completion recovery.
+Verification is advisory ([ADR 0039](../adr/0039-advisory-verification.md)). It records evidence and
+holds final replies, but it never grants or denies execution:
 
-A declared check whose launch was rejected before any process ran (for example
-`malformed_call`, a policy denial or an unresolvable executable) observed no
-result. It stays outstanding, but because the identical rejected call can never
-pass, a later passing check of the same kind (verification or expected failure)
-resolves it. A rejected rerun never replaces evidence from a check that ran.
+- A failed, pending or result-missing declared check is outstanding. Only the same canonical check
+  passing later retires it. Unrelated reads, other passing checks and summaries do not.
+- A final reply with an outstanding check is held with a recovery note up to three times per run.
+  After that the run completes, and its summary verification state is `unverified`. A `[BLOCKED]`
+  reply still ends the run unsuccessfully.
+- An expected-exit mismatch is an outstanding failed check under the same rule. Report the observed
+  exit. Do not rerun a deliberately failing command to force the expected code, and a different
+  invocation does not clear the original check.
+- A `verified` summary needs a declared check that ran after the last structured source edit and no
+  outstanding check. Structured source edits are `write`, `edit`, `write_file`, `edit_file`,
+  `apply_patch` and `agent_apply` outside documentation paths. Terminal commands, computer input,
+  deletes and restores are not source edits.
+- Commands do not invalidate earlier checks. A background check that is still running is pending:
+  read its terminal output until it exits, and do not start a duplicate.
+- `supersedes` is accepted and ignored. It is not checked for `purpose=verification`, and it retires
+  nothing. Its schema bounds (1 to 16 entries) still apply.
+- A declared check rejected before launch (a malformed call, a policy denial or an unresolvable
+  executable) observed nothing and creates no obligation. Its failed receipt still counts as a tool
+  failure.
+
+Clean up temporary scripts before final checks. Canonical identity is the resolved executable, the
+exact argv and the canonical working directory, so cwd aliases resolve the same check. Authenticated
+receipts identify the actual resolved invocation. Authority-derived metadata grants no execution
+permission. See [receipt-backed verification](../architecture/harness.md#receipt-backed-verification).
+
+The model-facing text describes this behavior. The `purpose` description says that a command is not a
+declared check and that a failed or pending required check stays outstanding until the same check
+passes. The `supersedes` description says that it is deprecated, ignored and retires nothing.
+Verification emits no repair families or repair hints, and it never emits `verification_repair_identity`
+or `verification_invocation_invalid`. Receipts that still carry those fields parse, and the fields are
+ignored.
 
 ### Evidence retention and model continuation
 
@@ -1039,3 +1124,27 @@ Broker receipt bytes are unchanged. A truncated incomplete scan with no source
 cursor has no invented continuation: narrow the query. Offset units remain
 UTF-8 bytes for read, UTF-16 characters for web/terminal output, and match indices
 for grep. Raw SDK results retain their native receipt metadata.
+
+## Registering a model-visible tool
+
+A model-visible tool is one row in `RuAgent.Protocol/Tools/AgentToolDescriptorTable.cs`
+([ADR 0038](../adr/0038-tool-descriptor-table.md)). Its Protocol definition, Broker manifest,
+trusted adapter, session scopes and access class derive from that row. To add a tool:
+
+1. Add one row at its position in model order. Its ordinal equals its index, and it carries the
+   current definition version, primary and extra scopes, risk, approval requirement, adapter,
+   workspace requirement, access class, optional output bound, description and input schema builder.
+   The access class is a literal on the row. Only computer observation actions are refined, in
+   `ToolAccessClassification`.
+2. Write the input schema as a strict object (`additionalProperties: false`). Any example must
+   validate against it. The catalog rejects a non-strict schema or a failing example at construction.
+3. Bind an executor in the Broker execution runtime. `ToolCatalog` rejects an executor without a row
+   and a bound row without an executor.
+4. For a new risk or adapter value, add an explicit arm in `ToolDescriptorMapping`. Unmapped values
+   throw. The trusted adapter allowlist follows the `AgentToolAdapter` enum automatically.
+5. Add deliberate membership where the tool should be advertised: a coding profile in
+   `AgentToolProfiles.Includes`, a subagent role in `SubagentRoleTools`, or a program tool in
+   `ProgramToolContract.SupportedTools`. No tool is advertised by default.
+6. When a schema digest, security column or definition changes, update the golden locks
+   (`AgentToolGoldenLockTests`, `ToolManifestGoldenLockTests`) and the counts on this page and in
+   [broker.md](../architecture/broker.md).

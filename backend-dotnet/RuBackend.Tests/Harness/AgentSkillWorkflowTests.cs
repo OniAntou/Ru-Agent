@@ -80,8 +80,10 @@ public sealed class AgentSkillWorkflowTests
         using var client = factory.CreateClient();
         using var catalog = await client.GetAsync("/agent/v1/skills");
         using var settings = await client.PostAsJsonAsync("/agent/v1/skills/settings", new { action = "refresh" });
+        using var packages = await client.PostAsJsonAsync("/agent/v1/skills/packages", new { workspace_path = "D:\\LLM", action = "install", source_url = "https://github.com/acme/repo" });
         Assert.Equal(HttpStatusCode.Unauthorized, catalog.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, settings.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, packages.StatusCode);
     }
 
     private static async Task<string> CreateRunAsync(HttpClient client, string workspace, string prompt)

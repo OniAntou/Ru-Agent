@@ -238,7 +238,7 @@ public sealed class FileGlobAdapter
         }
 
         var arr = new JsonArray(final.Select(p => (JsonNode)JsonValue.Create(p)).ToArray());
-        return new JsonObject
+        var output = new JsonObject
         {
             ["results"] = arr,
             ["count"] = final.Count,
@@ -247,6 +247,15 @@ public sealed class FileGlobAdapter
             ["scanned"] = scanned,
             ["duration_ms"] = (int)sw.ElapsedMilliseconds,
         };
+
+        // An empty result set is ambiguous between "no matches" and "the call did nothing",
+        // so an explicit notice states the pattern matched nothing.
+        if (final.Count == 0)
+        {
+            output["notice"] = $"nothing matched the pattern '{pattern}'.";
+        }
+
+        return output;
     }
 
     private ResolvedPath ResolveChecked(string input)

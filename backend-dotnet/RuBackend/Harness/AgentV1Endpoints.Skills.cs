@@ -13,6 +13,7 @@ public static partial class AgentV1Endpoints
         // Available before run creation; these endpoints manage guidance, never execution grants.
         app.MapGet("/agent/v1/skills", GetSkillsAsync);
         app.MapPost("/agent/v1/skills/settings", PostSkillSettingsAsync);
+        app.MapPost("/agent/v1/skills/packages", PostSkillPackageAsync);
     }
 
     private static async Task<IResult> GetSkillsAsync(HttpContext context, CancellationToken ct)
@@ -32,6 +33,56 @@ public static partial class AgentV1Endpoints
         [property: JsonPropertyName("root")] string? Root,
         [property: JsonPropertyName("id")] string? Id,
         [property: JsonPropertyName("enabled")] bool? Enabled);
+
+    private sealed record SkillPackageRequest(
+        [property: JsonPropertyName("workspace_path")] string WorkspacePath,
+        [property: JsonPropertyName("source_url")] string SourceUrl,
+        [property: JsonPropertyName("action")] string Action);
+
+    private static async Task<IResult> PostSkillPackageAsync(
+        HttpContext context, SkillPackageInstaller installer, CancellationToken ct)
+    {
+        SkillPackageRequest? request;
+        try
+        {
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct, 8 * 1024).ConfigureAwait(false);
+            request = text is null ? null : JsonSerializer.Deserialize<SkillPackageRequest>(text);
+        }
+        catch (RequestBodyTooLargeException) { return SkillError(413, "request_too_large", "Skill package request is too large."); }
+        catch (Exception error) when (error is JsonException or DecoderFallbackException)
+        { return SkillError(400, "invalid_request", "Invalid skill package request."); }
+        if (request is null || !TrySkillWorkspace(request.WorkspacePath, out var canonical))
+            return SkillError(400, "invalid_workspace", "An existing absolute workspace path is required.");
+        if (string.IsNullOrWhiteSpace(request.SourceUrl) || request.SourceUrl.Length > 2048)
+            return SkillError(400, "invalid_skill_source", "A pinned GitHub tree URL is required.");
+        var action = request.Action switch
+        {
+            "install" => SkillPackageInstallAction.Install,
+            "update" => SkillPackageInstallAction.Update,
+            _ => (SkillPackageInstallAction?)null,
+        };
+        if (action is null) return SkillError(400, "invalid_skill_action", "Choose explicit install or update.");
+        try
+        {
+            var receipt = await installer.InstallAsync(request.SourceUrl, action.Value, ct).ConfigureAwait(false);
+            var catalog = await SkillCatalogPayloadAsync(new SkillCatalog(canonical), null, true, ct).ConfigureAwait(false);
+            return Results.Json(new { receipt, catalog });
+        }
+        catch (SkillPackageInstallException error)
+        {
+            var status = error.Code switch
+            {
+                "skill_target_exists" or "skill_update_target_missing" or "skill_target_modified" or "skill_target_unmanaged" => 409,
+                "skill_source_unavailable" or "skill_source_redirect" => 502,
+                "skill_source_timeout" => 504,
+                "skill_install_busy" => 409,
+                "skill_archive_too_large" => 413,
+                "skill_install_failed" or "skill_install_root_unsafe" => 500,
+                _ => 400,
+            };
+            return SkillError(status, error.Code, error.Message);
+        }
+    }
 
     private static async Task<IResult> PostSkillSettingsAsync(HttpContext context, CancellationToken ct)
     {
@@ -62,8 +113,13 @@ public static partial class AgentV1Endpoints
 
     private static async Task<IResult> SkillCatalogResponseAsync(SkillCatalog catalog, string? query, bool refresh, CancellationToken ct)
     {
+        return Results.Json(await SkillCatalogPayloadAsync(catalog, query, refresh, ct).ConfigureAwait(false));
+    }
+
+    private static async Task<object> SkillCatalogPayloadAsync(SkillCatalog catalog, string? query, bool refresh, CancellationToken ct)
+    {
         var result = await catalog.DiscoverAsync(query, refresh, ct).ConfigureAwait(false);
-        return Results.Json(new
+        return new
         {
             items = result.Items.Select(item => new
             {
@@ -74,7 +130,7 @@ public static partial class AgentV1Endpoints
             }),
             diagnostics = result.Diagnostics.Select(item => new { source_path = item.SourcePath, code = item.Code }),
             truncated = result.Truncated, total = result.Total,
-        });
+        };
     }
 
     private static bool TrySkillWorkspace(string? path, out string canonical)

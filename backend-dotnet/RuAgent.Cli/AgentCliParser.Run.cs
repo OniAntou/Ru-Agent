@@ -17,12 +17,14 @@ public static partial class AgentCliParser
         bool ConfirmFullAccess,
         bool Classic,
         IReadOnlyList<string> Images,
-        string? Prompt);
+        string? Prompt,
+        bool Worktree);
 
     private static AgentCliParseResult? ParseRunChatOptions(
         string[] args,
         int startIndex,
         bool allowClassic,
+        bool allowWorktree,
         string commandLabel,
         out RunChatOptions options)
     {
@@ -39,6 +41,8 @@ public static partial class AgentCliParser
         bool trustWorkspaceSeen = false;
         bool confirmFullAccess = false;
         bool confirmFullAccessSeen = false;
+        bool worktree = false;
+        bool worktreeSeen = false;
         bool classic = false;
         bool classicSeen = false;
         string? prompt = null;
@@ -139,6 +143,15 @@ public static partial class AgentCliParser
                 continue;
             }
 
+            if (token == "--worktree" && allowWorktree)
+            {
+                if (worktreeSeen)
+                    return Fail("duplicate_switch", "Duplicate --worktree.");
+                worktree = true;
+                worktreeSeen = true;
+                continue;
+            }
+
             if (token == "--classic")
             {
                 if (!allowClassic)
@@ -177,6 +190,11 @@ public static partial class AgentCliParser
         if (preset == "full_access" && !confirmFullAccess)
             return Fail("full_access_confirmation_required", "--confirm-full-access is required with --preset full_access.");
 
+        // A resumed session keeps its original workspace; a fresh worktree would
+        // silently change the authority the session was created with.
+        if (worktree && sessionId is not null)
+            return Fail("worktree_session_conflict", "--worktree cannot be combined with --session.");
+
         // --json is the non-interactive rendering. It is only accepted alongside the
         // explicit trust/full-access flags, so a scripted run cannot silently take the
         // authority those flags exist to confirm.
@@ -192,13 +210,15 @@ public static partial class AgentCliParser
             confirmFullAccess,
             classic,
             images.Count == 0 ? Array.Empty<string>() : images,
-            prompt);
+            prompt,
+            worktree);
         return null;
     }
 
     private static AgentCliParseResult ParseRun(string[] args)
     {
-        var error = ParseRunChatOptions(args, 2, allowClassic: false, commandLabel: "agent run", out var options);
+        var error = ParseRunChatOptions(
+            args, 2, allowClassic: false, allowWorktree: true, commandLabel: "agent run", out var options);
         if (error is not null)
         {
             return error;
@@ -217,12 +237,14 @@ public static partial class AgentCliParser
             options.Json,
             options.TrustWorkspace,
             options.ConfirmFullAccess,
-            options.Images.Count == 0 ? null : options.Images));
+            options.Images.Count == 0 ? null : options.Images,
+            options.Worktree));
     }
 
     private static AgentCliParseResult ParseChat(string[] args, int startIndex)
     {
-        var error = ParseRunChatOptions(args, startIndex, allowClassic: true, commandLabel: "chat", out var options);
+        var error = ParseRunChatOptions(
+            args, startIndex, allowClassic: true, allowWorktree: false, commandLabel: "chat", out var options);
         if (error is not null)
         {
             return error;

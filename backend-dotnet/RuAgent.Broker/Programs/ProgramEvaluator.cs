@@ -2,12 +2,15 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Jint;
 using Jint.Runtime;
+using RuAgent.Protocol.Programs;
 
 namespace RuAgent.Broker.Programs;
 
 public sealed record ProgramToolRequest(string ToolId, JsonObject Arguments);
+public sealed record ProgramToolBatchRequest(int StartIndex, IReadOnlyList<ProgramToolRequest> Calls);
 public sealed record ProgramToolReceipt(string ToolId, JsonObject Arguments, JsonObject Response);
-public sealed record ProgramEvaluation(JsonNode? Result = null, ProgramToolRequest? Pending = null, string? ErrorCode = null);
+public sealed record ProgramEvaluation(JsonNode? Result = null, ProgramToolRequest? Pending = null,
+    string? ErrorCode = null, ProgramToolBatchRequest? PendingBatch = null);
 
 /// <summary>Pure computation only. Each uncached call unwinds the interpreter;
 /// asynchronous execution happens outside Jint, then a fresh engine replays receipts.</summary>
@@ -26,6 +29,7 @@ public sealed class ProgramEvaluator
         var source = "(function(){\n" + code + "\n})()";
         if (ProgramSyntaxGuard.Validate(source) is { } syntaxError) return new(ErrorCode: syntaxError);
         ProgramToolRequest? pending = null;
+        ProgramToolBatchRequest? pendingBatch = null;
         string? refusal = null;
         var cursor = 0;
         using var engine = new Engine(options => options.Strict().LimitMemory(32 * 1024 * 1024)
@@ -53,17 +57,103 @@ public sealed class ProgramEvaluator
             }
             throw new ProgramYieldException();
         }));
+        engine.SetValue("__program_parallel", new Func<string, string>((descriptors) =>
+        {
+            if (pending is not null || pendingBatch is not null || refusal is not null) throw new ProgramYieldException();
+            if (Encoding.UTF8.GetByteCount(descriptors) > MaximumValueBytes)
+            {
+                refusal = "program_parallel_arguments_limit";
+                throw new ProgramYieldException();
+            }
+            var parsed = JsonNode.Parse(descriptors) as JsonArray;
+            if (parsed is null || parsed.Count == 0)
+            {
+                refusal = "program_parallel_arguments_invalid";
+                throw new ProgramYieldException();
+            }
+            if (parsed.Count > ProgramToolContract.MaximumParallelCalls)
+            {
+                refusal = "program_parallel_limit";
+                throw new ProgramYieldException();
+            }
+
+            List<ProgramToolRequest> calls = new(parsed.Count);
+            foreach (var descriptor in parsed)
+            {
+                if (descriptor is not JsonObject item || item.Count != 2
+                    || item["tool"] is not JsonValue toolValue || !toolValue.TryGetValue<string>(out var tool)
+                    || item["arguments"] is not JsonObject arguments)
+                {
+                    refusal = "program_parallel_arguments_invalid";
+                    throw new ProgramYieldException();
+                }
+                if (!SupportedTools.Contains(tool)) refusal = "program_tool_not_supported";
+                else if (!ProgramToolContract.CanRunInParallel(tool)) refusal = "program_parallel_tool_not_read_only";
+                if (refusal is not null) throw new ProgramYieldException();
+                if (Encoding.UTF8.GetByteCount(arguments.ToJsonString()) > MaximumValueBytes)
+                {
+                    refusal = "program_parallel_arguments_limit";
+                    throw new ProgramYieldException();
+                }
+                calls.Add(new ProgramToolRequest(tool, (JsonObject)arguments.DeepClone()));
+            }
+            if (cursor + calls.Count > MaximumCalls)
+            {
+                refusal = "program_call_limit";
+                throw new ProgramYieldException();
+            }
+
+            var results = new JsonArray();
+            var startIndex = cursor;
+            var pendingCalls = new List<ProgramToolRequest>();
+            foreach (var call in calls)
+            {
+                if (cursor < receipts.Count)
+                {
+                    var receipt = receipts[cursor++];
+                    if (receipt.ToolId != call.ToolId || !JsonNode.DeepEquals(receipt.Arguments, call.Arguments))
+                    {
+                        refusal = "program_replay_mismatch";
+                        throw new ProgramYieldException();
+                    }
+                    results.Add(JsonNode.Parse(receipt.Response.ToJsonString()));
+                }
+                else
+                {
+                    pendingCalls.Add(call);
+                    cursor++;
+                }
+            }
+            if (pendingCalls.Count > 0)
+            {
+                pendingBatch = new ProgramToolBatchRequest(startIndex + calls.Count - pendingCalls.Count, pendingCalls);
+                throw new ProgramYieldException();
+            }
+            var resultJson = results.ToJsonString();
+            if (Encoding.UTF8.GetByteCount(resultJson) > MaximumValueBytes)
+            {
+                refusal = "program_result_limit";
+                throw new ProgramYieldException();
+            }
+            return resultJson;
+        }));
         try
         {
             engine.Execute("""
                 const __program_bridge = (() => {
-                  const host = __program_call, stringify = JSON.stringify, parse = JSON.parse;
+                  const host = __program_call, parallelHost = __program_parallel, stringify = JSON.stringify, parse = JSON.parse;
                   delete globalThis.__program_call;
+                  delete globalThis.__program_parallel;
                   const sdk = Object.create(null);
                   sdk.call = (name,args) => {
                     const json=stringify(args);
                     if (typeof name !== 'string' || typeof json !== 'string') throw new Error('program_arguments_invalid');
                     return parse(host(name,json));
+                  };
+                  sdk.parallel = calls => {
+                    const json=stringify(calls);
+                    if (typeof json !== 'string') throw new Error('program_parallel_arguments_invalid');
+                    return parse(parallelHost(json));
                   };
                   return { sdk, serialize(value) {
                     if (value && typeof value.then === 'function') throw new Error('program_async_unsupported');
@@ -86,7 +176,7 @@ public sealed class ProgramEvaluator
             engine.Execute("const tools=Object.freeze(__program_bridge.sdk);");
             var value = engine.Evaluate(source);
             var json = engine.Invoke(serialize, value).AsString();
-            if (pending is null && refusal is null)
+            if (pending is null && pendingBatch is null && refusal is null)
             {
                 if (cursor != receipts.Count) return new(ErrorCode: "program_replay_mismatch");
                 if (Encoding.UTF8.GetByteCount(json) > MaximumValueBytes) return new(ErrorCode: "program_result_limit");
@@ -102,7 +192,8 @@ public sealed class ProgramEvaluator
         }
         catch (JavaScriptException error)
         {
-            refusal ??= error.Message is "program_async_unsupported" or "program_arguments_invalid" ? error.Message : "program_script_error";
+            refusal ??= error.Message is "program_async_unsupported" or "program_arguments_invalid"
+                or "program_parallel_arguments_invalid" ? error.Message : "program_script_error";
         }
         catch (Exception error) when (error is StatementsCountOverflowException or MemoryLimitExceededException
             or TimeoutException or RecursionDepthOverflowException)
@@ -110,7 +201,8 @@ public sealed class ProgramEvaluator
             refusal ??= "program_compute_limit";
         }
         ct.ThrowIfCancellationRequested();
-        return new(Pending: refusal is null ? pending : null, ErrorCode: refusal);
+        return new(Pending: refusal is null ? pending : null, ErrorCode: refusal,
+            PendingBatch: refusal is null ? pendingBatch : null);
     }
 
     private sealed class ProgramYieldException : Exception;

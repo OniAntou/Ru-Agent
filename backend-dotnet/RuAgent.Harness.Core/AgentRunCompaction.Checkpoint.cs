@@ -48,7 +48,7 @@ internal sealed partial class AgentRunCompaction
                     taskPrompt.Capabilities.Where(c => referencedTools.Contains((c.Id, c.Version))).ToArray(),
                     new PromptRuntimeContext(taskPrompt.RuntimeContext.References.Where(r => r.Kind == "nested_instructions").ToArray()));
                 var result = await _summarizer!.SummarizeAsync(new ModelStepRequest(run.RunId, stepId, requestContext, prompt,
-                    run.Preset, run.PolicySnapshotVersion, run.PolicySnapshotSha256), ct).ConfigureAwait(false);
+                    run.Preset, run.PolicySnapshotVersion, run.PolicySnapshotSha256, sessionId: run.SessionId), ct).ConfigureAwait(false);
 
                 var accountingError = await RecordCheckpointCallAsync(run, stepId, prompt, result, ct).ConfigureAwait(false);
                 if (accountingError.ErrorCode is not null) return (accountingError.Run, null, accountingError.ErrorCode);

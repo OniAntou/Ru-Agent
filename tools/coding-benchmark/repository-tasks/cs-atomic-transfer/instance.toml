@@ -1,0 +1,8 @@
+id = "cs-atomic-transfer"
+language = "csharp"
+difficulty = "repository"
+editable_paths = ["Ledger.csproj", "src/Transfer.cs", "src/AtomicLedger.cs"]
+fail_to_pass = ["ordered_batch", "atomic_rejection", "idempotent_replay", "duplicate_transfer_rejected"]
+pass_to_pass = ["starting_balances", "unknown_balance"]
+agent_timeout_sec = 600
+verifier_timeout_sec = 60

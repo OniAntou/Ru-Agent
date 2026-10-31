@@ -1,3 +1,5 @@
+extern alias Broker;
+
 using Microsoft.Extensions.Logging.Abstractions;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
@@ -405,7 +407,7 @@ public sealed partial class HarnessSessionDeletionCoordinatorTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<(bool Authorized, string? AuthorizationToken)> RespondApprovalAsync(
+        public Task<(bool Authorized, string? AuthorizationToken, Broker::RuAgent.Broker.Policy.ApprovalRememberPlan? RememberPlan)> RespondApprovalAsync(
             string runId,
             string hostApprovalId,
             string command,

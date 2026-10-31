@@ -44,6 +44,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     // One store per service: recovery ids stay opaque even when several
     // runtimes live in one process.
     private readonly InMemoryRecoveryStore _recoveryStore = new();
+    // Counting only: tells the read counter whether this session already read the path.
+    private readonly ReadRepeatTracker _readRepeats = new();
     private readonly CanonicalPathResolver _mutationResolver;
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);
@@ -267,11 +269,6 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ToolVerificationStates.NotRequired,
             summary));
 
-    private static string VerificationFailure(ToolBinding binding) =>
-        binding.VerificationRequired
-            ? ToolVerificationStates.Failed
-            : ToolVerificationStates.NotRequired;
-
     /// <summary>
     /// What the model can do about a failed file call, in the same shape as
     /// the edit-match hint above: the stable code stays, the summary tells it
@@ -279,11 +276,14 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     /// </summary>
     private static string IoRepairHint(string? code) => code switch
     {
-        "is_directory" => "target is a directory, and file tools address files: list it and act on the files inside, or remove it with an approved terminal command.",
-        "file_not_found" => "file does not exist: list the directory to check the path. Create it with an advertised write_file or apply_patch add-file diff. An edit cannot create files.",
+        "is_directory" => "target is a directory. Use list for its entries and choose an existing file path for read_file/edit_file; do not remove it unless the user requested deletion.",
+        "not_a_directory" => "path is not an existing directory. list and glob require a directory; grep accepts either a file or directory. To read a file, use read_file or read. For a directory, correct the path or list its existing parent; do not retry the same path.",
+        "file_not_found" => "file does not exist: list its parent directory to check the path. Create it with an advertised write_file or apply_patch add-file diff. An edit cannot create files.",
         "read_line_too_long" => "A line exceeds the line-read output limit. Use read with byte paging and its returned cursor instead.",
         "read_line_scan_limit" => "The file exceeds the 4 MiB line snapshot limit. Use read with bounded byte paging instead.",
+        "read_hash_timeout" => "The bounded file read timed out. Do not repeat unchanged; inspect the path and retry once only if the file is now accessible.",
         "file_exists" => "file already exists: read it, then use the advertised file tool for a partial change, or retry write_file with the same path and content and overwrite=true for deliberate replacement.",
+        "io_error" => "The filesystem operation failed. Do not repeat an unchanged mutation. Inspect the current target and parent directory with read/list before deciding whether a retry is safe; if it persists, report the failure.",
         _ => "Tool input or output failed.",
     };
 
@@ -341,5 +341,207 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     {
         public ToolExecutionException(string code) : base(code) => Code = code;
         public string Code { get; }
+    }
+
+    private readonly ConcurrentDictionary<Task<StreamingProcessResult>, string> _terminalPumps = new();
+    private readonly object _terminalLifetimeGate = new();
+    private readonly HashSet<string> _stoppingSessions = new(StringComparer.Ordinal);
+    private bool _stopping;
+
+    private void TrackTerminalPump(string sessionId, Task<StreamingProcessResult> pump)
+    {
+        _terminalPumps[pump] = sessionId;
+        _ = pump.ContinueWith(completed =>
+        {
+            // Detached commands still have an owner that observes completion and faults.
+            _ = completed.Exception;
+            _terminalPumps.TryRemove(completed, out _);
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+
+    private async Task DrainTerminalPumpsAsync(string? sessionId = null)
+    {
+        var pumps = _terminalPumps.Where(pair => sessionId is null || pair.Value == sessionId)
+            .Select(pair => pair.Key).ToArray();
+        if (pumps.Length > 0)
+        {
+            try
+            {
+                await Task.WhenAll(pumps).WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+            }
+            catch (TimeoutException error)
+            {
+                throw new TimeoutException("Terminal processes did not stop before session cleanup.", error);
+            }
+        }
+    }
+
+    public async Task RemoveSessionAsync(string sessionId)
+    {
+        await StopSessionTerminalTasksAsync(sessionId).ConfigureAwait(false);
+        RemoveSessionState(sessionId);
+        lock (_terminalLifetimeGate) _stoppingSessions.Remove(sessionId);
+    }
+
+    public async Task RevokeSessionGrantsAsync(string sessionId)
+    {
+        // Stop active work before retiring session grants.
+        await StopSessionTerminalTasksAsync(sessionId).ConfigureAwait(false);
+        lock (_terminalLifetimeGate) _stoppingSessions.Remove(sessionId);
+    }
+
+    private async Task StopSessionTerminalTasksAsync(string sessionId)
+    {
+        lock (_terminalLifetimeGate) _stoppingSessions.Add(sessionId);
+        _backgroundTasks.CancelSession(sessionId);
+        await DrainTerminalPumpsAsync(sessionId).ConfigureAwait(false);
+        _backgroundTasks.RemoveSession(sessionId);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        lock (_terminalLifetimeGate) _stopping = true;
+        _backgroundTasks.CancelAll();
+        await DrainTerminalPumpsAsync().ConfigureAwait(false);
+        Dispose();
+    }
+
+    private static string ReadCapabilityClass(JsonObject payload)
+    {
+        if (!payload.TryGetPropertyValue("capability_class", out var node) || node is null)
+        {
+            return "internal";
+        }
+
+        return node is JsonValue value
+            && value.TryGetValue<string>(out var result)
+            && !string.IsNullOrWhiteSpace(result)
+            && result.Length <= 64
+                ? result
+                : throw new ToolExecutionException("invalid_capability_class");
+    }
+
+    /// <summary>
+    /// The Host's per-run image-input decision (ADR 0026). It travels on the
+    /// envelope, never in the model's arguments; anything but a literal true is false.
+    /// </summary>
+    private static bool ReadImageInputAccepted(JsonObject payload) =>
+        payload["image_input"] is JsonValue value
+        && value.TryGetValue<bool>(out var accepted)
+        && accepted;
+
+    private static string ReadString(JsonObject payload, string key) =>
+        payload[key] is JsonValue value
+        && value.TryGetValue<string>(out var result)
+        && !string.IsNullOrWhiteSpace(result)
+            ? result
+            : throw new ToolExecutionException("invalid_arguments");
+
+    private static bool ReadBool(JsonObject payload, string key) =>
+        payload[key] is JsonValue value
+        && value.TryGetValue<bool>(out var result)
+            ? result
+            : throw new ToolExecutionException("invalid_arguments");
+
+    private static int? ReadOptionalInt(JsonObject payload, string key)
+    {
+        if (payload[key] is not JsonValue value)
+        {
+            return null;
+        }
+
+        if (value.TryGetValue<int>(out var result))
+        {
+            return result;
+        }
+
+        if (value.TryGetValue<long>(out var longResult) && longResult is >= int.MinValue and <= int.MaxValue)
+        {
+            return checked((int)longResult);
+        }
+
+        return null;
+    }
+
+    private static bool IsTrue(JsonObject payload, string key) =>
+        payload[key] is JsonValue value
+        && value.TryGetValue<bool>(out var flag)
+        && flag;
+
+    private static string? ReadOptionalString(JsonObject payload, string key) =>
+        payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result)
+            ? result
+            : null;
+
+    private static string? ReadAuthorizationToken(JsonObject payload) =>
+        ReadOptionalString(payload, "authorization_token")
+        ?? ReadOptionalString(payload, "authorizationToken")
+        ?? ReadOptionalString(payload, "approval_token");
+
+    private static IReadOnlyList<string> ReadArguments(JsonNode? node)
+    {
+        // The run-mode schema makes the argument vector optional.
+        if (node is null) return Array.Empty<string>();
+
+        if (node is not JsonArray values || values.Count > 64)
+        {
+            throw new ToolExecutionException("invalid_arguments");
+        }
+
+        var result = new List<string>(values.Count);
+        foreach (var value in values)
+        {
+            if (value is not JsonValue item || !item.TryGetValue<string>(out var text) || text.Length > 1024)
+            {
+                throw new ToolExecutionException("invalid_arguments");
+            }
+
+            result.Add(text);
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<string> ReadWriteSet(JsonObject payload)
+    {
+        if (payload["write_set"] is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (payload["write_set"] is not JsonArray values)
+        {
+            throw new ToolExecutionException("invalid_terminal_write_set");
+        }
+
+        if (values.Count > 256)
+        {
+            throw new ToolExecutionException("invalid_terminal_write_set");
+        }
+
+        var result = new List<string>(values.Count);
+        foreach (var value in values)
+        {
+            if (value is not JsonValue item
+                || !item.TryGetValue<string>(out var path)
+                || string.IsNullOrWhiteSpace(path)
+                || path.Length > 4096)
+            {
+                throw new ToolExecutionException("invalid_terminal_write_set");
+            }
+
+            result.Add(path);
+        }
+
+        try
+        {
+            WorkspaceWriteSet.Validate(IsTrue(payload, "read_only"), result);
+        }
+        catch (AgentProtocolException exception)
+        {
+            throw new ToolExecutionException(exception.Code);
+        }
+
+        return result;
     }
 }

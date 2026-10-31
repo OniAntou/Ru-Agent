@@ -159,7 +159,8 @@ public sealed class AgentProviderSnapshotFactory(
             ? "unknown"
             : selected.Backend.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase)
                 ? "models.dev"
-                : "provider_catalog";
+                // A named custom provider's catalog is the user's own list (ADR 0034).
+                : selected.IsCustomProvider ? "user_setting" : "provider_catalog";
         var contextWindowVersion = contextWindowTokens is null
             ? "unknown-v1"
             : models.LastSuccessUtc?.ToString("O") ?? "catalog-v1";
@@ -227,8 +228,7 @@ public sealed class AgentProviderSnapshotFactory(
             throw new ProviderCatalogException("provider_selection_invalid");
         }
         var replayChatReasoning = ChatReasoningReplayPolicy.TakePinnedCapability(options, selected);
-        // The image-input decision gates the read tool, not the provider request (ADR 0026).
-        _ = ImageInputPolicy.TakePinnedCapability(options);
+        var acceptsImageInput = ImageInputPolicy.TakePinnedCapability(options);
         _ = ComputerUsePolicy.TakePinnedCapability(options);
         _ = ProviderWebSearchPolicy.TakePinnedCapability(options);
         AgentToolProfilePin.ValidateAndRemove(options);
@@ -244,7 +244,9 @@ public sealed class AgentProviderSnapshotFactory(
             contextWindowTokens: pin.ContextWindowTokens,
             outputTokenReserve: pin.OutputTokenReserve,
             reducedEffortRequestOptions: ProviderReasoningPreferences.LowestEffortOptions(models, selected.Model, options),
-            replayChatReasoning: replayChatReasoning);
+            replayChatReasoning: replayChatReasoning,
+            acceptsImageInput: acceptsImageInput,
+            sessionHeaderName: ProviderOverrides.SessionHeaderName(selected.Alias));
     }
 
     private async Task<string> ReadCredentialAsync(ProviderSelection selected, CancellationToken ct)
@@ -254,6 +256,8 @@ public sealed class AgentProviderSnapshotFactory(
             : await credentials.GetAsync("Ru", selected.Account, ct).ConfigureAwait(false) ?? "";
         if (selected.RequiresCredential && string.IsNullOrWhiteSpace(key))
             throw new ProviderCatalogException("catalog_unauthorized");
+        if (selected.Alias == "custom" || selected.IsCustomProvider)
+            CustomProviders.RequireCredentialTransport(selected.CompletionUri, key);
         if ((selected.Alias is "openai" or "anthropic") && string.IsNullOrWhiteSpace(selected.Model))
             throw new ProviderCatalogException("model_unavailable");
         return key;
@@ -269,6 +273,9 @@ public sealed class AgentProviderSnapshotFactory(
                 && pin.Protocol == ProviderProtocols.OpenAiResponses,
             "Anthropic" => pin.Alias == "anthropic"
                 && pin.Protocol == ProviderProtocols.AnthropicMessages,
+            _ when CustomProviders.NormalizeBackend(pin.Backend) is { } custom => pin.Backend == custom
+                && pin.Alias == custom
+                && pin.Protocol is ProviderProtocols.ChatCompletions or ProviderProtocols.AnthropicMessages,
             _ => ProviderSelection.NormalizeModelsDevBackend(pin.Backend) is { } generic
                 && pin.Alias == generic["models.dev:".Length..]
                 && pin.Protocol == ProviderProtocols.ChatCompletions,
@@ -316,6 +323,14 @@ public sealed class AgentProviderSnapshotFactory(
 
     private static ProviderSelection ResolveExpectedSelection(AgentRunProviderSelection pin)
     {
+        // A custom provider's account follows from its id alone; its endpoint and
+        // protocol are the pinned ones, and a deleted provider fails at the catalog.
+        if (CustomProviders.NormalizeBackend(pin.Backend) is { } custom)
+        {
+            return new ProviderSelection(custom, custom, pin.Protocol, new Uri(pin.BaseUri), pin.Model,
+                CustomProviders.CredentialAccount(CustomProviders.IdOf(custom)));
+        }
+
         var settings = new SettingsSnapshot(
             new JsonObject(),
             pin.Backend,
@@ -365,7 +380,9 @@ public sealed class AgentProviderSnapshotFactory(
         long? contextWindowTokens = null,
         int? outputTokenReserve = null,
         JsonObject? reducedEffortRequestOptions = null,
-        bool replayChatReasoning = false)
+        bool replayChatReasoning = false,
+        bool? acceptsImageInput = null,
+        string? sessionHeaderName = null)
     {
         try
         {
@@ -384,7 +401,9 @@ public sealed class AgentProviderSnapshotFactory(
                 contextWindowTokens,
                 outputTokenReserve,
                 reducedEffortRequestOptions,
-                replayChatReasoning);
+                replayChatReasoning,
+                acceptsImageInput,
+                sessionHeaderName);
         }
         catch (ArgumentException)
         {

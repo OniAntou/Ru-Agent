@@ -15,6 +15,17 @@ fails as `catalog_unauthorized` with an empty catalog once it is signed out — 
 is not sent anonymously, so no picker offers a model that cannot run. The keyless
 Custom OpenAI endpoint keeps serving its catalog.
 
+A named custom provider (`custom:<id>`, [ADR 0034](../adr/0034-named-custom-providers.md))
+has no fetched catalog: `GET /models?backend=custom:<id>` returns the model list
+saved in Settings, with each model's optional context window, and never makes a
+request. `GET /models?backend=custom:<id>&discover=true` asks the provider's
+`{base}/models` with its saved key and returns what it lists without storing it.
+Unusable entries are skipped, and `context_length`, vLLM's `max_model_len` or
+`top_provider.context_length` become the context length. The editor's "Fetch
+available models" uses it and reports a failure code as its connection test.
+A deleted provider fails as `provider_selection_invalid`, and a model removed
+from the list as `model_unavailable`, for new and pinned runs alike.
+
 Settings sends candidate Models.dev keys to the authenticated
 `POST /settings/provider/key` route. Under the settings transition gate, Host checks
 the candidate through the normal provider-specific catalog path using temporary,
@@ -108,6 +119,22 @@ from the plain-text `cloudflare_account_id` setting — a missing or malformed
 id fails closed as `catalog_configuration_error`, never a guessed URL — and
 serves its catalog from the Models.dev model list without HTTP. No new route,
 alias, or credential account: the key stays `cloudflare-workers-ai_api_key`.
+
+OpenCode (`models.dev:opencode`) and OpenCode Go (`models.dev:opencode-go`) are
+catalog overrides that still fetch over HTTP. Models.dev publishes each gateway's
+*chat* base (`https://opencode.ai/inference/openai/v1`,
+`https://opencode.ai/inference/go/openai/v1`), where `GET /models` answers 404;
+the live model list sits beside it at `https://opencode.ai/inference/v1/models`
+and `https://opencode.ai/inference/go/v1/models`, which reject a bad key with
+401. `ProviderSelection.ModelsUri` uses those table URLs for the two ids, and
+only while the resolved endpoint still points at `opencode.ai`; chat completions
+keep the published base. The key-check probe reads the same URL, so a wrong key
+is still `provider_key_rejected`, not an unverifiable save. OpenCode Go also
+rejects every completion without `x-opencode-session` (HTTP 400
+`MissingSessionID`) before it reads the key: the header carries the run's
+conversation id, is pinned with the provider, and travels with Ru's User-Agent
+on each generation. A pinned provider that requires it and has no session fails
+closed as `provider_session_missing`.
 
 ## TUI provider and model pickers
 

@@ -25,8 +25,12 @@ public static class ProgramReceiptTrace
             if (trace.ValueKind != JsonValueKind.Array || trace.GetArrayLength() > 32
                 || root.GetProperty("tool_count").GetInt32() != trace.GetArrayLength()) return false;
             List<ProgramReceiptEntry> result = [];
+            var expectedCallIndex = 0;
             foreach (var entry in trace.EnumerateArray())
             {
+                if (!entry.TryGetProperty("call_index", out var callIndex)
+                    || callIndex.ValueKind != JsonValueKind.Number || !callIndex.TryGetInt32(out var index)
+                    || index != expectedCallIndex) return false;
                 var tool = entry.GetProperty("tool_id").GetString()!;
                 if (!ProgramToolContract.SupportedTools.Contains(tool)) return false;
                 var response = entry.GetProperty("response");
@@ -40,13 +44,14 @@ public static class ProgramReceiptTrace
                     _ => ToolExecutionOutcome.OutcomeUnknown,
                 };
                 if (outcome == ToolExecutionOutcome.OutcomeUnknown) return false;
-                var id = "program_" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(providerCallId + "|" + result.Count))).ToLowerInvariant();
+                var id = "program_" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(providerCallId + "|" + index))).ToLowerInvariant();
                 var call = new ModelToolCall(id, tool, "1.0.0", entry.GetProperty("arguments"));
                 var code = response.TryGetProperty("error_code", out var error) && error.ValueKind == JsonValueKind.String
                     ? error.GetString()! : "ok";
                 var effect = ProgramToolContract.CanHaveEffects(tool)
                     && response.GetProperty("adapter_invoked").GetBoolean();
                 result.Add(new(call, response.GetProperty("output").Clone(), outcome, code, effect));
+                expectedCallIndex++;
             }
             entries = result;
             return true;

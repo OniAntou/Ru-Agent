@@ -79,6 +79,11 @@ public sealed partial class TuiTranscript
             case AgentActivityKind.Analyze:
             case AgentActivityKind.Edit:
             case AgentActivityKind.Terminal:
+            case AgentActivityKind.Web:
+            case AgentActivityKind.Mcp:
+            case AgentActivityKind.Computer:
+            case AgentActivityKind.Skill:
+            case AgentActivityKind.Program:
                 ApplyToolActivity(activity);
                 return;
 
@@ -187,7 +192,10 @@ public sealed partial class TuiTranscript
 
     private static string? BuildTarget(AgentActivityModel activity)
     {
-        if (activity.ToolDisplay is "Search" or "Fetch" && !string.IsNullOrWhiteSpace(activity.Detail))
+        if ((activity.ToolDisplay is "Search" or "Fetch"
+                || activity.Kind is AgentActivityKind.Web or AgentActivityKind.Mcp
+                    or AgentActivityKind.Computer or AgentActivityKind.Skill)
+            && !string.IsNullOrWhiteSpace(activity.Detail))
             return ChatDisplayText.Sanitize(activity.Detail, 160);
         if (activity.Kind == AgentActivityKind.Terminal && !string.IsNullOrWhiteSpace(activity.Detail))
             return TuiText.Truncate(Escape(activity.Detail), 160);

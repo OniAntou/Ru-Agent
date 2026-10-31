@@ -2,17 +2,22 @@ using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Tools;
 
 namespace RuAgent.Broker.Tools;
 
 public sealed class ToolCatalog
 {
+    // Manifest defaults shared by every builtin tool. Per-tool values come from the descriptor table.
+    private const int ManifestTimeoutMs = 30_000;
+    private const int DefaultMaxOutputBytes = 4 * 1024 * 1024;
+    private const string ManifestTrustClass = "builtin";
+
+    // Bound ids come from the descriptor table. Host-intercepted tools such as ask_user are excluded:
+    // the Host consumes them before gateway dispatch, so the Broker must never receive them.
     private static readonly IReadOnlyList<string> BoundIds =
-        AgentToolDefinitionCatalog.Get()
-            // ask_user is Host-intercepted before gateway dispatch, so the Broker
-            // must never receive it: it deliberately has no manifest or binding.
-            .Where(definition => definition.ToolId is not "ask_user")
-            .Select(definition => definition.ToolId)
+        AgentToolDescriptorTable.BrokerBound
+            .Select(row => row.Id)
             .ToArray();
 
     public ToolCatalog(
@@ -64,8 +69,7 @@ public sealed class ToolCatalog
                 manifest,
                 executors[manifest.Id],
                 ModelEnabled: true,
-                Availability: "executable",
-                VerificationRequired: false));
+                Availability: "executable"));
         }
     }
 
@@ -79,57 +83,27 @@ public sealed class ToolCatalog
             || manifest.RequiresApproval;
     }
 
-    private static IEnumerable<ToolManifest> Manifests(WebOptions webOptions)
+    /// <summary>One manifest per Broker-bound descriptor row, in table order.</summary>
+    internal static IEnumerable<ToolManifest> Manifests(WebOptions webOptions)
     {
-        yield return Manifest("read", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false,
-            maxOutputBytes: Files.FileToolLimits.MaxReadOutputBytes);
-        yield return Manifest("read_file", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false,
-            maxOutputBytes: Files.FileReadAdapter.MaximumLineOutputBytes);
-        yield return Manifest("list", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
-        yield return Manifest("help", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
-        yield return Manifest("todo_write", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
-        yield return Manifest("grep", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
-        yield return Manifest("glob", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
-        yield return Manifest("apply_patch", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
-        foreach (var id in new[] { "write_file", "edit_file", "file_delete", "file_restore" })
-            yield return Manifest(id, ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
-        foreach (var id in new[] { "powershell", "run_process", "terminal_read", "terminal_stop" })
-            yield return Manifest(id, ToolScope.TerminalExecute, RiskClass.Reversible, "terminal", workspace: false, requiresApproval: true);
-        yield return Manifest("web_search", ToolScope.WebSearch, RiskClass.External, "web", workspace: false, requiresApproval: true);
-        yield return Manifest("web_fetch", ToolScope.WebFetch, RiskClass.External, "web", workspace: false, requiresApproval: true);
-        yield return Manifest("skill", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
-        yield return Manifest("run_code", ToolScope.SystemRead, RiskClass.Reversible, "builtin", workspace: false);
-        // An MCP server is a user-chosen program run with the user's rights (ADR 0025).
-        yield return Manifest("mcp", ToolScope.TerminalExecute, RiskClass.External, "connector", workspace: false, requiresApproval: true);
-        // Computer use sends input as the user to granted apps (ADR 0031).
-        yield return Manifest("computer", ToolScope.TerminalExecute, RiskClass.External, "desktop", workspace: false, requiresApproval: true);
-        foreach (var definition in RuAgent.Protocol.Subagents.SubagentToolDefinitions.Get())
-            yield return Manifest(definition.ToolId,
-                definition.ToolId == "agent_apply" ? ToolScope.WorkspaceWrite : ToolScope.SystemRead,
-                definition.ToolId == "agent_apply" ? RiskClass.Reversible : RiskClass.Read, "builtin",
-                workspace: definition.ToolId == "agent_apply", requiresApproval: definition.ToolId == "agent_apply");
+        foreach (var row in AgentToolDescriptorTable.BrokerBound)
+        {
+            yield return Manifest(row);
+        }
     }
 
-    private static ToolManifest Manifest(
-        string id,
-        string scope,
-        RiskClass risk,
-        string adapter,
-        bool workspace = false,
-        bool requiresApproval = false,
-        int maxOutputBytes = 4 * 1024 * 1024,
-        string[]? extraScopes = null) => new(
-        id,
-        "1.0.0",
-        adapter,
-        risk,
-        new HashSet<string>([scope, .. extraScopes ?? []], StringComparer.Ordinal),
-        AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)?.InputSchema
+    private static ToolManifest Manifest(AgentToolDescriptor row) => new(
+        row.Id,
+        row.Version,
+        ToolDescriptorMapping.ToAdapterName(row.Adapter),
+        ToolDescriptorMapping.ToRiskClass(row.Risk),
+        new HashSet<string>(row.AllScopes, StringComparer.Ordinal),
+        AgentToolDefinitionCatalog.Find(row.Id, row.Version)?.InputSchema
             ?? throw new AgentProtocolException("tool_contract_not_found"),
         new JsonObject { ["type"] = "object" },
-        30_000,
-        maxOutputBytes,
-        "builtin",
-        WorkspaceRequired: workspace,
-        RequiresApproval: requiresApproval);
+        ManifestTimeoutMs,
+        row.MaxOutputBytes ?? DefaultMaxOutputBytes,
+        ManifestTrustClass,
+        WorkspaceRequired: row.WorkspaceRequired,
+        RequiresApproval: row.RequiresApproval);
 }

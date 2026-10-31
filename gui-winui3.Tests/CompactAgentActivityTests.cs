@@ -112,9 +112,57 @@ public sealed class CompactAgentActivityTests
         Assert.Equal(3, summary.Count);
         Assert.Equal(1, summary.Failed);
         Assert.Equal(1, summary.Waiting);
-        Assert.StartsWith("Waiting", summary.Label);
-        Assert.Contains("1 failed", summary.Label);
-        Assert.DoesNotContain("completed", summary.Label, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Ran commands", summary.Title);
+        Assert.Equal("waiting for you · 1 failed", summary.Meta);
+        Assert.Equal(AgentActivitySummaryTone.Failed, summary.Tone);
+        Assert.Equal(AgentActivitySummaryProjection.FailedGlyph, summary.Glyph);
+        Assert.False(summary.IsLive);
+    }
+
+    [Fact]
+    public void A_finished_turn_reads_as_its_three_most_frequent_kinds_of_work()
+    {
+        var message = new ChatMessageItem
+        {
+            Role = "assistant", AgentActivities = new()
+            {
+                Activity("t", AgentActivityKind.Thinking, AgentActivityState.Completed),
+                Activity("r1", AgentActivityKind.Explore, AgentActivityState.Completed),
+                Activity("s1", AgentActivityKind.Search, AgentActivityState.Completed),
+                Activity("e1", AgentActivityKind.Edit, AgentActivityState.Completed),
+                Activity("e2", AgentActivityKind.Edit, AgentActivityState.Completed),
+                Activity("c1", AgentActivityKind.Terminal, AgentActivityState.Completed),
+                Activity("c2", AgentActivityKind.Terminal, AgentActivityState.Completed),
+            }
+        };
+        var summary = AgentActivitySummaryProjection.ForMessage(message);
+        // Ties keep first appearance; thinking describes the run, not work done.
+        Assert.Equal("Edited files, ran commands, read files and more", summary.Title);
+        Assert.Equal(string.Empty, summary.Meta);
+        Assert.Equal(AgentActivitySummaryTone.Quiet, summary.Tone);
+        Assert.Equal(AgentActivitySummaryProjection.KindGlyph(AgentActivityKind.Edit), summary.Glyph);
+        Assert.Equal(7, summary.Count);
+
+        message.AgentActivities.Remove(message.AgentActivities.Single(item => item.ActivityId == "s1"));
+        Assert.Equal("Edited files, ran commands and read files", AgentActivitySummaryProjection.ForMessage(message).Title);
+    }
+
+    [Theory]
+    [InlineData(new[] { AgentActivityKind.Search }, "Searched code")]
+    [InlineData(new[] { AgentActivityKind.Explore, AgentActivityKind.Search }, "Read files and searched code")]
+    [InlineData(new AgentActivityKind[0], "Thought it through")]
+    public void Done_titles_join_like_a_sentence(AgentActivityKind[] order, string expected)
+    {
+        Assert.Equal(expected, AgentActivitySummaryProjection.DoneTitle(order));
+    }
+
+    [Theory]
+    [InlineData(0, 34, "0:34")]
+    [InlineData(1, 2, "1:02")]
+    [InlineData(65, 5, "1:05:05")]
+    public void Elapsed_time_reads_as_a_clock(int minutes, int seconds, string expected)
+    {
+        Assert.Equal(expected, AgentActivitySummaryProjection.Elapsed(TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(seconds)));
     }
 
     [Fact]
@@ -123,14 +171,65 @@ public sealed class CompactAgentActivityTests
         var frame = Frame("tool", AgentActivityKind.Terminal, AgentActivityState.Started);
         var item = new AgentActivityItem(frame);
         var message = new ChatMessageItem { Role = "assistant", IsStreaming = true, AgentActivities = new() { item } };
-        Assert.StartsWith("Working", AgentActivitySummaryProjection.ForMessage(message).Label);
+        var live = AgentActivitySummaryProjection.ForMessage(message);
+        Assert.True(live.IsLive);
+        Assert.Equal(item.DisplayText, live.Title);
+        Assert.Equal(AgentActivitySummaryProjection.KindGlyph(AgentActivityKind.Terminal), live.Glyph);
         item.UpdateFrom(frame with { State = AgentActivityState.Failed });
         message.IsStreaming = false;
         var summary = AgentActivitySummaryProjection.ForMessage(message);
         Assert.Equal(1, summary.Failed);
-        Assert.DoesNotContain("Working", summary.Label);
+        Assert.False(summary.IsLive);
+        Assert.Equal("Ran commands", summary.Title);
         message.AgentActivities.Clear();
         Assert.Equal(AgentActivitySummary.Empty, AgentActivitySummaryProjection.ForMessage(message));
+    }
+
+    [Fact]
+    public void Prose_gets_room_only_on_the_side_where_an_activity_row_sits()
+    {
+        var lead = new TextSegment("I will look.");
+        var activity = Activity("read", AgentActivityKind.Explore, AgentActivityState.Completed);
+        var reply = new TextSegment("Found it.");
+        var message = new ChatMessageItem
+        {
+            Role = "assistant",
+            Segments = new() { lead, new ActivitySegment(activity.ActivityId, activity), reply },
+            AgentActivities = new() { activity },
+        };
+
+        Assert.Equal(new Microsoft.UI.Xaml.Thickness(0, 0, 0, 12), lead.ActivityGap);
+        Assert.Equal(new Microsoft.UI.Xaml.Thickness(0, 12, 0, 0), reply.ActivityGap);
+
+        // Collapsed compact turns show prose only, so nothing needs room.
+        message.CompactAgentActivity = true;
+        Assert.Equal(default, lead.ActivityGap);
+        Assert.Equal(default, reply.ActivityGap);
+
+        message.IsActivityDetailsExpanded = true;
+        Assert.Equal(new Microsoft.UI.Xaml.Thickness(0, 12, 0, 0), reply.ActivityGap);
+    }
+
+    [Fact]
+    public void An_opened_session_gets_the_preference_although_its_history_arrives_as_a_reset()
+    {
+        // ReplaceAll raises one Reset without NewItems; applying only NewItems left every
+        // message of an opened session in detailed mode.
+        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OnMessagesChanged");
+        Assert.Contains("NotifyCollectionChangedAction.Reset) RefreshActivityDisplay()", body);
+    }
+
+    [Fact]
+    public void The_line_is_quiet_and_its_glyph_gives_way_to_the_chevron()
+    {
+        var control = GuiSource.Xml("Controls", "AgentActivitySummaryControl.xaml");
+        GuiSource.Require(control, "LeadingIcon");
+        Assert.Equal("0", GuiSource.Require(control, "ChevronIcon").Attribute("Opacity")?.Value);
+        Assert.Equal("Transparent", GuiSource.Require(control, "SummaryButton").Attribute("Background")?.Value);
+        Assert.Contains("RuMonoFontFamily", GuiSource.Text("Controls", "AgentActivitySummaryControl.xaml.cs"));
+        var code = GuiSource.Text("Controls", "AgentActivitySummaryControl.xaml.cs");
+        Assert.Contains("UiTiming.AnimationsEnabled", code);
+        Assert.Contains("TitleMinimumMs", code);
     }
 
     [Fact]
@@ -150,9 +249,15 @@ public sealed class CompactAgentActivityTests
     public void Settings_and_transcript_bind_the_same_presentation_option_and_keep_existing_detail_templates()
     {
         var settings = GuiSource.Xml("Views", "SettingsView.xaml");
-        var toggle = GuiSource.Require(settings, "CompactAgentActivityToggle");
-        Assert.Equal("ToggleSwitch", toggle.Name.LocalName);
-        Assert.Contains("ActivityFeedPreferences.Compact", GuiSource.AttributeValue(toggle, "IsOn"));
+        // Two named styles rather than an on/off switch.
+        Assert.False(GuiSource.NamedElements(settings).ContainsKey("CompactAgentActivityToggle"));
+        var verbose = GuiSource.Require(settings, "VerboseActivityOption");
+        var compact = GuiSource.Require(settings, "CompactActivityOption");
+        Assert.Equal("Verbose", verbose.Attribute("Content")?.Value);
+        Assert.Equal("Compact", compact.Attribute("Content")?.Value);
+        Assert.Same(verbose.Parent, compact.Parent);
+        var code = GuiSource.Text("Views", "SettingsView.ActivityStyle.cs");
+        Assert.Contains("ActivityFeedPreferences.Compact = style == \"compact\"", code);
         var chat = GuiSource.Xml("Views", "ChatView.xaml");
         Assert.Contains(chat.Descendants(), node => node.Name.LocalName == "AgentActivitySummaryControl");
         Assert.Contains("{x:Bind DisplayedSegments, Mode=OneWay}", GuiSource.AttributeValues(chat, "ItemsSource"));

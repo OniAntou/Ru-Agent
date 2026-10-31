@@ -7,6 +7,54 @@ namespace RuBackend.Tests.Harness;
 public sealed class WorkspaceWatchRegistryTests
 {
     [Fact]
+    public async Task Known_file_write_is_journaled_before_return_and_late_watcher_event_does_not_repeat_it()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-watch-known-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "app.txt");
+            await File.WriteAllTextAsync(path, "original");
+            var monitor = new WorkspaceExternalChangeMonitor();
+            var registry = new WorkspaceWatchRegistry(monitor);
+            var changes = new System.Collections.Concurrent.ConcurrentQueue<WorkspaceExternalChangeEvent>();
+            using var lease = registry.Acquire(root, change => { changes.Enqueue(change); return Task.FromResult(true); });
+            await File.WriteAllTextAsync(path, "tool edit");
+            await registry.ObserveKnownPathAsync(root, "app.txt", default);
+            Assert.Single(changes);
+            await Task.Delay(300); // Allow the OS event's normal debounce callback to arrive.
+            Assert.Single(changes);
+            await File.WriteAllTextAsync(path, "later external edit");
+            await WaitForAsync(() => changes.Count == 2);
+            Assert.Equal(2, changes.Count);
+            Assert.NotEqual(changes.First().ObservedSha256, changes.Last().ObservedSha256);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Failed_known_write_journaling_does_not_acknowledge_the_new_baseline()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-watch-rejected-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "app.txt");
+            await File.WriteAllTextAsync(path, "original");
+            var monitor = new WorkspaceExternalChangeMonitor();
+            var registry = new WorkspaceWatchRegistry(monitor);
+            using var lease = registry.Acquire(root, _ => Task.FromResult(false));
+            await File.WriteAllTextAsync(path, "tool edit");
+            var error = await Assert.ThrowsAsync<RuAgent.Harness.Persistence.HarnessStoreException>(() =>
+                registry.ObserveKnownPathAsync(root, "app.txt", default));
+            Assert.Equal("workspace_change_store_failed", error.Code);
+            Assert.True(monitor.TryGetExpectedContent(root, "app.txt", out var bytes));
+            Assert.Equal("original", Encoding.UTF8.GetString(bytes!));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public void Peer_leases_share_original_content_until_the_last_release_then_recapture()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-watch-lease-" + Guid.NewGuid().ToString("N"));

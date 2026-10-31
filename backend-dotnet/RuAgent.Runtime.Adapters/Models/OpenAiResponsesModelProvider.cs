@@ -199,7 +199,7 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
 
     private static string BuildBody(ModelRequest request)
     {
-        if (request.Images.Count > 0 && !ModelImage.IsVisionModel(request.Model))
+        if (request.Images.Count > 0 && !request.AcceptsImageInput)
             throw new ModelProviderException("vision_unsupported", false);
 
         var input = new JsonArray();

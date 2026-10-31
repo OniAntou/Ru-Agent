@@ -15,12 +15,17 @@ public sealed partial class RuPromptContextProvider
             ? context.Entries.LastOrDefault(RuntimeContextSnapshot.IsSnapshot)?.Content : null;
         if (previous is not null)
         {
-            foreach (var line in previous.Split('\n').Where(line => line.StartsWith("observed_path_b64: ", StringComparison.Ordinal)).Take(128))
+            foreach (var line in previous.Split('\n').Take(128))
             {
+                var directoryHint = line.StartsWith("observed_dir_b64: ", StringComparison.Ordinal);
+                if (!directoryHint && !line.StartsWith("observed_path_b64: ", StringComparison.Ordinal)) continue;
+                var encoded = line[(directoryHint ? 18 : 19)..];
                 try
                 {
-                    var bytes = Convert.FromBase64String(line[19..]);
-                    if (bytes.Length <= 4096) paths.Add(new System.Text.UTF8Encoding(false, true).GetString(bytes));
+                    var bytes = Convert.FromBase64String(encoded);
+                    if (bytes.Length > 4096) continue;
+                    var observed = new System.Text.UTF8Encoding(false, true).GetString(bytes);
+                    paths.Add(directoryHint ? Path.Combine(observed, ".ru-instruction-scope") : observed);
                 }
                 catch (Exception error) when (error is FormatException or System.Text.DecoderFallbackException) { }
             }

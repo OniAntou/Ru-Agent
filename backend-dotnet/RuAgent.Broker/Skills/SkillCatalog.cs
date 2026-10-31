@@ -44,16 +44,18 @@ public sealed partial class SkillCatalog
     public Task<SkillCatalogResult> DiscoverAsync(string? query = null, bool refresh = false, CancellationToken cancellationToken = default) =>
         Task.FromResult(DiscoverCore(query, refresh, cancellationToken));
 
-    public SkillCatalogItem? FindById(string id)
+    public SkillCatalogItem? FindById(string id, CancellationToken cancellationToken = default)
     {
         if (!SkillIdentity.IsValid(id)) return null;
+        cancellationToken.ThrowIfCancellationRequested();
         RefreshRoots();
         var preferences = ReadPreferences();
         string[] roots; lock (_rootsGate) roots = _roots.ToArray();
         foreach (var root in roots)
         {
-            var directory = Path.Combine(root, id);
-            if (!Directory.Exists(directory) || HasReparseAncestor(directory)) continue;
+            cancellationToken.ThrowIfCancellationRequested();
+            var directory = FindPackageDirectory(root, id, cancellationToken);
+            if (directory is null) continue;
             var file = Path.Combine(directory, "SKILL.md");
             if (!File.Exists(file)) continue;
             try
@@ -130,13 +132,14 @@ public sealed partial class SkillCatalog
         string[] roots;
         lock (_rootsGate) roots = _roots.ToArray();
         var cacheKey = BuildCacheKey(roots);
-        if (!refresh && query is null && SharedCache.TryGetValue(cacheKey, out var cached) && IsFresh(cached, roots)) return cached.Result;
+        if (!refresh && query is null && SharedCache.TryGetValue(cacheKey, out var cached)
+            && IsFresh(cached, roots, cancellationToken)) return cached.Result;
         var preferences = ReadPreferences();
         var diagnostics = new List<SkillCatalogDiagnostic>(); var items = new List<SkillCatalogItem>(); var seen = new HashSet<string>(StringComparer.Ordinal);
         var truncated = false; var total = 0;
         if (query is not null && SkillIdentity.IsValid(query.ToLowerInvariant()))
         {
-            var exact = FindById(query.ToLowerInvariant());
+            var exact = FindById(query.ToLowerInvariant(), cancellationToken);
             if (exact is not null)
             {
                 var unmet = SkillRequirements.FindUnmet(exact.Requires, SkillCapabilityAvailability.IsAvailable);
@@ -149,11 +152,10 @@ public sealed partial class SkillCatalog
             cancellationToken.ThrowIfCancellationRequested();
             if (!Directory.Exists(rootPath)) continue;
             if (HasReparseAncestor(rootPath)) { AddDiagnostic(rootPath, "reparse_point"); continue; }
-            string[] dirs;
-            try { dirs = Directory.EnumerateDirectories(rootPath, "*", SearchOption.TopDirectoryOnly).Take(MaxDirectoriesPerRoot + 1).OrderBy(Path.GetFileName, StringComparer.Ordinal).ToArray(); }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { AddDiagnostic(rootPath, "unreadable"); continue; }
-            if (dirs.Length > MaxDirectoriesPerRoot) { dirs = dirs[..MaxDirectoriesPerRoot]; truncated = true; AddDiagnostic(rootPath, "scan_limit"); }
-            foreach (var discoveredDirectory in dirs)
+            var scan = ScanRoot(rootPath, cancellationToken);
+            truncated |= scan.Truncated;
+            foreach (var diagnostic in scan.Diagnostics) AddDiagnostic(diagnostic.SourcePath, diagnostic.Code);
+            foreach (var discoveredDirectory in scan.Packages)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (HasReparseAncestor(discoveredDirectory)) { AddDiagnostic(discoveredDirectory, "reparse_point"); continue; }
@@ -190,7 +192,7 @@ public sealed partial class SkillCatalog
         if (items.Count >= MaxItems) { truncated = true; AddDiagnostic("skill-catalog", "item_limit"); result = new SkillCatalogResult(items, diagnostics, truncated, total); }
         if (query is null)
         {
-            StoreCache(cacheKey, CreateCacheEntry(result, roots));
+            StoreCache(cacheKey, CreateCacheEntry(result, roots, cancellationToken));
         }
         return result;
         void AddDiagnostic(string source, string code) { if (diagnostics.Count < MaxDiagnostics) diagnostics.Add(new(source, code)); else truncated = true; }

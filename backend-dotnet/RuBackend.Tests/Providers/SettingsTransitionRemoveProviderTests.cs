@@ -33,7 +33,7 @@ public sealed class SettingsTransitionRemoveProviderTests
 
     [Theory]
     [InlineData("models.dev:../openrouter")]
-    [InlineData("openrouter")]
+    [InlineData("not-a-provider")]
     public async Task Invalid_or_unknown_models_dev_alias_is_rejected_without_deleting_credentials(string providerChoice)
     {
         var settings = new MemorySettingsStore(new SettingsSnapshot(
@@ -48,6 +48,27 @@ public sealed class SettingsTransitionRemoveProviderTests
         Assert.Equal("Unknown provider.", result.Message);
         Assert.Equal("openrouter-secret", credentials.Value("openrouter_api_key"));
         Assert.Empty(credentials.DeletedAccounts);
+    }
+
+    [Fact]
+    public async Task A_spoken_catalog_name_resolves_to_the_same_account_it_names()
+    {
+        // "openrouter" is a product name a user types, not a bare catalog id: the
+        // shared alias table maps it to models.dev:openrouter, so sign-out targets
+        // exactly the account a sign-in would have written.
+        var settings = new MemorySettingsStore(new SettingsSnapshot(
+            new JsonObject(), "models.dev:openrouter", "vendor/model", "default",
+            "http://localhost:8000/v1", "", ""));
+        var credentials = new MemoryCredentialStore(
+            ("openrouter_api_key", "openrouter-secret"),
+            ("opencode_api_key", "opencode-secret"));
+        var service = new SettingsTransitionService(settings, credentials);
+
+        var result = await service.RemoveProviderAsync("openrouter", CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(credentials.Value("openrouter_api_key"));
+        Assert.Equal("opencode-secret", credentials.Value("opencode_api_key"));
     }
 
     private sealed class MemorySettingsStore(SettingsSnapshot snapshot) : ISettingsStore

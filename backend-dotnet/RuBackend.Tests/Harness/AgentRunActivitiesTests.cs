@@ -177,6 +177,13 @@ public sealed class AgentRunActivitiesTests
             Array.Empty<ModelToolCall>(),
             AssistantFinishReason.Stop,
             0));
+        // The task list still has open items, so the first final reply is held once for
+        // the checklist; this second reply is the one that completes the run.
+        steps.Enqueue(new AssistantStep(
+            "planned",
+            Array.Empty<ModelToolCall>(),
+            AssistantFinishReason.Stop,
+            0));
 
         using var tmp = TempWorkspace.Create();
         using var factory = new BackendWebApplicationFactory(
@@ -303,6 +310,13 @@ public sealed class AgentRunActivitiesTests
             },
             AssistantFinishReason.ToolCalls,
             0));
+        steps.Enqueue(new AssistantStep(
+            "done",
+            Array.Empty<ModelToolCall>(),
+            AssistantFinishReason.Stop,
+            0));
+        // The open task item holds the first "done" once; the retracted reply is never
+        // persisted, so this repeat is the single final text the transcript shows.
         steps.Enqueue(new AssistantStep(
             "done",
             Array.Empty<ModelToolCall>(),

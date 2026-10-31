@@ -1,17 +1,25 @@
 # Coding-agent capability baseline
 
-This is the current capability and acceptance map for Ru. The 2026-10-04 hardening delivery balanced Harness and TUI development; it does not establish benchmark or overall product parity. Updated 2026-10-11: terminal OS confinement was retired under ADR-0015; terminal children run as the current Windows user, while Job Object bounds, ordinary approvals, and secret redaction remain. The [post-refactor Nemotron rerun](../history/verification/2026-10-10.md#post-refactor-live-coding-rerun-2026-10-10) resolved 0/9 custom tasks under `standard`; its model/tool-use and approval failures do not establish general coding quality.
+This is the current capability and acceptance map for Ru, reviewed on 2026-10-28.
+Implemented capabilities do not establish benchmark or overall product parity.
+Terminal OS confinement was retired under ADR 0015; terminal children run as the
+current Windows user, while process-tree bounds, approvals and redaction remain.
+The [2026-10-10 Nemotron rerun](../history/verification/2026-10-10.md#post-refactor-live-coding-rerun-2026-10-10)
+is historical evidence for that model and checkout, not a score for the current
+tool, context and skill implementations. Later deterministic checks and small
+live smoke runs must also be kept separate from a matched coding-quality cohort.
 
 ## Reference workflows
 
-The baseline was checked against official sources on 2026-10-04:
+Reference products evolve independently. These links describe workflows to
+compare, not a claim that their current internals or performance match Ru:
 
 - [Codex CLI](https://learn.chatgpt.com/docs/codex/cli): an interactive explore/edit/tool loop, visible commands and changes, saved-session resume and reusable skills.
 - [Claude Code interactive mode](https://code.claude.com/docs/en/interactive-mode): multiline input, queued prompts, interruption and keyboard-driven control of conversation state.
 - [OpenCode TUI](https://opencode.ai/v2/docs/cli/tui/): discoverable commands, session/model controls, project-file context and transcript interaction.
-- [Pi usage](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/usage.md): a small composable core with session continuity, prompt/context entry and explicit extension boundaries.
+- [Pi coding agent](https://github.com/earendil-works/pi/tree/main/packages/coding-agent): a small composable core with session continuity, prompt/context entry and explicit extension boundaries.
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): composable agent workflows and extension ownership.
-- [Antigravity artifact review](https://www.antigravity.google/docs/cli/artifacts/): inspectable output and changes before subsequent decisions.
+- [Antigravity browser verification](https://antigravity.google/docs/commands/browser): an isolated browser subagent with DevTools, screenshots and recorded artifacts.
 
 These products differ in architecture and scope. Ru must keep its native .NET runtime and Broker execution boundary; copying a provider fallback, interpreter or unrestricted plugin architecture would violate Ru's contract.
 
@@ -19,12 +27,12 @@ These products differ in architecture and scope. Ru must keep its native .NET ru
 
 | Workflow | Current source evidence | Acceptance gap |
 | --- | --- | --- |
-| Read/edit/run/verify loop | Harness Core, run-pinned Protocol coding profiles, Broker adapters; incomplete-finish rejection and concrete tool repair hints | Before the finish-reason fixes, the nine-task live rerun resolved none. The post-fix small C# diagnostic stopped at provider rate limiting before tool use; improvement remains unmeasured. See [Verification](../history/verification/2026-10-10.md#provider-finish-reason-and-tool-feedback-fixes-2026-10-10) |
+| Read/edit/run/verify loop | Run-pinned `coding_v2`, `patch_v2` and experimental `coding_code_v1`; separate create/edit tools, literal process argv, bounded programs, advisory declared-check evidence (ADR 0039) and incomplete-finish rejection | Current end-task success, redundant calls and repair overhead need matched real-provider tasks. A passed command or completed run does not establish acceptance coverage. See [tool policy](agent-tools.md) |
 | Multi-tool steps and bounded repair | Tool Batch, durable Recovery Notes, failed period-2/3 cycle guard; real Host/Broker edit/verify and guard scenarios | Real-provider effectiveness of repair advice |
 | Streaming and durable replay | HTTP/SSE, transcript reconciliation, retained run discovery, explicit `/follow` and typed `Continue` | Native rendering and transport interruption acceptance |
 | Approval, trust and presets | Broker authority, single-use tokens, Workspace Trust; pending approval replay and fresh run-version checks | Native approval keyboard acceptance; another client may resolve first |
 | Provider/model selection | Catalog, GUI/CLI pickers; secret-free SQLite pin; optional run-detail metadata used by retained-run display | Unknown legacy selections suppress usage estimates; real-provider acceptance remains separate |
-| Context retention | Current-run prompt protection across sequence domains; compaction replay by committed run version | Real-provider long-task quality |
+| Context retention | Bounded workspace project memory, structured provider-backed checkpoints, exact prepared-request budgeting, bounded overflow recovery, active projection caching, nested instructions and visible-history-bound handoff; [context management](../architecture/context-management.md) | Repeated-compaction recall and long-task completion need matched real-provider acceptance; byte-based estimates are not exact tokenization |
 | Session import/export and branching | Accurate persisted/dropped counts, bounded cached listing, `/new`, searchable `/sessions` and explicit `/resume` | Listing is partial when any scan/read/result budget is exhausted |
 | Attachments | Shared GUI picker/paste normalization; CLI image/text/code intake and immutable queued submission ownership; Office attachments are unsupported | Native clipboard, image quality and file-picker acceptance; document processing depends on installed tools/optional skills |
 | Project-file context | GUI file browsing; compact TUI uses dropped paths or Ctrl+V for image/text/code context | Native picker acceptance; no LSP or automatic repository index |
@@ -36,9 +44,10 @@ These products differ in architecture and scope. Ru must keep its native .NET ru
 | Interactive terminal (GUI) | ConPTY plus vendored xterm.js in WebView2, PowerShell in the session workspace; a user-only surface the Agent can neither see nor call, killed with the app or a workspace change; the WebView2 runtime ships with Windows 11 | Native terminal rendering, resize and Unicode acceptance |
 | Custom slash commands | `CustomPromptCommands`: `.ru/commands/*.md` templates with `$ARGUMENTS`, expanded to an ordinary prompt | TUI only; not in completion/palette; no GUI surface |
 | Hooks | `HookToolGateway`: `PreToolUse` (exit 2 blocks) and `PostToolUse`; `RunLifecycleHooks`: `UserPromptSubmit` (exit 2 refuses the prompt before a run exists) and `Stop` (observes a finished run), all from `hooks.json` | Workspace hooks run as the user once the workspace is trusted; the agent cannot write `.ru\hooks.json` in Plan or Standard |
-| External instructions | Workspace AGENTS and lazy Markdown skills | Instructions remain untrusted and never confer execution authority |
+| External instructions and skills | Workspace/nested AGENTS; grouped project and user `.agents/skills`, explicit `/skill`, GUI/TUI controls, pinned GitHub package installation/update and bounded run-local workflow snapshots; [skill operations](skills.md) | Supported metadata is not full plugin/package compatibility. No package script/dependency installation; selection/adherence quality needs matched live evidence |
+| Web research and computer use | Broker search/fetch with PDF text extraction; policy-gated first-party provider search; opt-in Windows computer use | Web text and desktop screenshots do not supply browser DOM/DevTools automation or prove successful UI verification; see [tool policy](agent-tools.md) |
 | Workflow evaluation | Eleven hashed scenario oracles; isolated scripted CLI/Host/Broker tool-cycle runner | Scripted wiring is not model quality; eleven cases remain unmeasured or unmet; this workflow evaluator has no live quality run |
-| Coding benchmark | Six custom Terminal-style tasks and three SWE-style issue repositories across C#, Python and TypeScript; external graders, reference self-tests, fresh Git baselines and opt-in native RPC trials | Compact public corpus; dated Step 5 pilot and post-refactor Nemotron rerun recorded under different conditions; official dataset scores and container parity remain unmeasured |
+| Coding benchmark | Six Terminal, three SWE and eleven Everyday tasks across C#, Python and TypeScript, plus five opt-in skill tasks; external graders, cohort provenance, interrupted-attempt accounting and native RPC trials | Small public corpus; historical runs use different models/checkouts. Skill selection is explicitly unknown in current RPC metrics. No matched current-checkout competitor ranking or official dataset score; see [benchmark scope](../../tools/coding-benchmark/README.md) |
 
 ## Acceptance boundary
 
@@ -69,4 +78,4 @@ Transcript retention is capped at 2,000 rows, 200,000 Unicode scalars and 16,000
 
 ## Remaining independent projects
 
-MCP servers are supported through the `mcp` tool ([ADR 0025](../adr/0025-mcp-servers-through-the-broker.md)): stdio servers from the user's own `~/.ru/mcp.json`, run by the Broker, with `ExternalTerminal` approval. LSP and executable plugin integration remain distinct architectural projects. They require explicit execution boundaries, dependency and authority designs; a UI affordance or allowlist is not proof that those capabilities exist. Desktop/CLI installers and explicit updates are documented in [distribution and updates](distribution-and-updates.md). Terminal OS sandboxing has been retired by [ADR 0015](../adr/0015-retire-terminal-os-sandbox.md).
+MCP servers are supported through the `mcp` tool ([ADR 0025](../adr/0025-mcp-servers-through-the-broker.md)): stdio or explicit Streamable HTTP servers from the user's own `~/.ru/mcp.json`, owned by the Broker, with `ExternalTerminal` approval. LSP integration was removed ([ADR 0037](../adr/0037-language-server-tools.md)). Executable plugin integration remains a separate architectural project requiring explicit execution boundaries, dependency and authority designs. Desktop/CLI installers and explicit updates are documented in [distribution and updates](distribution-and-updates.md). Terminal OS sandboxing has been retired by [ADR 0015](../adr/0015-retire-terminal-os-sandbox.md).

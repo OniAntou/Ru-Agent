@@ -10,6 +10,8 @@ public sealed partial class AgentSidePanelControl
 {
     private Storyboard? _visibilityAnimation;
     private FrameworkElement? _visibilityHost;
+    private Storyboard? _bodyAnimation;
+    private FrameworkElement? _bodyHost;
     public bool IsVisibilityExiting { get; private set; }
 
     public void CancelVisibilityAnimations()
@@ -92,14 +94,31 @@ public sealed partial class AgentSidePanelControl
         animation.Begin();
     }
 
-    private static void PlayBodyTransition(FrameworkElement body)
+    private void CancelBodyTransition()
     {
+        _bodyAnimation?.Stop();
+        _bodyAnimation = null;
+        if (_bodyHost is { } host) host.Opacity = 1;
+        _bodyHost = null;
+    }
+
+    private void PlayBodyTransition(FrameworkElement body)
+    {
+        CancelBodyTransition();
         if (!UiTiming.AnimationsEnabled) return;
-        var fade = new DoubleAnimation { From = 0, To = 1, Duration = TimeSpan.FromMilliseconds(140) };
+        // Keep the incoming content readable immediately; stale clocks must never
+        // leave a previously hidden terminal or preview translucent on return.
+        var fade = new DoubleAnimation { From = 0.72, To = 1, Duration = TimeSpan.FromMilliseconds(120) };
         Storyboard.SetTarget(fade, body);
         Storyboard.SetTargetProperty(fade, "Opacity");
         var animation = new Storyboard();
         animation.Children.Add(fade);
+        _bodyAnimation = animation;
+        _bodyHost = body;
+        animation.Completed += (_, _) =>
+        {
+            if (ReferenceEquals(_bodyAnimation, animation)) CancelBodyTransition();
+        };
         animation.Begin();
     }
 }

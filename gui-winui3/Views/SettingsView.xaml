@@ -291,7 +291,7 @@
                       <StackPanel Spacing="12">
                           <StackPanel Spacing="2">
                               <TextBlock Text="Message text size" Style="{StaticResource SettingLabelStyle}" />
-                              <TextBlock Text="Conversation text size; activity lines stay two steps smaller"
+                              <TextBlock Text="Conversation text size, used for replies and agent activity alike"
                                          Style="{StaticResource SettingDescStyle}" />
                           </StackPanel>
                           <!-- Four equal columns: the specimens stretch the full
@@ -305,14 +305,53 @@
                     <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
                         <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                             <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                <TextBlock Text="Compact agent activity" Style="{StaticResource SettingLabelStyle}" />
-                                <TextBlock Text="Group each turn’s activity into one expandable line."
+                                <TextBlock x:Name="AgentActivityStyleLabel" Text="Agent activity" Style="{StaticResource SettingLabelStyle}" />
+                                <TextBlock Text="Verbose shows every step. Compact groups each turn’s steps into one line you can expand."
                                            Style="{StaticResource SettingDescStyle}" />
                             </StackPanel>
-                            <ToggleSwitch x:Name="CompactAgentActivityToggle" Grid.Column="1"
-                                          IsOn="{x:Bind ActivityFeedPreferences.Compact, Mode=TwoWay}"
-                                          OnContent="" OffContent="" VerticalAlignment="Center"
-                                          AutomationProperties.Name="Compact agent activity" />
+                            <!-- A two-part choice rather than a switch: both styles are
+                                 named, so neither reads as "off". The selected part is
+                                 raised on the track; the other stays muted. -->
+                            <Border x:Name="AgentActivityStyleChoice" Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Padding="3"
+                                    Background="{StaticResource RuCanvasBrush}"
+                                    BorderBrush="{StaticResource RuLineBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource AppControlCornerRadius}"
+                                    AutomationProperties.LabeledBy="{Binding ElementName=AgentActivityStyleLabel}">
+                                <StackPanel Orientation="Horizontal" Spacing="2">
+                                    <StackPanel.Resources>
+                                        <Style x:Key="ActivityStyleSegment" TargetType="ToggleButton">
+                                            <Setter Property="MinWidth" Value="84" />
+                                            <Setter Property="Padding" Value="12,5" />
+                                            <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                                            <Setter Property="FontSize" Value="13" />
+                                            <Setter Property="BorderThickness" Value="0" />
+                                            <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+                                            <Setter Property="Background" Value="Transparent" />
+                                            <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
+                                        </Style>
+                                        <SolidColorBrush x:Key="ToggleButtonBackgroundChecked" Color="{ThemeResource RuSurfaceColor}" />
+                                        <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="{ThemeResource RuSurfaceColor}" />
+                                        <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="{ThemeResource RuSurfaceColor}" />
+                                        <SolidColorBrush x:Key="ToggleButtonForegroundChecked" Color="{ThemeResource RuInkColor}" />
+                                        <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="{ThemeResource RuInkColor}" />
+                                        <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPressed" Color="{ThemeResource RuInkColor}" />
+                                        <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="Transparent" />
+                                        <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="Transparent" />
+                                        <SolidColorBrush x:Key="ToggleButtonForegroundPointerOver" Color="{ThemeResource RuInkColor}" />
+                                    </StackPanel.Resources>
+                                    <ToggleButton x:Name="VerboseActivityOption" Content="Verbose" Tag="verbose"
+                                                  Style="{StaticResource ActivityStyleSegment}"
+                                                  Click="OnAgentActivityStyleClick"
+                                                  AutomationProperties.Name="Verbose agent activity" />
+                                    <ToggleButton x:Name="CompactActivityOption" Content="Compact" Tag="compact"
+                                                  Style="{StaticResource ActivityStyleSegment}"
+                                                  Click="OnAgentActivityStyleClick"
+                                                  AutomationProperties.Name="Compact agent activity" />
+                                </StackPanel>
+                            </Border>
                         </Grid>
                     </Border>
 
@@ -432,20 +471,6 @@
                                         </Flyout>
                                     </Button.Flyout>
                                 </Button>
-                            </Grid>
-                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                    <TextBlock Text="Computer use" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock x:Name="ComputerUseDescription"
-                                               Text="Lets Ru see your screen and use apps you approve, for new turns with an image-capable model. Press Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) to stop it."
-                                               Style="{StaticResource SettingDescStyle}" />
-                                </StackPanel>
-                                <ToggleSwitch x:Name="ComputerUseToggle"
-                                              Grid.Column="1"
-                                              VerticalAlignment="Center"
-                                              OnContent="" OffContent=""
-                                              Toggled="OnComputerUseToggled"
-                                              AutomationProperties.Name="Computer use" />
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -645,11 +670,12 @@
                                         </Flyout>
                                     </Button.Flyout>
                                 </Button>
-                            <Button x:Name="AddCustomProviderButton" Content="Add custom Provider"
+                            <Button x:Name="AddCustomProviderButton" Content="Add custom model API"
                                     Command="{x:Bind ViewModel.AddCustomProviderCommand}"
                                     IsEnabled="{x:Bind ViewModel.IsProviderManagementEnabled, Mode=OneWay}"
                                     MinHeight="36" Padding="16,8" CornerRadius="8"
-                                    AutomationProperties.Name="Add custom Provider" />
+                                    ToolTipService.ToolTip="Connect a self-hosted server or relay by its URL, protocol and models"
+                                    AutomationProperties.Name="Add custom model API" />
                         </StackPanel>
                         <ProgressBar IsIndeterminate="True" Visibility="{x:Bind ViewModel.IsLoading, Mode=OneWay}"
                                      AutomationProperties.Name="Loading providers" />
@@ -668,7 +694,7 @@
                                     Visibility="{x:Bind ViewModel.HasNoConfiguredProviders, Mode=OneWay}">
                                 <StackPanel Spacing="6">
                                     <TextBlock Text="No providers added yet" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Add a provider to connect its models, or use a custom OpenAI-compatible server."
+                                    <TextBlock Text="Add a provider to connect its models, or a custom model API for a self-hosted server or relay."
                                                Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
                             </Border>
@@ -864,6 +890,9 @@
                                    Style="{StaticResource SettingDescStyle}" />
                         </StackPanel>
                     </ContentControl>
+                    <!-- Named custom providers (ADR 0034) have their own editor. -->
+                    <views:CustomProviderEditorView x:Name="CustomProviderEditor"
+                                                    Visibility="{x:Bind ViewModel.IsCustomEditorOpen, Mode=OneWay}" />
                 </StackPanel>
             </ScrollViewer>
             <!-- Approval rules: what "Always allow" remembered, and the way to forget it. -->

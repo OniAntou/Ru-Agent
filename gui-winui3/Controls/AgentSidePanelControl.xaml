@@ -115,8 +115,8 @@
                  opens its details tab, Codex-style. -->
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="MinHeight" Value="28" />
-            <Setter Property="Padding" Value="6,3" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="8,6" />
             <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -173,18 +173,18 @@
                 BorderBrush="{StaticResource RuLineBrush}"
                 BorderThickness="1"
                 CornerRadius="{StaticResource AppCardCornerRadius}"
-                Padding="14,12"
+                Padding="12"
                 Visibility="Collapsed"
                 AutomationProperties.Name="Session panel">
             <Border.RenderTransform>
                 <TranslateTransform x:Name="CardSlide" />
             </Border.RenderTransform>
-            <StackPanel Spacing="8">
-                <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="4">
+                <Grid ColumnDefinitions="*,Auto" Margin="8,0,0,8">
                     <TextBlock x:Name="CardTitleText"
                                Text="Session"
                                FontFamily="{StaticResource RuUiFontFamily}"
-                               FontSize="13"
+                               FontSize="14"
                                FontWeight="SemiBold"
                                Foreground="{StaticResource RuInkBrush}"
                                TextTrimming="CharacterEllipsis"
@@ -212,13 +212,14 @@
                                   FontSize="12"
                                   Foreground="{StaticResource RuMutedBrush}"
                                   VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1"
-                                   Text="Changes"
+                        <TextBlock x:Name="CardChangesLabel" Grid.Column="1"
+                                   Text="No file changes"
                                    FontFamily="{StaticResource RuUiFontFamily}"
                                    FontSize="12"
                                    Foreground="{StaticResource RuInkBrush}"
                                    VerticalAlignment="Center" />
-                        <StackPanel Grid.Column="2"
+                        <StackPanel x:Name="CardChangeDeltas" Grid.Column="2"
+                                    Visibility="Collapsed"
                                     Orientation="Horizontal"
                                     Spacing="6"
                                     VerticalAlignment="Center">
@@ -236,13 +237,11 @@
                     </Grid>
                 </Button>
 
-                <Border Height="1" Background="{StaticResource RuLineBrush}" />
-
                 <Button x:Name="CardSubagentsRow" Click="OnCardSubagentsRowClick"
                         Style="{StaticResource SidePanelCardRowStyle}"
                         ToolTipService.ToolTip="View subagents" AutomationProperties.Name="View subagents">
                     <!-- Same shape as the Changes and Tasks rows: icon and title, then the state. -->
-                    <StackPanel Spacing="6">
+                    <StackPanel Spacing="4">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
                             <FontIcon Glyph="&#xE716;"
                                       FontSize="12"
@@ -262,14 +261,12 @@
                         </Grid>
                     </StackPanel>
                 </Button>
-                <Border Height="1" Background="{StaticResource RuLineBrush}" />
-
                 <Button x:Name="CardTasksRow"
                         Click="OnCardTasksRowClick"
                         Style="{StaticResource SidePanelCardRowStyle}"
                         ToolTipService.ToolTip="Open background tasks"
                         AutomationProperties.Name="Open tasks panel">
-                    <StackPanel Spacing="6">
+                    <StackPanel Spacing="4">
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
                             <FontIcon Glyph="&#xE7C4;"
                                       FontSize="12"
@@ -291,16 +288,13 @@
                     </StackPanel>
                 </Button>
 
-                <ScrollViewer MaxHeight="180"
-                              HorizontalScrollBarVisibility="Disabled"
-                              VerticalScrollBarVisibility="Auto">
-                    <ItemsControl x:Name="CardTasksList" ItemsSource="{x:Bind Tasks, Mode=OneWay}">
+                    <ItemsControl x:Name="CardTasksList" ItemsSource="{x:Bind CardTasks, Mode=OneWay}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="models:AgentTaskRow">
-                                <StackPanel Margin="6,0,6,8" Spacing="3" ToolTipService.ToolTip="{x:Bind Label}">
+                                <StackPanel Margin="26,2,8,6" Spacing="3" ToolTipService.ToolTip="{x:Bind Label}">
                                     <TextBlock Text="{x:Bind Label}"
                                                FontFamily="{StaticResource RuMonoFontFamily}"
-                                               FontSize="12"
+                                               FontSize="11.5"
                                                Foreground="{StaticResource RuInkBrush}"
                                                TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="{x:Bind DetailText}"
@@ -311,7 +305,12 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                </ScrollViewer>
+                <Button x:Name="CardMoreTasksButton" Click="OnCardTasksRowClick"
+                        Visibility="Collapsed" HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left" Margin="18,0,0,4"
+                        Style="{StaticResource SidePanelCardRowStyle}"
+                        FontSize="11.5" Foreground="{StaticResource RuMutedBrush}"
+                        AutomationProperties.Name="View all background tasks" />
             </StackPanel>
         </Border>
 
@@ -357,13 +356,17 @@
                       Margin="14,0,12,0"
                       VerticalAlignment="Center">
                     <ScrollViewer x:Name="TabStripScroll" Grid.Column="0"
+                                  SizeChanged="OnTabStripSizeChanged"
                                   Height="28"
                                   VerticalAlignment="Center"
                                   HorizontalScrollBarVisibility="Hidden"
                                   HorizontalScrollMode="Enabled"
                                   VerticalScrollBarVisibility="Disabled"
                                   VerticalScrollMode="Disabled">
-                        <StackPanel x:Name="ChipStrip" Orientation="Horizontal" Spacing="2">
+                        <StackPanel x:Name="ChipStrip" Orientation="Horizontal" Spacing="2"
+                                    KeyDown="OnTabStripKeyDown"
+                                    AutomationProperties.Name="Details tabs"
+                                    AutomationProperties.HelpText="Ctrl+Tab switches tabs; Ctrl+W closes the selected tab.">
                     <!-- The chip wrapper is a Border, not the label button: the whole
                          chip is one hover/active surface, so the label and the close
                          control share a single block instead of two fills. -->
@@ -372,9 +375,6 @@
                             VerticalAlignment="Center"
                             PointerEntered="OnChipPointerEntered"
                             PointerExited="OnChipPointerExited"
-                            PointerPressed="OnChipPointerPressed"
-                            PointerMoved="OnChipPointerMoved"
-                            PointerReleased="OnChipPointerReleased"
                             PointerCaptureLost="OnChipPointerCaptureLost"
                             CornerRadius="{StaticResource AppControlCornerRadius}"
                             BorderThickness="1"
@@ -412,9 +412,6 @@
                             VerticalAlignment="Center"
                             PointerEntered="OnChipPointerEntered"
                             PointerExited="OnChipPointerExited"
-                            PointerPressed="OnChipPointerPressed"
-                            PointerMoved="OnChipPointerMoved"
-                            PointerReleased="OnChipPointerReleased"
                             PointerCaptureLost="OnChipPointerCaptureLost"
                             CornerRadius="{StaticResource AppControlCornerRadius}"
                             BorderThickness="1"
@@ -452,9 +449,6 @@
                             VerticalAlignment="Center"
                             PointerEntered="OnChipPointerEntered"
                             PointerExited="OnChipPointerExited"
-                            PointerPressed="OnChipPointerPressed"
-                            PointerMoved="OnChipPointerMoved"
-                            PointerReleased="OnChipPointerReleased"
                             PointerCaptureLost="OnChipPointerCaptureLost"
                             CornerRadius="{StaticResource AppControlCornerRadius}"
                             BorderThickness="1"
@@ -492,9 +486,6 @@
                             VerticalAlignment="Center"
                             PointerEntered="OnChipPointerEntered"
                             PointerExited="OnChipPointerExited"
-                            PointerPressed="OnChipPointerPressed"
-                            PointerMoved="OnChipPointerMoved"
-                            PointerReleased="OnChipPointerReleased"
                             PointerCaptureLost="OnChipPointerCaptureLost"
                             CornerRadius="{StaticResource AppControlCornerRadius}"
                             BorderThickness="1"
@@ -553,9 +544,6 @@
                             VerticalAlignment="Center"
                             PointerEntered="OnChipPointerEntered"
                             PointerExited="OnChipPointerExited"
-                            PointerPressed="OnChipPointerPressed"
-                            PointerMoved="OnChipPointerMoved"
-                            PointerReleased="OnChipPointerReleased"
                             PointerCaptureLost="OnChipPointerCaptureLost"
                             CornerRadius="{StaticResource AppControlCornerRadius}"
                             BorderThickness="1"
@@ -605,7 +593,7 @@
                             Style="{StaticResource SidePanelStripButtonStyle}"
                             Width="28"
                             Padding="0"
-                            ToolTipService.ToolTip="Open panel tab"
+                            ToolTipService.ToolTip="All panel views"
                             AutomationProperties.Name="Open panel tab">
                         <Button.Flyout>
                             <MenuFlyout>
@@ -618,7 +606,7 @@
                                 <MenuFlyoutItem Text="Terminal" Tag="Terminal" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Terminal tab" />
                             </MenuFlyout>
                         </Button.Flyout>
-                        <FontIcon Glyph="&#xE710;" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                        <FontIcon Glyph="&#xE70D;" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
                     </Button>
 
                     <Button x:Name="FullscreenButton"
@@ -746,10 +734,13 @@
                     </Grid>
 
                     <Grid x:Name="TasksBody" Visibility="Collapsed" RowDefinitions="Auto,Auto,*">
-                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                        <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
                             <TextBlock Text="Background tasks" FontSize="13" FontWeight="SemiBold"
                                        Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" x:Name="TasksRefreshButton" Click="OnTasksRefreshClick"
+                            <ProgressRing x:Name="TasksLoadingRing" Grid.Column="1" Width="14" Height="14"
+                                          IsActive="False" Visibility="Collapsed" Foreground="{StaticResource RuMutedBrush}"
+                                          AutomationProperties.Name="Refreshing background tasks" />
+                            <Button Grid.Column="2" x:Name="TasksRefreshButton" Click="OnTasksRefreshClick"
                                     Style="{StaticResource SidePanelStripButtonStyle}" Width="28" Padding="0"
                                     ToolTipService.ToolTip="Refresh background tasks" AutomationProperties.Name="Refresh background tasks">
                                 <FontIcon Glyph="&#xE72C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
@@ -787,7 +778,8 @@
                                                            Foreground="{StaticResource RuMutedBrush}" />
                                             </StackPanel>
                                             <Button Grid.Column="1"
-                                                    Content="Stop"
+                                                    Content="{x:Bind StopText, Mode=OneWay}"
+                                                    IsEnabled="{x:Bind CanStop, Mode=OneWay}"
                                                     Tag="{x:Bind ExecutionId}"
                                                     Click="OnTaskStopClick"
                                                     Padding="10,4" CornerRadius="{StaticResource AppControlCornerRadius}"
@@ -801,8 +793,8 @@
                         </ScrollViewer>
                     </Grid>
 
-                    <Grid x:Name="FilesBody" Visibility="Collapsed" RowDefinitions="Auto,*">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                    <Grid x:Name="FilesBody" Visibility="Collapsed" RowDefinitions="Auto,Auto,*">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
                             <TextBlock x:Name="FilesRootText"
                                        Text="No workspace"
                                        FontFamily="{StaticResource RuUiFontFamily}"
@@ -810,8 +802,11 @@
                                        Foreground="{StaticResource RuMutedBrush}"
                                        TextTrimming="CharacterEllipsis"
                                        VerticalAlignment="Center" />
+                            <ProgressRing x:Name="FilesLoadingRing" Grid.Column="1" Width="14" Height="14"
+                                          IsActive="False" Visibility="Collapsed" Foreground="{StaticResource RuMutedBrush}"
+                                          AutomationProperties.Name="Refreshing workspace files" />
                             <Button x:Name="FilesRefreshButton"
-                                    Grid.Column="1"
+                                    Grid.Column="2"
                                     Click="OnFilesRefreshClick"
                                     Style="{StaticResource SidePanelStripButtonStyle}"
                                     Width="28"
@@ -823,7 +818,7 @@
                         </Grid>
 
                         <ListView x:Name="FilesList"
-                                  Grid.Row="1"
+                                  Grid.Row="2"
                                   Margin="0,6,0,0"
                                   SelectionMode="None"
                                   IsItemClickEnabled="True"
@@ -831,23 +826,20 @@
                                   ItemsSource="{x:Bind Files, Mode=OneWay}"
                                   ItemContainerStyle="{StaticResource FileRowContainerStyle}"
                                   AutomationProperties.Name="Workspace files">
-                            <ListView.ItemContainerTransitions>
-                                <TransitionCollection>
-                                    <AddDeleteThemeTransition />
-                                </TransitionCollection>
-                            </ListView.ItemContainerTransitions>
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:FileTreeRow">
-                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6"
+                                    <Grid ColumnDefinitions="12,Auto,*" ColumnSpacing="6"
                                           Margin="{x:Bind IndentMargin}"
                                           MinHeight="26"
                                           AutomationProperties.Name="{x:Bind Name}"
                                           ToolTipService.ToolTip="{x:Bind FullPath}">
-                                        <FontIcon Glyph="{x:Bind IconGlyph}"
+                                        <FontIcon Glyph="{x:Bind ExpansionGlyph, Mode=OneWay}" FontSize="9"
+                                                  Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center" />
+                                        <FontIcon Grid.Column="1" Glyph="{x:Bind IconGlyph}"
                                                   FontSize="13"
                                                   Foreground="{StaticResource RuMutedBrush}"
                                                   VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1"
+                                        <TextBlock Grid.Column="2"
                                                    Text="{x:Bind Name}"
                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                    FontSize="12"
@@ -855,8 +847,7 @@
                                                    TextTrimming="CharacterEllipsis"
                                                    VerticalAlignment="Center"
                                                    Visibility="{x:Bind NameVisibility}" />
-                                        <TextBlock Grid.Column="1"
-                                                   Grid.ColumnSpan="2"
+                                        <TextBlock Grid.Column="2"
                                                    Text="{x:Bind Name}"
                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                    FontSize="11.5"

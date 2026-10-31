@@ -51,7 +51,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
         Assert.Equal(PolicyDecision.Ask, ask.Decision);
         Assert.Equal("external_directory_required", ask.SafeCode);
 
-        var (authorized, token) = await _fixture.Factory.RespondApprovalAsync(
+        var (authorized, token, _) = await _fixture.Factory.RespondApprovalAsync(
             _runId.Value,
             ask.ApprovalId!.Value.Value,
             "allow_session_directory",
@@ -92,7 +92,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
         Assert.True(await gateway.RevokeApprovalAsync(ask.ApprovalId!.Value, CancellationToken.None));
         Assert.False(await gateway.RevokeApprovalAsync(ask.ApprovalId!.Value, CancellationToken.None));
 
-        var (authorized, _) = await _fixture.Factory.RespondApprovalAsync(
+        var (authorized, _, _) = await _fixture.Factory.RespondApprovalAsync(
             _runId.Value,
             ask.ApprovalId!.Value.Value,
             "allow_once",
@@ -137,7 +137,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
     {
         await CreateGateway();
 
-        var (authorized, token) = await _fixture.Factory.RespondApprovalAsync(
+        var (authorized, token, _) = await _fixture.Factory.RespondApprovalAsync(
             _runId.Value,
             "apr_" + new string('9', 32),
             "allow_once",
@@ -198,7 +198,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
             var writeAsk = await gateway.EvaluateAsync(writeProposal, CancellationToken.None);
             Assert.Equal(PolicyDecision.Ask, writeAsk.Decision);
 
-            var (editAuthorized, _) = await _fixture.Factory.RespondApprovalAsync(
+            var (editAuthorized, _, _) = await _fixture.Factory.RespondApprovalAsync(
                 _runId.Value,
                 editAsk.ApprovalId!.Value.Value,
                 "allow_session_directory",

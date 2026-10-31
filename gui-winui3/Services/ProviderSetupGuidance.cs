@@ -146,7 +146,7 @@ internal static class ProviderSetupGuidance
     /// ones (they come from the network), so this is the union callers check.
     /// </summary>
     internal static bool IsSelectableProvider(string? backendChoice) =>
-        IsKnown(backendChoice) || IsModelsDevChoice(backendChoice);
+        IsKnown(backendChoice) || IsModelsDevChoice(backendChoice) || CustomProviderPolicy.IsCustomChoice(backendChoice?.Trim());
 
     /// <summary>
     /// Normalises a selectable choice for storage: the fixed alias as-is, a
@@ -155,6 +155,12 @@ internal static class ProviderSetupGuidance
     /// </summary>
     internal static string NormalizeProviderChoice(string? backendChoice)
     {
+        // A named custom provider (ADR 0034) is kept as stored, never re-resolved.
+        if (CustomProviderPolicy.IsCustomChoice(backendChoice?.Trim()))
+        {
+            return backendChoice!.Trim();
+        }
+
         if (IsModelsDevChoice(backendChoice))
         {
             string id = backendChoice!.Trim()[ModelsDevPrefix.Length..].Trim().ToLowerInvariant();

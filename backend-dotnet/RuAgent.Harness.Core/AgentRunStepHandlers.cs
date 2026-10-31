@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using RuAgent.Protocol.Harness;
+using RuAgent.Harness.Core.Completion;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
@@ -46,47 +47,23 @@ internal sealed partial class AgentRunStepHandlers
         _familyBudget = familyBudget;
     }
 
-    public async Task<AgentRunStepResult> HandleUnverifiedFailureStepAsync(
+    /// <summary>
+    /// Commits the terminal failure of an unverified tool result once no recovery note is left.
+    /// The model step is audit-only and the run fails with <paramref name="errorCode"/>.
+    /// Outstanding verification evidence completes instead (ADR 0039), so it never reaches here.
+    /// </summary>
+    public async Task<AgentRunStepResult> HandleUnverifiedFailStepAsync(
         AgentRun run,
         ModelStepId modelStepId,
         AssistantStep step,
         string errorCode,
         int droppedCount,
-        ModelContextSnapshot context,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken,
         string? reasoningText = null)
     {
         const string stepErrorCode = "unverified_after_tool_failure";
-        // A confirmed mismatch cannot be repaired by regenerating final prose.
-        // Keep the failed evidence and publish its observed outcome exactly once.
-        if (context.VerificationEvidence.DescribeExitMismatch() is { } mismatchReport)
-            return await HandleBlockedReportAsync(run, modelStepId, step, mismatchReport, errorCode,
-                droppedCount, promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText).ConfigureAwait(false);
-        var reportsBlocker = AgentRecoveryNotes.TryReadBlockedReply(step, out var blockerReport);
-        if (reportsBlocker)
-            return await HandleBlockedReportAsync(run, modelStepId, step, blockerReport, errorCode,
-                droppedCount, promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText).ConfigureAwait(false);
-        if (AgentRecoveryNotes.CanAdvise(context, AgentRecoveryKind.UnverifiedAfterToolFailure))
-        {
-            return await HandleRecoveryAdviceStepAsync(
-                    run,
-                    modelStepId,
-                    step,
-                    droppedCount,
-                    AgentRecoveryNotes.BuildUnverifiedNote(errorCode),
-                    AgentRecoveryNotes.NoteCount(
-                        context,
-                        AgentRecoveryKind.UnverifiedAfterToolFailure),
-                    stepErrorCode,
-                    promptReceiptPayload,
-                    promptComposedEvent,
-                    cancellationToken,
-                    reasoningText)
-                .ConfigureAwait(false);
-        }
-
         var transition = AgentRunStateMachine.TryTransition(
             run.Status,
             HarnessRunTransition.Fail);
@@ -153,6 +130,34 @@ internal sealed partial class AgentRunStepHandlers
             .ConfigureAwait(false);
         return AgentRunStepResult.Blocked(committed, errorCode);
     }
+
+    /// <summary>
+    /// Commits a held reply as advice: the decided note is recorded and the run keeps stepping.
+    /// The note's safe code is its case marker, so the commit matches the earlier per-case paths.
+    /// </summary>
+    public Task<AgentRunStepResult> HandleHoldStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        AssistantStep step,
+        int droppedCount,
+        StepDecision hold,
+        HarnessPayloadIntent promptReceiptPayload,
+        HarnessEventIntent promptComposedEvent,
+        CancellationToken cancellationToken,
+        string? reasoningText) =>
+        HandleRecoveryAdviceStepAsync(
+            run,
+            modelStepId,
+            step,
+            droppedCount,
+            hold.NoteText ?? throw new InvalidOperationException("hold_without_note"),
+            hold.PriorNoteCount,
+            AgentRecoveryNotes.KindMarker(hold.NoteKind ?? throw new InvalidOperationException("hold_without_note_kind")),
+            promptReceiptPayload,
+            promptComposedEvent,
+            cancellationToken,
+            reasoningText,
+            hold.RetainAssistantContext);
 
     /// <summary>
     /// Answers a dead-end model step (prose after a failed receipt, or an empty
@@ -644,33 +649,21 @@ internal sealed partial class AgentRunStepHandlers
         return new AgentRunStepResult(result.Run, result.Receipts, result.ErrorCode);
     }
 
+    /// <summary>
+    /// Commits an accepted non-blank final reply. Blank replies are decided earlier by the
+    /// policy (empty-reply rule), so this is reached only with visible text.
+    /// </summary>
     public async Task<AgentRunStepResult> HandleFinalStepAsync(
         AgentRun run,
         ModelStepId modelStepId,
         AssistantStep step,
         int droppedCount,
-        ModelContextSnapshot context,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken,
         string? reasoningText = null,
         ProviderContinuation? providerContinuation = null)
     {
-        if (string.IsNullOrWhiteSpace(step.Text))
-        {
-            return await HandleModelReplyFailureAsync(
-                    run,
-                    modelStepId,
-                    step,
-                    droppedCount,
-                    context,
-                    promptReceiptPayload,
-                    promptComposedEvent,
-                    cancellationToken,
-                    reasoningText)
-                .ConfigureAwait(false);
-        }
-
         var stateChange = AgentRunStateMachine.TryTransition(
             run.Status,
             _internalRun ? HarnessRunTransition.CompleteSubagent : HarnessRunTransition.BeginFinalHistory);
@@ -679,8 +672,10 @@ internal sealed partial class AgentRunStepHandlers
             throw new InvalidOperationException(stateChange.ErrorCode);
         }
 
+        // The policy routes blank text to the empty-reply rule, so an accepted final reply has text.
+        var finalText = step.Text ?? throw new InvalidOperationException("final_reply_without_text");
         var reply = await _replyPolicy
-            .PrepareAsync(run, step.Text, cancellationToken)
+            .PrepareAsync(run, finalText, cancellationToken)
             .ConfigureAwait(false);
         var payloadId = _ids.NewPayloadId();
         var bytes = Encoding.UTF8.GetBytes(reply.VisibleText);

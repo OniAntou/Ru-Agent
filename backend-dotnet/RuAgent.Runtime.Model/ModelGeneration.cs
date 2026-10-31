@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
@@ -84,7 +85,8 @@ public sealed record ModelGenerationRequest
         IReadOnlyList<JsonObject>? responsesInputItems = null,
         IReadOnlyList<JsonObject>? anthropicMessages = null,
         bool promptInHistory = false,
-        string? pendingRuntimeSnapshot = null)
+        string? pendingRuntimeSnapshot = null,
+        SessionId? sessionId = null)
     {
         ArgumentNullException.ThrowIfNull(modelMessages);
         ArgumentNullException.ThrowIfNull(systemPromptContext);
@@ -121,6 +123,7 @@ public sealed record ModelGenerationRequest
         Prompt = prompt;
         PromptInHistory = promptInHistory;
         PendingRuntimeSnapshot = pendingRuntimeSnapshot;
+        SessionId = sessionId;
         ModelMessages = Array.AsReadOnly(modelMessages.ToArray());
         SystemPromptContext = systemPromptContext;
         Settings = settings;
@@ -148,6 +151,12 @@ public sealed record ModelGenerationRequest
 
     public bool PromptInHistory { get; }
     public string? PendingRuntimeSnapshot { get; }
+
+    /// <summary>
+    /// The conversation this step belongs to, when the caller knows it. A provider
+    /// that routes by conversation needs it on every generation.
+    /// </summary>
+    public SessionId? SessionId { get; }
 
     private static void ValidatePrompt(string prompt, bool hasImages)
     {

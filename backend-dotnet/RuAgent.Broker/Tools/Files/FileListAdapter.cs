@@ -179,7 +179,7 @@ public sealed class FileListAdapter
             });
         }
 
-        return new JsonObject
+        var result = new JsonObject
         {
             ["entries"] = jsonEntries,
             ["count"] = finalList.Count,
@@ -187,6 +187,16 @@ public sealed class FileListAdapter
             ["skipped"] = skipped,
             ["duration_ms"] = (int)sw.ElapsedMilliseconds,
         };
+        // A model reads an empty result as a broken tool. Say what actually happened.
+        // Only a directory with no entries at all is empty: entries skipped as protected
+        // or outside the workspace are already reported through "skipped", and an
+        // enumeration cut short by the time cap reports "truncated" instead.
+        if (scannedEntries == 0 && !truncated)
+        {
+            result["notice"] = "the directory exists but is empty (0 entries).";
+        }
+
+        return result;
     }
 
     private ResolvedPath ResolveChecked(string input)

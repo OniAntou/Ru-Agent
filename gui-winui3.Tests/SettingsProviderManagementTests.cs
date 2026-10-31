@@ -27,7 +27,7 @@ public sealed partial class SettingsViewModelTests
         };
         using var vm = NewViewModel();
         await vm.AttachAsync(backend, new FakeCatalog());
-        vm.AddCustomProviderCommand.Execute(null);
+        vm.EditProviderCommand.Execute("custom");
 
         var returning = vm.ReturnToProvidersCommand.ExecuteAsync(null);
         await reloadEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -96,15 +96,61 @@ public sealed partial class SettingsViewModelTests
     }
 
     [Fact]
-    public async Task Custom_action_opens_the_endpoint_editor_without_a_catalog_selection()
+    public async Task Custom_action_opens_the_custom_model_api_editor_without_changing_the_provider()
     {
         using var vm = NewViewModel();
+        var editor = new RuApp.ViewModels.CustomProviderEditorViewModel(new NoCustomProviderBackend());
+        vm.AttachCustomEditor(editor);
         await vm.AttachAsync(new FakeBackend(), new FakeCatalog());
+        var choice = vm.ProviderChoice;
+
         vm.AddCustomProviderCommand.Execute(null);
-        Assert.True(vm.IsProviderEditorOpen);
-        Assert.True(vm.IsCustomProviderVisible);
-        Assert.False(vm.IsModelsDevKeyVisible);
-        Assert.Equal("custom", vm.ProviderChoice);
+
+        Assert.True(vm.IsCustomEditorOpen);
+        Assert.False(vm.IsProviderEditorOpen);
+        Assert.False(vm.IsProviderOverviewVisible);
+        Assert.True(editor.IsNew);
+        Assert.Equal(choice, vm.ProviderChoice);
+
+        editor.CancelCommand.Execute(null);
+        Assert.False(vm.IsCustomEditorOpen);
+        Assert.True(vm.IsProviderOverviewVisible);
+    }
+
+    [Fact]
+    public async Task Named_custom_providers_are_listed_and_edited_in_their_own_editor()
+    {
+        using var vm = NewViewModel();
+        var editor = new RuApp.ViewModels.CustomProviderEditorViewModel(new NoCustomProviderBackend());
+        vm.AttachCustomEditor(editor);
+        var settings = new AppSettingsDto
+        {
+            BackendChoice = "custom:home",
+            CustomProviders = [new CustomProviderDto { Id = "home", DisplayName = "Ollama at home", BaseUrl = "http://localhost:11434/v1", Models = [new() { Id = "qwen3:8b" }] }],
+            CustomProviderKeys = [],
+        };
+        await vm.AttachAsync(new FakeBackend { Settings = settings }, new FakeCatalog());
+
+        var row = Assert.Single(vm.ConfiguredProviders);
+        Assert.Equal("custom:home", row.Choice);
+        Assert.Equal("Ollama at home", row.DisplayName);
+        Assert.Contains("1 model", row.Status);
+        Assert.Equal("custom:home", vm.ProviderChoice);
+
+        vm.EditProviderCommand.Execute("custom:home");
+        Assert.True(vm.IsCustomEditorOpen);
+        Assert.False(editor.IsNew);
+        Assert.Equal("Ollama at home", editor.DisplayName);
+    }
+
+    private sealed class NoCustomProviderBackend : RuApp.ViewModels.ICustomProviderBackend
+    {
+        public Task<AppSettingsDto?> GetSettingsAsync() => Task.FromResult<AppSettingsDto?>(null);
+        public Task<CustomProviderSaveResult> SaveAsync(IReadOnlyList<CustomProviderDto> providers, string? keyProviderId, string? apiKey) =>
+            Task.FromResult(new CustomProviderSaveResult(true, null, ""));
+        public Task<ProviderCatalogSnapshot?> DiscoverAsync(string backend, CancellationToken cancellationToken) =>
+            Task.FromResult<ProviderCatalogSnapshot?>(null);
+        public Task<bool> RemoveKeyAsync(string backend) => Task.FromResult(true);
     }
 
     [Fact]
@@ -152,8 +198,8 @@ public sealed partial class SettingsViewModelTests
     public async Task A_failed_save_keeps_the_editor_and_gives_a_recovery_message()
     {
         using var vm = NewViewModel();
-        await vm.AttachAsync(new FakeBackend { SaveResult = false }, new FakeCatalog());
-        vm.AddCustomProviderCommand.Execute(null);
+        await vm.AttachAsync(new FakeBackend { SaveResult = false, Settings = new AppSettingsDto { BackendChoice = "custom" } }, new FakeCatalog());
+        vm.EditProviderCommand.Execute("custom");
         await vm.ReturnToProvidersCommand.ExecuteAsync(null);
         Assert.True(vm.IsProviderEditorOpen);
         Assert.Contains("Could not save", vm.ProviderTestMessage);

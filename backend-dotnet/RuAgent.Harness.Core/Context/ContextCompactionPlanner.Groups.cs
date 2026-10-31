@@ -19,7 +19,9 @@ public static partial class ContextCompactionPlanner
                 || (IsBaseTurnDialogue(entry) && !completeBaseEntries.Contains(entry)))
             .ToHashSet();
         var scopeSnapshot = entries.LastOrDefault(Prompting.RuntimeContextSnapshot.IsSnapshot);
-        if (scopeSnapshot?.Content?.Contains("\nobserved_path_b64: ", StringComparison.Ordinal) == true)
+        if (scopeSnapshot?.Content is { } scopeContent
+            && (scopeContent.Contains("\nobserved_path_b64: ", StringComparison.Ordinal)
+                || scopeContent.Contains("\nobserved_dir_b64: ", StringComparison.Ordinal)))
         {
             protectedEntries.Add(scopeSnapshot);
         }

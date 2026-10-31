@@ -80,7 +80,7 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
         var workspaceAdmission = new AgentRunWorkspaceAdmissionService(
             resolver, trust, workspaces, workspaceCoordinator, policySnapshotService, ids, time);
         var creation = new AgentRunCreationService(fixture.EventStore, sessions, permissionStore,
-            workspaceAdmission, roots, ids, time, guard, settings);
+            workspaceAdmission, roots, ids, time, guard);
         var queries = new AgentRunQueryService(fixture.EventStore, sessions, workspaceTrust, guard,
             new SqliteAgentRunProviderSelectionStore(fixture.Options), fixture.PayloadStore, fixture.Options);
         var subagentStore = new SqliteSubagentStore(fixture.Options, fixture.PayloadStore);
@@ -94,7 +94,7 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
             queries,
             lifecycle,
             new AgentApprovalsService(fixture.EventStore, fixture.Options, workspaces, ids, time,
-                fixture.PayloadStore, fixture.KeyStore, roots, gateway, guard),
+                fixture.KeyStore, gateway, guard),
             commands,
             new AgentInputsService(fixture.EventStore, ids, time, fixture.PayloadStore, guard),
             new AgentPoliciesService(fixture.EventStore, fixture.Options, workspaces, ids, time,

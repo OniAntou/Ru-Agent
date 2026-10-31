@@ -19,9 +19,8 @@ namespace RuBackend.Harness.ModelRunner;
 /// </summary>
 public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepRunner, IModelStepRequestPreparer, IContextCheckpointSummarizer
 {
-    private const int MaxModelStepAttempts = 5;
+    private const int MaxModelStepAttempts = ProviderRetryPolicy.MaximumAttempts;
     private static readonly TimeSpan[] ModelStepRetryBackoffs = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)];
-    private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromSeconds(60);
 
     // Conversation blocks stay small; untrusted runtime references carry bounded
     // source output and explicit cursors when more can be fetched.
@@ -141,11 +140,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText,
                     result.ProviderContinuation, attempt + 1, effectiveEffort, selectedEffort);
             }
-            catch (ModelStepException error) when (
-                error.Retryable
-                && (error.RetryAfter is null || error.RetryAfter <= MaximumRetryDelay)
-                && attempt + 1 < MaxModelStepAttempts
-                && !cancellationToken.IsCancellationRequested)
+            catch (ModelStepException error) when (ProviderRetryPolicy.CanRetry(
+                error.Retryable, error.RetryAfter, attempt, cancellationToken.IsCancellationRequested))
             {
                 // One line per retryable rejection keeps a run whose retried
                 // attempt also fails diagnosable, like the retired worker transport
@@ -157,7 +153,9 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                     : ModelStepRetryBackoffs;
                 var delay = ComputeRetryDelay(backoffs[attempt], error.RetryAfter, RetryJitterSample());
                 Console.Error.WriteLine($"ru.host model_retry attempt={attempt + 1} code={error.Code} wait_ms={(int)delay.TotalMilliseconds}");
-                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                using (RuAgent.Harness.Core.Diagnostics.HarnessPerformance.Measure(
+                    RuAgent.Harness.Core.Diagnostics.HarnessPhase.ProviderRetryWait))
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 // A model-formatting rejection is handed back to the model on the
                 // next attempt instead of failing the run closed.
                 selectionFeedbackCode = error.Code;
@@ -189,13 +187,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
     }
 
     internal static TimeSpan ComputeRetryDelay(TimeSpan backoff, TimeSpan? retryAfter, double jitterSample)
-    {
-        if (double.IsNaN(jitterSample) || jitterSample is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(jitterSample));
-        var jitteredTicks = (long)(backoff.Ticks * (0.8 + 0.4 * jitterSample));
-        var delay = TimeSpan.FromTicks(Math.Max(0, jitteredTicks));
-        if (delay > MaximumRetryDelay) delay = MaximumRetryDelay;
-        return retryAfter is { } serverDelay && serverDelay > delay ? serverDelay : delay;
-    }
+        => ProviderRetryPolicy.Delay(backoff, retryAfter, jitterSample);
 
     private const long RequestSafetyMarginTokens = 64;
 
@@ -272,7 +264,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 new ModelGenerationSettings(settings["model_tools"] as JsonArray,
                     providerWebSearch: request.PromptContext.ProviderWebSearch), bootstrap,
                 ParseRunImages(images), history.Responses, history.Anthropic,
-                promptInHistory: nativeText, pendingRuntimeSnapshot: pendingSnapshot);
+                promptInHistory: nativeText, pendingRuntimeSnapshot: pendingSnapshot,
+                sessionId: request.SessionId);
         }
         catch (ArgumentException error)
         {
@@ -877,7 +870,6 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             ["availability"] = "executable",
             ["model_enabled"] = true,
             ["capability_class"] = "tool",
-            ["verification_required"] = false,
             ["input_schema"] = schema,
         };
     }

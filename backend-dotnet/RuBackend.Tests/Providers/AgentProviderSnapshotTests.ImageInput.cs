@@ -34,6 +34,7 @@ public sealed partial class AgentProviderSnapshotTests
         var pinned = (await selections.GetAsync(run.Run.RunId, default))!.Selection;
 
         Assert.Equal(accepts, ImageInputPolicy.IsPinned(pinned));
+        Assert.Equal(accepts, bootstrap.AcceptsImageInput);
         Assert.False(bootstrap.RequestOptions?.ContainsKey(ImageInputPolicy.PinField) ?? false);
 
         // A later settings change does not move the run's decision.

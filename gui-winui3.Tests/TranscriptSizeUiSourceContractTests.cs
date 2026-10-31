@@ -128,7 +128,7 @@ public sealed class TranscriptSizeUiSourceContractTests
         string init = GuiSource.MethodBody(code, "InitTranscriptSizeOptions");
         Assert.Contains("TranscriptSizePickerProjection.Sizes", init, StringComparison.Ordinal);
         Assert.Contains("TranscriptSizeOptionsPanel.Children.Add", init, StringComparison.Ordinal);
-        Assert.Contains("LabelWithActivity", init, StringComparison.Ordinal);
+        Assert.Contains("TranscriptSizePickerProjection.Label(size)", init, StringComparison.Ordinal);
 
         // No radio bullets: each specimen is a plain button, and the choice
         // reads through the accent wash applied after every build and click.

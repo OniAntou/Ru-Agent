@@ -1,3 +1,4 @@
+using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
 using RuAgent.Protocol;
@@ -60,7 +61,6 @@ public sealed class ToolCatalogTests
 
         Assert.True(powershell.Manifest.RequiresApproval);
         Assert.Equal(RiskClass.Reversible, powershell.Manifest.Risk);
-        Assert.False(powershell.VerificationRequired);
         Assert.Equal("executable", powershell.Availability);
 
         // Advertisement is derived from profile scopes. The single Agent
@@ -72,6 +72,24 @@ public sealed class ToolCatalogTests
             .ToArray();
         Assert.DoesNotContain(CapabilityProfile.Chat, advertised);
         Assert.Contains(CapabilityProfile.Agent, advertised);
+    }
+
+    /// <summary>
+    /// Every manifest the catalog yields must pass the registry's trust checks on its own.
+    /// The catalog's adapter strings and the registry's trusted-adapter allowlist are two
+    /// separate lists, so an adapter missing from the allowlist breaks composition for
+    /// every consumer of the catalog. Registering into a fresh registry names that seam.
+    /// </summary>
+    [Fact]
+    public void Every_catalog_manifest_is_accepted_by_a_fresh_tool_registry()
+    {
+        var registry = new ToolRegistry();
+
+        foreach (var manifest in ToolCatalog.Manifests(new WebOptions()))
+        {
+            registry.Register(manifest);
+        }
+
     }
 
     [Fact]
@@ -199,5 +217,25 @@ public sealed class ToolCatalogTests
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(searchSchema, new JsonObject { ["query"] = "hello", ["max_results"] = 99 }));
         var fetchSchema = catalog.Registry.Get("web_fetch", "1.0.0").Manifest.InputSchema;
         ToolSchemaValidator.Validate(fetchSchema, new JsonObject { ["url"] = "https://example.com" });
+    }
+
+    [Theory]
+    [InlineData("run_process", "{\"executable\":\"python\",\"purpose\":\"command\",\"supersedes\":[\"probe\"]}")]
+    [InlineData("powershell", "{\"script\":\"dotnet test\",\"purpose\":\"verification\",\"supersedes\":[\"probe\",\"probe\"]}")]
+    public void Supersedes_is_accepted_and_ignored_by_the_launch_schema_for_any_purpose(string toolId, string json)
+    {
+        var schema = AgentToolDefinitionCatalog.Find(toolId, "1.0.0")!.InputSchema;
+        ToolSchemaValidator.Validate(schema, JsonNode.Parse(json));
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("[\"\"]")]
+    [InlineData("[3]")]
+    public void Supersedes_shape_is_still_schema_checked(string supersedes)
+    {
+        var schema = AgentToolDefinitionCatalog.Find("run_process", "1.0.0")!.InputSchema;
+        var arguments = JsonNode.Parse("{\"executable\":\"python\",\"supersedes\":" + supersedes + "}");
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(schema, arguments));
     }
 }

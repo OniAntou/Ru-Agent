@@ -83,16 +83,40 @@ Provider billing and cache counters remain independent of these display estimate
 The meter button's accessible help includes the total and all three values, so
 the reading remains available even when the flyout opens as a transient hover.
 
+## Activity rows
+
+Each row of the detailed timeline is one line built from three parts. The verb stays
+the named label (`AgentActivityText`, `ThinkingLabel` or `EditPreviewLabel`) that the
+running sweep and settled tone find by name; `ActivityRowGlyph` puts the kind's glyph
+before it (danger or warning when the row failed or waits), and `ActivityRowTail`
+puts the subject, a mono tail and an `exit N` badge after it. The words come from
+`AgentActivityItem.RowVerb`, `RowSubject` and `RowMeta`; `DisplayText` remains the
+whole sentence for tooltips, automation names and the compact summary. Only the
+subject trims, to whatever width the other parts leave. Rows use
+`TranscriptTypography.ActivityFontSize`, which equals the message size; muted ink, not
+size, sets them apart. `ChatMessageItem.UpdateActivityGaps` gives each displayed prose
+slice 12px on the side where an activity row sits.
+
 ## Compact agent activity
 
-Settings includes an opt-in **Compact agent activity** switch. Detailed mode is
-still the default. The device-local `Ru/activity-display.json` preference applies
+Settings › Agent activity offers a two-part **Verbose / Compact** choice
+(`SettingsView.ActivityStyle.cs`) rather than an on/off switch, so neither style reads
+as "off". Verbose (every step) is still the default. The device-local `Ru/activity-display.json` preference applies
 to open transcripts and newly loaded messages; it does not enter backend settings,
 model context, durable activity records or execution policy.
 
-Each assistant message with activity gets one disclosure line in compact mode.
-It counts recorded non-narration activities, reports failed/waiting states, and
-shows the latest running activity while the turn streams. Reply text stays visible.
+Each assistant message with activity gets one quiet disclosure line in compact mode,
+with no surface or border of its own. A finished turn reads as a sentence of its
+three most frequent kinds of work, ranked by count with ties in first-appearance
+order and no counts ("Edited files, ran commands and read files", "… and more" past
+three); thinking, status and narration rows do not rank. A live turn shows the
+running activity's own text under a sweeping shimmer (off when Windows animations
+are off), holds each title at least 150 ms so fast tool bursts do not flicker, and
+ends in an elapsed clock measured from the reply's creation. Failures and waits add
+a tail ("waiting for you · 1 failed") and tint the line warning or danger. The
+leading glyph names the main kind of work and turns into the disclosure chevron on
+hover, keyboard focus or while open. No total duration is shown for a finished turn,
+because the transcript does not record when a turn ended. Reply text stays visible.
 Expanding the line restores the original interleaved text/activity timeline;
 collapsing filters only activity segments and preserves the same live text objects.
 The legacy replay layout uses the same disclosure. Expansion is per message and
@@ -106,6 +130,40 @@ using incremental appends for live segments. The disclosure uses a keyboard-oper
 button with an accessible action and expanded/collapsed status; it adds no motion.
 The stored preference is bounded and written atomically; absent/invalid preferences
 fall back to detailed mode.
+
+## Customize page
+
+**Customize**, directly under New Chat in the sidebar, opens a page in place of the
+chat (`ShellDestination.Customize`); selecting a session or New Chat returns to the
+chat, and `/skills` typed in the composer opens it. The composer carries no skills
+button. The page has two tabs:
+
+- **Skills** lists the active workspace's catalog through `SkillsApiClient`, with
+  search, reload, an enable switch per skill, automatic-selection in each row's
+  menu, and adding or removing local skill folders. **Use in chat** goes back to the
+  open chat with `/skill <id>` in the composer (`ChatView.InsertSkillCommand`).
+- **Plugins** holds computer use ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)),
+  moved out of Settings. The switch saves the Host setting and reverts when the
+  save fails; it applies to new runs.
+
+The page reloads both tabs each time it is shown and cancels its requests when hidden.
+
+## Custom model API editor
+
+Settings › Providers › "Add custom model API" opens `CustomProviderEditorView`
+(view model `CustomProviderEditorViewModel`) for a named custom provider
+([ADR 0034](../adr/0034-named-custom-providers.md)): Provider ID (fixed once
+saved), display name, base URL, API protocol (OpenAI Chat Completions or
+Anthropic Messages), API key and the model list with optional context windows.
+`CustomProviderPolicy` mirrors the Host's rules so the editor can name the
+first wrong field and warn before a key would go over plain `http://` to another
+computer; the Host still validates every save. A save replaces the whole
+`custom_providers` list and may store one provider's key in the same request.
+"Fetch available models" saves first, then lists what the server serves; adding
+from that list fills the model's context window. Delete removes the key before
+the definition, so no orphaned secret remains. Saved providers appear in "Your
+providers" and as their own groups in the composer's model picker; the legacy
+Custom OpenAI slot stays listed as "(legacy)" while configured.
 
 ## Presentation ownership
 
@@ -165,8 +223,8 @@ Workspaces, Recents and CLI Sessions headings pair their labels with decorative
 grid, history and minimal terminal-prompt icons; the labels and existing controls
 remain the accessible interaction targets.
 `SidebarLayoutState` owns one expanded width in the 220–360 px range for every
-window tier. The title-bar workspace-sidebar toggle hides it completely and
-restores its last width. `MainWindow.SidebarLayout.cs` handles pointer identity,
+window tier. The workspace-sidebar toggle at the far left of the title bar hides
+it completely and restores its last width. `MainWindow.SidebarLayout.cs` handles pointer identity,
 capture cancellation and width presentation; the focusable splitter exposes
 RangeValue, arrows and Home/End. Ctrl+Left/Right uses the same bounds; double-click
 resets to 250 px. The splitter has a real 10 px layout column and transparent hit
@@ -205,6 +263,15 @@ source of the typed text, because WinUI raises `TextChanged` after an edit: meth
 that compare or save text take the box's current value, so text typed while a send
 awaits the Host is never cleared by that send. The view model writes text back only
 through `TextReplaced` (restore and clear), never through a two-way binding.
+Picker, drop and clipboard images share the same bounded preparation path.
+Signature detection reads the supplied stream directly and leaves it open for
+the decoder; adapters over managed byte streams do not support cloned substreams.
+Intake failures appear above the composer only while the originating session and
+generation still own the operation.
+Sent user messages keep image/file attachments in a separate right-aligned row
+above the text bubble. Only the typed text receives the bubble background;
+attachment-only messages show no empty bubble. Overflow attachments can scroll
+horizontally within the reading column, and message copy/rewind remains on the group.
 `SessionPresetViewModel` owns the chat's permission preset and the cached version of
 the Host's stored selection. Only two rules narrow it: Full Access does not follow the
 user into a session it was not stored for, and a declined Full Access confirmation
@@ -227,7 +294,8 @@ preset, read again on every open because the chat can narrow Full Access without
 event; an adopted preset repaints Settings only while its session is still active, and a
 preset chosen in Settings is applied to the chat. A settings save invalidates the catalogs
 and only the newest provider-selection reload applies. The view model also owns the
-theme choice and its persistence and the title bar's update and side-panel entries.
+theme choice and its persistence, the title bar's update entry and the command
+palette's side-panel state.
 `MainWindow` keeps windowing, the title-bar region, the composition of the Host-bound
 services and views, dialogs, layout and every animation. `HostShellBackend` resolves the
 API service, health service and catalog controllers per call, because a reconnect
@@ -245,8 +313,8 @@ global rules once and project rules per workspace the user has sessions in, keep
 rows when a read fails, and only removes rules. `ChatComposerViewModel` keeps an
 accepted send until its run starts, so a declined workspace-trust prompt returns the
 message to the composer instead of losing it. The empty chat links to Models &
-Providers while `ChatModelPickerViewModel.NeedsProviderSetup` is true, and the composer
-shows a read-only Full Access notice bound to `SessionPresetViewModel.IsFullAccess`.
+Providers while `ChatModelPickerViewModel.NeedsProviderSetup` is true. The composer
+shows no permission notice; the conversation header reports the preset.
 `ViewModelBindingContractTests` checks that each `{x:Bind ViewModel.X}`,
 `{x:Bind ModelSelection.X}`, `{x:Bind Composer.X}` and `{x:Bind Shell.X}` names a public
 member of the bound view model.
@@ -277,6 +345,10 @@ Shell policy contexts retain the selected runtime and exact invocation for
 approval matching; nonempty shell argv allow rules use literal, case-sensitive
 whole invocations, so script wildcards cannot widen a remembered permission.
 Deny and ask rules retain pattern matching.
+
+Markdown headings scale from the selected body size: H1 adds 6px, H2 4px,
+H3 2px and H4 1px; H5/H6 retain body size. Semibold weight and heading-specific
+line height distinguish sections while keeping wrapped titles readable.
 
 Markdown embedded code/table frames track the available reading-column width
 without reparsing on resize. Code preserves line boundaries with horizontal
@@ -446,6 +518,42 @@ before classifying an occupied port as a foreign Host.
 Startup is cancellation-scoped, with checks after asynchronous stages before
 creating subsequent UI services or timers. Host shutdown remains Host-owned.
 
+### Conversation header
+
+`ChatHeader` is the first row of the chat view's root grid, above the reading column,
+side surface and composer. Its left side is a breadcrumb: the workspace folder's name
+(full path in the tooltip), then the open session's title, trimmed against the width
+the other parts leave. After the title a label names the permission preset with the
+Settings names (Plan, Standard, Full Access) and a dot coloured by risk: info, success
+and warning. The label is a notice, not a control: the preset changes only in Settings
+or the command palette. At the far right, a panel toggle hides or restores the
+session's side surface, with the same enabled state as its command-palette action.
+Immediately before it, "Working" with a breathing dot shows while a run is live
+(the dot holds still when animations are off). Title trimming reserves both action
+columns so neither control is displaced by a long session name. The header follows the
+transcript's visibility, so the welcome screen has none. The title updates when a
+session opens and when the open session is titled by its first prompt; the workspace
+follows the side surface's workspace and each run's resolved folder; the label follows
+`SessionPresetViewModel.Preset`.
+
+### Message rail
+
+`MessageRailControl` sits in `ChatContentGrid` beside, not inside, `ChatListView`, so it
+stays put while the transcript scrolls. It draws one tick per loaded message, spaced by index rather than by row geometry, because
+the list virtualizes and unrealized rows have no trustworthy position. When the ticks
+do not fit, `MessageRailPolicy` groups neighbouring messages into one tick. Ticks are
+shapes on one hit-test surface; the pointer's Y picks the nearest tick. At rest all
+ticks share one short, dim length and only the one in view is brighter; hovering lifts
+the tick under the pointer and tapers its neighbours, through a composition scale
+rather than a relayout. The hover card
+reads the message's current `Content` when shown, strips Markdown, and never takes hit
+tests, so it cannot steal the pointer from the rail. A click stops following output
+before jumping (the click lands outside the list, so the list's own input hooks never
+see it) and settles the jump again after layout. The highlighted tick follows
+`FirstVisibleIndex`, or the last message at the bottom. The rail hides below two
+messages or when the host is narrower than the reading column plus both gutters.
+Messages not yet paged in from history have no tick until loaded.
+
 ## Conversation Session
 
 The conversation and history record owned by the Public Host in the shared
@@ -517,18 +625,22 @@ ordered edit previews and line offsets instead of concatenating unrelated hunks.
 
 `TurnChangesSummaryControl` sits after the reply text in the assistant template.
 It hides while streaming or without edits, shows four files initially and expands
-into a height-bounded, virtualized list. It observes message/collection changes
+into a height-bounded, virtualized list. Its compact header places line totals
+beside the wrapping title, with a 28px icon, a subdued outline and 32px file rows.
+It observes message/collection changes
 while loaded and item updates only once settled; unloading releases subscriptions.
 The existing run-owned transcript replay restores old turns without adopting the
 next run's edits. The session-wide Changes tab keeps its independent projection.
 
-File clicks and View changes open `TurnChangesDetailsControl`, a read-only native
-reader with a file picker and virtualized edits using `FileEditPreviewControl`.
-Missing previews are explicit. The shared dialog gate rechecks optional ownership
-after waiting, so a queued reader cannot open for a recycled message/session.
-Unloading, rebinding or resuming the message closes the reader; viewport changes
-resize its content. It uses recorded data only, with no file writes, new endpoint
-or permission changes.
+File clicks and View changes raise a navigation request to the owning chat view.
+The view validates the current session/message and opens the existing right-panel
+Changes tab. There is no separate turn reader, file picker or back navigation.
+Clicking a file expands and scrolls to its latest recorded edit in the normal
+session list. An older selected edit can replace the oldest visible row within the
+100-row cap; session totals still cover every edit. Live refreshes retain expanded
+diffs. Explicit turn navigation opens an overlay on narrow windows instead of
+suppressing the panel. Session reset or tab closure clears the navigation target.
+It uses recorded data only, with no file writes, new endpoint or permission changes.
 
 ## Session Side Surface
 
@@ -539,6 +651,28 @@ tasks are processes, distinct from the todo plan. Panel mode, active tab and
 fullscreen selection survive temporary hiding on narrow windows. The interactive
 terminal is one user-owned shell that follows the selected workspace, restarting
 on a workspace change; background refreshes do not take input focus.
+The summary card previews at most three processes, prioritizing running ones, with
+an explicit action for the complete list. Files and Terminal open from the panel's
+views menu rather than separate summary-card shortcuts.
+Its change count names recorded edits, not unique files: activities carry safe
+basenames, which cannot distinguish identically named files in different folders.
+The selected panel tab retains its label and close action; inactive tabs keep their
+icons, tooltips and accessible names. The views menu opens every tab. Ctrl+Tab and
+Ctrl+Shift+Tab cycle, and Ctrl+W closes, while focus is within the tab strip only;
+terminal and document keyboard commands keep their own scope. Visibility and body
+transitions have separate cancellation owners, restore opacity on completion or
+unload, and respect Windows animation settings.
+Tab drags observe handled pointer events and release the label button's capture
+before the chip captures the gesture; an ordinary click keeps its normal action.
+Files refresh keeps the current rows visible but disables tree interaction while
+reading. `FileTreeSnapshotLoader` revisits only expanded branches within the 1,500-row
+bound and existing directory filters. A failed same-workspace refresh retains the
+last listing with retry guidance; switching workspace clears it immediately.
+Individual branch reads check both refresh generation and expansion version, so a
+collapse/reopen cannot insert an older result. Status messages occupy a separate row
+from the tree. An unreadable branch retains one collapsible error note rather than
+appending another on every retry. Background-process refresh has a busy indicator; Stop disables that
+process's action until the command settles, and duplicate in-flight stops are ignored.
 `BackgroundTaskObservation` retains last known task identities through read
 failures, labels them stale and retries at 4/8/16/30-second intervals while the
 surface remains visible. An authoritative successful response resets the delay

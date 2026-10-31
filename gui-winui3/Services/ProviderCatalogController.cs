@@ -107,7 +107,16 @@ public sealed class ProviderCatalogController : IAsyncDisposable
         return RefreshAsync();
     }
 
-    public Task<bool> RefreshAsync(bool force = false)
+    /// <summary>
+    /// Refreshes the selected provider's catalog.
+    /// </summary>
+    /// <param name="force">Refresh even while a successful catalog is fresh.</param>
+    /// <param name="bypassManualThrottle">
+    /// Skip the 30-second manual-refresh throttle. An explicit connection test and a
+    /// just-saved key are answers the user is waiting for, so they may not be served by
+    /// a refresh this class suppressed; the host's own retry throttle still applies.
+    /// </param>
+    public Task<bool> RefreshAsync(bool force = false, bool bypassManualThrottle = false)
     {
         CancellationTokenSource requestCts;
         TaskCompletionSource<bool> completion;
@@ -121,10 +130,10 @@ public sealed class ProviderCatalogController : IAsyncDisposable
             {
                 if (_requestCts?.IsCancellationRequested != true) return _flight;
                 if (_restartAfterCancellation is not null) return _restartAfterCancellation;
-                _restartAfterCancellation = RestartAfterCancellationAsync(_flight, force);
+                _restartAfterCancellation = RestartAfterCancellationAsync(_flight, force, bypassManualThrottle);
                 return _restartAfterCancellation;
             }
-            if (force && _lastForcedRefreshUtc.HasValue &&
+            if (force && !bypassManualThrottle && _lastForcedRefreshUtc.HasValue &&
                 _clock.UtcNow - _lastForcedRefreshUtc.Value < ManualRefreshThrottle)
                 return Task.FromResult(false);
 
@@ -141,7 +150,7 @@ public sealed class ProviderCatalogController : IAsyncDisposable
         return completion.Task;
     }
 
-    private async Task<bool> RestartAfterCancellationAsync(Task<bool> previous, bool force)
+    private async Task<bool> RestartAfterCancellationAsync(Task<bool> previous, bool force, bool bypassManualThrottle)
     {
         try { await previous.ConfigureAwait(false); }
         catch (Exception ex)
@@ -152,7 +161,7 @@ public sealed class ProviderCatalogController : IAsyncDisposable
         {
             _restartAfterCancellation = null;
         }
-        return await RefreshAsync(force).ConfigureAwait(false);
+        return await RefreshAsync(force, bypassManualThrottle).ConfigureAwait(false);
     }
 
     public void Invalidate()

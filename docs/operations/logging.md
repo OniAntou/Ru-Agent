@@ -100,3 +100,16 @@ provider):
   payloads are never tagged. Unknown values are dropped fail-closed.
 - Without a listener every helper is a no-op. OTLP export is added only when
   `OTEL_EXPORTER_OTLP_ENDPOINT` is set; otherwise traces stay in-process.
+
+The Broker source also carries two counters on the Host meter provider:
+- `ru.tool.calls` (`tool.id`, `tool.status`, `error.code`): how often each tool
+  runs, fails, or is denied, and under which bounded code. This is the number to
+  read before changing a tool's behaviour or a policy rule.
+- `ru.tool.read_pages` (`tool.id`, `repeated`): whether the read page is the
+  first one this session took from that path. It measures how often a session
+  re-reads a path; it is counting only and never withholds content. A real
+  "file unchanged" answer needs the Host's compaction-aware read state, so
+  dedup stays a separate decision until this counter justifies it.
+
+Both counters follow the same allowlist: bounded tokens only, paths and
+arguments are never tagged.

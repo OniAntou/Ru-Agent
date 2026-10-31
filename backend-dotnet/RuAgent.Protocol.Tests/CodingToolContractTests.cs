@@ -51,4 +51,15 @@ public sealed class CodingToolContractTests
         Assert.True(AgentToolProfiles.Includes(AgentToolProfiles.Programmatic, "run_code"));
         Assert.Equal(AgentToolProfiles.Programmatic, AgentToolProfiles.ForNewRun("coding_code_v1"));
     }
+
+    [Fact]
+    public void Removed_semantic_profile_is_rejected_without_substitution()
+    {
+        var pin = new JsonObject { [AgentToolProfiles.PinField] = "coding_semantic_v1" };
+        Assert.Equal("tool_profile_invalid", Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ReadPin(pin)).Message);
+        Assert.Null(AgentToolProfiles.ReadSupportedLabel(pin));
+        Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ForNewRun("coding_semantic_v1"));
+        Assert.Equal(AgentToolProfiles.Minimal, AgentToolProfiles.ForNewRun());
+        Assert.DoesNotContain(AgentToolDefinitionCatalog.Get(), tool => tool.ToolId == "code_intelligence");
+    }
 }

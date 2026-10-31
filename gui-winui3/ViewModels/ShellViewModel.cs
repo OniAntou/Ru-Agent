@@ -30,12 +30,13 @@ internal sealed record ShellNavigation(
     bool LeavesChat,
     bool KeepsCatalogPolling,
     bool IsLogActive,
-    bool IsDiagnosticsActive);
+    bool IsDiagnosticsActive,
+    bool IsCustomizeActive = false);
 
 /// <summary>
 /// The window shell's state and decisions: Host startup, reconnect and health, the
 /// status line, navigation and the Settings modal, the Settings ↔ chat preset and
-/// theme sync, and the title bar's update and side-panel entries.
+/// theme sync, the title bar's update action and side-panel command-palette state.
 /// </summary>
 /// <remarks>
 /// Call members on the UI thread; Host exits and health results arrive through the
@@ -365,7 +366,8 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
             LeavesChat: destination != ShellDestination.Chat,
             KeepsCatalogPolling: ShellRoutePolicy.KeepsCatalogPolling(tag),
             IsLogActive: ShellRoutePolicy.IsLogActive(tag),
-            IsDiagnosticsActive: ShellRoutePolicy.IsDiagnosticsActive(tag));
+            IsDiagnosticsActive: ShellRoutePolicy.IsDiagnosticsActive(tag),
+            IsCustomizeActive: ShellRoutePolicy.IsCustomizeActive(tag));
     }
 
     /// <summary>

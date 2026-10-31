@@ -8,12 +8,13 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 public sealed class VerificationCompletionTests
 {
     [Fact]
-    public void Coding_terminal_check_is_invalidated_by_multi_edit_and_completed_by_rerun()
+    public void Passed_check_is_not_invalidated_by_a_later_edit_and_a_rerun_passes_too()
     {
         const string args = """{"script":"dotnet test","purpose":"verification"}""";
         var initial = Batch(1, "check", "powershell", args, ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}""")
             .Concat(Batch(3, "change", "edit_file", "{}", ToolExecutionOutcome.Succeeded, "ok", "{}"));
-        Assert.Equal("verification_stale", Snapshot(initial).VerificationEvidence.Checks.Single().Code);
+        Assert.Equal(VerificationCheckStatus.Passed, Assert.Single(Snapshot(initial).VerificationEvidence.Checks).Status);
+        Assert.Null(Snapshot(initial).VerificationEvidence.BlockingCode);
         var repaired = initial.Concat(Batch(5, "recheck", "powershell", args, ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""));
         Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(repaired), out _));
     }
@@ -39,13 +40,13 @@ public sealed class VerificationCompletionTests
     }
 
     [Fact]
-    public void A_later_code_change_invalidates_a_passed_verification()
+    public void A_later_code_change_does_not_turn_a_passed_verification_into_a_failure()
     {
         var entries = Batch(1, "test", "bash", Verification,
             ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}""")
             .Concat(Batch(3, "edit", "edit", "{}", ToolExecutionOutcome.Succeeded, "ok", "{}"));
-        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out var code));
-        Assert.Equal("verification_stale", code);
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out _));
+        Assert.Null(Snapshot(entries).VerificationEvidence.BlockingCode);
     }
 
     [Fact]
@@ -152,18 +153,15 @@ public sealed class VerificationCompletionTests
     }
 
     [Fact]
-    public void Background_check_started_before_mutation_cannot_verify_the_new_code()
+    public void Background_check_started_before_a_mutation_is_not_an_obligation()
     {
         var entries = Batch(1, "start", "bash", Verification, ToolExecutionOutcome.Succeeded,
             "ok", """{"execution_id":"background-test","state":"running"}""")
             .Concat(Batch(3, "edit", "edit", "{}", ToolExecutionOutcome.Succeeded, "ok", "{}"))
             .Concat(Batch(5, "finish", "bash", """{"mode":"read_output","execution_id":"background-test"}""",
                 ToolExecutionOutcome.Succeeded, "ok", """{"state":"exited","exit_code":0}"""));
-        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out var code));
-        Assert.Equal("verification_stale", code);
-        var rerun = entries.Concat(Batch(7, "rerun", "bash", Verification,
-            ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""));
-        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(rerun), out _));
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out _));
+        Assert.Null(Snapshot(entries).VerificationEvidence.BlockingCode);
     }
 
     [Fact]
@@ -182,27 +180,13 @@ public sealed class VerificationCompletionTests
     }
 
     [Fact]
-    public void Legacy_check_upgrades_only_after_exact_replay_with_authority_metadata()
-    {
-        var digest = new string('c', 64);
-        var entries = Batch(1, "legacy", "bash", Verification, ToolExecutionOutcome.Failed,
-            "process_exit_nonzero", """{"exit_code":1}""")
-            .Concat(Batch(3, "upgrade", "bash", Verification, ToolExecutionOutcome.Failed,
-                "process_exit_nonzero", JsonSerializer.Serialize(new { exit_code = 1, verification_identity = digest })))
-            .Concat(Batch(5, "alias", "bash", Verification.Replace("\"purpose\"", "\"working_directory\":\"C:/workspace\",\"purpose\""),
-                ToolExecutionOutcome.Succeeded, "ok", JsonSerializer.Serialize(new { exit_code = 0, verification_identity = digest })));
-        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out _));
-        Assert.Single(Snapshot(entries).VerificationEvidence.Checks);
-    }
-
-    [Fact]
-    public void A_check_rejected_before_launch_stays_outstanding_until_a_corrected_check_passes()
+    public void A_check_rejected_before_launch_creates_no_obligation_and_a_corrected_check_passes()
     {
         var rejected = Batch(1, "malformed", "run_process", """{"executable":"python","purpose":"verification"}""",
             ToolExecutionOutcome.Failed, "malformed_call", "{}");
         Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(rejected), out var code));
         Assert.Equal("malformed_call", code);
-        Assert.Contains("rejected before launch", Snapshot(rejected).VerificationEvidence.DescribePending());
+        Assert.Null(Snapshot(rejected).VerificationEvidence.DescribePending());
         Assert.Contains("keep that purpose", AgentRecoveryNotes.BuildUnverifiedNote(code));
 
         var corrected = rejected
@@ -215,15 +199,15 @@ public sealed class VerificationCompletionTests
     }
 
     [Fact]
-    public void A_passing_negative_check_does_not_resolve_a_rejected_verification()
+    public void A_rejected_check_never_blocks_a_later_passing_negative_check()
     {
         var entries = Batch(1, "malformed", "run_process", """{"executable":"python","purpose":"verification"}""",
                 ToolExecutionOutcome.Failed, "malformed_call", "{}")
             .Concat(Batch(3, "negative", "bash",
                 """{"mode":"shell","script":"exit 1","purpose":"expected_failure","expected_exit_code":1}""",
                 ToolExecutionOutcome.Failed, "process_exit_nonzero", """{"exit_code":1}"""));
-        Assert.True(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out var code));
-        Assert.Equal("malformed_call", code);
+        Assert.Null(Snapshot(entries).VerificationEvidence.BlockingCode);
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(Snapshot(entries), out _));
     }
 
     [Fact]

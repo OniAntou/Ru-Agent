@@ -7,6 +7,7 @@ public enum HarnessPhase
 {
     ContextRead, PromptBuild, RequestPrepare, AdmissionCommit, ProviderGate,
     ProviderStream, FirstToken, FirstText, FirstReasoning, FirstTool, ToolExecution, FramePublish,
+    ProviderRetryWait,
 }
 
 /// <summary>Local timing seam. Fixed phase names only; no user/provider content or identifiers.</summary>

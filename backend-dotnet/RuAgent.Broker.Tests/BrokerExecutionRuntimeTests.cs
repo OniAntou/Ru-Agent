@@ -22,6 +22,48 @@ namespace RuAgent.Broker.Tests;
 public sealed class BrokerExecutionRuntimeTests
 {
     [Fact]
+    public async Task Supersedes_metadata_is_ignored_and_does_not_change_command_identity()
+    {
+        using var fixture = new RuntimeFixture();
+        const string session = "valid-replacement";
+        const string run = "valid-replacement-run";
+        Assert.Null((await fixture.Runtime.OpenRunAsync(
+            RunOpen(run, session, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default)).Error);
+        string? identity = null;
+        foreach (var replacement in new[] { false, true })
+        {
+            var args = new JsonObject { ["executable"] = "dotnet", ["arguments"] = new JsonArray("--version"),
+                ["purpose"] = "verification" };
+            if (replacement) args["supersedes"] = new JsonArray("prior-check");
+            var decision = await fixture.Runtime.EvaluateAsync(Evaluate("valid-" + replacement, session, run, "run_process", args), default);
+            Assert.Equal("allow", decision.Decision!.Decision);
+            var result = await fixture.Runtime.ExecuteAuthorizedAsync(Execute("execute-" + replacement,
+                session, run, "run_process", decision.Decision.AuthorizationToken!, args), default);
+            Assert.Equal(ToolResultStatuses.Succeeded, result.Receipt!.Status);
+            var observed = result.Receipt.Output["verification_identity"]!.GetValue<string>();
+            if (identity is not null) Assert.Equal(identity, observed);
+            identity = observed;
+        }
+    }
+
+    [Fact]
+    public async Task Supersedes_without_verification_is_accepted_and_ignored_by_policy_and_execution()
+    {
+        using var fixture = new RuntimeFixture();
+        const string session = "accepted-supersedes";
+        const string run = "accepted-supersedes-run";
+        Assert.Null((await fixture.Runtime.OpenRunAsync(
+            RunOpen(run, session, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default)).Error);
+        var args = new JsonObject { ["executable"] = "dotnet", ["arguments"] = new JsonArray("--version"),
+            ["purpose"] = "inspection", ["supersedes"] = new JsonArray("probe") };
+        var decision = await fixture.Runtime.EvaluateAsync(Evaluate("accepted-supersedes", session, run, "run_process", args), default);
+        Assert.Equal("allow", decision.Decision!.Decision);
+        var result = await fixture.Runtime.ExecuteAuthorizedAsync(Execute("execute-accepted-supersedes",
+            session, run, "run_process", decision.Decision.AuthorizationToken!, args), default);
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Receipt!.Status);
+    }
+
+    [Fact]
     public async Task Expected_failure_with_zero_exit_is_rejected_before_authorization()
     {
         using var fixture = new RuntimeFixture();
@@ -708,6 +750,33 @@ public sealed class BrokerExecutionRuntimeTests
         Assert.Equal("ask", again.Decision!.Decision);
         Assert.Equal("rule_asks", again.Decision.ReasonCode);
         Assert.Empty(fixture.Session.DirectoryGrants.GetGrantedDirectories(sessionId));
+    }
+
+    [Fact]
+    public async Task Approved_call_returns_the_remember_plan_of_its_own_pending_context()
+    {
+        using var fixture = new RuntimeFixture();
+        const string sessionId = "session-runtime-plan";
+        const string runId = "run_plan11111111111111111111111111";
+        var opened = await fixture.Runtime.OpenRunAsync(
+            RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default);
+        Assert.Null(opened.Error);
+
+        var arguments = new JsonObject { ["op"] = "call", ["server"] = "github", ["tool"] = "create_issue" };
+        var ask = await fixture.Runtime.EvaluateAsync(
+            Evaluate("evaluate-plan", sessionId, runId, "mcp", arguments),
+            default);
+        Assert.Equal("ask", ask.Decision!.Decision);
+
+        var approved = await fixture.Runtime.RespondApprovalAsync(
+            ApprovalRespond("approve-plan", sessionId, runId, ask.Decision.ApprovalId!, "allow_always"),
+            default);
+
+        Assert.Equal("authorized", approved.Status);
+        Assert.NotNull(approved.RememberPlan);
+        Assert.Equal("mcp:github", approved.RememberPlan.SessionMatcher!.ResolvedExecutable);
+        Assert.Equal(new[] { "call", "create_issue" }, approved.RememberPlan.DurableMatcher!.ArgvPattern);
+        Assert.Equal("mcp", approved.RememberPlan.DurableMatcher.ToolId);
     }
 
     [Fact]

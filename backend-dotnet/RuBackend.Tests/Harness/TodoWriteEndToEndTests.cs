@@ -57,6 +57,13 @@ public sealed class TodoWriteEndToEndTests
             Array.Empty<ModelToolCall>(),
             AssistantFinishReason.Stop,
             0));
+        // The list still has open items, so the first final reply is held once for the
+        // checklist; this second reply is the one that completes the run.
+        steps.Enqueue(new AssistantStep(
+            "plan published",
+            Array.Empty<ModelToolCall>(),
+            AssistantFinishReason.Stop,
+            0));
 
         using var tmp = TempWorkspace.Create();
         using var factory = new BackendWebApplicationFactory(

@@ -34,6 +34,19 @@ public sealed class FileLineReadTests : IDisposable
     }
 
     [Fact]
+    public async Task Missing_files_and_directories_return_named_read_errors()
+    {
+        var adapter = new FileReadAdapter(_root);
+        var missing = await Assert.ThrowsAsync<FileNotFoundException>(async () => await adapter.ExecuteLinesAsync(
+            new JsonObject { ["path"] = "missing.txt" }, default));
+        var directory = await Assert.ThrowsAsync<IOException>(async () => await adapter.ExecuteLinesAsync(
+            new JsonObject { ["path"] = "." }, default));
+
+        Assert.Equal("file_not_found", missing.Message);
+        Assert.Equal("is_directory", directory.Message);
+    }
+
+    [Fact]
     public async Task Too_long_line_is_named_instead_of_skipping_unreturned_text()
     {
         File.WriteAllText(Path.Combine(_root, "a.txt"), new string('x', 100_000));

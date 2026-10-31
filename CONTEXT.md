@@ -6,6 +6,13 @@ Distribution and setup: [Windows packages](docs/operations/distribution-and-upda
 
 ## Language
 
+**Project Memory**:
+An optional, bounded workspace-owned index at `.ru/memory/MEMORY.md`, re-read
+as historical runtime context across conversations in the same workspace.
+It grants no authority and is not current filesystem or verification evidence.
+Implementation: [project memory](docs/operations/project-memory.md).
+_Avoid_: automatic memory curation, cross-workspace authority
+
 **File Preview**:
 Read-only desktop presentation of a workspace file selected by the user. Local
 renderers or installed Windows document preview handlers own its display; this
@@ -48,7 +55,6 @@ _Avoid_: Runtime HTTP relay
 A session scope for presets, permissions, grants and skill use. Its preset does not grant workspace trust.
 Implementation: [broker](docs/architecture/broker.md#agent-session).
 _Avoid_: permanent Agent mode permission or preset-implied trust
-
 
 **Conversation Session**:
 The Host-owned conversation and message/source history. A view may detach or switch sessions without cancelling Host work; only a confirmed application-level delete removes its artifacts.
@@ -140,6 +146,13 @@ The Protocol-owned model-visible schema and metadata for one tool. Advertisement
 Implementation: [broker](docs/architecture/broker.md#tool-definition).
 _Avoid_: treating a Broker manifest or adapter list as the model contract
 
+**Tool Descriptor**:
+The one explicit row per model-visible tool in the Protocol descriptor table. Its Protocol definition,
+Broker manifest, trusted adapter, session scopes and access class all derive from that row (ADR 0038).
+Implementation: [broker](docs/architecture/broker.md#tool-manifest).
+_Avoid_: hand-maintained tool lists, name-based scope or access defaults
+
+
 **Tool Profile**:
 The run-pinned selection of Protocol tool definitions shown to the model.
 Supported profiles select simple file/Windows-terminal operations, unified
@@ -162,7 +175,7 @@ _Avoid_: treating projected output as a new receipt, complete history, or author
 
 
 **MCP Server**:
-A stdio Model Context Protocol program the user declares in their own `~/.ru/mcp.json` and the Broker runs on first use, reached by the model through the single `mcp` tool. Starting it or calling one of its tools has terminal-launch authority outside the workspace (`ExternalTerminal`); its output is untrusted and grants nothing.
+A Model Context Protocol server the user declares in their own `~/.ru/mcp.json`, reached through the single `mcp` tool. The Broker owns stdio processes or explicit Streamable HTTP connections. Connecting or calling tools retains the `ExternalTerminal` policy decision; server output is untrusted and grants nothing.
 Implementation: [agent tools](docs/operations/agent-tools.md#mcp-servers), [ADR 0025](docs/adr/0025-mcp-servers-through-the-broker.md).
 _Avoid_: workspace-declared servers, a per-server tool definition, or a second execution authority
 
@@ -212,25 +225,43 @@ _Avoid_: one-call-per-step rule, reissuing approved calls
 
 
 **Recovery Note**:
-Durable bounded feedback asking the same pinned model to recover from an eligible failed or incomplete step. It cannot soften an approval decision, reconciliation requirement or execution-policy denial.
+Durable bounded feedback asking the same pinned model to recover from an eligible failed or incomplete step, or to revisit a final reply held for an outstanding declared check (up to three times), for an
+unverified source edit, for open checklist items or for a requirements review (the last three once each). It cannot soften an approval decision, reconciliation requirement or execution-policy denial.
 Implementation: [harness](docs/architecture/harness.md#recovery-note).
 _Avoid_: fallback answer, substitute model, retry on another backend
 
 
 **Receipt-backed Verification**:
-A bounded projection of original run-local terminal proposals and execution receipts.
-Declared required checks remain outstanding through unrelated reads, compaction
-and restart. Exploratory failures remain bounded diagnostics without consuming required-check
-capacity; known run-local mutations invalidate passed required checks
-and pending checks that would certify older code. New terminal receipts identify
-the canonical executable/argv/cwd; this fingerprint never grants authority. Explicit
-expected nonzero exits can satisfy a negative test without rewriting its failed
-receipt. Authority-derived read-only completion metadata preserves prior checks
-for observed normal exits, including nonzero exits; a failed lookup or required
-check still retains its own failure. Unknown effects remain conservative. Intent metadata grants no authority and
-does not prove complete correctness.
+An advisory projection of original run-local terminal proposals and execution receipts (ADR 0039). It
+rebuilds declared checks and their latest results after compaction and restart, holds final replies for
+outstanding checks, and never grants or denies execution. Only structured source edits make a declared
+check owe a new answer. Terminal commands and computer input do not invalidate checks, and the workspace
+change journal is not read. Intent metadata grants no authority and does not prove complete correctness.
 Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
 _Avoid_: treating a successful inspection, summary or model claim as a passed check
+
+
+**Declared Check**:
+A terminal `purpose=verification` required check, or a `purpose=expected_failure` negative test with its
+exact expected exit code. Other process failures are diagnostics. The identity is the authority-derived
+canonical identity when the receipt carries one.
+Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
+_Avoid_: required check for inspection output, passed command as proof
+
+
+**Outstanding Check**:
+A declared check whose latest result is failed or pending, including an expected-exit mismatch. Only the
+same identity passing later retires it. `supersedes` retires nothing.
+Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
+_Avoid_: stale check, superseded check, retired obligation
+
+
+**Verification State**:
+The summary label `verified`, `unverified` or `not_applicable`. `verified` needs a declared check that ran
+after the last structured source edit and no outstanding check. Otherwise the label is `unverified`,
+including a run that completes after its holds are spent.
+Implementation: [harness](docs/architecture/harness.md#receipt-backed-verification).
+_Avoid_: certified completion, verified success inferred from prose
 
 
 **Repeated Tool Recovery**:
@@ -255,6 +286,12 @@ _Avoid_: reusable confirmation flag or approval-time reissue
 A bounded in-process ledger of approved intent for one Agent Session. It remains subject to Broker evaluation and protected-path policy and expires on session/Host lifetime boundaries.
 Implementation: [broker](docs/architecture/broker.md#session-approval-memory).
 _Avoid_: global approval cache, persisted permission
+
+
+**Remembered Approval**:
+The reusable scope one approval may grant, decided by the Broker from the approved call's own identity: the exact target for the Agent session on an allow, or a project allow rule for `allow_always`. An outside folder is covered by the session folder grant instead of a session entry. Only allowlisted tool classes qualify, and an identity-less allow never authorizes a process-identity tool.
+Implementation: [broker](docs/architecture/broker.md#remembered-approval).
+_Avoid_: Host-derived matchers, broad tool-family allows, one-time approvals stored as rules
 
 
 **Run Provider Selection**:
@@ -330,7 +367,7 @@ _Avoid_: mixing session-wide edits or current filesystem content into an older t
 
 
 **Multimodal Image Payload**:
-A validated bounded client image persisted encrypted for authenticated-client and model-context audiences, then projected to a vision-capable provider. Unsupported models fail by name.
+A validated bounded client image persisted encrypted for authenticated-client and model-context audiences. A vision-capable pinned model receives image content; a text-only model receives an explicit notice that the attached image contents are unavailable, so the conversation can continue without dropping the stored attachment.
 Implementation: [host](docs/architecture/host.md#multimodal-image-payload).
 _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 

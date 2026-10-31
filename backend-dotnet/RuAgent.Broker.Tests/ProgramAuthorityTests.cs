@@ -35,6 +35,23 @@ public sealed class ProgramAuthorityTests : IDisposable
     }
 
     [Fact]
+    public async Task ParallelReadsUseRealBrokerAndRecordOneReceiptPerNestedCall()
+    {
+        await OpenAsync(EnvelopeTestSnapshots.StandardEmpty());
+        File.WriteAllText(Path.Combine(_root, "a.txt"), "alpha");
+        File.WriteAllText(Path.Combine(_root, "b.txt"), "bravo");
+        const string code = "return tools.parallel([{tool:'read_file',arguments:{path:'a.txt'}},"
+            + "{tool:'read_file',arguments:{path:'b.txt'}}]).map(r=>r.output.content);";
+        var result = await ExecuteAsync(code, "call_parallel_reads");
+        Assert.Equal("succeeded", result.Receipt!.Status);
+        Assert.Equal(new[] { "alpha", "bravo" }, result.Receipt.Output["result"]!.AsArray()
+            .Select(value => value!.GetValue<string>()));
+        Assert.Equal(2, result.Receipt.Output["tool_count"]!.GetValue<int>());
+        Assert.Equal(new[] { "a.txt", "b.txt" }, result.Receipt.Output["nested_receipts"]!.AsArray()
+            .Select(receipt => receipt!["arguments"]!["path"]!.GetValue<string>()));
+    }
+
+    [Fact]
     public async Task PlanCannotWriteEvenInsideProgram()
     {
         await OpenAsync(EnvelopeTestSnapshots.Snapshot(1, "plan", []));
@@ -68,6 +85,21 @@ public sealed class ProgramAuthorityTests : IDisposable
         Assert.Equal("write_file", result.Receipt.Output["blocked_call"]!["tool_id"]!.GetValue<string>());
         Assert.Equal("denied.txt", result.Receipt.Output["blocked_call"]!["arguments"]!["path"]!.GetValue<string>());
         Assert.False(File.Exists(Path.Combine(_root, "denied.txt")));
+    }
+
+    [Fact]
+    public async Task ParallelReadApprovalStopsAfterDrainAndPreservesFirstBlockedCall()
+    {
+        await OpenAsync(EnvelopeTestSnapshots.StandardWithRules(
+            PolicyEvalSnapshots.Rule("ask-reads", "ask", PolicyEvalSnapshots.Matcher(toolId: "read_file"))));
+        const string code = "tools.parallel([{tool:'read_file',arguments:{path:'first.txt'}},"
+            + "{tool:'read_file',arguments:{path:'second.txt'}}]); return 'not reached';";
+        var result = await ExecuteAsync(code, "call_parallel_ask");
+        Assert.Equal("program_requires_direct_call", result.Receipt!.ErrorCode);
+        Assert.Equal("first.txt", result.Receipt.Output["blocked_call"]!["arguments"]!["path"]!.GetValue<string>());
+        Assert.Equal(2, result.Receipt.Output["nested_receipts"]!.AsArray().Count);
+        Assert.All(result.Receipt.Output["nested_receipts"]!.AsArray(), receipt =>
+            Assert.False(receipt!["response"]!["adapter_invoked"]!.GetValue<bool>()));
     }
 
     [Fact]

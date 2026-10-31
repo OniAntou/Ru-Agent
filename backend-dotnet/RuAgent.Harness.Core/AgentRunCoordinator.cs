@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Approval;
+using RuAgent.Harness.Core.Completion;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
@@ -318,110 +319,40 @@ public sealed partial class AgentRunCoordinator
         }
 
         var step = invocation.Step;
-        var promptReceiptPayload = invocation.PromptReceiptPayload;
-        var promptComposedEvent = invocation.PromptComposedEvent;
-        var modelDroppedCount = invocation.ModelDroppedCount;
-        var reasoningText = invocation.ReasoningText;
-        var providerContinuation = invocation.ProviderContinuation;
 
-        // A provider may return partial calls alongside a length/error finish.
-        // Reject the entire step before proposing any side effect.
-        if (step.FinishReason is AssistantFinishReason.Length
-            or AssistantFinishReason.ContentFilter or AssistantFinishReason.Error)
+        // Pre-refresh decisions use the pinned step: R1 unusable finish, R2 tool calls (Proceed
+        // dispatches them through the same switch) and R3 commentary-only.
+        var preRefresh = CompletionPolicy.DecideBeforeRefresh(step, context);
+        if (preRefresh is not null)
         {
-            invocation.RetractAssistantText();
-            return await _steps.HandleUnusableModelStepAsync(
-                    run, modelStepId, step, modelDroppedCount, context,
-                    promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText)
+            return await ExecuteStepDecisionAsync(preRefresh, run, modelStepId, invocation, context, cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        if (step.ToolCalls.Count > 0)
+        // Workspace journal state may change while the provider is generating a
+        // final answer. Refresh only host-derived verification evidence; the
+        // accepted model input and its context entries remain pinned to this step.
+        var beforeFreshness = await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+        if (beforeFreshness.Version != run.Version || beforeFreshness.State != HarnessRunState.Running)
+            return AgentRunStepResult.Blocked(beforeFreshness, "run_changed_during_generation");
+        var freshContext = await _contextAssembler.AssembleAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+        var afterFreshness = await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+        if (afterFreshness.Version != beforeFreshness.Version || afterFreshness.State != HarnessRunState.Running)
+            return AgentRunStepResult.Blocked(afterFreshness, "run_changed_during_generation");
+        context = new ModelContextSnapshot(context.Entries, context.CanonicalUtf8,
+            context.ObservedFilePaths, freshContext.VerificationEvidence);
+
+        try
         {
-            var repetition = ConsecutiveToolCallGuard.Inspect(
-                context,
-                step.ToolCalls,
-                out var receiptCode);
-            if (repetition == RepetitionGuardVerdict.Advise)
-            {
-                invocation.RetractAssistantText();
-                return await _steps.HandleRepetitionAdviceStepAsync(
-                        run,
-                        modelStepId,
-                        step,
-                        receiptCode,
-                        modelDroppedCount,
-                        promptReceiptPayload,
-                        promptComposedEvent,
-                        cancellationToken,
-                        reasoningText)
-                    .ConfigureAwait(false);
-            }
-
-            if (repetition == RepetitionGuardVerdict.Stop)
-            {
-                invocation.RetractAssistantText();
-                return await _steps.HandleRepeatedToolStepAsync(
-                        run,
-                        modelStepId,
-                        step,
-                        promptReceiptPayload,
-                        promptComposedEvent,
-                        cancellationToken,
-                        reasoningText)
-                    .ConfigureAwait(false);
-            }
-
-            return await _steps.HandleToolStepAsync(
-                    run,
-                    modelStepId,
-                    step,
-                    modelDroppedCount,
-                    promptReceiptPayload,
-                    promptComposedEvent,
-                    cancellationToken,
-                    reasoningText,
-                    providerContinuation)
+            var decision = CompletionPolicy.DecideAfterRefresh(step, context);
+            return await ExecuteStepDecisionAsync(decision, run, modelStepId, invocation, context, cancellationToken)
                 .ConfigureAwait(false);
         }
-
-        if (step.ResponsesMessages?.IsCommentaryOnly == true)
-            return await _steps.HandleCommentaryStepAsync(run, modelStepId, step, modelDroppedCount,
-                context, promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText).ConfigureAwait(false);
-
-        if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode)
-            || AgentRecoveryNotes.TryReadBlockedReply(step, out _))
+        catch (InvalidOperationException error) when (error.Message == "run_version_conflict")
         {
-            if (context.VerificationEvidence.HasExitMismatch || !AgentRecoveryNotes.TryReadBlockedReply(step, out _))
-                invocation.RetractAssistantText();
-            return await _steps.HandleUnverifiedFailureStepAsync(
-                    run,
-                    modelStepId,
-                    step,
-                    string.IsNullOrEmpty(failureCode) ? "model_reported_blocker" : failureCode,
-                    modelDroppedCount,
-                    context,
-                    promptReceiptPayload,
-                    promptComposedEvent,
-                    cancellationToken,
-                    reasoningText)
-                .ConfigureAwait(false);
+            var current = await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+            return AgentRunStepResult.Blocked(current, "run_changed_during_generation");
         }
-
-        if (string.IsNullOrWhiteSpace(step.Text))
-            invocation.RetractAssistantText();
-        return await _steps.HandleFinalStepAsync(
-                run,
-                modelStepId,
-                step,
-                modelDroppedCount,
-                context,
-                promptReceiptPayload,
-                promptComposedEvent,
-                cancellationToken,
-                reasoningText,
-                providerContinuation)
-            .ConfigureAwait(false);
     }
 
     public Task<AgentRun> AcknowledgeHistoryAsync(

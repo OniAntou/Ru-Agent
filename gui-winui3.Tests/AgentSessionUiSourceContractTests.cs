@@ -61,13 +61,10 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.True(named.ContainsKey("AgentModeLabel"), "AgentModeLabel must exist.");
         Assert.Equal("Agent", GuiSource.AttributeValue(named["AgentModeLabel"], "Text"));
 
-        // The composer carries no permission control: the preset lives in Settings. It may
-        // say that Full Access is on (owner decision, 2026-10-22), as a read-only notice.
+        // The composer carries no permission control or notice: the preset lives in
+        // Settings, and the conversation header reports it (ChatHeaderTests).
         Assert.False(named.ContainsKey("AgentPresetBox"), "AgentPresetBox was retired from the composer.");
-        var notice = named["FullAccessIndicator"];
-        Assert.Equal("Border", notice.Name.LocalName);
-        Assert.Equal("{x:Bind Presets.IsFullAccess, Mode=OneWay}", GuiSource.AttributeValue(notice, "Visibility"));
-        Assert.DoesNotContain(notice.DescendantsAndSelf(), element => element.Name.LocalName is "Button" or "ComboBox" or "ToggleButton");
+        Assert.False(named.ContainsKey("FullAccessIndicator"), "The composer's Full Access notice moved to the header.");
 
         foreach (var retired in RetiredXamlNames)
         {
@@ -94,10 +91,8 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Same(composerRow, indicator.Parent);
         Assert.Equal(0, GuiSource.IntAttribute(attach, "Column", -1));
         Assert.Equal(1, GuiSource.IntAttribute(indicator, "Column", -1));
-        var skills = GuiSource.Require(document, "SkillsButton");
-        Assert.Same(composerRow, skills.Parent);
-        Assert.Equal(2, GuiSource.IntAttribute(skills, "Column", -1));
-        Assert.Equal("Browse and manage skills", GuiSource.AttributeValue(skills, "Name"));
+        // Skills live on the Customize page, not in the composer.
+        Assert.DoesNotContain(document.Descendants(), element => (string?)element.Attribute(GuiSource.Xaml + "Name") == "SkillsButton");
         Assert.True(
             GuiSource.DocumentOrder(document, attach) < GuiSource.DocumentOrder(document, indicator),
             "The attachment button must precede the agent indicator.");

@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
+using System.Text.Json;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Tests.Prompting;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Tests.Fakes;
@@ -51,6 +53,84 @@ public sealed partial class AgentRunCoordinatorTests
         var result = await Coordinator(model, new FakeToolGateway(), store).RunOneStepAsync(RunId(), default);
         Assert.Equal(HarnessRunState.WaitingHistory, result.Run.State);
         Assert.Single(store.Commits.SelectMany(c => c.ConversationOutbox));
+    }
+
+    [Theory]
+    [InlineData("web_http_404")]
+    [InlineData("web_network_error")]
+    public async Task Final_answer_can_use_readable_web_source_when_optional_fetch_failed(string failureCode)
+    {
+        var contextEntries = PartialWebEvidenceGuardTests
+            .Context("web_fetch", "1.0.0", ToolExecutionOutcome.Failed, failureCode, false, true, true)
+            .Entries
+            .ToArray();
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("The readable source answers the question."));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, new FakeToolGateway(), store,
+            contextSource: new FixedContextSource(contextEntries));
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingHistory, result.Run.State);
+        Assert.Single(store.Commits.SelectMany(commit => commit.ConversationOutbox));
+        Assert.Equal(ToolExecutionOutcome.Failed, contextEntries[^1].ToolReceipt!.Outcome);
+        Assert.Equal(failureCode, contextEntries[^1].ToolReceipt!.Code);
+        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Payloads),
+            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+    }
+
+    [Fact]
+    public async Task Passed_check_is_not_reopened_by_a_workspace_change_during_final_generation()
+    {
+        // Journal changes never reach verification (ADR 0039 item 3). A passed check with no later
+        // structured source edit holds no note, so the final reply is accepted without recovery.
+        var source = new FixedContextSource(VerificationCompletionTests.Batch(1, "provider-check", "bash",
+            """{"mode":"shell","script":"dotnet test","purpose":"verification"}""",
+            ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""));
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("The tests pass."));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+
+        var result = await Coordinator(model, new FakeToolGateway(), store, contextSource: source)
+            .RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingHistory, result.Run.State);
+        Assert.Null(result.ErrorCode);
+        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Payloads),
+            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+    }
+
+    [Fact]
+    public async Task Run_version_change_during_final_generation_blocks_stale_final()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("The task is complete."));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var concurrentModel = new ConcurrentRunChangingModelStepRunner(model, async () =>
+        {
+            var current = await store.GetRunAsync(RunId(), CancellationToken.None)
+                ?? throw new InvalidOperationException("run_not_found");
+            var next = new AgentRun(current.RunId, current.SessionId, current.WorkspaceId, current.Status,
+                current.Version + 1, current.LastSequence + 1, current.BudgetWindow, current.ModelStepsInWindow,
+                current.ToolCallsInWindow, current.Preset, current.PolicySnapshotVersion,
+                current.PolicySnapshotSha256, current.CreatedAt, current.UpdatedAt.AddSeconds(1),
+                permissionProfileVersion: current.PermissionProfileVersion);
+            var commit = await store.CommitAsync(new HarnessCommit(current.RunId, current.Version, next,
+                [new HarnessEventIntent(new EventId("evt_" + new string('c', 32)),
+                    HarnessEventKind.RunNoteAdded, safeCode: "concurrent_update")], [], []), CancellationToken.None);
+            Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
+        });
+
+        var result = await Coordinator(concurrentModel, new FakeToolGateway(), store)
+            .RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal("run_changed_during_generation", result.ErrorCode);
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.Empty(store.Commits.SelectMany(commit => commit.ConversationOutbox));
     }
 
     [Fact]
@@ -117,4 +197,17 @@ public sealed partial class AgentRunCoordinatorTests
             ["type"] = "message", ["id"] = "msg_1", ["role"] = "assistant", ["phase"] = phase,
             ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = text }),
         }]));
+
+    private sealed class ConcurrentRunChangingModelStepRunner(
+        IModelStepRunner inner,
+        Func<Task> afterGeneration) : IModelStepRunner
+    {
+        public async Task<ModelStepResult> RunStepAsync(ModelStepRequest request,
+            Func<AssistantDelta, ValueTask> publishDelta, CancellationToken cancellationToken)
+        {
+            var result = await inner.RunStepAsync(request, publishDelta, cancellationToken).ConfigureAwait(false);
+            await afterGeneration().ConfigureAwait(false);
+            return result;
+        }
+    }
 }

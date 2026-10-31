@@ -9,8 +9,24 @@ public static class ProviderCatalogRequestFactory
     public static HttpRequestMessage Create(ProviderSelection selection, string credential)
     {
         ArgumentNullException.ThrowIfNull(selection);
+        // Custom endpoints are user-chosen: a key never travels over plain HTTP to another host (ADR 0034).
+        if (selection.Alias == "custom" || selection.IsCustomProvider)
+            CustomProviders.RequireCredentialTransport(selection.ModelsUri, credential);
         var request = new HttpRequestMessage(HttpMethod.Get, selection.ModelsUri);
-        if (selection.Alias == "openai")
+        if (selection.IsCustomProvider)
+        {
+            if (credential.Length == 0) return request;
+            if (selection.Protocol == RuAgent.Runtime.Adapters.Bootstrap.ProviderProtocols.AnthropicMessages)
+            {
+                request.Headers.TryAddWithoutValidation("x-api-key", RequireCredential(credential));
+                request.Headers.TryAddWithoutValidation("anthropic-version", AnthropicVersion);
+            }
+            else
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", RequireCredential(credential));
+            }
+        }
+        else if (selection.Alias == "openai")
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", RequireCredential(credential));
         else if (selection.Alias == "anthropic")
         {

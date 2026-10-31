@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using Xunit;
@@ -26,20 +27,40 @@ public sealed class ProviderIntentTests
         Assert.Null((await selections.GetAsync(source.Run.RunId, default))!.Selection);
     }
 
-    [Fact]
-    public async Task Migration_from_31_preserves_existing_runs_and_leaves_them_without_an_intent()
+    [Theory]
+    [InlineData(31, false)]
+    [InlineData(32, false)]
+    [InlineData(32, true)]
+    public async Task Migration_preserves_runs_intents_and_execution_index(int version, bool intentAlreadyPresent)
     {
-        await using var fixture = await HarnessStoreTestFixture.CreateAsync(); await fixture.RegisterWorkspaceAsync(1);
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
         var run = fixture.NewRun(1, 1, 1, 'a', 'b');
-        await fixture.CreateEventStore().TryCreateRunAsync(run, default);
+        var intent = intentAlreadyPresent ? new RunProviderIntent("Custom OpenAI", "retained-model") : null;
+        var request = new NewAgentRun(run.Run, run.Events, run.Payloads, run.ConversationOutbox, run.CreationIdentity, intent);
+        await fixture.CreateEventStore().TryCreateRunAsync(request, default);
         await using (var connection = fixture.CreateRawConnection())
         {
-            await connection.OpenAsync(); using var command = connection.CreateCommand();
-            command.CommandText = "DROP TABLE agent_run_provider_intents; PRAGMA user_version=31;";
+            await connection.OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = (intentAlreadyPresent ? "" : "DROP TABLE agent_run_provider_intents; ")
+                + (version == 31 || intentAlreadyPresent ? "DROP INDEX ix_agent_events_execution_request; " : "")
+                + $"PRAGMA user_version={version};";
             await command.ExecuteNonQueryAsync();
         }
-        Assert.True((await HarnessSqliteSchema.InitializeAsync(fixture.Options, default)).IsAvailable);
+        await using (var pooled = await fixture.Options.OpenConnectionAsync(default))
+            SqliteConnection.ClearPool(pooled);
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='index' AND name='ix_agent_events_execution_request'";
+            Assert.Equal(1L, await command.ExecuteScalarAsync());
+        }
         Assert.NotNull(await fixture.CreateEventStore().GetRunAsync(run.Run.RunId, default));
-        Assert.Null(await new SqliteAgentRunProviderSelectionStore(fixture.Options).GetIntentAsync(run.Run.RunId, default));
+        Assert.Equal(intent, await new SqliteAgentRunProviderSelectionStore(fixture.Options).GetIntentAsync(run.Run.RunId, default));
     }
 }

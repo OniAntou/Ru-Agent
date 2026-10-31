@@ -36,12 +36,6 @@ internal static class TranscriptSizePickerProjection
             : size.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// The label with the activity line's size, which is always two steps smaller.
-    /// </summary>
-    internal static string LabelWithActivity(double size) =>
-        $"{Label(size)} · activity {Label(size - 2)}";
-
-    /// <summary>
     /// The size to show as selected for a stored value, clamped into the range the
     /// picker can represent so a hand-edited settings file still selects a row.
     /// </summary>

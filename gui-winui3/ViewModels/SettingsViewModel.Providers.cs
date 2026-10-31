@@ -16,7 +16,35 @@ public sealed partial class SettingsViewModel
     [NotifyPropertyChangedFor(nameof(IsProviderOverviewVisible))]
     public partial bool IsProviderEditorOpen { get; private set; }
 
-    public bool IsProviderOverviewVisible => !IsProviderEditorOpen;
+    /// <summary>The "Custom model API" editor for named custom providers (ADR 0034).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsProviderOverviewVisible))]
+    public partial bool IsCustomEditorOpen { get; private set; }
+
+    public bool IsProviderOverviewVisible => !IsProviderEditorOpen && !IsCustomEditorOpen;
+
+    public CustomProviderEditorViewModel? CustomEditor { get; private set; }
+
+    /// <summary>Connects the editor; closing it reloads the providers it may have changed.</summary>
+    internal void AttachCustomEditor(CustomProviderEditorViewModel editor)
+    {
+        if (CustomEditor is not null) CustomEditor.Closed -= OnCustomEditorClosed;
+        CustomEditor = editor ?? throw new ArgumentNullException(nameof(editor));
+        CustomEditor.Closed += OnCustomEditorClosed;
+    }
+
+    private void OnCustomEditorClosed(object? sender, bool changed)
+    {
+        IsCustomEditorOpen = false;
+        if (changed) _ = LoadAsync();
+    }
+
+    private void OpenCustomEditor(string? id)
+    {
+        if (CustomEditor is null || IsLoading || !IsProviderNavigationEnabled) return;
+        CustomEditor.Open(_lastSettings, id);
+        IsCustomEditorOpen = true;
+    }
 
     [ObservableProperty] public partial bool HasNoConfiguredProviders { get; private set; } = true;
     [ObservableProperty]
@@ -38,10 +66,14 @@ public sealed partial class SettingsViewModel
     private Task ReloadProvidersAsync() => LoadAsync();
 
     [RelayCommand]
-    private void AddCustomProvider() => OpenProviderEditor("custom");
+    private void AddCustomProvider() => OpenCustomEditor(null);
 
     [RelayCommand]
-    private void EditProvider(string? choice) => OpenProviderEditor(choice);
+    private void EditProvider(string? choice)
+    {
+        if (CustomProviderPolicy.IsCustomChoice(choice)) OpenCustomEditor(CustomProviderPolicy.IdOf(choice!));
+        else OpenProviderEditor(choice);
+    }
 
     private void OpenProviderEditor(string? choice)
     {
@@ -94,8 +126,15 @@ public sealed partial class SettingsViewModel
         if (_lastSettings?.HasCustomKey == true ||
             string.Equals(_lastSettings?.BackendChoice, "custom", StringComparison.OrdinalIgnoreCase))
         {
-            rows.Add(new("custom", "Custom OpenAI Server", true,
+            rows.Add(new("custom", "Custom OpenAI server (legacy)", true,
                 _lastSettings?.HasCustomKey == true ? "Key saved" : "Endpoint configured"));
+        }
+        foreach (var provider in _lastSettings?.CustomProviders ?? new())
+        {
+            var hasKey = _lastSettings?.CustomProviderKeys?.Contains(provider.Id) == true;
+            var models = provider.Models.Count == 1 ? "1 model" : $"{provider.Models.Count} models";
+            rows.Add(new(CustomProviderPolicy.Backend(provider.Id), provider.DisplayName, true,
+                $"{CustomProviderPolicy.ProtocolLabel(provider.Protocol)} · {models} · {(hasKey ? "key saved" : "no key")}"));
         }
         if (_lastSettings?.HasOpenAiKey == true) rows.Add(new("openai", "OpenAI (legacy)", false, "Key saved"));
         if (_lastSettings?.HasAnthropicKey == true) rows.Add(new("anthropic", "Anthropic (legacy)", false, "Key saved"));

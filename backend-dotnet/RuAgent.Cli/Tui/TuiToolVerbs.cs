@@ -44,6 +44,13 @@ public static class TuiToolVerbs
         ["todo"] = ("updating the plan", "planned"),
         ["plan"] = ("updating the plan", "planned"),
         ["web_search"] = ("searching the web", "searched the web"),
+        ["web search"] = ("searching the web", "searched the web"),
+        ["output"] = ("reading output", "read output"),
+        ["stop"] = ("stopping", "stopped"),
+        ["docs"] = ("checking the docs", "checked the docs"),
+        ["mcp"] = ("calling", "called"),
+        ["computer"] = ("using the computer", "used the computer"),
+        ["program"] = ("running a program", "ran a program"),
         ["web_fetch"] = ("fetching", "fetched"),
         ["fetch"] = ("fetching", "fetched"),
         ["skill"] = ("loading", "loaded"),
@@ -64,6 +71,11 @@ public static class TuiToolVerbs
         [AgentActivityKind.Todo] = ("updating the plan", "planned"),
         [AgentActivityKind.Compaction] = ("compacting", "compacted"),
         [AgentActivityKind.Retry] = ("retrying", "retried"),
+        [AgentActivityKind.Web] = ("browsing", "browsed"),
+        [AgentActivityKind.Mcp] = ("calling", "called"),
+        [AgentActivityKind.Computer] = ("using the computer", "used the computer"),
+        [AgentActivityKind.Skill] = ("loading", "loaded"),
+        [AgentActivityKind.Program] = ("running a program", "ran a program"),
     };
 
     /// <summary>Present-tense verb for the live row, e.g. <c>reading app.cs</c>.</summary>

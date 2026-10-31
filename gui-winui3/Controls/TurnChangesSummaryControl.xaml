@@ -4,28 +4,32 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:services="using:RuApp.Services"
     IsTabStop="False" Visibility="Collapsed">
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="SummaryOutlineBrush" Color="{ThemeResource RuLineColor}" Opacity="0.65" />
+    </UserControl.Resources>
     <Border Background="{StaticResource RuSurfaceBrush}"
-            BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+            BorderBrush="{StaticResource SummaryOutlineBrush}" BorderThickness="1"
             CornerRadius="{StaticResource AppCardCornerRadius}">
         <StackPanel>
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Padding="14,12"
-                  BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,0,1">
-                <Border Width="36" Height="36" CornerRadius="8" Background="{StaticResource RuCanvasBrush}"
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Padding="12,8"
+                  BorderBrush="{StaticResource SummaryOutlineBrush}" BorderThickness="0,0,0,1">
+                <Border Width="28" Height="28" CornerRadius="6" Background="{StaticResource RuCanvasBrush}"
                         VerticalAlignment="Center">
-                    <FontIcon Glyph="&#xE943;" FontSize="18" Foreground="{StaticResource RuMutedBrush}"
+                    <FontIcon Glyph="&#xE943;" FontSize="14" Foreground="{StaticResource RuMutedBrush}"
                               AutomationProperties.AccessibilityView="Raw" />
                 </Border>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="12"
+                      HorizontalAlignment="Left" VerticalAlignment="Center">
                     <TextBlock x:Name="SummaryTitle" FontFamily="{StaticResource RuUiFontFamily}"
                                FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"
-                               Foreground="{StaticResource RuInkBrush}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
+                               VerticalAlignment="Center" Foreground="{StaticResource RuInkBrush}" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <TextBlock x:Name="AddedTotal" FontSize="11" FontFamily="{StaticResource RuMonoFontFamily}"
                                    Foreground="{StaticResource RuSuccessBrush}" />
                         <TextBlock x:Name="RemovedTotal" FontSize="11" FontFamily="{StaticResource RuMonoFontFamily}"
                                    Foreground="{StaticResource RuDangerBrush}" />
                     </StackPanel>
-                </StackPanel>
+                </Grid>
                 <Button Grid.Column="2" Content="View changes" Click="OnViewChangesClick"
                         Padding="10,5" FontSize="11" VerticalAlignment="Center"
                         AutomationProperties.Name="View changes in this turn" />
@@ -46,8 +50,8 @@
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="services:TurnChangedFile">
                         <Button Click="OnFileClick" Tag="{x:Bind}" Background="Transparent"
-                                BorderThickness="0" Padding="8,8" HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Stretch" MinHeight="36"
+                                BorderThickness="0" Padding="6,6" HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch" MinHeight="32"
                                 AutomationProperties.Name="{x:Bind AccessibleName}"
                                 ToolTipService.ToolTip="{x:Bind Path}">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
@@ -75,8 +79,6 @@
                               AutomationProperties.AccessibilityView="Raw" />
                 </StackPanel>
             </Button>
-            <TextBlock x:Name="DetailsError" Visibility="Collapsed" Margin="14,0,14,10" TextWrapping="Wrap"
-                       FontSize="12" Foreground="{StaticResource RuDangerBrush}" AutomationProperties.LiveSetting="Polite" />
         </StackPanel>
     </Border>
 </UserControl>

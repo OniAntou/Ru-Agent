@@ -113,6 +113,22 @@ public sealed class ChangesTabProjectionTests
     }
 
     [Fact]
+    public void Clicking_an_old_edit_keeps_it_in_the_normal_bounded_list_without_changing_totals()
+    {
+        var edits = Enumerable.Range(0, ChangesTabProjection.MaxRows + 5)
+            .Select(index => Edit($"file-{index}.txt", added: 1, removed: 2)).ToArray();
+        var projection = ChangesTabProjection.Project(edits, edits[0].ActivityId);
+
+        Assert.Equal(ChangesTabProjection.MaxRows, projection.Rows.Count);
+        Assert.Equal(edits[^1].ActivityId, projection.Rows[0].ActivityId);
+        Assert.Equal(edits[0].ActivityId, projection.Rows[^1].ActivityId);
+        Assert.Equal(ChangesTabProjection.MaxRows + 5, projection.Added);
+        Assert.Equal((ChangesTabProjection.MaxRows + 5) * 2, projection.Removed);
+        Assert.Equal(projection.Rows.Count, projection.Rows.Select(row => row.ActivityId).Distinct().Count());
+        Assert.DoesNotContain(ChangesTabProjection.Project(edits).Rows, row => row.ActivityId == edits[0].ActivityId);
+    }
+
+    [Fact]
     public void Rows_carry_the_preview_and_the_expansion_starts_folded()
     {
         var projection = ChangesTabProjection.Project(new[]

@@ -26,6 +26,43 @@ public sealed partial class BrokerExecutionRuntime
         return UnderLifecycleAsync(() => RespondApprovalCore(request), cancellationToken);
     }
 
+    /// <summary>
+    /// Reads the pending approval named by the request without consuming it or issuing a token. <c>Known</c> is
+    /// true only while the Broker holds the approval as pending for that run and it has not expired;
+    /// <c>Rememberable</c> says whether allow_always may remember its tool class. An unknown, foreign, unleased
+    /// or expired approval answers (false, false).
+    /// </summary>
+    public Task<(bool Known, bool Rememberable)> ApprovalProbeAsync(AgentEnvelope request, CancellationToken cancellationToken)
+    {
+        if (!_session.Owns(request.SessionId))
+        {
+            return Task.FromResult((false, false));
+        }
+
+        return UnderLifecycleAsync(() => ApprovalProbeCore(request), cancellationToken);
+    }
+
+    private (bool Known, bool Rememberable) ApprovalProbeCore(AgentEnvelope request)
+    {
+        var runId = PayloadReads.OptionalString(request.Payload, "run_id");
+        var approvalId = PayloadReads.OptionalString(request.Payload, "approval_id");
+        if (string.IsNullOrWhiteSpace(runId)
+            || string.IsNullOrWhiteSpace(approvalId)
+            || !TryGetOwnedRunLease(request, runId, out var lease, out _)
+            || lease is null
+            || !_pendingV2.TryPeekV2(approvalId, out var pending)
+            || pending is null
+            || !string.Equals(pending.Binding.RunId, runId, StringComparison.Ordinal)
+            || pending.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            return (false, false);
+        }
+
+        // TryPeekV2 does not check expiry, and TryConsumeV2 would answer an expired approval as expired, so an
+        // expired approval must not read as known here.
+        return (true, pending.Context is { } context && ApprovalRememberPolicy.IsRememberableTool(context));
+    }
+
     private ApprovalDecisionResult RespondApprovalCore(AgentEnvelope request)
     {
         var payload = request.Payload;
@@ -153,6 +190,14 @@ public sealed partial class BrokerExecutionRuntime
         }
 #endif
 
+        // A drive, volume or share root is never a session folder grant: its subtree is the whole volume.
+        // Such an approval degrades to a one-time token, as its remember plan does.
+        if (command == ApprovalCommandV2.AllowSessionDirectory
+            && ApprovalRememberPolicy.IsRootBoundary(pending.Binding.BoundaryDirectory))
+        {
+            command = ApprovalCommandV2.AllowOnce;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var resolution = _pendingV2.TryConsumeV2(approvalId!, command, expectedBinding, now);
 
@@ -195,9 +240,33 @@ public sealed partial class BrokerExecutionRuntime
                 return ApprovalDecisionResult.Authorized(
                     authToken,
                     DateTimeOffset.UtcNow.AddSeconds(60).ToString("O"),
-                    PendingApprovalStore.BuildMatcherPreview(pending.Binding));
+                    PendingApprovalStore.BuildMatcherPreview(pending.Binding),
+                    RememberPlanFor(resolution.Consumed));
             default:
                 return ApprovalDecisionResult.Denied("approval_not_found", "approval not found");
         }
+    }
+
+    /// <summary>
+    /// The remember plan of the approval this response grants, built from the context and ask reason the
+    /// pending approval was issued with. Null for an approval issued without a context (subagent apply).
+    /// </summary>
+    private static ApprovalRememberPlan? RememberPlanFor(V2PendingApproval? consumed)
+    {
+        if (consumed is null || consumed.Context is not { } context)
+        {
+            return null;
+        }
+
+        var externalDirectoryRequested = string.Equals(
+            consumed.AskSafeCode,
+            "external_directory_required",
+            StringComparison.Ordinal);
+        return ApprovalRememberPolicy.Build(
+            context,
+            consumed.Binding.ToolId,
+            consumed.Binding.ToolVersion,
+            consumed.AskSafeCode,
+            externalDirectoryRequested);
     }
 }

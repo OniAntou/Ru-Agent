@@ -128,19 +128,24 @@ public static class ImageAttachmentResizer
 
     private static async Task<string> DetectMimeTypeAsync(IRandomAccessStream stream)
     {
-        byte[] signature = new byte[SignatureBufferLength];
-        using var input = stream.GetInputStreamAt(0).AsStreamForRead();
-        int totalRead = 0;
-        while (totalRead < SignatureBufferLength)
+        byte[] signature;
+        using (var reader = new DataReader(stream))
         {
-            int read = await input.ReadAsync(signature.AsMemory(totalRead));
-            if (read == 0)
+            try
             {
-                break;
+                uint count = await reader.LoadAsync(SignatureBufferLength);
+                signature = new byte[count];
+                reader.ReadBytes(signature);
             }
-            totalRead += read;
+            finally
+            {
+                // MemoryStream.AsRandomAccessStream cannot clone substreams.
+                // Read directly and leave the caller's stream open for decoding.
+                reader.DetachStream();
+            }
         }
 
+        int totalRead = signature.Length;
         if (totalRead >= PngSignature.Length && signature.AsSpan(0, PngSignature.Length).SequenceEqual(PngSignature))
         {
             return "image/png";

@@ -74,12 +74,9 @@ public sealed record AgentRunSummary
             _ => throw new ArgumentOutOfRangeException(nameof(run)),
         };
         var safeMetrics = metrics ?? AgentRunSummaryMetrics.Empty;
-        bool hasChecks = verificationEvidence?.Checks.Any(check => check.IsVerification) == true;
-        bool hasMutations = verificationEvidence?.HasMutations == true
-            || safeMetrics.HasVerifiedMutation || safeMetrics.HasUnverifiedMutation;
-        var verification = hasChecks
-            ? verificationEvidence!.BlockingCode is null ? "verified" : "unverified"
-            : hasMutations ? "unverified" : "not_applicable";
+        var verification = verificationEvidence is null
+            ? VerificationStateWithoutEvidence(safeMetrics)
+            : VerificationStateFromEvidence(verificationEvidence);
 
         return new AgentRunSummary(
             status,
@@ -90,6 +87,25 @@ public sealed record AgentRunSummary
             safeMetrics.FilesCreated,
             safeMetrics.FilesDeleted);
     }
+
+    /// <summary>
+    /// ADR 0039 item 7. verified: no outstanding declared check and a declared check launched after the
+    /// last structured source edit. not_applicable: no structured source edit and no declared check launched.
+    /// Otherwise unverified. Computer input and other activity never change this label.
+    /// </summary>
+    private static string VerificationStateFromEvidence(RunVerificationEvidence evidence)
+    {
+        if (evidence.BlockingCode is null && evidence.DeclaredCheckSinceSourceEdit)
+        {
+            return "verified";
+        }
+
+        return !evidence.HasSourceEdits && !evidence.DeclaredCheckSinceSourceEdit ? "not_applicable" : "unverified";
+    }
+
+    // Without run history, activity-level mutations stay conservatively unverified. Nothing can certify a check.
+    private static string VerificationStateWithoutEvidence(AgentRunSummaryMetrics metrics) =>
+        metrics.HasVerifiedMutation || metrics.HasUnverifiedMutation ? "unverified" : "not_applicable";
 
     private static void ValidateWorkspaceLabel(string? label)
     {

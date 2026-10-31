@@ -1,6 +1,8 @@
 # Ru coding benchmark
 
-Three custom suites evaluate source changes in C#, Python and TypeScript. They
+Three established suites contain 20 task fixtures (six Terminal, three SWE and
+eleven Everyday) across C#, Python and TypeScript, with five opt-in skill
+workflow fixtures and a separate three-task opt-in repository suite. They
 use Terminal-Bench and SWE-bench evaluation patterns; they are not official
 datasets or leaderboard scores. The corpus is public, so runs can be
 contaminated by prior exposure to its reference solutions.
@@ -16,6 +18,32 @@ summaries do not expose authoritative skill identity. End-task acceptance does
 not prove skill selection or adherence. Skill tasks are excluded from
 `--suite all`; select `--suite skills` explicitly. Offline `self-test` never
 calls a provider.
+
+The opt-in `repository` suite adds three multi-file fixtures across C#, Python
+and TypeScript. Per-task `editable_paths` can include explicitly named project
+files; graders and solutions stay outside the candidate workspace. Each task
+has independent behavior and preservation groups, and the offline oracle
+requires the starter to fail and the reference to pass. The TypeScript
+repository task runs `tsc --noEmit` as a required grader group. If `tsc` is not
+installed, grading returns `unavailable` with
+`typescript_compiler_unavailable`; runtime checks are not substituted for type
+checking. This requirement applies only to the repository task. Existing
+TypeScript tasks continue to use Node type stripping and runtime checks without
+`tsc`.
+
+## Grader correction provenance (2026-10-29)
+
+Five fixture fingerprints change after the recorded Kilo cohort: Todo accepts
+independent read-only dictionaries; Atomic Ledger accepts non-castable immutable
+snapshots and additionally checks repeated valid transfer pairs; Scheduler counts
+caught exceptions as failed checks instead of emitting invalid zero-check groups;
+`ts-abortable-coalescer` and `ts-generation-pager` drop the pre-settlement
+`calls === 0` loader-timing assertions and assert exactly one loader call for
+shared requests.
+Behavioral regressions cover valid alternatives and invalid implementations.
+Historical reports/patches retain their original fingerprints and raw scores;
+offline corrected-grader diagnostics are labelled separately. Do not silently
+compare or merge scores across these fixture revisions.
 
 ## Tasks
 
@@ -37,11 +65,18 @@ calls a provider.
 | Everyday | `ts-emitter-lifecycle` | Repair unsubscribe idempotence and mutation during dispatch |
 | Everyday | `ts-query-builder` | Add deterministic query encoding without losing falsy values |
 | Everyday | `py-tool-workflow` | Create a new Unicode/spaced path, repair existing functions and verify grouped output |
+| Everyday | `py-batch-reconcile` | Parse a multi-source export, normalize identities, resolve conflicts and preserve first-seen order |
+| Everyday | `py-checkpoint-journal` | Validate ordered event delivery and restore checkpoints atomically |
+| Everyday | `py-log-redaction` | Recursively redact nested secrets while preserving safe values and input containers |
+| Everyday | `ts-abortable-coalescer` | Share asynchronous requests while isolating caller cancellation and stale generations |
 | Skills | `explicit-currency-rounding` | Resolve `/skill currency-rounding precision=2` and produce a correctly rounded invoice total |
 | Skills | `implicit-calendar-slots` | Select a relevant scheduling workflow for conflict-free intervals |
 | Skills | `negative-unrelated-slug` | Complete standalone normalization with an unrelated skill in the catalog |
 | Skills | `negative-manual-only-csv` | Complete CSV cleanup without auto-invoking a manual-only workflow |
 | Skills | `supporting-resource-json-summary` | Apply aliases defined in a workflow supporting resource |
+| Repository | `cs-atomic-transfer` | Validate and apply cross-file transfer batches atomically |
+| Repository | `py-dependency-plan` | Produce a stable dependency order while rejecting invalid graphs |
+| Repository | `ts-event-policy` | Preserve strict cross-file event policy typing and filtering |
 
 These are compact, dependency-free repositories. Terminal/SWE tasks have
 difficult correctness constraints; Everyday tasks are focused bug repairs and
@@ -63,6 +98,8 @@ uses Node's type stripping and checks runtime behavior; it does not run `tsc`.
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py self-test --attempts 3 --report artifacts/coding-oracle.json
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py self-test --suite everyday --report artifacts/everyday-oracle.json
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py self-test --suite skills --report artifacts/skills-oracle.json
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py list --suite repository
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py self-test --suite repository --report artifacts/repository-oracle.json
 ```
 
 The skills corpus only needs Python 3.11+ and the standard library. Its files
@@ -300,10 +337,79 @@ record; the report's completeness flags make partial telemetry visible. No
 external-agent result exists until prediction files and verifier outcomes are
 actually collected.
 
-For a direct comparison, `compare-cohorts --cohorts cohorts.json --track harness
+## Reproducible native and GUI cohorts
+
+Schema-v2 cohorts pin the source commit, source-tree SHA-256 and artifact
+manifest SHA-256 as well as agent version, model, effort, protocol, tool
+profile, toolchain and deadline. Hash the canonical published payload manifest
+(sorted relative paths and file digests), since a .NET apphost alone may remain
+unchanged across builds.
+Each task entry pins its task definition, fixture and effective prompt SHA-256;
+the prompt and reference solution are never copied into the manifest. Create a
+manifest from an explicit pin file and selected fixtures:
+
+```powershell
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py make-cohort --suite everyday --attempts 2 --cohort-pins artifacts\cohort-pins.json --report artifacts\cohort-manifest.json
+```
+
+The pin file contains those exact schema-v2 cohort fields. Candidate and
+baseline runs must use separate manifests and fresh workspaces. For a
+matched-model comparison (`--track matched-model`, alias `harness`), keep task,
+fixture and effective-prompt hashes, model, effort, protocol, tool profile,
+toolchain, deadline and attempt matrix equal. If provider identity is included
+in cohort pins, it must match too;
+the source commit, source-tree and artifact hashes identify the differing
+implementation under evaluation, including uncommitted source changes.
+`compare-cohorts` rejects pin or fixture mismatches instead of silently merging
+them. The `native-product` track (alias `product`) allows differences in agent,
+provider, model, effort, protocol and tool profile, and lists which fields
+differ. Both tracks require the same task, fixture, prompt, toolchain, deadline
+and attempt matrix.
+An incomplete observation matrix is reported with `comparable: false` and no
+paired outcome summary; it is not treated as a matched comparison.
+
+Each observation JSONL line repeats all cohort pins and task/prompt hashes,
+then records `attempt`, optional per-task `base_commit`, `status`, trusted
+`grader_accepted` (boolean or `null` when grading evidence is unavailable),
+`unattended_completed`, `intervention`, and `wall_seconds`.
+Statuses distinguish `parked`, `interrupted`, `infrastructure_error`, `timeout`
+and `failed` from `completed`. CLI, GUI and external adapters can all write the
+same format. The Python API `cohort.record_attempt` creates a validated row;
+`cohort.record_ru_attempt` adapts the existing native RPC result and trusted
+grader result, rejecting mismatched observed model, protocol or tool profile.
+GUI results can be imported with `cohort.load_observations`.
+
+`trajectory` and `usage` fields carry counts only when authoritative; missing or
+partial event streams remain null in aggregate totals. Current RPC records can
+count model steps, outer tool dispatches/receipts and complete-stream
+compactions. Multi-step fixture acceptance does not prove behavior across a
+forced compaction or restart, so no continuity score is inferred. Nested tool
+errors, repeated reads, recovery behavior, cached
+tokens, search usage, cost and skill selection remain unknown unless a future
+adapter supplies direct evidence. A parked attempt may pass the external
+grader, but it does not count as unattended completion. Aggregate and compare:
+
+```powershell
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py aggregate-cohort --manifest artifacts\cohort-manifest.json --predictions artifacts\observations.jsonl --report artifacts\cohort-report.json
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py compare-cohorts --cohorts artifacts\cohorts.json --track matched-model --report artifacts\comparison.json
+```
+
+For complete schema-v2 comparisons, `paired_outcomes` compares grader
+acceptance and unattended completion separately for each paired attempt. It
+also counts correct-but-not-completed attempts, so an interrupted correct patch
+does not become an unattended success. Unknown usage remains null in each
+aggregate and is never filled from a paired cohort.
+
+The aggregate reports grader acceptance (`null` until all expected attempts
+have authoritative grader outcomes), unattended completion and
+unattended accepted completion separately. It also lists missing attempts,
+per-status counts, latency and completeness for trajectory/usage totals. An
+unknown cost or skill-selection result never becomes zero or a passing score.
+
+For a schema-v1 held-out comparison, `compare-cohorts --cohorts cohorts.json --track harness
 --task-store D:\private-evaluation --report comparison.json` reads an array of
 `{"label":"Ru","manifest":"ru.json","predictions":"ru.jsonl"}` entries, resolving
-paths relative to `cohorts.json`. The harness track requires identical model,
+paths relative to `cohorts.json`. The schema-v1 harness track requires identical model,
 effort, protocol, toolchain, deadline, task hashes and trial matrix. The product
 track permits different model/effort/protocol configurations and labels that
 limitation; tasks, toolchain and deadline must still match.

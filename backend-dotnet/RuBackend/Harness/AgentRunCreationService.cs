@@ -18,11 +18,9 @@ using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using RuBackend.Business.Sessions;
-using RuBackend.Business.Settings;
 using RuBackend.Harness.Policy;
 using RuBackend.Harness.Workspace;
 using RuBackend.Providers;
-using RuAgent.Runtime.Adapters.Models;
 using static RuBackend.Harness.AgentV1Shared;
 
 namespace RuBackend.Harness;
@@ -37,18 +35,13 @@ public sealed class AgentRunCreationService
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
     private readonly AgentV1SubagentGuard _subagentGuard;
-    private readonly ISettingsStore _settingsStore;
     private readonly ILogger<AgentRunCreationService>? _logger;
     private readonly Hooks.RunLifecycleHooks? _lifecycleHooks;
-
-    /// <summary>The selected provider catalog's declaration for image input.</summary>
-    public Func<string, CancellationToken, Task<bool?>>? DeclaredVision { get; set; }
-    public Func<string, string, CancellationToken, Task<bool?>>? DeclaredProviderVision { get; set; }
 
     public AgentRunCreationService(IHarnessEventStore store, ISessionStore sessions,
         AgentSessionPermissionStore permissionStore, AgentRunWorkspaceAdmissionService workspaceAdmission,
         IAgentRuntimeRootRegistry runtimeRoots, IIdGenerator ids, ITimeProvider time,
-        AgentV1SubagentGuard subagentGuard, ISettingsStore settingsStore,
+        AgentV1SubagentGuard subagentGuard,
         ILogger<AgentRunCreationService>? logger = null,
         Hooks.RunLifecycleHooks? lifecycleHooks = null)
     {
@@ -61,7 +54,6 @@ public sealed class AgentRunCreationService
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _subagentGuard = subagentGuard ?? throw new ArgumentNullException(nameof(subagentGuard));
-        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logger = logger;
     }
 
@@ -154,30 +146,6 @@ public sealed class AgentRunCreationService
                 {
                     return BoundedError(413, "image_too_large", "Total images decoded size exceeds 20MB.");
                 }
-            }
-
-            var settings = ProviderIntentSettings.Apply(await _settingsStore.ReadAsync(cancellationToken).ConfigureAwait(false), providerIntent);
-            string model;
-            try
-            {
-                var selection = ProviderSelection.From(settings);
-                model = selection.Model;
-            }
-            catch
-            {
-                model = settings.Model;
-            }
-
-            // A provider's own declaration outranks the name check: a gateway model
-            // can carry no vendor token at all, and reading its name as non-vision
-            // rejected a model that had published modalities ["text","image"].
-            bool? declared = providerIntent is not null && DeclaredProviderVision is not null
-                ? await DeclaredProviderVision(settings.Backend, model, cancellationToken).ConfigureAwait(false)
-                : DeclaredVision is null ? null : await DeclaredVision(model, cancellationToken).ConfigureAwait(false);
-
-            if (!ModelImage.IsVisionModel(model, declared))
-            {
-                return BoundedError(400, "vision_unsupported", $"Model '{model}' does not support vision.");
             }
         }
 

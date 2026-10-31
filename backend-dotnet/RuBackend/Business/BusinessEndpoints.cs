@@ -58,12 +58,22 @@ public static partial class BusinessEndpoints
                 credentials,
                 "anthropic_api_key",
                 cancellationToken).ConfigureAwait(false);
-            return Results.Json(ToSettingsResponse(
+            // Which named custom providers have a key; the keys themselves never leave the vault.
+            var customProviderKeys = new JsonArray();
+            foreach (var provider in RuBackend.Providers.CustomProviders.Read(snapshot))
+            {
+                if (await HasCredentialAsync(credentials, provider.Account, cancellationToken).ConfigureAwait(false))
+                    customProviderKeys.Add(provider.Id);
+            }
+
+            var response = ToSettingsResponse(
                 snapshot,
                 hasCustom,
                 hasOpenAi,
                 hasAnthropic,
-                catalog.ReadSavedReasoningEffort(snapshot)));
+                catalog.ReadSavedReasoningEffort(snapshot));
+            response["custom_provider_keys"] = customProviderKeys;
+            return Results.Json(response);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -489,6 +499,7 @@ public static partial class BusinessEndpoints
         "Anthropic" => "anthropic",
         "llama.cpp" => "gguf",
         _ when RuBackend.Providers.ProviderSelection.IsModelsDevBackend(backend) => backend,
+        _ when RuBackend.Providers.CustomProviders.IsCustomBackend(backend) => backend,
         _ => string.Empty,
     };
 

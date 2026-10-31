@@ -17,6 +17,7 @@ public static class RuntimeContextSnapshot
     public static string? Render(string? runtime, string? workflow)
     {
         var sections = new[] { workflow?.Replace("observed_path_b64:", "quoted_scope_path:", StringComparison.Ordinal)
+            .Replace("observed_dir_b64:", "quoted_scope_dir_b64:", StringComparison.Ordinal)
             .Replace("reference (nested_instructions;", "quoted_nested_reference (", StringComparison.Ordinal), runtime }
             .Where(text => !string.IsNullOrWhiteSpace(text));
         var body = string.Join("\n\n", sections);

@@ -50,12 +50,12 @@ public sealed class TranscriptSizePickerProjectionTests
     }
 
     [Fact]
-    public void A_label_states_what_the_activity_line_will_be()
+    public void The_picker_no_longer_names_a_separate_activity_size()
     {
-        // The activity line is always two steps smaller, and the picker is the only
-        // place a user could learn that before seeing it.
-        Assert.Equal("14 · activity 12", TranscriptSizePickerProjection.LabelWithActivity(14));
-        Assert.Equal("17 · activity 15", TranscriptSizePickerProjection.LabelWithActivity(17));
+        // Activity rows now match the message size, so a second figure would be wrong.
+        string code = GuiSource.Text("Services", "TranscriptSizePickerProjection.cs");
+        Assert.DoesNotContain("activity", code, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("two steps smaller", GuiSource.Text("Views", "SettingsView.xaml"), StringComparison.Ordinal);
     }
 
     [Fact]

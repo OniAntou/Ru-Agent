@@ -109,7 +109,7 @@ internal sealed class AgentModelInvocation
 
         var request = preparedRequest ?? new ModelStepRequest(
             run.RunId, modelStepId, context, promptContext, run.Preset,
-            run.PolicySnapshotVersion, run.PolicySnapshotSha256);
+            run.PolicySnapshotVersion, run.PolicySnapshotSha256, sessionId: run.SessionId);
         PublishUsageEstimate(run.RunId, modelStepId, request.Preparation);
         var droppedBefore = _frames.DroppedCount;
         var assistantStream = new TransientContentStream(
@@ -351,7 +351,7 @@ internal sealed class AgentModelInvocation
                 promptContext = await _promptContextProvider.BuildAsync(run, context, cancellationToken)
                     .ConfigureAwait(false) ?? throw new InvalidOperationException("prompt_context_null");
             var request = new ModelStepRequest(run.RunId, modelStepId, context, promptContext,
-                run.Preset, run.PolicySnapshotVersion, run.PolicySnapshotSha256);
+                run.Preset, run.PolicySnapshotVersion, run.PolicySnapshotSha256, sessionId: run.SessionId);
             IPreparedModelStep prepared;
             using (Diagnostics.HarnessPerformance.Measure(Diagnostics.HarnessPhase.RequestPrepare))
                 prepared = await preparer.PrepareAsync(request, cancellationToken).ConfigureAwait(false);

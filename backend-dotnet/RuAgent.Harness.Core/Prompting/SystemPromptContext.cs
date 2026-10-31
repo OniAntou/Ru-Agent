@@ -20,7 +20,9 @@ public sealed record PromptEnvironment
         string timezone,
         string date,
         string? workspaceLabel,
-        string? toolInventory = null)
+        string? toolInventory = null,
+        bool? imageInputAccepted = null,
+        string? workspaceGit = null)
     {
         Model = PromptText.Require(model, 256, nameof(model));
         Platform = PromptText.Require(platform, 64, nameof(platform));
@@ -29,6 +31,8 @@ public sealed record PromptEnvironment
         Date = PromptText.Require(date, 32, nameof(date));
         WorkspaceLabel = PromptText.Optional(workspaceLabel, 128, nameof(workspaceLabel));
         ToolInventory = PromptText.Optional(toolInventory, 256, nameof(toolInventory));
+        ImageInputAccepted = imageInputAccepted;
+        WorkspaceGit = PromptText.Optional(workspaceGit, 160, nameof(workspaceGit));
     }
 
     public string Model { get; }
@@ -49,6 +53,29 @@ public sealed record PromptEnvironment
     /// exists instead of guessing pwsh and learning via executable_not_found.
     /// </summary>
     public string? ToolInventory { get; }
+
+    public bool? ImageInputAccepted { get; }
+
+    /// <summary>
+    /// Bounded git state of the workspace at composition time, such as
+    /// <c>dirty (2 changed, 1 untracked)</c>. It lets the model warn before the
+    /// first mutation instead of discovering the user's in-progress work by
+    /// overwriting it. Null when the probe is unavailable.
+    /// </summary>
+    public string? WorkspaceGit { get; }
+
+    internal JsonObject SerializeFields()
+    {
+        var fields = new JsonObject
+        {
+            ["model"] = Model, ["platform"] = Platform, ["locale"] = Locale,
+            ["timezone"] = Timezone, ["date"] = Date, ["workspace_label"] = WorkspaceLabel,
+            ["tool_inventory"] = ToolInventory,
+        };
+        if (ImageInputAccepted is { } accepted) fields["image_input"] = accepted;
+        if (WorkspaceGit is not null) fields["workspace_git"] = WorkspaceGit;
+        return fields;
+    }
 }
 
 public enum PromptInstructionOrigin
@@ -343,16 +370,7 @@ public sealed record SystemPromptContext
             agent_profile = AgentProfile,
             preset = Preset,
             effective_policy = AgentPolicyProfileCatalog.WriteProfile(EffectivePolicy),
-            environment = new
-            {
-                model = Environment.Model,
-                platform = Environment.Platform,
-                locale = Environment.Locale,
-                timezone = Environment.Timezone,
-                date = Environment.Date,
-                workspace_label = Environment.WorkspaceLabel,
-                tool_inventory = Environment.ToolInventory,
-            },
+            environment = Environment.SerializeFields(),
             instruction_blocks = InstructionBlocks.Select(block => new
             {
                 source_id = block.SourceId,

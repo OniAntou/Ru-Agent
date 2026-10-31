@@ -66,8 +66,7 @@ checks run first, exactly as for text, and the result keeps the file's SHA-256.
 
 The Host decides once per run whether the pinned model accepts image input. The
 decision is pinned with the provider selection: when a selection is pinned, the
-Host applies the same rule that run creation applies to attachments,
-`ModelImage.IsVisionModel(model, declared)`, where `declared` is the catalog's
+Host applies `ModelImage.IsVisionModel(model, declared)`, where `declared` is the catalog's
 Models.dev declaration (`attachment` / `modalities.input` contains `image`).
 The decision is stored as the `_ru_image_input_v1` marker in the pinned request
 options, the way the chat reasoning replay capability is pinned. The snapshot
@@ -81,7 +80,8 @@ field of the `tool.execute` envelope, next to `run_id`. It is never part of
 canonical arguments. The Broker's `ToolExecutionContext.ImageInputAccepted`
 defaults to `false`, so a host without a resolver fails closed. `read` checks
 the gate after classification: an image read for a model without image input
-fails with `image_unsupported_by_model`. Its bytes are never returned as text.
+fails with `image_unsupported_by_model`. Its bytes are never returned as text. Client-attached
+images use the separate text-only continuation in [ADR 0040](0040-text-only-image-attachments.md).
 
 ### The receipt carries bytes beside the JSON
 

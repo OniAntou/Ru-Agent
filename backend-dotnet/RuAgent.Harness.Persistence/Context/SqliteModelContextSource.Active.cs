@@ -46,6 +46,8 @@ public sealed partial class SqliteModelContextSource
             ? appended.Prepend(assistant).ToArray() : appended.ToArray();
         var capturedPaths = sessionBase.SelectMany(SessionScopeHints.Decode).ToArray();
         var paths = FileObservationPaths.Read(evidenceEntries, cached?.Paths ?? capturedPaths);
+        // Verification is projected from the run's own receipts only. The workspace journal is not read
+        // here (ADR 0039 item 7); the journal itself stays owned by workspace coordination (ADR 0008).
         var verification = RunVerificationEvidence.Project(evidenceEntries, cached?.Verification);
         var lastAssistant = appended.LastOrDefault(e => e.AssistantStep is not null) ?? cached?.LastAssistant;
         IReadOnlyList<ModelContextEntry> skillBaseEntries = cached is null ? sessionBase : Array.Empty<ModelContextEntry>();

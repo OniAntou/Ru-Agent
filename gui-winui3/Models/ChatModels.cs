@@ -61,6 +61,7 @@ namespace RuApp.Models
                 {
                     OnPropertyChanged(nameof(ShowTypingDots));
                     OnPropertyChanged(nameof(ShowContent));
+                    OnPropertyChanged(nameof(HasText));
                 }
             }
         }
@@ -308,6 +309,8 @@ namespace RuApp.Models
         }
 
         public bool HasAttachments => Attachments != null && Attachments.Count > 0;
+
+        public bool HasText => !string.IsNullOrWhiteSpace(Content);
 
         public bool ShowTypingDots => Role == "assistant" && IsStreaming && string.IsNullOrEmpty(Content);
 

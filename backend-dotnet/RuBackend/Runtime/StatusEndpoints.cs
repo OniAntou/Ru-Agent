@@ -44,6 +44,13 @@ public static class StatusEndpoints
         var requested = context.Request.Query["backend"].ToString();
         try
         {
+            // Discovery asks a named custom provider what it serves; nothing is stored (ADR 0034).
+            if (context.Request.Query["discover"] == "true")
+            {
+                var discovered = await catalog.DiscoverCustomModelsAsync(requested, current, cancellationToken);
+                return Results.Json(discovered.ToJson());
+            }
+
             var result = requested.Length == 0
                 ? await catalog.GetAsync(current, context.Request.Query["refresh"] == "true", cancellationToken)
                 : await catalog.GetAsync(requested, current, context.Request.Query["refresh"] == "true", cancellationToken);
@@ -53,6 +60,10 @@ public static class StatusEndpoints
         catch (UnknownProviderAliasException)
         {
             return Results.Json(new { status = "error", error_code = "provider_not_active", models = Array.Empty<string>() });
+        }
+        catch (ProviderCatalogException error)
+        {
+            return Results.Json(new { status = "error", error_code = error.Code, models = Array.Empty<string>() });
         }
         catch (Exception error) when (error is ArgumentException or CredentialStoreException)
         {

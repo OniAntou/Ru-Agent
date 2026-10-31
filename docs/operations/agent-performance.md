@@ -11,6 +11,7 @@ No additional endpoint or upload is enabled by default.
 | `ContextRead` | Model-context source load, including persisted rows, decryption/cache checks, compaction projection and current work state |
 | `PromptBuild`, `RequestPrepare`, `AdmissionCommit` | Prompt context construction, exact request preparation, and the durable step-start commit |
 | `ProviderGate`, `ProviderStream` | Waiting for the provider semaphore, then consuming the selected provider stream |
+| `ProviderRetryWait` | Automatic retry cooldown after a rejected attempt; includes interrupted waits, excludes provider streaming |
 | `FirstToken`, `FirstText`, `FirstReasoning`, `FirstTool` | Time from provider enumeration to the first nonempty token-bearing delta of each kind |
 | `ToolExecution`, `FramePublish` | Each scheduled tool execution and synchronous Host publication of assistant deltas |
 

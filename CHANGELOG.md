@@ -26,6 +26,270 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Invalidate the menu layout when live typing/backspace changes its height, so
   partial commands such as `/mod` do not retain the previous black menu frame.
 
+- **refactor(git)**: **Một cách gọi git nhất quán cho worktree và dirty probe.** Host đọc trạng thái
+  bằng `git status --porcelain=v2 --branch` qua `GitStatusParser` của Broker (bỏ parser đếm dòng
+  riêng); cả Host và CLI đặt `GIT_TERMINAL_PROMPT=0`/`LC_ALL=C`, probe thêm `GIT_OPTIONAL_LOCKS=0`
+  để không treo ở credential prompt và không đua index với git của user. CLI kiểm tra `git --version`
+  ≥ 2.20 trước khi tạo worktree và báo lỗi có mã (`worktree_git_missing`/`worktree_git_too_old`).
+
+- **feat(prompt)**: **Agent biết workspace đang dơ trước khi sửa.** Environment block thêm
+  `workspace_git: clean | dirty (N changed, M untracked) | not_a_repository` — chỉ đếm, không
+  tên file, cache ngắn để không tốn một lần `git status` mỗi model step. Contract yêu cầu model
+  báo trước lần ghi đầu tiên và đưa lựa chọn: commit/stash trước, làm tiếp tại chỗ, hoặc chạy
+  trong worktree — chờ anh chọn, không tự tạo hay đổi workspace.
+
+- **feat(cli)**: **`agent run --worktree` tách run khỏi cây làm việc của anh.** CLI tạo một git
+  worktree mới tại HEAD (mặc định `%LOCALAPPDATA%\Ru\worktrees`, đổi bằng `RU_WORKTREE_ROOT`),
+  chạy agent trong bản copy đó và in đường dẫn; cây gốc cùng thay đổi chưa commit không bị chạm.
+  Nhánh `ru/worktree/<id>` và worktree được giữ lại để review, xoá bằng `git worktree remove`.
+  Chỉ trạng thái đã commit được copy; workspace mới vẫn cần `--trust-workspace`, và không kết
+  hợp được với `--session`.
+
+- **feat(tools)**: **`list` nói rõ thư mục rỗng thay vì trả mảng trống.** `list` thêm `notice`
+  khi thư mục tồn tại nhưng không có entry nào và không có entry bị ẩn (`skipped == 0`), để câu
+  "rỗng" không sai khi thực ra có file bị bỏ qua. Thư mục có entry giữ nguyên shape cũ.
+
+- **feat(tools)**: **`glob` nói rõ khi không khớp file nào.** `glob` thêm `notice` nêu pattern
+  không khớp gì; kết quả có file giữ nguyên shape cũ. Mô tả tool và golden lock cập nhật theo.
+
+- **feat(tools)**: **Grep nói rõ kết quả rỗng thay vì trả `count: 0` trống.** `grep` thêm `notice`
+  `no matches were found for the query.` khi scan hoàn tất và không khớp gì; scan thiếu
+  (`scan_incomplete`/`excluded_by_size`) giữ nguyên mô tả coverage và không nhận notice,
+  kết quả có match cũng không. Mô tả tool, golden lock và `docs/architecture/broker.md`
+  ghi lại quy ước notice này.
+
+- **feat(cli)**: **Headless run trả lời được approval mà không cần terminal.** `agent run --json`
+  in `approval_id` trên event `approval.requested` — handle duy nhất mà `agent approve` nhận —
+  và `approve`/`deny` nhận `--json` để trả object `approval` (`decision`, `scope`,
+  `authorized`, matcher preview) thay vì từ chối `interactive_required`. Approval vẫn là
+  single-use, bind đúng canonical args và không tạo token tái dùng; chỉ định dạng đầu ra đổi.
+
+- **fix(prompt)**: **Model tự xưng đúng tên model, không nhận "Ru Agent" là tên mình.** Persona block
+  giờ mở đầu bằng `You are <model>, a coding model running inside Ru Agent`, nói rõ Ru Agent là
+  sản phẩm/host chứ không phải danh tính, và khi được hỏi model hay version thì trả lời bằng model id
+  của run (id đã có trong environment block). Tên sản phẩm trong UI/CLI không đổi; chỉ danh tính
+  model-visible thay đổi.
+
+- **feat(telemetry)**: **Đếm được read trùng và tool fail trước khi quyết định dedup.**
+  Broker thêm hai counter trên meter provider của Host: `ru.tool.calls`
+  (`tool.id`/`tool.status`/`error.code`) và `ru.tool.read_pages`
+  (`tool.id`/`repeated`). `repeated` đo xem phiên đã đọc đúng path đó chưa; tracker chỉ
+  đếm, không bao giờ giữ nội dung hay từ chối trả file — dedup thật cần read-state biết
+  compaction của Host nên vẫn là quyết định riêng, giờ có số để biện minh. Tag chỉ là token
+  bounded; path/arguments không bao giờ vào tag.
+
+- **feat(tools)**: **Read nói rõ điều gì đã xảy ra thay vì trả trang rỗng.** `read` và
+  `read_file` thêm `notice` cho file rỗng, offset/start_line vượt cuối file, và trang bị
+  cắt kèm hướng dẫn `next_offset`/`next_line`; `read` thêm `estimated_tokens` để model biết
+  trang vừa nhận tốn bao nhiêu token thay vì đoán theo byte. Mô tả tool nói rõ hai field
+  này, và golden lock của tool contract được cập nhật theo.
+
+- **refactor(broker)**: `ToolExecutionService` gộp từ 15 partial còn 4 theo trục trách nhiệm
+  (core/dispatch, execution, workspace, external I/O), không đổi hành vi; toàn bộ 1.443 test
+  Broker vẫn xanh.
+
+- **fix(cli)**: **Một bảng tên provider duy nhất cho Host và hai client.** `ProviderAliases`
+  trong `RuAgent.Protocol` thay bốn bảng alias từng trôi lệch nhau (Host, settings
+  transition, settings store và `ProviderCredential`). `/key opencode`, `/key kilo`,
+  `/key gguf` giờ lưu được key — trước đây CLI báo `unknown_provider` trong khi Host vẫn
+  nhận đúng những tên đó — và mỗi tên trỏ đúng một credential account. Test đối chiếu chéo
+  khoá lại: mỗi alias phải cho cùng backend và cùng account trên Host, CLI và GUI.
+
+- **test(gui)**: **Khoá catalog câu lỗi về một nguồn.** `AgentFailureCopy` đã là bảng chung
+  cho TUI và GUI; hai bề mặt Settings (nút Test connection, editor custom provider) vẫn tự
+  viết switch riêng. Chúng giờ là dictionary kèm test parity: mọi mã chúng diễn giải phải có
+  trong bảng chung, và mọi `catalog_*` trong bảng chung phải được nút Test diễn giải — không
+  mã nào rơi về raw token trong ô key.
+
+- **fix(providers)**: **Thêm được key OpenCode Go và chạy được provider này.** Models.dev
+  công bố base *chat* của gateway (`…/inference[/go]/openai/v1`), nơi `GET /models` trả
+  404 — nên bước kiểm tra key từ chối mọi key OpenCode Go là `provider_key_unverified` và
+  catalog không bao giờ tải được. Catalog (và chính probe kiểm tra key) giờ đọc danh sách
+  model thật của gateway (`…/inference/go/v1/models`, `…/inference/v1/models`), còn chat
+  completions vẫn dùng base đã công bố; key sai vẫn bị `provider_key_rejected`. OpenCode
+  Go cũng từ chối mọi completion thiếu `x-opencode-session` (HTTP 400 `MissingSessionID`)
+  trước khi đọc key, nên header mang session của run được pin cùng provider và gửi kèm
+  User-Agent của Ru ở mỗi lượt gọi; provider cần header mà run không có session thì fail
+  closed bằng `provider_session_missing`.
+
+- **fix(gui)**: **Nút Test connection không còn trả lời bằng catalog cũ.** Một lần refresh bị
+  throttle 30 giây (hoặc bị thay thế) trước đây vẫn được đọc như kết quả mới, nên ngay sau khi
+  lưu key, Test có thể báo `catalog_unauthorized` từ trạng thái trước khi có key dù provider đã
+  chạy được. Test và lần refresh sau khi lưu key giờ bỏ qua throttle phía client (Host vẫn giữ
+  retry throttle của nó), một refresh bị bỏ qua được báo là "could not refresh" thay vì một kết
+  luận cũ, câu kết quả nêu tên provider vừa test, và trace ghi
+  `[provider-test] backend=… refreshed=… code=…`.
+
+- **fix(gui)**: Show sent image/file attachments outside the user's text bubble;
+  hide the text bubble for attachment-only messages and retain copy/rewind actions.
+- **fix(agent)**: Preserve image receipt facts in follow-up context, including
+  image-only turns, and declare pinned image capability in the system prompt so
+  unavailable image contents are not confused with a missing attachment.
+
+- **feat(agent)**: Continue chats with image attachments on text-only models.
+  Keep the images in history and give the selected model an explicit notice
+  that it cannot view their contents, allowing it to explain the limitation
+  in its reply. Preserve provider/model selection and image validation bounds.
+
+- **fix(gui)**: Restore image attachments from the picker, drag-and-drop and
+  clipboard by reading image signatures without cloning managed streams. Show
+  intake failures above the composer instead of only logging them.
+
+- **sec(approvals)**: Stop one approval from covering a whole tool family. An allow for an MCP tool, a
+  computer-use app grant or a language-server operation used to be saved as a matcher with no server,
+  tool, app or language identity. A null matcher field is a wildcard, so a single `allow_once`
+  (remembered for the session) or `allow_always` (saved as a project rule) silently allowed every later
+  call of that tool. The Broker now builds each remembered matcher from the approved call's identity,
+  and the evaluator ignores allow rules that lack it. Remembered file and terminal approvals use
+  canonical paths and resolved executables, so a sibling path or a same-named executable elsewhere still
+  asks. The Host also used to write a durable rule and session memory before the Broker grant, so a
+  failed grant could leave them behind; both now follow a successful grant.
+
+- **refactor(approvals)!**: Derive remembered approvals in the Broker. Each approval remembers the target
+  its tool class names: file paths, terminal launches (resolved executable, argv and cwd), the MCP server
+  and tool, and the exact computer-use app list. An outside folder remembers
+  its nearest existing folder, and a drive, volume or share root remembers nothing and degrades to a
+  one-time allow. Tools outside that allowlist are never remembered, and `allow_always` on them is
+  refused. Rules saved by earlier builds for MCP or computer use carry no identity and
+  are ignored, so those calls ask again. A user-written allow without that identity is ignored too. An MCP
+  call whose `arguments` is a JSON string, the form the tool requires, is now approvable; the Host used to
+  re-parse it and answer `approval_stale`. An allow on an approval the Broker no longer holds now returns
+  `409 approval_stale` before anything commits; it used to commit the resolution and then answer `502`.
+
+- **feat(harness)!**: Make declared-check verification advisory (ADR 0039). A failed, pending or
+  result-missing `purpose=verification` check, or a failed `expected_failure` check, holds a final reply
+  with a recovery note up to three times per run. After that the run completes with its summary
+  verification state `unverified`; a `[BLOCKED]` reply still ends the run unsuccessfully. Relative to the
+  last release, an expected-exit mismatch no longer fails the run at once. Commands and computer-use input
+  no longer invalidate passed checks, and computer-use input is not a source edit. Only the same check
+  passing later retires an outstanding one. `supersedes` is accepted and ignored. Stale-check replacement,
+  repair families and workspace-journal freshness no longer affect completion or labels. A declared check
+  rejected before launch creates no obligation. Verification repair families and repair hints are removed,
+  and the Broker no longer emits `verification_repair_identity` or `verification_invocation_invalid`.
+  A terminal call carrying `supersedes` without `purpose=verification` is no longer rejected. Receipts that
+  still carry the removed fields parse, and the fields are ignored.
+
+- **refactor(broker,protocol)!**: Derive every model-visible tool from one descriptor table (ADR 0038):
+  Protocol definitions, Broker manifests, the trusted adapter allowlist, per-tool session scopes and the
+  access class that the Broker and hook gateways share. Hook-denied decisions now report the Broker's
+  access class for `run_code`, the agent tools, `todo_write`, `mcp`, `ask_user`,
+  `terminal_stop`, non-observation `computer` actions and unknown tools. Session grants add each tool's
+  declared scopes: `read`, `read_file` and `run_code` no longer add `workspace.read`, `list` adds
+  `system.read`.
+
+- **refactor(harness)**: Route every returned model step through one ordered, internal completion policy.
+  Commit shapes, outbox entries and recovery notes are unchanged; see the completion policy in
+  [harness](docs/architecture/harness.md#completion-policy).
+
+- **Removed:** Broker language-server integration and the semantic coding profile.
+  Code navigation and diagnostics continue through file tools and CLI build/test commands.
+  Retired profile pins fail explicitly; existing user configuration is left untouched.
+
+- **fix(tools)**: Clarify file creation versus replacement and provide specific `file_exists` recovery.
+
+- **fix(harness)**: State the specific reason in the unverified recovery note (missing or pending check result,
+  expected-exit mismatch, or failed tool call). A failed tool call needs a repair tool call or a `[BLOCKED]`
+  final reply; a verification failure completes as `unverified` once its three notes are spent.
+
+- **feat(harness)**: Hold the first non-empty final reply after an unverified structured
+  source edit once per run. Its streamed text is retracted and a durable
+  `unverified_source_edit` note asks for a `purpose=verification` build or test of the
+  request's requirements. Documentation-only `write`/`edit` calls, deletes, restores
+  and terminal commands do not trigger it, and a run that ignores the note still
+  completes as `unverified`. This responds to the 2026-10-29 benchmark triage, which
+  found runs that edited source and finished without running anything after the last
+  edit.
+
+- **feat(harness)**: Ask coding runs to record each explicit requirement of a
+  multi-requirement request as its own `todo_write` item before editing, and to
+  complete an item only after a check exercises it. A final reply after source edits
+  can take up to two more one-time holds, open list items and then a requirements
+  review unless the list is fully completed; both are advice that never fails a run.
+  This responds to the 2026-10-29 benchmark triage, which found most failed runs missed
+  explicit requirement clauses even when the agent's own checks passed.
+
+- **fix(benchmark)**: Accept valid read-only Todo and non-castable immutable
+  ledger snapshots, count scheduler exceptions as failed checks, and cover
+  repeated valid ledger transfers. Prior benchmark records remain unchanged;
+  these three fixture fingerprints change for future comparisons.
+
+- **feat(gui)**: Open View changes in the existing right Changes panel instead of
+  a popup. Clicking a file expands and reveals its edit in the normal session list.
+
+- **feat(gui)**: Give Markdown headings a clearer size hierarchy and compact the
+  per-turn changes card with inline line totals, a smaller icon and tighter rows.
+
+- **feat(gui)**: Put the workspace-sidebar toggle at the far left of the title bar
+  and the right-panel toggle at the far right of the conversation header.
+
+- **feat(gui)**: Polish the floating session card and right details panel: compact
+  task previews, icon tabs with a readable selected label,
+  keyboard tab switching/closing, and refresh/Stop feedback. File refresh retains
+  expanded folders and the previous listing on failure. Rapid tab transitions and
+  folder reopens discard superseded work instead of leaving stale animation or rows.
+
+- **feat(gui)**: Settings chooses the agent activity style with a Verbose / Compact
+  segmented control instead of a Compact on/off switch.
+
+- **feat(gui)**: Agent activity rows read as one line: a glyph for the kind of work, a
+  verb in the row's tense, the subject (file, command, query, host, tool) and a mono
+  tail of line range, result count, duration and line delta, with an `exit N` badge for
+  a failing command. Rows sit closer together. Web fetch and search, MCP calls, computer
+  use, skills and `run_code` programs get their own rows instead of a bare status line,
+  listing, globbing, tool docs and terminal output/stop are told apart, and terminal
+  rows carry the exit code (`exit_code` on `agent.activity`). The TUI prints the new
+  kinds as tool rows. Activity text now reads at the message's own size (the Settings
+  size picker drops its separate activity figure), prose keeps
+  12px of room from the rows beside it, and terminal rows use a plain `>_` prompt.
+
+- **feat(gui)**: Compact agent activity reads as one quiet line: a sentence of the
+  turn's main kinds of work ("Edited files, ran commands and read files"), a glyph that
+  turns into the disclosure chevron on hover, and, while the turn runs, the current
+  activity under a shimmer with an elapsed clock. Failures and waits tint the line.
+
+- **feat(providers)**: Add any number of named custom providers (ADR 0034): Settings ›
+  Providers › Add custom model API takes a provider ID, display name, base URL, OpenAI
+  Chat Completions or Anthropic Messages protocol, an optional key and the model list,
+  each with an optional context window. The list is the provider's catalog, so servers
+  without `/models` work; Fetch available models lists what the server serves and
+  doubles as a connection test. Keys go only over https:// or to this computer
+  (`provider_insecure_endpoint`), for the legacy Custom OpenAI slot too. Pasted endpoint
+  URLs are trimmed to their base, a model or server that cannot call tools fails as
+  `model_tools_unsupported`, and vLLM's `max_model_len` is read as the context window.
+
+- **feat(agent)**: Discover grouped skill libraries, install and explicitly update
+  commit-pinned GitHub skill packages through Customize or `/skills`, and read a
+  bounded workspace `.ru/memory/MEMORY.md` across conversations.
+- **feat(tools)**: Add bounded read-only `tools.parallel` batches to the experimental
+  program SDK with atomic budgets and durable indexed receipts. MCP supports
+  explicit Streamable HTTP, bearer credentials, structured content and resource
+  links behind the existing approval policy.
+- **fix(agent)**: Optional failed web sources no longer prevent completion when
+  a batch contains usable evidence. Nested instruction scope metadata names real
+  directories; file errors provide specific guidance without changing exact edits.
+- **test(benchmark)**: Add cohort provenance/acceptance reporting and four multi-step
+  coding fixtures; unknown usage and interrupted attempts remain explicit.
+
+- **feat(gui)**: A header above the chat shows the workspace and session title as a
+  breadcrumb, the permission mode with a risk-coloured dot (Plan, Standard or
+  Full Access), and a Working indicator while a run is live. The mode is read-only there;
+  it still changes in Settings or with Ctrl+K. The composer's own Full Access notice is gone.
+
+- **feat(gui)**: A message rail in the transcript's left gutter shows a tick per
+  loaded message. Hovering lifts the tick and previews the message (title and first lines, without
+  Markdown); clicking jumps to its first line. The tick for the message in view is
+  highlighted. The rail hides when the window leaves no gutter beside the reading column.
+
+- **feat(gui)**: A **Customize** page under New Chat gathers skills and plugins. Its
+  Skills tab searches the workspace skills, enables or disables them, sets automatic
+  use, adds local skill folders and puts `/skill <id>` in the composer; its Plugins tab
+  holds the computer-use switch, which moves out of Settings. The composer's Skills
+  button is gone; `/skills` in the composer opens the page.
+
+- **fix(agent)**: Structured file mutations are observed before the next check, with queued watcher
+  notifications deduplicated against current content. Schema v32 adds indexed execution-request provenance;
+  verification no longer reads the workspace change journal (ADR 0039).
+
 - **fix(tui)**: Honor cancellation while loading image and dropped-text files;
   drain session-owned attachment work before teardown and release temporary
   clipboard images when loading is canceled.
@@ -33,6 +297,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **fix(tui)**: Preserve a submitted provider/model when another session changes
   defaults during admission. Persist run intent through restart and idempotent
   retries; refuse older Hosts instead of falling back to an unselected run.
+  Schema v33 adds this intent after the existing v32 execution-provenance index.
 
 - **feat(tui)**: Run multiple sessions in one terminal with independent drafts,
   attachments, queues and waiting panels. Add compact tabs, Alt+N, F6/Shift+F6
@@ -151,7 +416,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Enter sends on the existing run; Escape leaves the question pending for `/follow`.
   Recover pending questions after session reopen and refuse stale answers without retries.
 
-
 - **feat(web)**: Runs on first-party Anthropic and OpenAI models now search through the
   provider's own hosted web search, as Claude Code and Codex do, instead of scraping
   search-engine pages (ADR 0033). It needs no extra key; each search is billed on the
@@ -218,13 +482,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **docs**: Point broker implementation sections at the CONTEXT.md glossary instead
   of restating definitions, break up the longest paragraphs, and state in the
   permissions guide that a terminal command can read the local service token.
-- **fix(harness)**: A declared verification whose launch was rejected before any
-  process ran (`malformed_call`, policy or resolution failure) no longer blocks
-  the run forever: it stays outstanding until a corrected check of the same kind
-  passes, instead of failing the run after the recovery-note budget. A rejected
-  rerun never replaces evidence from a check that actually ran, and the recovery
-  note for `malformed_call`/`invalid_arguments` tells the model to keep the
-  declared purpose on the corrected call.
+- **fix(harness)**: A declared check rejected before any process launched creates no obligation. Its failed
+  receipt is still handled by the tool-failure guard, and a rejected rerun never replaces evidence from a
+  check that ran.
 - **fix(policy)**: Plan's read-only gate now covers `file_restore`, so a remembered
   allow or ask rule can no longer restore files or prompt in `plan`.
 - **fix(web)**: Only 192.0.0.0/24 and 192.0.2.0/24 are treated as reserved;
@@ -263,9 +523,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Apply a narrow Codex recipe only to its confirmed official native route;
   custom endpoints and unknown models retain neutral guidance.
 
-- **fix(verification)**: Preserve prior checks after authority-identified read-only
-  commands exit nonzero; retain the original failed diagnostic or required check.
-  Clarify explicit inspection intent for PowerShell reads.
+- **fix(verification)**: Commands no longer invalidate earlier declared checks, and the original failed
+  diagnostic or required check stays failed. Clarify explicit inspection intent for PowerShell reads.
 - **fix(approvals)**: Show the total multi-edit count, bounded numbered excerpts
   and omitted-edit notice; preserve Unicode boundaries and full-argument binding.
 - **refactor(policy)**: Share PowerShell wrapper recognition with the resolver,
@@ -275,8 +534,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **fix(tui)**: Reflow long-paragraph storage segments continuously across terminal
   widths, preserving whitespace, inline styles and quote/list indentation.
 
-- **fix(agent)**: Stop final-prose retry loops for confirmed expected-exit
-  mismatches and publish the observed failure without clearing required checks.
+- **fix(agent)**: An expected-exit mismatch is an outstanding failed check, not an immediate failure: a final
+  reply is held up to three times, then the run completes with its verification state `unverified`.
   Clarify native argv/exit handling and multiline JSON edit/write arguments.
 - **fix(history)**: Commit failed-run reports and their final history outbox
   atomically; delivery retains the failed state instead of rejecting the report
@@ -341,10 +600,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or connection errors instead of generic adapter failures.
 - **fix(gui)**: Keep the terminal failure visible when a run ends without a reply.
 
-- **fix(harness)**: Keep background checks stale when code changes during execution;
-  derive terminal check identity from the resolved executable, argv and cwd.
-  Build live and resumed summaries from receipt-backed checks so edits alone
-  cannot claim verified completion.
+- **fix(harness)**: Derive terminal check identity from the resolved executable, argv and cwd. Build live and
+  resumed summaries from receipt-backed checks so edits alone cannot claim verified completion.
 - **fix(search)**: Report files excluded by the per-file size bound as incomplete
   coverage, with explicit exclusion counts.
 - **fix(providers)**: Preserve long Retry-After hints and park before an automatic
@@ -352,9 +609,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **test(runtime)**: Keep the occupied-port startup test independent of existing
   listeners and give SSE deletion checks margin beyond the parked poll interval.
 
-- **fix(harness)**: Keep terminal verification outstanding across unrelated reads,
-  compaction and restart; invalidate passed checks after later mutations. Support
-  explicitly declared negative tests without changing failed execution receipts.
+- **fix(harness)**: Keep declared checks outstanding across unrelated reads, compaction and restart until the
+  same identity passes. Support explicitly declared negative tests without changing failed execution receipts.
 - **fix(providers)**: Restore selected reasoning effort after truncation repair,
   honor bounded Retry-After with jitter, and expose attempt/effective-effort diagnostics.
 - **fix(context)**: Allow one budgeted format repair for malformed checkpoints,

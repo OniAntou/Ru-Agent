@@ -26,26 +26,18 @@ public sealed partial class TurnChangesSummaryControl : UserControl
     private readonly HashSet<AgentActivityItem> _observedItems = [];
     private TurnChangeSummary _summary = TurnChangeSummary.Empty;
     private bool _expanded;
-    private bool _openingDetails;
-    private ContentDialog? _detailsDialog;
 
     public TurnChangesSummaryControl()
     {
         InitializeComponent();
         Loaded += (_, _) => BindMessage();
-        Unloaded += (_, _) =>
-        {
-            StopObserving();
-            _detailsDialog?.Hide();
-        };
+        Unloaded += (_, _) => StopObserving();
     }
 
     private static void OnMessageChanged(DependencyObject source, DependencyPropertyChangedEventArgs args)
     {
         var control = (TurnChangesSummaryControl)source;
         control._expanded = false;
-        control._detailsDialog?.Hide();
-        control.DetailsError.Visibility = Visibility.Collapsed;
         control.BindMessage();
     }
 
@@ -90,7 +82,6 @@ public sealed partial class TurnChangesSummaryControl : UserControl
         if (args.PropertyName == nameof(ChatMessageItem.AgentActivities)) BindMessage();
         else if (args.PropertyName is nameof(ChatMessageItem.IsStreaming) or nameof(ChatMessageItem.Role))
         {
-            if (Message?.IsStreaming == true) _detailsDialog?.Hide();
             ObserveSettledItems();
             RenderSummary();
         }

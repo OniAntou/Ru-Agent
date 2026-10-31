@@ -12,9 +12,9 @@ grants permissions from `allowed-tools` or other metadata.
 - In terminal chat, ask in an ordinary prompt, for example `Use the verify skill
   to check src/main.cs`. `/skills` and `/skill` are no longer terminal chat
   commands. Model-side loading retains the package's invocation policy.
-- The GUI composer **Skills** action opens the searchable picker. Select a skill
-  to fill the composer, then send it with any arguments. It also offers refresh,
-  enable/disable and automatic-selection controls.
+- In the GUI, **Customize** under New Chat (or `/skills` typed in the composer)
+  opens the Skills tab: a searchable list with enable/disable, automatic-selection
+  and reload controls. **Use in chat** returns with `/skill <id>` in the composer.
 - The GUI can register or remove a local root such as `D:\MySkills` containing
   skill folders for this workspace. This registers
   files in place; it does not copy, download, update or execute a package.
@@ -22,17 +22,41 @@ grants permissions from `allowed-tools` or other metadata.
 Default root precedence is workspace `skills`, `.ru/skills`, `.agents/skills`,
 `RU_SKILLS_ROOT`, `~/.ru/skills`, `~/.agents/skills`, then `%LOCALAPPDATA%/Ru/skills`. Registered roots
 follow those defaults. The first matching canonical ID wins. Discovery is
-shallow: put `SKILL.md` directly in each child skill folder. The shared user
+bounded and breadth-first: a skill may be inside grouping folders, up to six
+directory levels, 256 visited directories and 4,096 enumerated entries per root.
+A folder with `SKILL.md`
+is a skill leaf; hidden, dependency and linked directories are skipped. The shared user
 library `~/.agents/skills` is discovered automatically across workspaces, without
 copying packages or registering a root. Project skills and Ru-specific user
 skills take precedence over matching IDs in that shared library.
 
 Local preferences live in `%LOCALAPPDATA%/Ru/skill-preferences.json`, scoped by
 workspace. They control guidance availability, not file/terminal permissions.
-Editing a package and refreshing the catalog is the local update workflow.
+Local packages can still be edited in place and refreshed from the catalog.
 Diagnostic codes identify invalid YAML, unsupported fields, unreadable files,
 linked paths, duplicate IDs and scan/metadata limits. A truncated catalog reports
 omissions; search narrows the listing rather than silently claiming completeness.
+
+## Explicit GitHub package installation
+
+**Customize → Skills → Add → Install from GitHub** accepts a GitHub tree URL pinned
+to a full 40-character commit, for example:
+
+```text
+https://github.com/acme/workflows/tree/0123456789abcdef0123456789abcdef01234567/skills/review
+```
+
+Choose **Install from GitHub** when there is no package with that ID in Ru's managed
+user library. **Update a GitHub package** is a separate, explicit action and
+only replaces an unchanged package previously installed by Ru from the same
+repository and subdirectory. It may pin a newer commit. Ru fetches the fixed
+`codeload.github.com` archive with redirects disabled, validates archive paths,
+size, file count and `SKILL.md` frontmatter, and reports the source commit and
+package SHA-256 receipt. Installation is atomic under `%LOCALAPPDATA%/Ru/skills`.
+Unknown folders and packages with local edits or extra files are preserved and
+refused for update. Package scripts and dependencies are never run or installed;
+any later tool use follows the normal Broker policy. There is no automatic
+download when a skill is discovered or selected.
 
 ## Package format
 

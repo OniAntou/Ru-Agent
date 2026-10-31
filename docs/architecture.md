@@ -33,6 +33,7 @@ flowchart LR
 
 The default product is .NET 10. Media surfaces and the private Runtime Worker are retired. Repository Python is tooling; optional workflow requirements produce a named failure when unavailable. The opt-in programmatic coding profile uses a bounded managed JavaScript interpreter inside Broker ([ADR 0028](adr/0028-bounded-programmatic-coding-tools.md)), without a second execution authority. See [Host implementation](architecture/host.md#coding-core-and-plugins), [runtime boundary](operations/python-runtime-boundary.md) and [ADR 0012](adr/0012-in-process-model-runner.md).
 
+
 ## Contracts and transport
 
 The [canonical public route contract](../backend-dotnet/public-route-contract.json) declares the authenticated loopback HTTP/SSE surface. There is no WebSocket or second chat transport. The stdio bridge wraps those same APIs without adding an HTTP route. Protocol owns tool schemas, wire DTOs and activity enums; GUI/Client do not depend on Harness server-domain types.
@@ -54,7 +55,7 @@ The Host orchestrates; Harness state machines own ordering/durability; Broker ow
 
 ## Data ownership
 
-The canonical profile keeps the shared SQLite WAL store and encrypted payloads; credentials remain in Windows Credential Manager. Schema initialization uses an ordered catalog and one atomic selected upgrade batch ending in v32 (relational history/search, context mutation fences and explicit run provider intents). The released v18 schema is the supported floor; earlier versions are rejected without mutation. Development v19-v31 sources still upgrade through the catalog. Fresh and upgraded shape, rollback and concurrent initialization are checked against frozen original DDL. See [Harness persistence](architecture/harness.md#data-ownership), [ADR 0013](adr/0013-consolidate-business-persistence-in-sqlite.md) and [data location](adr/0004-canonical-ru-data-location.md).
+The canonical profile keeps the shared SQLite WAL store and encrypted payloads; credentials remain in Windows Credential Manager. Schema initialization uses an ordered catalog and one atomic selected upgrade batch ending in v33 (relational history/search, context mutation fences, indexed execution-request provenance and explicit run provider intents). The released v18 schema is the supported floor; earlier versions are rejected without mutation. Development v19-v32 sources still upgrade through the catalog. Fresh and upgraded shape, rollback and concurrent initialization are checked against frozen original DDL. See [Harness persistence](architecture/harness.md#data-ownership), [ADR 0013](adr/0013-consolidate-business-persistence-in-sqlite.md) and [data location](adr/0004-canonical-ru-data-location.md).
 
 ## Privacy boundary
 

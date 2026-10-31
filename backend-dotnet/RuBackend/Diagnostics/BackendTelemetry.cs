@@ -20,7 +20,11 @@ public static class BackendTelemetry
     {
         try
         {
-            var builder = Sdk.CreateMeterProviderBuilder().AddMeter(HarnessPerformance.MeterName);
+            // Tool counters (calls, read pages) live on the Broker source; without
+            // this meter they are produced but never collected.
+            var builder = Sdk.CreateMeterProviderBuilder()
+                .AddMeter(HarnessPerformance.MeterName)
+                .AddMeter(BrokerTelemetry.SourceName);
             if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(BrokerTelemetry.OtlpEndpointVariable)))
                 builder.AddOtlpExporter();
             return builder.Build();

@@ -3,8 +3,8 @@
 `RuBackend` is the only public backend for Ru. When started as
 `RuBackend.exe --managed-runtime`, it asks Kestrel to bind an available loopback
 port and publishes the selected address in its runtime descriptor after bind.
-It owns all 52 HTTP routes
-(24 non-Agent routes plus 27 additive
+It owns all 54 HTTP routes
+(25 non-Agent routes plus 28 additive
 `/agent/v1/*`). Text turns use the current in-process-model-step Agent HTTP/SSE
 contract; no Chat WebSocket is exposed.
 
@@ -77,7 +77,7 @@ desktop secret, binds loopback, then publishes an ACL-restricted descriptor for
 `RuApp` and `RuAgent.Cli` never start an execution process; they validate the
 descriptor and `GET /status` bearer, and poll for a valid descriptor if
 stale/absent. Agent v2 (in-process
-one-step model generation, `/agent/v1/*` 27 routes, SSE reconnect with durable
+one-step model generation, `/agent/v1/*` 28 routes, SSE reconnect with durable
 `id:<sequence>`
 and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 `agent_harness.db` + AES-GCM payloads, workspace trust, session permissions,
@@ -106,8 +106,9 @@ the GUI gate or CLI `--confirm-full-access`.
 Standard external structured access can create a session-scoped canonical
 folder grant for read/list/glob/grep/write/edit; terminal intent never consumes
 that grant. An external-directory approval can also be remembered with
-`allow_always`: the Host saves the approved folder as a durable project-scope
-path pattern (`<folder>\**`) that covers the same structured tools and survives
+`allow_always`: the Broker builds a durable project-scope path pattern for the
+nearest existing folder of the approved path (`<folder>\**`), and the Host saves it. The pattern covers
+the same structured tools and survives
 restarts and later sessions of the same workspace, and the evaluator honors a
 matched allow rule for external targets (deny and ask rules keep precedence).
 `allow_always` on a terminal ask remembers a bounded command pattern — the

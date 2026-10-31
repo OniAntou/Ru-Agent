@@ -22,28 +22,14 @@ internal sealed class WorkspaceWatchRegistry(WorkspaceExternalChangeMonitor moni
                     try
                     {
                         monitor.CaptureExpectedHashes(root);
+                        entry.PersistChange = persistChange;
                         entry.Watcher = monitor.StartWatchingAsync(root, async change =>
                         {
-                            bool persisted;
-                            try { persisted = await persistChange(change).ConfigureAwait(false); }
+                            try { await PersistObservedAsync(root, entry, change, CancellationToken.None).ConfigureAwait(false); }
                             catch
                             {
                                 monitor.ForgetObservation(root, change.NormalizedPath);
                                 throw;
-                            }
-
-                            if (!persisted)
-                            {
-                                monitor.ForgetObservation(root, change.NormalizedPath);
-                                return;
-                            }
-
-                            lock (entry.Gate)
-                            {
-                                // A callback already persisting when its watch ends
-                                // must not acknowledge into a replacement baseline.
-                                if (!entry.Retired)
-                                    monitor.RegisterExpectedHash(root, change.NormalizedPath, change.ObservedSha256);
                             }
                         });
                     }
@@ -58,6 +44,38 @@ internal sealed class WorkspaceWatchRegistry(WorkspaceExternalChangeMonitor moni
                 return new Lease(() => Release(root, entry));
             }
         }
+    }
+
+    public async Task ObserveKnownPathAsync(string workspaceRoot, string path, CancellationToken ct)
+    {
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspaceRoot));
+        if (!_workspaces.TryGetValue(root, out var entry)) return;
+        var change = new WorkspaceExternalChangeEvent("workspace_tool_change_detected", path, null,
+            new string('0', 64), "ru_tool");
+        if (!await PersistObservedAsync(root, entry, change, ct).ConfigureAwait(false))
+            throw new RuAgent.Harness.Persistence.HarnessStoreException("workspace_change_store_failed");
+    }
+
+    private async Task<bool> PersistObservedAsync(string root, Entry entry, WorkspaceExternalChangeEvent candidate, CancellationToken ct)
+    {
+        await entry.ChangeGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            lock (entry.Gate) { if (entry.Retired) return true; }
+            // A queued watcher event may describe an already acknowledged tool
+            // write. Re-read just this path under the shared persistence gate.
+            var change = monitor.RefreshObservation(root, candidate);
+            if (change is null) return true;
+            if (!await entry.PersistChange!(change).ConfigureAwait(false))
+            {
+                monitor.ForgetObservation(root, change.NormalizedPath);
+                return false;
+            }
+            lock (entry.Gate)
+                if (!entry.Retired) monitor.RegisterExpectedHash(root, change.NormalizedPath, change.ObservedSha256);
+            return true;
+        }
+        finally { entry.ChangeGate.Release(); }
     }
 
     private void Release(string root, Entry entry)
@@ -82,6 +100,8 @@ internal sealed class WorkspaceWatchRegistry(WorkspaceExternalChangeMonitor moni
     private sealed class Entry
     {
         public object Gate { get; } = new();
+        public SemaphoreSlim ChangeGate { get; } = new(1, 1);
+        public Func<WorkspaceExternalChangeEvent, Task<bool>>? PersistChange;
         public int References;
         public bool Retired;
         public IDisposable? Watcher;

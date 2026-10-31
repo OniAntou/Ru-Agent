@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Cli.Worktree;
 using RuAgent.Client;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
@@ -35,11 +36,32 @@ public sealed partial class AgentCommands
             imagePayloads = payloads;
         }
 
+        // A worktree run edits a copy at HEAD, so the caller's tree (and any dirty
+        // work in it) is never touched. The worktree stays after the run; review the
+        // diff with git and remove it with 'git worktree remove'.
+        var workspace = cmd.WorkspacePath;
+        if (cmd.Worktree)
+        {
+            var (lease, error) = await GitWorktreeIsolation.CreateAsync(
+                workspace,
+                Environment.GetEnvironmentVariable(GitWorktreeIsolation.RootVariable),
+                cancellationToken).ConfigureAwait(false);
+            if (lease is null)
+            {
+                await _err.WriteLineAsync(error ?? "worktree_create_failed: unknown failure.").ConfigureAwait(false);
+                return 1;
+            }
+
+            workspace = lease.WorkspacePath;
+            await (cmd.Json ? _err : _out).WriteLineAsync(
+                $"worktree: {lease.WorktreePath} (branch {lease.Branch})").ConfigureAwait(false);
+        }
+
         RunStartOutcome outcome;
         try
         {
             outcome = await _runStarter.StartAsync(
-                new RunStartRequest(cmd.WorkspacePath, cmd.Prompt, cmd.Preset, cmd.SessionId, cmd.TrustWorkspace, cmd.ConfirmFullAccess, cmd.Json, imagePayloads),
+                new RunStartRequest(workspace, cmd.Prompt, cmd.Preset, cmd.SessionId, cmd.TrustWorkspace, cmd.ConfirmFullAccess, cmd.Json, imagePayloads),
                 async sessionId =>
                 {
                     // --json owns stdout: human-facing ids go to stderr so the NDJSON

@@ -102,7 +102,19 @@
                 </Style>
             </Grid.Resources>
 
-            <!-- Keep interactive actions immediately left of the system captions. -->
+                <Button x:Name="NavigationSidebarToggleButton"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Click="OnNavigationSidebarToggleClick"
+                        Style="{StaticResource TitleBarIconButtonStyle}"
+                        ToolTipService.ToolTip="Hide workspace sidebar"
+                        AutomationProperties.Name="Hide workspace sidebar">
+                    <Viewbox Width="16" Height="16">
+                        <Path Data="M4.5,3.5 H11.5 A2,2 0 0 1 13.5,5.5 V10.5 A2,2 0 0 1 11.5,12.5 H4.5 A2,2 0 0 1 2.5,10.5 V5.5 A2,2 0 0 1 4.5,3.5 Z M5.5,3.5 V12.5"
+                              Stroke="{StaticResource RuInkBrush}" StrokeThickness="1.2" />
+                    </Viewbox>
+                </Button>
+
+            <!-- The update badge remains immediately left of the system captions. -->
             <StackPanel x:Name="TitleBarActions" Orientation="Horizontal" Spacing="2"
                         HorizontalAlignment="Right" VerticalAlignment="Top">
                 <Button x:Name="TitleBarUpdateButton" Content="Update"
@@ -115,33 +127,6 @@
                         Visibility="{x:Bind Shell.IsUpdateAvailable, Mode=OneWay}" Click="OnTitleBarUpdateClick"
                         ToolTipService.ToolTip="Check for updates"
                         AutomationProperties.Name="Check for updates" />
-                <Button x:Name="NavigationSidebarToggleButton"
-                        Click="OnNavigationSidebarToggleClick"
-                        Style="{StaticResource TitleBarIconButtonStyle}"
-                        ToolTipService.ToolTip="Hide workspace sidebar"
-                        AutomationProperties.Name="Hide workspace sidebar">
-                    <Viewbox Width="16" Height="16">
-                        <Path Data="M4.5,3.5 H11.5 A2,2 0 0 1 13.5,5.5 V10.5 A2,2 0 0 1 11.5,12.5 H4.5 A2,2 0 0 1 2.5,10.5 V5.5 A2,2 0 0 1 4.5,3.5 Z M5.5,3.5 V12.5"
-                              Stroke="{StaticResource RuInkBrush}" StrokeThickness="1.2" />
-                    </Viewbox>
-                </Button>
-                <Button x:Name="SidePanelToggleButton"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Top"
-                        IsEnabled="{x:Bind Shell.CanToggleSidePanel, Mode=OneWay}"
-                        Click="OnSidePanelToggleClick"
-                        Style="{StaticResource TitleBarIconButtonStyle}"
-                        ToolTipService.ToolTip="{x:Bind Shell.SidePanelToggleLabel, Mode=OneWay}"
-                        AutomationProperties.Name="{x:Bind Shell.SidePanelToggleLabel, Mode=OneWay}">
-                    <Viewbox Width="16" Height="16">
-                        <Path Data="M4.5,3.5 H11.5 A2,2 0 0 1 13.5,5.5 V10.5 A2,2 0 0 1 11.5,12.5 H4.5 A2,2 0 0 1 2.5,10.5 V5.5 A2,2 0 0 1 4.5,3.5 Z M10.5,3.5 V12.5"
-                              Stroke="{StaticResource RuInkBrush}"
-                              StrokeThickness="1.2"
-                              StrokeLineJoin="Round"
-                              StrokeStartLineCap="Round"
-                              StrokeEndLineCap="Round" />
-                    </Viewbox>
-                </Button>
             </StackPanel>
         </Grid>
 
@@ -164,6 +149,7 @@
                         <VisualState.Setters>
                             <Setter Target="NavNewChat.Padding" Value="10,8"/>
                             <Setter Target="NavChat.Padding" Value="10,7"/>
+                            <Setter Target="NavCustomize.Padding" Value="10,7"/>
                             <Setter Target="NavSettings.Padding" Value="10,7"/>
                             <Setter Target="ThemeToggleButton.Padding" Value="10,7"/>
                         </VisualState.Setters>
@@ -505,6 +491,19 @@
                                 <StackPanel x:Name="ContentNewChat" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <FontIcon x:Name="IconNewChat" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="LabelNewChat" Text="New Chat" Style="{StaticResource RuNavLabelStyle}"/>
+                                </StackPanel>
+                            </Button>
+
+                            <!-- Skills and plugins, below New Chat -->
+                            <Button x:Name="NavCustomize" Tag="customize" Click="OnNavClick" HorizontalAlignment="Stretch"
+                                    Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
+                                    Padding="10,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                    AutomationProperties.AutomationId="CustomizeButton"
+                                    AutomationProperties.Name="Customize"
+                                    ToolTipService.ToolTip="Skills and plugins">
+                                <StackPanel x:Name="ContentCustomize" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                    <FontIcon x:Name="IconCustomize" Glyph="&#xE771;" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="LabelCustomize" Text="Customize" Style="{StaticResource RuNavLabelStyle}"/>
                                 </StackPanel>
                             </Button>
 

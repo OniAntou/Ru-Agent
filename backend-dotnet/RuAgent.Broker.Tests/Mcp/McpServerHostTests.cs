@@ -29,6 +29,39 @@ public sealed class McpConfigurationTests
     }
 
     [Fact]
+    public void Reads_explicit_streamable_http_and_skips_ambiguous_or_unsafe_entries()
+    {
+        var configuration = McpConfiguration.Parse("""
+            {"servers":{
+              "remote":{"transport":"streamable_http","url":"https://mcp.example.com/mcp","bearer_credential":"ru-mcp-remote"},
+              "loopback":{"transport":"streamable_http","url":"http://127.0.0.1:8080/mcp"},
+              "plain-http":{"transport":"streamable_http","url":"http://mcp.example.com/mcp"},
+              "userinfo":{"transport":"streamable_http","url":"https://user:pass@mcp.example.com/mcp"},
+              "mixed":{"transport":"streamable_http","url":"https://mcp.example.com/mcp","command":"run.exe"},
+              "bad-transport":{"transport":null,"command":"run.exe"},
+              "bad-enabled":{"enabled":"true","command":"run.exe"},
+              "duplicate":{"transport":"streamable_http","url":"https://mcp.example.com/one","url":"https://mcp.example.com/two"}
+            }}
+            """);
+
+        Assert.Equal(["remote", "loopback"], configuration.Servers.Select(server => server.Name));
+        Assert.Equal(McpServerTransport.StreamableHttp, configuration.Servers[0].Transport);
+        Assert.Equal("https://mcp.example.com/mcp", configuration.Servers[0].Endpoint!.AbsoluteUri);
+        Assert.Equal("ru-mcp-remote", configuration.Servers[0].BearerCredential);
+        Assert.Null(configuration.Servers[1].BearerCredential);
+    }
+
+    [Fact]
+    public void Duplicate_server_names_are_skipped_instead_of_selecting_one_definition()
+    {
+        var configuration = McpConfiguration.Parse("""
+            {"servers":{"same":{"command":"one.exe"},"same":{"command":"two.exe"},"valid":{"command":"ok.exe"}}}
+            """);
+
+        Assert.Equal("valid", Assert.Single(configuration.Servers).Name);
+    }
+
+    [Fact]
     public void Only_the_users_own_file_is_read()
     {
         var home = Directory.CreateTempSubdirectory("ru-mcp-home").FullName;

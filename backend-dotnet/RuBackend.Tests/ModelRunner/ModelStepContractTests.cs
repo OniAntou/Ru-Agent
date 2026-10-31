@@ -1,4 +1,5 @@
 ﻿using RuBackend.Harness.Prompting;
+using RuAgent.Protocol;
 using Xunit;
 
 namespace RuBackend.Tests.ModelRunner;
@@ -25,6 +26,7 @@ public sealed class ModelStepContractTests
         Assert.Contains("read_file", ids);
         Assert.DoesNotContain("bash", ids);
     }
+
 
     [Fact]
     public void Runtime_capabilities_advertise_both_web_tools()

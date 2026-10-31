@@ -28,15 +28,6 @@ public static class AgentV1Service
 
     internal static void ClearHostInputsForTests() => AgentInputsService.ClearHostInputsForTests();
 
-    internal static PolicyMatcher? BuildAllowAlwaysMatcher(
-        ToolApprovalBinding approvalBinding,
-        string? askSafeCode,
-        bool externalDirectoryRequested) => AgentApprovalsService.BuildAllowAlwaysMatcher(
-            approvalBinding, askSafeCode, externalDirectoryRequested);
-
-    internal static string? BuildExternalDirectoryPattern(string? approvedPath) =>
-        AgentApprovalsService.BuildExternalDirectoryPattern(approvedPath);
-
     internal static (AgentRun NextRun, HarnessEventIntent[] Events) PlanContinueCommit(
         AgentRun run,
         HarnessRunStatus nextStatus,

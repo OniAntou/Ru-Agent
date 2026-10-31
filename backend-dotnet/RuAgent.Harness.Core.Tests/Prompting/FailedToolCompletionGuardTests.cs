@@ -22,6 +22,7 @@ public sealed class FailedToolCompletionGuardTests
 
     [Theory]
     [InlineData("edit_no_match", "re-read the same file")]
+    [InlineData("file_exists", "overwrite=true")]
     [InlineData("edit_not_unique", "expected_occurrences")]
     [InlineData("workspace_changed", "reconcile the change")]
     [InlineData("process_exit_nonzero", "verification diagnostics")]

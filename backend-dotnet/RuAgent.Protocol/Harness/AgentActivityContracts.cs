@@ -16,6 +16,12 @@ public enum AgentActivityKind
     Status,
     Todo,
     Narration,
+    // Appended so existing tokens and stored rows keep their meaning.
+    Web,
+    Mcp,
+    Computer,
+    Skill,
+    Program,
 }
 
 public enum AgentActivityState
@@ -69,7 +75,8 @@ public sealed record AgentActivityWire(
     [property: JsonPropertyName("tool_display")] string? ToolDisplay = null,
     [property: JsonPropertyName("detail")] string? Detail = null,
     [property: JsonPropertyName("todos")] IReadOnlyList<AgentTodoWire>? Todos = null,
-    [property: JsonPropertyName("durable_sequence")] long? DurableSequence = null);
+    [property: JsonPropertyName("durable_sequence")] long? DurableSequence = null,
+    [property: JsonPropertyName("exit_code")] int? ExitCode = null);
 
 public static class AgentActivityWireCodec
 {
@@ -152,6 +159,7 @@ public static class AgentActivityWireValidator
         "detail",
         "todos",
         "durable_sequence",
+        "exit_code",
     };
 
     private static readonly HashSet<string> ReservedDeviceNames = new(StringComparer.OrdinalIgnoreCase)

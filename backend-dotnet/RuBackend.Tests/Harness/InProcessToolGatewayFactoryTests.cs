@@ -55,7 +55,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
         var proposal = ExternalReadProposal(runId);
         var ask = await first.EvaluateAsync(proposal, CancellationToken.None);
         Assert.Equal(PolicyDecision.Ask, ask.Decision);
-        var (authorized, _) = await _fixture.Factory.RespondApprovalAsync(
+        var (authorized, _, _) = await _fixture.Factory.RespondApprovalAsync(
             runId.Value,
             ask.ApprovalId!.Value.Value,
             "allow_once",

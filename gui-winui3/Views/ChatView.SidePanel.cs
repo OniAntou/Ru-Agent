@@ -49,7 +49,7 @@ public sealed partial class ChatView
     /// <summary>Hides or restores the whole surface; the title-bar toggle's action.</summary>
     public void ToggleSidePanel()
     {
-        if (!CanShowSidePanel())
+        if (!CanShowSidePanel() && !_changesPanelExplicitlyOpened)
         {
             return;
         }
@@ -66,7 +66,7 @@ public sealed partial class ChatView
 
     /// <summary>The state the policy wants right now, re-checked after a fade-out.</summary>
     private bool IsSidePanelDesiredVisible() =>
-        (CanShowSidePanel() || IsSubagentOverlay()) && _sidePanelPolicy.GetMode(_activeSessionId) != AgentSidePanelMode.Hidden;
+        (CanShowSidePanel() || IsSidePanelOverlay()) && _sidePanelPolicy.GetMode(_activeSessionId) != AgentSidePanelMode.Hidden;
 
     private void ApplySidePanelState()
     {
@@ -117,11 +117,11 @@ public sealed partial class ChatView
         // A narrow window temporarily suppresses presentation, not the user's
         // selected mode, tab or fullscreen state.
 
-        bool overlay = IsSubagentOverlay();
+        bool overlay = IsSidePanelOverlay();
         bool isVisible = (canShow || overlay) && mode != AgentSidePanelMode.Hidden;
         SidePanel.SetPreviewVisibility(isVisible);
         bool subagentReaderCoversChat = overlay || (mode == AgentSidePanelMode.Panel
-            && _sidePanelPolicy.GetActiveTab(_activeSessionId) is SidePanelTabKind.Subagents or SidePanelTabKind.Preview
+            && _sidePanelPolicy.GetActiveTab(_activeSessionId) is SidePanelTabKind.Subagents or SidePanelTabKind.Preview or SidePanelTabKind.Changes
             && _sidePanelPolicy.IsFullscreen(_activeSessionId));
         // Cover the composer while retaining the main approval/question overlay's priority (20).
         Microsoft.UI.Xaml.Controls.Canvas.SetZIndex(SidePanel, subagentReaderCoversChat ? 10 : 0);
@@ -172,15 +172,22 @@ public sealed partial class ChatView
             ApprovalHostGrid.Margin = new Thickness(16, 0, 16 + _sidePanelReserveWidth, 24);
         }
 
-        MainWindow.Instance?.UpdateSidePanelToggleState(canShow, mode == AgentSidePanelMode.Hidden);
+        bool canToggle = canShow || _changesPanelExplicitlyOpened;
+        MainWindow.Instance?.UpdateSidePanelToggleState(canToggle, mode == AgentSidePanelMode.Hidden);
+        SidePanelToggleButton.IsEnabled = canToggle;
+        string toggleLabel = mode == AgentSidePanelMode.Hidden ? "Show side panel" : "Hide side panel";
+        Microsoft.UI.Xaml.Controls.ToolTipService.SetToolTip(SidePanelToggleButton, toggleLabel);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(SidePanelToggleButton, toggleLabel);
         UpdateTaskRefreshTimer(isVisible);
     }
+
+    private void OnSidePanelToggleClick(object sender, RoutedEventArgs e) => ToggleSidePanel();
 
     private double ReserveFor(AgentSidePanelMode mode) =>
         mode switch
         {
             AgentSidePanelMode.Card => EffectiveSidePanelReserve(SidePanelCardWidth),
-            AgentSidePanelMode.Panel when _sidePanelPolicy.IsFullscreen(_activeSessionId) || IsSubagentOverlay() => 0,
+            AgentSidePanelMode.Panel when _sidePanelPolicy.IsFullscreen(_activeSessionId) || IsSidePanelOverlay() => 0,
             AgentSidePanelMode.Panel => EffectiveSidePanelReserve(_sidePanelWidth),
             _ => 0,
         };
@@ -215,6 +222,16 @@ public sealed partial class ChatView
     }
 
     private void OnSidePanelTabOpenRequested(object? sender, SidePanelTabKind kind)
+    {
+        if (kind == SidePanelTabKind.Changes)
+        {
+            ClearChangeNavigation();
+            RefreshSidePanelEdits();
+        }
+        OpenSidePanelTab(kind);
+    }
+
+    private void OpenSidePanelTab(SidePanelTabKind kind)
     {
         _sidePanelPolicy.OpenTab(_activeSessionId, kind);
         _sidePanelPolicy.ExpandToPanel(_activeSessionId);
@@ -253,6 +270,11 @@ public sealed partial class ChatView
 
     private void OnSidePanelTabClosed(object? sender, SidePanelTabKind kind)
     {
+        if (kind == SidePanelTabKind.Changes)
+        {
+            ClearChangeNavigation();
+            _changesPanelExplicitlyOpened = false;
+        }
         if (kind == SidePanelTabKind.Preview) SidePanel.ClearPreview();
         _sidePanelPolicy.CloseTab(_activeSessionId, kind);
         ApplySidePanelState();
@@ -263,6 +285,8 @@ public sealed partial class ChatView
         _sidePanelPolicy.MoveTab(_activeSessionId, move.Kind, move.TargetIndex);
         ApplySidePanelState();
     }
+
+    private readonly System.Collections.Generic.HashSet<(string Run, string Execution)> _taskStopsInFlight = new();
 
     private async void OnSidePanelTaskStopRequested(object? sender, string executionId)
     {
@@ -276,6 +300,10 @@ public sealed partial class ChatView
         {
             return;
         }
+
+        var stopKey = (runId, executionId);
+        if (!_taskStopsInFlight.Add(stopKey)) return;
+        SidePanel.SetTaskStopping(executionId, true);
 
         long generation = _sessionOpenGeneration;
         var controller = _agentController;
@@ -296,6 +324,11 @@ public sealed partial class ChatView
             if (generation != _sessionOpenGeneration) return;
             SidePanel.SetTasksStatus("Stop failed; the host did not answer.");
             return;
+        }
+        finally
+        {
+            _taskStopsInFlight.Remove(stopKey);
+            SidePanel.SetTaskStopping(executionId, false);
         }
 
         await RefreshAgentTasksAsync();

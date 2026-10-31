@@ -12,7 +12,7 @@ namespace RuApp.Views;
 /// Host's typed <c>/tasks</c> command and a stop is the same command with a kill
 /// argument, so the Broker stays the only execution authority and the view
 /// never talks to it directly. The summary card and the details panel render
-/// the same rows; only the panel offers Stop.
+/// the same observation, with a bounded card preview; only the panel offers Stop.
 /// </summary>
 public sealed partial class ChatView
 {
@@ -45,6 +45,7 @@ public sealed partial class ChatView
 
         _activeSessionTitle = title;
         SidePanel?.SetSessionTitle(title);
+        UpdateChatHeaderTitle();
     }
 
     private void UpdateSidePanel(bool isRunRunning)
@@ -56,6 +57,7 @@ public sealed partial class ChatView
 
         SidePanel.SetSessionTitle(_activeSessionTitle);
         SidePanel.SetWorkspace(_agentWorkspace);
+        UpdateChatHeaderWorkspace();
         SidePanel.SetTerminalWorkingDirectory(_agentWorkspace);
         ApplySidePanelState();
         UpdateWelcomeWorkspaceText();
@@ -77,7 +79,7 @@ public sealed partial class ChatView
             return;
         }
 
-        var projection = ChangesTabProjection.ProjectSession(Messages, AgentActivities);
+        var projection = ChangesTabProjection.ProjectSession(Messages, AgentActivities, _focusedChangeActivityId);
         SidePanel.RenderChanges(projection.Rows, projection.Added, projection.Removed);
         _sidePanelEditsDirty = false;
     }
@@ -93,6 +95,8 @@ public sealed partial class ChatView
         {
             return;
         }
+
+        SidePanel.SetTasksRefreshing(false);
 
         var runId = ResolveSidePanelTaskRunId();
         if (!string.Equals(runId, _taskObservationRunId, StringComparison.Ordinal))
@@ -118,6 +122,7 @@ public sealed partial class ChatView
         try
         {
             _taskRefreshInProgress = true;
+            SidePanel.SetTasksRefreshing(true);
             _taskRefreshCancellation = new CancellationTokenSource();
             var response = await controller!
                 .DispatchCommandAsync(runId, "/tasks", _taskRefreshCancellation.Token)
@@ -151,6 +156,7 @@ public sealed partial class ChatView
             if (_taskRefreshRequests.Owns(version))
             {
                 _taskRefreshInProgress = false;
+                SidePanel.SetTasksRefreshing(false);
                 UpdateTaskRefreshTimer(IsSidePanelDesiredVisible());
             }
         }

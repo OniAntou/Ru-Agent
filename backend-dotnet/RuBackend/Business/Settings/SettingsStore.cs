@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Protocol.Providers;
 using RuBackend.Providers;
 
 namespace RuBackend.Business.Settings;
@@ -222,21 +223,17 @@ public sealed partial class SettingsStore : ISettingsStore
 
     private static string NormalizeBackend(string value)
     {
-        if (ProviderSelection.NormalizeModelsDevBackend(value) is { } generic)
+        if (ProviderAliases.Normalize(value) is { } named)
         {
-            return generic;
+            return named;
         }
 
-        return value.Trim().ToLowerInvariant() switch
+        if (CustomProviders.NormalizeBackend(value) is { } custom)
         {
-            "gguf" or "llama.cpp" => "models.dev:opencode",
-            "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => "models.dev:opencode",
-            "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => "models.dev:kilo",
-            "custom" or "custom openai" or "custom openai api" => BackendCustom,
-            "openai" or "openai api" => "OpenAI",
-            "anthropic" or "anthropic claude" or "claude" => "Anthropic",
-            _ => string.Empty,
-        };
+            return custom;
+        }
+
+        return string.Empty;
     }
 
     private static (double TriggerRatio, double TargetRatio) ReadCompactionRatios(JsonObject raw)

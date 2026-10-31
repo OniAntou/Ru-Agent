@@ -1,0 +1,192 @@
+<UserControl
+    x:Class="RuApp.Views.CustomProviderEditorView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:viewmodels="using:RuApp.ViewModels"
+    IsTabStop="False"
+    AutomationProperties.Name="Custom model API">
+
+    <UserControl.Resources>
+        <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
+        </Style>
+        <Style x:Key="FieldHintStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel x:Name="EditorRoot" Spacing="20" MaxWidth="640" HorizontalAlignment="Stretch">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+            <Button x:Name="BackButton" Content="Back" Command="{x:Bind ViewModel.CancelCommand, Mode=OneWay}"
+                    Style="{StaticResource RuToolbarButtonStyle}" AutomationProperties.Name="Back to providers" />
+            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Title, Mode=OneWay}" FontFamily="{StaticResource RuUiFontFamily}"
+                       FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </Grid>
+
+        <TextBlock Style="{StaticResource FieldHintStyle}"
+                   Text="Connect a relay, a self-hosted server such as Ollama, LM Studio or vLLM, or any other OpenAI- or Anthropic-compatible endpoint by its base URL, protocol and models." />
+
+        <StackPanel Spacing="6">
+            <TextBlock x:Name="ProviderIdLabel" Text="Provider ID" Style="{StaticResource FieldLabelStyle}" />
+            <TextBox x:Name="ProviderIdBox"
+                     Text="{x:Bind ViewModel.ProviderId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{x:Bind ViewModel.IsNew, Mode=OneWay}"
+                     PlaceholderText="home-ollama" MaxLength="32" IsSpellCheckEnabled="False"
+                     AutomationProperties.LabeledBy="{Binding ElementName=ProviderIdLabel}" />
+            <TextBlock Style="{StaticResource FieldHintStyle}"
+                       Text="Lowercase identifier, starting with a letter, that names this provider in requests and its saved key. It cannot be changed later." />
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+            <TextBlock x:Name="DisplayNameLabel" Text="Display name" Style="{StaticResource FieldLabelStyle}" />
+            <TextBox x:Name="DisplayNameBox"
+                     Text="{x:Bind ViewModel.DisplayName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     PlaceholderText="Ollama at home" MaxLength="64"
+                     AutomationProperties.LabeledBy="{Binding ElementName=DisplayNameLabel}" />
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+            <TextBlock x:Name="BaseUrlLabel" Text="Base URL" Style="{StaticResource FieldLabelStyle}" />
+            <TextBox x:Name="BaseUrlBox"
+                     Text="{x:Bind ViewModel.BaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     PlaceholderText="http://localhost:11434/v1" IsSpellCheckEnabled="False"
+                     AutomationProperties.LabeledBy="{Binding ElementName=BaseUrlLabel}" />
+            <TextBlock Style="{StaticResource FieldHintStyle}"
+                       Text="A pasted …/chat/completions or …/models address is trimmed to its base, and /v1 is added to a bare host when saving." />
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+            <TextBlock x:Name="ProtocolLabel" Text="API protocol" Style="{StaticResource FieldLabelStyle}" />
+            <ComboBox x:Name="ProtocolBox" MinWidth="240"
+                      ItemsSource="{x:Bind ViewModel.ProtocolLabels}"
+                      SelectedIndex="{x:Bind ViewModel.ProtocolIndex, Mode=TwoWay}"
+                      AutomationProperties.LabeledBy="{Binding ElementName=ProtocolLabel}" />
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+            <TextBlock x:Name="ApiKeyLabel" Text="API key" Style="{StaticResource FieldLabelStyle}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <PasswordBox x:Name="ApiKeyBox"
+                             Password="{x:Bind ViewModel.ApiKey, Mode=TwoWay}"
+                             PlaceholderText="{x:Bind ViewModel.KeyPlaceholder, Mode=OneWay}"
+                             PasswordRevealMode="Peek"
+                             AutomationProperties.LabeledBy="{Binding ElementName=ApiKeyLabel}" />
+                <Button Grid.Column="1" Content="Remove key" Command="{x:Bind ViewModel.RemoveKeyCommand}"
+                        Visibility="{x:Bind ViewModel.HasSavedKey, Mode=OneWay}"
+                        IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}"
+                        Style="{StaticResource RuSecondaryButtonStyle}" />
+            </Grid>
+            <TextBlock Style="{StaticResource FieldHintStyle}"
+                       Text="Stored in Windows Credential Manager. Sent only over https://, or over http:// to this computer." />
+            <TextBlock x:Name="InsecureKeyWarning"
+                       Visibility="{x:Bind ViewModel.IsInsecureKeyWarningVisible, Mode=OneWay}"
+                       FontFamily="{StaticResource RuUiFontFamily}" FontSize="12" TextWrapping="Wrap"
+                       Foreground="{StaticResource RuWarningBrush}"
+                       Text="This address uses plain http:// to another computer, so Ru will not send a key to it. Use https://, or leave the key empty." />
+        </StackPanel>
+
+        <Border Height="1" Background="{StaticResource RuLineBrush}" />
+
+        <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="Models" Style="{StaticResource FieldLabelStyle}" VerticalAlignment="Center" />
+                <HyperlinkButton x:Name="FetchModelsButton" Grid.Column="1" Content="Fetch available models"
+                                 Command="{x:Bind ViewModel.FetchModelsCommand}"
+                                 IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}"
+                                 ToolTipService.ToolTip="Saves this provider, then asks the server which models it serves" />
+            </Grid>
+
+            <Grid x:Name="ModelsEmptyState" Visibility="{x:Bind ViewModel.HasNoModels, Mode=OneWay}" MinHeight="52">
+                <Rectangle Stroke="{StaticResource RuLineBrush}" StrokeThickness="1" StrokeDashArray="4,3"
+                           RadiusX="8" RadiusY="8" />
+                <TextBlock Margin="16,12" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                           Style="{StaticResource FieldHintStyle}"
+                           Text="No models yet. Add a model ID, or fetch the list from the server. The selector shows only listed models." />
+            </Grid>
+
+            <ItemsControl x:Name="ModelsList" ItemsSource="{x:Bind ViewModel.Models}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="viewmodels:CustomModelRow">
+                        <Grid ColumnDefinitions="*,160,Auto" ColumnSpacing="8">
+                            <TextBox Text="{x:Bind Id, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="Model ID, e.g. qwen3:8b" IsSpellCheckEnabled="False"
+                                     AutomationProperties.Name="Model ID" />
+                            <TextBox Grid.Column="1" Text="{x:Bind ContextWindow, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="Context (optional)" InputScope="Number"
+                                     ToolTipService.ToolTip="The context window in tokens the server really serves. For Ollama this is its num_ctx or OLLAMA_CONTEXT_LENGTH."
+                                     AutomationProperties.Name="Context window in tokens" />
+                            <Button Grid.Column="2" Click="OnRemoveModelClick" Tag="{x:Bind}"
+                                    Style="{StaticResource RuToolbarButtonStyle}" Padding="8,6"
+                                    AutomationProperties.Name="Remove model" ToolTipService.ToolTip="Remove model">
+                                <FontIcon Glyph="&#xE711;" FontSize="12" />
+                            </Button>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Button x:Name="AddModelButton" Command="{x:Bind ViewModel.AddModelCommand}"
+                    Style="{StaticResource RuSecondaryButtonStyle}" AutomationProperties.Name="Add model">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE710;" FontSize="12" />
+                    <TextBlock Text="Add model" />
+                </StackPanel>
+            </Button>
+
+            <StackPanel x:Name="DiscoveredPanel" Spacing="8" Visibility="{x:Bind ViewModel.HasDiscovered, Mode=OneWay}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="Served by this server" Style="{StaticResource FieldHintStyle}" VerticalAlignment="Center" />
+                    <HyperlinkButton Grid.Column="1" Content="Add all" Command="{x:Bind ViewModel.AddAllDiscoveredCommand}" />
+                </Grid>
+                <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.Discovered}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="viewmodels:DiscoveredModelRow">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12" Padding="4,6"
+                                      BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,0,1">
+                                    <TextBlock Text="{x:Bind Id}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13"
+                                               Foreground="{StaticResource RuInkBrush}" TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind Detail}" FontSize="12"
+                                               Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center" />
+                                    <Button Grid.Column="2" Content="Add" Click="OnAddDiscoveredClick" Tag="{x:Bind}"
+                                            IsEnabled="{x:Bind CanAdd, Mode=OneWay}"
+                                            Style="{StaticResource RuToolbarButtonStyle}" Padding="10,4"
+                                            AutomationProperties.Name="Add this model" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </StackPanel>
+
+        <TextBlock x:Name="StatusText" Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                   Visibility="{x:Bind ViewModel.HasStatus, Mode=OneWay}"
+                   FontFamily="{StaticResource RuUiFontFamily}" FontSize="12.5" TextWrapping="Wrap"
+                   IsTextSelectionEnabled="True" AutomationProperties.LiveSetting="Polite" />
+
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+            <Button x:Name="DeleteButton" Content="Delete provider" Command="{x:Bind ViewModel.DeleteCommand}"
+                    Visibility="{x:Bind ViewModel.IsExisting, Mode=OneWay}"
+                    IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}"
+                    Foreground="{StaticResource RuDangerBrush}"
+                    Style="{StaticResource RuToolbarButtonStyle}" />
+            <Button Grid.Column="2" Content="Cancel" Command="{x:Bind ViewModel.CancelCommand}"
+                    Style="{StaticResource RuSecondaryButtonStyle}" />
+            <Button x:Name="SaveButton" Grid.Column="3" Content="Save" Command="{x:Bind ViewModel.SaveCommand}"
+                    IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}"
+                    Style="{StaticResource RuPrimaryButtonStyle}" />
+        </Grid>
+    </StackPanel>
+</UserControl>

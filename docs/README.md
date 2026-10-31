@@ -42,6 +42,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Operations and verification](operations/verification.md)
 - [Agent tools and truthful execution](operations/agent-tools.md)
 - [Skill setup, invocation and continuity](operations/skills.md)
+- [Workspace project memory](operations/project-memory.md)
 - [Coding-agent capability and acceptance map](operations/coding-agent-capabilities.md)
 - [Custom Terminal/SWE/Everyday coding benchmark](../tools/coding-benchmark/README.md)
 - [Logging and diagnostics](operations/logging.md)
@@ -56,6 +57,12 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Agent guidance](../AGENTS.md)
 
 ## Decisions
+
+- [Advisory verification of declared checks](adr/0039-advisory-verification.md)
+- [Tool descriptor table](adr/0038-tool-descriptor-table.md)
+- [Broker-owned language-server tools](adr/0037-language-server-tools.md)
+- [Explicit pinned GitHub skill package installation](adr/0036-explicit-skill-package-installation.md)
+- [Explicit MCP Streamable HTTP behind the existing Broker authority](adr/0035-mcp-streamable-http.md)
 
 - [Shared skill catalog and run-local workflow snapshots](adr/0032-skill-catalog-and-workflow-snapshots.md)
 
@@ -93,6 +100,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Relational history and database maintenance](adr/0030-relational-history-and-database-maintenance.md)
 - [Computer use through the Broker](adr/0031-computer-use-through-the-broker.md)
 - [Provider-hosted web search](adr/0033-provider-hosted-web-search.md)
+- [Named custom providers](adr/0034-named-custom-providers.md)
 
 Git history is the recovery source for removed dated plans, specifications,
 reviews and verification records.

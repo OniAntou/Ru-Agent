@@ -1,5 +1,6 @@
 using RuAgent.Broker.Policy;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Tools;
 
 namespace RuAgent.Broker.Runtime;
 
@@ -332,15 +333,15 @@ public sealed class BrokerSession
         }
     }
 
-    private static IEnumerable<string> WorkspaceScopesFor(string toolId) => toolId switch
-    {
-        "read" or "read_file" or "grep" or "glob" or "run_code" => [ToolScope.SystemRead, ToolScope.WorkspaceRead],
-        "write" or "edit" or "write_file" or "edit_file" or "file_delete" or "file_restore" or "apply_patch" => [ToolScope.WorkspaceWrite],
-        "bash" or "powershell" or "run_process" or "terminal_read" or "terminal_stop" or "mcp" or "computer" => [ToolScope.TerminalExecute],
-        "web_search" => [ToolScope.WebSearch],
-        "web_fetch" => [ToolScope.WebFetch],
-        _ => [ToolScope.WorkspaceRead],
-    };
+    /// <summary>
+    /// The scopes one advertised tool adds to its session's grant: exactly the scopes its manifest
+    /// requires, taken from the same descriptor row. A tool the table does not bind (unknown, or
+    /// host-intercepted) adds nothing, so an unrecognized tool can never widen a grant.
+    /// </summary>
+    private static IEnumerable<string> WorkspaceScopesFor(string toolId) =>
+        AgentToolDescriptorTable.Find(toolId) is { IsBrokerBound: true } row
+            ? row.AllScopes
+            : Array.Empty<string>();
 
     public bool TryGetRunLease(string runId, out BrokerRunLease? lease)
     {

@@ -25,8 +25,10 @@ def test_task_registry_has_separate_multilingual_terminal_and_swe_suites():
 def test_everyday_suite_has_multilingual_tasks_and_tool_workflow():
     from collections import Counter
     everyday = benchmark.tasks("everyday")
-    assert Counter(task.language for task in everyday) == {"csharp": 2, "python": 3, "typescript": 2}
-    assert "py-tool-workflow" in {task.id for task in everyday}
+    assert Counter(task.language for task in everyday) == {"csharp": 2, "python": 6, "typescript": 3}
+    assert {"py-tool-workflow", "py-batch-reconcile", "py-checkpoint-journal", "py-log-redaction",
+            "ts-abortable-coalescer"} <= {
+        task.id for task in everyday}
     assert all(task.fail_to_pass and task.pass_to_pass for task in everyday)
 
 

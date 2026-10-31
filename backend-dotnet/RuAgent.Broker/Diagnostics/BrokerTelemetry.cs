@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Text.Json.Nodes;
 using RuAgent.Protocol;
 
@@ -20,6 +21,62 @@ public static class BrokerTelemetry
     public const string OtlpEndpointVariable = "OTEL_EXPORTER_OTLP_ENDPOINT";
 
     public static readonly ActivitySource Source = new(SourceName);
+
+    /// <summary>
+    /// Counters over the same source. They answer what a span list cannot answer
+    /// cheaply: how often a tool fails, under which bounded code, and how often a
+    /// file read repeats one this session already read.
+    /// </summary>
+    private static readonly Meter Meter = new(SourceName);
+
+    private static readonly Counter<long> ToolCalls = Meter.CreateCounter<long>(
+        "ru.tool.calls",
+        unit: "call",
+        description: "Tool executions by bounded tool id, status and error code.");
+
+    private static readonly Counter<long> ReadPages = Meter.CreateCounter<long>(
+        "ru.tool.read_pages",
+        unit: "page",
+        description: "File read pages, split by whether the session already read that path.");
+
+    /// <summary>Records one finished tool call. Unsafe tokens are dropped, never trimmed.</summary>
+    public static void RecordToolCall(string? toolId, ToolResult? result)
+    {
+        if (result is null)
+        {
+            return;
+        }
+
+        var tags = new TagList();
+        if (IsSafeDiagnosticToken(toolId))
+        {
+            tags.Add("tool.id", toolId);
+        }
+
+        if (ToolResultStatuses.Known.Contains(result.Status))
+        {
+            tags.Add("tool.status", result.Status);
+        }
+
+        if (IsSafeDiagnosticToken(result.ErrorCode))
+        {
+            tags.Add("error.code", result.ErrorCode);
+        }
+
+        ToolCalls.Add(1, tags);
+    }
+
+    /// <summary>Records one read page and whether this session had already read that path.</summary>
+    public static void RecordReadPage(string? toolId, bool repeated)
+    {
+        var tags = new TagList { { "repeated", repeated ? "true" : "false" } };
+        if (IsSafeDiagnosticToken(toolId))
+        {
+            tags.Add("tool.id", toolId);
+        }
+
+        ReadPages.Add(1, tags);
+    }
 
     /// <summary>Starts a <c>tool.execute</c> span, or null without a listener.</summary>
     public static Activity? StartToolActivity() =>

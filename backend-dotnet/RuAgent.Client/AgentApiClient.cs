@@ -313,7 +313,8 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
                     DurableSequence: wire.DurableSequence,
                     TransientSequence: null,
                     wire.Detail,
-                    wire.Todos));
+                    wire.Todos,
+                    wire.ExitCode));
             }
 
             return rows;

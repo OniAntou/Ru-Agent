@@ -151,6 +151,49 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
+    public void ParseRun_AcceptsWorktreeIsolation()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--trust-workspace", "--worktree", "prompt" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        Assert.True(Assert.IsType<RunCommand>(res.Command).Worktree);
+    }
+
+    [Fact]
+    public void ParseRun_RejectsWorktreeWithSession()
+    {
+        // A resumed session keeps the workspace it was created with.
+        var args = new[]
+        {
+            "agent", "run", "--workspace", ValidWorkspace, "--worktree", "--session", new string('a', 32), "prompt",
+        };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("worktree_session_conflict", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseRun_RejectsDuplicateWorktree()
+    {
+        var args = new[]
+        {
+            "agent", "run", "--workspace", ValidWorkspace, "--worktree", "--worktree", "prompt",
+        };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("duplicate_switch", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseChat_RejectsWorktree()
+    {
+        var args = new[] { "agent", "chat", "--workspace", ValidWorkspace, "--worktree" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("unknown_switch", res.ErrorCode);
+    }
+
+    [Fact]
     public void ParseRun_RejectsDuplicateTrustWorkspace()
     {
         var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--trust-workspace", "--trust-workspace", "prompt" };
@@ -625,12 +668,14 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
-    public void ParseApprove_RejectsJson_InteractiveRequired()
+    public void ParseApprove_AcceptsJson()
     {
+        // A headless orchestrator answers a pending approval by id; --json only
+        // selects the output format.
         var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--json" };
         var res = AgentCliParser.Parse(args);
-        Assert.False(res.Success);
-        Assert.Equal("interactive_required", res.ErrorCode);
+        Assert.True(res.Success);
+        Assert.True(Assert.IsType<ApproveCommand>(res.Command).Json);
     }
 
     [Fact]
@@ -643,12 +688,12 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
-    public void ParseDeny_RejectsJson_InteractiveRequired()
+    public void ParseDeny_AcceptsJson()
     {
         var args = new[] { "agent", "deny", ValidRunId, "apr_" + new string('d', 32), "--json" };
         var res = AgentCliParser.Parse(args);
-        Assert.False(res.Success);
-        Assert.Equal("interactive_required", res.ErrorCode);
+        Assert.True(res.Success);
+        Assert.True(Assert.IsType<DenyCommand>(res.Command).Json);
     }
 
     [Fact]
@@ -747,7 +792,7 @@ public sealed class AgentCliParserTests
 
         var args2 = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--json" };
         var res2 = AgentCliParser.Parse(args2);
-        Assert.False(res2.Success);
-        Assert.Equal("interactive_required", res2.ErrorCode);
+        // Approval is explicit by id; --json is an output format, not a prompt.
+        Assert.True(res2.Success);
     }
 }

@@ -5,7 +5,8 @@ namespace RuAgent.Harness.Core.Context;
 
 public sealed partial class RunVerificationEvidence
 {
-    private readonly record struct TerminalMetadata(string? CanonicalIdentity, int? CompletedReadExitCode);
+    /// <summary>Authority metadata copied into the receipt. Only the canonical identity and display cwd are read.</summary>
+    private readonly record struct TerminalMetadata(string? CanonicalIdentity, string? WorkingDirectory);
 
     private static TerminalMetadata ReadTerminalMetadata(string? content)
     {
@@ -15,19 +16,9 @@ public sealed partial class RunVerificationEvidence
             if (json.RootElement.ValueKind != JsonValueKind.Object) return default;
             var digest = StringArg(json.RootElement, "verification_identity");
             if (digest is not { Length: 64 } || !digest.All(char.IsAsciiHexDigit)) return default;
-            var completedState = !json.RootElement.TryGetProperty("state", out var state)
-                || state.ValueKind == JsonValueKind.Null
-                || state.ValueKind == JsonValueKind.String && state.GetString() == "exited";
-            var validBackground = !json.RootElement.TryGetProperty("background", out var background)
-                || background.ValueKind is JsonValueKind.Null or JsonValueKind.True or JsonValueKind.False;
-            var stillRunning = StringArg(json.RootElement, "state") is null && background.ValueKind == JsonValueKind.True;
-            int? completedReadExit = null;
-            if (StringArg(json.RootElement, "terminal_effect") == "read_only"
-                && json.RootElement.TryGetProperty("exit_code", out var exit) && exit.ValueKind == JsonValueKind.Number
-                && exit.TryGetInt32(out var code)
-                && completedState && validBackground && !stillRunning)
-                completedReadExit = code;
-            return new(digest.ToUpperInvariant(), completedReadExit);
+            var cwd = StringArg(json.RootElement, "verification_cwd");
+            if (string.IsNullOrWhiteSpace(cwd) || cwd.Length > RuAgent.Protocol.TerminalLimits.MaxWorkingDirectoryChars) cwd = null;
+            return new(digest.ToUpperInvariant(), cwd);
         }
         catch (JsonException) { return default; }
     }
@@ -50,5 +41,4 @@ public sealed partial class RunVerificationEvidence
         }
         return Convert.ToHexString(SHA256.HashData(buffer.ToArray()));
     }
-
 }

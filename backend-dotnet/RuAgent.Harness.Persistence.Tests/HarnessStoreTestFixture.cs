@@ -97,6 +97,7 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
             DROP TRIGGER IF EXISTS context_compaction_updated;
             DROP TRIGGER IF EXISTS context_compaction_deleted;
             DROP INDEX IF EXISTS ix_agent_context_compactions_run_version;
+            DROP INDEX IF EXISTS ix_agent_events_execution_request;
             DROP INDEX IF EXISTS ix_business_session_messages_session_source;
             ALTER TABLE agent_runs DROP COLUMN context_revision;
             PRAGMA user_version=30;

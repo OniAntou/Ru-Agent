@@ -214,19 +214,38 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         ShowProviderTest(ProviderConnectionTestPresentation.Testing());
         try
         {
-            var state = await SettingsProviderPresenter.TestConnectionAsync(
+            // The test is an explicit question about the provider shown, so it may not be
+            // answered from a catalog the editor already had: the manual throttle is
+            // bypassed and a suppressed refresh is reported instead of a stale verdict.
+            var run = await SettingsProviderPresenter.TestConnectionAsync(
                 SaveSettingsAsync,
-                () => catalog.RefreshAsync(force: true),
+                () => catalog.RefreshAsync(force: true, bypassManualThrottle: true),
                 () => catalog.State);
-            var outcome = ProviderConnectionTestPresentation.Project(state);
-            if (ProviderConnectionTestPresentation.DiagnosticCode(outcome, state) is { } errorCode)
+            GuiDiagnosticWriter.AppendTraceLine(
+                $"[provider-test] backend={ProviderChoice} refreshed={run.Refreshed} code={run.State?.ErrorCode ?? "none"}");
+            if (run.State is null)
             {
-                // The message alone cannot tell a blocked network from a bad key next
-                // time: record the catalog code locally.
-                GuiDiagnosticWriter.WriteGuiError("provider_test", errorCode);
+                // Saving failed, so the Host would answer from settings that never landed.
+                ShowProviderTest(ProviderConnectionTestPresentation.Project(null));
             }
+            else if (!run.Refreshed)
+            {
+                ShowProviderTest(new ProviderConnectionTest(
+                    ProviderConnectionTest.NeutralTone,
+                    "Could not refresh the provider list. Try again in a moment."));
+            }
+            else
+            {
+                var outcome = NameTheProvider(ProviderConnectionTestPresentation.Project(run.State));
+                if (ProviderConnectionTestPresentation.DiagnosticCode(outcome, run.State) is { } errorCode)
+                {
+                    // The message alone cannot tell a blocked network from a bad key next
+                    // time: record the catalog code locally.
+                    GuiDiagnosticWriter.WriteGuiError("provider_test", errorCode);
+                }
 
-            ShowProviderTest(outcome, state?.ErrorCode);
+                ShowProviderTest(outcome, run.State.ErrorCode);
+            }
         }
         catch (Exception ex)
         {
@@ -238,6 +257,19 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         {
             IsProviderTestEnabled = true;
         }
+    }
+
+    /// <summary>
+    /// Names the provider the verdict is about. The editor shows several Models.dev
+    /// providers whose names differ by a suffix ("OpenCode" and "OpenCode Go"), so a
+    /// bare "the provider rejected the key" left the reader guessing which one was tested.
+    /// </summary>
+    private ProviderConnectionTest NameTheProvider(ProviderConnectionTest test)
+    {
+        var name = ProviderButtonText.Trim();
+        return name.Length == 0 || name == NoProviderLabel
+            ? test
+            : test with { Message = $"{name}: {test.Message}" };
     }
 
     /// <summary>
@@ -290,7 +322,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    internal Task RefreshCatalogAsync() => _catalog?.RefreshAsync(force: true) ?? Task.FromResult(false);
+    internal Task RefreshCatalogAsync() =>
+        _catalog?.RefreshAsync(force: true, bypassManualThrottle: true) ?? Task.FromResult(false);
 
     /// <summary>Reloads stored settings and the provider catalog. The latest load wins.</summary>
     internal async Task LoadAsync()

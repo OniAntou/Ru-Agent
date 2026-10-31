@@ -59,87 +59,88 @@
                 <Grid x:Name="MessageColumn"
                       HorizontalAlignment="Center"
                       Loaded="OnMessageColumnLoaded">
-                <!-- The user bubble is a tail, not a card: the bottom-right
-                     corner pulls in to 4 so the message points back at the
-                     composer. Every other corner stays on the flyout step. -->
-                <Border MaxWidth="620"
-                        HorizontalAlignment="Right"
-                        Background="{StaticResource RuSurfaceBrush}"
-                        BorderBrush="{StaticResource RuLineBrush}"
-                        BorderThickness="1"
-                        CornerRadius="14,14,4,14"
-                        Padding="16,12">
-                    <Border.ContextFlyout>
-                        <MenuFlyout>
-                            <MenuFlyoutItem Text="Copy Content" Click="OnCopyMessageContentClick" Tag="{x:Bind}">
-                                <MenuFlyoutItem.Icon>
-                                    <FontIcon Glyph="&#xE8C8;" />
-                                </MenuFlyoutItem.Icon>
-                            </MenuFlyoutItem>
-                            <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
-                                <MenuFlyoutItem.Icon>
-                                    <FontIcon Glyph="&#xE7A7;" />
-                                </MenuFlyoutItem.Icon>
-                            </MenuFlyoutItem>
-                        </MenuFlyout>
-                    </Border.ContextFlyout>
-                    <StackPanel Spacing="8">
-                        <ItemsControl ItemsSource="{x:Bind Attachments, Mode=OneWay}"
-                                      Visibility="{x:Bind HasAttachments, Mode=OneWay}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal" Spacing="6" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:ImageAttachmentItem">
-                                    <Grid Margin="0,0,0,4">
-                                        <!-- Image Rendering -->
-                                        <Border Visibility="{x:Bind IsImage, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                 MaxWidth="240" MaxHeight="180" Width="140" Height="105" CornerRadius="{StaticResource AppCardCornerRadius}"
-                                                Background="{StaticResource RuCanvasBrush}"
-                                                BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
-                                                ToolTipService.ToolTip="Click to view full image">
-                                            <HyperlinkButton Click="OnImageAttachmentClick" Tag="{x:Bind}"
-                                                             AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}"
-                                                             Padding="0" Background="Transparent" BorderThickness="0"
-                                                             HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                                                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                                                <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" />
-                                            </HyperlinkButton>
-                                        </Border>
+                    <!-- Attachments have their own row; only the typed text gets a bubble. -->
+                    <StackPanel MaxWidth="620" HorizontalAlignment="Right" Spacing="8">
+                        <StackPanel.ContextFlyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="Copy Content" Click="OnCopyMessageContentClick" Tag="{x:Bind}">
+                                    <MenuFlyoutItem.Icon>
+                                        <FontIcon Glyph="&#xE8C8;" />
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+                                <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
+                                    <MenuFlyoutItem.Icon>
+                                        <FontIcon Glyph="&#xE7A7;" />
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+                            </MenuFlyout>
+                        </StackPanel.ContextFlyout>
+                        <ScrollViewer HorizontalAlignment="Right" MaxWidth="620"
+                                      HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled"
+                                      HorizontalContentAlignment="Right"
+                                      Visibility="{x:Bind HasAttachments, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <ItemsControl x:Name="UserMessageAttachments" ItemsSource="{x:Bind Attachments, Mode=OneWay}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="6" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:ImageAttachmentItem">
+                                        <Grid Margin="0,0,0,4">
+                                            <!-- Image Rendering -->
+                                            <Border Visibility="{x:Bind IsImage, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                     MaxWidth="240" MaxHeight="180" Width="140" Height="105" CornerRadius="{StaticResource AppCardCornerRadius}"
+                                                    Background="{StaticResource RuCanvasBrush}"
+                                                    BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+                                                    ToolTipService.ToolTip="Click to view full image">
+                                                <HyperlinkButton Click="OnImageAttachmentClick" Tag="{x:Bind}"
+                                                                 AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}"
+                                                                 Padding="0" Background="Transparent" BorderThickness="0"
+                                                                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                                                 HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                                                    <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" />
+                                                </HyperlinkButton>
+                                            </Border>
 
-                                        <!-- Document / Code File Pill Badge -->
-                                        <Border Visibility="{x:Bind IsDocument, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                CornerRadius="{StaticResource AppControlCornerRadius}"
-                                                Background="{StaticResource RuCanvasBrush}"
-                                                BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
-                                                Padding="10,6">
-                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                <FontIcon Glyph="{x:Bind FileIconGlyph, Mode=OneWay}" FontSize="16" Foreground="{StaticResource RuAccentBrush}" />
-                                                <StackPanel Spacing="1">
-                                                    <TextBlock Text="{x:Bind FileName, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" MaxWidth="180" TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Text="{x:Bind FormattedSize, Mode=OneWay}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                                            <!-- Document / Code File Pill Badge -->
+                                            <Border Visibility="{x:Bind IsDocument, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                    CornerRadius="{StaticResource AppControlCornerRadius}"
+                                                    Background="{StaticResource RuCanvasBrush}"
+                                                    BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+                                                    Padding="10,6">
+                                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                    <FontIcon Glyph="{x:Bind FileIconGlyph, Mode=OneWay}" FontSize="16" Foreground="{StaticResource RuAccentBrush}" />
+                                                    <StackPanel Spacing="1">
+                                                        <TextBlock Text="{x:Bind FileName, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" MaxWidth="180" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{x:Bind FormattedSize, Mode=OneWay}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                                                    </StackPanel>
                                                 </StackPanel>
-                                            </StackPanel>
-                                        </Border>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <controls:MarkdownBlock x:Name="AgentLegacyTextBlock"
-                                                MarkdownText="{x:Bind Content, Mode=OneWay}"
-                                                Foreground="{StaticResource RuInkBrush}"
-                                                FontFamily="{StaticResource RuUiFontFamily}" />
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <Border x:Name="UserTextBubble" MaxWidth="620"
+                                HorizontalAlignment="Right"
+                                Background="{StaticResource RuSurfaceBrush}"
+                                BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+                                CornerRadius="14,14,4,14" Padding="16,12"
+                                Visibility="{x:Bind HasText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <controls:MarkdownBlock x:Name="AgentLegacyTextBlock"
+                                                    MarkdownText="{x:Bind Content, Mode=OneWay}"
+                                                    Foreground="{StaticResource RuInkBrush}"
+                                                    FontFamily="{StaticResource RuUiFontFamily}" />
+                        </Border>
                     </StackPanel>
-                </Border>
                 </Grid>
             </Grid>
         </DataTemplate>
 
         <DataTemplate x:Key="AgentActivityTemplate" x:DataType="models:AgentActivityItem">
-            <Grid Margin="0,8"
+            <Grid Margin="0,3"
                   HorizontalAlignment="Stretch"
                   Visibility="{x:Bind IsVisibleInFeed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                   Loaded="OnActivityItemLoaded"
@@ -158,19 +159,27 @@
                       ColumnSpacing="8"
                       HorizontalAlignment="Stretch"
                       VerticalAlignment="Center">
-                      <TextBlock Grid.Column="0"
-                                 x:Name="AgentActivityText"
-                                 Text="{x:Bind DisplayText, Mode=OneWay}"
-                                 Visibility="{x:Bind ShowPlainHeader, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                 FontFamily="{StaticResource RuUiFontFamily}"
-                               Foreground="{StaticResource RuInkBrush}"
-                               TextWrapping="NoWrap"
-                               TextTrimming="CharacterEllipsis"
-                               MaxLines="1"
-                               MaxWidth="240"
-                               ToolTipService.ToolTip="{x:Bind DisplayTooltip, Mode=OneWay}"
-                               VerticalAlignment="Center"
-                               Margin="20,0,0,0" />
+                      <!-- Glyph for the kind of work, then the verb. The verb stays a
+                           named TextBlock: the running sweep and settled tone find it by
+                           name (ChatView.ActivityLabelElementName). -->
+                      <StackPanel Grid.Column="0"
+                                  Orientation="Horizontal"
+                                  Spacing="8"
+                                  Margin="20,0,0,0"
+                                  VerticalAlignment="Center"
+                                  Visibility="{x:Bind ShowPlainHeader, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                          <controls:ActivityRowGlyph Item="{x:Bind}" />
+                          <TextBlock x:Name="AgentActivityText"
+                                     Text="{x:Bind RowVerb, Mode=OneWay}"
+                                     FontFamily="{StaticResource RuUiFontFamily}"
+                                     Foreground="{StaticResource RuInkBrush}"
+                                     TextWrapping="NoWrap"
+                                     TextTrimming="CharacterEllipsis"
+                                     MaxLines="1"
+                                     MaxWidth="320"
+                                     ToolTipService.ToolTip="{x:Bind DisplayTooltip, Mode=OneWay}"
+                                     VerticalAlignment="Center" />
+                      </StackPanel>
                       <!--
                         The 20px is the fold chevron's place, kept even when the row has
                         no toggle: a hidden box that still takes width (14px) plus its
@@ -203,8 +212,9 @@
                                             Foreground="{StaticResource RuMutedBrush}"
                                             VerticalAlignment="Center" />
                               </Grid>
+                              <controls:ActivityRowGlyph Item="{x:Bind}" />
                               <TextBlock x:Name="ThinkingLabel"
-                                         Text="{x:Bind DisplayText, Mode=OneWay}"
+                                         Text="{x:Bind RowVerb, Mode=OneWay}"
                                          FontFamily="{StaticResource RuUiFontFamily}"
                                          Foreground="{StaticResource RuInkBrush}"
                                          TextWrapping="NoWrap"
@@ -241,8 +251,9 @@
                                              Foreground="{StaticResource RuMutedBrush}"
                                              VerticalAlignment="Center" />
                                </Grid>
+                               <controls:ActivityRowGlyph Item="{x:Bind}" />
                                <TextBlock x:Name="EditPreviewLabel"
-                                          Text="{x:Bind DisplayText, Mode=OneWay}"
+                                          Text="{x:Bind RowVerb, Mode=OneWay}"
                                           FontFamily="{StaticResource RuUiFontFamily}"
                                           Foreground="{StaticResource RuInkBrush}"
                                           TextWrapping="NoWrap"
@@ -254,86 +265,14 @@
                            </StackPanel>
                        </ToggleButton>
                       <!--
-                        The subject and its line counts are two different things: the pill
-                        frames the file, and the counts stand beside it. A border around both
-                        made the numbers read as part of the frame instead of as the change.
+                        Everything after the verb: the subject it acted on, then the
+                        numbers (range, results, time), the line delta and a failing
+                        exit code. One line; only the subject trims.
                       -->
-                      <StackPanel Grid.Column="1"
-                                  x:Name="ActivityMetaPanel"
-                                  Orientation="Horizontal"
-                                  Spacing="6"
-                                  VerticalAlignment="Center">
-                      <Border Visibility="{x:Bind HasMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                              Background="{StaticResource RuSurfaceBrush}"
-                              BorderBrush="{StaticResource RuLineBrush}"
-                              BorderThickness="1"
-                              CornerRadius="{StaticResource AppControlCornerRadius}"
-                              Padding="8,3"
-                              VerticalAlignment="Center">
-                      <StackPanel Orientation="Horizontal"
-                                  Spacing="4"
-                                  VerticalAlignment="Center">
-                           <TextBlock Text="{x:Bind MetadataText, Mode=OneWay}"
-                                      TextWrapping="NoWrap"
-                                      TextTrimming="CharacterEllipsis"
-                                      MaxLines="1"
-                                      MaxWidth="160"
-                                      ToolTipService.ToolTip="{x:Bind MetadataText, Mode=OneWay}"
-                                      Visibility="{x:Bind HasNoLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                      FontFamily="{StaticResource RuMonoFontFamily}"
-                                      FontSize="12.5"
-                                      FontWeight="SemiBold"
-                                      Foreground="{StaticResource RuInkBrush}"
-                                      VerticalAlignment="Center" />
-                           <TextBlock Text="{x:Bind BaseMetadataText, Mode=OneWay}"
-                                      TextWrapping="NoWrap"
-                                      TextTrimming="CharacterEllipsis"
-                                      MaxLines="1"
-                                      MaxWidth="160"
-                                      ToolTipService.ToolTip="{x:Bind BaseMetadataText, Mode=OneWay}"
-                                      Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                      FontFamily="{StaticResource RuMonoFontFamily}"
-                                      FontSize="12.5"
-                                      FontWeight="SemiBold"
-                                      Foreground="{StaticResource RuInkBrush}"
-                                      VerticalAlignment="Center" />
-                      </StackPanel>
-                      </Border>
-                         <TextBlock Text="·"
-                                    Visibility="{x:Bind HasLineDeltaAndBaseMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                    FontFamily="{StaticResource RuMonoFontFamily}"
-                                    FontSize="11"
-                                    Foreground="{StaticResource RuMutedBrush}"
-                                    VerticalAlignment="Center" />
-                         <TextBlock Text="{x:Bind AddedDeltaText, Mode=OneWay}"
-                                    Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                    FontFamily="{StaticResource RuMonoFontFamily}"
-                                    FontSize="11"
-                                    FontWeight="SemiBold"
-                                    Foreground="{StaticResource RuSuccessBrush}"
-                                    VerticalAlignment="Center" />
-                         <TextBlock Text="{x:Bind RemovedDeltaText, Mode=OneWay}"
-                                    Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                    FontFamily="{StaticResource RuMonoFontFamily}"
-                                    FontSize="11"
-                                    FontWeight="SemiBold"
-                                    Foreground="{StaticResource RuDangerBrush}"
-                                    VerticalAlignment="Center" />
-                      </StackPanel>
-                <!-- Short tool context stays beside its status; growing details
-                     must not add a row and move every following transcript block. -->
-                <TextBlock Grid.Column="2"
-                           x:Name="ActivityDetailText"
-                           Text="{x:Bind Detail, Mode=OneWay}"
-                           Visibility="{x:Bind ShowPlainDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                           FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="11.5"
-                           Foreground="{StaticResource RuMutedBrush}"
-                           TextWrapping="NoWrap"
-                           TextTrimming="CharacterEllipsis"
-                           MaxLines="1"
-                           VerticalAlignment="Center"
-                           ToolTipService.ToolTip="{x:Bind Detail, Mode=OneWay}" />
+                      <controls:ActivityRowTail Grid.Column="1"
+                                                Grid.ColumnSpan="2"
+                                                x:Name="ActivityTail"
+                                                Item="{x:Bind}" />
                 </Grid>
                 <!--
                   Thinking deliberation as a quote block: canvas fill to set it off the
@@ -491,7 +430,7 @@
                                             Visibility="{x:Bind ShowLegacyText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
-                    <controls:TurnChangesSummaryControl Message="{x:Bind}" />
+                    <controls:TurnChangesSummaryControl Message="{x:Bind}" DetailsRequested="OnTurnChangesRequested" />
                     <!--
                       An error that has somewhere to go next offers that place. A
                       missing provider key is the case this exists for: the message
@@ -518,6 +457,7 @@
             <controls:MarkdownBlock MarkdownText="{x:Bind Text, Mode=OneWay}"
                                     IsStreaming="{x:Bind IsLive, Mode=OneWay}"
                                     Visibility="{x:Bind HasText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                    Margin="{x:Bind ActivityGap, Mode=OneWay}"
                                     FontSize="14"
                                     Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                     FontFamily="{StaticResource RuUiFontFamily}" />
@@ -538,7 +478,7 @@
                                            AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
     </UserControl.Resources>
 
-    <Grid x:Name="RootGrid" RowDefinitions="*,Auto" Background="{StaticResource RuCanvasBrush}">
+    <Grid x:Name="RootGrid" RowDefinitions="Auto,*,Auto" Background="{StaticResource RuCanvasBrush}">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="ResponsiveStates">
                 <VisualState x:Name="Wide">
@@ -574,13 +514,119 @@
 
         <controls:MeteorShowerField x:Name="MeteorShowerField"
                                     Grid.Row="0"
-                                    Grid.RowSpan="2"
+                                    Grid.RowSpan="3"
                                     HorizontalAlignment="Stretch"
                                     VerticalAlignment="Stretch"
                                     IsHitTestVisible="False" />
 
-        <Grid x:Name="ReadingColumn"
+        <!-- Conversation header: the session title and a read-only permission
+             label. A notice, not a control: the preset still changes only in
+             Settings or the command palette (owner decision, 2026-10-22). -->
+        <Grid x:Name="ChatHeader"
               Grid.Row="0"
+              Height="52"
+              Padding="20,0,12,0"
+              ColumnDefinitions="*,Auto,Auto"
+              ColumnSpacing="12"
+              Visibility="Collapsed"
+              BorderBrush="{StaticResource RuLineBrush}"
+              BorderThickness="0,0,0,1"
+              AutomationProperties.AutomationId="ChatHeader"
+              AutomationProperties.Name="Conversation header">
+            <StackPanel x:Name="ChatHeaderLeading"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Center">
+                <StackPanel x:Name="ChatHeaderWorkspace"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            VerticalAlignment="Center"
+                            Background="Transparent"
+                            AutomationProperties.AutomationId="ChatHeaderWorkspace">
+                    <FontIcon Glyph="&#xE8B7;"
+                              FontSize="13"
+                              Foreground="{StaticResource RuMutedBrush}"
+                              VerticalAlignment="Center"
+                              AutomationProperties.AccessibilityView="Raw" />
+                    <TextBlock x:Name="ChatHeaderWorkspaceText"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="13"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="200"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <FontIcon x:Name="ChatHeaderBreadcrumbSeparator"
+                          Glyph="&#xE76C;"
+                          FontSize="9"
+                          Foreground="{StaticResource RuMutedBrush}"
+                          VerticalAlignment="Center"
+                          AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock x:Name="ChatHeaderTitle"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource RuInkBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           TextWrapping="NoWrap"
+                           VerticalAlignment="Center"
+                           AutomationProperties.AutomationId="ChatHeaderTitle" />
+                <Border x:Name="ChatHeaderPermission"
+                        Margin="4,0,0,0"
+                        VerticalAlignment="Center"
+                        Background="Transparent"
+                        AutomationProperties.AutomationId="ChatHeaderPermission">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Ellipse x:Name="ChatHeaderPermissionDot"
+                                 Width="6"
+                                 Height="6"
+                                 VerticalAlignment="Center" />
+                        <TextBlock x:Name="ChatHeaderPermissionText"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="12.5"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Shown only while a run is live; the dot breathes (see ChatView.Header). -->
+            <Border x:Name="ChatHeaderRunStatus"
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed"
+                    AutomationProperties.AutomationId="ChatHeaderRunStatus"
+                    AutomationProperties.Name="Run in progress">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse x:Name="ChatHeaderRunDot"
+                             Width="6"
+                             Height="6"
+                             Fill="{StaticResource RuAccentBrush}"
+                             VerticalAlignment="Center" />
+                    <TextBlock Text="Working"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="12.5"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+            <Button x:Name="SidePanelToggleButton"
+                    Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Width="32" Height="32" Padding="0" IsEnabled="False"
+                    Style="{StaticResource RuToolbarButtonStyle}"
+                    Click="OnSidePanelToggleClick"
+                    ToolTipService.ToolTip="Show side panel"
+                    AutomationProperties.Name="Show side panel">
+                <Viewbox Width="16" Height="16">
+                    <Path Data="M4.5,3.5 H11.5 A2,2 0 0 1 13.5,5.5 V10.5 A2,2 0 0 1 11.5,12.5 H4.5 A2,2 0 0 1 2.5,10.5 V5.5 A2,2 0 0 1 4.5,3.5 Z M10.5,3.5 V12.5"
+                          Stroke="{StaticResource RuMutedBrush}" StrokeThickness="1.2"
+                          StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                </Viewbox>
+            </Button>
+        </Grid>
+
+        <Grid x:Name="ReadingColumn"
+              Grid.Row="1"
               HorizontalAlignment="Stretch"
               Background="Transparent">
             <StackPanel x:Name="WelcomeHeroPanel"
@@ -720,11 +766,16 @@
                     </ListView.ItemContainerStyle>
                 </ListView>
 
+                <!-- Outside the list so it stays put while the transcript scrolls;
+                     its hover card never takes hit tests (see MessageRailControl). -->
+                <controls:MessageRailControl x:Name="MessageRail"
+                                             Margin="4,0,0,0"
+                                             Visibility="Collapsed" />
             </Grid>
         </Grid>
 
         <Button x:Name="NewMessagesPill"
-                Grid.Row="0"
+                Grid.Row="1"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Bottom"
                 Margin="0,0,0,16"
@@ -760,7 +811,7 @@
              details panel live in one control; the view answers which host is
              showing through AgentSidePanelPolicy. -->
         <controls:AgentSidePanelControl x:Name="SidePanel"
-                                        Grid.Row="0"
+                                        Grid.Row="1"
                                         Grid.RowSpan="2" />
 
         <!-- Approval overlay: declared before the input (XAML parse fails when
@@ -769,7 +820,7 @@
           of shoving them upward. The question card shares the host: a run is
           either waiting for approval or waiting for an answer, never both. -->
         <Grid x:Name="ApprovalHostGrid"
-              Grid.Row="1"
+              Grid.Row="2"
               VerticalAlignment="Bottom"
               HorizontalAlignment="Stretch"
               MaxWidth="820"
@@ -780,7 +831,7 @@
         </Grid>
 
             <Grid x:Name="InputContainer"
-              Grid.Row="1"
+              Grid.Row="2"
               RowDefinitions="Auto,Auto,Auto,Auto"
               MaxWidth="820"
               Margin="16,0"
@@ -1093,7 +1144,7 @@
                     </TextBox>
 
                     <Grid Grid.Row="3"
-                          ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto"
+                          ColumnDefinitions="Auto,Auto,Auto,*,Auto"
                           Margin="0,4,0,0">
                         <Button x:Name="AttachImageButton"
                                 Grid.Column="0"
@@ -1115,48 +1166,6 @@
                                       FontSize="14"
                                       Foreground="{StaticResource RuMutedBrush}" />
                         </Button>
-
-                        <Button x:Name="SkillsButton"
-                                Grid.Column="2"
-                                Click="OnSkillsButtonClick"
-                                Padding="8,4"
-                                Margin="2,0"
-                                CornerRadius="{StaticResource AppControlCornerRadius}"
-                                Style="{StaticResource RuToolbarButtonStyle}"
-                                AutomationProperties.Name="Browse and manage skills">
-                            <StackPanel Orientation="Horizontal" Spacing="5">
-                                <FontIcon Glyph="&#xE82D;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
-                                <TextBlock Text="Skills" FontSize="12" Foreground="{StaticResource RuInkBrush}" />
-                            </StackPanel>
-                        </Button>
-
-                        <!--
-                          A notice, not a control (owner decision, 2026-10-22): the composer
-                          still carries no permission selector. Full Access skips approval
-                          prompts, so the composer says so while it is the preset.
-                        -->
-                        <Border x:Name="FullAccessIndicator"
-                                Grid.Column="1"
-                                Visibility="{x:Bind Presets.IsFullAccess, Mode=OneWay}"
-                                Background="{StaticResource RuAccentSoftBrush}"
-                                CornerRadius="{StaticResource AppControlCornerRadius}"
-                                Padding="8,3"
-                                Margin="4,0"
-                                VerticalAlignment="Center"
-                                ToolTipService.ToolTip="Full Access: commands skip approval prompts. Change it in Settings or with Ctrl+K."
-                                AutomationProperties.Name="Permission: Full Access">
-                            <StackPanel Orientation="Horizontal" Spacing="5">
-                                <FontIcon Glyph="&#xE7BA;"
-                                          FontSize="11"
-                                          Foreground="{StaticResource RuWarningBrush}"
-                                          VerticalAlignment="Center" />
-                                <TextBlock Text="Full Access"
-                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                           FontSize="12"
-                                           Foreground="{StaticResource RuInkBrush}"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
 
                         <Button x:Name="AgentModeButton"
                                 Grid.Column="1"
@@ -1183,7 +1192,7 @@
                             </StackPanel>
                         </Button>
 
-                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="2">
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
                             <Button x:Name="ChatModelButton"
                                     AutomationProperties.AutomationId="ChatModelButton"
                                     AutomationProperties.Name="Select AI Model"
@@ -1294,7 +1303,7 @@
                             </Button>
                         </StackPanel>
 
-                        <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                             <Button x:Name="ContextMeterButton"
                                     AutomationProperties.AutomationId="ContextMeterButton"
                                     AutomationProperties.Name="View Context Window capacity"

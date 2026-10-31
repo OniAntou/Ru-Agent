@@ -37,7 +37,13 @@ public static partial class HarnessSqliteSchema
             new(28, 29, "SELECT 1;"),
             new(29, 30, SessionHistorySchemaMigration),
             new(30, 31, ContextProjectionMigration),
-            new(31, 32, ProviderIntentMigration),
+            new(31, 32, """
+                CREATE INDEX ix_agent_events_execution_request
+                    ON agent_events(run_id, execution_id, tool_call_id, provider_call_id, sequence)
+                    WHERE kind = 'tool.execution_requested';
+                SELECT 1;
+                """),
+            new(32, 33, ProviderIntentMigration),
         ];
     }
 }

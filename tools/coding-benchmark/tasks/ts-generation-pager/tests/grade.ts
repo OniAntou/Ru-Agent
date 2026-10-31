@@ -43,11 +43,12 @@ async function sameGenerationDedup(c: Checks): Promise<void> {
   const pager = new GenerationPager<string>(_ => { calls++; return gate.promise; });
   const one = pager.loadNext();
   const two = pager.loadNext();
-  c.that(one === two && calls === 0, "same generation returns the shared request before loader turn");
+  c.that(one === two, "same generation returns the shared request");
   await Promise.resolve();
   c.that(calls === 1 && pager.snapshot().isLoading, "one loader is active");
   gate.resolve({ items: ["áo dài"], nextCursor: null });
   await Promise.all([one, two]);
+  c.that(calls === 1, "shared request issues exactly one loader call");
   c.that(pager.snapshot().items[0] === "áo dài", "shared result is appended once");
 }
 

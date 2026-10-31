@@ -227,14 +227,25 @@ public sealed class ProviderCatalogTests
             "zen", "identity", "model-a", "default", new[] { "model-a" }));
         Assert.True(await first);
         Assert.False(await controller.RefreshAsync(force: true));
+        Assert.Equal(1, calls);
+
+        // An explicit connection test, or the refresh that follows a saved key, may not be
+        // served by a refresh this controller suppressed: bypassing the throttle fetches now.
+        release = new TaskCompletionSource<ProviderCatalogSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var bypassed = controller.RefreshAsync(force: true, bypassManualThrottle: true);
+        release.TrySetResult(ProviderCatalogSnapshot.Success(
+            "zen", "identity", "model-b", "default", new[] { "model-b" }));
+        Assert.True(await bypassed);
+        Assert.Equal(2, calls);
+        Assert.Equal(new[] { "model-b" }, controller.State.Models);
 
         now.Advance(TimeSpan.FromSeconds(31));
         release = new TaskCompletionSource<ProviderCatalogSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         var refreshed = controller.RefreshAsync(force: true);
         release.TrySetResult(ProviderCatalogSnapshot.Success(
-            "zen", "identity", "model-b", "default", new[] { "model-b" }));
+            "zen", "identity", "model-c", "default", new[] { "model-c" }));
         Assert.True(await refreshed);
-        Assert.Equal(2, calls);
+        Assert.Equal(3, calls);
     }
 
     [Fact]

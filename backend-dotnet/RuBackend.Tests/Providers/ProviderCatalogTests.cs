@@ -168,6 +168,67 @@ public sealed class ProviderCatalogTests : IDisposable
     }
 
     [Fact]
+    public async Task Opencode_catalog_is_read_beside_the_published_chat_root()
+    {
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:opencode-go", Model = "glm-5.3-flash" };
+        var catalog = new[]
+        {
+            new ModelsDevProvider("opencode-go", "OpenCode Go", "https://opencode.ai/inference/go/openai/v1", []),
+            new ModelsDevProvider("opencode", "OpenCode", "https://opencode.ai/inference/openai/v1", []),
+        };
+
+        // OpenCode publishes no {api}/models at either gateway: the list lives one
+        // level up, next to the protocol root, and only the catalog URL moves.
+        var go = ProviderSelection.From(settings with { Backend = "models.dev:opencode-go" }, catalog);
+        Assert.Equal(new Uri("https://opencode.ai/inference/go/v1/models"), go.ModelsUri);
+        Assert.Equal(new Uri("https://opencode.ai/inference/go/openai/v1/chat/completions"), go.CompletionUri);
+
+        var zen = ProviderSelection.From(settings with { Backend = "models.dev:opencode" }, catalog);
+        Assert.Equal(new Uri("https://opencode.ai/inference/v1/models"), zen.ModelsUri);
+        Assert.Equal(new Uri("https://opencode.ai/inference/openai/v1/chat/completions"), zen.CompletionUri);
+    }
+
+    [Fact]
+    public async Task Opencode_catalog_override_is_not_applied_off_the_opencode_host()
+    {
+        // The table is keyed by provider id, but a catalog entry that moved to
+        // another host keeps its own URL: no key is sent to a guessed endpoint.
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:opencode-go", Model = "glm-5.3-flash" };
+        var catalog = new[]
+        {
+            new ModelsDevProvider("opencode-go", "OpenCode Go", "https://mirror.example/go/openai/v1", []),
+        };
+
+        var selection = ProviderSelection.From(settings, catalog);
+
+        Assert.Equal(new Uri("https://mirror.example/go/openai/v1/models"), selection.ModelsUri);
+        Assert.Equal(new Uri("https://mirror.example/go/openai/v1/chat/completions"), selection.CompletionUri);
+    }
+
+    [Fact]
+    public async Task Opencode_go_catalog_and_candidate_probe_use_the_gateway_model_list()
+    {
+        await WriteModelsDevCacheAsync(ManyProviderJsonWith(
+            60, "opencode-go", "https://opencode.ai/inference/go/openai/v1"));
+        _handler.Status = HttpStatusCode.Unauthorized;
+        var service = ModelsDevService();
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:opencode-go", Model = "glm-5.3-flash" };
+
+        var live = await service.GetAsync(settings, refresh: true, CancellationToken.None);
+        Assert.Equal("catalog_unauthorized", live.ErrorCode);
+        Assert.Equal(new Uri("https://opencode.ai/inference/go/v1/models"), _handler.LastUri);
+        Assert.Equal("Bearer synthetic-key-1", _handler.Authorization);
+
+        // The key-save probe asks the same URL with the candidate credential, so a
+        // rejected key still fails closed instead of being written unverified.
+        var candidate = await service.CheckCandidateCredentialAsync(
+            "models.dev:opencode-go", "candidate-key", settings, CancellationToken.None);
+        Assert.Equal("catalog_unauthorized", candidate.ErrorCode);
+        Assert.Equal(new Uri("https://opencode.ai/inference/go/v1/models"), _handler.LastUri);
+        Assert.Equal("Bearer candidate-key", _handler.Authorization);
+    }
+
+    [Fact]
     public async Task Cloudflare_override_fills_base_url_from_account_id()
     {
         var settings = (await SettingsAsync()) with
@@ -647,6 +708,7 @@ public sealed class ProviderCatalogTests : IDisposable
         public string Json = "{\"data\":[{\"id\":\"model-a\"}]}";
         public HttpStatusCode Status = HttpStatusCode.OK;
         public string? Authorization;
+        public Uri? LastUri;
         public TaskCompletionSource? Hold;
         public TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource SecondStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -654,6 +716,7 @@ public sealed class ProviderCatalogTests : IDisposable
         {
             var count = Interlocked.Increment(ref Count);
             Authorization = request.Headers.Authorization?.ToString();
+            LastUri = request.RequestUri;
             Started.TrySetResult();
             if (count == 2) SecondStarted.TrySetResult();
             if (Hold is not null) await Hold.Task.WaitAsync(cancellationToken);

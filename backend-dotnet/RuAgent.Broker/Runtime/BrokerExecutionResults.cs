@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuAgent.Broker.Policy;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Runtime;
@@ -102,7 +103,8 @@ public sealed record ApprovalDecisionResult(
     string? ErrorCode = null,
     string? AuthorizationToken = null,
     string? ExpiresAt = null,
-    JsonObject? MatcherPreview = null)
+    JsonObject? MatcherPreview = null,
+    ApprovalRememberPlan? RememberPlan = null)
 {
     public static ApprovalDecisionResult Denied(string errorCode, string safeSummary) =>
         new(null, ToolResultStatuses.Denied, safeSummary, errorCode);
@@ -110,8 +112,9 @@ public sealed record ApprovalDecisionResult(
     public static ApprovalDecisionResult Authorized(
         string authorizationToken,
         string expiresAt,
-        JsonObject matcherPreview) =>
-        new(null, "authorized", "approval authorized", AuthorizationToken: authorizationToken, ExpiresAt: expiresAt, MatcherPreview: matcherPreview);
+        JsonObject matcherPreview,
+        ApprovalRememberPlan? rememberPlan = null) =>
+        new(null, "authorized", "approval authorized", AuthorizationToken: authorizationToken, ExpiresAt: expiresAt, MatcherPreview: matcherPreview, RememberPlan: rememberPlan);
 }
 
 /// <summary>

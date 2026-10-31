@@ -12,16 +12,70 @@ namespace RuAgent.Broker.Tools.Files;
 /// </summary>
 public sealed class EditMatchException : InvalidOperationException
 {
-    public EditMatchException(string code, int matchCount)
+    public EditMatchException(string code, int matchCount, string? repairHint = null)
         : base(code)
     {
         Code = code;
         MatchCount = matchCount;
+        RepairHint = repairHint;
     }
 
     public string Code { get; }
 
     public int MatchCount { get; }
+
+    public string? RepairHint { get; }
+
+    internal static EditMatchException UnexpectedCount(int observed, int expected) => new(
+        "edit_not_unique", observed,
+        $"old_string has {observed} matches, but expected_occurrences was {expected}. No edit was made. "
+        + "Re-read the file and narrow old_string with surrounding source text for a single intended change. "
+        + $"Use expected_occurrences={observed} only when every observed match is an intended replacement.");
+
+    internal static EditMatchException NoExactMatch(string source, string candidate)
+    {
+        if (ContainsEncodedMarkup(candidate))
+        {
+            return new EditMatchException("edit_no_match", 0,
+                "old_string was not found. It contains text that looks HTML-escaped (such as &quot; or &#10;); the edit tool never decodes entities. Re-read the file and send its actual quote and newline characters. No edit was made.");
+        }
+
+        var foldedCandidate = CollapseWhitespace(candidate);
+        if (foldedCandidate.Length >= 20
+            && CollapseWhitespace(source).Contains(foldedCandidate, StringComparison.Ordinal))
+        {
+            return new EditMatchException("edit_no_match", 0,
+                "old_string was not found exactly, but it matches after whitespace is collapsed. Line breaks or indentation may have been flattened; re-read and copy the exact source lines. No fuzzy edit was applied.");
+        }
+
+        return new EditMatchException("edit_no_match", 0,
+            "old_string was not found after CRLF/LF line-ending normalization. Re-read the file and copy its exact text, including indentation and line breaks; do not repeat the same edit. No edit was made.");
+    }
+
+    private static bool ContainsEncodedMarkup(string value) =>
+        value.Contains("&quot;", StringComparison.OrdinalIgnoreCase)
+        || value.Contains("&#10;", StringComparison.OrdinalIgnoreCase)
+        || value.Contains("&#13;", StringComparison.OrdinalIgnoreCase)
+        || value.Contains("&#xA;", StringComparison.OrdinalIgnoreCase)
+        || value.Contains("&#xD;", StringComparison.OrdinalIgnoreCase);
+
+    private static string CollapseWhitespace(string value)
+    {
+        var result = new StringBuilder(value.Length);
+        var pendingSpace = false;
+        foreach (var character in value)
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                pendingSpace = result.Length > 0;
+                continue;
+            }
+            if (pendingSpace) result.Append(' ');
+            result.Append(character);
+            pendingSpace = false;
+        }
+        return result.ToString();
+    }
 }
 
 public sealed partial class FileEditAdapter
@@ -57,12 +111,12 @@ public sealed partial class FileEditAdapter
         var count = CountOccurrences(normalizedText, normalizedOld);
         if (count == 0)
         {
-            throw new EditMatchException("edit_no_match", 0);
+            throw EditMatchException.NoExactMatch(normalizedText, normalizedOld);
         }
 
         if (count != expectedOccurrences)
         {
-            throw new EditMatchException("edit_not_unique", count);
+            throw EditMatchException.UnexpectedCount(count, expectedOccurrences);
         }
 
         var normalizedUpdated = normalizedText.Replace(normalizedOld, normalizedNew, StringComparison.Ordinal);
@@ -138,12 +192,12 @@ public sealed partial class FileEditAdapter
         var count = CountOccurrences(normalizedText, normalizedOld);
         if (count == 0)
         {
-            throw new EditMatchException("edit_no_match", 0);
+            throw EditMatchException.NoExactMatch(normalizedText, normalizedOld);
         }
 
         if (count != expectedOccurrences)
         {
-            throw new EditMatchException("edit_not_unique", count);
+            throw EditMatchException.UnexpectedCount(count, expectedOccurrences);
         }
 
         var normalizedUpdated = normalizedText.Replace(normalizedOld, normalizedNew, StringComparison.Ordinal);

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using RuAgent.Broker.Diagnostics;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
@@ -61,6 +62,31 @@ public sealed partial class ToolExecutionService
         ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: true, intent);
 
     private async Task<ToolResult> ExecuteAsync(
+        AgentEnvelope request,
+        CancellationToken cancellationToken,
+        bool isAuthenticatedV2Execution,
+        CanonicalCommandIntent? authorizedTerminalIntent = null)
+    {
+        // Two counters, one funnel: every tool entry point ends here, so a call is
+        // counted once whatever route reached it. The read counter answers the
+        // question a dedup would later solve — how often a session re-reads a path.
+        var toolId = ReadString(request.Payload, "tool_id");
+        if (toolId is "read" or "read_file"
+            && request.Payload["arguments"] is JsonObject arguments
+            && arguments["path"] is JsonValue pathValue
+            && pathValue.TryGetValue<string>(out var path)
+            && !string.IsNullOrWhiteSpace(path))
+        {
+            BrokerTelemetry.RecordReadPage(toolId, _readRepeats.Observe(request.SessionId, path.Trim()));
+        }
+
+        var result = await ExecuteCoreAsync(
+            request, cancellationToken, isAuthenticatedV2Execution, authorizedTerminalIntent).ConfigureAwait(false);
+        BrokerTelemetry.RecordToolCall(toolId, result);
+        return result;
+    }
+
+    private async Task<ToolResult> ExecuteCoreAsync(
         AgentEnvelope request,
         CancellationToken cancellationToken,
         bool isAuthenticatedV2Execution,
@@ -478,18 +504,18 @@ public sealed partial class ToolExecutionService
         }
         catch (ToolSchemaException error)
         {
-            outcome = ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", VerificationFailure(binding));
+            outcome = ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", ToolVerificationStates.NotRequired);
         }
         catch (ToolExecutionException error)
         {
-            outcome = ToolExecutionOutcome.Failed(error.Code, "Tool arguments were rejected.", VerificationFailure(binding));
+            outcome = ToolExecutionOutcome.Failed(error.Code, "Tool arguments were rejected.", ToolVerificationStates.NotRequired);
         }
         catch (UnauthorizedAccessException error)
         {
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "access_denied"),
                 "Tool access was denied.",
-                VerificationFailure(binding));
+                ToolVerificationStates.NotRequired);
         }
         catch (ArgumentException error)
         {
@@ -497,15 +523,16 @@ public sealed partial class ToolExecutionService
                 StableCode(error.Message, "invalid_arguments"),
                 error.Message is "read_line_too_long" or "read_line_scan_limit" ? IoRepairHint(error.Message)
                     : error.Message == "edit_overlap" ? "Edits overlap in the original file. Combine them into one exact replacement or use disjoint spans."
+                    : error.Message == "invalid_path" ? "Send a plain workspace-relative path string. Do not include XML wrappers such as </rfl:parameter> in path or pattern. Correct the argument; no path was rewritten or guessed."
                     : "Tool arguments were rejected.",
-                VerificationFailure(binding));
+                ToolVerificationStates.NotRequired);
         }
         catch (IOException error)
         {
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "io_error"),
                 IoRepairHint(error.Message),
-                VerificationFailure(binding));
+                ToolVerificationStates.NotRequired);
         }
         catch (InvalidDataException error) when (binding.Manifest.Id is "web_search" or "web_fetch")
         {
@@ -517,7 +544,7 @@ public sealed partial class ToolExecutionService
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "invalid_data"),
                 "Tool response data was rejected.",
-                VerificationFailure(binding));
+                ToolVerificationStates.NotRequired);
         }
         catch (EditMatchException error)
         {
@@ -526,10 +553,10 @@ public sealed partial class ToolExecutionService
             // the match count travels; no file content leaks into the receipt.
             outcome = ToolExecutionOutcome.Failed(
                 error.Code,
-                error.MatchCount > 0
+                error.RepairHint ?? (error.MatchCount > 0
                     ? $"old_string matched {error.MatchCount} times. Set expected_occurrences to {error.MatchCount} to replace all, or narrow old_string to a unique span."
-                    : "old_string was not found in the file. Re-read the file and copy the exact text including whitespace.",
-                VerificationFailure(binding));
+                    : "old_string was not found in the file. Re-read the file and copy the exact text including whitespace."),
+                ToolVerificationStates.NotRequired);
         }
         catch (HttpRequestException error) when (binding.Manifest.Id is "web_search" or "web_fetch")
         {
@@ -544,7 +571,7 @@ public sealed partial class ToolExecutionService
             outcome = ToolExecutionOutcome.Failed(
             "adapter_error",
             "Tool adapter failed. The broker diagnostic log carries the adapter error.",
-            VerificationFailure(binding));
+            ToolVerificationStates.NotRequired);
         }
 
         if (binding.Manifest.Id is "powershell" or "run_process" && context.AuthorizedTerminalIntent is { } terminalIntent)
@@ -639,13 +666,6 @@ public sealed partial class ToolExecutionService
             return ToolExecutionOutcome.Failed("conflicting_output_status", "Tool returned a conflicting status.");
         }
 
-        if (binding.VerificationRequired
-            && outcome.Status == ToolResultStatuses.Succeeded
-            && outcome.VerificationState != ToolVerificationStates.Verified)
-        {
-            return ToolExecutionOutcome.Failed("verification_required", "Tool success was not verified.");
-        }
-
         if (outcome.SafeSummary.Length > 4096)
         {
             return ToolExecutionOutcome.Failed("invalid_safe_summary", "Tool summary was invalid.");
@@ -660,15 +680,130 @@ public sealed partial class ToolExecutionService
         }
         catch (ToolSchemaException error)
         {
-            return ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", VerificationFailure(binding));
+            return ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", ToolVerificationStates.NotRequired);
         }
 
         var outputBytes = Encoding.UTF8.GetByteCount(outcome.Output.ToJsonString());
         if (outputBytes > binding.Manifest.MaxOutputBytes)
         {
-            return ToolExecutionOutcome.Failed("output_too_large", "Tool output exceeded its limit.", VerificationFailure(binding));
+            return ToolExecutionOutcome.Failed("output_too_large", "Tool output exceeded its limit.", ToolVerificationStates.NotRequired);
         }
 
         return outcome;
+    }
+
+    private static string SafeAction(ToolManifest manifest) => manifest.Id switch
+    {
+        "powershell" or "run_process" => "Run a terminal action in the workspace.",
+        "mcp" => "Start or call one of your MCP servers.",
+        "edit_file" => "Chỉnh sửa file.",
+        _ => "Run an external or destructive Agent action.",
+    };
+
+    internal static string BuildPreview(string toolId, JsonObject arguments, string? fileText = null)
+    {
+        try
+        {
+            if (arguments is null)
+            {
+                return string.Empty;
+            }
+
+            if (toolId == "edit_file")
+                return BuildEditPreview(arguments["edits"]?.AsArray(), fileText);
+            if (toolId == "apply_patch") return Bound(ReadOptionalString(arguments, "patch") ?? string.Empty);
+            var preview = toolId switch
+            {
+                "write_file" => ReadOptionalString(arguments, "content") ?? string.Empty,
+                "powershell" => ReadOptionalString(arguments, "script") ?? string.Empty,
+                "run_process" => TerminalRunPreview(arguments),
+                "terminal_read" => "Read retained terminal output.",
+                // ADR 0025: the card names the server, the tool and the bounded arguments.
+                "mcp" => ReadOptionalString(arguments, "op") == "call"
+                    ? $"{ReadOptionalString(arguments, "server")} > {ReadOptionalString(arguments, "tool")} {Bound(ReadOptionalString(arguments, "arguments") ?? "{}")}"
+                    : $"{ReadOptionalString(arguments, "server")} > list tools",
+                _ => string.Empty,
+            };
+            return preview.Length <= ApprovalPreviewFields.MaxLength
+                ? preview
+                : preview[..ApprovalPreviewFields.MaxLength];
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string Bound(string value) =>
+        value.Length <= ApprovalPreviewFields.MaxLength / 2 ? value : value[..(ApprovalPreviewFields.MaxLength / 2)];
+
+    private static string BuildEditPreview(JsonArray? edits, string? fileText)
+    {
+        if (edits is null || edits.Count == 0) return string.Empty;
+        if (edits.Count == 1) return EditPreview(edits[0]!.AsObject(), fileText);
+
+        const int maximumExcerpts = 4;
+        var shown = Math.Min(edits.Count, maximumExcerpts);
+        var header = $"{edits.Count} edits in one file. Excerpts: {shown} of {edits.Count}.\n";
+        var footer = shown < edits.Count
+            ? $"\n{edits.Count - shown} more edits not shown. Approval applies all {edits.Count} edits."
+            : string.Empty;
+        // Reserve labels and line breaks before distributing the shared UI bound.
+        var perEdit = (ApprovalPreviewFields.MaxLength - header.Length - footer.Length - shown * 4) / shown;
+        var preview = new StringBuilder(header);
+        for (var index = 0; index < shown; index++)
+        {
+            if (index > 0) preview.Append('\n');
+            preview.Append(index + 1).Append(". ").Append(EditPreview(edits[index]!.AsObject(), fileText, perEdit));
+        }
+        return preview.Append(footer).ToString();
+    }
+
+    private static string EditPreview(JsonObject arguments, string? fileText, int maxLength = ApprovalPreviewFields.MaxLength)
+    {
+        var oldString = ReadOptionalString(arguments, "old_string") ?? string.Empty;
+        var newString = ReadOptionalString(arguments, "new_string") ?? string.Empty;
+        if (oldString.Length == 0 && newString.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var matchIndex = oldString.Length > 0 && fileText is not null
+            ? fileText.IndexOf(oldString, StringComparison.Ordinal)
+            : -1;
+        if (matchIndex < 0)
+        {
+            var headLength = (maxLength - 8) / 2;
+            return $"[-{PreviewHead(oldString, headLength)}-][+{PreviewHead(newString, headLength)}+]";
+        }
+
+        var before = fileText.AsSpan(0, matchIndex);
+        var after = fileText.AsSpan(matchIndex + oldString.Length);
+        var maxHeadLength = (maxLength - 8) / 2;
+        var core = $"[-{PreviewHead(oldString, maxHeadLength)}-][+{PreviewHead(newString, maxHeadLength)}+]";
+        var budget = maxLength - core.Length;
+        if (budget <= 0)
+        {
+            return core;
+        }
+
+        var afterCount = Math.Min(after.Length, budget / 2);
+        var beforeCount = Math.Min(before.Length, budget - afterCount);
+        afterCount = Math.Min(after.Length, budget - beforeCount);
+        return $"{PreviewTail(before, beforeCount)}{core}{PreviewHead(after, afterCount)}";
+    }
+
+    private static string PreviewHead(ReadOnlySpan<char> text, int limit)
+    {
+        var length = Math.Min(text.Length, limit);
+        if (length > 0 && length < text.Length && char.IsHighSurrogate(text[length - 1]) && char.IsLowSurrogate(text[length])) length--;
+        return text[..length].ToString();
+    }
+
+    private static string PreviewTail(ReadOnlySpan<char> text, int limit)
+    {
+        var start = Math.Max(0, text.Length - limit);
+        if (start > 0 && start < text.Length && char.IsLowSurrogate(text[start]) && char.IsHighSurrogate(text[start - 1])) start++;
+        return text[start..].ToString();
     }
 }

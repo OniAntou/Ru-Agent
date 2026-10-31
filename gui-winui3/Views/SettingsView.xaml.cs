@@ -73,6 +73,7 @@ namespace RuApp.Views
             InitializeUpdates();
             InitDropdownOptions();
             InitTranscriptSizeOptions();
+            InitializeActivityStyleChoice();
             InitializeSettingsHoverEffects();
             ViewModel.PropertyChanged += OnViewModelPropertyChanged;
             ViewModel.ProviderPickerCommitted += OnProviderPickerCommitted;
@@ -95,8 +96,10 @@ namespace RuApp.Views
             DisposeOwnedProviderCatalogController();
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController is null;
+            var customEditor = new CustomProviderEditorViewModel(new ApiCustomProviderBackend(apiService));
+            ViewModel.AttachCustomEditor(customEditor);
+            CustomProviderEditor.Attach(customEditor);
             _ = ViewModel.AttachAsync(new ApiSettingsBackend(apiService), new ProviderCatalogSession(_providerCatalogController));
-            _ = LoadComputerUseAsync(apiService);
         }
 
         public Task RefreshProviderCatalogAsync() => ViewModel.RefreshCatalogAsync();
@@ -122,6 +125,10 @@ namespace RuApp.Views
                     break;
                 case nameof(SettingsViewModel.PresetChoice):
                     RefreshPresetUI();
+                    break;
+                case nameof(SettingsViewModel.IsCustomEditorOpen):
+                    if (ViewModel.IsCustomEditorOpen)
+                        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, CustomProviderEditor.FocusFirstField);
                     break;
                 case nameof(SettingsViewModel.IsProviderEditorOpen):
                     if (ViewModel.IsProviderEditorOpen) FocusProviderEditor();
@@ -244,7 +251,7 @@ namespace RuApp.Views
                 });
                 specimen.Children.Add(new TextBlock
                 {
-                    Text = TranscriptSizePickerProjection.LabelWithActivity(size),
+                    Text = TranscriptSizePickerProjection.Label(size),
                     FontFamily = uiFont,
                     FontSize = 11,
                     Foreground = muted,
@@ -258,7 +265,7 @@ namespace RuApp.Views
                     HorizontalContentAlignment = HorizontalAlignment.Center,
                 };
                 AutomationProperties.SetAutomationId(option, TranscriptSizePickerProjection.OptionAutomationId(size));
-                AutomationProperties.SetName(option, $"Conversation text size {TranscriptSizePickerProjection.LabelWithActivity(size)}");
+                AutomationProperties.SetName(option, $"Conversation text size {TranscriptSizePickerProjection.Label(size)}");
                 option.Click += OnTranscriptSizeOptionClick;
                 Grid.SetColumn(option, index);
                 TranscriptSizeOptionsPanel.Children.Add(option);

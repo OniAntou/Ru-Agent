@@ -8,7 +8,17 @@ public static class ProviderCatalogParser
 {
     private static readonly HashSet<string> Efforts = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-    public static IReadOnlyList<CatalogModel> Parse(string backend, string json)
+    public static IReadOnlyList<CatalogModel> Parse(string backend, string json) => Parse(backend, json, skipInvalidEntries: false);
+
+    /// <summary>
+    /// Parses a custom provider's discovery response (ADR 0034). Entries without a
+    /// usable id are skipped rather than failing the list, since the user picks
+    /// from the result instead of running against it; the envelope still has to
+    /// be a <c>data</c> array.
+    /// </summary>
+    public static IReadOnlyList<CatalogModel> ParseDiscovery(string json) => Parse("custom discovery", json, skipInvalidEntries: true);
+
+    private static IReadOnlyList<CatalogModel> Parse(string backend, string json, bool skipInvalidEntries)
     {
         try
         {
@@ -25,12 +35,21 @@ public static class ProviderCatalogParser
             foreach (var node in data)
             {
                 if (node is not JsonObject item || Text(item["id"]) is not { } id
-                    || id.Length is 0 or > 256 || id.Any(char.IsControl)) throw new JsonException();
+                    || id.Length is 0 or > 256 || id.Any(char.IsControl))
+                {
+                    if (skipInvalidEntries) continue;
+                    throw new JsonException();
+                }
                 if (!seen.Add(id)) continue;
                 int? contextLength = null;
                 if (item["context_length"] is JsonValue ctxVal && ctxVal.TryGetValue<int>(out var cl) && cl > 0)
                 {
                     contextLength = cl;
+                }
+                else if (item["max_model_len"] is JsonValue servedVal && servedVal.TryGetValue<int>(out var served) && served > 0)
+                {
+                    // vLLM publishes the length it actually serves under this name.
+                    contextLength = served;
                 }
                 else if (item["top_provider"] is JsonObject topProv && topProv["context_length"] is JsonValue topCtx && topCtx.TryGetValue<int>(out var tcl) && tcl > 0)
                 {

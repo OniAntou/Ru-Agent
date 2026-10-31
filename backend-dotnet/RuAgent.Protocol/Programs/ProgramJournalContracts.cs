@@ -10,4 +10,6 @@ public interface IProgramJournal
     Task<JsonObject?> ReadAsync(string runId, string key, CancellationToken ct);
     Task<ProgramJournalWrite> CreateAsync(string runId, string key, JsonObject value, CancellationToken ct);
     Task<bool> ReserveToolAsync(string runId, string key, CancellationToken ct);
+    /// <summary>Atomically reserves every tool slot for one batch or reserves none.</summary>
+    Task<bool> ReserveToolsAsync(string runId, string batchKey, int count, CancellationToken ct);
 }

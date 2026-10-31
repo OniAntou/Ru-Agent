@@ -245,7 +245,8 @@ public sealed class ChatModelPickerViewModelTests
             State = ReadyCatalog(backend);
         }
 
-        public Task<bool> RefreshAsync(bool force = false) => Task.FromResult(true);
+        public Task<bool> RefreshAsync(bool force = false, bool bypassManualThrottle = false) =>
+            Task.FromResult(true);
 
         public void Raise(ProviderCatalogState state) => StateChanged?.Invoke(this, state);
     }

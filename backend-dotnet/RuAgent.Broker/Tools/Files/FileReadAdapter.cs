@@ -205,7 +205,30 @@ public sealed partial class FileReadAdapter
             ["duration_ms"] = (int)sw.ElapsedMilliseconds,
             ["sha256"] = sha256,
         };
-        return new FileReadResult(FileReadOutputBudget.Fit(output), null);
+        var fitted = FileReadOutputBudget.Fit(output);
+        var fittedContent = fitted["content"]!.GetValue<string>();
+        // A model reads an empty result as a broken tool. Say what actually happened,
+        // and when content remains, say where to continue.
+        if (fitted["truncated"]!.GetValue<bool>())
+        {
+            fitted["notice"] = fittedContent.Length < content.Length
+                ? "content was truncated at the output budget; continue at next_offset."
+                : $"more content remains ({observedFileLength} bytes total); continue at next_offset.";
+        }
+        else if (validLength == 0 && observedFileLength == 0)
+        {
+            fitted["notice"] = "the file exists but is empty (0 bytes).";
+        }
+        else if (validLength == 0)
+        {
+            fitted["notice"] =
+                $"offset {offset} is at or past the end of the file ({observedFileLength} bytes); nothing to read there.";
+        }
+
+        // Token estimate, not a byte count: the model budgets in tokens, and a byte
+        // number it cannot convert invites blind paging.
+        fitted["estimated_tokens"] = (fittedContent.Length + 3) / 4;
+        return new FileReadResult(fitted, null);
     }
 
     private async ValueTask<FileReadResult> ReadImageAsync(

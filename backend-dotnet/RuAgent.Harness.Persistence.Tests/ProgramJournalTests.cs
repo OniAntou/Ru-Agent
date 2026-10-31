@@ -51,6 +51,23 @@ public sealed class ProgramJournalTests
         Assert.True(await agents.HasFamilyAsync(root.Run.RunId, default));
     }
 
+    [Fact]
+    public async Task BatchReservationIsAtomicAndIdempotentAgainstSharedFamilyBudget()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var root = fixture.NewRun(1, 1, 1);
+        await fixture.CreateEventStore().TryCreateRunAsync(root, default);
+        await SetRunningAsync(fixture, tools: 250);
+        IProgramJournal journal = fixture.PayloadStore;
+
+        Assert.False(await journal.ReserveToolsAsync(root.Run.RunId.Value, "program_batch", 8, default));
+        Assert.True(await journal.ReserveToolsAsync(root.Run.RunId.Value, "program_batch", 6, default));
+        Assert.True(await journal.ReserveToolsAsync(root.Run.RunId.Value, "program_batch", 6, default));
+        await Assert.ThrowsAsync<HarnessStoreException>(() => journal.ReserveToolsAsync(
+            root.Run.RunId.Value, "program_batch", 5, default));
+    }
+
     private static async Task SetRunningAsync(HarnessStoreTestFixture fixture, int tools = 0)
     {
         await using var connection = fixture.CreateRawConnection();

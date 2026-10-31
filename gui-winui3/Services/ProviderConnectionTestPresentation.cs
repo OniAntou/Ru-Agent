@@ -95,34 +95,49 @@ internal static class ProviderConnectionTestPresentation
     ///
     /// An unmapped code still names itself: it is the only handle a report has.
     /// </remarks>
+    private static readonly Dictionary<string, string> CatalogMessages =
+        new(StringComparer.Ordinal)
+        {
+            ["catalog_unauthorized"] =
+                "The provider rejected the API key. Check that it is correct, complete, and still active.",
+            ["catalog_rate_limited"] =
+                "The provider is rate-limiting this key. Wait a moment, then test again.",
+            ["catalog_http_error"] =
+                "The provider returned an error. Check the key and the selected model.",
+            ["catalog_timeout"] =
+                "The provider did not answer in time. Check your network connection and try again.",
+            ["catalog_too_large"] =
+                "The provider's model list was too large to read. Try a different provider.",
+            ["catalog_malformed"] =
+                "The provider answered in a shape Ru could not read. Check the endpoint URL.",
+            ["provider_not_active"] =
+                "No provider is selected. Choose one above, then test again.",
+            // The host folds a rejected credential into this code before it ever
+            // reaches the provider.
+            ["catalog_configuration_error"] =
+                "The provider could not be configured. Check that the API key is correct and complete.",
+            ["catalog_unavailable"] =
+                "Could not reach the provider. Check your network connection and try again.",
+        };
+
+    /// <summary>
+    /// The codes this surface phrases. Every one of them is also cataloged in
+    /// <see cref="AgentFailureCopy"/>, which owns the run-level wording; a parity test
+    /// fails when a new code is phrased here without being catalogsed there.
+    /// </summary>
+    internal static IReadOnlyCollection<string> PhrasedCodes => CatalogMessages.Keys;
+
     private static string MessageFor(string? errorCode)
     {
-        switch (errorCode?.Trim())
+        string code = errorCode?.Trim() ?? string.Empty;
+        if (CatalogMessages.TryGetValue(code, out var message))
         {
-            case "catalog_unauthorized":
-                return "The provider rejected the API key. Check that it is correct, complete, and still active.";
-            case "catalog_rate_limited":
-                return "The provider is rate-limiting this key. Wait a moment, then test again.";
-            case "catalog_http_error":
-                return "The provider returned an error. Check the key and the selected model.";
-            case "catalog_timeout":
-                return "The provider did not answer in time. Check your network connection and try again.";
-            case "catalog_too_large":
-                return "The provider's model list was too large to read. Try a different provider.";
-            case "catalog_malformed":
-                return "The provider answered in a shape Ru could not read. Check the endpoint URL.";
-            case "provider_not_active":
-                return "No provider is selected. Choose one above, then test again.";
-            case "catalog_configuration_error":
-                // The host folds a rejected credential into this code before it ever
-                // reaches the provider.
-                return "The provider could not be configured. Check that the API key is correct and complete.";
-            case "catalog_unavailable":
-            case null:
-            case "":
-                return "Could not reach the provider. Check your network connection and try again.";
-            default:
-                return $"The provider rejected the request ({errorCode}).";
+            return message;
         }
+
+        // An unmapped code still names itself: it is the only handle a report has.
+        return code.Length == 0
+            ? CatalogMessages["catalog_unavailable"]
+            : $"The provider rejected the request ({errorCode}).";
     }
 }

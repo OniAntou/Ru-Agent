@@ -7,32 +7,51 @@ public sealed partial class SkillCatalog
     private static readonly ConcurrentDictionary<string, CacheEntry> SharedCache = new(StringComparer.OrdinalIgnoreCase);
     private const long MaximumCacheBytes = 32 * 1024 * 1024;
 
-    private bool IsFresh(CacheEntry cache, IReadOnlyList<string> roots)
+    private bool IsFresh(CacheEntry cache, IReadOnlyList<string> roots, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (DateTimeOffset.UtcNow - cache.CreatedAt > TimeSpan.FromSeconds(30)
             || cache.RootStamps.Count != roots.Count) return false;
         for (var index = 0; index < roots.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             if (Stamp(roots[index], directory: true) != cache.RootStamps[index]) return false;
-        if (!DirectoryStamps(roots).OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+        }
+        if (!DirectoryStamps(roots, cancellationToken).OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
                 .SequenceEqual(cache.DirectoryStamps.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))) return false;
         foreach (var stamp in cache.FileStamps)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             if (Stamp(stamp.Key, directory: false) != stamp.Value) return false;
+        }
         return Stamp(_preferencesPath, directory: false) == cache.PreferencesStamp;
     }
 
-    private CacheEntry CreateCacheEntry(SkillCatalogResult result, IReadOnlyList<string> roots)
+    private CacheEntry CreateCacheEntry(SkillCatalogResult result, IReadOnlyList<string> roots,
+        CancellationToken cancellationToken)
     {
-        var directories = DirectoryStamps(roots);
+        var directories = DirectoryStamps(roots, cancellationToken);
         // Invalid and omitted definitions also invalidate discovery when repaired.
-        var files = directories.Keys.Where(path => !HasReparseAncestor(path))
-            .Select(path => Path.Combine(path, "SKILL.md"))
-            .ToDictionary(path => path, path => Stamp(path, directory: false), StringComparer.OrdinalIgnoreCase);
+        var files = new Dictionary<string, FileStamp>(StringComparer.OrdinalIgnoreCase);
+        foreach (var directory in directories.Keys)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (HasReparseAncestor(directory)) continue;
+            var path = Path.Combine(directory, "SKILL.md");
+            files[path] = Stamp(path, directory: false);
+        }
         var weight = 1024L + directories.Keys.Concat(files.Keys).Sum(path => 128L + path.Length * 2L)
             + result.Items.Sum(item => 512L + 2L * (item.Id.Length + item.Name.Length + item.Description.Length
                 + item.SourcePath.Length + item.ResourceBase.Length + item.Revision.Length
                 + (item.Compatibility?.Length ?? 0) + item.Requires.Sum(value => value.Length)))
             + result.Diagnostics.Sum(item => 128L + 2L * (item.SourcePath.Length + item.Code.Length));
-        return new(result, roots.Select(root => Stamp(root, directory: true)).ToArray(),
+        var rootStamps = new List<FileStamp>(roots.Count);
+        foreach (var root in roots)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            rootStamps.Add(Stamp(root, directory: true));
+        }
+        return new(result, rootStamps,
             directories, files, Stamp(_preferencesPath, directory: false), weight, DateTimeOffset.UtcNow);
     }
 
@@ -48,18 +67,19 @@ public sealed partial class SkillCatalog
         }
     }
 
-    private static IReadOnlyDictionary<string, FileStamp> DirectoryStamps(IReadOnlyList<string> roots)
+    private static IReadOnlyDictionary<string, FileStamp> DirectoryStamps(IReadOnlyList<string> roots,
+        CancellationToken cancellationToken)
     {
         var values = new Dictionary<string, FileStamp>(StringComparer.OrdinalIgnoreCase);
         foreach (var root in roots)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (HasReparseAncestor(root)) continue;
-            try
+            foreach (var directory in ScanRoot(root, cancellationToken).Directories)
             {
-                foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.TopDirectoryOnly).Take(MaxDirectoriesPerRoot + 1))
-                    values[directory] = Stamp(directory, directory: true);
+                cancellationToken.ThrowIfCancellationRequested();
+                values[directory] = Stamp(directory, directory: true);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
         }
         return values;
     }

@@ -89,6 +89,18 @@ rows and newer compactions in one read transaction; they do not read all covered
 ciphertexts. Images are queried only for active receipts; current Work State is
 refreshed separately. Restart, eviction or invalidation rebuilds from originals.
 
+Verification receipts retain the recorded tool-request time and identity. Context loads project declared checks from original receipts only. They do not compare checks with the workspace change journal, so there is no journal high-water lookup and no workspace-wide invalidation for verification (ADR 0039). The journal itself stays owned by workspace coordination ([ADR 0008](../adr/0008-shared-workspace-coordination.md)).
+
+Successful structured file-tool receipts trigger a path-specific observation
+before the tool returns to orchestration. This shares a persistence gate with
+watcher callbacks, which re-read the path against the latest acknowledged hash.
+A delayed notification for the same content cannot become a new post-check
+mutation. This observes results after Broker execution; it adds no execution
+adapter or permission decision to the Host and does not rescan the entire
+workspace on every step.
+
+Repair-family metadata and `supersedes` retirement are no longer part of verification (ADR 0039). A `supersedes` argument is accepted and ignored. A failed or pending check stays outstanding until the same identity passes. Original receipts remain in durable history, and the projection keeps the latest result for each identity.
+
 The cache admits at most eight runs, 32 MiB estimated weight per run and 64 MiB
 total, with two-minute access validity. Native Responses public-message metadata
 reserves its full envelope bound in that estimate, including annotations beside
@@ -109,6 +121,16 @@ bytes and call/result identities remain intact. Valid JSON objects/arrays are le
 existing structured output projector, preserving paging and cursor semantics.
 This stable projection happens before request budgeting or checkpoint generation;
 it does not rewrite previously admitted history merely because a result aged.
+
+For unstructured text only, up to six diagnostic-like lines from the omitted
+middle supplement the unchanged head/tail excerpt. Selection scans at most
+1 MiB of characters and retains at most 300 characters per line with Unicode-safe
+boundaries. It is explicitly labelled heuristic and incomplete; the original
+receipt and existing output cursors remain the source for full diagnostics.
+Structured JSON and small output are unchanged. These samples are context,
+not independent verification evidence.
+
+Outstanding-check guidance lists each outstanding declared check with its provider call ID, authority-recorded working directory, code and next action: read a pending background check's terminal execution until it exits, repair and rerun a failed check, or report the observed exit of an expected-exit mismatch without forcing the expected code. Inspecting logs does not satisfy a check. The text is bounded and never establishes equivalence between tests.
 
 ## Provider usage anchors
 
@@ -170,6 +192,10 @@ model history. Quoted markers cannot create private hints. Normal containment an
 instruction refresh checks apply before use; see [handoff](harness.md#session-run-handoff).
 
 ## Prompt ownership and verification
+
+An optional [project memory index](../operations/project-memory.md) supplies
+bounded workspace continuity across conversations. It is refreshed runtime data,
+separate from run-local checkpoints, instruction authority and verification.
 
 `RuAgent.Protocol/AgentToolPromptGuidance.cs` owns capability-specific workflow
 hints next to tool definitions. The Core composer emits only hints for advertised

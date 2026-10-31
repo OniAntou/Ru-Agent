@@ -67,7 +67,7 @@ Closing the GUI sends an authenticated `POST /host/shutdown` so the Host exits g
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../../backend-dotnet/public-route-contract.json):
-53 HTTP method/path pairs with no WebSocket route (28 `/agent/v1/*` and 25
+54 HTTP method/path pairs with no WebSocket route (29 `/agent/v1/*` and 25
 non-Agent routes); REST and SSE clients authenticate with the desktop secret
 (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE
@@ -106,13 +106,17 @@ and run handles.
 
 The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP.NET Core Public Host, the in-process model step, and LLM providers:
 - **Client preparation:** WinUI 3 `ImageAttachmentResizer` scales images exceeding 2048px on their longest dimension down proportionally and compresses them to JPEG (quality 0.85) or PNG (if alpha present). Up to 4 images can be attached per user turn.
-- **Backend validation & persistence:** `POST /agent/v1/runs` has a 26 MiB JSON request-body bound for encoded `image_attachments` data URLs, distinct from decoded image bounds. ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), base64 structure, decoded per-image size (<=4 MiB), total decoded size (<=20 MiB), and vision compatibility of the selected model. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
+- **Backend validation & persistence:** `POST /agent/v1/runs` has a 26 MiB JSON request-body bound for encoded `image_attachments` data URLs, distinct from decoded image bounds. ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), base64 structure, decoded per-image size (<=4 MiB), total decoded size (<=20 MiB), and retains valid images even when the selected model accepts only text. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
 - **Model step integration:** the typed `ModelGenerationRequest.Images` carries decrypted `UserImage` payloads. `ModelStepService` projects these into `ModelRequest.Images` (`IReadOnlyList<ModelImage>`).
 - **Provider projection:** Model adapters project images into provider-native payloads:
   - OpenAI Responses: `{"type": "input_image", "image_url": "data:image/..."}`
   - Anthropic Messages: `{"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}`
   - OpenAI-Compatible: `{"type": "image_url", "image_url": {"url": "data:image/..."}}`
-  Non-vision models fail closed with `vision_unsupported`.
+  Text-only pinned models receive a textual attachment notice instead of image wire parts, allowing the chat to continue and the model to explain that it cannot view the image. Stored images remain available to the authenticated client; MIME/size limits and payload-read failures remain enforced ([ADR 0040](../adr/0040-text-only-image-attachments.md)).
+  Follow-up context preserves image receipt facts for retained user messages,
+  including image-only turns. The prompt environment declares the pinned model's
+  image capability on every turn. Receipt facts contain no image bytes and do
+  not alter the user's displayed message; pruned history is not resurrected.
 - **Workspace images through `read`:** the agent can also look at an image file in the workspace ([ADR 0026](../adr/0026-read-returns-workspace-images.md)). The run's pinned selection records whether its model accepts image input; the in-process gateway sends that decision on the `tool.execute` envelope, and the Broker returns the image beside small JSON metadata or fails with `image_unsupported_by_model`. The pipeline stores it as a model-only, opaque, encrypted `ToolImage` payload (kind 18) whose id is derived from the tool result's payload id, so no event or context row names it. `SqliteModelContextSource` attaches the newest four to their tool results; older results carry an omitted note. See [Providers](providers.md#tool-images) for the per-protocol projection.
 
 
@@ -138,7 +142,7 @@ _Avoid_: Python backend, upstream server
 ## Public Contract
 
 The stable authenticated surface of HTTP method/path pairs with no WebSocket
-route (25 non-Agent plus 28 additive `/agent/v1/*`; Agent v2 is
+route (25 non-Agent plus 29 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC
@@ -156,6 +160,36 @@ private transport remains: tool execution is in process as well (ADR-0012,
 ADR-0014).
 _Avoid_: Runtime HTTP relay
 
+## Approval flow
+
+`AgentApprovalsService` orchestrates a decision and derives no policy. It reads the command
+(`allow_once`, `allow_session_directory`, `allow_always` or `deny`), then:
+
+1. Checks the approval against durable state: the run exists and is `WaitingApproval`, and the
+   approval id is the run's latest persisted `approval.requested` and is unexpired. Otherwise the reply
+   is `409 approval_stale`. The in-process first-writer ledger only guards concurrent HTTP retries.
+2. For an allow with a configured execution authority, probes the Broker without consuming the
+   approval. An approval the Broker no longer holds as pending for the run returns `409 approval_stale`,
+   and nothing is committed. `allow_always` on a tool class the Broker does not remember returns
+   `400 invalid_approval_command`, also before any commit. A deny skips the probe, so a run whose Broker
+   approval has expired can still be ended.
+3. Commits the durable `approval_resolved` transition.
+4. Asks the Broker to consume the approval. The command follows the pending kind: an outside folder
+   always becomes `allow_session_directory`, otherwise `allow_always` or `allow_once`. The Broker
+   returns the authorization token and the remember plan from that same call. Without a token the reply
+   is `502 approval_authorization_failed`, and the committed resolution stands.
+5. Only after authorization: an `allow_always` with a durable matcher saves a project-scope allow rule.
+   A failed save leaves `rule_saved: false` and the session matcher is still remembered. The Host
+   remembers the saved durable matcher, or else the plan's session matcher, in the in-process session
+   ledger. An outside-folder approval writes no ledger entry.
+
+With no configured execution authority, an allow returns `503 broker_gateway_unavailable` before any commit. `allow_session_directory` on an approval that is not for an outside folder returns `400 invalid_approval_command`, also before any commit.
+
+The reply carries `authorization_token` (60 seconds), a `matcher_preview` of the matcher actually
+remembered, `rule_saved`, `reusable_rule_not_saved` and `rule_id`. The matchers come from the Broker
+([Remembered Approval](broker.md#remembered-approval)). The Host copies them into its own matcher type
+and does not parse tool arguments.
+
 ## Run Event Feed
 
 One client-side SSE subscription path owns frame dispatch and bounded reconnect
@@ -172,7 +206,7 @@ most 2048px on client, validated against strict MIME and size bounds (max 4
 images, 4 MB decoded per image, 20 MB total decoded), persisted atomically in
 SQLite `agent_payloads` under kind `UserImage` (value 11) with dual audience
 `AuthenticatedClient | ModelContext`, and projected to vision-capable model
-providers through the typed model step and `ModelRequest.Images`.
+providers through the typed model step and `ModelRequest.Images`. Text-only models receive an explicit unavailable-image notice while the original payload remains stored.
 _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 
 ## Protected User Data

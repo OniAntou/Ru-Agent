@@ -41,6 +41,9 @@ public sealed partial class ModelStepService
     private readonly SemaphoreSlim _providerGate;
     private readonly RequestTokenAnchor _tokenAnchors = new();
 
+    private static readonly IReadOnlyDictionary<string, string> NoProviderHeaders =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Bounds how many provider generations may be in flight at once.
     /// </summary>
@@ -147,23 +150,29 @@ public sealed partial class ModelStepService
             var requestTurns = nativeToolCalling
                 ? request.ModelMessages
                 : ProjectTextTurns(request.ModelMessages, settings);
+            var userImages = UserImageInputProjection.Project(
+                request.Prompt, request.Images, providerBootstrap.AcceptsImageInput);
+            var providerHeaders = BuildProviderHeaders(providerBootstrap, request.SessionId);
             modelRequest = new ModelRequest(
                 providerBootstrap.Model,
                 snapshot.Text,
-                request.Prompt,
+                userImages.Prompt,
                 requestTurns,
                 BuildRequestSettings(settings, providerBootstrap.RequestOptions),
                 providerBootstrap.Endpoint,
                 providerBootstrap.Credential,
                 providerBootstrap.MaximumOutputTokens,
-                request.Images,
+                userImages.Images,
                 request.ResponsesInputItems,
                 nativeToolCalling,
                 request.AnthropicMessages,
                 providerBootstrap.UseMaxCompletionTokens,
                 runtimeContext: request.PromptInHistory ? null : snapshot.RuntimeContext,
-                promptInHistory: request.PromptInHistory,
-                replayChatReasoning: nativeToolCalling && providerBootstrap.ReplayChatReasoning);
+                promptInHistory: request.PromptInHistory
+                    && (request.Images.Count == 0 || providerBootstrap.AcceptsImageInput),
+                replayChatReasoning: nativeToolCalling && providerBootstrap.ReplayChatReasoning,
+                acceptsImageInput: providerBootstrap.AcceptsImageInput,
+                providerHeaders: providerHeaders);
         }
         catch (ModelStepException)
         {
@@ -208,6 +217,27 @@ public sealed partial class ModelStepService
 
         return new PreparedModelStep(
             request, modelRequest, snapshot, settings, provider, estimatedInputTokens, maxPromptTokens, contextScope);
+    }
+
+    /// <summary>
+    /// Headers the pinned provider requires on every generation. A provider that
+    /// routes by conversation refuses a request without an id, so a missing one
+    /// fails closed here with a bounded code instead of becoming a provider error.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> BuildProviderHeaders(
+        ProviderBootstrapData bootstrap, SessionId? sessionId)
+    {
+        if (bootstrap.SessionHeaderName is not { } headerName)
+        {
+            return NoProviderHeaders;
+        }
+
+        if (sessionId?.Value is not { } value || string.IsNullOrWhiteSpace(value))
+        {
+            throw new ModelStepException("provider_session_missing", retryable: false);
+        }
+
+        return ProviderWireIdentity.ForSession(headerName, value);
     }
 
     public async Task<ModelStepServiceResult> RunPreparedAsync(

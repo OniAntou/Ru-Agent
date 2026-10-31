@@ -14,6 +14,8 @@ def grader_command(task, verifier, candidate):
     if task.language == "python":
         return [sys.executable, "-I", str(verifier / "grade.py")], environment
     if task.language == "typescript":
+        if task.suite == "repository" and shutil.which("tsc") is None:
+            return None, {"status": "unavailable", "error": "typescript_compiler_unavailable"}
         return ["node", "--experimental-strip-types", str(verifier / "grade.ts")], environment
     command = [
         "dotnet", "build", str(verifier / "Grader.csproj"), "-c", "Release", "--nologo", "--verbosity", "quiet",
@@ -56,6 +58,8 @@ def grade(task, workspace):
         if execution["status"] != "completed":
             result["status"] = execution["status"]
             result["reward"] = None if execution["status"] == "unavailable" else 0
+            if execution.get("error"):
+                result["error"] = execution["error"]
             return result
         if command is None:
             result["status"] = "build_failed"

@@ -219,7 +219,13 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
         try
         {
             var providers = await backend.GetModelsDevAsync();
-            await grouped.SetModelsDevProvidersAsync(providers.Select(entry => new ModelsDevEntry(entry.Id, entry.Name)).ToArray());
+            // Named custom providers (ADR 0034) come first, under the names the user gave them.
+            var custom = CurrentSettings?.CustomProviders?
+                .Select(provider => new ModelsDevEntry(CustomProviderPolicy.Backend(provider.Id), provider.DisplayName))
+                ?? [];
+            await grouped.SetModelsDevProvidersAsync(custom
+                .Concat(providers.Select(entry => new ModelsDevEntry(entry.Id, entry.Name)))
+                .ToArray());
         }
         catch (Exception ex)
         {

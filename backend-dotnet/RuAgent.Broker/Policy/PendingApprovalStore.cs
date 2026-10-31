@@ -121,12 +121,19 @@ public sealed record V2ApprovalBinding
 }
 
 public sealed record V2ApprovalResolution(
-    V2ApprovalOutcome Outcome);
+    V2ApprovalOutcome Outcome,
+    V2PendingApproval? Consumed = null);
 
+/// <summary>
+/// A pending v2 approval. <see cref="Context"/> and <see cref="AskSafeCode"/> are the Broker's own
+/// evaluation of the call; the approval's remember plan is built from them, never from re-parsed arguments.
+/// </summary>
 public sealed record V2PendingApproval(
     string ApprovalId,
     V2ApprovalBinding Binding,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    PolicyContext? Context = null,
+    string? AskSafeCode = null);
 
 public sealed class PendingApprovalStore
 {
@@ -247,7 +254,11 @@ public sealed class PendingApprovalStore
 
     private readonly ConcurrentDictionary<string, V2PendingApproval> _v2 = new(StringComparer.Ordinal);
 
-    public string IssueV2(V2ApprovalBinding binding, DateTimeOffset expiresAt)
+    public string IssueV2(
+        V2ApprovalBinding binding,
+        DateTimeOffset expiresAt,
+        PolicyContext? context = null,
+        string? askSafeCode = null)
     {
         ArgumentNullException.ThrowIfNull(binding);
         if (expiresAt <= DateTimeOffset.UtcNow)
@@ -257,7 +268,7 @@ public sealed class PendingApprovalStore
 
         var approvalId = $"apr_{Guid.NewGuid():N}";
         if (approvalId.Length > 128) approvalId = approvalId[..128];
-        var pending = new V2PendingApproval(approvalId, binding, expiresAt);
+        var pending = new V2PendingApproval(approvalId, binding, expiresAt, context, askSafeCode);
         DropExpiredApprovals();
         _v2[approvalId] = pending;
         return approvalId;
@@ -311,8 +322,9 @@ public sealed class PendingApprovalStore
         }
 
         // Only one-time tokens and session-directory grants exist. The Broker
-        // never persists policy rules.
-        return new V2ApprovalResolution(V2ApprovalOutcome.ConsumedApproved);
+        // never persists policy rules. The consumed entry carries the context the
+        // remember plan of this approval is built from.
+        return new V2ApprovalResolution(V2ApprovalOutcome.ConsumedApproved, candidate);
     }
 
     /// <summary>

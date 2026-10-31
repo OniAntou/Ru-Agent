@@ -19,6 +19,7 @@ public sealed class ChatDiagnosticAdapterTests
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
         var tgWriter = new TgTranscriptWriter(app, window.Transcript);
+        RunNativeFrame(app, window);
         // An inactive native bridge must not swallow line-adapter diagnostics.
         app.Dispose();
 
@@ -39,7 +40,25 @@ public sealed class ChatDiagnosticAdapterTests
         var tgWriter = new TgTranscriptWriter(app, window.Transcript);
         var fallback = new StringWriter();
 
-        Assert.Same(tgWriter, AgentCommands.ResolveDiagnosticWriter(tgMode: true, tgWriter, fallback));
-        Assert.Same(fallback, AgentCommands.ResolveDiagnosticWriter(tgMode: true, tgWriter: null, fallback));
+        app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
+        {
+            Assert.Same(tgWriter, AgentCommands.ResolveDiagnosticWriter(tgMode: true, tgWriter, fallback));
+            Assert.Same(fallback, AgentCommands.ResolveDiagnosticWriter(tgMode: true, tgWriter: null, fallback));
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    private static void RunNativeFrame(IApplication app, TgChatWindow window)
+    {
+        // Immediate disposal after Init can race the Windows ANSI input startup.
+        // Match the native lifecycle before testing an inactive bridge.
+        app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
+        {
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
     }
 }

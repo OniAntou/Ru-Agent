@@ -57,6 +57,7 @@ public sealed class ChatShellUiContractTests
     [InlineData("diagnostics", ShellDestination.Diagnostics)]
     [InlineData("policy", ShellDestination.Policy)]
     [InlineData("audit", ShellDestination.Audit)]
+    [InlineData("customize", ShellDestination.Customize)]
     public void Route_policy_maps_tags_to_destinations(string? tag, ShellDestination expected)
     {
         Assert.Equal(expected, ShellRoutePolicy.Resolve(tag));
@@ -70,6 +71,7 @@ public sealed class ChatShellUiContractTests
         Assert.False(ShellRoutePolicy.KeepsCatalogPolling("diagnostics"));
         Assert.False(ShellRoutePolicy.KeepsCatalogPolling("policy"));
         Assert.False(ShellRoutePolicy.KeepsCatalogPolling("audit"));
+        Assert.False(ShellRoutePolicy.KeepsCatalogPolling("customize"));
     }
 
     [Fact]

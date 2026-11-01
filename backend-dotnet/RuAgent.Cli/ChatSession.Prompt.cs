@@ -518,6 +518,14 @@ public sealed partial class AgentCommands
                 return true;
             }
 
+            if (slashCmd == "/status" && arg is not null && !arg.Equals("overview", StringComparison.OrdinalIgnoreCase))
+            {
+                var section = arg.ToLowerInvariant();
+                if (section is "context" or "usage") await ShowUsageReportAsync(section, cancellationToken).ConfigureAwait(false);
+                else await WriteDiagnosticLineAsync(_err, "invalid_status_section: choose overview, context, or usage.").ConfigureAwait(false);
+                return true;
+            }
+
             if (slashCmd == "/subagents")
             {
                 await ShowSubagentsAsync(arg, runSession.ActiveRunId ?? runSession.ParkedRunId ?? runSession.FollowableRunId,
@@ -581,6 +589,15 @@ public sealed partial class AgentCommands
         async Task<bool> HandleSlashLineWithDocumentAsync(string slashLine, CancellationToken cancellationToken)
         {
             var command = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)[0];
+            if (tgMode && !cmd.Json && slashLine.Trim().Equals("/status", StringComparison.OrdinalIgnoreCase))
+            {
+                var section = await ChooseStatusSectionAsync(cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (section is null) return true;
+                if (section is not ("overview" or "context" or "usage"))
+                    throw new InvalidOperationException("Invalid status selection.");
+                slashLine = "/status " + section;
+            }
             if (!tgMode || !Tui.ChatCommandCatalog.IsReportCommand(command))
             {
                 return await HandleSlashLineAsync(slashLine, cancellationToken).ConfigureAwait(false);

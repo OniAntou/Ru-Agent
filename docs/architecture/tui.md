@@ -278,9 +278,63 @@ and rollback at run creation. The command does not mutate a live run or confer t
 authority. Busy/queued transitions and retained runs block changes; pending attachments
 remain with the draft. Noninteractive Full Access selection is refused.
 
+The same picker includes **Remembered rules**, also reachable with `/preset rules`.
+This branch leaves preset intent and Full Access confirmation unchanged. It reads
+global rules and current-workspace project rules through the existing policy API.
+Project identity comes from authenticated, paged session metadata matched against
+the canonical workspace path; no session/run is created for discovery. Reads are
+bounded to ten metadata pages and 1,000 rules. Missing, ambiguous or incomplete
+workspace metadata is an explicit project-scope notice, not an empty-rule claim.
+
+`ChatApprovalRulesWorkflow` owns list/details/removal navigation through the native
+modal request gate. Ask/Deny rules are read-only: deleting those could widen access.
+Removing an Allow rule defaults to Keep, requires explicit confirmation, rechecks
+the workspace identity and exact scoped rule, sends one interactive DELETE, and
+rereads that scope before reporting success. Esc/cancellation never confirms and a
+lost acknowledgement is never retried automatically. Removing a durable rule does
+not clear other grants, change the selected preset or rewrite existing run snapshots.
+Busy/queued/retained-run guards remain in force. Line/JSON adapters list only;
+JSON emits a `remembered_rules` record and keeps diagnostics off stdout. Policy list
+responses without an `items` array fail with `invalid_response` instead of looking empty.
+
 Terminal.Gui status/help reports are emitted without the legacy inner border, using
 the available document label width. Only the native modal supplies a frame; retained
 transcript rows remain unboxed and can reflow without splitting border columns.
+
+### Context and token reports
+
+Native `/status` selects Overview, Context or Session usage; explicit
+`/status overview|context|usage` bypasses the picker. Line/JSON keeps the bare
+overview behavior. Sections remain read-only local commands: no new conversation,
+run, permission update or model request is created. The existing queue/paused
+controls and document modal request gate retain ownership of input and attachments.
+Reports follow the existing queue and take a snapshot at command execution; they
+do not add a parallel control operation or a live-refresh timer.
+
+`ChatTokenUsage` parses optional provider counts and normalizes inclusive cached
+input into disjoint billing buckets. Missing counts/accounting/rates remain unknown,
+including partial pricing; zero requires an explicit measured zero. `ChatUsageReader`
+binds every run and durable event to the selected conversation, de-duplicates payload
+references and verifies event order. Replays use `live=0`; limits are eight recent
+listed runs, 8,192 events, 256 distinct usage reports and 8,388,608 UTF-16 code units of replay/payload text
+per run. The section read has a 20-second deadline; optional price lookup is limited
+to two seconds per run. No history/payload read is triggered by typing or drawing.
+
+Context reads only the latest run's newest usage payload after its last compaction,
+without reading historical billing payloads or prices. System/tools/messages are
+request-size estimates, distinct from provider prompt tokens and cumulative billing.
+A retained run owns its published window/reserve; next-turn catalog selection cannot
+replace them. A compaction with no newer usage keeps the reading unknown. A live
+prepared-request estimate may fill an otherwise unreported matching run; compaction
+and usage frames clear it. The unsent draft estimate uses the GUI's rough 3.5
+characters-per-token ratio plus the Protocol image allowance and is labelled separately.
+
+Session usage sums step billing while peak is the largest individual reported step.
+The display states the recent-run scope, incomplete fields and priced coverage.
+Prices use recorded provider/model identities with current catalog rates, never
+the currently selected next-turn model. JSON sections emit `context` or
+`session_usage` records, with diagnostics on stderr. `ChatUsagePresentation` builds
+plain document rows; the existing modal performs wrapping, scrolling and resize.
 
 Document modal bounds follow the wrapped body height plus card chrome, capped by
 the available window height. The wrap cache is shared by measurement and drawing;

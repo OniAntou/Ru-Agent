@@ -74,7 +74,7 @@ public sealed class ChatPresetSelectionTests
             if (count == 1)
             {
                 Assert.Equal("standard", list.Current.Value);
-                Assert.Equal(["plan", "standard", "full_access"], list.Items.Select(item => item.Value));
+                Assert.Equal(["plan", "standard", "full_access", "rules"], list.Items.Select(item => item.Value));
                 return Task.FromResult<string?>("full_access");
             }
             Assert.Equal("keep", list.Current.Value);
@@ -104,6 +104,21 @@ public sealed class ChatPresetSelectionTests
         Assert.StartsWith("preset_change_blocked", result.Error);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("rules")]
+    [InlineData(" RULES ")]
+    public async Task Rules_selection_never_changes_preset_or_confirms_full_access(string? argument)
+    {
+        var current = Current with { Preset = "full_access", ConfirmFullAccess = false };
+        var result = await ChatPresetSelection.SelectAsync(current, argument, false,
+            (list, _) => { Assert.Equal("full_access", list.Current.Value); return Task.FromResult<string?>("rules"); }, default);
+        Assert.Null(result.Error);
+        Assert.Null(result.Command);
+        Assert.True(result.ManageRules);
+        Assert.False(current.ConfirmFullAccess);
+    }
+
     [Fact]
     public async Task Cancelled_selection_does_not_commit_full_access()
     {
@@ -116,13 +131,15 @@ public sealed class ChatPresetSelectionTests
             }, cts.Token));
     }
 
-    [Fact]
-    public void Preset_command_keeps_pending_images_outside_its_snapshot()
+    [Theory]
+    [InlineData("/preset plan")]
+    [InlineData("/preset rules")]
+    public void Preset_command_keeps_pending_images_outside_its_snapshot(string input)
     {
         using var state = new ChatSubmissionState();
         var image = new RuAgent.Cli.Images.CliImageAttachment("image.png", "image/png", "aW1hZ2U=", 1, 1, 5);
         state.Add(image);
-        var command = state.CreateSnapshot("/preset plan", "session", "C:\\workspace", "standard", "provider", "model", false);
+        var command = state.CreateSnapshot(input, "session", "C:\\workspace", "standard", "provider", "model", false);
         Assert.NotNull(command);
         Assert.Empty(command.Images);
         state.Admit(command);

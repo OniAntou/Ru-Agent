@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Add Overview / Context / Session usage under `/status`, with direct
+  `/status overview|context|usage` forms. Show latest-request context partitions,
+  pinned window/reserve and a separate draft estimate; show recent-run input/output,
+  cache, peak and provider/model-specific estimated cost with explicit coverage.
+  Avoid double-counting inclusive cache tokens; missing data stays unknown and
+  compacted context is not restored from an older report. Read usage only on demand,
+  with bounded finite replay and cancellation; retain line/JSON overview behavior.
+
+- **feat(tui)**: Manage remembered approvals inside `/preset` → **Remembered rules**
+  or `/preset rules`. View global/current-workspace matchers and remove saved Allow
+  rules with a Keep-default confirmation; Esc cancels. Ask/Deny rules stay read-only,
+  project-scope lookup failures are explicit, and removal never changes the preset
+  or clears other grants. Revalidate before deletion and verify absence afterward;
+  uncertain deletion is not retried. Line/JSON mode lists only. Malformed policy-list
+  envelopes now return `invalid_response` instead of an empty list.
+
 - **refactor(tui)**: Remove `/skills` and `/skill` from terminal chat handling,
   suggestions and help. Keep ordinary skill requests in prompts and existing
   Host skill discovery/invocation rules.

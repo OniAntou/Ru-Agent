@@ -66,6 +66,8 @@ public sealed partial class AgentCommands
                             || usageEnvelope.InputTokens is not null
                             || usageEnvelope.OutputTokens is not null))
                     {
+                        if (usageEnvelope.EventType == "model.usage_recorded" && preparedContext?.Run == usageEnvelope.RunId)
+                            preparedContext = null;
                         usage.Apply(usageEnvelope.InputTokens, usageEnvelope.OutputTokens);
                         lastTotalTokens = usageEnvelope.TotalTokens
                             ?? ((usageEnvelope.InputTokens ?? 0) + (usageEnvelope.OutputTokens ?? 0));
@@ -87,12 +89,14 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>Shows the measured request size of the step about to run before its first token arrives.</summary>
-        void ApplyUsageEstimate(SseFrame frame)
+        void ApplyUsageEstimate(SseFrame frame, string runId)
         {
             if (frame.IsTransient
                 && AgentUsageEstimateModel.TryParse(frame, out var usageEstimate)
                 && usageEstimate is not null)
             {
+                if (preparedContext?.Run != runId || usageEstimate.TransientSequence > preparedContext.Value.Estimate.TransientSequence)
+                    preparedContext = (runId, usageEstimate);
                 // The step's measured request size arrives before its first token,
                 // so the meter shows the context the model is about to read instead
                 // of waiting for the usage report at step end.
@@ -144,6 +148,7 @@ public sealed partial class AgentCommands
                     var durableEvent = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
                     if (durableEvent?.EventType == "context.compacted")
                     {
+                        preparedContext = null;
                         usage.ResetContextReading();
                         if (tgMode)
                         {

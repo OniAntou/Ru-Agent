@@ -335,7 +335,7 @@ public sealed partial class AgentCommands
 
                     RecordAssistantStepPayload(frame);
                     ApplyUsageFrame(frame);
-                    ApplyUsageEstimate(frame);
+                    ApplyUsageEstimate(frame, runId);
                     await ApplySubagentChangeAsync(frame).ConfigureAwait(false);
                     ApplyCompactionFrame(frame);
                 }

@@ -13,6 +13,9 @@ internal static class SidebarSessionPresenter
     internal static string ResolveNewChatWorkspace(string? selectedWorkspaceKey) =>
         selectedWorkspaceKey ?? SidebarSessionOrganization.RecentsKey;
 
+    internal static bool CanCreateChatInGroup(string key, string? path) =>
+        path is not null || key == SidebarSessionOrganization.RecentsKey;
+
     internal static bool NextExpandedState(bool? boundIsExpanded, bool storedDefault) =>
         !(boundIsExpanded ?? storedDefault);
 

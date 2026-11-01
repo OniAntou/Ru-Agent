@@ -21,6 +21,7 @@ using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
+[Collection(nameof(TerminalProcessHeavyCollection))]
 public sealed class SubagentSchedulingTests
 {
     [Theory]
@@ -106,7 +107,21 @@ public sealed class SubagentSchedulingTests
             var driving = loop.StepOnceAsync(lifetime.Token);
             try
             {
-                await blocked.AllStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                try
+                {
+                    await blocked.AllStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (TimeoutException)
+                {
+                    var states = new List<string>();
+                    foreach (var childId in childIds)
+                    {
+                        var child = await storage.EventStore.GetRunAsync(childId, default);
+                        states.Add($"{child?.State}:{child?.TerminalErrorCode ?? "none"}");
+                    }
+                    throw new Xunit.Sdk.XunitException(
+                        $"Only {blocked.Started}/4 child model steps started before the deadline; states: {string.Join(", ", states)}");
+                }
                 foreach (var parentId in parentIds) await loop.CancelAndRemoveRunAsync(parentId, default);
                 await driving.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(4, blocked.Canceled);
@@ -156,6 +171,7 @@ public sealed class SubagentSchedulingTests
         private int _started;
         private int _canceled;
         public TaskCompletionSource AllStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Started => Volatile.Read(ref _started);
         public int Canceled => Volatile.Read(ref _canceled);
         public async Task<ModelStepResult> RunStepAsync(ModelStepRequest request,
             Func<AssistantDelta, ValueTask> publishDelta, CancellationToken ct)

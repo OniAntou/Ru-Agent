@@ -133,7 +133,7 @@ public static partial class BusinessEndpoints
                 message_count = value.MessageCount, parent_session_id = value.ParentSessionId,
                 forked_from_message_id = value.ForkedFromMessageId, workspace_id = value.WorkspaceId,
                 workspace_label = value.WorkspaceLabel, workspace_path = value.WorkspacePath,
-                workspace_kind = scratchWorkspaces.IsScratchPath(value.WorkspacePath) ? "scratch" : "project",
+                workspace_kind = scratchWorkspaces.OwnsCanonicalWorkspace(value.WorkspacePath, value.Id) ? "scratch" : "project",
                 client_source = value.ClientSource, is_agent_running = running.Contains(value.Id),
             };
         }).ToArray();

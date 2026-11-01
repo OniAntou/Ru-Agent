@@ -325,7 +325,7 @@ _Avoid_: repository-stored authority
 
 
 **Scratch Workspace**:
-A Ru-owned workspace under the Ru data root for a chat that never chose a project folder. It is ordinary workspace territory for trust, policy and tools; it differs only in origin, display (one Scratch group) and lifecycle (deleted with its session, reclaimed by a startup sweeper).
+A Ru-owned workspace under the Ru data root for a chat that never chose a project folder. Ownership requires a matching session marker and canonical path to the non-reparse session directory; path shape alone does not establish ownership. It is ordinary workspace territory for trust, policy and tools; the GUI places its chats in Recents unless the user explicitly changes sidebar placement. It is deleted after successful or confirmed-absent session deletion and reclaimed by a startup sweeper.
 Implementation: [host](docs/architecture/host.md), [ADR 0041](docs/adr/0041-scratch-workspaces.md).
 _Avoid_: install directory or drive root as a default workspace, project-derived authority
 

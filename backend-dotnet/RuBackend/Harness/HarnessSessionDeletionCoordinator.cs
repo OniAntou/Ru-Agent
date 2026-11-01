@@ -121,6 +121,11 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
             artifactsDeleted = false;
         }
         var primary = await _sessions.DeleteWithOutcomeAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (primary == SessionDeleteOutcome.Failed)
+        {
+            return HarnessSessionDeletionOutcome.SessionDeleteFailed;
+        }
+
         // Session memory dies with the session: a deleted session starts from
         // zero approvals even if its id were ever observed again.
         SessionApprovalLedger.ClearSession(sessionId);
@@ -141,7 +146,6 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
             }
         }
 
-        if (primary == SessionDeleteOutcome.Failed) return HarnessSessionDeletionOutcome.SessionDeleteFailed;
         if (!artifactsDeleted || !scratchDeleted) return HarnessSessionDeletionOutcome.ArtifactsPending;
         // A retry can finish retained harness cleanup after the conversation
         // record was deleted by the first pass. Report that completed work.

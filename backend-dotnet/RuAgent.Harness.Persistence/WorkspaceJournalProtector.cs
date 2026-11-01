@@ -11,7 +11,24 @@ public sealed record EncryptedWorkspaceJournal(
     ReadOnlyMemory<byte> Ciphertext,
     ReadOnlyMemory<byte> AuthenticationTag);
 
-public sealed class WorkspaceJournalProtector
+public interface IWorkspaceJournalProtector
+{
+    ValueTask<EncryptedWorkspaceJournal> EncryptAsync(
+        WorkspaceId workspaceId,
+        string changeId,
+        string normalizedPath,
+        ReadOnlyMemory<byte> plaintext,
+        CancellationToken cancellationToken);
+
+    ValueTask<ReadOnlyMemory<byte>> DecryptAsync(
+        WorkspaceId workspaceId,
+        string changeId,
+        string normalizedPath,
+        EncryptedWorkspaceJournal encrypted,
+        CancellationToken cancellationToken);
+}
+
+public sealed class WorkspaceJournalProtector : IWorkspaceJournalProtector
 {
     public const int CurrentProtectionVersion = 1;
     public const int MaximumJournalBytes = 16 * 1024 * 1024;

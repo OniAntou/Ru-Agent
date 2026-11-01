@@ -442,7 +442,8 @@ namespace RuApp.Views
             _requestedWorkspace = string.IsNullOrWhiteSpace(workspacePath) ? null : workspacePath.Trim();
         }
 
-        public async Task OpenSessionAsync(string sessionId, string title)       {
+        public async Task OpenSessionAsync(string sessionId, string title, bool isNewSession = false)
+        {
             // Visible to the catch below: a superseded load must not paint its
             // failure into the session that replaced it.
             long generation = -1;
@@ -462,17 +463,17 @@ namespace RuApp.Views
                 _isLoadingEarlierHistory = false;
                 _historyPageCursor.Reset(sessionId, generation);
                 _historyReplay = Array.Empty<SessionRunReplay>();
+                DeferSidePanelLayout();
                 UpdateLoadEarlierHistoryButton();
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 UpdateChatHeaderTitle();
                 _agentWorkspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
-                    ?? _agentWorkspace;
+                    ?? (isNewSession ? string.Empty : _agentWorkspace);
                 ResetAgentState(preserveTranscript: true);
                 _sidePanelRunRunning = null;
                 // The outgoing rows stay on screen until the history arrives; laying
                 // the incoming session's side panel out over them would reflow them
                 // to its width first, so the switch would paint twice.
-                DeferSidePanelLayout();
                 UpdateSidePanel(false);
                 // A preset belongs to the session it was set for. The send path
                 // pushes the composer's preset onto whichever session is open,
@@ -489,6 +490,14 @@ namespace RuApp.Views
                 // Bulk load: one reset notification for the whole transcript
                 // instead of one add notification per row.
                 var opened = new List<ChatMessageItem>();
+                if (isNewSession)
+                {
+                    if (!IsCurrentOpen(generation)) return;
+                    // The create response already proves this session is empty. Paint
+                    // it in this dispatcher turn instead of replaying history/usage I/O.
+                    PresentNewSession();
+                    return;
+                }
                 // Every await below is a chance for another switch to take over. Opening a
                 // session out of order used to paint its history under the newer session's
                 // title, and the backend's active session (activation is a POST) could end
@@ -610,6 +619,16 @@ namespace RuApp.Views
                     UpdateContextUsage(force: true);
                 }
             }
+        }
+
+        /// <summary>Commits the known-empty transcript and its layout without history I/O.</summary>
+        private void PresentNewSession()
+        {
+            ClearAgentActivities();
+            ClearTodoPanel();
+            JumpToLatestForNewTurn();
+            Messages.ReplaceAll(Array.Empty<ChatMessageItem>());
+            EndSidePanelLayoutDeferral();
         }
 
         /// <summary>

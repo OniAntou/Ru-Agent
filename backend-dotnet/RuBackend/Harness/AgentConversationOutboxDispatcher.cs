@@ -77,8 +77,20 @@ public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
             throw new InvalidOperationException("runtime_root_unknown");
         }
 
-        var coordinator = await _factory.CreateAsync(workspaceRoot, policySnapshot, runId, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        AgentRunCoordinator coordinator;
+        try
+        {
+            coordinator = await _factory.CreateAsync(workspaceRoot, policySnapshot, runId, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException && _events is not null)
+        {
+            // A provider/gateway construction error cannot be repaired by asking that same
+            // factory to acknowledge the outbox forever. Settle through persistence alone.
+            await new AgentRunFailureTransition(_events).FailAsync(runId,
+                AgentRuntimeLoopService.NormalizeDriveFailureCode(error), cancellationToken).ConfigureAwait(false);
+            return;
+        }
         _ = await coordinator.AcknowledgeHistoryAsync(
                 runId,
                 historyWaitKind,
@@ -91,6 +103,13 @@ public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
         string errorCode,
         CancellationToken cancellationToken)
     {
+        if (_events is not null)
+        {
+            await new AgentRunFailureTransition(_events).FailAsync(runId, errorCode, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
         if (!_roots.TryGetRoot(runId, out var workspaceRoot) || workspaceRoot is null
             || !_roots.TryGetPolicySnapshot(runId, out var policySnapshot) || policySnapshot is null)
         {

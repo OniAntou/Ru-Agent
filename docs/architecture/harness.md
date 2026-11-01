@@ -262,6 +262,8 @@ The primary conversation store reports deletion, confirmed absence and failure
 separately. Only confirmed absence can complete a retained-artifact retry; a
 storage failure stays an error even if harness rows were successfully removed.
 Legacy stores returning an ambiguous false are treated as failures.
+Scratch cleanup follows the same primary-store result: failure preserves its
+files and approval ledger; successful deletion or confirmed absence permits cleanup.
 The schema retains scope evidence with the
 owned run after relation loss, without restoring execution authority. A
 root-bound preparation journal records reservation before filesystem creation,
@@ -948,6 +950,13 @@ _Avoid_: embedded fallback persona
 
 `AgentRuntimeLoopService` drives runs; `AgentRuntimeRootRegistry` owns registered
 roots/coordinators, and `AgentRuntimeCoordinatorFactory` composes a drive.
+If composition fails before a coordinator exists, `AgentRunFailureTransition`
+commits a named terminal failure directly through the event store before runtime
+registration is released. It re-reads on version conflicts, preserves concurrent
+terminal states, and bounds each attempt to eight commits. Store failure retains
+registration for a later retry. History acknowledgement uses the same persistence
+path when composition fails; a history-delivery failure also needs no provider or
+tool gateway to settle the run.
 `AgentRuntimeParkingState` owns client-wait and recovered-approval/version fences.
 `AgentRuntimeRunLifecycle` releases registration, Broker resources and retained
 approval state only after pending user-apply and child work is cancelled.

@@ -209,35 +209,45 @@ public sealed partial class WindowsDesktopController : IDesktopController
         }
     }
 
-    public void Drag(int fromX, int fromY, int toX, int toY, CancellationToken cancellationToken)
+    public void Drag(
+        int fromX,
+        int fromY,
+        int toX,
+        int toY,
+        Func<int, int, nint> authorizeTargetAt,
+        CancellationToken cancellationToken)
     {
         using var dpi = DpiScope.Enter();
-        Send([Mouse(fromX, fromY, MouseMove | MouseAbsolute | MouseVirtualDesk)]);
-        Send([Mouse(fromX, fromY, 0x0002 | MouseAbsolute | MouseVirtualDesk)]);
-        try
-        {
-            const int Steps = 12;
-            for (var step = 1; step <= Steps; step++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                Thread.Sleep(15);
-                Send([Mouse(fromX + (toX - fromX) * step / Steps, fromY + (toY - fromY) * step / Steps,
-                    MouseMove | MouseAbsolute | MouseVirtualDesk)]);
-            }
-        }
-        finally
-        {
-            // Never leave the button held, even when the drag is cancelled.
-            Send([Mouse(toX, toY, 0x0004 | MouseAbsolute | MouseVirtualDesk)]);
-        }
+        PointerInputSequence.Drag(
+            fromX,
+            fromY,
+            toX,
+            toY,
+            authorizeTargetAt,
+            (x, y, expectedRoot) => SendPointerAtTarget(x, y, expectedRoot,
+                MouseMove | MouseAbsolute | MouseVirtualDesk),
+            (x, y, expectedRoot) => SendPointerAtTarget(x, y, expectedRoot,
+                0x0002 | MouseAbsolute | MouseVirtualDesk),
+            (x, y, _) => Send([Mouse(x, y, 0x0004 | MouseAbsolute | MouseVirtualDesk)]),
+            () => Thread.Sleep(15),
+            cancellationToken);
     }
 
-    public void Scroll(int x, int y, int deltaX, int deltaY)
+    public void Scroll(int x, int y, int deltaX, int deltaY, Func<int, int, nint> authorizeTargetAt)
     {
         using var dpi = DpiScope.Enter();
-        Send([Mouse(x, y, MouseMove | MouseAbsolute | MouseVirtualDesk)]);
-        if (deltaY != 0) Send([Mouse(x, y, 0x0800 | MouseAbsolute | MouseVirtualDesk, unchecked((uint)deltaY))]);
-        if (deltaX != 0) Send([Mouse(x, y, 0x1000 | MouseAbsolute | MouseVirtualDesk, unchecked((uint)deltaX))]);
+        PointerInputSequence.Scroll(
+            x,
+            y,
+            deltaX,
+            deltaY,
+            authorizeTargetAt,
+            (eventX, eventY, expectedRoot) => SendPointerAtTarget(eventX, eventY, expectedRoot,
+                MouseMove | MouseAbsolute | MouseVirtualDesk),
+            (delta, expectedRoot) => SendPointerAtTarget(x, y, expectedRoot,
+                0x0800 | MouseAbsolute | MouseVirtualDesk, unchecked((uint)delta)),
+            (delta, expectedRoot) => SendPointerAtTarget(x, y, expectedRoot,
+                0x1000 | MouseAbsolute | MouseVirtualDesk, unchecked((uint)delta)));
     }
 
     public void TypeText(string text, nint expectedRoot, CancellationToken cancellationToken)
@@ -310,6 +320,13 @@ public sealed partial class WindowsDesktopController : IDesktopController
         if (actual != expected)
             throw new ComputerUseException("computer_target_changed",
                 "The target window changed during the action; take a new screenshot before continuing.");
+    }
+
+    private static void SendPointerAtTarget(int x, int y, nint expectedRoot, uint flags, uint data = 0)
+    {
+        var input = Mouse(x, y, flags, data);
+        RequireRoot(GetAncestor(WindowFromPoint(new POINT { X = x, Y = y }), 2), expectedRoot);
+        Send([input]);
     }
 
     private const uint MouseMove = 0x0001;

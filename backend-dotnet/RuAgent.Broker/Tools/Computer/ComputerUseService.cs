@@ -338,6 +338,8 @@ public sealed class ComputerUseService
             throw new ComputerUseException("computer_display_changed", "The monitor layout changed; take a new screenshot.");
         var (x, y) = ComputerGeometry.ToPhysical(shot.Monitor, shot.Width, shot.Height, Int(arguments, "x"), Int(arguments, "y"));
         var grants = Grants(sessionId);
+        nint AuthorizeTargetAt(int targetX, int targetY) =>
+            RequireTarget(_desktop.RootWindowAt(targetX, targetY), grants, fullAccess).Handle;
         var target = RequireTarget(_desktop.RootWindowAt(x, y), grants, fullAccess);
         cancellationToken.ThrowIfCancellationRequested();
         switch (action)
@@ -358,13 +360,13 @@ public sealed class ComputerUseService
                     "right" => (amount, 0),
                     _ => throw new ComputerUseException("computer_arguments_invalid", "scroll needs direction up, down, left or right."),
                 };
-                _desktop.Scroll(x, y, deltaX, deltaY);
+                _desktop.Scroll(x, y, deltaX, deltaY, AuthorizeTargetAt);
                 break;
             default:
                 var (toX, toY) = ComputerGeometry.ToPhysical(shot.Monitor, shot.Width, shot.Height,
                     Int(arguments, "to_x"), Int(arguments, "to_y"));
                 RequireTarget(_desktop.RootWindowAt(toX, toY), grants, fullAccess);
-                _desktop.Drag(x, y, toX, toY, cancellationToken);
+                _desktop.Drag(x, y, toX, toY, AuthorizeTargetAt, cancellationToken);
                 break;
         }
 

@@ -45,7 +45,7 @@ public sealed class ModelRequestTests
     [Fact]
     public void ModelRequest_rejects_too_many_images()
     {
-        var imgs = Enumerable.Range(0, 5).Select(_ => new ModelImage("image/png", "a")).ToArray();
+        var imgs = Enumerable.Range(0, 5).Select(_ => new ModelImage("image/png", "AQ==")).ToArray();
         Assert.Throws<ArgumentException>(() => CreateRequest(imgs));
     }
 
@@ -73,9 +73,9 @@ public sealed class ModelRequestTests
     [Fact]
     public void ModelRequest_rejects_null_image_entry()
     {
-        var imgs = new ModelImage?[] { new ModelImage("image/png", "a"), null! }.Where(x => true).Select(x => x!).ToList();
+        var imgs = new ModelImage?[] { new ModelImage("image/png", "AQ=="), null! }.Where(x => true).Select(x => x!).ToList();
         // force list containing null without compile error: create array with null element
-        var list = new List<ModelImage> { new ModelImage("image/png", "a"), null! };
+        var list = new List<ModelImage> { new ModelImage("image/png", "AQ=="), null! };
         Assert.Throws<ArgumentException>(() => CreateRequest(list));
     }
 
@@ -230,9 +230,9 @@ public sealed class ModelRequestTests
     [Fact]
     public void ModelImage_accepts_valid_mimes()
     {
-        var png = new ModelImage("image/png", "a");
-        var jpeg = new ModelImage("image/jpeg", "a");
-        var webp = new ModelImage("image/webp", "a");
+        var png = new ModelImage("image/png", "AQ==");
+        var jpeg = new ModelImage("image/jpeg", "AQ==");
+        var webp = new ModelImage("image/webp", "AQ==");
         Assert.Equal("image/png", png.MimeType);
         Assert.Equal("image/jpeg", jpeg.MimeType);
         Assert.Equal("image/webp", webp.MimeType);
@@ -244,6 +244,19 @@ public sealed class ModelRequestTests
         Assert.Throws<ArgumentException>(() => new ModelImage("image/png", ""));
         Assert.Throws<ArgumentException>(() => new ModelImage("image/png", "   "));
         Assert.Throws<ArgumentException>(() => new ModelImage("image/png", null!));
+    }
+
+    [Theory]
+    [InlineData("A")]
+    [InlineData("====")]
+    [InlineData("YWJj=")]
+    [InlineData("AA=A")]
+    [InlineData("AA==AAAA")]
+    [InlineData("AB==")]
+    [InlineData("AA== ")]
+    public void ModelImage_rejects_malformed_base64(string base64)
+    {
+        Assert.Throws<ArgumentException>(() => new ModelImage("image/png", base64));
     }
 
     [Fact]
@@ -265,32 +278,38 @@ public sealed class ModelRequestTests
     [Fact]
     public void ModelImage_accepts_base64_at_limit()
     {
-        var atLimit = new string('A', 5_600_000);
+        var atLimit = Convert.ToBase64String(new byte[ModelImage.MaximumDecodedBytes]);
         var img = new ModelImage("image/png", atLimit);
-        Assert.Equal(5_600_000, img.Base64Data.Length);
+        Assert.Equal(ModelImage.MaximumDecodedBytes, Convert.FromBase64String(img.Base64Data).Length);
     }
 
     [Fact]
-    public void ModelRequest_rejects_total_decoded_too_large()
+    public void ModelImage_rejects_base64_decoded_above_four_mib()
     {
-        // Each image Base64 length 5_600_000 => decoded ~4_200_000
-        // 4 images => ~16.8MB <20MB so would pass.
-        var maxImages = Enumerable.Range(0, 4).Select(_ => new ModelImage("image/png", new string('A', 5_600_000))).ToArray();
+        var aboveLimit = Convert.ToBase64String(new byte[ModelImage.MaximumDecodedBytes + 1]);
+
+        Assert.Throws<ArgumentException>(() => new ModelImage("image/png", aboveLimit));
+    }
+
+    [Fact]
+    public void ModelRequest_accepts_four_images_at_the_decoded_per_image_limit()
+    {
+        var maxImage = Convert.ToBase64String(new byte[ModelImage.MaximumDecodedBytes]);
+        var maxImages = Enumerable.Range(0, 4).Select(_ => new ModelImage("image/png", maxImage)).ToArray();
         var req = CreateRequest(maxImages);
         Assert.Equal(4, req.Images.Count);
 
-        var five = Enumerable.Range(0, 5).Select(_ => new ModelImage("image/png", "a")).ToArray();
+        var five = Enumerable.Range(0, 5).Select(_ => new ModelImage("image/png", "AQ==")).ToArray();
         Assert.Throws<ArgumentException>(() => CreateRequest(five));
     }
 
     [Fact]
-    public void ModelRequest_rejects_total_decoded_exceeds_20MB()
+    public void ModelRequest_revalidates_oversized_base64_after_record_copy()
     {
-        // To exceed 20MB with valid per-image base64 (5_600_000) is impossible (4*4.2MB=16.8MB).
-        // Use 'with' to bypass per-image limit and create images with 7_000_000 chars => decoded 5_250_000 each => total 21MB >20MB.
-        // This verifies ModelRequest total validation exists even though normal ModelImage would reject.
-        var baseImg = new ModelImage("image/png", "a");
-        var large = baseImg with { Base64Data = new string('A', 7_000_000) };
+        // A record copy can bypass the constructor's per-image validation; the
+        // request boundary must revalidate it before preparing provider data.
+        var baseImg = new ModelImage("image/png", "AQ==");
+        var large = baseImg with { Base64Data = Convert.ToBase64String(new byte[ModelImage.MaximumDecodedBytes + 1]) };
         var imgs = Enumerable.Range(0, 4).Select(_ => large).ToArray();
         Assert.Throws<ArgumentException>(() => CreateRequest(imgs));
     }
@@ -298,16 +317,16 @@ public sealed class ModelRequestTests
     [Fact]
     public void ModelRequest_images_are_defensively_copied()
     {
-        var list = new List<ModelImage> { new ModelImage("image/png", "a") };
+        var list = new List<ModelImage> { new ModelImage("image/png", "AQ==") };
         var req = CreateRequest(list);
-        list.Add(new ModelImage("image/jpeg", "b"));
+        list.Add(new ModelImage("image/jpeg", "Ag=="));
         Assert.Single(req.Images);
     }
 
     [Fact]
     public void ModelRequest_accepts_empty_prompt_when_images_present()
     {
-        var imgs = new[] { new ModelImage("image/png", "a") };
+        var imgs = new[] { new ModelImage("image/png", "AQ==") };
         var req = new ModelRequest("gpt-4o", "sys", "", Array.Empty<ModelTurn>(), new JsonObject(), new Uri("https://api.openai.com/v1"), "sk", 100, imgs);
         Assert.Equal("", req.Prompt);
         Assert.Single(req.Images);

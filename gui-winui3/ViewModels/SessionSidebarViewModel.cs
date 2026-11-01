@@ -45,14 +45,17 @@ internal sealed record SessionListPageBatch(
 internal sealed record WorkspaceDeletionPlan(
     string Key,
     string Label,
-    IReadOnlyList<string> SessionIds);
+    IReadOnlyList<string> SessionIds,
+    string? WorkspacePath);
 
 /// <summary>Bulk delete counts. <paramref name="Partial"/> chats are gone with cleanup pending.</summary>
 internal sealed record WorkspaceDeletionResult(
     int Total,
     int Deleted,
     int Partial,
-    int Failed);
+    int Failed,
+    SessionDeletionFollowUp FollowUp,
+    bool WorkspaceRemoved);
 
 /// <summary>The confirmations and notices a delete may need; the view owns the dialogs.</summary>
 internal interface ISessionDeletionPrompts
@@ -102,7 +105,6 @@ internal sealed record SidebarMoveTarget(string Text, string SessionId, string G
 /// </remarks>
 public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDisposable
 {
-
     private readonly ISessionListBackend _backend;
     private readonly SidebarOrganizationStore _organization;
     private readonly WorkspaceGroupPreferenceStore _groupPreferences;
@@ -310,6 +312,7 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
                 existing.ParentSessionId = incoming.ParentSessionId;
                 existing.ForkedFromMessageId = incoming.ForkedFromMessageId;
                 existing.WorkspaceId = incoming.WorkspaceId;
+                existing.WorkspaceKind = incoming.WorkspaceKind;
                 existing.ClientSource = incoming.ClientSource;
                 existing.WorkspaceLabel = incoming.WorkspaceLabel;
                 existing.WorkspacePath = incoming.WorkspacePath;
@@ -343,13 +346,15 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     /// <summary>Rebuilds the flattened rows from sessions, groups and pins.</summary>
     internal void Render()
     {
+        var paintedExpansion = Rows.OfType<WorkspaceGroupRow>()
+            .ToDictionary(row => row.Group.Key, row => row.IsExpanded, StringComparer.Ordinal);
         var projection = SidebarSessionPresenter.Build(
             Sessions.ToList(),
             AppRoot,
             _organization.Current,
             _pins.PinnedPaths,
             ActiveSessionId,
-            _groupPreferences.IsExpanded,
+            (key, fallback) => _groupPreferences.IsExpanded(key, paintedExpansion.GetValueOrDefault(key, fallback)),
             key => _groupShowAll.Contains(key));
 
         _groups.Clear();
@@ -367,6 +372,13 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         WorkspaceShowMoreRow more => "more:" + more.GroupKey,
         _ => throw new ArgumentException("Unknown sidebar row", nameof(row)),
     };
+
+    private static bool SameRowPresentation(object current, object incoming) =>
+        current is WorkspaceGroupRow left && incoming is WorkspaceGroupRow right
+            ? left.IsExpanded == right.IsExpanded && left.Group.Key == right.Group.Key
+                && left.Group.Label == right.Group.Label && left.Group.Path == right.Group.Path
+                && left.Group.Sessions.SequenceEqual(right.Group.Sessions)
+            : Equals(current, incoming);
 
     /// <summary>
     /// Moves rows into place instead of clearing the collection: clearing destroys the
@@ -390,7 +402,7 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
             else
             {
                 if (current != index) Rows.Move(current, index);
-                if (!Equals(Rows[index], desired[index])) Rows[index] = desired[index];
+                if (!SameRowPresentation(Rows[index], desired[index])) Rows[index] = desired[index];
             }
         }
 
@@ -424,15 +436,6 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     internal void ShowAll(string key)
     {
         _groupShowAll.Add(key);
-        Render();
-    }
-
-    /// <summary>Removes a pinned workspace; its folder and sessions stay untouched.</summary>
-    internal void Unpin(string key)
-    {
-        if (ResolveWorkspacePath(key) is not { } path) return;
-        _pins.Unpin(path);
-        if (SelectedWorkspaceKey == key) SelectedWorkspaceKey = null;
         Render();
     }
 
@@ -531,7 +534,7 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     /// Makes a session the open one and drops every unstarted draft other than it. An
     /// empty draft is visible only while open; hiding it does not delete the Host record.
     /// </summary>
-    internal void ActivateDrafts(string? sessionId)
+    internal void ActivateDrafts(string? sessionId, bool render = true)
     {
         if (sessionId is not null) ActiveSessionId = sessionId;
         var discarded = _drafts.Activate(sessionId);
@@ -544,7 +547,7 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
             if (_organization.Current.Groups.ContainsKey(id)) _organization.Remove(id);
         }
 
-        if (discarded.Count > 0) Render();
+        if (discarded.Count > 0 && render) Render();
     }
 
     /// <summary>Leaving the chat surface: a later create or open must not be overtaken.</summary>
@@ -576,7 +579,7 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
             return null;
         }
 
-        ActivateDrafts(session.Id);
+        ActivateDrafts(session.Id, render: false);
         _drafts.Register(session, workspaceKey, workspacePath);
         if (workspacePath is not null) _sessionWorkspaces.Set(session.Id, workspacePath);
         Sessions.Insert(0, session);
@@ -602,7 +605,9 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         ActivateDrafts(session.Id);
         var key = GroupFor(session).Key;
         SelectedWorkspaceKey = key;
-        if (!_groupPreferences.IsExpanded(key, defaultExpanded: true))
+        var expanded = Rows.OfType<WorkspaceGroupRow>().FirstOrDefault(row => row.Group.Key == key)?.IsExpanded
+            ?? _groupPreferences.IsExpanded(key, defaultExpanded: true);
+        if (!expanded)
         {
             _groupPreferences.SetExpanded(key, true);
             Render();
@@ -621,6 +626,10 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     /// <summary>The session the chat records as open; keeps the sidebar highlight in step.</summary>
     internal void NoteOpened(string sessionId)
     {
+        if (!string.Equals(ActiveSessionId, sessionId, StringComparison.OrdinalIgnoreCase))
+        {
+            ++_navigationGeneration;
+        }
         ActiveSessionId = sessionId;
     }
 
@@ -664,57 +673,6 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         if (row is null) return;
         Sessions.Remove(row);
         Render();
-    }
-
-    /// <summary>The sessions one workspace group would delete, resolved before confirmation.</summary>
-    internal WorkspaceDeletionPlan? PlanWorkspaceDeletion(string key)
-    {
-        var group = _groups.FirstOrDefault(candidate => string.Equals(candidate.Key, key, StringComparison.Ordinal));
-        if (group is null || group.Sessions.Count == 0)
-        {
-            return null;
-        }
-
-        return new WorkspaceDeletionPlan(
-            group.Key,
-            group.Label,
-            group.Sessions.Select(session => session.Id).ToArray());
-    }
-
-    /// <summary>
-    /// Deletes every session of one workspace. Each delete still goes through the Host's
-    /// single-session path, so scratch folders, approvals and tombstones keep their own rules;
-    /// this method only batches work the user already confirmed and reports the counts. The
-    /// workspace folder on disk is never deleted.
-    /// </summary>
-    internal async Task<WorkspaceDeletionResult> DeleteWorkspaceSessionsAsync(
-        WorkspaceDeletionPlan plan,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(plan);
-        var deleted = 0;
-        var partial = 0;
-        var failed = 0;
-        foreach (var sessionId in plan.SessionIds)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var outcome = await _backend.DeleteSessionAsync(sessionId).ConfigureAwait(false);
-            if (outcome.Deleted || outcome.Partial)
-            {
-                deleted++;
-                if (outcome.Partial) partial++;
-                _drafts.Remove(sessionId);
-                _organization.Remove(sessionId);
-                RemoveRow(sessionId);
-            }
-            else
-            {
-                failed++;
-            }
-        }
-
-        await RefreshLatestAsync().ConfigureAwait(false);
-        return new WorkspaceDeletionResult(plan.SessionIds.Count, deleted, partial, failed);
     }
 
     /// <summary>

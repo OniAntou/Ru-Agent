@@ -19,18 +19,40 @@ skills. Its only differences are origin, display and lifecycle:
 - The desktop client approves its trust request silently. Ru created the
   folder; asking the user to trust Ru's own scratch space is noise. The
   decision still goes through the normal explicit trust endpoint.
-- The workspace sidebar shows every scratch session in one **Scratch** group,
-  not one group per session id.
+- The sidebar shows a chat without a chosen project in **Recents**. Scratch
+  directories are internal execution storage and do not create workspace groups.
+  Explicit manual placement remains a separate presentation choice.
 - It is deleted with its session: the session-deletion coordinator removes the
   folder after the session record, and a startup sweeper reclaims folders whose
   session no longer exists.
 - Deleting a workspace group deletes its sessions through the same
-  single-session path. The workspace folder on disk is never deleted; a project
-  folder belongs to the user.
+  single-session path and removes the workspace pin after confirming no chats
+  remain. The single action also removes an empty pinned workspace. Failed
+  deletes or pin writes retain the workspace for retry. User-selected project
+  folders on disk are never deleted; scratch folders follow their sessions' cleanup rules.
 
 Deletion is marker-gated. A folder without a marker is not Ru's: it is left in
 place, and a marker naming another session is refused, so a user folder whose
 name happens to match a session id is safe.
+
+### Ownership and deletion clarification (2026-11-01 review)
+
+Allocation never claims an existing unmarked or foreign directory and rejects
+reparse points. Run responses and session listings classify a workspace as
+scratch only when its canonical path resolves to the same session's marked,
+non-reparse scratch directory. A lexical child path is insufficient, including
+for silent GUI trust approval. Failed primary session deletion preserves the
+scratch directory; only successful deletion or confirmed absence permits cleanup.
+Workspace deletion resolves all session pages before confirmation, within bounded
+listing limits, and refuses incomplete plans rather than deleting a visible subset.
+
+### Sidebar amendment: no chosen project means Recents
+
+At the user's request, Recents replaces the original aggregate Scratch group.
+Receiving `workspace_kind: "scratch"` after the first run must not move a chat
+out of Recents. Project groups represent chosen folders or explicit sidebar
+placement. This changes presentation only; per-session scratch allocation,
+ownership checks, workspace trust and cleanup keep their existing contracts.
 
 ## Context
 

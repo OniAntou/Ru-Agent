@@ -123,7 +123,9 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
         HarnessRunStatus status,
         string runId,
         string sessionId,
-        string? workspaceRoot = null)
+        string? workspaceRoot = null,
+        IReadOnlyList<HarnessPayloadIntent>? payloads = null,
+        IReadOnlyList<ConversationOutboxIntent>? outbox = null)
     {
         workspaceRoot ??= Path.Combine(RootPath, "workspace-" + runId);
         Directory.CreateDirectory(workspaceRoot);
@@ -156,9 +158,10 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
             run,
             [new HarnessEventIntent(
                 new EventId($"evt_{Guid.NewGuid():N}"),
-                HarnessEventKind.RunStateChanged)],
-            [],
-            [],
+                HarnessEventKind.RunStateChanged,
+                payloadId: payloads?.FirstOrDefault(payload => payload.Kind == HarnessPayloadKind.UserPrompt)?.PayloadId)],
+            payloads ?? [],
+            outbox ?? [],
             new RunCreationIdentity(new string('c', 64), new string('d', 64), 1));
         var result = await EventStore.TryCreateRunAsync(request, CancellationToken.None);
         Assert.Equal(CreateRunOutcome.Created, result.Outcome);

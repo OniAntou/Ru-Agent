@@ -7,14 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Giảm các nhịp giật khi tạo chat mới: thay draft bằng một lần render sidebar,
+  giữ trạng thái mở/gập và container của các nhóm không đổi, bỏ animation thêm/xóa chồng lên
+  reposition. Chat vừa tạo hiển thị trống ngay sau bước detach, không tải lại history/replay/usage
+  hoặc chạy lại điều hướng đang ở màn chat. Giữ chế độ giảm chuyển động theo Windows.
+
+- **fix(gui)**: Gộp menu workspace thành một nút **Delete workspace…**. Sau xác nhận,
+  xóa các chat trong nhóm và gỡ workspace khỏi Ru; workspace rỗng cũng xóa được. Giữ nguyên
+  thư mục project trên đĩa. Nếu xóa chat hoặc lưu trạng thái ghim thất bại, giữ workspace để
+  thử lại; chat mới phát sinh ngoài danh sách đã xác nhận được giữ lại.
+
+- **fix(gui)**: Chat không chọn project nằm trong **Recents**, kể cả sau khi gửi tin nhắn
+  và refresh từ Host. Không tạo nhóm **Scratch** trên sidebar; thư mục scratch chỉ là nơi
+  làm việc nội bộ. Vị trí do người dùng chủ động chuyển vẫn được giữ. Thêm regression cho
+  luồng draft → gửi chat → refresh và trạng thái mở/đóng Recents.
+
+- **fix(review)**: Giữ nguyên scratch files khi xoá session chính thất bại; chỉ nhận scratch
+  khi marker, session và canonical path cùng khớp. Khôi phục file phân biệt file thiếu với file
+  rỗng và chặn ghi đè thay đổi xen ngang. Từ chối Base64 sai trước khi lưu hoặc gửi model.
+  Xoá workspace tải đủ các trang trước xác nhận, giữ UI context và điều hướng đúng khi chat
+  đang mở bị xoá. Lỗi dựng runtime được ghi terminal trước khi nhả registration; drag/scroll
+  kiểm tra lại quyền target trước từng sự kiện input. Sửa các lỗi Ruff và encoding của CI.
+
 - **feat(gui/host)**: **Chat không chọn folder dùng scratch workspace, và xoá chat/workspace xoá luôn
   folder scratch.** GUI không còn lấy thư mục cha của app làm workspace mặc định (trước đây `D:\LLM`
   thành `D:\`). Run tạo với `workspace_path` rỗng sẽ được Host cấp scratch workspace dưới data root
   (`workspaces/<sessionId>`) kèm marker sở hữu; response trả `workspace_path`/`workspace_kind`, sidebar
-  gom mọi scratch session vào một nhóm **Scratch**, và trust request của scratch được duyệt im lặng.
+  đưa chat không chọn project vào **Recents**, và trust request của scratch được duyệt im lặng.
   Xoá session xoá folder scratch của nó; sweeper lúc Host khởi động dọn folder mồ côi. Folder không có
   marker thì không bao giờ bị xoá. Thêm **Delete workspace…** trong menu workspace group của GUI: xoá
-  toàn bộ chat của nhóm qua đúng đường xoá từng session, không xoá folder project trên đĩa. CLI vẫn chỉ
+  toàn bộ chat của nhóm qua đúng đường xoá từng session và gỡ ghim workspace, không xoá folder project trên đĩa. CLI vẫn chỉ
   xoá từng session như cũ, nhưng session delete giờ cũng dọn scratch folder qua Host.
 
 - **fix(agent)**: **`skill` query nhiều từ không còn trả rỗng, và `total`/`truncated` không còn gây

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using RuBackend.Harness.Workspace;
 using Xunit;
 
@@ -155,6 +156,75 @@ public sealed class ScratchWorkspaceStoreTests : IDisposable
 
         Assert.Equal(first, second);
         Assert.True(File.Exists(Path.Combine(first, "keep.txt")));
+    }
+
+    [Fact]
+    public void Ensure_refuses_to_claim_an_existing_unmarked_user_folder()
+    {
+        var store = Store;
+        var sessionId = Session('7');
+        var path = store.PathFor(sessionId);
+        Directory.CreateDirectory(path);
+        var userFile = Path.Combine(path, "keep.txt");
+        File.WriteAllText(userFile, "user data");
+
+        Assert.Throws<IOException>(() => store.Ensure(sessionId));
+        Assert.Equal("user data", File.ReadAllText(userFile));
+        Assert.False(File.Exists(Path.Combine(path, ScratchWorkspaceStore.MarkerFileName)));
+    }
+
+    [Fact]
+    public void Ensure_refuses_to_overwrite_a_marker_for_another_session()
+    {
+        var store = Store;
+        var sessionId = Session('8');
+        var path = store.PathFor(sessionId);
+        Directory.CreateDirectory(path);
+        var userFile = Path.Combine(path, "keep.txt");
+        var marker = Path.Combine(path, ScratchWorkspaceStore.MarkerFileName);
+        File.WriteAllText(userFile, "user data");
+        File.WriteAllText(marker, "{\"Version\":1,\"SessionId\":\"" + Session('9') + "\"}");
+
+        Assert.Throws<IOException>(() => store.Ensure(sessionId));
+        Assert.Equal("user data", File.ReadAllText(userFile));
+        Assert.Contains(Session('9'), File.ReadAllText(marker), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ensure_refuses_a_reparse_point_workspace_path()
+    {
+        var store = Store;
+        var sessionId = Session('a');
+        var target = Path.Combine(_root, "outside-target");
+        Directory.CreateDirectory(target);
+        Directory.CreateDirectory(store.Root);
+        var link = store.PathFor(sessionId);
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe",
+                Arguments = $"/c mklink /J \"{link}\" \"{target}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            Assert.NotNull(process);
+            Assert.True(process.WaitForExit(15_000), "junction creation timed out");
+            Assert.Equal(0, process.ExitCode);
+
+            Assert.Throws<IOException>(() => store.Ensure(sessionId));
+            Assert.False(File.Exists(Path.Combine(target, ScratchWorkspaceStore.MarkerFileName)));
+            Assert.True(Directory.Exists(target));
+        }
+        finally
+        {
+            if (Directory.Exists(link))
+            {
+                Directory.Delete(link, recursive: false);
+            }
+        }
     }
 
     public void Dispose()

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using RuAgent.Harness.Persistence;
 using RuBackend.Harness;
 using RuBackend.Harness.Reconciliation;
 using Xunit;
@@ -21,6 +22,9 @@ public sealed class AgentServiceCompositionTests
         Assert.NotNull(factory.Services.GetRequiredService<AgentApprovalsService>());
         Assert.NotNull(factory.Services.GetRequiredService<AgentPoliciesService>());
         Assert.NotNull(factory.Services.GetRequiredService<AgentWorkspaceService>());
+        Assert.Same(
+            factory.Services.GetRequiredService<WorkspaceJournalProtector>(),
+            factory.Services.GetRequiredService<IWorkspaceJournalProtector>());
         Assert.NotNull(factory.Services.GetRequiredService<AgentWorkspaceTrustService>());
         Assert.NotNull(factory.Services.GetRequiredService<AgentActivitiesService>());
         Assert.NotNull(factory.Services.GetRequiredService<AgentCommandsService>());

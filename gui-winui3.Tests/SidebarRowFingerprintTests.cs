@@ -30,6 +30,18 @@ public sealed class SidebarRowFingerprintTests
     }
 
     [Fact]
+    public void Workspace_kind_change_breaks_the_fingerprint()
+    {
+        var ordinary = Row("a", "Hello", "2026-09-17T18:00:00Z");
+        var scratch = Row("a", "Hello", "2026-09-17T18:00:00Z");
+        scratch.WorkspaceKind = "scratch";
+
+        Assert.NotEqual(
+            SidebarRowFingerprint.ForSessions([ordinary]),
+            SidebarRowFingerprint.ForSessions([scratch]));
+    }
+
+    [Fact]
     public void Reorder_or_add_or_remove_breaks_the_fingerprint()
     {
         var first = new List<SessionInfo> { Row("a", "Hello", "t"), Row("b", "World", "t") };

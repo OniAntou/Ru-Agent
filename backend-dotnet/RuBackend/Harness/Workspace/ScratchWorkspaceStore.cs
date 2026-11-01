@@ -40,22 +40,81 @@ public sealed class ScratchWorkspaceStore
         value is { Length: 32 } && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     /// <summary>
-    /// Creates the session's scratch folder and its marker. Idempotent: a second call keeps the
-    /// folder and refreshes only the marker.
+    /// Creates the session's scratch folder and its marker. An existing folder is reused only
+    /// when its marker already proves ownership by this session; it is never adopted or relabelled.
     /// </summary>
     public string Ensure(string sessionId)
     {
         var path = PathFor(sessionId);
-        if (Directory.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+        if (Directory.Exists(path))
         {
-            // Never write a marker through a junction: the target is not Ru's folder.
-            throw new IOException("scratch_workspace_reparse");
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            {
+                // Never write a marker through a junction: the target is not Ru's folder.
+                throw new IOException("scratch_workspace_reparse");
+            }
+
+            if (!MarkerMatches(path, sessionId))
+            {
+                // Existing user data is not ours to claim. In particular, never
+                // replace a missing, malformed or foreign ownership marker.
+                throw new IOException("scratch_workspace_unowned");
+            }
+
+            return path;
         }
 
         Directory.CreateDirectory(path);
         var marker = JsonSerializer.Serialize(new Marker(MarkerVersion, sessionId));
-        File.WriteAllText(Path.Combine(path, MarkerFileName), marker, new System.Text.UTF8Encoding(false));
+        var markerPath = Path.Combine(path, MarkerFileName);
+        try
+        {
+            using var stream = new FileStream(markerPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
+            writer.Write(marker);
+        }
+        catch (IOException) when (MarkerMatches(path, sessionId))
+        {
+            // Concurrent idempotent allocation for this same session is safe only
+            // after the winner's marker proves ownership.
+        }
+
         return path;
+    }
+
+    /// <summary>
+    /// Proves that a canonical workspace root is the folder allocated to this
+    /// exact session. A path-shaped match or a marker behind a reparse point is
+    /// insufficient provenance for automatic scratch trust.
+    /// </summary>
+    public bool OwnsCanonicalWorkspace(string? canonicalWorkspacePath, string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(canonicalWorkspacePath) || !IsValidSessionId(sessionId))
+        {
+            return false;
+        }
+
+        var path = PathFor(sessionId!);
+        try
+        {
+            if (!Directory.Exists(path)
+                || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0
+                || !MarkerMatches(path, sessionId!))
+            {
+                return false;
+            }
+
+            var expectedCanonical = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(path);
+            var actualCanonical = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(canonicalWorkspacePath);
+            return string.Equals(
+                Path.TrimEndingDirectorySeparator(expectedCanonical),
+                Path.TrimEndingDirectorySeparator(actualCanonical),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     public string PathFor(string sessionId)
@@ -69,9 +128,9 @@ public sealed class ScratchWorkspaceStore
     }
 
     /// <summary>
-    /// True only for a direct child of <see cref="Root"/> whose name is a valid session id. The
-    /// marker is deliberately not required here: grouping and display use the path shape, while
-    /// deletion additionally proves ownership with the marker.
+    /// True only for a direct child of <see cref="Root"/> whose name is a valid session id.
+    /// This describes path shape only; use <see cref="OwnsCanonicalWorkspace"/> when ownership
+    /// or trust depends on the scratch classification.
     /// </summary>
     public bool IsScratchPath(string? path)
     {

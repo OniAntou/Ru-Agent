@@ -1,4 +1,5 @@
 """Behavioral coverage for grader bugs found in the 2026-10-29 cohort."""
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -7,8 +8,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1] / "tools" / "coding-benchmark"
 sys.path.insert(0, str(ROOT))
-import benchmark
-import task_io
+benchmark = importlib.import_module("benchmark")
+task_io = importlib.import_module("task_io")
 
 
 def reference_workspace(tmp_path, suite, task_id):

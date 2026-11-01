@@ -10,11 +10,31 @@ folder does not grant workspace trust or execution permission.
 A new chat has no implicit project. The app never falls back to its install
 directory or that directory's parent: the run request carries an empty
 `workspace_path`, the Host allocates a scratch workspace for the session, and
-the client adopts the returned canonical path. Scratch sessions share one
-**Scratch** sidebar group, and their trust request is approved silently because
-Ru created the folder; the explicit trust endpoint still records the decision.
-The workspace group's **Delete workspace…** action deletes the group's chats
-through the single-session endpoint and never deletes the folder on disk.
+the client adopts the returned canonical path for execution. Chats without a
+chosen project stay in **Recents**, including after the Host returns scratch
+metadata. Scratch storage never creates a workspace header in the sidebar.
+An explicit manual move to a project group controls presentation without
+rewriting the execution workspace. Only Host-confirmed scratch ownership permits silent
+trust approval; the explicit trust endpoint still records the decision. Path
+shape alone does not authorize it. Refresh merges `workspace_kind` into existing
+rows and includes it in their change fingerprint.
+The Recents `+` creates a session with no chosen project; the Host allocates its
+private scratch directory when a run starts. The first durable history refresh
+keeps the chat in Recents. CLI-origin chats retain the separate CLI section.
+The workspace menu has one **Delete workspace…** action. After confirmation it
+deletes the group's chats through the single-session endpoint, then removes the
+workspace pin and clears its new-chat selection. The project folder and its files
+stay on disk. Empty pinned workspaces use the same action with zero chat deletes.
+Before confirmation it enumerates the unfiltered session listing (at most 100
+pages and 10,000 sessions), with a frozen grouping snapshot; missing pages,
+duplicate sessions, repeated cursors or exceeded bounds abort planning. Bulk
+planning preserves local workspace hints for open drafts whose Host summaries
+do not yet have workspace paths, without overriding known durable paths. Bulk
+deletion retains the UI context and returns an explicit navigation outcome when
+the active chat is deleted; a later user navigation takes precedence. A complete
+listing is checked again before unpinning: a failed delete, a new chat outside the
+confirmed plan, an unavailable listing or a failed preference write retains the
+workspace for retry. Named partial artifact cleanup stays visible in the result.
 
 Terminal failures keep their actionable inline status above the composer even
 when no assistant reply was rendered. The transcript does not add a terminal
@@ -404,7 +424,7 @@ keeps executing and reopening adopts the newest non-terminal run. A switch waits
 for an in-flight create acknowledgement before detaching; unknown create outcomes
 retain the pinned request identity and block the switch until reconciliation.
 Explicit Stop still reconciles and cancels through the existing command path.
-While the incoming history and durable activities load, the view suspends pending
+For existing sessions, while incoming history and durable activities load, the view suspends pending
 feed timers without clearing or settling the outgoing message graph. Once the
 latest load is ready, it clears the old activity registry and replaces history
 in the same dispatcher turn. The transcript explicitly has no item-container
@@ -591,12 +611,24 @@ row is a UI draft named `New Session`, visible only while open. Leaving without
 sending hides the row; the first accepted chat keeps the same session ID and
 shows a prompt-derived title until durable history supplies the server title.
 Hiding an empty draft does not delete the Host record.
+Replacing an unstarted draft publishes one sidebar render, without an intermediate
+empty section. Workspace expansion state survives that render, and unchanged
+workspace headers keep their container identity. Sidebar rows use repositioning
+without overlapping add/delete entrances; changing Windows' animation preference
+reconfigures these transitions as well as the running indicators.
+The create response identifies a known-new session: after the existing detach,
+draft-retention and preset-narrowing steps, it paints an empty transcript and
+commits the side-panel layout in one dispatcher turn. It skips activation/history,
+activity replay, usage and run-adoption reads that only apply to existing sessions.
+Creating a chat while already on the chat screen does not replay navigation's
+model/catalog refreshes. No previous workspace path is carried into a new
+no-project draft. Existing-session replay and latest-open cancellation stay intact.
 The GUI's `ChatSessionPresentation` owns the active session identity, asynchronous
 open/load cancellation, run-monitor lifetime and once-per-turn completion.
 It keeps the latest session click authoritative; WinUI renders the transcript
 and retains/restores composer drafts through that owner.
-New GUI sessions without an explicitly selected workspace use the parent of the
-application working root; backend startup still uses the application root.
+New GUI sessions without an explicitly selected workspace request a Host-owned
+scratch workspace; backend startup still uses the application root.
 Explicit selections, restored sessions and harness workspaces retain their paths.
 Different sessions can always run in the same workspace in GUI and CLI; one
 session still owns at most one non-terminal run. Workspace coordination uses

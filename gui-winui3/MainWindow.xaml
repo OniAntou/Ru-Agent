@@ -330,12 +330,6 @@
                                 <FontIcon Glyph="&#xE74D;" Foreground="{StaticResource AppDangerBrush}"/>
                             </MenuFlyoutItem.Icon>
                         </MenuFlyoutItem>
-                        <MenuFlyoutSeparator/>
-                        <MenuFlyoutItem Text="Remove workspace" Click="OnWorkspaceRemoveClick" Tag="{x:Bind Group.Key}">
-                            <MenuFlyoutItem.Icon>
-                                <FontIcon Glyph="&#xE74D;" Foreground="{StaticResource AppDangerBrush}"/>
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
                     </MenuFlyout>
                 </Button.ContextFlyout>
                 <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">

@@ -137,6 +137,8 @@ internal static class PublicHostServiceRegistration
         });
         services.AddSingleton<WorkspaceJournalProtector>(services =>
             new WorkspaceJournalProtector(services.GetRequiredService<IHarnessKeyStore>()));
+        services.AddSingleton<IWorkspaceJournalProtector>(services =>
+            services.GetRequiredService<WorkspaceJournalProtector>());
         services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore>();
         services.AddSingleton<RuAgent.Harness.Core.Subagents.ISubagentInbox>(services =>
             services.GetRequiredService<RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore>());

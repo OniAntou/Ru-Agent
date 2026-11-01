@@ -63,7 +63,13 @@ the before/observed hashes without being told an unverified process identity.
 Use `after_sequence` and `limit` for bounded polling. A `run_id` is present for
 Ru-owned changes; an absent `run_id` identifies an external writer. Restore
 verifies the current hash before replacing bytes, writes an authenticated
-restore journal entry, and is safe to retry.
+restore journal entry, and is safe to retry. An absent target is represented by
+64 zero characters; an empty file has the normal SHA-256 of empty bytes. After
+decrypting the journal, restore checks and writes an existing target through a
+single handle excluding other writers and deleters, retaining bounded original
+bytes for rollback on I/O failure. An absent target is created without overwrite,
+so a competing creation returns `workspace_restore_stale`. This is a concurrency
+guard, not a power-loss-atomic filesystem transaction.
 
 Terminal requests may carry additive `read_only` and `write_set` metadata.
 Malformed paths and a non-empty write set on a read-only request are rejected.

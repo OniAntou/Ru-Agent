@@ -9,6 +9,11 @@ date: 2026-10-30
 
 Accepted.
 
+Catalog amendment (2026-11-01): after removal of `git_status`, the current table
+has 28 model-visible rows and 27 Broker-bound manifests; `ask_user` remains
+Host-intercepted. The original 29-row decision below records the initial scope;
+counts are version-specific and are not registry invariants.
+
 ## Context
 
 A model-visible tool used to be described in several hand-maintained places that had to

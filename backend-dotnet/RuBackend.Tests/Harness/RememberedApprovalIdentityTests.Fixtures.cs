@@ -480,11 +480,12 @@ public sealed partial class RememberedApprovalIdentityTests
         {
         }
 
-        public void Drag(int fromX, int fromY, int toX, int toY, CancellationToken cancellationToken)
+        public void Drag(int fromX, int fromY, int toX, int toY,
+            Func<int, int, nint> authorizeTargetAt, CancellationToken cancellationToken)
         {
         }
 
-        public void Scroll(int x, int y, int deltaX, int deltaY)
+        public void Scroll(int x, int y, int deltaX, int deltaY, Func<int, int, nint> authorizeTargetAt)
         {
         }
 

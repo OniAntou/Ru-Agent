@@ -763,22 +763,24 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
         catch (Exception error) when (error is not OperationCanceledException)
         {
             _logger.LogWarning(error, "run {RunId} failed during runtime drive", runIdValue);
-            if (coordinator is null)
-            {
-                // A missing/replaced workspace can make gateway construction fail
-                // before a coordinator exists. Park the registration instead of
-                // retrying the same bad root on every 250 ms poll.
-                await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
-                return;
-            }
-
             try
             {
                 var failureCode = NormalizeDriveFailureCode(error);
+                if (coordinator is null)
+                {
+                    // Registration is released only after the durable run no longer owns the
+                    // session. A store error leaves it registered for a later bounded retry.
+                    await new AgentRunFailureTransition(_store).FailAsync(runId, failureCode, cancellationToken)
+                        .ConfigureAwait(false);
+                    await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+                    await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
+                    return;
+                }
+
                 await coordinator.FailAsync(runId, failureCode, cancellationToken).ConfigureAwait(false);
                 await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception nested)
+            catch (Exception nested) when (nested is not OperationCanceledException)
             {
                 _logger.LogError(nested, "failed to mark run {RunId} as failed", runIdValue);
             }
@@ -865,7 +867,7 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
         }
     }
 
-    private static string NormalizeDriveFailureCode(Exception error)
+    internal static string NormalizeDriveFailureCode(Exception error)
     {
         if (error is InvalidDataException
             && error.Message.StartsWith("retained_input_", StringComparison.Ordinal))

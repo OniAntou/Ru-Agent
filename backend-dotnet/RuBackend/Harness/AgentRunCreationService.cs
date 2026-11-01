@@ -17,6 +17,7 @@ using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Models;
 using RuBackend.Business.Sessions;
 using RuBackend.Harness.Policy;
 using RuBackend.Harness.Workspace;
@@ -89,7 +90,7 @@ public sealed class AgentRunCreationService
             const long MaxSingleImageBytes = 4L * 1024 * 1024;
             const long MaxTotalImagesBytes = 20L * 1024 * 1024;
 
-            long totalEstimatedBytes = 0;
+            long totalDecodedBytes = 0;
             foreach (var url in request.ImageAttachments)
             {
                 if (string.IsNullOrWhiteSpace(url))
@@ -120,35 +121,22 @@ public sealed class AgentRunCreationService
                 }
 
                 var b64 = url.Substring(semi + 8);
-                if (b64.Length == 0)
+                if (!BoundedBase64Validator.TryGetDecodedLength(
+                        b64,
+                        MaxImageDataUrlChars,
+                        int.MaxValue,
+                        out var decodedBytes))
                 {
-                    return BoundedError(400, "invalid_image_base64", "Base64 data cannot be empty.");
+                    return BoundedError(400, "invalid_image_base64", "Image Base64 data is malformed.");
                 }
 
-                // Validate base64 charset without allocating
-                for (var i = 0; i < b64.Length; i++)
-                {
-                    var ch = b64[i];
-                    if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '+' || ch == '/' || ch == '='))
-                    {
-                        return BoundedError(400, "invalid_image_base64", "Base64 data contains invalid characters or whitespace.");
-                    }
-                }
-
-                // Estimate decoded size from base64 length: ceil(b64_len * 3 / 4)
-                // Account for padding: each '=' reduces decoded size by 1
-                var padding = 0;
-                if (b64.EndsWith("==", StringComparison.Ordinal)) padding = 2;
-                else if (b64.EndsWith("=", StringComparison.Ordinal)) padding = 1;
-                var estimatedDecoded = (b64.Length * 3L) / 4 - padding;
-
-                if (estimatedDecoded > MaxSingleImageBytes)
+                if (decodedBytes > MaxSingleImageBytes)
                 {
                     return BoundedError(413, "image_too_large", "Image decoded size exceeds 4MB.");
                 }
 
-                totalEstimatedBytes += estimatedDecoded;
-                if (totalEstimatedBytes > MaxTotalImagesBytes)
+                totalDecodedBytes += decodedBytes;
+                if (totalDecodedBytes > MaxTotalImagesBytes)
                 {
                     return BoundedError(413, "image_too_large", "Total images decoded size exceeds 20MB.");
                 }
@@ -172,33 +160,11 @@ public sealed class AgentRunCreationService
         }
 
         var workspacePath = request.WorkspacePath?.Trim() ?? string.Empty;
-        if (workspacePath.Length == 0)
-        {
-            // No chosen project: allocate a Ru-owned scratch workspace for this session. It is a
-            // normal workspace for policy, trust and tools; only its origin and lifecycle differ.
-            if (_scratchWorkspaces is null)
-            {
-                return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
-            }
-
-            try
-            {
-                workspacePath = _scratchWorkspaces.Ensure(sessionIdRaw);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
-            {
-                _logger?.LogWarning(error, "scratch workspace could not be created");
-                return BoundedError(503, "scratch_workspace_unavailable", "Scratch workspace could not be created.");
-            }
-        }
-        else if (workspacePath.Length > 4096)
+        var allocateScratchWorkspace = workspacePath.Length == 0;
+        if (!allocateScratchWorkspace && workspacePath.Length > 4096)
         {
             return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
         }
-
-        var workspaceKind = _scratchWorkspaces?.IsScratchPath(workspacePath) == true
-            ? WorkspaceKindScratch
-            : WorkspaceKindProject;
 
         var prompt = request.Prompt ?? string.Empty;
         if (string.IsNullOrWhiteSpace(prompt))
@@ -244,6 +210,26 @@ public sealed class AgentRunCreationService
         if (sessionDoc is null)
         {
             return BoundedError(404, "session_not_found", "Session not found.");
+        }
+
+        if (allocateScratchWorkspace)
+        {
+            // Allocate only after the conversation is known to exist. Scratch provenance
+            // comes from the Host-created marker, not from the eventual display path.
+            if (_scratchWorkspaces is null)
+            {
+                return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
+            }
+
+            try
+            {
+                workspacePath = _scratchWorkspaces.Ensure(sessionIdRaw);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                _logger?.LogWarning(error, "scratch workspace could not be created");
+                return BoundedError(503, "scratch_workspace_unavailable", "Scratch workspace could not be created.");
+            }
         }
 
         var workspaceResolution = await _workspaceAdmission.ResolveAndRegisterAsync(workspacePath, cancellationToken)
@@ -322,6 +308,9 @@ public sealed class AgentRunCreationService
         var runId = admittedWorkspace.RunId;
         var workspaceIdentity = admittedWorkspace.Identity;
         var canonicalWorkspacePath = admittedWorkspace.CanonicalRoot;
+        var workspaceKind = _scratchWorkspaces?.OwnsCanonicalWorkspace(canonicalWorkspacePath, sessionIdRaw) == true
+            ? WorkspaceKindScratch
+            : WorkspaceKindProject;
         var pendingTrustRequest = admittedWorkspace.PendingTrustRequest;
         var isTrusted = admittedWorkspace.IsTrusted;
         var policySnapshot = admittedWorkspace.PolicySnapshot;

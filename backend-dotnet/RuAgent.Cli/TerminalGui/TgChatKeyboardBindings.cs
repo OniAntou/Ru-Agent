@@ -11,6 +11,7 @@ internal sealed class TgChatKeyboardBindings
 {
     private readonly TgChatWindow _window;
     private readonly Func<bool> _isBusy;
+    private readonly Func<bool> _canCancel;
     private readonly Action _submit;
     private readonly Action _cancel;
     private readonly Action<int> _navigateHistory;
@@ -22,6 +23,7 @@ internal sealed class TgChatKeyboardBindings
     public TgChatKeyboardBindings(
         TgChatWindow window,
         Func<bool> isBusy,
+        Func<bool> canCancel,
         Action submit,
         Action cancel,
         Action<int> navigateHistory,
@@ -31,6 +33,7 @@ internal sealed class TgChatKeyboardBindings
     {
         _window = window;
         _isBusy = isBusy;
+        _canCancel = canCancel;
         _submit = submit;
         _cancel = cancel;
         _navigateHistory = navigateHistory;
@@ -196,7 +199,7 @@ internal sealed class TgChatKeyboardBindings
         {
             _window.HideSlashDropdown();
         }
-        else if (_isBusy())
+        else if (_canCancel())
         {
             _cancel();
         }

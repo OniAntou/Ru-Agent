@@ -3,106 +3,58 @@ using Xunit;
 
 namespace RuAgent.Cli.Tests;
 
-/// <summary>
-/// The append-only sink (the fallback used when no terminal is available). It prints rows
-/// and keeps a bounded history; it never positions the cursor, repaints or rebuilds.
-/// </summary>
 public sealed class TuiSurfacePlainTests
 {
-    private static (TuiSurface Surface, StringWriter Writer) Create()
-    {
-        TuiPalette.Level = TuiColorLevel.None;
-        var writer = new StringWriter();
-        return (new TuiSurface(writer), writer);
-    }
-
     [Fact]
-    public void WriteLine_records_the_row_and_keeps_it_in_the_history()
+    public void RowsAndFragmentsKeepTheirOutputWithoutScreenControl()
     {
-        var (surface, writer) = Create();
-
-        surface.WriteLine("hello");
-
-        Assert.Equal("hello" + Environment.NewLine, writer.ToString());
-        Assert.Equal(1, surface.HistoryCount);
-        Assert.Equal(["hello"], surface.SnapshotTail(1, 40));
-    }
-
-    [Fact]
-    public void WriteLine_splits_embedded_newlines_into_separate_rows()
-    {
-        var (surface, _) = Create();
-
+        using var writer = new StringWriter();
+        var surface = new TuiSurface(writer);
+        surface.Write("partial"); surface.Line();
         surface.WriteLine("a\nb\r\nc");
-
-        Assert.Equal(3, surface.HistoryCount);
-        Assert.Equal(["a", "b", "c"], surface.SnapshotTail(3, 40));
-    }
-
-    [Fact]
-    public void Line_completes_the_pending_fragment()
-    {
-        var (surface, _) = Create();
-
-        surface.Write("partial");
-        surface.Line();
-
-        Assert.Equal(["partial"], surface.SnapshotTail(1, 40));
-    }
-
-    [Fact]
-    public void Write_keeps_partial_text_pending_until_a_newline_arrives()
-    {
-        var (surface, _) = Create();
-
-        surface.Write("no newline yet");
-
-        Assert.Equal(0, surface.HistoryCount);
-    }
-
-    [Fact]
-    public void WriteBlock_writes_every_row_and_flushes()
-    {
-        var (surface, writer) = Create();
-
         surface.WriteBlock(["one", "two"]);
-
-        Assert.Equal(["one", "two"], surface.SnapshotTail(2, 40));
-        Assert.Equal("one" + Environment.NewLine + "two" + Environment.NewLine, writer.ToString());
+        surface.Flush();
+        Assert.Equal(string.Join(Environment.NewLine, "partial", "a", "b", "c", "one", "two", ""), writer.ToString());
+        Assert.DoesNotContain('\u001b', writer.ToString());
     }
 
     [Fact]
-    public void History_is_bounded_by_rows()
+    public void PartialWritesAreNotDelayedInASecondHistoryBuffer()
     {
-        var (surface, _) = Create();
+        using var writer = new StringWriter();
+        var surface = new TuiSurface(writer);
+        surface.Write("first");
+        Assert.Equal("first", writer.ToString());
+        surface.Write(" second"); surface.Line();
+        Assert.Equal("first second" + Environment.NewLine, writer.ToString());
+    }
 
-        for (var i = 0; i < TuiSurface.HistoryCapacity + 5; i++)
+    [Fact]
+    public async Task IndependentSessionSinksDoNotShareAProcessWideWriteLock()
+    {
+        using var blocked = new BlockingWriter();
+        using var normal = new StringWriter();
+        var first = new TuiSurface(blocked); var second = new TuiSurface(normal);
+        var pending = Task.Run(() => first.WriteLine("slow sink"));
+        try
         {
-            surface.WriteLine("row " + i);
+            await blocked.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.Run(() => second.WriteLine("other session")).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal("other session" + Environment.NewLine, normal.ToString());
         }
-
-        Assert.Equal(TuiSurface.HistoryCapacity, surface.HistoryCount);
-        Assert.Equal("row " + (TuiSurface.HistoryCapacity + 4), surface.SnapshotTail(1, 40)[0]);
+        finally { blocked.Release.Set(); await pending; }
     }
 
-    [Fact]
-    public void One_row_is_capped_at_the_documented_unit_limit()
+    private sealed class BlockingWriter : StringWriter
     {
-        var (surface, _) = Create();
-
-        surface.WriteLine(new string('x', TuiSurface.MaxLineCharacters + 100));
-
-        Assert.Equal(TuiSurface.MaxLineCharacters, surface.SnapshotTail(1, int.MaxValue)[0].Length);
-    }
-
-    [Fact]
-    public void SnapshotTail_clips_each_row_to_the_requested_width()
-    {
-        var (surface, _) = Create();
-        surface.WriteLine("abcdefghij");
-
-        var rows = surface.SnapshotTail(1, 5);
-
-        Assert.Equal(5, TuiText.VisibleWidth(rows[0]));
+        internal readonly TaskCompletionSource Entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly ManualResetEventSlim Release = new(false);
+        public override void WriteLine(string? value)
+        {
+            Entered.TrySetResult();
+            if (!Release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("test sink was not released");
+            base.WriteLine(value);
+        }
+        protected override void Dispose(bool disposing) { Release.Dispose(); base.Dispose(disposing); }
     }
 }

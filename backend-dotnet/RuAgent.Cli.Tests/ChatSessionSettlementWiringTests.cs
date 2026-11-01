@@ -9,7 +9,7 @@ public sealed class ChatSessionSettlementWiringTests
     {
         var root = FindRepositoryRoot();
         var prompt = File.ReadAllText(Path.Combine(root, "backend-dotnet", "RuAgent.Cli", "ChatSession.Prompt.cs"));
-        var terminalGui = File.ReadAllText(Path.Combine(root, "backend-dotnet", "RuAgent.Cli", "ChatSession.TerminalGui.cs"));
+        var terminalGui = File.ReadAllText(Path.Combine(root, "backend-dotnet", "RuAgent.Cli", "ChatSession.Engine.cs"));
         var manager = File.ReadAllText(Path.Combine(root, "backend-dotnet", "RuAgent.Cli", "TuiSessionManager.cs"));
 
         var retained = prompt.IndexOf("runSettlement = runSession.RetainRunSettlement();", StringComparison.Ordinal);

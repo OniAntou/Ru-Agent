@@ -137,6 +137,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `recovery_model_step_incomplete` (copy UI "Model reply interrupted"), trả session về rảnh. Run có
   bước model đã completion và receipt đầy đủ vẫn được để chạy tiếp như cũ.
 
+- **refactor(tui)**: Remove `/skills` and `/skill` from terminal chat handling,
+  suggestions and help. Keep ordinary skill requests in prompts and existing
+  Host skill discovery/invocation rules.
+
+- **fix(tui)**: Refuse submissions after shutdown without consuming pending drafts
+  or attachments. Retain tabs that own pending session navigation, and let Escape
+  cancel task/change/history fetches while the model is idle.
+
+- **refactor(tui)**: Use one chat controller for native Terminal.Gui and line/JSON
+  input, sharing admission, queues, cancellation, history and attachment ownership.
+  Remove the separate text chat loop, native-to-text handover and unused legacy
+  welcome rendering. Keep script/JSON compatibility and native welcome artwork;
+  remove duplicate transcript retention and serialize writes per session sink.
+
+- **fix(tui)**: Keep slash-command suggestions directly above the composer when
+  filtering changes the menu height, eliminating the blank gap below `/model`.
+  Invalidate the menu layout when live typing/backspace changes its height, so
+  partial commands such as `/mod` do not retain the previous black menu frame.
+
 - **feat(agent)**: **Lỗi dừng run dễ đọc hơn và thêm một lỗi model tự sửa được.** Run park vì provider
   (`provider_transport_error`, `provider_timeout`, `provider_server_error`, `provider_rate_limited`,
   `provider_quota_exhausted`), budget, context hay repetition giờ nói lý do bằng câu — "network

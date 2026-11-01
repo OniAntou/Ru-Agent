@@ -30,7 +30,7 @@ public sealed partial class AgentCommands
         private SettingsApiClient _settingsClient => _host._settingsClient;
         private AgentSlashCommands _slashCommands => tgMode
             ? sessionSlashCommands ??= new AgentSlashCommands(_settingsClient, _sessionClient,
-                tgWriter!, tgWriter!, _host._skillsClient)
+                tgWriter!, tgWriter!)
             : _host._slashCommands;
         private RunStartCore _runStartCore => tgMode
             ? sessionRunStartCore ??= new RunStartCore(_sessionClient, _agentClient, tgWriter!, tgWriter!)

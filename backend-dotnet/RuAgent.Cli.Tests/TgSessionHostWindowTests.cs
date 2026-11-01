@@ -23,7 +23,7 @@ public sealed class TgSessionHostWindowTests
                 case 0: page.SetHostedApplication(app); app.Driver!.SetScreenSize(18, 10); return true;
                 case 1: return true;
                 default:
-                    Assert.False(page.HandOverToSequential);
+                    Assert.True(page.IsSessionPage);
                     Assert.Same(shell, app.TopRunnableView);
                     page.SetHostedApplication(null); complete = true; app.RequestStop(); return false;
             }

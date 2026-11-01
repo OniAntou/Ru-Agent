@@ -25,6 +25,10 @@ public sealed class RemovedChatCommandTests
     [InlineData("/ATTACH \"C:\\workspace\\notes.txt\"")]
     [InlineData("/detach --all")]
     [InlineData("/continue run_not_adopted")]
+    [InlineData("/skills")]
+    [InlineData("/skills add-root C:\\skills")]
+    [InlineData("/skill review")]
+    [InlineData("/SKILL review inspect src/main.cs")]
     public async Task RemovedCommands_AreUndiscoverableAndCannotExecute(string command)
     {
         var slashCommand = command.Split(' ', 2)[0].ToLowerInvariant();

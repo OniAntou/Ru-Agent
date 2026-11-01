@@ -1,4 +1,5 @@
 using RuAgent.Cli.Tui;
+using RuAgent.Cli.Chat;
 using Xunit;
 
 namespace RuAgent.Cli.Tests;
@@ -41,12 +42,12 @@ public sealed class ChatInputContractTests
     [Fact]
     public void History_AppendsAndDedupesConsecutiveItems()
     {
-        var reader = new PlainChatInput();
-        reader.AddToHistory("first command");
-        reader.AddToHistory("first command"); // consecutive duplicate
-        reader.AddToHistory("second command");
-        reader.AddToHistory("   "); // whitespace ignored
-        reader.AddToHistory("first command"); // non-consecutive allowed
+        var reader = new ChatSessionEngine(new PlainChatView(TextWriter.Null, ""));
+        reader.RememberForTests("first command");
+        reader.RememberForTests("first command"); // consecutive duplicate
+        reader.RememberForTests("second command");
+        reader.RememberForTests("   "); // whitespace ignored
+        reader.RememberForTests("first command"); // non-consecutive allowed
 
         Assert.Equal(3, reader.History.Count);
         Assert.Equal("first command", reader.History[0]);
@@ -85,7 +86,7 @@ public sealed class ChatInputContractTests
         Assert.Contains("line 1", result);
         Assert.Contains("line 2", result);
         Assert.Contains("line 3", result);
-        Assert.Contains(result, reader.History);
+        Assert.Equal(3, result.Split(Environment.NewLine).Length);
     }
 
     [Fact]

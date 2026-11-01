@@ -33,6 +33,8 @@ public sealed partial class AgentCommands
             var submissionSessionId = submission?.SessionId ?? sessionId;
             var submissionWorkspace = submission?.WorkspacePath ?? canonicalWorkspace;
             var submissionPreset = submission?.Preset ?? cmd.Preset;
+            var isParkedContinuation = runSession.ParkedRunId is not null
+                && string.Equals(promptLine, "continue", StringComparison.OrdinalIgnoreCase);
             IReadOnlyList<Images.CliImageAttachment> submissionImages = submission is null
                 ? pendingImages
                 : submission.Images;
@@ -47,7 +49,7 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            if (submission is not null)
+            if (submission is not null && !isParkedContinuation)
             {
                 try
                 {
@@ -103,8 +105,7 @@ public sealed partial class AgentCommands
 
             // The GUI accepts a bare typed "Continue" while a run is parked. Only claim
             // that literal when a parked run is known: otherwise it is an ordinary prompt.
-            if (runSession.ParkedRunId is not null
-                && string.Equals(promptLine, "continue", StringComparison.OrdinalIgnoreCase))
+            if (isParkedContinuation)
             {
                 if (!cmd.Json && !tgMode)
                 {
@@ -246,7 +247,7 @@ public sealed partial class AgentCommands
                 if (tgMode) RunOnTgUi(() => tgWindow!.Hints.ClearWorkspaceBusy());
                 submissions.Accept();
                 RefreshAttachmentLabels();
-                tgLoop?.ResumeQueuedSubmissions();
+                chatEngine?.ResumeQueuedSubmissions();
                 runSession.AcceptCreatedRun(resp.RunId);
                 ownedRunId = resp.RunId;
 
@@ -508,14 +509,6 @@ public sealed partial class AgentCommands
             if (slashCmd is "/rewind" or "/history")
             {
                 await RewindHistoryAsync(arg, cancellationToken).ConfigureAwait(false);
-                return true;
-            }
-
-            // Explicit skill invocation is a normal user turn. The Host resolves the
-            // exact skill and durably captures it before model dispatch.
-            if (slashCmd == "/skill")
-            {
-                await HandlePromptLineAsync(slashLine, cancellationToken).ConfigureAwait(false);
                 return true;
             }
 

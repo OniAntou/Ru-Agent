@@ -18,7 +18,7 @@ public sealed partial class TuiMultiSessionTests
         using var commands = new AgentCommands(ChatRewindWorkflowTests.Host.Session, http, TextWriter.Null, TextWriter.Null);
         var writer = new TgTranscriptWriter(app, pageA.Transcript); var path = Path.GetTempPath();
         var bootstrap = new AgentCommands.ChatBootstrapContext(new ChatSubmissionState(), writer, path, path, string.Empty,
-            "OpenAI", "gpt-4o", "high", null, TuiEngine.TerminalGui, true, writer, pageA, app);
+            "OpenAI", "gpt-4o", "high", null, ChatPresentationMode.Native, true, writer, pageA, app);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var stage = 0; TgChatWindow? pageB = null; Exception? failure = null;
         app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>

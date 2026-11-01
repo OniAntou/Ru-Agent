@@ -70,6 +70,11 @@ def test_repository_linked_candidate_entries_are_rejected(tmp_path):
     task = next(task for task in benchmark.tasks("repository") if task.language == "python")
     trial = benchmark.prepare(task, tmp_path / "trial")
     workspace = Path(trial["workspace"])
-    (workspace / "src" / "linked.py").symlink_to(task.seed / "src" / "service.py")
+    try:
+        (workspace / "src" / "linked.py").symlink_to(task.seed / "src" / "service.py")
+    except OSError as error:
+        if sys.platform == "win32" and getattr(error, "winerror", None) == 1314:
+            pytest.skip("Windows account cannot create symlinks (WinError 1314)")
+        raise
     with pytest.raises(ValueError, match="linked fixture"):
         task_io.check_integrity(task, workspace)

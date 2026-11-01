@@ -32,9 +32,10 @@ guidance is reported rather than assumed. See [context management](../architectu
 
 A skill is a folder with a `SKILL.md` file that describes a workflow. Ru lists only each skill's name and
 description in a bounded catalog and loads the full workflow on demand. Use
-`/skill release-notes [arguments]` in chat to select one explicitly, or open
-**Customize** under New Chat in the GUI (or type `/skills` in its composer).
-`/skills` lists and manages skills in the TUI.
+an ordinary terminal prompt such as `Use the release-notes skill for this change`,
+or open **Customize** under New Chat in the GUI for explicit selection and management.
+Terminal chat no longer exposes `/skills` or `/skill`; model-side invocation
+rules still apply.
 
 ```markdown
 ---

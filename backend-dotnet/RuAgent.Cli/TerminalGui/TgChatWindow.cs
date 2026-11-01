@@ -204,37 +204,6 @@ public sealed partial class TgChatWindow : Window
         }
     }
 
-    /// <summary>
-    /// Set once the live terminal has settled below the drawable 20x12 floor: the window stops the app
-    /// and the run loop continues the same session on the append-only text path. One-way
-    /// for the life of the window; the TG frame never reopens.
-    /// </summary>
-    public bool HandOverToSequential { get; private set; }
-
-    /// <summary>
-    /// How long the terminal must stay below the floor before the frame gives up. Dragging a
-    /// window edge sweeps the width through small values for a moment, and the handover cannot
-    /// be undone, so reacting to the first blip costs the operator the whole Terminal.Gui
-    /// surface over a stray pixel of drag.
-    /// </summary>
-    private const int HandoverDebounceMs = 400;
-
-    /// <summary>
-    /// The size below which the layout genuinely cannot be drawn, which is a very different
-    /// question from the 80x24 floor that picks the engine at startup. That floor asks "which
-    /// surface suits this screen"; this one asks "can this surface still be laid out", and the
-    /// honest answer stays yes far below it. Width barely matters: the wordmark falls back to
-    /// a caption under <see cref="TuiHeader.MinWordmarkWidth"/> and the composer clamps at ten
-    /// columns. Height is the real constraint, because the header, transcript and the pinned
-    /// composer stack are what stop fitting.
-    /// </summary>
-    private const int HandoverMinWidth = 20;
-
-    /// <summary>Header, transcript, the six composer rows and the hint row cannot share fewer.</summary>
-    private const int HandoverMinHeight = 12;
-
-    private bool _handoverScheduled;
-
     /// <summary>Decision token of a confirmed approval/trust/picker panel.</summary>
     public event Action<string>? PanelConfirmed;
 
@@ -293,8 +262,11 @@ public sealed partial class TgChatWindow : Window
         }
 
         _slashDropdown.SetMatches(matches);
-        _slashDropdown.Height = Dim.Func(_ => Math.Min(_slashDropdown.PanelHeight, Math.Max(3, Composer.Frame.Y)));
-        _slashDropdown.Y = Pos.Func(_ => Math.Max(0, Composer.Frame.Y - _slashDropdown.Frame.Height));
+        int DropdownHeight() => Math.Min(_slashDropdown.PanelHeight, Math.Max(3, Composer.Frame.Y));
+        _slashDropdown.Height = Dim.Func(_ => DropdownHeight());
+        // Frame.Height still describes the previous match set while Y is measured.
+        // Use the current measurement for both so filtering cannot leave a gap.
+        _slashDropdown.Y = Pos.Func(_ => Math.Max(0, Composer.Frame.Y - DropdownHeight()));
         if (_slashDropdown.SuperView is null)
         {
             Add(_slashDropdown);
@@ -565,9 +537,8 @@ public sealed partial class TgChatWindow : Window
     public static TgChatWindow Build() => new();
 
     /// <summary>
-    /// Watches the app's resize feed for as long as the window is running: a size change
-    /// relayouts the pinned regions, and a drop below the TG floor (the same 80x24 the
-    /// engine selection gates on) ends the frame in favour of the sequential fallback.
+    /// Watches the app's resize feed while the window is running. Resize relayouts
+    /// pinned regions without replacing the session controller or its native view.
     /// </summary>
     protected override void OnIsRunningChanged(bool args)
     {
@@ -595,15 +566,6 @@ public sealed partial class TgChatWindow : Window
 
     private void OnScreenChanged(object? sender, EventArgs<Rectangle> args)
     {
-        if (!IsSessionPage && IsBelowFloor(args.Value))
-        {
-            // Not a handover yet: keep the frame and relayout so it stays usable while the
-            // terminal decides whether it really is too small.
-            ScheduleHandover();
-            Relayout();
-            return;
-        }
-
         Relayout();
     }
 
@@ -634,44 +596,6 @@ public sealed partial class TgChatWindow : Window
         {
             _relayoutInProgress = false;
         }
-    }
-
-    private static bool IsBelowFloor(Rectangle size) => IsTooSmallToDraw(size.Width, size.Height);
-
-    /// <summary>
-    /// Whether a terminal of this size cannot host the layout at all. Separate from the 80x24
-    /// floor that picks the engine at startup on purpose, and separate from any driver, so the
-    /// rule can be pinned directly instead of through a screen the test driver may refuse.
-    /// </summary>
-    internal static bool IsTooSmallToDraw(int width, int height) =>
-        width < HandoverMinWidth || height < HandoverMinHeight;
-
-    /// <summary>
-    /// Arms the one-way handover, and disarms it again if the terminal is back above the floor
-    /// by the time it fires. A settled-small terminal still loses the frame; a drag that only
-    /// passes through the floor for a moment does not.
-    /// </summary>
-    private void ScheduleHandover()
-    {
-        if (_handoverScheduled)
-        {
-            return;
-        }
-
-        _handoverScheduled = true;
-        _resizeApp?.AddTimeout(TimeSpan.FromMilliseconds(HandoverDebounceMs), () =>
-        {
-            _handoverScheduled = false;
-            var driver = _resizeApp?.Driver;
-            if (driver is not null && !IsBelowFloor(new Rectangle(0, 0, driver.Cols, driver.Rows)))
-            {
-                return false;
-            }
-
-            HandOverToSequential = true;
-            _resizeApp?.RequestStop();
-            return false;
-        });
     }
 
     private void ShowPanel(Func<int, int, IReadOnlyList<CardLine>> card)

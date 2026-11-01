@@ -6,19 +6,17 @@ grants permissions from `allowed-tools` or other metadata.
 
 ## Invoke and manage
 
-- In chat, send `/skill verify src/main.cs` to load the `verify` workflow with
+- In GUI chat, send `/skill verify src/main.cs` to load the `verify` workflow with
   `src/main.cs` as arguments. `$ARGUMENTS` in the rendered workflow receives that
   text. The visible conversation keeps the concise command.
-- In the TUI, `/skills` lists the catalog before a run exists. `/skills search
-  review`, `/skills refresh`, `/skills enable verify`, `/skills disable verify`,
-  and `/skills implicit verify on|off` manage discovery and selection.
+- In terminal chat, ask in an ordinary prompt, for example `Use the verify skill
+  to check src/main.cs`. `/skills` and `/skill` are no longer terminal chat
+  commands. Model-side loading retains the package's invocation policy.
 - In the GUI, **Customize** under New Chat (or `/skills` typed in the composer)
-  opens the Skills tab: a searchable list with enable/disable,
-  automatic-selection and reload controls. **Use in chat** returns to the chat
-  with `/skill <id>` in the composer; send it with any arguments.
-- `/skills add-root D:\MySkills` registers an existing directory containing
-  skill folders for this workspace; `/skills remove-root D:\MySkills` removes
-  that registration. The GUI accepts the same local root paths. This registers
+  opens the Skills tab: a searchable list with enable/disable, automatic-selection
+  and reload controls. **Use in chat** returns with `/skill <id>` in the composer.
+- The GUI can register or remove a local root such as `D:\MySkills` containing
+  skill folders for this workspace. This registers
   files in place; it does not copy, download, update or execute a package.
 
 Default root precedence is workspace `skills`, `.ru/skills`, `.agents/skills`,
@@ -41,7 +39,7 @@ omissions; search narrows the listing rather than silently claiming completeness
 
 ## Explicit GitHub package installation
 
-**Customize → Skills → Add → Install from GitHub** and `/skills install <url>` accept a GitHub tree URL pinned
+**Customize → Skills → Add → Install from GitHub** accepts a GitHub tree URL pinned
 to a full 40-character commit, for example:
 
 ```text
@@ -49,7 +47,7 @@ https://github.com/acme/workflows/tree/0123456789abcdef0123456789abcdef01234567/
 ```
 
 Choose **Install from GitHub** when there is no package with that ID in Ru's managed
-user library. **Update a GitHub package** (or `/skills update <url>`) is a separate, explicit action and
+user library. **Update a GitHub package** is a separate, explicit action and
 only replaces an unchanged package previously installed by Ru from the same
 repository and subdirectory. It may pin a newer commit. Ru fetches the fixed
 `codeload.github.com` archive with redirects disabled, validates archive paths,

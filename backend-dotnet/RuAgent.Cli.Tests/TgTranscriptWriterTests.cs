@@ -269,6 +269,13 @@ public sealed class TgTranscriptWriterTests
         using var window = TgChatWindow.Build();
         Assert.True(AgentCommands.CreateSessionRenderer(new TgTranscriptWriter(app, window.Transcript)).Transcript.FullScreenCards);
         Assert.False(AgentCommands.CreateSessionRenderer(new StringWriter()).Transcript.FullScreenCards);
+        // Leave a running frame before disposal so ANSI input startup has settled.
+        app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
+        {
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
     }
     [Fact]
     public void WriteLine_StripsPaletteEscapes()

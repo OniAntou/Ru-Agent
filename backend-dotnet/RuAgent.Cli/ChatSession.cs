@@ -52,7 +52,7 @@ public sealed partial class AgentCommands
         private IReadOnlyList<CliTextAttachment> pendingTexts = default!;
         private TgChatLoop? tgLoop = null;
         private Tui.TuiSessionRenderer sessionRenderer = default!;
-        private Tui.PlainChatInput lineReader = default!;
+        private Chat.ChatSessionEngine? chatEngine;
         private string? sessionTitle = null;
         private long? lastTotalTokens = null;
         private Tui.TuiUsageTracker usage = default!;
@@ -98,45 +98,15 @@ public sealed partial class AgentCommands
                 if (tgMode)
                 {
                     await RunTerminalGuiChatAsync().ConfigureAwait(false);
-                    if (!tgWindow!.HandOverToSequential || dispatcherExitCode is not null)
-                        return dispatcherExitCode ?? 0;
-
-                    // One-way handover after a tiny viewport stops the frame. Dispose the
-                    // alternate screen before writing to stdout; session/run state stays intact.
-                    tgMode = false;
-                    tgWriter = null;
-                    _slashCommands.ReprintPanelOnPickerCancel = false;
-                    _slashCommands.FramelessReports = false;
-                    humanOut = _out;
-                    _slashCommands.HumanOut = _out;
-                    // The Terminal.Gui delegates now point at a disposed view. Drop the
-                    // picker and masked panel, and rebuild the session list paths so
-                    // commands use the sequential fallbacks.
-                    _slashCommands.Picker = null;
-                    _slashCommands.SecretPanelPrompt = null;
-                    _slashCommands.SecretPrompt = (prompt, ct) => Tui.ConsoleSecretInput.ReadAsync(_out, prompt, ct);
-                    sessionCommands = CreateSessionCommands();
-                    sessionRenderer = CreateSessionRenderer(_out);
-                    tgApp!.Dispose();
+                    return dispatcherExitCode ?? 0;
                 }
 
-                var dispatcher = new ChatLineDispatcher(
-                    HandleSlashLineAsync,
-                    (prompt, ct) => HandlePromptLineAsync(prompt, ct));
-                return await lineReader.RunAsync(_in, humanOut, async (line, ct) =>
-                {
-                    line = line.Trim();
-                    if (line.Length == 0 && submissions.Count == 0) return null;
-                    // Quotes belong to the prompt unless the whole line is an existing file.
-                    var candidate = line.Trim('"', '\'');
-                    if (candidate.Length > 0 && IsDroppedAttachmentPath(candidate))
-                    {
-                        await AttachFileAsync(candidate).ConfigureAwait(false);
-                        return null;
-                    }
-                    await dispatcher.DispatchAsync(line, ct).ConfigureAwait(false);
-                    return dispatcherExitCode;
-                }, cancellationToken).ConfigureAwait(false);
+                var view = new Chat.PlainChatView(_err, workspaceLabel);
+                var engine = new Chat.ChatSessionEngine(view, cancellationToken);
+                ConfigureChatEngine(engine);
+                await Chat.ChatLineAdapter.RunAsync(_in, humanOut, view, engine,
+                    attachmentTasks.WaitForIdleAsync, cancellationToken).ConfigureAwait(false);
+                return dispatcherExitCode ?? 0;
             }
             finally
             {

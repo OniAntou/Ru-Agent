@@ -106,7 +106,7 @@ public sealed partial class AgentCommands
                     });
                 }
                 submissions.Accept();
-                tgLoop?.FinishHistoryReload();
+                chatEngine?.FinishHistoryReload();
                 RefreshAttachmentLabels();
                 await WriteDiagnosticLineAsync(humanOut, "conversation reloaded · pending attachments preserved");
             }

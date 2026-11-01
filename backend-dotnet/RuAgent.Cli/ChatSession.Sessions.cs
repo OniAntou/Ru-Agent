@@ -163,10 +163,7 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
-        /// Rebuilds the session-command surface for the current engine. A tiny-terminal
-        /// handover disposes the Terminal.Gui frame, so its pickers and delete card must be
-        /// replaced by the sequential list paths; reusing the old delegate would call a
-        /// disposed panel.
+        /// Binds session commands to the selected presentation's picker capabilities.
         /// </summary>
         ChatSessionCommands CreateSessionCommands() =>
             new(
@@ -178,7 +175,7 @@ public sealed partial class AgentCommands
                 target => multiSessions is null ? SwitchSessionAsync(target) : multiSessions.OpenAsync(this, target),
                 _slashCommands.Picker,
                 // The session card (switch + delete) and the delete call exist only where a panel
-                // can be drawn; the sequential engine keeps the plain list and /sessions id:<id>.
+                // can be drawn; line I/O keeps the plain list and /sessions id:<id>.
                 tgMode ? (list, ct) => TgPanelRequests.RequestSessionChoiceAsync(tgWindow!, list, ct) : null,
                 tgMode ? (target, token) => multiSessions is null ? DeleteSessionAsync(target, token)
                     : multiSessions.DeleteAsync(this, target, token) : null,

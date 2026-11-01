@@ -76,14 +76,20 @@ portable newline paths; Shift+Enter depends on terminal key reporting. Explicit
 copy returns retained text, including any code gutters, rather than original
 tool payloads. See the [CLI controls](../../backend-dotnet/RuAgent.Cli/README.md).
 
+The [2026-10-31 typing investigation](../history/verification/2026-10-31-tui-typing.md)
+identified redundant whole-window redraws during slash-menu edits and the native
+loop's default iteration cap. The shared-controller integration fixes menu geometry,
+but does not implement the proposed repaint/cadence optimization or establish
+current manual typing latency.
+
 ### The live row and the animation clock
 
 The transcript's live activity row (thinking / running tool / writing) is drawn
 from a pure time-based clock (`TuiSpinner`), so its spinner advances at
 100 ms per frame whatever the ticker cadence; the running-tool glyph rotates its
 half-circle on the same clock. The row clears when the activity settles (the
-writer clears it as the permanent tool row lands), when the turn ends, or on
-`/clear`. A parked run keeps the row static (no rotation) with its reason;
+writer clears it as the permanent tool row lands) or when the turn ends.
+A parked run keeps the row static (no rotation) with its reason;
 scrolled back, the live row sits below the viewport and the hints-row spinner is
 the only running indicator. The 18 ms frame timer still runs for the landing
 meteors while the frame is live; when idle its callback only clears the live row

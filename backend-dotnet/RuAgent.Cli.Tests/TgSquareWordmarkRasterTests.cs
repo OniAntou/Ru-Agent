@@ -63,9 +63,19 @@ public sealed class TgSquareWordmarkRasterTests
         var other = raster.Render(3.2);
         Assert.Same(quiet, other);
         Assert.Same(other, raster.Render(3.21));
+        var perFrame = new long[300];
+        var collections = GC.CollectionCount(0);
         var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 300; i++) _ = raster.Render(i * .1);
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        var previous = before;
+        for (var i = 0; i < 300; i++)
+        {
+            _ = raster.Render(i * .1);
+            var current = GC.GetAllocatedBytesForCurrentThread();
+            perFrame[i] = current - previous;
+            previous = current;
+        }
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(allocated == 0, $"Allocated {allocated}; GC0 delta {GC.CollectionCount(0) - collections}; frames: {string.Join(',', perFrame.Select((bytes, i) => (bytes, i)).Where(item => item.bytes != 0))}");
     }
 
     [Theory]

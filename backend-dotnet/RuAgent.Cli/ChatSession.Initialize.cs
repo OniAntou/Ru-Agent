@@ -26,7 +26,7 @@ public sealed partial class AgentCommands
             modelWarning = bootstrap.ModelWarning;
             pendingImages = submissions.Images;
             pendingTexts = submissions.Texts;
-            // The loop is created once the run handlers exist (RunTerminalGuiChatAsync);
+            // The shared controller is configured once the run handlers exist;
             // attachment mutations below refresh its hint row through this seam.
             sessionRenderer = CreateSessionRenderer(ResolveRenderWriter());
             if (tgWriter is not null)
@@ -37,7 +37,6 @@ public sealed partial class AgentCommands
                 tgWriter.RetainedLinesProvider = () => sessionRenderer.Transcript.RetainedLines;
             }
 
-            lineReader = new Tui.PlainChatInput();
 
             // Header state for the Terminal.Gui header. The title is read from the
             // session document (bounded probes) and the tally repaints as usage frames arrive.
@@ -46,8 +45,8 @@ public sealed partial class AgentCommands
             modelUsage = new ChatModelUsage(_settingsClient.GetModelDetailsAsync);
             runSession = new ChatRunSession();
 
-            // Slash-command surfaces: the pickers run through the TG panels or the sequential
-            // reader. --json owns stdout, so every human-facing line a slash command prints goes
+            // Slash-command surfaces use native panels or explicit line arguments.
+            // --json owns stdout, so every human-facing line a slash command prints goes
             // to stderr and picker-only commands refuse instead of prompting.
             _slashCommands.HumanOut = humanOut;
             _slashCommands.Json = cmd.Json;
@@ -56,8 +55,8 @@ public sealed partial class AgentCommands
             // The TG frame has no scrollback behind the picker, so a cancelled bare form must
             // reprint the option panel instead of leaving the operator with a silent no-op.
             _slashCommands.ReprintPanelOnPickerCancel = tgMode;
-            // Terminal.Gui is the only engine with a floating picker. The sequential
-            // fallback leaves Picker null so the command handlers print their option
+            // Only the native presentation has a floating picker. The line adapter
+            // leaves Picker null so the command handlers print their option
             // panels (or a bounded interactive_required) instead of calling a no-op.
             if (!cmd.Json && tgMode)
             {

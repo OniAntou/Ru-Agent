@@ -98,7 +98,7 @@ public sealed class ChatParkReasonWorkflowTests
                 };
             }
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"status":"ok","backend":"OpenAI","openai_model":"synthetic-test-model"}""", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.EndsWith("/cancel"))

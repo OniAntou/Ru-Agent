@@ -20,6 +20,7 @@ public sealed partial class AgentCommands
             private readonly HashSet<string> _deleted = new(StringComparer.Ordinal);
             private readonly CancellationTokenSource _lifetime = CancellationTokenSource.CreateLinkedTokenSource(initial.cancellationToken);
             private ChatSession? _active;
+            private ChatSession? _navigationSource;
             private Task _navigation = Task.CompletedTask;
             private volatile bool _navigating;
             private sealed record ModelDefaults(string Backend, string Model, string Effort);
@@ -138,6 +139,7 @@ public sealed partial class AgentCommands
                     source.tgWindow!.Hints.ShowFeedback("session selection is already open", true);
                     return;
                 }
+                Volatile.Write(ref _navigationSource, source);
                 _navigating = true;
                 _navigation = NavigateAsync();
                 async Task NavigateAsync()
@@ -151,6 +153,7 @@ public sealed partial class AgentCommands
                     }
                     finally
                     {
+                        Volatile.Write(ref _navigationSource, null);
                         _navigating = false;
                         if (!Stopping) await OnUi(CloseDeletedPages).ConfigureAwait(false);
                     }
@@ -188,7 +191,7 @@ public sealed partial class AgentCommands
                         Preset = preset, ConfirmFullAccess = preset == "full_access" };
                     var bootstrap = new ChatBootstrapContext(submissions, writer, source.canonicalWorkspace,
                         source.workspaceLabel, sessionId, source.backendName, source.activeModel, source.activeReasoningEffort,
-                        null, source.bootstrap.Engine, true, writer, page, _app);
+                        null, source.bootstrap.Presentation, true, writer, page, _app);
                     created = new ChatSession(source._host, command, bootstrap, _lifetime.Token) { multiSessions = this };
                 }).ConfigureAwait(false);
                 try
@@ -277,6 +280,11 @@ public sealed partial class AgentCommands
 
             private void CloseIdle(ChatSession session)
             {
+                if (ReferenceEquals(session, Volatile.Read(ref _navigationSource)))
+                {
+                    session.tgWindow!.Hints.ShowFeedback("session selection is still running · wait before closing this tab", true);
+                    return;
+                }
                 if (Snapshot().Length <= 1 || !CanRelease(session))
                 {
                     session.tgWindow!.Hints.ShowFeedback("keep one tab · finish the run and clear pending attachments before closing", true);
@@ -296,6 +304,7 @@ public sealed partial class AgentCommands
             private void CloseDeletedPages()
             {
                 foreach (var session in Snapshot().Where(session => _deleted.Contains(session.sessionId)
+                             && !ReferenceEquals(session, Volatile.Read(ref _navigationSource))
                              && !ReferenceEquals(session, _active) && !session.tgLoop!.IsBusy
                              && !session.attachmentTasks.HasPending)) RemoveIdle(session);
                 UpdateTabs();

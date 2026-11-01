@@ -4,9 +4,48 @@ Current reference. [System ownership](../architecture.md) · [Domain glossary](.
 
 The CLI's `ChatModelUsage` resolves header metadata separately from chat
 orchestration. It keeps a retained run's context window from its snapshot and
-uses catalog details only for rates; sequential/data-only chat skips that lookup.
+uses catalog details only for rates; line/JSON chat skips that lookup.
 
 ## Core TUI
+
+### Shared chat controller
+
+`ChatSessionEngine` is the only conversation controller in `agent chat`. It owns
+submission guards/snapshots, admission, the bounded queue, prompt history,
+turn cancellation, pause/resume and the independent task/change/history inspection
+lane. `ChatSession.Engine.cs` wires the same command and run handlers, attachment
+ownership and shutdown settlement for every presentation. A parked `Continue`
+revalidates the retained run's owner/state and preserves its provider pin; it does
+not require current default settings to match a new submission.
+
+`TgChatLoop` is a native key binding over this controller, with
+`TgChatEngineView` translating its notifications to Terminal.Gui widgets.
+`ChatLineAdapter` reads continued lines, submits them to the controller and waits
+for the turn and attachment intake before reading again. `PlainChatInput` only
+reads input; it has no conversation loop or second history. Text and NDJSON keep
+their existing event/output projections. Human diagnostics and prompts stay off
+JSON stdout. EOF and cancellation stop the controller and await owned settlement.
+Stopped controllers refuse new input before routing and again at queue admission,
+so shutdown during snapshot validation does not consume a draft or its attachments.
+
+`ChatPresentationSelection` selects capabilities once: interactive terminals use
+Terminal.Gui; redirected stdin/stdout, `--json`, `--classic`, any `NO_COLOR`,
+`TERM=dumb` or a startup viewport below 80×24 use append-only line I/O. These are
+adapters to one controller, not alternative chat engines. Native resize stays in
+the same native host; there is no handover to a second loop.
+
+`Tui/` contains shared semantic formatting, measurement and event projection as
+well as the line reader. It is not another interactive renderer. Native welcome
+artwork still owns the galaxy, wordmark, sweep and meteors. The unused legacy
+welcome/header drawing methods have been removed; shared glyph data and path
+shortening remain. Host orchestration, protocol routes, provider selection
+compatibility and Broker permissions are unchanged by this client refactor.
+
+Terminal chat omits `/skills` and `/skill` from handling, completion, palettes and
+help; entering either command reports `unknown_command` without a run or catalog
+mutation. Ordinary prompts can still ask for a skill. Host discovery, the model's
+`skill` tool, GUI skill controls and typed run-command contracts retain their
+existing invocation rules.
 
 ### Concurrent session tabs
 
@@ -19,22 +58,28 @@ are `◐` running, `?` waiting, `✓` completed, `!` error/held queue and `·` i
 
 There is one `IApplication`, one runnable `TgSessionHostWindow` and one animation
 timer. Each session retains a `TgChatWindow` as a child view container, its own
-`ChatSession`, loop, command writer, run owner, event cursor, bounded transcript,
+`ChatSession`, shared controller instance, command writer, run owner, event cursor, bounded transcript,
 usage, drafts/cursor, attachments, scroll state and submission queue. These child
 containers are never run as separate applications. Only the selected page is
 visible and receives application-level key/paste routing. Hidden transcripts defer
 wrap work until selected; their event feeds and semantic projection continue so
 transient deltas and queued work are preserved. Tab summaries refresh at most
-every 200 ms. Small resizes retain the session host rather than terminating all
-workers for a sequential handover; startup engine selection is unchanged.
+every 200 ms. Small resizes retain the session host and its workers; startup
+presentation selection is unchanged.
 
 Background approval and `ask_user` panels belong to their session page and do not
 take the selected session's input. Activation restores that page's modal/editor
 focus. Escape cancels only the selected session's work; switching tabs never
 posts a cancellation. `/sessions close` releases an idle tab without deleting its
 saved conversation. It refuses the last tab, retained runs, held/queued work,
-pending history branches and attachments. Normal confirmed session deletion
+pending history branches and attachments. A tab that owns an outstanding session
+create/open/picker operation remains retained until that operation settles; other
+idle tabs can still close. Normal confirmed session deletion
 keeps its existing API and rejects open tabs with pending work.
+
+Escape can cancel a pending task/change/history inspection before its panel opens,
+even with no model turn running. Inspection cancellation keeps priority over model
+cancellation; the model's running indicator and palette guards retain their own state.
 
 Provider/model settings remain shared defaults for new runs. An idle tab adopts
 changes made in another tab before a fresh submission; already admitted runs
@@ -106,12 +151,12 @@ Terminal.Gui owns the interactive screen. Shared event and Markdown formatting
 projects semantic transcript rows and styled runs directly to native attributes;
 sequential text output and legacy command/diagnostic imports remain separate adapters.
 
-Only Terminal.Gui draws an interactive frame; the append-only adapter is a printer.
-It writes finished rows and keeps a bounded history, with no cursor positioning,
-sticky footer, live-row repaint, resize rebuild or framed composer. Those paths were
-unreachable in production (the CLI suppressed repaints unconditionally), and keeping
-them meant maintaining a second renderer that no terminal could see. The interactive
-engine's live row, footer and panels are unchanged.
+Only Terminal.Gui draws an interactive frame; the append-only adapter prints rows
+without cursor positioning, sticky footer, live-row repaint, resize rebuild or
+framed composer. `TuiSurface` serializes writes per sink, without retaining a
+duplicate transcript or imposing a process-wide write lock on other sessions.
+Transcript history belongs to the native view; prompt history belongs to the
+shared conversation controller. The native live row, footer and panels are unchanged.
 
 Both adapters share one text engine. `TuiText` owns display-cell measurement, rune
 decoding, wrapping and the common truncations; the Terminal.Gui importer and the
@@ -127,8 +172,9 @@ current column before measuring. A submitted multiline prompt is one user-block 
 source line, with continuation rows aligned under the chevron. Span-painted bullet and
 quote rows repeat their marker column or `│` gutter on continuation rows, with the body
 wrapped in the remaining width, so the screen and classic renderers agree on the shape.
-The append-only surface bounds its rebuild history by rows and characters (2,000 /
-200,000, with a 16,000-unit per-line cap) exactly like the Terminal.Gui transcript.
+The native transcript retains at most 2,000 rows / 200,000 characters, with a
+16,000-unit per-line cap. The append-only sink writes directly and retains no
+rebuild history.
 _Avoid_: Requiring GUI feature parity or treating presentation metadata as authority.
 
 Native paragraph projection splits styled, tab-expanded prose into storage segments
@@ -252,7 +298,7 @@ acknowledged input events. The Host retains consume-once and policy authority.
 Retained input recovery uses a finite replay (2048 events, 64 KiB per frame, four
 seconds), requires matching run/session/event identity and the summary cursor, then
 refreshes the run before opening the editor. Missing/stale questions fail visibly;
-uncertain POSTs never trigger an automatic retry. Sequential/JSON paths retain the
+uncertain POSTs never trigger an automatic retry. Line/JSON adapters retain the
 out-of-band answer command and do not consume stdin on behalf of the question.
 
 `ChatTaskWorkflow` implements `/tasks [run-id]` and `/tasks kill <execution-id>` using
@@ -270,7 +316,7 @@ submissions until finished, and cancels/drains on shutdown. Escape during its fe
 cancels task control rather than the model. It adds no timer or periodic network
 traffic: refresh is an explicit picker action. Modal request serialization is shared
 with native questions and approval/trust prompts, preventing one panel's response
-from resolving another panel's waiter. Sequential and JSON remain nonmodal adapters.
+from resolving another panel's waiter. Line and JSON I/O remain nonmodal adapters.
 
 `ChatChangesWorkflow` adds read-only `/changes [run-id]` using the existing
 `GetRunAsync`/`ListRunActivitiesAsync` client API. Run/session membership is checked
@@ -466,7 +512,16 @@ This does not add a screen-sized buffer or inherit the galaxy raster's dimension
 cap. No retained particle objects, background tasks or extra timer are created, and
 the same hidden/overlay pause stops both effects.
 The terminal font owns glyph metrics. The existing wordmark and composer stay above the black sky. No new controls or provider calls are added.
-The sequential output adapter retains its existing header renderer.
+The line adapter prints its existing plain startup banner.
+
+Slash suggestions align to the full composer width and end directly above its
+top row. Their height and vertical position use the same current match-count
+measurement, so filtering `/` down to `/model` or expanding it again cannot reuse
+the previous menu height and leave a gap or cover the prompt. The measurement
+keeps the existing available-height bound when the terminal is resized.
+`TgSlashDropdown.SetMatches` also invalidates layout when the measured panel
+height changes. Live typing and backspace can change that data without changing
+the layout delegates themselves; redraw alone would keep an old black frame.
 
 The existing UI timer still owns activity/footer updates. Only the welcome clock
 is throttled to 50 ms (at most 20 FPS; about 18.5 FPS with the shared 18 ms timer);

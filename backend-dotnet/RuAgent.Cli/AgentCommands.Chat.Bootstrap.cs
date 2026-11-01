@@ -9,7 +9,7 @@ public sealed partial class AgentCommands
 {
     /// <summary>
     /// ChatAsync's bootstrap: preset/workspace/session validation, the settings
-    /// read that names the run's provider, engine selection, the Terminal.Gui
+    /// read that names the run's provider, presentation selection, the Terminal.Gui
     /// frame construction and the attachment intake. Everything ChatAsync's run
     /// loop assumes is established here; failure paths drain what was created
     /// so a refused chat cannot leak the frame or delete-tasks of the images it
@@ -25,7 +25,7 @@ public sealed partial class AgentCommands
         string activeModel,
         string reasoningEffort,
         string? modelWarning,
-        TuiEngine engine,
+        ChatPresentationMode presentation,
         bool tgMode,
         TgTranscriptWriter? tgWriter,
         TgChatWindow? tgWindow,
@@ -40,7 +40,7 @@ public sealed partial class AgentCommands
         public string ActiveModel { get; } = activeModel;
         public string ReasoningEffort { get; } = reasoningEffort;
         public string? ModelWarning { get; } = modelWarning;
-        public TuiEngine Engine { get; } = engine;
+        public ChatPresentationMode Presentation { get; } = presentation;
         public bool TgMode { get; } = tgMode;
         public TgTranscriptWriter? TgWriter { get; } = tgWriter;
         public TgChatWindow? TgWindow { get; } = tgWindow;
@@ -124,11 +124,11 @@ public sealed partial class AgentCommands
             // Settings backend unreachable; the header reports it as unknown.
         }
 
-        // Engine selection happens once settings are known: --json, --classic, redirected
-        // output, NO_COLOR, a dumb TERM and a too-small viewport all stay sequential. In TG
+        // Presentation selection happens once settings are known: --json, --classic,
+        // redirected I/O, NO_COLOR, a dumb TERM and a small startup viewport use line I/O. In TG
         // mode the window and its transcript writer are created before the session renderer
         // so the shared run machinery renders into the Terminal.Gui transcript, never stdout.
-        var engine = TuiEngineSelection.Resolve(
+        var presentation = ChatPresentationSelection.Resolve(
             Console.IsOutputRedirected,
             cmd.Json,
             Tui.TuiViewport.Width(),
@@ -137,7 +137,7 @@ public sealed partial class AgentCommands
             Environment.GetEnvironmentVariable("TERM"),
             cmd.Classic,
             Console.IsInputRedirected || !ReferenceEquals(_in, Console.In));
-        bool tgMode = engine == TuiEngine.TerminalGui;
+        bool tgMode = presentation == ChatPresentationMode.Native;
         IApplication? tgApp = tgMode ? Application.Create() : null;
         if (tgApp is not null)
         {
@@ -207,7 +207,7 @@ public sealed partial class AgentCommands
                 activeModel,
                 reasoningEffort,
                 modelWarning,
-                engine,
+                presentation,
                 tgMode,
                 tgWriter,
                 tgWindow,

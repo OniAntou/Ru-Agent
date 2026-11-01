@@ -1,6 +1,6 @@
-namespace RuAgent.Cli.TerminalGui;
+namespace RuAgent.Cli.Chat;
 
-public sealed partial class TgChatLoop
+public partial class ChatSessionEngine
 {
     private Func<string?, CancellationToken, Task>? _taskCommandHandler;
     private Func<string?, CancellationToken, Task>? _changesCommandHandler;
@@ -43,12 +43,12 @@ public sealed partial class TgChatLoop
             if (_stopped) return true;
             if (isRewind && (_busy || _queuePaused || _queued.Count > 0))
             {
-                _window.Hints.ShowFeedback("finish pending/queued work before rewinding history", true);
+                _view.ShowFeedback("finish pending/queued work before rewinding history", true);
                 return true;
             }
             if (_taskControlDone is { Task.IsCompleted: false })
             {
-                _window.Hints.ShowFeedback("finish the current inspection first · esc closes the panel", true);
+                _view.ShowFeedback("finish the current inspection first · esc closes the panel", true);
                 return true;
             }
             if (handler is null) return false;
@@ -57,7 +57,7 @@ public sealed partial class TgChatLoop
             _historyControlActive = isRewind;
         }
         // No submission snapshot/admission: pending attachments and the model turn are untouched.
-        _window.Composer.Input.Text = "";
+        _view.InputText = "";
         Remember(line);
         _ = RunTaskControlAsync(handler, parts.Length == 2 ? parts[1].Trim() : null, cancellation, done);
         return true;
@@ -69,7 +69,7 @@ public sealed partial class TgChatLoop
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            Dispatch(() => _window.Hints.ShowFeedback("inspection_error: " + CliErrorText.ShortMessage(ex.Message), true));
+            Dispatch(() => _view.ShowFeedback("inspection_error: " + CliErrorText.ShortMessage(ex.Message), true));
         }
         finally
         {

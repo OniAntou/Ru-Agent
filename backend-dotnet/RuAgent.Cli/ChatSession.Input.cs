@@ -27,19 +27,19 @@ public sealed partial class AgentCommands
                 if (outcome == ChatInputOutcome.Deferred)
                 {
                     sessionRenderer.Note($"question left pending · use /follow {expectedRunId} to answer", Tui.TuiToken.Warn);
-                    tgLoop?.PauseQueuedSubmissions();
+                    chatEngine?.PauseQueuedSubmissions();
                     throw new RunWaitingInputException(expectedRunId, request.InputId);
                 }
                 if (outcome == ChatInputOutcome.Answered)
                     sessionRenderer.Note("answer sent · continuing the same run", Tui.TuiToken.Ok);
-                tgLoop?.ResumeQueuedSubmissions();
+                chatEngine?.ResumeQueuedSubmissions();
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (RunParkedException) { throw; }
             catch (Exception ex)
             {
                 await WriteDiagnosticLineAsync(_err, $"input_answer_error: {CliErrorText.ShortMessage(ex.Message)} · use /follow {expectedRunId} to check the run").ConfigureAwait(false);
-                tgLoop?.PauseQueuedSubmissions();
+                chatEngine?.PauseQueuedSubmissions();
                 throw new RunWaitingInputException(expectedRunId, inputId ?? "unavailable");
             }
         }

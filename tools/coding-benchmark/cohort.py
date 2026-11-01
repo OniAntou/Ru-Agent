@@ -577,4 +577,3 @@ def load_observations(path):
         except json.JSONDecodeError as error:
             raise ValueError(f"invalid JSONL at line {line_number}") from error
     return result
-

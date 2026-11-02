@@ -14,7 +14,7 @@ namespace RuAgent.Cli.Tests;
 /// panels must stand in when there is no interactive console (which is what these tests see,
 /// since a test host has no keyboard).
 /// </summary>
-public sealed class AgentSlashCommandSurfaceTests
+public sealed partial class AgentSlashCommandSurfaceTests
 {
     private static PublicHostSession Session()
     {
@@ -290,23 +290,20 @@ public sealed class AgentSlashCommandSurfaceTests
     }
 
     /// <summary>
-    /// I1's no-op guard: the TG picker leaves no scrollback behind it, so a cancelled bare
-    /// `/backend` must still leave the option panel in the transcript.
+    /// Escape closes the native picker; only a missing picker enables text listing.
     /// </summary>
     [Fact]
-    public async Task Backend_PickerCancel_StillPrintsThePanel()
+    public async Task Backend_PickerCancel_DoesNotPrintThePanel()
     {
         var output = new StringWriter();
         var commands = Create(output);
-        commands.ReprintPanelOnPickerCancel = true;
         commands.Picker = (_, _) => Task.FromResult<string?>(null);
 
         Assert.True(await commands.TryHandleAsync("/backend", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
 
         var text = output.ToString();
-        Assert.Contains("╭─ backend", text, StringComparison.Ordinal);
-        Assert.Contains("OpenAI", text, StringComparison.Ordinal);
-        Assert.Contains("/backend <name>", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("╭─ backend", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("/backend <name>", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -469,7 +466,7 @@ public sealed class AgentSlashCommandSurfaceTests
     }
 
     [Fact]
-    public async Task Reasoning_NeverOpensThePickerForANonInteractiveHost()
+    public async Task Reasoning_UsesTheWiredPickerEvenWhenTheConsoleIsRedirected()
     {
         var output = new StringWriter();
         var posted = new List<string>();
@@ -481,13 +478,14 @@ public sealed class AgentSlashCommandSurfaceTests
             return Task.FromResult<string?>("high");
         };
 
-        // A test host has no console, so the bare form must fall back to the panel and
-        // leave the configuration alone rather than picking something.
+        // The input adapter owns picker capability; native input does not read Console.In.
         await commands.TryHandleAsync("/reasoning", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None);
 
-        Assert.Empty(opened);
-        Assert.Empty(posted);
-        Assert.Contains("╭─ reasoning", output.ToString(), StringComparison.Ordinal);
+        Assert.Single(opened);
+        var body = JsonNode.Parse(Assert.Single(posted))!.AsObject();
+        Assert.Equal("high", body["reasoning_effort"]!.GetValue<string>());
+        Assert.Equal("ident-42", body["reasoning_identity"]!.GetValue<string>());
+        Assert.DoesNotContain("╭─ reasoning", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

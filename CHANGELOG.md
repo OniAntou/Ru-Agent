@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Escape in the model, backend and reasoning pickers closes the menu
+  without dumping its text option panel into chat. Remove the native cancel/reprint
+  flag and distinguish a missing picker from a cancelled one. Honor a wired picker
+  independently of console redirection; keep line-mode listings and explicit choices.
+  Verify Escape restores composer focus and does not save settings across native menus.
+
 - **feat(tui)**: Add Overview / Context / Session usage under `/status`, with direct
   `/status overview|context|usage` forms. Show latest-request context partitions,
   pinned window/reserve and a separate draft estimate; show recent-run input/output,

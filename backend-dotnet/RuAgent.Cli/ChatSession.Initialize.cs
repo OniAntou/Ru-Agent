@@ -52,9 +52,6 @@ public sealed partial class AgentCommands
             _slashCommands.Json = cmd.Json;
             _slashCommands.PanelWidth = Tui.TuiViewport.Width();
             _slashCommands.FramelessReports = tgMode;
-            // The TG frame has no scrollback behind the picker, so a cancelled bare form must
-            // reprint the option panel instead of leaving the operator with a silent no-op.
-            _slashCommands.ReprintPanelOnPickerCancel = tgMode;
             // Only the native presentation has a floating picker. The line adapter
             // leaves Picker null so the command handlers print their option
             // panels (or a bounded interactive_required) instead of calling a no-op.

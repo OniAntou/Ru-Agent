@@ -242,6 +242,13 @@ on failure/cancellation; pending state owns cleanup after a successful transfer.
 Read-only document panels strip legacy ANSI sequences before wrapping into native
 card rows. Their wrap budget includes the card's item indentation, preventing
 per-row clipping; the original output still reaches the transcript's styled importer.
+Picker capability belongs to the input adapter, rather than `Console.IsInputRedirected`.
+An absent picker enables the line adapter's text listing; a null answer from an
+opened picker is cancellation. Model/backend/reasoning handlers return at that
+boundary without appending a text option panel or saving settings. Esc restores
+composer focus. Catalog availability notices emitted before the picker are retained;
+explicitly requested report documents keep their existing transcript retention.
+
 Panel and picker labels coming from a remote catalog (provider names, model ids) are
 sanitized like transcript text before they are measured or painted.
 

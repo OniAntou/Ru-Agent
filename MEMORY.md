@@ -1,5 +1,20 @@
 # MEMORY — Ru-Agent (máy của anh steal)
 
+## 2026-11-02 — Commit và đưa bản sửa Esc lên branch
+
+- Anh yêu cầu commit lên branch; phạm vi là bản sửa Esc/picker bên dưới cùng regression/native tests, README, kiến trúc TUI, CHANGELOG và MEMORY. Dùng branch `casluminous/tui-multi-session`, đưa lên remote cả commit `7c636c5c` còn chờ từ lượt trước; không force-push hoặc sync thêm dev.
+- Kết quả kiểm chứng giữ nguyên: CLI2147pass, Client310pass, docs7pass; chỉ bổ sung ghi nhận Git và kiểm tra staged diff. Không đưa2path untracked của anh, log/artifacts/binary vào commit; không publish hoặc cập nhật bản Ru đang cài.
+
+## 2026-11-02 — Esc bộ chọn không đổ menu vào chat
+
+- Anh gửi ảnh `/model` bấm Esc rồi danh sách model bị in vào transcript, yêu cầu rà tất cả pattern tương tự. Gốc lỗi ở `HandleModelAsync`: picker trả null nhưng fall through `WriteModelPanel`. `/backend` và `/reasoning` cũng in lại qua `ReprintPanelOnPickerCancel`; reasoning còn suy luận picker capability từ Console redirection thay vì adapter.
+- Bỏ hẳn flag và wiring cũ; chỉ list text khi không có picker (giữ card0/1model không mở picker). Sau một picker đã mở, null hủy và return, không in option panel hoặc POST settings. Reasoning dùng picker nếu adapter cung cấp; JSON vẫn từ chối bare interactive forms. Propagate token cancellation qua model/reasoning và check sau picker, không biến cancellation thành fallback hoặc settings error. Giữ catalog availability notices phát ra trước menu.
+- Rà provider/secret entry, sessions, preset/Full Access, remembered rules, status, tasks, changes, history/rewind và native panel request cleanup: các luồng còn lại đã return/hủy hoặc quay lại menu đúng nghĩa, không có kiểu cancel→print option panel tương tự. Không đổi cơ chế giữ lại report sau khi người dùng đã chủ động mở document; legacy `/key` vẫn giữ thông báo hủy ngắn, không in danh sách hoặc secret.
+- Thêm14case:4cancel regression (model live/configured fallback, backend, reasoning),3token-cancel sau câu trả lời và7native keyboard cases `/model`, `/backend`, `/reasoning`, `/provider`, `/preset`, `/status`, `/sessions`. Native dùng400model, bấm Esc, assert transcript không tăng row, giữ focus composer/gõ tiếp được và0POST (không tạo run/session hoặc đổi settings). Focused cuối **87pass/0fail/0skip**.
+- Red tests trước sửa **4fail/0pass**; đã sửa fixture fallback để có đủ2model trước lần xác nhận red thứ hai. Sau sửa phải cập nhật2test contract cũ vốn đòi reprint/không dùng picker khi console redirected. Giữ log1failure contract cũ,1lần native fixture thiếu namespace Testing và1case native fixture sai `/models` route trước khi sửa fixture; không làm yếu assertions hoặc guard. Evidence `work/tui-picker-escape` trong task workspace.
+- Full CLI Release cuối **2147pass/0fail/0skip**, Client Release **310pass/0fail/0skip**, docs guards **7pass**, diff check sạch; chạy serial dưới mutex `Global\ru-test-matrix-run`. Không chạy lại13project .NET/full Python matrix vì thay đổi cục bộ picker CLI. Chưa nghiệm thu thủ công Windows Terminal; native tests dùng ANSI driver/key injection và Host giả có dữ liệu synthetic.
+- README, kiến trúc TUI và CHANGELOG đã cập nhật. Không sửa GUI/Host/Broker/policy/schema/routes, không gọi model/provider thật hoặc đọc profile thật. Chưa commit/push/publish/cập nhật lệnh Ru đang cài, không dừng phiên thật; giữ2path untracked của anh. Source bắt đầu từ `7c636c5c`, branch `casluminous/tui-multi-session` vẫn ahead1 vì commit trước chưa push.
+
 ## 2026-11-01 — Commit quản lý quyền và context/token TUI
 
 - Anh yêu cầu commit; gom hai phần đã triển khai/kiểm chứng ở bên dưới: remembered rules trong `/preset` và Overview/Context/Session usage trong `/status`, gồm source, regression/native tests, README, kiến trúc TUI, CHANGELOG và MEMORY. Branch hiện tại `casluminous/tui-multi-session`; không đổi branch hoặc nhận thêm code từ remote.

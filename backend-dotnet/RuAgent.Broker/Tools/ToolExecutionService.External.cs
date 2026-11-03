@@ -465,7 +465,7 @@ public sealed partial class ToolExecutionService
                 context.ConfinementRequired && !context.IsAuthenticatedV2Execution,
                 token,
                 retain,
-                killTimeoutMs: lifetimeMs));
+                killTimeoutMs: lifetimeMs, output: isBackground ? null : context.TerminalOutput));
         if (isBackground)
         {
             return StartedBackgroundOutcome(executionId, lifetimeMs);
@@ -534,7 +534,7 @@ public sealed partial class ToolExecutionService
                 token,
                 retain,
                 killTimeoutMs: lifetimeMs,
-                grant: grant));
+                grant: grant, output: isBackground ? null : context.TerminalOutput));
         if (isBackground)
         {
             return StartedBackgroundOutcome(executionId, lifetimeMs);

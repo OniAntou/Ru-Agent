@@ -354,9 +354,33 @@ namespace RuApp.Views
 
         private async Task StopActiveAgentAsync()
         {
+            Task? submissionSettled = _submissionSettled?.Task;
+            var controller = _agentController;
+            string sessionId = _activeSessionId;
+            long sessionGeneration = _sessionOpenGeneration;
+            bool OwnsStop() => ReferenceEquals(controller, _agentController)
+                && string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal)
+                && sessionGeneration == _sessionOpenGeneration;
+            CancelPreparingSubmission();
             await RunAgentActionAsync(
-                () => _agentController?.CancelAsync() ?? Task.CompletedTask,
+                async () =>
+                {
+                    if (controller is null || !OwnsStop()) return;
+                    await controller.CancelAsync();
+                    if (submissionSettled is not null)
+                    {
+                        await submissionSettled;
+                        // The first cancel may have raced before CreateRun returned.
+                        // Reconcile only the unknown create owned by this session;
+                        // this avoids cancelling a later run after navigation.
+                        if (OwnsStop() && controller.HasPendingCreateOutcomeUnknown)
+                        {
+                            await controller.CancelAsync();
+                        }
+                    }
+                },
                 "Stopping Coding Agent…");
+            if (!OwnsStop()) return;
             // Stopping is an interrupt: queued turns stay put until the user asks for
             // them, instead of a new run starting underneath the click that meant stop.
             if (!Composer.Queue.IsEmpty)
@@ -444,6 +468,7 @@ namespace RuApp.Views
 
         public async Task OpenSessionAsync(string sessionId, string title, bool isNewSession = false)
         {
+            CancelPreparingSubmission();
             // Visible to the catch below: a superseded load must not paint its
             // failure into the session that replaced it.
             long generation = -1;

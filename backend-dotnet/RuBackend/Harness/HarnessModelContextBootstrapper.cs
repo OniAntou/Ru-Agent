@@ -63,7 +63,8 @@ public sealed class HarnessModelContextBootstrapper : IHarnessModelContextBootst
         long sequence = 1;
         foreach (var turn in turns)
         {
-            int imageCount = turn.SourceRunId is { } source && imageCounts.TryGetValue(source, out var count) ? count : 0;
+            int liveImageCount = turn.SourceRunId is { } source && imageCounts.TryGetValue(source, out var count) ? count : 0;
+            int imageCount = Math.Max(turn.ImageAttachmentCount, liveImageCount);
             if (string.IsNullOrWhiteSpace(turn.Prompt) && imageCount == 0) continue;
             var prompt = turn.Prompt;
             if (imageCount > 0)

@@ -50,13 +50,14 @@ public static class SuspendedProcess
         Process Process,
         SafeFileHandle ThreadHandle,
         StreamReader StandardOutput,
-        StreamReader StandardError);
+        StreamReader StandardError,
+        Stream? StandardInput);
 
     /// <summary>
     /// Creates the process described by <paramref name="startInfo"/> without letting it
     /// run. The caller must assign it to a job and then call <see cref="Resume"/>.
     /// </summary>
-    public static StartedProcess StartSuspended(ProcessStartInfo startInfo)
+    public static StartedProcess StartSuspended(ProcessStartInfo startInfo, bool redirectStandardInput = false)
     {
         ArgumentNullException.ThrowIfNull(startInfo);
         if (!OperatingSystem.IsWindows())
@@ -79,8 +80,11 @@ public static class SuspendedProcess
             // EOF instead of inheriting a console. The read end stays inheritable so it
             // crosses into the child as its standard input.
             (stdinRead, stdinWrite) = CreateInheritablePipe();
-            stdinWrite.Dispose();
-            stdinWrite = null;
+            if (!redirectStandardInput)
+            {
+                stdinWrite.Dispose();
+                stdinWrite = null;
+            }
 
             (stdoutRead, stdoutWrite) = CreateInheritablePipe();
             ClearInheritance(stdoutRead);
@@ -149,6 +153,7 @@ public static class SuspendedProcess
             Process? process = null;
             StreamReader? standardOutput = null;
             StreamReader? standardError = null;
+            Stream? standardInput = null;
             try
             {
                 // Process.StandardOutput/StandardError are only populated by Process.Start,
@@ -169,7 +174,13 @@ public static class SuspendedProcess
                     detectEncodingFromByteOrderMarks: true);
                 stderr = null;
 
-                return new StartedProcess(process, threadHandle, standardOutput, standardError);
+                if (redirectStandardInput)
+                {
+                    standardInput = new FileStream(stdinWrite!, FileAccess.Write);
+                    stdinWrite = null;
+                }
+
+                return new StartedProcess(process, threadHandle, standardOutput, standardError, standardInput);
             }
             catch
             {
@@ -177,6 +188,7 @@ public static class SuspendedProcess
                 SafeClose(stderr);
                 standardOutput?.Dispose();
                 standardError?.Dispose();
+                standardInput?.Dispose();
                 try
                 {
                     if (process is not null && !process.HasExited)

@@ -224,13 +224,50 @@ public sealed class McpStdioClientTests
     {
         var definition = new McpServerDefinition("exits", Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe",
             ["/d", "/c", "exit", "3"], null, new Dictionary<string, McpEnvironmentValue>(), null, TimeSpan.FromSeconds(5));
-        await using var client = McpStdioClient.Start(definition, new Dictionary<string, string>
+        // A process that exits immediately may disappear before job assignment or initialization.
+        // Both paths must retain the same named failure.
+        var error = await Assert.ThrowsAsync<McpException>(async () =>
         {
-            ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot") ?? @"C:\Windows",
-        }, Path.GetTempPath());
-
-        var error = await Assert.ThrowsAsync<McpException>(() => client.InitializeAsync(TimeSpan.FromSeconds(10), CancellationToken.None));
+            await using var client = McpStdioClient.Start(definition, new Dictionary<string, string>
+            {
+                ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot") ?? @"C:\Windows",
+            }, Path.GetTempPath());
+            await client.InitializeAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+        });
 
         Assert.Equal("mcp_server_unavailable", error.Code);
+    }
+
+    [Fact]
+    public async Task A_server_that_spawns_a_child_and_exits_keeps_the_child_in_the_cleanup_job()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var marker = Path.Combine(Path.GetTempPath(), $"ru-mcp-descendant-{Guid.NewGuid():N}.txt");
+        var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
+            @"WindowsPowerShell\v1.0\powershell.exe");
+        var childScript = $"Start-Sleep -Seconds 3; [IO.File]::WriteAllText('{marker}', 'survived')";
+        var childCommand = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(childScript));
+        var parentScript = $"Start-Process -FilePath '{powershell}' -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand','{childCommand}'); exit";
+        var parentCommand = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(parentScript));
+        var definition = new McpServerDefinition("spawner", powershell,
+            ["-NoProfile", "-NonInteractive", "-EncodedCommand", parentCommand], null,
+            new Dictionary<string, McpEnvironmentValue>(), null, TimeSpan.FromSeconds(5));
+
+        try
+        {
+            var client = McpStdioClient.Start(definition, new Dictionary<string, string>
+            {
+                ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot") ?? @"C:\Windows",
+            }, Path.GetTempPath());
+            await client.DisposeAsync();
+            await Task.Delay(TimeSpan.FromSeconds(4));
+
+            Assert.False(File.Exists(marker), "The MCP descendant escaped the job and outlived client disposal.");
+        }
+        finally
+        {
+            try { File.Delete(marker); } catch (IOException) { }
+        }
     }
 }

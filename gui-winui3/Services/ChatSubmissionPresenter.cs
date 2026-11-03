@@ -3,6 +3,30 @@ namespace RuApp.Services;
 /// <summary>Owns submission snapshot and accepted-draft commit rules.</summary>
 internal static class ChatSubmissionPresenter
 {
+    internal sealed record RunSubmissionSnapshot(string SessionId, long SessionGeneration);
+
+    internal static async Task<RunSubmissionSnapshot> CaptureRunSubmissionAsync(
+        Func<Task> ensureSession,
+        Func<string> readSession,
+        Func<long> readSessionGeneration,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(ensureSession);
+        ArgumentNullException.ThrowIfNull(readSession);
+        ArgumentNullException.ThrowIfNull(readSessionGeneration);
+        cancellationToken.ThrowIfCancellationRequested();
+        await ensureSession().ConfigureAwait(true);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new RunSubmissionSnapshot(readSession(), readSessionGeneration());
+    }
+
+    internal static bool OwnsAdmission(
+        RunSubmissionSnapshot snapshot,
+        Func<string> readSession,
+        Func<long> readSessionGeneration) =>
+        string.Equals(snapshot.SessionId, readSession(), StringComparison.Ordinal)
+        && snapshot.SessionGeneration == readSessionGeneration();
+
     internal static async Task<string> CaptureSessionAsync(Func<Task> ensureSession, Func<string> readSession)
     {
         ArgumentNullException.ThrowIfNull(ensureSession);

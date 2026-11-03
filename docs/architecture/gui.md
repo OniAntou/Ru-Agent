@@ -662,6 +662,12 @@ Leaving a session detaches the GUI feed without cancelling its Host-owned run;
 reopening adopts the newest non-terminal run. Only explicit Stop cancels work.
 An in-flight create must acknowledge before detachment; an unknown outcome keeps
 its request identity and requires reconciliation before switching.
+A composer submission owns a cancellation token from session preparation
+through run creation. Stop and opening another session cancel that work; the view
+adopts a newly created session only while its captured open generation remains
+current. Run admission rechecks both session ID and generation after asynchronous
+preset work, and Stop waits for submission settlement before reconciling an
+ambiguous create outcome.
 Persisted GUI rows retain the Host's raw message index for rewind independently
 of hidden history or synthetic activity rows. A rewind result may update only
 the session that requested it; queued prompts remain local until Host acceptance.

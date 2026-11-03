@@ -17,6 +17,7 @@ public sealed record ToolExecutionContext(
     bool IsAuthenticatedV2Execution = false,
     bool ImageInputAccepted = false)
 {
+    internal Terminal.TerminalOutputDeltaHandler? TerminalOutput { get; init; }
     internal Terminal.CanonicalCommandIntent? AuthorizedTerminalIntent { get; init; }
 }
 

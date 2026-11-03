@@ -307,8 +307,8 @@ public sealed partial class SessionStore : ISessionStore
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO business_session_messages(session_id, message_index, role, content, source_message_id, source_run_id)
-            VALUES ($id, $index, $role, CAST($content AS TEXT), $source, $run);
+            INSERT INTO business_session_messages(session_id, message_index, role, content, source_message_id, source_run_id, image_attachment_count)
+            VALUES ($id, $index, $role, CAST($content AS TEXT), $source, $run, $images);
             """;
         var id = command.Parameters.Add("$id", SqliteType.Text);
         var index = command.Parameters.Add("$index", SqliteType.Integer);
@@ -316,6 +316,7 @@ public sealed partial class SessionStore : ISessionStore
         var content = command.Parameters.Add("$content", SqliteType.Blob);
         var source = command.Parameters.Add("$source", SqliteType.Text);
         var run = command.Parameters.Add("$run", SqliteType.Text);
+        var images = command.Parameters.Add("$images", SqliteType.Integer);
         for (var offset = 0; offset < messages.Count; offset++)
         {
             var message = messages[offset];
@@ -326,6 +327,7 @@ public sealed partial class SessionStore : ISessionStore
             content.Value = Encoding.UTF8.GetBytes(message.Content);
             source.Value = DbValue(message.SourceMessageId);
             run.Value = DbValue(message.SourceRunId);
+            images.Value = message.ImageAttachmentCount;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
@@ -364,6 +366,8 @@ public sealed partial class SessionStore : ISessionStore
         (message.Role == "user" || message.Role == "ai") &&
         message.Content is not null &&
         Encoding.UTF8.GetByteCount(message.Content) <= MaximumMessageBytes &&
+        message.ImageAttachmentCount is >= 0 and <= 64 &&
+        (message.ImageAttachmentCount == 0 || (message.Role == "user" && message.SourceMessageId is not null)) &&
         ((message.SourceMessageId is null && message.SourceRunId is null)
             || (IsValidSourceId(message.SourceMessageId)
                 && IsValidSourceId(message.SourceRunId)));

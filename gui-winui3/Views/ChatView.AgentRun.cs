@@ -30,6 +30,8 @@ namespace RuApp.Views
     public sealed partial class ChatView
     {
         private long _agentTurnGeneration;
+        private CancellationTokenSource? _submissionCancellation;
+        private TaskCompletionSource? _submissionSettled;
 
         /// <summary>The run panel's state: status line, Stop, send face, approval, question, trust guard.</summary>
         public AgentRunPanelViewModel RunPanel { get; } = new();
@@ -328,6 +330,7 @@ namespace RuApp.Views
 
         private void ResetAgentState(bool preserveTranscript = false)
         {
+            CancelPreparingSubmission();
             ClearChangeNavigation();
             _changesPanelExplicitlyOpened = false;
             _sidePanelTasksRunId = null;
@@ -541,6 +544,9 @@ namespace RuApp.Views
             }
 
             long submittedGeneration = _agentTurnGeneration;
+            long requestedSessionGeneration = _sessionOpenGeneration;
+            CancellationTokenSource? submissionCancellation = null;
+            TaskCompletionSource? submissionSettled = null;
             try
             {
                 var snapshot = Composer.TakeSnapshot(ChatInputTextBox.Text);
@@ -586,27 +592,46 @@ namespace RuApp.Views
                     return;
                 }
 
+                submissionCancellation = new CancellationTokenSource();
+                CancelPreparingSubmission();
+                _submissionCancellation = submissionCancellation;
+                submissionSettled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _submissionSettled = submissionSettled;
+                CancellationToken submissionToken = submissionCancellation.Token;
                 _isSendingUserTurn = true;
                 UpdateSendButtonMode(isAgentRunning: true);
 
-                string submittedSessionId = await ChatSubmissionPresenter.CaptureSessionAsync(
-                    () => EnsureAgentSessionAsync(CancellationToken.None),
-                    () => _activeSessionId);
+                var submission = await ChatSubmissionPresenter.CaptureRunSubmissionAsync(
+                    () => EnsureAgentSessionAsync(submissionToken, requestedSessionGeneration),
+                    () => _activeSessionId,
+                    () => _sessionOpenGeneration,
+                    submissionToken);
+                submissionToken.ThrowIfCancellationRequested();
+
                 bool accepted = await ChatSubmissionPresenter.SubmitAsync(
                     onAccepted => SendAgentTurnAsync(
                         effectivePrompt,
-                        CancellationToken.None,
+                        submissionToken,
                         attachments: attachments,
                         displayUserText: text,
-                        onAccepted: onAccepted),
+                        onAccepted: onAccepted,
+                        expectedSessionId: submission.SessionId,
+                        expectedSessionGeneration: submission.SessionGeneration),
                     () => submittedGeneration == _agentTurnGeneration
-                        && string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal)
+                        && ChatSubmissionPresenter.OwnsAdmission(
+                            submission,
+                            () => _activeSessionId,
+                            () => _sessionOpenGeneration)
                         && Composer.IsUnchangedSince(snapshot, ChatInputTextBox.Text),
-                    () => Composer.ClearAfterSend(submittedSessionId, snapshot));
+                    () => Composer.ClearAfterSend(submission.SessionId, snapshot));
                 if (!accepted && submittedGeneration == _agentTurnGeneration)
                 {
                     UpdateSendButtonMode(isAgentRunning: false);
                 }
+            }
+            catch (OperationCanceledException) when (submissionCancellation?.IsCancellationRequested == true)
+            {
+                return;
             }
             catch (Exception ex)
             {
@@ -623,8 +648,23 @@ namespace RuApp.Views
                     _isSendingUserTurn = false;
                     UpdateAgentInlineState();
                 }
+                if (submissionCancellation is { } current)
+                {
+                    if (ReferenceEquals(_submissionCancellation, current))
+                    {
+                        _submissionCancellation = null;
+                    }
+                    current.Dispose();
+                }
+                if (submissionSettled is { } settled)
+                {
+                    if (ReferenceEquals(_submissionSettled, settled)) _submissionSettled = null;
+                    settled.TrySetResult();
+                }
             }
         }
+
+        private void CancelPreparingSubmission() => _submissionCancellation?.Cancel();
 
         /// <summary>
         /// Takes what the composer holds and puts it behind the run in hand. False
@@ -693,7 +733,9 @@ namespace RuApp.Views
             List<ImageAttachmentItem>? attachments = null,
             string? displayUserText = null,
             bool addUserMessage = true,
-            Action? onAccepted = null)
+            Action? onAccepted = null,
+            string? expectedSessionId = null,
+            long? expectedSessionGeneration = null)
         {
             if (allowSessionRecovery)
             {
@@ -717,7 +759,19 @@ namespace RuApp.Views
                 return false;
             }
 
-            await EnsureAgentSessionAsync(cancellationToken);
+            long requestedGeneration = expectedSessionGeneration ?? _sessionOpenGeneration;
+            await EnsureAgentSessionAsync(cancellationToken, requestedGeneration);
+            cancellationToken.ThrowIfCancellationRequested();
+            var admittedSession = new ChatSubmissionPresenter.RunSubmissionSnapshot(
+                expectedSessionId ?? _activeSessionId,
+                _sessionOpenGeneration);
+            if (!ChatSubmissionPresenter.OwnsAdmission(
+                    admittedSession,
+                    () => _activeSessionId,
+                    () => _sessionOpenGeneration))
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
             // Empty means "no project chosen": the Host allocates a Ru-owned scratch workspace
             // and returns its canonical path with the created run.
             string workspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace) ?? string.Empty;
@@ -725,9 +779,17 @@ namespace RuApp.Views
             _agentWorkspace = workspace;
             UpdateChatHeaderWorkspace();
             // The exact folder this run is created for, so the trust prompt can name it.
-            _requestedWorkspaceBySession[_activeSessionId] = workspace;
+            _requestedWorkspaceBySession[admittedSession.SessionId] = workspace;
 
-            string? submittedSessionId = null;
+            string submittedSessionId = admittedSession.SessionId;
+            bool OwnsSubmission() =>
+                !cancellationToken.IsCancellationRequested
+                && ChatSubmissionPresenter.OwnsAdmission(
+                    admittedSession,
+                    () => _activeSessionId,
+                    () => _sessionOpenGeneration);
+            string retrySessionId = submittedSessionId;
+            long retrySessionGeneration = admittedSession.SessionGeneration;
             try
             {
                 AgentPermissionPreset preset = Presets.Preset;
@@ -750,7 +812,12 @@ namespace RuApp.Views
                     .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
                     .ToList();
 
-                submittedSessionId = _activeSessionId;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!OwnsSubmission())
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
                 var request = new CreateAgentRunRequest(
                     submittedSessionId,
                     workspace,
@@ -772,7 +839,7 @@ namespace RuApp.Views
                         displayUserText,
                         addUserMessage,
                         onAccepted));
-                if (!string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal))
+                if (!OwnsSubmission())
                 {
                     return accepted;
                 }
@@ -801,14 +868,18 @@ namespace RuApp.Views
                     error,
                     allowSessionRecovery,
                     submittedSessionId,
-                    () => string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal),
+                    OwnsSubmission,
                     () => submittedSessionId is not null && _agentSessionRecovery.TryBegin(submittedSessionId),
                     async () =>
                     {
                         // Preserve the completion gate while replacing the stale
                         // session and retrying this same logical turn once.
                         AbandonActiveAgentReply(removeUserMessage: true);
-                        await RecoverAgentSessionAsync(cancellationToken);
+                        retrySessionId = await RecoverAgentSessionAsync(
+                            cancellationToken,
+                            submittedSessionId,
+                            admittedSession.SessionGeneration);
+                        retrySessionGeneration = _sessionOpenGeneration;
                     },
                     () => SendAgentTurnAsync(
                         text,
@@ -816,7 +887,9 @@ namespace RuApp.Views
                         allowSessionRecovery: false,
                         attachments: attachments,
                         displayUserText: displayUserText,
-                        onAccepted: onAccepted));
+                        onAccepted: onAccepted,
+                        expectedSessionId: retrySessionId,
+                        expectedSessionGeneration: retrySessionGeneration));
                 if (recovered is bool accepted)
                 {
                     return accepted;

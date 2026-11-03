@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(review)**: Stop huỷ lượt gửi đang chuẩn bị, và phản hồi tạo session đến
+  muộn không giành lại màn hình sau khi chuyển chat. Rewind chặn câu trả lời
+  muộn của lượt đã xoá. Nhánh fork giữ thông tin ảnh sau khi xoá session gốc.
+  MCP stdio đưa process vào Job Object trước khi chạy, và terminal foreground
+  chuyển output đã che dữ liệu nhạy cảm tới giao diện trong lúc lệnh chạy.
+
 - **fix(gui)**: Giảm các nhịp giật khi tạo chat mới: thay draft bằng một lần render sidebar,
   giữ trạng thái mở/gập và container của các nhóm không đổi, bỏ animation thêm/xóa chồng lên
   reposition. Chat vừa tạo hiển thị trống ngay sau bước detach, không tải lại history/replay/usage

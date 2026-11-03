@@ -26,6 +26,32 @@ public sealed class InProcessToolGatewayConformanceTests : ToolGatewayConformanc
     protected override bool StreamsToolOutputDeltas => false;
 
     [Fact]
+    public async Task Foreground_terminal_publishes_output_before_command_can_finish()
+    {
+        var gateway = await CreatePresetGatewayAsync(FullAccessPreset);
+        var marker = "stream-ack-" + Guid.NewGuid().ToString("N");
+        var received = false;
+        var receipt = await ExecuteOnAsync(gateway, "powershell", new JsonObject
+        {
+            ["script"] = $"[Console]::Error.WriteLine('live-marker'); while (!(Test-Path '{marker}')) {{ Start-Sleep -Milliseconds 50 }}",
+            ["working_directory"] = ".",
+            ["timeout_ms"] = 10000,
+        }, chunk =>
+        {
+            if (chunk.Stream == ToolOutputStream.Stderr && chunk.Content.Contains("live-marker", StringComparison.Ordinal))
+            {
+                received = true;
+                File.WriteAllText(Path.Combine(_fixtures[^1].WorkspaceRoot, marker), "");
+            }
+            return ValueTask.CompletedTask;
+        });
+
+        Assert.True(received);
+        Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+        Assert.False(ParseModelContent(receipt)["background"]?.GetValue<bool>() ?? false);
+    }
+
+    [Fact]
     public async Task Failed_terminal_command_delivers_diagnostics_to_the_model()
     {
         var gateway = await CreatePresetGatewayAsync(FullAccessPreset);

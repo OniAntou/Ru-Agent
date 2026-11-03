@@ -114,7 +114,8 @@ public sealed class TerminalAdapter
         bool confineWorkspace,
         CancellationToken cancellationToken,
         Action<string>? retainOutput = null,
-        int? killTimeoutMs = null)
+        int? killTimeoutMs = null,
+        TerminalOutputDeltaHandler? output = null)
     {
         ArgumentNullException.ThrowIfNull(grant);
         ArgumentNullException.ThrowIfNull(request);
@@ -168,7 +169,7 @@ public sealed class TerminalAdapter
             intent,
             cancellationToken,
             retainOutput,
-            killTimeoutMs);
+            killTimeoutMs, output);
     }
 
     /// <summary>
@@ -192,7 +193,8 @@ public sealed class TerminalAdapter
         CancellationToken cancellationToken,
         Action<string>? retainOutput = null,
         int? killTimeoutMs = null,
-        PolicyGrant? grant = null)
+        PolicyGrant? grant = null,
+        TerminalOutputDeltaHandler? output = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateWriteSet(request.ReadOnly, request.WriteSet);
@@ -216,7 +218,7 @@ public sealed class TerminalAdapter
                 _environment.ChildEnvironment,
                 killTimeoutMs ?? intent.TimeoutMs,
                 TerminalLimits.MaxSpoolFileBytes),
-            WrapRetain(retainOutput),
+            WrapRetain(retainOutput, output),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -224,7 +226,8 @@ public sealed class TerminalAdapter
         CanonicalCommandIntent intent,
         CancellationToken cancellationToken,
         Action<string>? retainOutput = null,
-        int? killTimeoutMs = null)
+        int? killTimeoutMs = null,
+        TerminalOutputDeltaHandler? output = null)
     {
         var arguments = IsAutomaticGitRead(intent)
             ? BuildSafeGitReadArguments(intent.Arguments)
@@ -238,7 +241,7 @@ public sealed class TerminalAdapter
                 _environment.ChildEnvironment,
                 killTimeoutMs ?? intent.TimeoutMs,
                 TerminalLimits.MaxSpoolFileBytes),
-            WrapRetain(retainOutput),
+            WrapRetain(retainOutput, output),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -292,19 +295,12 @@ public sealed class TerminalAdapter
     /// already bounds total frames by the output limit and redacts before
     /// emitting, so the spool inherits both properties without new trust.
     /// </summary>
-    private static TerminalOutputDeltaHandler? WrapRetain(Action<string>? retainOutput)
-    {
-        if (retainOutput is null)
-        {
-            return null;
-        }
-
-        return (stream, sequence, text, redacted, emitToken) =>
+    private static TerminalOutputDeltaHandler? WrapRetain(Action<string>? retainOutput, TerminalOutputDeltaHandler? output) =>
+        retainOutput is null ? output : (stream, sequence, text, redacted, token) =>
         {
             retainOutput(text);
-            return ValueTask.CompletedTask;
+            return output?.Invoke(stream, sequence, text, redacted, token) ?? ValueTask.CompletedTask;
         };
-    }
 
     private void EnforceWorkingDirectoryPolicy(CanonicalCommandIntent intent, bool confineWorkspace)
     {

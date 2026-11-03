@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Broker.Diagnostics;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
+using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Runtime;
@@ -14,7 +15,10 @@ public sealed partial class BrokerExecutionRuntime
     /// (lease re-check + one-time token consumption), and the execution itself
     /// runs outside the gate so two executes can overlap.
     /// </summary>
-    public async Task<ToolExecutionReply> ExecuteAuthorizedAsync(AgentEnvelope request, CancellationToken cancellationToken)
+    public async Task<ToolExecutionReply> ExecuteAuthorizedAsync(
+        AgentEnvelope request,
+        CancellationToken cancellationToken,
+        TerminalOutputDeltaHandler? output = null)
     {
         // Registered before the authorization token is consumed, so a run close
         // or an explicit cancel that lands between the lease check and the handler
@@ -40,7 +44,7 @@ public sealed partial class BrokerExecutionRuntime
                 return ToolExecutionReply.Error("run_not_open", "run was cancelled before execution started");
             }
 
-            preparation = PrepareToolExecute(request);
+            preparation = PrepareToolExecute(request, output);
         }
         finally
         {
@@ -282,7 +286,7 @@ public sealed partial class BrokerExecutionRuntime
                 MatcherPreview: matcherPreview));
     }
 
-    private ToolExecutePreparation PrepareToolExecute(AgentEnvelope request)
+    private ToolExecutePreparation PrepareToolExecute(AgentEnvelope request, TerminalOutputDeltaHandler? output = null)
     {
         var payload = request.Payload;
         var runId = PayloadReads.OptionalString(payload, "run_id") ?? request.SessionId;
@@ -366,7 +370,7 @@ public sealed partial class BrokerExecutionRuntime
                 null)
             : new ToolExecutePreparation(null,
                 _authenticatedTerminalHandler is { } terminalHandler && authContext.TerminalIntent is { } intent
-                    ? (envelope, ct) => terminalHandler(envelope, intent, ct)
+                    ? (envelope, ct) => terminalHandler(envelope, intent, ct, output)
                     : _authenticatedToolHandler);
     }
 

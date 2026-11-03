@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuAgent.Broker.Runtime;
 using RuAgent.Harness.Core;
 using RuAgent.Protocol;
 
@@ -221,21 +222,47 @@ public sealed partial class InProcessToolGateway
         var imageInput = pending.ToolId == "read"
             && _imageInputAccepted is not null
             && await _imageInputAccepted(_runId, cancellationToken).ConfigureAwait(false);
-        var reply = await _runtime
-            .ExecuteAuthorizedAsync(
-                Request(sessionId, AgentMessageTypes.ToolExecute, new JsonObject
-                {
-                    ["run_id"] = _runId,
-                    ["image_input"] = imageInput,
-                    ["tool_call_id"] = pending.Proposal.ToolCallId.Value,
-                    ["tool_id"] = pending.ToolId,
-                    ["tool_version"] = pending.ToolVersion,
-                    ["authorization_token"] = pending.AuthorizationToken,
-                    ["arguments"] = BrokerGatewayContracts.ParseArgumentsJson(pending.ArgumentsJson),
-                }),
-                cancellationToken)
-            .ConfigureAwait(false);
+        // A foreground command can detach at its wait limit. Its pump keeps
+        // spooling, while the gateway stops admitting frames for this call.
+        var publishing = true;
+        var sequence = 0L;
+        var outputGate = new SemaphoreSlim(1);
+        async ValueTask PublishTerminalOutputAsync(string stream, long _, string content, bool redacted, CancellationToken token)
+        {
+            if (!Volatile.Read(ref publishing)) return;
+            await outputGate.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                if (!Volatile.Read(ref publishing)) return;
+                await publishDelta(new ToolOutputChunk(execution.ExecutionId, ++sequence,
+                    stream == "stderr" ? ToolOutputStream.Stderr : ToolOutputStream.Stdout, content)).ConfigureAwait(false);
+            }
+            finally { outputGate.Release(); }
+        }
 
+        ToolExecutionReply reply;
+        try
+        {
+            reply = await _runtime
+                .ExecuteAuthorizedAsync(
+                    Request(sessionId, AgentMessageTypes.ToolExecute, new JsonObject
+                    {
+                        ["run_id"] = _runId,
+                        ["image_input"] = imageInput,
+                        ["tool_call_id"] = pending.Proposal.ToolCallId.Value,
+                        ["tool_id"] = pending.ToolId,
+                        ["tool_version"] = pending.ToolVersion,
+                        ["authorization_token"] = pending.AuthorizationToken,
+                        ["arguments"] = BrokerGatewayContracts.ParseArgumentsJson(pending.ArgumentsJson),
+                    }),
+                    cancellationToken,
+                    PublishTerminalOutputAsync)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref publishing, false);
+        }
         if (reply.Receipt is null)
         {
             if (pending.ToolId == "run_code")

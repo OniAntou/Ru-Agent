@@ -985,7 +985,9 @@ error the tool returns.
 
 For stdio, the Broker execution runtime starts a server on its first `list_tools` or `call`, at most one
 instance per Host, inside a kill-on-close job object, as the current Windows user with the
-credential-stripped agent environment plus its declared variables. A server whose
+credential-stripped agent environment plus its declared variables. The server starts
+suspended and joins the job before its code runs, so descendants it creates are covered
+by the same cleanup. A server whose
 declaration changed or that exited is restarted; all servers stop with the Host. Startup is
 bounded to 20 seconds and each request to the server's `timeout_seconds` (default 60,
 at most 600). `arguments` is a JSON object encoded as a string (at most 64 KB) and follows

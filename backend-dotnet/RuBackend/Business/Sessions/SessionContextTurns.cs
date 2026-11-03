@@ -14,6 +14,7 @@ internal static class SessionContextTurns
 
         string? pendingPrompt = null;
         string? pendingRunId = null;
+        var pendingImageCount = 0;
         var turns = new List<ConversationTurn>();
         foreach (var message in messages)
         {
@@ -27,12 +28,14 @@ internal static class SessionContextTurns
             {
                 pendingPrompt = content;
                 pendingRunId = message.SourceRunId;
+                pendingImageCount = message.ImageAttachmentCount;
             }
             else if (message.Role == "ai" && pendingPrompt is not null)
             {
-                turns.Add(new ConversationTurn(pendingPrompt, content, pendingRunId));
+                turns.Add(new ConversationTurn(pendingPrompt, content, pendingRunId, pendingImageCount));
                 pendingPrompt = null;
                 pendingRunId = null;
+                pendingImageCount = 0;
             }
         }
 

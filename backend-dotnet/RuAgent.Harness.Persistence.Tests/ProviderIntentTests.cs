@@ -35,6 +35,7 @@ public sealed class ProviderIntentTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
+        await fixture.RemoveVersion34SchemaFeaturesAsync();
         var run = fixture.NewRun(1, 1, 1, 'a', 'b');
         var intent = intentAlreadyPresent ? new RunProviderIntent("Custom OpenAI", "retained-model") : null;
         var request = new NewAgentRun(run.Run, run.Events, run.Payloads, run.ConversationOutbox, run.CreationIdentity, intent);

@@ -38,7 +38,8 @@ public sealed partial class SessionStore
                         role,
                         content,
                         ReadNullableString(messageNode, "source_message_id"),
-                        ReadNullableString(messageNode, "source_run_id"));
+                        ReadNullableString(messageNode, "source_run_id"),
+                        ReadInt32(messageNode, "image_attachment_count"));
                     if (IsValidMessage(message))
                     {
                         messages.Add(message);
@@ -85,6 +86,11 @@ public sealed partial class SessionStore
         node[key] is JsonValue value && value.TryGetValue<string>(out var result)
             ? result
             : null;
+
+    private static int ReadInt32(JsonObject node, string key) =>
+        node[key] is JsonValue value && value.TryGetValue<int>(out var result) && result is >= 0 and <= 64
+            ? result
+            : 0;
 
     private static DateTimeOffset ReadTimestamp(JsonObject node, string key)
     {

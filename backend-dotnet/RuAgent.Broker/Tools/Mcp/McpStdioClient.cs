@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Protocol;
 using RuAgent.Broker.Tools.Terminal;
 
 namespace RuAgent.Broker.Tools.Mcp;
@@ -49,7 +50,7 @@ public sealed class McpStdioClient : IMcpClient
     internal McpStdioClient(Stream serverOutput, Stream serverInput, Stream? serverError = null, Process? process = null, IProcessTreeController? tree = null)
     {
         _output = serverOutput ?? throw new ArgumentNullException(nameof(serverOutput));
-        _writer = new StreamWriter(serverInput ?? throw new ArgumentNullException(nameof(serverInput)), new UTF8Encoding(false), 4096, leaveOpen: true)
+        _writer = new StreamWriter(serverInput ?? throw new ArgumentNullException(nameof(serverInput)), new UTF8Encoding(false), 4096, leaveOpen: false)
         {
             AutoFlush = false,
             NewLine = "\n",
@@ -89,17 +90,29 @@ public sealed class McpStdioClient : IMcpClient
 
         WindowsJobProcessTree? tree = null;
         Process? process = null;
+        SuspendedProcess.StartedProcess? started = null;
         try
         {
             tree = WindowsJobProcessTree.Create();
-            process = Process.Start(start) ?? throw new McpException("mcp_server_unavailable");
+            started = SuspendedProcess.StartSuspended(start, redirectStandardInput: true);
+            process = started.Process;
             tree.Assign(process.Id);
-            return new McpStdioClient(process.StandardOutput.BaseStream, process.StandardInput.BaseStream,
-                process.StandardError.BaseStream, process, tree);
+            if (!SuspendedProcess.Resume(started.ThreadHandle))
+                throw new InvalidOperationException("The MCP server could not be resumed.");
+            started.ThreadHandle.Dispose();
+            return new McpStdioClient(started.StandardOutput.BaseStream, started.StandardInput!,
+                started.StandardError.BaseStream, process, tree);
         }
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
         {
             try { process?.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            if (started is not null)
+            {
+                started.ThreadHandle.Dispose();
+                started.StandardInput?.Dispose();
+                started.StandardOutput.Dispose();
+                started.StandardError.Dispose();
+            }
             process?.Dispose();
             tree?.Dispose();
             throw new McpException("mcp_server_unavailable", "The server process could not be started.");

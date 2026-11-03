@@ -58,14 +58,15 @@ public sealed partial class ToolExecutionService
         ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: true);
 
     internal Task<ToolResult> ExecuteAuthenticatedV2Async(
-        AgentEnvelope request, CanonicalCommandIntent intent, CancellationToken cancellationToken) =>
-        ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: true, intent);
+        AgentEnvelope request, CanonicalCommandIntent intent, CancellationToken cancellationToken, TerminalOutputDeltaHandler? output = null) =>
+        ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: true, intent, output);
 
     private async Task<ToolResult> ExecuteAsync(
         AgentEnvelope request,
         CancellationToken cancellationToken,
         bool isAuthenticatedV2Execution,
-        CanonicalCommandIntent? authorizedTerminalIntent = null)
+        CanonicalCommandIntent? authorizedTerminalIntent = null,
+        TerminalOutputDeltaHandler? output = null)
     {
         // Two counters, one funnel: every tool entry point ends here, so a call is
         // counted once whatever route reached it. The read counter answers the
@@ -81,7 +82,7 @@ public sealed partial class ToolExecutionService
         }
 
         var result = await ExecuteCoreAsync(
-            request, cancellationToken, isAuthenticatedV2Execution, authorizedTerminalIntent).ConfigureAwait(false);
+            request, cancellationToken, isAuthenticatedV2Execution, authorizedTerminalIntent, output).ConfigureAwait(false);
         BrokerTelemetry.RecordToolCall(toolId, result);
         return result;
     }
@@ -90,7 +91,8 @@ public sealed partial class ToolExecutionService
         AgentEnvelope request,
         CancellationToken cancellationToken,
         bool isAuthenticatedV2Execution,
-        CanonicalCommandIntent? authorizedTerminalIntent = null)
+        CanonicalCommandIntent? authorizedTerminalIntent = null,
+        TerminalOutputDeltaHandler? output = null)
     {
         var started = Stopwatch.StartNew();
         try
@@ -189,7 +191,7 @@ public sealed partial class ToolExecutionService
                 approvalToken: null,
                 ReadOptionalString(request.Payload, "run_id") ?? request.SessionId,
                 isAuthenticatedV2,
-                cancellationToken, authorizedTerminalIntent).ConfigureAwait(false);
+                cancellationToken, authorizedTerminalIntent, output).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -410,7 +412,8 @@ public sealed partial class ToolExecutionService
         string runId,
         bool isAuthenticatedV2Execution,
         CancellationToken cancellationToken,
-        CanonicalCommandIntent? authorizedTerminalIntent = null)
+        CanonicalCommandIntent? authorizedTerminalIntent = null,
+        TerminalOutputDeltaHandler? output = null)
     {
         var started = Stopwatch.StartNew();
         try
@@ -463,6 +466,7 @@ public sealed partial class ToolExecutionService
             ImageInputAccepted: ReadImageInputAccepted(contextRequest.Payload))
         {
             AuthorizedTerminalIntent = isAuthenticatedV2Execution ? authorizedTerminalIntent : null,
+            TerminalOutput = isAuthenticatedV2Execution ? output : null,
         };
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

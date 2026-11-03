@@ -561,7 +561,7 @@ public abstract class ToolGatewayConformance : IDisposable
     protected async Task<ToolExecutionReceipt> ExecuteOnAsync(
         IToolGateway gateway,
         string toolId,
-        JsonObject arguments)
+        JsonObject arguments, Func<ToolOutputChunk, ValueTask>? publish = null)
     {
         var proposal = Proposal(toolId, arguments);
         var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
@@ -577,7 +577,7 @@ public abstract class ToolGatewayConformance : IDisposable
                 decision.GatewayGeneration),
             CancellationToken.None);
 
-        return await gateway.ExecuteAsync(prepared, _ => ValueTask.CompletedTask, CancellationToken.None);
+        return await gateway.ExecuteAsync(prepared, publish ?? (_ => ValueTask.CompletedTask), CancellationToken.None);
     }
 
     protected static JsonNode ParseModelContent(ToolExecutionReceipt receipt)

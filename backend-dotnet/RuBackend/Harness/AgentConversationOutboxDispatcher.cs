@@ -11,6 +11,7 @@ public enum AgentOutboxDispatchOutcome
 {
     Idle,
     Delivered,
+    StaleDelivery,
     RetryScheduled,
     RunFailed,
     TransitionRecovered,
@@ -219,15 +220,20 @@ public sealed class AgentConversationOutboxDispatcher
                 .ConfigureAwait(false);
         }
 
+        int imageAttachmentCount = claim.Role == ConversationOutboxRole.User
+            ? await _payloads.ReadUserImageCountAsync(claim.RunId, cancellationToken).ConfigureAwait(false)
+            : 0;
         var append = await _sessions.AppendIfAbsentAsync(
                 claim.SessionId.Value,
                 new SessionMessage(
                     claim.Role == ConversationOutboxRole.User ? "user" : "ai",
                     content,
                     claim.IntentId.Value,
-                    claim.RunId.Value),
+                    claim.RunId.Value,
+                    imageAttachmentCount),
                 cancellationToken)
             .ConfigureAwait(false);
+        var staleDelivery = append == SessionAppendOutcome.StaleDelivery;
         switch (append)
         {
             case SessionAppendOutcome.TransientFailure:
@@ -280,6 +286,7 @@ public sealed class AgentConversationOutboxDispatcher
                     .ConfigureAwait(false);
             case SessionAppendOutcome.Appended:
             case SessionAppendOutcome.AlreadyPresent:
+            case SessionAppendOutcome.StaleDelivery:
                 break;
             default:
                 throw new InvalidOperationException("unknown_session_append_outcome");
@@ -342,7 +349,7 @@ public sealed class AgentConversationOutboxDispatcher
                 cancellationToken)
             .ConfigureAwait(false);
         return new AgentOutboxDispatchResult(
-            AgentOutboxDispatchOutcome.Delivered,
+            staleDelivery ? AgentOutboxDispatchOutcome.StaleDelivery : AgentOutboxDispatchOutcome.Delivered,
             claim.IntentId,
             claim.AttemptCount);
     }

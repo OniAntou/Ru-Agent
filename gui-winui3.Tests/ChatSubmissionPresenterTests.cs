@@ -105,4 +105,39 @@ public sealed class ChatSubmissionPresenterTests
 
         Assert.Equal("created", captured);
     }
+
+    [Fact]
+    public async Task Run_submission_snapshot_captures_session_and_generation_after_admission()
+    {
+        string session = "before";
+        long generation = 4;
+        var captured = await ChatSubmissionPresenter.CaptureRunSubmissionAsync(
+            () => { session = "created"; generation = 5; return Task.CompletedTask; },
+            () => session,
+            () => generation,
+            CancellationToken.None);
+
+        Assert.Equal("created", captured.SessionId);
+        Assert.Equal(5, captured.SessionGeneration);
+        Assert.True(ChatSubmissionPresenter.OwnsAdmission(captured, () => session, () => generation));
+        generation++;
+        Assert.False(ChatSubmissionPresenter.OwnsAdmission(captured, () => session, () => generation));
+    }
+
+    [Fact]
+    public async Task Stop_cancellation_after_delayed_session_admission_prevents_a_snapshot()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var admission = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var submission = ChatSubmissionPresenter.CaptureRunSubmissionAsync(
+            () => admission.Task,
+            () => "created-session",
+            () => 2,
+            cancellation.Token);
+
+        cancellation.Cancel();
+        admission.SetResult();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => submission);
+    }
 }

@@ -216,6 +216,8 @@ reconciliation surfaces from Phase 3:
   reading. Full-file hashing observes caller cancellation and a five-second
   deadline (`read_hash_timeout`); mutation preimage hashes remain Host/Broker
   owned and cannot be supplied by the model.
+  Byte-paged and line-paged reads verify the opened handle's final path before
+  reading, so an ancestor junction swap after resolution cannot widen the target.
   On-demand skill bodies also use handle-based final-path and hard-link checks.
   Image reads additionally enforce byte signatures and bounded dimensions/size;
   only a pinned model that accepts image input receives an encrypted image result.
@@ -672,6 +674,10 @@ automation.
 ## Workspace Terminal
 
 Definition: [Workspace Terminal](../../CONTEXT.md) (glossary).
+
+While a foreground command is attached, the in-process gateway publishes
+bounded, redacted stdout and stderr chunks in sequence. The Broker retains
+the spool independently for background tasks and later output reads.
 
 The terminal adapter runs under execution-authority policy with bounded output,
 hard timeout, cancellation, redaction, and process-tree cleanup. `plan` denies

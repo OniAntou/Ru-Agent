@@ -3,6 +3,7 @@
 These records are dated evidence, not current operating instructions. [Current verification](../../operations/verification.md) owns commands and acceptance boundaries.
 
 - [undated](undated.md)
+- [2026-11-03 codebase review](2026-11-03-codebase-review.md) - six P2 findings and their submission, history, MCP and terminal-streaming remediations; final .NET matrix 9,593
 - [2026-11-02](2026-11-02.md) - new-session render batching, stable workspace headers and known-empty opening path; GUI suite 2,046
 - [2026-11-01 review remediation](2026-11-01-review-remediation.md) - R1-R11 lifecycle, restore, UI, computer-target, input validation and CI fixes
 - [2026-11-01](2026-11-01.md) - scratch workspaces for chats without a project, workspace-group delete, full matrix 9,484

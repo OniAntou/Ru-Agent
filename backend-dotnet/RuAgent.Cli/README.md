@@ -40,6 +40,13 @@ and explicit pruning. No automatic conversation deletion is enabled.
 
 ## Transcript and command navigation
 
+On the empty welcome screen, the small top-right **FX: On** button cycles
+**On → Low → Off**. Click it, or press Tab from a draft without a leading `/`
+and then Enter. Low targets about 8 FPS; Off keeps the current sky and logo as
+a static image. The composer remains usable. The choice follows session tabs
+in the current process and resets to On when Ru restarts. Slash completion
+keeps its existing Tab behavior; the FX button disappears when chat starts.
+
 Terminal.Gui is the default interactive surface on supported terminals. Ctrl+P
 opens a searchable palette backed by the same slash catalog as help and command
 completion. Enter selects a command into the composer; arguments can be completed
@@ -236,6 +243,7 @@ agent rpc
 - `/model` and `/backend` without an argument open a picker (`↑↓`, digits, `Enter`, `Esc`); choosing one updates the settings immediately. `/backend openrouter` and `/model <id>` also work with explicit arguments. Esc closes an opened picker without printing its options into chat or changing settings; `/reasoning` follows the same rule. The line adapter lists options when no picker is wired. Cancelling a native picker never enables that text fallback, even when the process console is redirected.
 - Starting `chat` or `run` against a `models.dev:*` backend makes one best-effort catalog check. A model id the live catalog does not list prints one bounded `model_not_in_catalog: <id> - it may fail with a 404; choose another with /model` notice; an unreadable catalog prints `model_check_unavailable: <reason>`. The run continues either way — the catalog can be stale — and OpenAI, Anthropic and custom backends, whose id spaces are not catalog-bound, are not checked.
 - `/provider` reads the live provider catalog (`GET /models-dev`), with built-in and fallback choices when the catalog is unavailable. Choose a provider first, then enter its API key in the separate masked box. `/provider <name>` opens the key box directly.
+- The native provider picker shows its catalog notice in the footer. Opening, filtering and cancelling the picker leave the welcome screen in place.
 - Every picker can be filtered by typing: letters and the id separators `-` `_` `.` narrow the rows by substring across label, detail and value, `Backspace` drops one character, and the footer reports `filter: <query> · <matched>/<total>`. Digits stay the numbered-pick shortcut, and with an empty filter every picker behaves exactly as before. A query that matches nothing shows one disabled `no match` row instead of an empty list.
 - `/reasoning` shows or sets the active model's reasoning effort from the live catalog. Bare `/reasoning` opens a picker of `default` plus the levels that model actually publishes, or explains that the model offers none; `/reasoning <effort>` writes it directly and, like `/backend`, needs no terminal. The save is `POST /settings` carrying exactly `reasoning_effort`, `reasoning_model` and `reasoning_identity` — the identity is the catalog snapshot the picker drew, so a save can never land on a different selection. `default` is always accepted, because the host only resolves a non-default effort against the catalog.
 - Provider setup saves the selected provider and key together through one `POST /settings` only after confirmation. `Ctrl+V` pastes the key into the masked box; Escape cancels without changing either. An empty entry keeps a known saved key; otherwise it saves nothing, except for custom endpoints where a key is optional. Keys use existing credential storage and never enter the transcript or command history. `/provider remove <name>` signs out. JSON refuses interactive key entry; without a picker the sequential path lists providers. Legacy `/backend` and `/key` commands remain callable but are hidden from help/completion. `/model` continues to select the model; `/provider` no longer aliases it. Saving a key does not verify it with the provider.

@@ -1,5 +1,48 @@
 # MEMORY — Ru-Agent (máy của anh steal)
 
+## 2026-11-03 — Kiểm tra toàn bộ lệnh TUI và gom bản sửa welcome
+
+- Rà 17 lệnh trong menu và chạy 46 kịch bản native bằng Host giả trên source khớp bản CLI đang cài. 18 ca giữ welcome, 28 ca ẩn welcome. Không có yêu cầu tạo session trong ma trận; 3 ca xác nhận đổi thiết lập chỉ POST `/settings`. Còn các nhánh cần xử lý riêng như `/model` với 0–1 lựa chọn, `/reasoning` không hỗ trợ, `/sessions` trống hoặc lỗi, hủy `/key` cũ và các lệnh cần session khi chưa có session. Chi tiết từng ca tại `work/tui-welcome-audit/outcomes.txt` trong task workspace.
+- Kiểm tra trước commit: full CLI 2.166 pass, Client 310 pass, tài liệu 7 pass. Commit trên `casluminous/tui-multi-session` gom nút FX, chuyển động dưới các bảng, và các bản sửa welcome đã mô tả bên dưới. Ma trận kiểm tra bổ sung và log ở task workspace.
+
+## 2026-11-03 — Rà các bảng khác kéo khỏi màn hình chính
+
+- `/model` dùng danh sách dự phòng đưa cảnh báo catalog vào footer khi có picker native; line adapter và card khi không có picker giữ cảnh báo dạng văn bản. Report `/help`, `/status` và `/subagents` qua cùng đường document chỉ giữ bản sao khi transcript đang hiện, kiểm tra ở UI thread sau khi đóng. Bấm Esc từ welcome giữ welcome và focus ô nhập.
+- Tái hiện 3 fail native trên `/model` fallback, `/help` và `/status overview`; sau sửa qua 121 test CLI liên quan và 7 kiểm tra tài liệu. Native test có cả `/help` trong cuộc chat để xác nhận report vẫn được giữ. Log/TRX `work/tui-effects/welcome-patterns-{red,green}`. Publish/cài đúng lệnh `Ru`, xác minh 243 file và `--version`. SHA256 CLI `0FDB210CFC2786BFB1EC3DDF5B945F18A9C6685A2D7FF74C006BD88C1557F6D7`. Backup `publish.backup-20261103-3389614aeb30461b95056af9d7bcb376`. Chưa commit/push.
+
+## 2026-11-03 — Tìm provider giữ màn hình chính
+
+- `/provider` và alias cũ `/backend` ghi thông báo catalog vào transcript trước khi mở picker. Dòng đó làm welcome ẩn dù chưa tạo session. Picker native giờ đưa số lượng hoặc cảnh báo fallback vào footer, còn chế độ dòng vẫn in thông báo. Luồng Enter chọn provider và xác nhận key vẫn dùng xử lý sẵn có.
+- Test native qua lệnh thật tái hiện 3 fail trước sửa (`/provider` có/mất catalog và `/backend`). Sau sửa 118 test CLI liên quan và 7 kiểm tra tài liệu qua, gồm gõ lọc, Esc, welcome/focus và không POST khi hủy. Log/TRX `work/tui-effects/provider-welcome-{red,green}`. Cài bản publish CLI 243 file vào đúng lệnh `Ru`, `--version` pass, SHA256 `5B16A1D6A4110467E36201909C0C5697E12558E2B0A6520165914C0F4873CDA4`. Backup `publish.backup-20261103-806877d8d9884579ba6237a0b9c12e6c`. Chưa commit/push.
+
+## 2026-11-03 — Áp dụng bản sửa thiên hà cho các bảng còn lại
+
+- Anh yêu cầu sửa các trường hợp giống `/model`. Năm test tái hiện welcome đứng yên phía sau bảng lệnh Ctrl+P, tài liệu, nhập API key, xin quyền và hỏi đáp. Gỡ trạng thái dừng theo overlay, giữ một đồng hồ theo FX On/Low/Off. Dùng điều kiện overlay chung để khóa nút FX và tránh raster logo vẽ đè lên panel; logo raster trở lại sau khi đóng. Slash suggestions vẫn chỉ che raster khi giao nhau. Bộ đệm dựng card tài liệu cấp phát theo số dòng đang thấy.
+- 97 test CLI liên quan và 7 kiểm tra tài liệu qua; chạy lại 5 case với kiểm tra nền thực sự được vẽ lại và chữ bảng vẫn hiện, cả 5 qua. Log/TRX tại `work/tui-effects/overlay-motion-{red,green,painted}`. Publish vào `work/tui-overlay-motion/publish-cli` và cài vào bản `bin/ru.cmd` dùng; xác minh 243 file và `--version`. CLI SHA256 `9D9B4329EAEA2CD10DD9029EDFEC5AB68E188F4541CDC2EC6BEDFDA70D73C818`. Backup `publish.backup-20261103-4976bc07784a44bcace3dfba12947d57`. Chưa commit/push.
+
+## 2026-11-03 — Thiên hà tiếp tục chạy khi mở bộ chọn model
+
+- Anh báo `/model` làm thiên hà đứng yên. TickWelcome trước đó dừng đồng hồ cho mọi modal; picker cũng dùng modal dù welcome còn hiện. Cho các ChoiceList picker chạy theo FX On/Low/Off. Tách việc giữ raster logo khỏi picker sang kiểm tra che khuất để ảnh không đè chữ; bộ chọn tái sử dụng card khi kích thước, bộ lọc và dòng chọn chưa đổi.
+- Test qua lệnh `/model` thật với Host giả xác nhận đồng hồ trước đó đứng yên (1 fail/6 pass). Sau sửa qua 50 test CLI liên quan và 7 test tài liệu; test raster xác nhận menu vẽ đúng và logo trở lại khi đóng. Log và TRX ở `work/tui-effects/model-picker-motion-{red,green}` trong task workspace.
+- Publish CLI Release win-x64 self-contained tại `work/tui-picker-motion/publish-cli`. Sau khi anh xác nhận đã thoát Ru, cài vào đúng bản `bin/ru.cmd` dùng, xác minh đủ 243 file và launcher `--version` pass. SHA256 CLI cài đặt `6005CCEB5C8478FBED709B30A5D99ABA23FA0383E153E189363CBBA8E56B6384` khớp staging. Host giữ SHA339CCB…; backup CLI `publish.backup-20261102-234c740d75f64b5498825ef7e6b4e116` cùng thư mục win-x64. Chưa commit/push.
+
+## 2026-11-02 — Nút FX cho máy yếu
+
+- Anh chốt nút nhỏ ở welcome với3mức On/Low(~8FPS)/Off. Giữ nguyên artwork và composer: On50ms, Low125ms, Off đóng băng thời gian hiện tại thay vì dùng AnimationPaused vốn ẩn raster logo. Resume đặt lại baseline; Low vẫn tiến đúng tốc độ chuyển động. Nút chuột/Tab→Enter trở về focus ô nhập, không submit draft; Tab input bắt đầu bằng `/` giữ autocomplete. Chỉ hiện khi welcome đủ chỗ; không đổi Host, model, policy hay GUI.
+- State weak-key theo IApplication để theo session tabs trong cùng cửa sổ, không lưu đĩa, khởi động lại mặc định On. Cache sky theo geometry/time để repaint Off không tính lại hạt; HideSlashDropdown khi đã đóng không invalidation cả cửa sổ mỗi lần gõ. Giữ repaint lúc thật sự đóng và relayout khi số match thay đổi.
+- Native test phát hiện Button mặc định cấp margin bóng1hàng làm viewport cao0: gỡ ShadowStyle sau constructor/Initialized không đủ. Sửa qua OnInitializingShadowStyle trước lúc cấp margin. Fixture chuột ban đầu gọi trực tiếp View không mô phỏng đúng hit-test; đổi sang app.Mouse với tọa độ màn hình. Giữ log lần đầu và các lần điều tra tại work/tui-effects. Thêm test clock20/8/0 lần tiến/giây, freeze/resume/cache, native keyboard/mouse gắn ChatLoop thật, giữ draft/không submit, ẩn trong chat, state theo tabs và Off giữ encoded raster logo. Một lần compile test raster thiếu namespace Testing, đã bổ sung trước chạy lại.
+- Kết quả cuối: focused effects-bound-loop29pass, raster1pass; full `dotnet test -c Release` CLI2156pass/Client310pass, `pytest tests/test_current_documentation.py -q`7pass, không skip. Log/TRX và lần lỗi đầu được giữ tại work/tui-effects dưới task workspace; một matrix/mutex tại một thời điểm. Không chạy lại toàn backend/GUI vì chỉ sửa CLI-local; chưa benchmark CPU/GPU/FPS máy thật, FPS là target phụ thuộc terminal.
+- Publish CLI Release win-x64 self-contained vào staging riêng, `--version` pass. Kiểm tra không có Ru CLI giữ target, copy/verify SHA256 toàn243file rồi đổi nguyên cây publish; không stop/sửa Host, không gọi model trên profile thật. **Đã cập nhật đúng lệnh Ru** (`bin/ru.cmd`): CLI SHA256 **88519114317B8B22BD699C2A0E5BFCB9B348601B59E323C8AB0D0B88FDB058E3** khớp staged; launcher `--version`=0.1.2-preview.1. Host vẫn SHA339CCB… như trước. Giữ CLI backup `publish.backup-20261102-64db52087dcc433199a6834331e3db85` cùng thư mục bin/win-x64. Chưa commit/push tính năng này.
+
+## 2026-11-02 — Cập nhật đúng lệnh Ru sau ảnh Esc vẫn lỗi
+
+- Anh báo ảnh Esc `/model` vẫn in danh sách trong lúc đang bàn nút hỗ trợ máy yếu. Xác minh `Get-Command`/`where Ru` đều trỏ `bin/ru.cmd`→CLI publish trong repo; phiên PID15868 chạy đúng thư mục đó nhưng DLL vẫn ngày31/10, SHA079752FE… và còn metadata `ReprintPanelOnPickerCancel`. Bản sửa b4cf94d1 đã push nhưng chưa thay executable đang cài, nên không phải bằng chứng regression của source mới.
+- Publish CLI và Host Release win-x64 self-contained vào staging `work/tui-picker-escape/publish-fixed` dưới mutex. CLI `--version`=0.1.2-preview.1, published Host smoke trên profile TEMP synthetic PASS (status/auth và idle shutdown), không gọi model. Chuẩn bị cùng cặp Host/CLI để không trộn runtime cũ với code mới.
+- Anh xác nhận đã `/exit`, chưa mở lại. Kiểm tra CLI đã tắt; Host36932 vẫn sống. Dừng Host qua authenticated `/host/shutdown?when_idle=true` sau kiểm tra maintenance protocol1, PID/path/start-time/loopback và chờ exit; không force-stop. Lần helper đầu từ chối timestamp do PowerShell tự parse ISO thành DateTime, chưa thay file; sửa so UTC đúng kiểu, giữ log đầu và resume đúng staging ID đã verify hash.
+- Sao lưu DB cùng WAL/SHM nếu còn sau shutdown vào `%LOCALAPPDATA%\Ru\backups\pre-source-update-20261102-467340283479482482434caa82d22291`; không đọc hội thoại/giải mã payload hay in bearer. Di chuyển bản publish cũ sang `publish.backup-20261102-467340283479482482434caa82d22291` ở từng cây bin (đã kiểm tra đường dẫn), rồi thay bằng cả cây mới đã copy/verify, không trộn DLL cũ.
+- **Lệnh Ru đã cập nhật**: CLI SHA256 **73117465B25586C1311A44A934B3A1A5D253B7ADC720006C0EAE67922BB98A8D**, Host **339CCB50153D7FF09CB245BB1588C6DB1FDA3F88975A2800C0A90BDF35D02733** đều khớp staging. Launcher thật `bin/ru.cmd --version` pass và DLL đang cài không còn flag reprint. Không tự mở chat/provider trên profile thật; full CLI2147/Client310/docs7 và native Esc cases của source vẫn là evidence ở bên dưới. Chưa commit/push ghi nhận cập nhật runtime này.
+- Sau cập nhật này anh đã chốt3mức FX On/Low(~8FPS)/Off; tiến độ ở mục mới phía trên.
+
 ## 2026-11-02 — Commit và đưa bản sửa Esc lên branch
 
 - Anh yêu cầu commit lên branch; phạm vi là bản sửa Esc/picker bên dưới cùng regression/native tests, README, kiến trúc TUI, CHANGELOG và MEMORY. Dùng branch `casluminous/tui-multi-session`, đưa lên remote cả commit `7c636c5c` còn chờ từ lượt trước; không force-push hoặc sync thêm dev.

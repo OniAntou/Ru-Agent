@@ -250,16 +250,17 @@ public sealed partial class AgentSlashCommands
                 ? await ReadAllKeyStatesAsync(settings.Value, cancellationToken).ConfigureAwait(false)
                 : null;
             var (providers, providerError) = await ReadModelsDevProvidersAsync(cancellationToken).ConfigureAwait(false);
-            await WriteProviderListNoticeAsync(providers, providerError).ConfigureAwait(false);
+            var notice = ProviderListNotice(providers, providerError);
 
             var choices = Tui.TuiSurfaces.BackendChoices(current, keyStates, providers);
-            var list = new Tui.ChoiceList("backend", choices);
             if (Picker is null)
             {
+                await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  " + notice)).ConfigureAwait(false);
                 WriteBackendPanel(current, keyStates, providers);
                 await _humanOut.FlushAsync().ConfigureAwait(false);
                 return;
             }
+            var list = new Tui.ChoiceList("backend", choices, footer: $"{notice} · ↑↓ select · enter apply");
             var picked = await Picker(list, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             if (picked is null) return;
@@ -274,20 +275,11 @@ public sealed partial class AgentSlashCommands
     /// short catalog from a failed fetch, which is exactly the confusion the WinUI
     /// provider list hit with the same call.
     /// </summary>
-    private async Task WriteProviderListNoticeAsync(
+    private static string ProviderListNotice(
         IReadOnlyList<(string Id, string Name)>? providers,
-        string? error)
-    {
-        if (providers is not null)
-        {
-            await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
-                $"  {providers.Count} providers from models.dev")).ConfigureAwait(false);
-            return;
-        }
-
-        await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
-            $"  models.dev list unavailable ({ChatDisplayText.Sanitize(error, 160)}) - showing the known providers only")).ConfigureAwait(false);
-    }
+        string? error) => providers is not null
+        ? $"{providers.Count} providers from models.dev"
+        : $"models.dev list unavailable ({ChatDisplayText.Sanitize(error, 160)}) - showing the known providers only";
 
     /// <summary>
     /// Shows or sets the active model's reasoning effort. With no argument it offers a
@@ -527,15 +519,11 @@ public sealed partial class AgentSlashCommands
                 }
 
                 candidates ??= Tui.TuiSurfaces.ModelChoices(backend, configured, keyStates);
-                if (catalogError is not null)
-                {
-                    await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
-                        $"  catalog unavailable ({catalogError}) - showing configured models")).ConfigureAwait(false);
-                }
+                var catalogNotice = catalogError is null ? null
+                    : $"catalog unavailable ({catalogError}) - showing configured models";
 
-                // The footer names the backend and the row count on both paths, so the
-                // picker never looks clipped; null backend stays on the default hint.
-                var candidatesFooter = string.IsNullOrWhiteSpace(backend) ? null : backend;
+                // Keep the fallback notice inside the native picker so it does not open the transcript.
+                var candidatesFooter = catalogNotice ?? (string.IsNullOrWhiteSpace(backend) ? null : backend);
 
                 // Fewer than two candidates means there is nothing to choose between: show
                 // the card instead of a one-row picker. The sequential engine has no
@@ -552,6 +540,9 @@ public sealed partial class AgentSlashCommands
                     }
                     return;
                 }
+
+                if (catalogNotice is not null)
+                    await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  " + catalogNotice)).ConfigureAwait(false);
 
                 if (candidates.Count > 0)
                 {

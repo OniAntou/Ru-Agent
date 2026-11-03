@@ -13,7 +13,7 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TgPickerCancellationTests
 {
-    private sealed class Host : HttpMessageHandler
+    private sealed class Host(bool catalogUnavailable) : HttpMessageHandler
     {
         internal List<string> Posts = [];
         private static HttpResponseMessage Json(object value) => new(HttpStatusCode.OK)
@@ -23,8 +23,11 @@ public sealed class TgPickerCancellationTests
             ct.ThrowIfCancellationRequested();
             if (request.Method != HttpMethod.Get) { Posts.Add(request.RequestUri!.AbsolutePath); throw new Exception("Cancellation must not mutate Host state"); }
             var path = request.RequestUri!.AbsolutePath;
-            if (path == "/settings/models-dev") return Task.FromResult(Json(new { status = "ok",
-                providers = new[] { new { id = "openrouter", name = "Synthetic OpenRouter" } } }));
+            if (path == "/models-dev") return Task.FromResult(catalogUnavailable
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("{}") }
+                : Json(new { status = "ok", providers = new[] { new { id = "openrouter", name = "Synthetic OpenRouter" } } }));
+            if (catalogUnavailable && path == "/models")
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
             if (path is "/models" or "/settings/models") return Task.FromResult(Json(new { status = "ok", backend = "OpenAI", identity = "synthetic-model-identity",
                 selected_model = "synthetic-model-000", selected_effort = "default", models = Array.Empty<object>(),
                 catalog = Enumerable.Range(0, 400).Select(index => new { id = $"synthetic-model-{index:000}", supported = true,
@@ -39,16 +42,22 @@ public sealed class TgPickerCancellationTests
 
     [Theory]
     [InlineData("/model")]
+    [InlineData("/model", true)]
     [InlineData("/backend")]
     [InlineData("/reasoning")]
-    [InlineData("/provider")]
+    [InlineData("/provider", false)]
+    [InlineData("/provider", true)]
     [InlineData("/preset")]
     [InlineData("/status")]
     [InlineData("/sessions")]
-    public async Task Escape_closes_picker_without_appending_options_or_losing_composer_focus(string command)
+    [InlineData("/help")]
+    [InlineData("/status overview")]
+    [InlineData("/help", false, true)]
+    public async Task Escape_closes_slash_panels_and_restores_composer_focus(
+        string command, bool catalogUnavailable = false, bool inChat = false)
     {
         using IApplication app = Application.Create(); app.Init(DriverRegistry.Names.ANSI);
-        using var page = TgChatWindow.Build(); using var host = new Host(); using var http = new HttpClient(host);
+        using var page = TgChatWindow.Build(); using var host = new Host(catalogUnavailable); using var http = new HttpClient(host);
         using var errors = new StringWriter();
         using var commands = new AgentCommands(ChatApprovalRulesWorkflowTests.Session, http, TextWriter.Null, errors);
         var writer = new TgTranscriptWriter(app, page.Transcript); var path = Path.GetTempPath();
@@ -56,18 +65,61 @@ public sealed class TgPickerCancellationTests
             "OpenAI", "synthetic-model-000", "default", null, ChatPresentationMode.Native, true, writer, page, app);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
         Exception? failure = null; var stage = 0; var beforeCancel = 0;
+        double? pickerOpenedAt = null;
+        var typedProviderFilter = false;
+        var report = command is "/help" or "/status overview";
         app.AddTimeout(TimeSpan.FromMilliseconds(120), () =>
         {
             try
             {
                 if (app.TopRunnableView is not TgSessionHostWindow) return true;
                 if (stage == 0)
-                { page.FocusComposer(); page.Composer.Input.Text = command; app.InjectKey(Key.Enter); stage++; }
-                else if (stage == 1 && page.IsModalPanelOpen)
-                { beforeCancel = page.Transcript.RetainedRowCount; app.InjectKey(Key.Esc); stage++; }
-                else if (stage == 2 && !page.IsModalPanelOpen && page.Hints.ActiveState == TgHintsState.Idle)
                 {
-                    Assert.Equal(beforeCancel, page.Transcript.RetainedRowCount);
+                    if (inChat) page.Transcript.Append("Existing conversation", TranscriptStyle.Prose);
+                    page.FocusComposer(); page.Composer.Input.Text = command; app.InjectKey(Key.Enter); stage++;
+                }
+                else if (stage == 1 && (report ? page.IsDocumentPanelOpen : page.IsModalPanelOpen))
+                {
+                    if (command is "/provider" or "/backend")
+                    {
+                        Assert.True(page.Landing.Visible, "Opening the provider picker must leave the welcome screen visible.");
+                        Assert.False(page.Transcript.HasContent);
+                        if (!typedProviderFilter)
+                        {
+                            app.InjectKey(Key.O);
+                            typedProviderFilter = true;
+                            return true;
+                        }
+                        var screen = string.Join('\n', TgSnapshot.Capture(app));
+                        Assert.Contains("Search o", screen, StringComparison.OrdinalIgnoreCase);
+                        Assert.Contains(catalogUnavailable ? "models.dev list unavailable" : "providers from models.dev", screen);
+                    }
+                    if (command == "/model")
+                    {
+                        Assert.True(page.Landing.Visible);
+                        if (pickerOpenedAt is null)
+                        {
+                            pickerOpenedAt = page.Landing.AnimationTime;
+                            return true;
+                        }
+                        Assert.True(page.Landing.AnimationTime > pickerOpenedAt.Value,
+                            "The welcome galaxy should advance while the model picker owns focus.");
+                        if (catalogUnavailable)
+                            Assert.Contains("catalog unavailable", string.Join('\n', TgSnapshot.Capture(app)));
+                    }
+                    beforeCancel = page.Transcript.RetainedRowCount; app.InjectKey(Key.Esc); stage++;
+                }
+                else if (stage == 2 && !page.IsModalPanelOpen && !page.IsDocumentPanelOpen && page.Hints.ActiveState == TgHintsState.Idle)
+                {
+                    if (inChat)
+                    {
+                        Assert.True(page.Transcript.RetainedRowCount > beforeCancel);
+                    }
+                    else
+                    {
+                        Assert.Equal(beforeCancel, page.Transcript.RetainedRowCount);
+                        if (report || command is "/provider" or "/backend" or "/model") Assert.True(page.Landing.Visible);
+                    }
                     Assert.DoesNotContain(page.Transcript.Lines, row => row.Text.Contains("synthetic-model-399"));
                     Assert.Same(page.Composer.Input, page.MostFocused);
                     app.InjectKey(Key.X); Assert.Equal("x", page.Composer.Input.Text);

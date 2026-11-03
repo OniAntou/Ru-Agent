@@ -3,12 +3,45 @@ using RuAgent.Cli.Tui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Drivers;
+using Terminal.Gui.Input;
+using Terminal.Gui.Testing;
 using Xunit;
 
 namespace RuAgent.Cli.Tests;
 
 public sealed class TgSquareWordmarkIntegrationTests
 {
+    [Fact]
+    public void Effects_off_keeps_the_raster_logo_and_reuses_its_encoded_image()
+    {
+        RasterImageCommand? frozenImage = null;
+        double frozenTime = 0;
+        Run(true, (app, w, stage) =>
+        {
+            if (stage == 0)
+            {
+                w.EffectsButton.SetFocus(); app.InjectKey(Key.Enter);
+                w.EffectsButton.SetFocus(); app.InjectKey(Key.Enter);
+                Assert.Equal(TgWelcomeEffects.Off, w.Landing.EffectsMode);
+                frozenTime = w.Landing.AnimationTime;
+                return true;
+            }
+            Assert.True(w.Landing.SquareWordmarkActive);
+            Assert.Equal(frozenTime, w.Landing.AnimationTime);
+            var image = Assert.Single(app.Driver!.GetOutputBuffer().GetRasterImages());
+            if (stage == 1)
+            {
+                frozenImage = image;
+                for (var tick = 0; tick < 100; tick++) w.TickWelcome();
+                w.Landing.SetNeedsDraw();
+                return true;
+            }
+            Assert.Equal(frozenImage!.SourceVersion, image.SourceVersion);
+            Assert.Same(frozenImage.EncodedSixel, image.EncodedSixel);
+            return false;
+        });
+    }
+
     [Theory]
     [InlineData(true)] [InlineData(false)]
     public void Raster_is_used_only_when_the_driver_supports_it(bool supported)
@@ -16,7 +49,7 @@ public sealed class TgSquareWordmarkIntegrationTests
         Run(supported, (app, w, _) =>
         {
             Assert.True(supported == w.Landing.SquareWordmarkActive,
-                $"supported={supported}; reported={app.Driver!.SixelSupport?.IsSupported}; landing={w.Landing.Visible}/{w.Landing.Frame}; image={w.Landing.SquareWordmarkBounds}; pixels={w.Landing.SquareWordmarkActive}; app={w.Landing.App is not null}; paused={w.Landing.AnimationPaused}; input={w.Composer.Frame}");
+                $"supported={supported}; reported={app.Driver!.SixelSupport?.IsSupported}; landing={w.Landing.Visible}/{w.Landing.Frame}; image={w.Landing.SquareWordmarkBounds}; pixels={w.Landing.SquareWordmarkActive}; app={w.Landing.App is not null}; input={w.Composer.Frame}");
             var requests = app.Driver!.GetOutputBuffer().GetRasterImages();
             if (supported)
             {
@@ -166,14 +199,80 @@ public sealed class TgSquareWordmarkIntegrationTests
                     Assert.False(w.Landing.SquareWordmarkActive); Assert.Empty(images);
                     w.DismissCommandPalette(); w.TickWelcome(); w.Landing.SetNeedsDraw(); return true;
                 case 2:
-                    Assert.NotEmpty(images); w.Transcript.Append("hello", TranscriptStyle.Prose); return true;
+                    Assert.NotEmpty(images);
+                    w.ShowPicker("model", [new ChoiceItem("test-model", "current", "test-model")]);
+                    return true;
                 case 3:
+                    Assert.True(w.IsModalPanelOpen);
+                    Assert.Empty(images);
+                    Assert.Contains("test-model", string.Join('\n', TgSnapshot.Capture(app)));
+                    w.HidePanel();
+                    return true;
+                case 4:
+                    Assert.NotEmpty(images); w.Transcript.Append("hello", TranscriptStyle.Prose); return true;
+                case 5:
                     Assert.False(w.Landing.Visible); Assert.Empty(images);
                     Assert.DoesNotContain(string.Join('\n', TgSnapshot.Capture(app)), ch => ch is >= '\u2801' and <= '\u28ff');
                     w.Transcript.Clear(); return true;
                 default:
                     Assert.True(w.Landing.Visible); Assert.NotEmpty(images); return false;
             }
+        });
+    }
+
+    [Theory]
+    [InlineData("palette", "Commands")]
+    [InlineData("document", "motion document")]
+    [InlineData("secret", "motion provider")]
+    [InlineData("approval", "motion approval")]
+    [InlineData("question", "motion question")]
+    public void Welcome_overlays_keep_the_sky_moving_and_preserve_their_text(string overlay, string marker)
+    {
+        double openedAt = 0;
+        long previousSkyRenders = 0;
+        Run(true, (app, window, stage) =>
+        {
+            if (stage == 0)
+            {
+                switch (overlay)
+                {
+                    case "palette": window.OpenCommandPalette(); break;
+                    case "document": window.ShowDocument(marker, ["first row", "second row"]); break;
+                    case "secret": window.ShowSecret(marker); break;
+                    case "approval": window.ShowApproval(marker); break;
+                    case "question": window.ShowQuestion(ChatInputWorkflowTests.Question with { Question = marker }); break;
+                }
+                window.TickWelcome();
+                openedAt = window.Landing.AnimationTime;
+                return true;
+            }
+
+            if (stage == 3)
+            {
+                Assert.True(window.Landing.SquareWordmarkActive);
+                return false;
+            }
+
+            window.TickWelcome();
+            Assert.True(window.Landing.AnimationTime > openedAt, $"Welcome animation stalled behind {overlay}.");
+            Assert.False(window.Landing.SquareWordmarkActive);
+            Assert.Empty(app.Driver!.GetOutputBuffer().GetRasterImages());
+            Assert.Contains(marker, string.Join('\n', TgSnapshot.Capture(app)), StringComparison.OrdinalIgnoreCase);
+            openedAt = window.Landing.AnimationTime;
+            if (stage == 1)
+            {
+                previousSkyRenders = window.Landing.SkyRenderCount;
+                return true;
+            }
+            Assert.True(window.Landing.SkyRenderCount > previousSkyRenders);
+
+            switch (overlay)
+            {
+                case "palette": window.DismissCommandPalette(); break;
+                case "document": window.HideDocument(); break;
+                default: window.HidePanel(); break;
+            }
+            return true;
         });
     }
 
@@ -191,14 +290,12 @@ public sealed class TgSquareWordmarkIntegrationTests
                 w.Composer.Input.Text = "/";
                 w.TickWelcome();
                 Assert.True(w.IsSlashDropdownOpen);
-                Assert.False(w.Landing.AnimationPaused);
                 previousTime = w.Landing.AnimationTime;
                 return true;
             }
             w.TickWelcome();
             Assert.True(w.Landing.AnimationTime > previousTime);
             previousTime = w.Landing.AnimationTime;
-            Assert.False(w.Landing.AnimationPaused);
             if (stage <= 2)
             {
                 var menu = Assert.Single(w.SubViews.OfType<TgSlashDropdown>());

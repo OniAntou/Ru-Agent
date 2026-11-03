@@ -246,8 +246,9 @@ Picker capability belongs to the input adapter, rather than `Console.IsInputRedi
 An absent picker enables the line adapter's text listing; a null answer from an
 opened picker is cancellation. Model/backend/reasoning handlers return at that
 boundary without appending a text option panel or saving settings. Esc restores
-composer focus. Catalog availability notices emitted before the picker are retained;
-explicitly requested report documents keep their existing transcript retention.
+composer focus. The native provider and model pickers show catalog availability in
+the footer. A report opened over the welcome screen stays in its document panel.
+An open conversation keeps the report in the transcript after the panel closes.
 
 Panel and picker labels coming from a remote catalog (provider names, model ids) are
 sanitized like transcript text before they are measured or painted.
@@ -525,7 +526,7 @@ The raster's frame must fit outside the header, composer and hint; its output is
 capped at 262,144 pixels and invalid cell resolutions are rejected. Unsupported
 terminals, constrained frames and welcome overlays retain the existing glyph
 wordmark with its small lower half-block shadow. Raster placements are removed
-when hidden or paused and restored on welcome resume. The classic header keeps
+when hidden or covered and restored when visible again. The classic header keeps
 its existing palette.
 Ice-white glints in the galaxy are sparse
 instead of covering every ridge. A rounder bulge and a few steady cross-shaped
@@ -571,8 +572,8 @@ cells are collected on the stack and merged with the sky/lower stars before
 painting the wordmark. Input bounds and the entire hint row stay excluded.
 This does not add a screen-sized buffer or inherit the galaxy raster's dimension
 cap. No retained particle objects, background tasks or extra timer are created, and
-the same hidden/overlay pause stops both effects.
-The terminal font owns glyph metrics. The existing wordmark and composer stay above the black sky. No new controls or provider calls are added.
+the same welcome clock controls both effects.
+The terminal font owns glyph metrics. The existing wordmark and composer stay above the black sky. No provider calls are added.
 The line adapter prints its existing plain startup banner.
 
 Slash suggestions align to the full composer width and end directly above its
@@ -584,16 +585,33 @@ keeps the existing available-height bound when the terminal is resized.
 height changes. Live typing and backspace can change that data without changing
 the layout delegates themselves; redraw alone would keep an old black frame.
 
+The welcome-only top-right FX button cycles On / Low / Off through mouse or
+Tab/Enter. Plain welcome drafts route Tab to that button; leading-slash input
+keeps completion. Activation returns focus to the composer without submitting
+the draft. A weak application-keyed state shares the choice across session pages,
+without persisting settings. A new application starts On. Modal/document/palette
+overlays disable the control; transcript content hides it. The compact one-row
+button suppresses the default shadow during initialization so a shadow margin
+cannot consume its viewport.
+
 The existing UI timer still owns activity/footer updates. Only the welcome clock
-is throttled to 50 ms (at most 20 FPS; about 18.5 FPS with the shared 18 ms timer);
-it stops advancing while the landing is hidden, has no viewport, or a command
-palette, modal or document panel is open. Opening the slash-command dropdown
-keeps the sky, meteors and light sweep running at the same cadence. A raster logo
-is temporarily suppressed only when its bounds intersect that dropdown, because
-raster images render after text. The normal glyph fallback stays behind the menu;
+is throttled: On uses 50 ms (at most 20 FPS), Low uses 125 ms (at most 8 FPS).
+Actual cadence depends on the shared loop and terminal output. Off preserves the
+current animation time. Resuming resets the clock baseline instead of catching up.
+The clock stops advancing while the landing is hidden, has no viewport, or FX is Off.
+Slash suggestions, the command palette, documents and all modals use the selected
+FX cadence while the landing is visible. A choice picker reuses its composed card
+until its geometry, selection or filter changes. The raster logo is temporarily
+suppressed under those panels or when slash suggestions overlap it, because raster
+images render after text. The glyph fallback stays behind the panel;
 raster rendering resumes when no longer covered. First transcript/live content hides the landing, including replay
 of an existing conversation; an empty transcript restores it. Typing an unsent
-ordinary draft leaves it visible. Resume caps a delayed step to 100 ms.
+ordinary draft leaves it visible. A delayed step is capped at 100 ms in On and
+200 ms in Low, preserving animation speed at the 125 ms Low cadence.
+`TuiGalaxySky` reuses the existing dot/color arrays when geometry and animation
+time match, so static redraws do not repeat particle calculations. An already
+closed slash dropdown no longer invalidates the entire window during typing;
+actual dropdown removal and geometry changes still repaint.
 
 Two byte buffers store masks and foreground ownership per cell; they are reused
 until resize, capped at 240 columns by 100 rows (48,000 payload bytes), with black

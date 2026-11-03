@@ -28,17 +28,19 @@ public sealed partial class AgentSlashCommands
             {
                 var (providers, error) = await ReadModelsDevProvidersAsync(ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
-                await WriteProviderListNoticeAsync(providers, error).ConfigureAwait(false);
+                var notice = ProviderListNotice(providers, error);
                 var choices = TuiSurfaces.BackendChoices(ReadBackend(settings), states, providers);
                 if (Picker is null)
                 {
+                    await _humanOut.WriteLineAsync(TuiPalette.DimPaint("  " + notice)).ConfigureAwait(false);
                     foreach (var line in TuiPanel.Compose(PanelWidth, "provider",
                         [new PanelSection(null, choices.Select(item => new PanelRow(item.Label, item.Detail)).ToList())],
                         "/provider <name> · select provider, then enter API key"))
                         await _humanOut.WriteLineAsync(line).ConfigureAwait(false);
                     return;
                 }
-                selected = await Picker(new ChoiceList("provider · choose before entering API key", choices), ct).ConfigureAwait(false);
+                selected = await Picker(new ChoiceList("provider · choose before entering API key", choices,
+                    footer: $"{notice} · ↑↓ select · enter apply"), ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
                 if (selected is null) return;
                 if (!choices.Any(item => item.Enabled && item.Value == selected))

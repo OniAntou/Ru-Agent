@@ -581,9 +581,9 @@ public sealed partial class AgentCommands
         /// <summary>
         /// Report-only slash commands print into the read-only output window instead of
         /// scrolling straight into the transcript. Both writers the command can reach are
-        /// pointed at a capture buffer for the run, so the window shows exactly what the
-        /// command printed; when it closes the same rows are written to the transcript, so
-        /// the report is still there to scroll back to. Sequential mode keeps printing
+        /// pointed at a capture buffer for the run, so the window shows what the command
+        /// printed. An open conversation also keeps those rows after the panel closes.
+        /// Sequential mode keeps printing
         /// inline: there is no window over a scrolling region to float above.
         /// </summary>
         async Task<bool> HandleSlashLineWithDocumentAsync(string slashLine, CancellationToken cancellationToken)
@@ -633,8 +633,13 @@ public sealed partial class AgentCommands
                     command.TrimStart('/'),
                     body,
                     cancellationToken).ConfigureAwait(false);
-                await transcript.WriteLineAsync(string.Join('\n', body)).ConfigureAwait(false);
-                await transcript.FlushAsync().ConfigureAwait(false);
+                var report = string.Join('\n', body);
+                RunOnTgUi(() =>
+                {
+                    if (tgWindow!.Landing.Visible || cancellationToken.IsCancellationRequested) return;
+                    transcript.WriteLine(report);
+                    transcript.Flush();
+                });
             }
 
             return handled;

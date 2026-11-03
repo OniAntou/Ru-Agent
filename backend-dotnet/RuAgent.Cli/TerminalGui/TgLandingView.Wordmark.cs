@@ -31,7 +31,7 @@ public sealed partial class TgLandingView
         var kitty = driver?.KittyGraphicsSupport;
         var sixel = driver?.SixelSupport;
         var useKitty = kitty?.IsSupported == true && driver!.GetOutput().UseKittyGraphics;
-        if (AnimationPaused || !(useKitty || sixel?.IsSupported == true)) return HideSquareWordmark();
+        if (!(useKitty || sixel?.IsSupported == true)) return HideSquareWordmark();
         var resolution = useKitty ? kitty!.Resolution : sixel!.Resolution;
         var paletteColors = !useKitty && sixel!.MaxPaletteColors > 0 ? Math.Min(32, sixel.MaxPaletteColors) : 32;
         if (resolution.Width <= 0 || resolution.Height <= 0 || resolution.Width > 128 || resolution.Height > 256)
@@ -45,7 +45,7 @@ public sealed partial class TgLandingView
             top + (TuiHeader.WordmarkRows - rows) / 2, columns, rows);
         if (frame.Top < 1 || frame.Bottom > height || ComposerBounds?.IntersectsWith(frame) == true
             || HintRow is { } hint && hint >= frame.Top && hint < frame.Bottom) return HideSquareWordmark();
-        // Raster images render after text. A slash menu may cover the logo while
+        // Raster images render after text. A menu may cover the logo while
         // the sky keeps animating; let normal glyph clipping preserve the menu.
         if (IsWordmarkOccluded?.Invoke(frame) == true) return HideSquareWordmark();
 

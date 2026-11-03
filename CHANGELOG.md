@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Keep provider browsing on the welcome screen by showing the
+  catalog notice in the picker footer instead of adding a transcript row.
+  Apply the same routing to the fallback model picker. Closing a report on the
+  welcome screen also leaves it visible, while an open conversation retains the report.
+
+- **fix(tui)**: Keep welcome animation at the selected FX cadence behind choice
+  pickers, the command palette, documents and other modals. Suppress the raster
+  logo to protect panel text, reuse picker cards on animation redraws and size
+  the document card body to the visible page.
+
+- **feat(tui)**: Add a welcome-only FX button with On / Low (~8 FPS target) /
+  Off modes, accessible by mouse or Tab/Enter. Off freezes the sky and logo
+  without disabling input; unchanged sky frames reuse their raster. Share the
+  choice across session tabs for the current process. Preserve slash completion
+  and avoid root redraws when no slash dropdown needs closing.
+
 - **fix(tui)**: Escape in the model, backend and reasoning pickers closes the menu
   without dumping its text option panel into chat. Remove the native cancel/reprint
   flag and distinguish a missing picker from a cancelled one. Honor a wired picker

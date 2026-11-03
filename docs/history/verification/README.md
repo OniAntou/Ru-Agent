@@ -4,7 +4,11 @@ These records are dated evidence, not current operating instructions. [Current v
 
 - [undated](undated.md)
 - [2026-11-03 codebase review](2026-11-03-codebase-review.md) - six P2 findings and their submission, history, MCP and terminal-streaming remediations; final .NET matrix 9,593
+- [2026-11-03 native acceptance and TUI performance](2026-11-03-native-acceptance-and-tui-performance.md) - native WinUI navigation/resize, controlled ConPTY latency, repaint/cadence improvements and real-provider task evidence
 - [2026-11-02](2026-11-02.md) - new-session render batching, stable workspace headers and known-empty opening path; GUI suite 2,046
+- [2026-11-02 TUI activity](2026-11-02-tui-activity.md) - compact per-action inspectors, truthful live phases, native cell renders and CLI regression evidence
+- [2026-11-02 context window](2026-11-02-context-window.md) - per-request context instead of cumulative billing, full pinned capacity and causal estimate/usage ordering in TUI and WinUI
+- [2026-11-02 codebase review](2026-11-02-codebase-review.md) - four findings remediated: opened-handle read validation, GUI model intent/read ordering, and removal of all external session exchange; original reproductions and verification evidence
 - [2026-11-01 review remediation](2026-11-01-review-remediation.md) - R1-R11 lifecycle, restore, UI, computer-target, input validation and CI fixes
 - [2026-11-01](2026-11-01.md) - scratch workspaces for chats without a project, workspace-group delete, full matrix 9,484
 - [2026-10-31](2026-10-31.md) - read notices and token estimate, tool telemetry counters, skill policy denial and the unconfigured-tool code, tokenized skill search, full matrix 9,464

@@ -14,6 +14,19 @@ namespace RuApp.Views
     {
         private bool _suppressContextUsageUpdate;
 
+        private void OnAgentContextStepStarted(object? sender, AgentModelStepStartedEventArgs step)
+        {
+            if (!DispatcherQueue.HasThreadAccess)
+            {
+                DispatcherQueue.TryEnqueue(() => OnAgentContextStepStarted(sender, step));
+                return;
+            }
+            if (_agentController?.CurrentRun is not { } run
+                || run.RunId != step.RunId || run.SessionId != _activeSessionId || run.SessionId != step.SessionId) return;
+            _retainedContextMeter.ScopeToRun(run, _activeSessionId);
+            _retainedContextMeter.ObserveModelStep(step.RunId, step.SessionId, step.Sequence, step.ModelStepId);
+        }
+
         public void UpdateContextUsage(bool force = false)
         {
             if (_suppressContextUsageUpdate) return;

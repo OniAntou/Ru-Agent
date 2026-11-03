@@ -14,6 +14,27 @@ namespace RuBackend.Tests.Harness;
 public sealed class AgentSkillWorkflowTests
 {
     [Fact]
+    public async Task User_catalog_is_available_without_a_workspace_and_does_not_include_project_skills()
+    {
+        using var fixture = new Fixture();
+        var id = "project-only-" + Guid.NewGuid().ToString("N");
+        fixture.WriteSkill(id, $"---\nname: {id}\ndescription: Project-local test skill\n---\nPrivate project workflow.");
+        using var factory = new BackendWebApplicationFactory(dataPaths: fixture.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+        using var response = await client.GetAsync("/agent/v1/skills");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var catalog = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.DoesNotContain(catalog.GetProperty("items").EnumerateArray(), item => item.GetProperty("id").GetString() == id);
+        Assert.DoesNotContain("Private project workflow.", catalog.GetRawText(), StringComparison.Ordinal);
+        using var invalid = await client.GetAsync("/agent/v1/skills?workspace_path=relative");
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        using var empty = await client.GetAsync("/agent/v1/skills?workspace_path=");
+        Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
+        using var mutation = await client.PostAsJsonAsync("/agent/v1/skills/settings", new { workspace_path = "", action = "set_enabled", id, enabled = false });
+        Assert.Equal(HttpStatusCode.BadRequest, mutation.StatusCode);
+    }
+
+    [Fact]
     public async Task Catalog_is_available_before_a_run_and_preserves_manual_only_metadata()
     {
         using var fixture = new Fixture();

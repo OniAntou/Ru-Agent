@@ -212,12 +212,13 @@ public sealed partial class ChatComposerViewModel : ObservableObject
     /// Puts what the composer holds behind the run in hand. False means the content
     /// stayed where it was: nothing to queue, or the queue is full.
     /// </summary>
-    internal bool QueueCurrent(string? sessionId, string text)
+    internal bool QueueCurrent(string? sessionId, string text, CreateRunProviderSelection providerSelection)
     {
+        ArgumentNullException.ThrowIfNull(providerSelection);
         var snapshot = TakeSnapshot(text);
         if (snapshot.IsEmpty) return false;
 
-        if (!Queue.TryEnqueue(snapshot.Text, snapshot.Text, snapshot.Attachments))
+        if (!Queue.TryEnqueue(snapshot.Text, snapshot.Text, snapshot.Attachments, providerSelection))
         {
             _runPanel.ShowLocalStatus(AgentComposerPresentation.QueueFullStatus);
             return false;

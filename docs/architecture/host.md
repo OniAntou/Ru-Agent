@@ -18,22 +18,13 @@ and reports incomplete cleanup. Mutex release stays on the dedicated owner
 thread; deferred cleanup retains synchronization resources until admitted work
 has quiesced.
 
-Session lists and interchange exports share `SessionWorkspaceResolver` to resolve
-the latest durable run's encrypted workspace metadata. Export resolves the requested
-session directly, independently of the session-list cap. Sessions without a readable
-workspace retain an unset working directory.
-
-Interchange exports have a shared 128 MiB bound on the actual serialized JSON
-envelope, including nested format escaping (`SessionInterchangeLimits`). The
-Host measures it with the same serializer used for the response and returns
-413 `export_too_large` before sending an oversized success. CLI and GUI use
-`ResponseHeadersRead` and parse a bounded JSON stream, independently of the
-general API reader's 8 MiB cap. Declared and actual stream lengths are checked.
+Session lists use `SessionWorkspaceResolver` to resolve the latest durable run's
+encrypted workspace metadata. Sessions without a readable workspace retain an
+unset working directory. External session import/export routes and format
+adapters are retired; native Ru fork, rewind and retained history remain.
 Both run-create routes (`/agent/v1/runs` and `/agent/v1/runs/selected`) use the
 larger run body bound; only the selected route's path check used to fall back to
 the general 8 MiB cap.
-Format file contents and the parsed JSON still live in memory; this is bounded
-buffering, not a constant-memory export directly to disk.
 
 Workspace change restore first checks the expected hash, then validates it again
 after journal decryption. Existing targets are hashed and rewritten through one
@@ -78,7 +69,7 @@ Closing the GUI sends an authenticated `POST /host/shutdown` so the Host exits g
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../../backend-dotnet/public-route-contract.json):
-54 HTTP method/path pairs with no WebSocket route (29 `/agent/v1/*` and 25
+52 HTTP method/path pairs with no WebSocket route (29 `/agent/v1/*` and 23
 non-Agent routes); REST and SSE clients authenticate with the desktop secret
 (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE
@@ -154,7 +145,7 @@ _Avoid_: Python backend, upstream server
 ## Public Contract
 
 The stable authenticated surface of HTTP method/path pairs with no WebSocket
-route (25 non-Agent plus 29 additive `/agent/v1/*`; Agent v2 is
+route (23 non-Agent plus 29 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC
@@ -209,6 +200,13 @@ for WinUI and CLI. Durable event IDs advance the resume cursor; transient frames
 remain outside durable history. WinUI keeps its cumulative reconnect retry
 bound, while CLI progress can refill its retry budget. Consumer callback errors
 propagate and are not retried as transport failures.
+
+Protocol v1 durable envelopes expose optional `model_step_id`, copied from the
+stored event when present. It correlates per-request context usage with transient
+request estimates without comparing durable and connection-local transient cursors.
+Old envelopes may omit it; old clients ignore the added field. Envelope token counters
+remain run-cumulative billing totals; request occupancy comes from the referenced
+`modelusage` payload (`json` encoding), not those totals.
 _Avoid_: replaying transient frames as durable history or hiding callback errors
 
 ## Multimodal Image Payload

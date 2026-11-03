@@ -26,13 +26,18 @@ public sealed class SkillsApiClient : IDisposable
     }
 
     public async Task<SkillCatalogResponse> ListAsync(
-        string workspacePath, string? query = null, bool refresh = false, CancellationToken cancellationToken = default)
+        string? workspacePath = null, string? query = null, bool refresh = false, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
-        var queryString = $"workspace_path={Uri.EscapeDataString(workspacePath)}";
-        if (!string.IsNullOrWhiteSpace(query)) queryString += $"&query={Uri.EscapeDataString(query)}";
-        if (refresh) queryString += "&refresh=true";
-        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(_session.BaseUri, $"agent/v1/skills?{queryString}"));
+        var parameters = new List<string>();
+        if (!string.IsNullOrEmpty(workspacePath))
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
+            parameters.Add($"workspace_path={Uri.EscapeDataString(workspacePath)}");
+        }
+        if (!string.IsNullOrWhiteSpace(query)) parameters.Add($"query={Uri.EscapeDataString(query)}");
+        if (refresh) parameters.Add("refresh=true");
+        var suffix = parameters.Count == 0 ? string.Empty : "?" + string.Join("&", parameters);
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(_session.BaseUri, "agent/v1/skills" + suffix));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
         return await SendAsync(request, "skills_list_failed", cancellationToken).ConfigureAwait(false);
     }

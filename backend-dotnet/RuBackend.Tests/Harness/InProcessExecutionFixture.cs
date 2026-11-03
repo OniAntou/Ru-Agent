@@ -1,5 +1,7 @@
 extern alias Broker;
 
+using System.Collections;
+using BrokerAgentCommandEnvironment = Broker::RuAgent.Broker.Tools.Terminal.AgentCommandEnvironment;
 using BrokerExecutionRuntime = Broker::RuAgent.Broker.Runtime.BrokerExecutionRuntime;
 using BrokerSession = Broker::RuAgent.Broker.Runtime.BrokerSession;
 using BrokerToolExecutionService = Broker::RuAgent.Broker.Tools.ToolExecutionService;
@@ -12,6 +14,10 @@ namespace RuBackend.Tests.Harness;
 /// the gateway factory. Without a workspace root it creates and owns one; an
 /// injected root (the conformance suite's) is left to its owner. Disposal
 /// releases the factory, the runtime and the temp directories.
+///
+/// The terminal environment is an explicit snapshot rather than the machine's:
+/// tests that stream terminal output must not inherit a developer's credentials,
+/// whose redaction seeds change how much output the live stream withholds.
 /// </summary>
 internal sealed class InProcessExecutionFixture : IDisposable
 {
@@ -20,7 +26,8 @@ internal sealed class InProcessExecutionFixture : IDisposable
 
     public InProcessExecutionFixture(string? workspaceRoot = null, bool subagentControls = true,
         Lazy<global::RuBackend.Harness.Subagents.SubagentControlDispatcher>? subagents = null,
-        Func<string, CancellationToken, Task<bool>>? imageInputAccepted = null)
+        Func<string, CancellationToken, Task<bool>>? imageInputAccepted = null,
+        IReadOnlyDictionary<string, string>? commandEnvironmentSnapshot = null)
     {
         _ownsWorkspace = workspaceRoot is null;
         WorkspaceRoot = workspaceRoot ?? Path.Combine(
@@ -42,7 +49,9 @@ internal sealed class InProcessExecutionFixture : IDisposable
         Tools = new BrokerToolExecutionService(
             Session,
             WorkspaceRoot,
-            terminalSpoolRoot: _spoolRoot);
+            terminalSpoolRoot: _spoolRoot,
+            commandEnvironment: new BrokerAgentCommandEnvironment(
+                commandEnvironmentSnapshot ?? DeterministicEnvironmentSnapshot()));
         Runtime = new BrokerExecutionRuntime(
             Session,
             Tools,
@@ -51,6 +60,30 @@ internal sealed class InProcessExecutionFixture : IDisposable
         {
             ImageInputAccepted = imageInputAccepted,
         };
+    }
+
+    /// <summary>
+    /// The current environment without the values the product treats as
+    /// credentials, so a test run is independent of the machine's secrets. Names
+    /// are classified by the product's own policy rather than a copied heuristic.
+    /// </summary>
+    public static Dictionary<string, string> DeterministicEnvironmentSnapshot()
+    {
+        var stripped = new HashSet<string>(
+            new BrokerAgentCommandEnvironment().StrippedNames,
+            StringComparer.OrdinalIgnoreCase);
+        var snapshot = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
+        {
+            if (entry.Key is string name
+                && entry.Value is string value
+                && !stripped.Contains(name))
+            {
+                snapshot[name] = value;
+            }
+        }
+
+        return snapshot;
     }
 
     public string WorkspaceRoot { get; }

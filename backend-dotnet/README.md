@@ -3,8 +3,8 @@
 `RuBackend` is the only public backend for Ru. When started as
 `RuBackend.exe --managed-runtime`, it asks Kestrel to bind an available loopback
 port and publishes the selected address in its runtime descriptor after bind.
-It owns all 54 HTTP routes
-(25 non-Agent routes plus 28 additive
+It owns all 52 HTTP routes
+(23 non-Agent routes plus 29 additive
 `/agent/v1/*`). Text turns use the current in-process-model-step Agent HTTP/SSE
 contract; no Chat WebSocket is exposed.
 
@@ -142,34 +142,10 @@ and serves `GET /status`/`GET /models` directly from the host settings store
 and the provider catalog; the media adapters (voice, STT, VTS, observation)
 and the raw route fallback no longer exist.
 
-## Session interchange
+## Conversation sessions
 
-`RuAgent.SessionInterchange` reads and writes other coding agents' session files, so a
-conversation can move between agents instead of living only where it started. It is pure
-text in, text out: the adapters never touch the filesystem, because where a file goes
-differs per partner (Claude Code keys a directory by project path, Codex keys one by date)
-and because an adapter that picked its own destination could not be tested.
-
-Shipped today: **Claude Code**
-(`~/.claude/projects/<slugified cwd>/<sessionId>.jsonl`) and **Codex**
-(`~/.codex/sessions/<yyyy>/<MM>/<dd>/rollout-*.jsonl`, plus the `session_index.jsonl` line
-its thread picker reads), both directions; **Antigravity** and **opencode**, read-only.
-
-Read-only is a decision with a reason for each. Antigravity keeps conversations as protobuf
-payloads inside a per-conversation SQLite database whose schema is not on disk, so Ru can
-parse its JSONL log but cannot produce a conversation the app would open. opencode moved its
-store into SQLite in 1.18, and writing there would mean inserting into its schema with its
-own bookkeeping; Ru will not do that to a live projects database without having verified the
-shape against a real install, because a wrong insert is not a failed import, it is a damaged
-store.
-
-A session's title is derived on read rather than carried: Claude Code has no field for one,
-and Codex keeps its copy in the sibling index.
-
-Every format here was copied from real files on disk, and each adapter's doc comment says
-which parts are observed and which are inferred. The one inferred piece is Claude Code's
-tool blocks: the only transcript available on the machine that wrote the adapter had died
-at authentication, before any tool ran.
+Ru retains its own session history, search, fork and rewind operations. External
+agent session import/export and format adapters are no longer supported.
 
 ## Build and verification
 

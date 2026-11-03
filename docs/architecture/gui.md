@@ -1,5 +1,29 @@
 # Gui implementation
 
+Chat Escape first dismisses an open model, reasoning or context flyout through
+its `FlyoutBase` owner and consumes that key. Other open flyout/menu presenters
+defer run handling to the popup. With no popup, the shared keyboard policy keeps
+approval/question precedence and stops an active run from the composer or chat
+surface. The three flyouts also register Escape on their content root while
+open, including already-handled routed keys, because popup focus has a separate
+route from the chat surface. Per-owner subscriptions detach on close and survive
+a stale close callback after reopening. Dismissing the context flyout cancels
+the pending hover timer and suppresses reopening until the pointer leaves the
+meter. The Host may await another model response after a terminal tool exits.
+Live file/task panels show work so far. Terminal run state owns normal
+transcript settlement.
+
+When adopting an active run after history replay, `ActiveRunTranscriptProjection`
+reattaches the assistant row with the same `SourceRunId` to the live activity
+collection. Completed earlier turns remain settled. The reply accumulator starts
+with that row's durable text, so subsequent deltas append without discarding the
+replayed prefix; a retry reset truncates only text from its live model step.
+Normal terminal completion and cancellation settle that same row. A stale or
+already-terminal adoption cannot rearm it, and a repeat adoption preserves
+pending deltas. If the view only has the replay seed when the run settles,
+history reload uses the persisted assistant reply for that same run once it
+is available.
+
 Workspace selection uses the desktop Windows App SDK folder picker, associated
 with the owning window's `WindowId`. `WorkspaceFolderPicker` permits one dialog
 at a time and treats native Cancel/close as no selection. Unexpected failures
@@ -91,6 +115,39 @@ Unloading/window close stops timers and storyboards and completes any pending
 dismissal task; repeated dismissal shares the in-flight completion. Ready/error
 status is applied immediately and announced politely rather than delayed by a fade.
 
+## Model picker loading
+
+`ChatModelPickerViewModel` refreshes the selected provider in parallel with the
+Models.dev directory. Opening the picker projects available catalog data immediately;
+the selected provider's catalog supplies its group until the grouped controller has
+a result. An empty result or reported failure from that group is preserved. With no rows yet, an
+in-flight refresh shows **Loading models…**. Provider publications share a fixed
+150 ms window that applies the newest snapshot without extending the deadline;
+continuous updates therefore cannot delay the first results until the full refresh
+finishes. The existing projection still determines supported protocols and rows.
+
+Settings reads carry a read generation and selection version. A newer read,
+manual save (both start and successful completion), rebind, or authoritative
+settings selection prevents an older response from adopting stale settings.
+Grouped catalog publications carry `SelectionVersion`: Settings-origin changes
+advance it; local picker synchronization and availability updates do not. This
+preserves Settings adoption without letting delayed catalog callbacks own the
+choice, including when the selection callback is still queued on the dispatcher.
+
+Submission snapshots the displayed backend/model before asynchronous session,
+preset or confirmation work and sends `CreateRunProviderSelection` through the
+selected-run contract. Queued turns retain the snapshot captured at enqueue.
+Reconciliation and session recovery retain that snapshot. A missing
+choice refuses submission while preserving the draft. Another client's default
+settings therefore cannot silently choose the provider/model for that turn.
+The in-flight submission owns a cancellation token from preparation through run
+creation. Stop and session navigation cancel it; a newly created session is
+adopted only while the captured open generation remains current, and the final
+create checks that the submission still owns the visible session. A stale-session
+recovery may replace that snapshot only while the original session still owns the
+recovery; Stop also waits for the create to settle before reconciling an ambiguous
+create outcome.
+
 ## Context window popup
 
 The compact composer popup shows used/context capacity, a thin segmented bar and
@@ -112,10 +169,30 @@ labelled as an estimate for the next request and the note says the last request
 failed; the popup never calls those tokens "used".
 Run/session ownership, sequence guards and compaction invalidate stale categories.
 Provider billing and cache counters remain independent of these display estimates.
+
+`RetainedContextMeterPresenter` uses the shared `RequestContextReading` to correlate
+durable `model.step_started`/`model.usage_recorded` events with transient estimates
+through optional `model_step_id`. Reported usage takes precedence over a delayed
+estimate for the same step; compaction retires old steps, and a new durable step
+accepts the transient cursor restarting after reconnect. Raw provider input is
+normalized using the exact pinned protocol and `input_tokens_include_cache`, so
+inclusive cache buckets are not added twice. Older envelopes without the optional
+step identity remain readable and retain durable-sequence guards.
 The meter button's accessible help includes the total and all three values, so
 the reading remains available even when the flyout opens as a transient hover.
 
 ## Activity rows
+
+Terminal row details use `TerminalActivityCard`: the existing row disclosure opens
+separate monospace command-preview and output areas, with a status dot, reported
+exit code and Copy action. Horizontal scrolling and selectable text preserve
+multiline scripts and aligned output. The card opens before any output arrives;
+missing captured output is labelled explicitly, and clipped output has a notice.
+`AgentActivityItem.Terminal` keeps the Host's existing display-safe preview when
+a completion frame omits detail. Resetting a retried attempt clears only captured
+output and preserves the disclosure state. Copy carries that card's preview and
+captured output through the existing handler. This introduces no raw-argument
+fetch, execution path, context-meter change or new activity-grouping policy.
 
 Each row of the detailed timeline is one line built from three parts. The verb stays
 the named label (`AgentActivityText`, `ThinkingLabel` or `EditPreviewLabel`) that the
@@ -181,11 +258,30 @@ button. The page has two tabs:
   search, reload, an enable switch per skill, automatic-selection in each row's
   menu, and adding or removing local skill folders. **Use in chat** goes back to the
   open chat with `/skill <id>` in the composer (`ChatView.InsertSkillCommand`).
+  Before a chat has a workspace, it lists user-level skills without creating a
+  scratch session or borrowing another project's roots/preferences. Search,
+  reload and Use in chat work there; changing availability and Add require an
+  explicit workspace, with the corresponding controls disabled until it exists.
 - **Plugins** holds computer use ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)),
   moved out of Settings. The switch saves the Host setting and reverts when the
   save fails; it applies to new runs.
 
-The page reloads both tabs each time it is shown and cancels its requests when hidden.
+The page reloads both tabs each time it is shown. `CustomizeSkillsLoader` owns the
+visible skill snapshot, loading/error feedback and cancellation. It also reloads
+when an open page is rebound to a reconnected Host, or the chat's workspace becomes
+available or changes. The native Loaded handler reapplies the current snapshot after
+the navigation transition attaches the page. A refresh keeps the current workspace's
+rows visible; a workspace change clears them. Hidden or superseded responses cannot
+replace the current snapshot, and a failed refresh preserves its rows for retry.
+An initial read without rows shows four static skeleton rows inside the Skills
+region; a refresh with existing rows keeps those rows visible instead. The heading,
+tabs and toolbar remain outside the skeleton. Completion or failure removes the
+placeholders, including when reading the user library without a workspace.
+Loading/error status is a polite live region;
+the placeholders are noninteractive, excluded from accessibility content, and add
+no animation or minimum loading delay.
+Plugin settings reads likewise check the current activation and backend before
+applying; a failed read preserves the last toggle state rather than treating it as off.
 
 ## Custom model API editor
 
@@ -345,6 +441,13 @@ palette's side-panel state.
 services and views, dialogs, layout and every animation. `HostShellBackend` resolves the
 API service, health service and catalog controllers per call, because a reconnect
 replaces them.
+`NavigationContentSwap` owns pending view replacements, including cancellation when
+the user returns to the already mounted page before an outgoing fade finishes.
+Every navigation supersedes the previous one; window close rejects pending mounts.
+`UiMotion` reacquires the host's composition visual after mounting content and
+restores its visible state if mounting or starting the fade-in throws. The existing
+completion handler still reports that error; it cannot leave the whole page at
+zero opacity. Reduced motion continues to apply the same content swap immediately.
 `CommandPaletteViewModel` ranks the shell's commands and sessions for the palette
 (Ctrl+K): characters must match in order, word starts outrank inner matches, and a
 command that cannot run now is left out. The shell builds the list on each open, and
@@ -587,15 +690,21 @@ follows the side surface's workspace and each run's resolved folder; the label f
 stays put while the transcript scrolls. It draws one tick per loaded message, spaced by index rather than by row geometry, because
 the list virtualizes and unrealized rows have no trustworthy position. When the ticks
 do not fit, `MessageRailPolicy` groups neighbouring messages into one tick. Ticks are
-shapes on one hit-test surface; the pointer's Y picks the nearest tick. At rest all
-ticks share one short, dim length and only the one in view is brighter; hovering lifts
+shapes on one hit-test surface; the pointer's Y picks the nearest tick. Ticks for
+the visible message range are brighter, with its last message emphasized most; hovering lifts
 the tick under the pointer and tapers its neighbours, through a composition scale
 rather than a relayout. The hover card
 reads the message's current `Content` when shown, strips Markdown, and never takes hit
 tests, so it cannot steal the pointer from the rail. A click stops following output
 before jumping (the click lands outside the list, so the list's own input hooks never
-see it) and settles the jump again after layout. The highlighted tick follows
-`FirstVisibleIndex`, or the last message at the bottom. The rail hides below two
+see it) and settles the jump again after layout. `MessageRailPolicy.SelectViewport`
+uses both `FirstVisibleIndex` and `LastVisibleIndex`. At the actual bottom, including
+a transcript that fits without scrolling, it emphasizes the final message; the looser
+follow-output threshold never highlights a still-offscreen tail. `LayoutUpdated`
+refreshes the selection after opening, resizing or streaming layout changes even
+without `ViewChanged`; both handlers are released on disposal. Unchanged selections
+do not restyle ticks, and the existing reduced-motion scale policy is preserved.
+The rail hides below two
 messages or when the host is narrower than the reading column plus both gutters.
 Messages not yet paged in from history have no tick until loaded.
 
@@ -662,12 +771,6 @@ Leaving a session detaches the GUI feed without cancelling its Host-owned run;
 reopening adopts the newest non-terminal run. Only explicit Stop cancels work.
 An in-flight create must acknowledge before detachment; an unknown outcome keeps
 its request identity and requires reconciliation before switching.
-A composer submission owns a cancellation token from session preparation
-through run creation. Stop and opening another session cancel that work; the view
-adopts a newly created session only while its captured open generation remains
-current. Run admission rechecks both session ID and generation after asynchronous
-preset work, and Stop waits for submission settlement before reconciling an
-ambiguous create outcome.
 Persisted GUI rows retain the Host's raw message index for rewind independently
 of hidden history or synthetic activity rows. A rewind result may update only
 the session that requested it; queued prompts remain local until Host acceptance.

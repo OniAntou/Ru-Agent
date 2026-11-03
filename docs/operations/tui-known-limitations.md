@@ -78,9 +78,12 @@ tool payloads. See the [CLI controls](../../backend-dotnet/RuAgent.Cli/README.md
 
 The [2026-10-31 typing investigation](../history/verification/2026-10-31-tui-typing.md)
 identified redundant whole-window redraws during slash-menu edits and the native
-loop's default iteration cap. The shared-controller integration fixes menu geometry,
-but does not implement the proposed repaint/cadence optimization or establish
-current manual typing latency.
+loop's default iteration cap. The current implementation skips closed/stable-menu
+parent redraws, preserves unchanged match selection and uses a 60-iteration native
+input/render cap while retaining the welcome animation's independent clock.
+[Controlled native measurements](../history/verification/2026-11-03-native-acceptance-and-tui-performance.md)
+use real ConPTY input and production views with pinned logical viewports; they do
+not measure the physical Windows Terminal font/compositor or IME composition.
 
 ### The live row and the animation clock
 
@@ -199,19 +202,6 @@ only the newest 20 user/assistant text messages, each capped at 2000 characters;
 tool and thinking rows are never replayed, `--json` skips replay entirely, and
 the assistant header shows the replay time because session payloads carry no
 timestamp.
-
-### Session import bounds, and the `.db` path is CLI-only
-
-`agent session import` refuses a file above **16 MiB** before reading it and
-re-checks the cap while reading; for the opencode `.db` store the cap applies to
-the extracted session payload, not to the whole database. Only the CLI reads
-that `.db` store: the desktop picker imports `.jsonl` (Claude Code, Codex,
-Antigravity) and points opencode users at
-`ru agent session import <opencode.db> --harness opencode`.
-The supported SQLite layout is OpenCode v1: scalar `session` metadata columns
-and JSON `message.data`/`part.data` payloads. Missing columns and newer layouts
-such as `session_v2` fail with `opencode_schema_unsupported` rather than being
-guessed. Database paths containing semicolons are handled as literal paths.
 
 ### RPC subscriptions can end without a terminal event
 

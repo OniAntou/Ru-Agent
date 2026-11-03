@@ -22,6 +22,15 @@ public sealed class AgentEventModelTests
         Assert.Equal("run.state_changed", model.EventType);
         Assert.Equal("started", model.SafeSummary);
         Assert.Equal("evt_1", model.EventId);
+        Assert.Null(model.ModelStepId); // Older Hosts omit the optional correlation field.
+    }
+
+    [Fact]
+    public void Durable_model_step_identity_survives_the_gui_adapter()
+    {
+        var json = DurableEnvelope.TrimEnd('}') + ",\"model_step_id\":\"step-1\"}";
+        var model = AgentEventModel.FromSseFrame(new SseFrame(5, "message", json, false, null));
+        Assert.Equal("step-1", model.ModelStepId);
     }
 
     [Fact]

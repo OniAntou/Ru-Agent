@@ -163,6 +163,21 @@ namespace RuApp.Views
             }
             var history = FlattenHistoryPages(pages);
 
+            // Adoption can seed the bubble with an intermediate model step.
+            // Once the final reply for that run is persisted, replay it instead
+            // of treating the seed as freshly streamed text.
+            if (!_activeAgentReplyReceived
+                && runId is not null
+                && _agentController?.CurrentRun is { } currentRun
+                && string.Equals(currentRun.RunId, runId, StringComparison.Ordinal)
+                && IsTerminalStatus(currentRun.Status)
+                && history.Any(row => row.Role is "ai" or "assistant"
+                    && string.Equals(row.SourceRunId, runId, StringComparison.Ordinal)
+                    && !string.IsNullOrWhiteSpace(row.Content)))
+            {
+                preserveLiveTurn = false;
+            }
+
             var projectedHistory = SessionHistoryProjection.Project(history.Select(row => (row.Role, row.Content)));
             var normalizedHistory = projectedHistory
                 .Select(row => (row.Role, row.Content))
@@ -354,6 +369,7 @@ namespace RuApp.Views
 
         private async Task StopActiveAgentAsync()
         {
+            // The Stop face also represents a send that has not reached the controller.
             Task? submissionSettled = _submissionSettled?.Task;
             var controller = _agentController;
             string sessionId = _activeSessionId;
@@ -468,6 +484,8 @@ namespace RuApp.Views
 
         public async Task OpenSessionAsync(string sessionId, string title, bool isNewSession = false)
         {
+            // Navigation supersedes a send that is still preparing a session or preset.
+            // Cancel before detach/open yields so its late result cannot start in this view.
             CancelPreparingSubmission();
             // Visible to the catch below: a superseded load must not paint its
             // failure into the session that replaced it.
@@ -492,8 +510,8 @@ namespace RuApp.Views
                 UpdateLoadEarlierHistoryButton();
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 UpdateChatHeaderTitle();
-                _agentWorkspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
-                    ?? (isNewSession ? string.Empty : _agentWorkspace);
+                SetAgentWorkspace(AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
+                    ?? (isNewSession ? string.Empty : _agentWorkspace));
                 ResetAgentState(preserveTranscript: true);
                 _sidePanelRunRunning = null;
                 // The outgoing rows stay on screen until the history arrives; laying
@@ -1026,6 +1044,7 @@ namespace RuApp.Views
                 _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
                 _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
+                _agentController.ContextStepStarted -= OnAgentContextStepStarted;
                 _agentController.ContextCompacted -= OnAgentContextCompacted;
                 _agentController.ContextEstimateReceived -= OnContextEstimateReceived;
                 _agentController.RunAdopted -= OnAgentRunAdopted;

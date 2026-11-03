@@ -197,7 +197,10 @@ reconciliation surfaces from Phase 3:
   storage/redaction are unchanged.
   Terminal children retain the trusted parent's `PSModulePath` for PowerShell
   module discovery; model input cannot supply or override environment entries.
-  Secret variables remain stripped and seeded into output redaction.
+  Secret variables remain stripped and seeded into output redaction. The
+  redactor withholds only a trailing run that could still become a seed, so the
+  live stream is not batched until the command exits when the environment
+  carries a credential.
   Glob traversal also checks its elapsed request budget directly, so delayed
   cancellation timers cannot turn an expired scan into a successful receipt.
   Legacy adapter-only callers retain

@@ -210,7 +210,7 @@ public sealed class StructuredTranscriptTests
         public void AppendPresentation(TranscriptLine row) => Rows.Add(row);
         public void AppendPresentationChunk(TranscriptLine row) => Rows.Add(row);
         public void AppendActivityPresentation(string id, TranscriptLine row, IReadOnlyList<string>? details = null) => Rows.Add(row);
-        public void UpdateActivityPresentation(string id, TranscriptLine row) => Rows.Add(row);
+        public void UpdateActivityPresentation(string id, TranscriptLine row, IReadOnlyList<string>? details = null) => Rows.Add(row);
         public Task<bool> ReplaceAssistantPresentationAsync(IReadOnlyList<TranscriptLine> rows) { Rows.AddRange(rows); Replaced = true; return Task.FromResult(true); }
         public void PreviewLine(string text) => Assert.Empty(text);
         public void CommitLine(IReadOnlyList<string> rows) => throw new InvalidOperationException("legacy Markdown commit");

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Tools.Paths;
 
@@ -23,7 +24,8 @@ public sealed partial class FileReadAdapter
             throw new FileNotFoundException("file_not_found");
         }
         // A bounded snapshot avoids returning pages assembled from different file revisions.
-        using var stream = OpenRead(target.CanonicalPath);
+        using var stream = _lineReadOpener(target.CanonicalPath);
+        HardLinkGuard.RequireFinalPathMatches(stream.SafeFileHandle, target.CanonicalPath);
         using var bytes = new MemoryStream();
         var buffer = new byte[64 * 1024];
         while (true)
@@ -54,26 +56,33 @@ public sealed partial class FileReadAdapter
             ["has_more"] = false, ["next_line"] = null, ["cursor_unit"] = "line_1_based",
             ["sha256"] = FileHashService.ComputeBytesHash(bytes.ToArray()),
         };
+        // Serialize the envelope once with an empty page. Each line then only adds
+        // its escaped JSON bytes to that fixed size; serializing the whole object per
+        // line made the page scan quadratic in the number of returned lines.
+        var envelopeJsonBytes = Encoding.UTF8.GetByteCount(output.ToJsonString());
+        var contentBudget = MaximumLineOutputBytes - 512 - envelopeJsonBytes;
+        var contentJsonBytes = 0;
         var returned = 0;
         while (position < text.Length && returned < count)
         {
             ct.ThrowIfCancellationRequested();
             var end = text.IndexOf('\n', position);
             end = end < 0 ? text.Length : end + 1;
-            var length = content.Length;
-            content.Append(text.AsSpan(position, end - position));
-            output["content"] = content.ToString();
-            // Reserve JSON space for the final counters, cursor and notice.
-            if (Encoding.UTF8.GetByteCount(output.ToJsonString()) > MaximumLineOutputBytes - 512)
+            var segment = text.AsSpan(position, end - position);
+            var escapedBytes = Encoding.UTF8.GetByteCount(JsonEncodedText.Encode(segment).Value);
+            if (contentJsonBytes + escapedBytes > contentBudget)
             {
                 if (returned == 0) throw new ArgumentException("read_line_too_long");
-                content.Length = length;
-                output["content"] = content.ToString();
                 break;
             }
+
+            content.Append(segment);
+            contentJsonBytes += escapedBytes;
             position = end;
             returned++;
         }
+
+        output["content"] = content.ToString();
         output["line_count"] = returned;
         output["has_more"] = position < text.Length;
         if (position < text.Length) output["next_line"] = first + returned;
@@ -95,7 +104,7 @@ public sealed partial class FileReadAdapter
         return output;
     }
 
-    private static FileStream OpenRead(string path)
+    private static FileStream OpenLineRead(string path)
     {
         try
         {

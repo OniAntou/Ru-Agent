@@ -102,6 +102,37 @@ public sealed class RetainedContextMeterPresenterTests
         Assert.Equal(int.MaxValue, RetainedContextMeterPresenter.ResolvePromptTokens("anthropic_messages", usage));
     }
 
+    [Fact]
+    public void An_estimate_for_an_already_reported_step_cannot_replace_real_usage()
+    {
+        var presenter = new RetainedContextMeterPresenter();
+        presenter.ScopeToRun(Run(), "session-1");
+        presenter.ObserveEstimate(RunId, "session-1", new AgentUsageEstimateModel(80_000, 100_000, "step-a", 5));
+        presenter.ObserveUsage(RunId, "session-1", 10, "openai_responses", Usage(50_000));
+        Assert.False(presenter.ObserveEstimate(RunId, "session-1", new AgentUsageEstimateModel(80_000, 100_000, "step-a", 6)));
+        Assert.Equal(50_000, presenter.Measure([], null, 0).UsedTokens);
+        Assert.True(presenter.HasReportedUsage);
+    }
+
+    [Fact]
+    public void Compaction_does_not_allow_a_buffered_estimate_to_restore_the_previous_step()
+    {
+        var presenter = new RetainedContextMeterPresenter();
+        presenter.ScopeToRun(Run(), "session-1");
+        presenter.ObserveEstimate(RunId, "session-1", new AgentUsageEstimateModel(80_000, 100_000, "step-a", 5));
+        presenter.ObserveCompaction(RunId, "session-1", 10, 0);
+        Assert.False(presenter.ObserveEstimate(RunId, "session-1", new AgentUsageEstimateModel(80_000, 100_000, "step-a", 6)));
+    }
+
+    [Fact]
+    public void A_large_prepared_estimate_plus_draft_saturates_without_integer_overflow()
+    {
+        var presenter = new RetainedContextMeterPresenter();
+        presenter.ScopeToRun(Run(), "session-1");
+        presenter.ObserveEstimate(RunId, "session-1", new(long.MaxValue, long.MaxValue, "a", 1));
+        Assert.Equal(int.MaxValue, presenter.Measure([], "draft", 0).UsedTokens);
+    }
+
     private static AgentRunModel Run(string? runId = null) => new(
         runId ?? RunId, "session-1", "workspace-1", "running", null, "standard", 1, "sha", 1,
         0, "2026-10-05", "2026-10-05", null, null, null, "identity",

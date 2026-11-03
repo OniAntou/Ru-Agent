@@ -15,7 +15,6 @@
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <ProjectReference Include="..\RuAgent.Runtime.Adapters\RuAgent.Runtime.Adapters.csproj" />
     <ProjectReference Include="..\RuAgent.Runtime.Model\RuAgent.Runtime.Model.csproj" />
-    <ProjectReference Include="..\RuAgent.SessionInterchange\RuAgent.SessionInterchange.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="OpenTelemetry" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />

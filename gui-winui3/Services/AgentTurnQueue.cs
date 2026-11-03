@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using RuApp.Models;
+using RuAgent.Protocol.Harness;
 
 namespace RuApp.Services;
 
@@ -12,10 +13,12 @@ namespace RuApp.Services;
 /// <param name="Text">The prompt the Agent receives, attachments already inlined.</param>
 /// <param name="DisplayText">The text the user typed, shown on the user bubble.</param>
 /// <param name="Attachments">The attachments that travel with this turn.</param>
+/// <param name="ProviderSelection">The displayed provider/model captured when the turn was queued.</param>
 public sealed record QueuedAgentTurn(
     string Text,
     string DisplayText,
-    IReadOnlyList<ImageAttachmentItem> Attachments)
+    IReadOnlyList<ImageAttachmentItem> Attachments,
+    CreateRunProviderSelection ProviderSelection)
 {
     /// <summary>The single-line chip label.</summary>
     public string Label => AgentTurnQueuePolicy.PreviewLabel(DisplayText, Text);
@@ -94,9 +97,14 @@ public sealed class AgentTurnQueue
     /// Queues a turn unless the queue is full or the turn carries nothing. Returns
     /// false when the caller should keep the composer text instead of clearing it.
     /// </summary>
-    public bool TryEnqueue(string text, string displayText, IReadOnlyList<ImageAttachmentItem>? attachments)
+    public bool TryEnqueue(
+        string text,
+        string displayText,
+        IReadOnlyList<ImageAttachmentItem>? attachments,
+        CreateRunProviderSelection providerSelection)
     {
         ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(providerSelection);
 
         var carried = attachments ?? Array.Empty<ImageAttachmentItem>();
         if (!AgentTurnQueuePolicy.CanEnqueue(Items.Count)
@@ -105,7 +113,7 @@ public sealed class AgentTurnQueue
             return false;
         }
 
-        Items.Add(new QueuedAgentTurn(text, displayText, carried.ToArray()));
+        Items.Add(new QueuedAgentTurn(text, displayText, carried.ToArray(), providerSelection));
         return true;
     }
 

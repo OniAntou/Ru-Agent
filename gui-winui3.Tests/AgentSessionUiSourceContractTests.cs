@@ -528,7 +528,7 @@ public sealed class AgentSessionUiSourceContractTests
         // Scratch workspaces are approved silently before the dialog: Ru created the folder, so
         // asking the user to trust it is noise. The fast path is gated by the workspace kind and
         // returns, leaving the dialog decisions as the only post-dialog invocations.
-        var silent = Assert.Single(invocations.Where(invocation => invocation.Index < show));
+        var silent = Assert.Single(invocations, invocation => invocation.Index < show);
         Assert.Equal("true", silent.Decision);
         Assert.True(silent.IsAwaited);
         Assert.False(silent.IsAssigned);

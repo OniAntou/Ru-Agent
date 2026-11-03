@@ -1,5 +1,3 @@
-using RuAgent.SessionInterchange;
-
 namespace RuBackend.Configuration;
 
 public sealed class BackendOptions
@@ -18,12 +16,4 @@ public sealed class BackendOptions
     /// <see cref="MaxRequestBodyBytes"/> stays small for every other route.
     /// </summary>
     public long AgentRunMaxRequestBodyBytes { get; set; } = 26 * 1024 * 1024;
-
-    /// <summary>
-    /// Declared-body bound for <c>POST /sessions/import</c>, set just above the
-    /// endpoint's own <see cref="SessionInterchangeLimits.MaxImportBodyBytes"/> so the
-    /// endpoint answers oversized imports with <c>import_too_large</c>. Kestrel's
-    /// transport bound sits above this one (<see cref="BackendLimits.KestrelMaxRequestBodyBytes"/>).
-    /// </summary>
-    public long SessionImportMaxRequestBodyBytes { get; set; } = SessionInterchangeLimits.MaxImportRouteBodyBytes;
 }

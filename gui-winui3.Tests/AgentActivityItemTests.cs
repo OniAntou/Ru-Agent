@@ -499,8 +499,8 @@ public sealed class AgentActivityItemTests
 
         var plain = new AgentActivityItem(Activity(
             AgentActivityState.Started,
-            kind: AgentActivityKind.Terminal,
-            detail: "ls"));
+            kind: AgentActivityKind.Analyze,
+            detail: "Inspect project"));
 
         Assert.True(plain.ShowPlainHeader);
         Assert.False(plain.HasEditPreview);

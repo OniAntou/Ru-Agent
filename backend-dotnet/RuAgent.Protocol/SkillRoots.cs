@@ -37,6 +37,16 @@ public static class SkillRoots
             Path.Combine(workspaceRoot, ".agents", "skills"),
         };
 
+        roots.AddRange(ForUser(localApplicationDataRoot, userProfileRoot, configuredRoot));
+        return roots;
+    }
+
+    /// <summary>User-level guidance roots, without choosing or creating a project workspace.</summary>
+    public static IReadOnlyList<string> ForUser(
+        string? localApplicationDataRoot = null, string? userProfileRoot = null, string? configuredRoot = null)
+    {
+        var roots = new List<string>();
+
         configuredRoot ??= Environment.GetEnvironmentVariable(ConfiguredRootVariable);
         if (!string.IsNullOrWhiteSpace(configuredRoot))
         {

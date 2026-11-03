@@ -8,6 +8,19 @@ namespace RuAgent.Client.Tests;
 
 public sealed class SkillsApiClientTests
 {
+    [Fact]
+    public async Task Listing_user_skills_omits_the_workspace_but_keeps_authentication_and_filters()
+    {
+        var handler = new StubHandler("""{"items":[],"diagnostics":[],"truncated":false,"total":0}""");
+        using var http = new HttpClient(handler);
+        using var client = new SkillsApiClient(Session(), http);
+        await client.ListAsync(string.Empty, "review", refresh: true);
+        Assert.Equal("Bearer", handler.AuthorizationScheme);
+        Assert.DoesNotContain("workspace_path", handler.Uri!.Query, StringComparison.Ordinal);
+        Assert.Contains("query=review", handler.Uri.Query, StringComparison.Ordinal);
+        Assert.Contains("refresh=true", handler.Uri.Query, StringComparison.Ordinal);
+    }
+
     private static PublicHostSession Session()
     {
         var process = System.Diagnostics.Process.GetCurrentProcess();

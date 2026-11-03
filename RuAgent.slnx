@@ -20,8 +20,6 @@
     <Project Path="backend-dotnet/RuAgent.Runtime.Adapters/RuAgent.Runtime.Adapters.csproj" />
     <Project Path="backend-dotnet/RuAgent.Runtime.Model.Tests/RuAgent.Runtime.Model.Tests.csproj" />
     <Project Path="backend-dotnet/RuAgent.Runtime.Model/RuAgent.Runtime.Model.csproj" />
-    <Project Path="backend-dotnet/RuAgent.SessionInterchange.Tests/RuAgent.SessionInterchange.Tests.csproj" />
-    <Project Path="backend-dotnet/RuAgent.SessionInterchange/RuAgent.SessionInterchange.csproj" />
     <Project Path="backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj" />
     <Project Path="backend-dotnet/RuBackend/RuBackend.csproj" />
   </Folder>

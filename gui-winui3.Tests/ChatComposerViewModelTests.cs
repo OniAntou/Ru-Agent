@@ -1,12 +1,14 @@
 using RuApp.Models;
 using RuApp.Services;
 using RuApp.ViewModels;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuApp.Tests;
 
 public sealed class ChatComposerViewModelTests
 {
+    private static CreateRunProviderSelection Selection => new("models.dev:openai", "gpt-test");
     private readonly AgentRunPanelViewModel _runPanel = new();
     private readonly ComposerDraftStore _drafts = new();
     private readonly List<string> _replaced = new();
@@ -154,7 +156,7 @@ public sealed class ChatComposerViewModelTests
     public void An_empty_composer_has_nothing_to_send_or_queue()
     {
         Assert.True(_composer.TakeSnapshot("   ").IsEmpty);
-        Assert.False(_composer.QueueCurrent("sess-a", "   "));
+        Assert.False(_composer.QueueCurrent("sess-a", "   ", Selection));
         Assert.True(_composer.Queue.IsEmpty);
         Assert.Empty(_replaced);
     }
@@ -164,10 +166,11 @@ public sealed class ChatComposerViewModelTests
     {
         _composer.EditDraft("sess-a", "then this");
 
-        Assert.True(_composer.QueueCurrent("sess-a", " then this "));
+        Assert.True(_composer.QueueCurrent("sess-a", " then this ", Selection));
 
         var turn = Assert.Single(_composer.Queue.Items);
         Assert.Equal("then this", turn.Text);
+        Assert.Equal(Selection, turn.ProviderSelection);
         Assert.Equal(string.Empty, _replaced[^1]);
         Assert.False(_drafts.HasDraft("sess-a"));
         Assert.Equal(AgentComposerPresentation.QueuedStatus, _runPanel.LocalStatus);
@@ -178,11 +181,11 @@ public sealed class ChatComposerViewModelTests
     {
         for (int i = 0; i < AgentTurnQueuePolicy.MaxTurns; i++)
         {
-            Assert.True(_composer.QueueCurrent("sess-a", $"turn {i}"));
+            Assert.True(_composer.QueueCurrent("sess-a", $"turn {i}", Selection));
         }
 
         _replaced.Clear();
-        Assert.False(_composer.QueueCurrent("sess-a", "one too many"));
+        Assert.False(_composer.QueueCurrent("sess-a", "one too many", Selection));
 
         Assert.Equal(AgentTurnQueuePolicy.MaxTurns, _composer.Queue.Items.Count);
         Assert.Empty(_replaced);
@@ -196,12 +199,12 @@ public sealed class ChatComposerViewModelTests
         Assert.False(_composer.CanSendQueueNow);
 
         _composer.SetRunInHand(true);
-        _composer.QueueCurrent("sess-a", "first");
+        _composer.QueueCurrent("sess-a", "first", Selection);
         Assert.True(_composer.HasQueuedTurns);
         Assert.Equal("1 message queued", _composer.QueueHeaderText);
         Assert.False(_composer.CanSendQueueNow);
 
-        _composer.QueueCurrent("sess-a", "second");
+        _composer.QueueCurrent("sess-a", "second", Selection);
         Assert.Equal("2 messages queued", _composer.QueueHeaderText);
 
         _composer.SetRunInHand(false);

@@ -512,7 +512,8 @@ namespace RuApp.Views
                 usage.SessionId,
                 usage.Sequence,
                 run.ProviderProtocol,
-                usage.Usage);
+                usage.Usage,
+                usage.ModelStepId);
 
             _activeAgentUsage = usage.Usage;
             if (_activeAgentAssistantMessage is not null)
@@ -582,9 +583,40 @@ namespace RuApp.Views
                 return;
             }
 
-            if (!string.Equals(adopted.Run.SessionId, _activeSessionId, StringComparison.Ordinal))
+            if (!string.Equals(adopted.Run.SessionId, _activeSessionId, StringComparison.Ordinal)
+                || _agentController?.CurrentRun is not { } currentRun
+                || !string.Equals(currentRun.RunId, adopted.Run.RunId, StringComparison.Ordinal)
+                || IsTerminalStatus(currentRun.Status))
             {
                 return;
+            }
+
+            bool alreadyAdopted = string.Equals(_activeAgentRunId, adopted.Run.RunId, StringComparison.Ordinal)
+                && _activeAgentAssistantMessage is { IsStreaming: true } current
+                && string.Equals(current.SourceRunId, adopted.Run.RunId, StringComparison.Ordinal);
+            if (!alreadyAdopted)
+            {
+                // A dispatcher callback from an earlier ownership generation must
+                // not later apply text into the newly adopted run's bubble.
+                _replyRenderScheduler.Invalidate();
+            }
+
+            _activeAgentRunId = adopted.Run.RunId;
+            _activeAgentAssistantMessage = ActiveRunTranscriptProjection.Adopt(
+                Messages,
+                AgentActivities,
+                adopted.Run.SessionId,
+                adopted.Run.RunId);
+            if (!alreadyAdopted)
+            {
+                _segmentFrozenLength = _activeAgentAssistantMessage.Content?.Length ?? 0;
+                lock (_accumulatorLock)
+                {
+                    _replyAccumulator.Begin(
+                        adopted.Run.SessionId,
+                        adopted.Run.RunId,
+                        _activeAgentAssistantMessage.Content);
+                }
             }
 
             _retainedContextMeter.ScopeToRun(adopted.Run, _activeSessionId);

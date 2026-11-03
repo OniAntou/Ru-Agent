@@ -10,7 +10,8 @@ namespace RuAgent.Cli.TerminalGui;
 public sealed class TgHeaderView : View
 {
     public string SessionTitle { get; private set; } = "session";
-    public long TotalTokens { get; private set; }
+    public long ContextTokens { get; private set; }
+    public bool ContextIsEstimated { get; private set; }
     public double? ContextPercent { get; private set; }
     public decimal? SessionCost { get; private set; }
     public string Preset { get; private set; } = string.Empty;
@@ -37,9 +38,10 @@ public sealed class TgHeaderView : View
         SetNeedsDraw();
     }
 
-    public void UpdateUsage(long totalTokens, double? percent, decimal? cost)
+    public void UpdateUsage(long contextTokens, double? percent, decimal? cost, bool contextIsEstimated = false)
     {
-        TotalTokens = totalTokens;
+        ContextTokens = contextTokens;
+        ContextIsEstimated = contextIsEstimated;
         ContextPercent = percent;
         SessionCost = cost;
         SetNeedsDraw();
@@ -62,12 +64,12 @@ public sealed class TgHeaderView : View
         var tokensOnly = string.Empty;
         if (ShowSessionDetails && width >= 60)
         {
-            parts = TuiUsageMeter.Compose(TotalTokens, ContextPercent, SessionCost);
+            parts = TuiUsageMeter.Compose(ContextTokens, ContextPercent, SessionCost, ContextIsEstimated);
             if (parts.Count == 0) parts = null;
         }
-        else if (ShowSessionDetails && width >= 32 && TotalTokens > 0)
+        else if (ShowSessionDetails && width >= 32 && ContextTokens > 0)
         {
-            tokensOnly = TuiStatusLine.FormatTokens(TotalTokens);
+            tokensOnly = (ContextIsEstimated ? "~" : "") + TuiStatusLine.FormatTokens(ContextTokens);
         }
 
         var usageWidth = parts is not null ? TuiUsageMeter.VisibleWidth(parts) : TuiText.VisibleWidth(tokensOnly);
@@ -77,8 +79,8 @@ public sealed class TgHeaderView : View
         if (usageWidth + presetWidth + presetGap > width)
         {
             parts = null;
-            tokensOnly = width >= 32 && TotalTokens > 0
-                ? TuiText.Truncate(TuiStatusLine.FormatTokens(TotalTokens), Math.Max(0, width - presetWidth - presetGap)) : string.Empty;
+            tokensOnly = width >= 32 && ContextTokens > 0
+                ? TuiText.Truncate((ContextIsEstimated ? "~" : "") + TuiStatusLine.FormatTokens(ContextTokens), Math.Max(0, width - presetWidth - presetGap)) : string.Empty;
             usageWidth = TuiText.VisibleWidth(tokensOnly);
             presetGap = presetWidth > 0 && usageWidth > 0 ? 2 : 0;
         }

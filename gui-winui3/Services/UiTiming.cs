@@ -38,20 +38,9 @@ public static class UiTiming
     public static readonly TimeSpan ModelSearchDebounce = TimeSpan.FromMilliseconds(180);
 
     /// <summary>
-    /// Coalescing window for grouped catalog publishes.
-    ///
-    /// One poll cycle publishes once per provider (two hundred with Models.dev),
-    /// and every publish re-projected all groups and rebuilt the picker diff on
-    /// the UI thread. Collapsing the burst into one trailing apply keeps a poll
-    /// at a single projection instead of hundreds.
-    /// </summary>
-    /// <summary>
-    /// Coalescing window for grouped catalog publishes.
-    ///
-    /// One poll cycle publishes once per provider (two hundred with Models.dev),
-    /// and every publish re-projected all groups and rebuilt the picker diff on
-    /// the UI thread. Collapsing the burst into one trailing apply keeps a poll
-    /// at a single projection instead of hundreds.
+    /// Fixed coalescing window for grouped catalog publishes. Each window applies
+    /// the newest snapshot once; further provider updates do not postpone its
+    /// deadline, so a continuous refresh cannot hold back the first results.
     /// </summary>
     public static readonly TimeSpan GroupedPublishCoalesce = TimeSpan.FromMilliseconds(150);
 

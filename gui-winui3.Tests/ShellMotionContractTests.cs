@@ -68,7 +68,8 @@ public sealed class ShellMotionContractTests
 
         var swap = GuiSource.MethodBody(code, "SwapNavContent");
         Assert.Contains("UiMotion.SwapContent", swap, StringComparison.Ordinal);
-        Assert.Contains("_navSwapGeneration", swap, StringComparison.Ordinal);
+        Assert.Contains("_navContentSwap.Show", swap, StringComparison.Ordinal);
+        Assert.Contains("UiMotion.Reset(ContentFrame)", swap, StringComparison.Ordinal);
 
         // The nav paths resolve through the shell and apply through the swap: none
         // assigns the frame directly.

@@ -29,8 +29,8 @@ namespace RuApp.Controls
     /// hover. The card never takes hit tests, so it cannot steal the pointer
     /// from the rail and set off a show/hide loop.
     ///
-    /// At rest every tick is the same short, dim mark; only the one in view is
-    /// brighter. Hovering lifts the tick under the pointer and, less, its
+    /// Visible messages are brighter and the last visible message is emphasized.
+    /// Hovering lifts the tick under the pointer and, less, its
     /// neighbours, by scaling toward the transcript rather than relaying out.
     /// </remarks>
     public sealed partial class MessageRailControl : Grid
@@ -64,7 +64,7 @@ namespace RuApp.Controls
         private IReadOnlyList<MessageRailEntry> _entries = Array.Empty<MessageRailEntry>();
         private int _tickCount;
         private double _pitch = MessageRailPolicy.MaxPitch;
-        private int _currentMessage = -1;
+        private MessageRailSelection _selection = MessageRailSelection.Empty;
         private int _currentTick = -1;
         private int _hoverTick = -1;
 
@@ -142,20 +142,19 @@ namespace RuApp.Controls
         public void SetEntries(IReadOnlyList<MessageRailEntry> entries)
         {
             _entries = entries ?? Array.Empty<MessageRailEntry>();
+            _selection = MessageRailSelection.Empty;
             HideCard();
             Layout();
         }
 
-        /// <summary>Highlights the tick that holds the message the reader is on.</summary>
-        public void SetCurrentMessage(int messageIndex)
+        /// <summary>Highlights the messages in view, with the strongest mark at its trailing edge.</summary>
+        public void SetViewport(MessageRailSelection selection)
         {
-            _currentMessage = messageIndex;
-            var tick = MessageRailPolicy.TickOfMessage(messageIndex, _tickCount, _entries.Count);
-            if (tick == _currentTick) return;
-            var previous = _currentTick;
-            _currentTick = tick;
-            StyleTick(previous);
-            StyleTick(tick);
+            if (_selection == selection) return;
+            _selection = selection;
+            _currentTick = selection.IsEmpty ? -1
+                : MessageRailPolicy.TickOfMessage(selection.LastMessage, _tickCount, _entries.Count);
+            StyleAllTicks();
         }
 
         private void Layout()
@@ -166,7 +165,8 @@ namespace RuApp.Controls
             _tickCount = tickCount;
             _pitch = pitch;
             _hoverTick = -1;
-            _currentTick = _currentMessage < 0 ? -1 : MessageRailPolicy.TickOfMessage(_currentMessage, tickCount, _entries.Count);
+            _currentTick = _selection.IsEmpty ? -1
+                : MessageRailPolicy.TickOfMessage(_selection.LastMessage, tickCount, _entries.Count);
 
             while (_tickShapes.Count < tickCount)
             {
@@ -203,9 +203,10 @@ namespace RuApp.Controls
             if (tick < 0 || tick >= _tickCount || tick >= _tickShapes.Count) return;
             var shape = _tickShapes[tick];
             var emphasized = tick == _currentTick || tick == _hoverTick;
+            var visible = MessageRailPolicy.IsVisibleTick(tick, _tickCount, _entries.Count, _selection);
             shape.Scale = new Vector3((float)MessageRailPolicy.TickScale(tick, _hoverTick, _currentTick), 1, 1);
-            shape.Fill = emphasized ? Brush("RuInkBrush", FallbackInkBrush) : Brush("RuMutedBrush", FallbackMutedBrush);
-            shape.Opacity = emphasized ? 1 : RestingOpacity;
+            shape.Fill = emphasized || visible ? Brush("RuInkBrush", FallbackInkBrush) : Brush("RuMutedBrush", FallbackMutedBrush);
+            shape.Opacity = emphasized ? 1 : visible ? 0.75 : RestingOpacity;
         }
 
         private void StyleAllTicks()

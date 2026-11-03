@@ -1,26 +1,40 @@
-using RuAgent.SessionInterchange;
-
 namespace RuBackend.Configuration;
 
 /// <summary>
 /// The transport bound Kestrel itself enforces.
 /// </summary>
 /// <remarks>
-/// Layering, outermost first: Kestrel's limit, then <see cref="RuBackend.Security.RequestSizeMiddleware"/>
-/// per route, then the endpoint's own bounded reader. Kestrel must sit above every
-/// application cap so an oversized request is refused by the layer that knows the route
-/// and can answer with its own code. Kestrel's default (30,000,000 bytes) sat below the
-/// import route's declared bound, which made the endpoint's <c>import_too_large</c> 413
-/// unreachable on a real server; only a test server, which does not enforce Kestrel
-/// limits, saw it.
+/// Kestrel's transport bound sits above the largest application request bound.
+/// The application bound is configuration (<see cref="BackendOptions.AgentRunMaxRequestBodyBytes"/>),
+/// so the transport bound is derived from it at startup; a fixed constant would
+/// make Kestrel answer a generic 413 before the run route could return its own
+/// bounded error code whenever an operator raised the configured cap.
 /// </remarks>
 public static class BackendLimits
 {
+    /// <summary>Room the transport bound keeps above the largest application cap.</summary>
+    public const long TransportMarginBytes = 4 * 1024 * 1024;
+
     /// <summary>
-    /// Kestrel's request body bound, a fixed margin above the deepest application cap
-    /// (<see cref="SessionInterchangeLimits.MaxImportRouteBodyBytes"/>). The application
-    /// caps stay the source of truth; this only keeps Kestrel from pre-empting them.
+    /// Kestrel's default request body bound, a fixed margin above the default
+    /// application cap.
     /// </summary>
     public const long KestrelMaxRequestBodyBytes =
-        SessionInterchangeLimits.MaxImportRouteBodyBytes + (4 * 1024 * 1024);
+        (26 * 1024 * 1024) + TransportMarginBytes;
+
+    /// <summary>
+    /// The transport bound for the largest configured application body cap: the
+    /// default bound, raised when the configuration asks for a larger one.
+    /// </summary>
+    public static long KestrelMaxRequestBodyBytesFor(long maxApplicationBodyBytes)
+    {
+        if (maxApplicationBodyBytes <= 0)
+        {
+            return KestrelMaxRequestBodyBytes;
+        }
+
+        return maxApplicationBodyBytes <= long.MaxValue - TransportMarginBytes
+            ? Math.Max(KestrelMaxRequestBodyBytes, maxApplicationBodyBytes + TransportMarginBytes)
+            : long.MaxValue;
+    }
 }

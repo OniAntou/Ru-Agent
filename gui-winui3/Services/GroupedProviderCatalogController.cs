@@ -15,6 +15,9 @@ public sealed record GroupedProviderCatalogState
 
     public string SelectedModel { get; init; } = string.Empty;
 
+    /// <summary>Advances only when an authoritative settings selection changes.</summary>
+    public long SelectionVersion { get; init; }
+
     public string SearchText { get; init; } = string.Empty;
 }
 
@@ -117,15 +120,27 @@ public sealed class GroupedProviderCatalogController : IAsyncDisposable
     public event EventHandler<GroupedProviderCatalogState>? StateChanged;
 
     public void SetSelection(string backend, string model)
+        => SetSelectionCore(backend, model, authoritative: true);
+
+    /// <summary>Mirrors a choice already owned by the composer without publishing a settings change.</summary>
+    public void SynchronizeSelection(string backend, string model)
+        => SetSelectionCore(backend, model, authoritative: false);
+
+    private void SetSelectionCore(string backend, string model, bool authoritative)
     {
         GroupedProviderCatalogState state;
         lock (_gate)
         {
             if (_disposed) return;
+            backend ??= string.Empty;
+            model ??= string.Empty;
+            if (string.Equals(_state.SelectedBackend, backend, StringComparison.Ordinal)
+                && string.Equals(_state.SelectedModel, model, StringComparison.Ordinal)) return;
             _state = _state with
             {
-                SelectedBackend = backend ?? string.Empty,
-                SelectedModel = model ?? string.Empty,
+                SelectedBackend = backend,
+                SelectedModel = model,
+                SelectionVersion = authoritative ? _state.SelectionVersion + 1 : _state.SelectionVersion,
             };
             state = _state;
         }

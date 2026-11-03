@@ -8,6 +8,17 @@ public sealed class AgentCliParserTests
     private static string ValidRunId2 => "run_" + new string('b', 32);
     private static string ValidWorkspace => Path.GetTempPath().TrimEnd('\\', '/');
 
+    [Theory]
+    [InlineData("import")]
+    [InlineData("export")]
+    public void ParseSession_RejectsRetiredExternalExchangeCommands(string subcommand)
+    {
+        var result = AgentCliParser.Parse(["agent", "session", subcommand, "placeholder"]);
+
+        Assert.False(result.Success);
+        Assert.Equal("unknown_subcommand", result.ErrorCode);
+    }
+
     [Fact]
     public void ParseRun_SucceedsWithRequiredArgs()
     {

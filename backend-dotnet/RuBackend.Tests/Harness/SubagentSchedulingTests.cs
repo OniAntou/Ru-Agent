@@ -143,7 +143,11 @@ public sealed class SubagentSchedulingTests
             Assert.Equal(probe.Generation, (await probe.Gateway.EvaluateAsync(Probe(probe.Run), default)).GatewayGeneration);
         }
         foreach (var childId in childIds)
-            Assert.Equal(HarnessRunState.Completed, (await storage.EventStore.GetRunAsync(childId, default))!.State);
+        {
+            var child = (await storage.EventStore.GetRunAsync(childId, default))!;
+            Assert.True(child.State == HarnessRunState.Completed,
+                $"Child {childId.Value}: {child.State}, error={child.TerminalErrorCode ?? "none"}");
+        }
         Assert.Equal(4, roots.Snapshot().Count);
         await loop.StepOnceAsync(default).WaitAsync(TimeSpan.FromSeconds(10));
         foreach (var root in roots.Snapshot())

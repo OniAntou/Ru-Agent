@@ -6,161 +6,94 @@ namespace RuAgent.Cli.Tests;
 public sealed class TuiUsageTrackerTests
 {
     [Fact]
-    public void Apply_UsesStepDeltasAgainstTheCumulativeEnvelope()
+    public void Billing_cannot_be_mistaken_for_one_requests_context_even_after_reconnect()
     {
-        var tracker = new TuiUsageTracker { ContextLimit = 1000 };
-
-        tracker.Apply(inputTokens: 400, outputTokens: 100);
-        Assert.Equal(40d, tracker.ContextPercent);
-
-        // The second step's envelope is cumulative: 700 total input, 300 total output.
-        // Its input is 300, so context occupancy stays at 40%; output tokens affect
-        // cost but do not represent retained prompt occupancy.
-        tracker.Apply(inputTokens: 700, outputTokens: 300);
+        var tracker = new TuiUsageTracker { ContextLimit = 1000, InputRate = 3, OutputRate = 15 };
+        tracker.ApplyBilling(1_000_000, 1_000_000);
+        tracker.ApplyBilling(1_000_000, 1_000_000);
+        Assert.Null(tracker.ContextTokens);
+        Assert.Null(tracker.ContextPercent);
+        Assert.True(tracker.CostKnown);
+        Assert.Equal(18, tracker.SessionCost, 6);
+        tracker.ObserveUsage(100, "a", 400, null);
         Assert.Equal(40d, tracker.ContextPercent);
     }
 
     [Fact]
-    public void Context_percent_keeps_the_fractional_precision_of_the_window()
+    public void Latest_request_replaces_the_peak_and_keeps_fractional_precision()
     {
         var tracker = new TuiUsageTracker { ContextLimit = 10_000 };
-
-        tracker.Apply(432, 0);
-
+        tracker.BeginStep("a", 1);
+        tracker.ObserveEstimate(new(1000, 9000, "a", 1));
+        tracker.ObserveUsage(2, "a", 432, null);
         Assert.Equal(4.32, tracker.ContextPercent);
+        Assert.False(tracker.ContextIsEstimated);
+        tracker.BeginStep("b", 3);
+        tracker.ObserveUsage(4, "b", 300, null);
+        Assert.Equal(3d, tracker.ContextPercent);
     }
 
     [Fact]
-    public void BeginTurn_ResetsTheMeterButKeepsTheSessionCost()
+    public void A_new_run_keeps_the_last_reading_and_session_cost_but_resets_billing_baseline()
     {
-        var tracker = new TuiUsageTracker
-        {
-            ContextLimit = 10_000,
-            InputRate = 1,
-            OutputRate = 2,
-        };
-
-        tracker.Apply(1000, 500);
-        var costAfterFirstTurn = tracker.SessionCost;
-        Assert.True(costAfterFirstTurn > 0);
+        var tracker = new TuiUsageTracker { ContextLimit = 10_000, InputRate = 1, OutputRate = 2 };
+        tracker.BindRun("a");
+        tracker.ApplyBilling(1000, 500);
+        tracker.ObserveUsage(1, "a", 1000, null);
+        var previousCost = tracker.SessionCost;
+        tracker.BindRun("b");
         Assert.Equal(10d, tracker.ContextPercent);
-
-        tracker.BeginTurn();
-        Assert.Null(tracker.ContextPercent);
-
-        // A new run restarts its counters; the reset baseline must not read as negative.
-        tracker.Apply(100, 50);
+        tracker.ApplyBilling(100, 50);
+        tracker.ObserveUsage(1, "b", 100, null);
         Assert.Equal(1d, tracker.ContextPercent);
-        Assert.True(tracker.SessionCost > costAfterFirstTurn);
+        Assert.True(tracker.SessionCost > previousCost);
+        var nextCost = tracker.SessionCost;
+        tracker.BindRun("b"); // Continue must not price the same cumulative counters twice.
+        tracker.ApplyBilling(100, 50);
+        Assert.Equal(nextCost, tracker.SessionCost);
     }
 
     [Fact]
-    public void Apply_PricesEveryStepAtThePublishedRates()
-    {
-        var tracker = new TuiUsageTracker { InputRate = 3, OutputRate = 15 };
-
-        tracker.Apply(1_000_000, 1_000_000);
-
-        Assert.True(tracker.CostKnown);
-        Assert.Equal(18, tracker.SessionCost, precision: 6);
-    }
-
-    [Fact]
-    public void Apply_WithoutRatesLeavesTheCostUnpublished()
+    public void Unknown_capacity_shows_request_count_without_inventing_a_window_from_prompt_budget()
     {
         var tracker = new TuiUsageTracker();
-
-        tracker.Apply(1000, 1000);
-
+        tracker.ObserveEstimate(new(2000, 8000, "a", 1));
+        Assert.Equal(2000, tracker.ContextTokens);
+        Assert.True(tracker.ContextIsEstimated);
+        Assert.Null(tracker.ContextPercent);
         Assert.False(tracker.CostKnown);
-        Assert.Equal(0, tracker.SessionCost);
-        Assert.Null(tracker.ContextPercent);
-    }
-
-    [Fact]
-    public void Apply_WithoutContextLimitLeavesThePercentOff()
-    {
-        var tracker = new TuiUsageTracker { InputRate = 1, OutputRate = 1 };
-
-        tracker.Apply(500, 500);
-
-        Assert.Null(tracker.ContextPercent);
-        Assert.True(tracker.CostKnown);
-    }
-
-    [Fact]
-    public void Context_reading_uses_input_only_and_resets_at_compaction()
-    {
-        var tracker = new TuiUsageTracker { ContextLimit = 1000 };
-        tracker.Apply(500, 800);
-        Assert.Equal(50d, tracker.ContextPercent);
-
-        tracker.ResetContextReading();
-        Assert.Null(tracker.ContextPercent);
-        tracker.Apply(700, 900);
+        tracker.ContextLimit = 10_000; // Metadata arriving later recomputes the same reading.
         Assert.Equal(20d, tracker.ContextPercent);
     }
 
     [Fact]
-    public void Output_only_usage_does_not_create_context_occupancy()
+    public void Compaction_clears_the_old_reading_while_preserving_cost_and_billing_baseline()
+    {
+        var tracker = new TuiUsageTracker { ContextLimit = 1000, InputRate = 1, OutputRate = 2 };
+        tracker.ApplyBilling(500, 800);
+        tracker.ObserveUsage(1, "a", 500, null);
+        var cost = tracker.SessionCost;
+        Assert.True(tracker.Compact(2));
+        Assert.Null(tracker.ContextPercent);
+        Assert.False(tracker.ObserveEstimate(new(500, 900, "a", 5)));
+        Assert.Equal(cost, tracker.SessionCost);
+        tracker.BeginStep("b", 3);
+        tracker.ApplyBilling(700, 900);
+        tracker.ObserveUsage(4, "b", 200, null);
+        Assert.Equal(20d, tracker.ContextPercent);
+        Assert.Equal(cost + .0004, tracker.SessionCost, 8);
+    }
+
+    [Fact]
+    public void Missing_and_zero_input_are_distinct_and_cost_without_rates_remains_unknown()
     {
         var tracker = new TuiUsageTracker { ContextLimit = 1000 };
-        tracker.Apply(null, 400);
-
+        tracker.ApplyBilling(null, 400);
+        tracker.ObserveUsage(1, "a", null, null);
         Assert.Null(tracker.ContextPercent);
-    }
-
-    [Fact]
-    public void ApplyEstimate_ShowsTheMeasuredRequestSizeBeforeTheUsageReport()
-    {
-        var tracker = new TuiUsageTracker { ContextLimit = 10_000 };
-
-        tracker.BeginTurn();
-        Assert.Null(tracker.ContextPercent);
-
-        // The step's measured request size arrives before its first token, so the
-        // meter is not empty for the whole first reply.
-        tracker.ApplyEstimate(estimatedInputTokens: 4_000, maxPromptTokens: 10_000);
-        Assert.Equal(40d, tracker.ContextPercent);
-    }
-
-    [Fact]
-    public void ApplyEstimate_UsesTheStepsOwnPromptBudgetWhenTheCatalogHasNone()
-    {
-        var tracker = new TuiUsageTracker();
-
-        tracker.ApplyEstimate(estimatedInputTokens: 2_000, maxPromptTokens: 8_000);
-
-        Assert.Equal(25d, tracker.ContextPercent);
-    }
-
-    [Fact]
-    public void ApplyEstimate_IsSupersededByReportedUsageWithoutBouncing()
-    {
-        var tracker = new TuiUsageTracker { ContextLimit = 10_000 };
-        tracker.ApplyEstimate(4_000, 10_000);
-        Assert.Equal(40d, tracker.ContextPercent);
-
-        // The reported step input (3,600) is smaller than the estimate. The reading is
-        // a max — the desktop meter's policy — so the number never drops back.
-        tracker.Apply(3_600, 200);
-        Assert.Equal(40d, tracker.ContextPercent);
-
-        // The next step's reported input is larger: it raises the reading.
-        tracker.Apply(9_600, 500);
-        Assert.Equal(60d, tracker.ContextPercent);
-    }
-
-    [Fact]
-    public void ApplyEstimate_IgnoresNonPositiveEstimatesAndKeepsTheLastReading()
-    {
-        var tracker = new TuiUsageTracker { ContextLimit = 1000 };
-        tracker.Apply(500, 100);
-        Assert.Equal(50d, tracker.ContextPercent);
-
-        tracker.ApplyEstimate(0, 1000);
-        tracker.ApplyEstimate(-1, 1000);
-
-        Assert.Equal(50d, tracker.ContextPercent);
+        Assert.False(tracker.CostKnown);
+        tracker.BeginStep("b", 2);
+        tracker.ObserveUsage(3, "b", 0, null);
+        Assert.Equal(0d, tracker.ContextPercent);
     }
 }

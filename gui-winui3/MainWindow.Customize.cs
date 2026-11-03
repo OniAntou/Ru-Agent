@@ -18,7 +18,23 @@ public sealed partial class MainWindow
         _customizeView.Initialize(_apiService, () => _chatView?.CurrentWorkspace);
         _customizeView.UseSkillRequested += OnUseSkillRequested;
         _customizeView.SetActive(false);
-        if (_chatView is not null) _chatView.CustomizeRequested += OnChatCustomizeRequested;
+        if (_chatView is not null)
+        {
+            _chatView.CustomizeRequested += OnChatCustomizeRequested;
+            _chatView.CurrentWorkspaceChanged += OnCustomizeWorkspaceChanged;
+        }
+    }
+
+    private void OnCustomizeWorkspaceChanged(object? sender, EventArgs e) => _customizeView?.RefreshWorkspace();
+
+    private void DisposeCustomizeView()
+    {
+        if (_chatView is not null)
+        {
+            _chatView.CustomizeRequested -= OnChatCustomizeRequested;
+            _chatView.CurrentWorkspaceChanged -= OnCustomizeWorkspaceChanged;
+        }
+        _customizeView?.Dispose();
     }
 
     private void OnChatCustomizeRequested(object? sender, EventArgs e) =>

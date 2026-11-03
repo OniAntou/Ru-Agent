@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml.Automation;
 using RuAgent.Hosting;
-using RuAgent.SessionInterchange;
 using RuApp.Models;
 using RuApp.Services;
 using RuApp.ViewModels;

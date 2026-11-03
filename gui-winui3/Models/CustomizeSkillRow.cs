@@ -5,12 +5,15 @@ namespace RuApp.Models;
 /// <summary>One skill as the Customize page lists it.</summary>
 public sealed class CustomizeSkillRow
 {
-    public CustomizeSkillRow(SkillCatalogItem skill)
+    public CustomizeSkillRow(SkillCatalogItem skill, bool canManage = true)
     {
         Skill = skill ?? throw new ArgumentNullException(nameof(skill));
+        CanManage = canManage;
     }
 
     public SkillCatalogItem Skill { get; }
+
+    public bool CanManage { get; }
 
     public string Id => Skill.Id;
 

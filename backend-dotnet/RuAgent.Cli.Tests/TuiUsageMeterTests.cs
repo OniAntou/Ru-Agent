@@ -9,6 +9,13 @@ namespace RuAgent.Cli.Tests;
 /// </summary>
 public sealed class TuiUsageMeterTests
 {
+    [Fact]
+    public void Prepared_context_is_marked_approximate_until_provider_usage_arrives()
+    {
+        Assert.Equal("~52,000", TuiUsageMeter.Compose(52_000, 40.625, null, estimated: true)[0].Text);
+        Assert.Equal("52,000", TuiUsageMeter.Compose(52_000, 40.625, null)[0].Text);
+    }
+
     [Theory]
     [InlineData(0.4, 1)]
     [InlineData(4.32, 1)]

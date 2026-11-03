@@ -29,10 +29,11 @@ public static class TuiToolRow
             Math.Max(MinWidth, width));
 
     public static TranscriptLine ComposePresentation(
-        ToolLineStatus status, string display, string? target, string? meta, int width, int indent = Indent)
+        ToolLineStatus status, string display, string? target, string? meta, int width, int indent = Indent,
+        int actionColumnWidth = 0)
     {
         var builder = new TranscriptRunBuilder();
-        foreach (var segment in Layout(status, display, target, meta, width, indent))
+        foreach (var segment in Layout(status, display, target, meta, width, indent, actionColumnWidth))
         {
             builder.Append(segment.Text, segment.Token);
         }
@@ -41,7 +42,8 @@ public static class TuiToolRow
     }
 
     private static IReadOnlyList<(string Text, TuiToken Token)> Layout(
-        ToolLineStatus status, string display, string? target, string? meta, int width, int indent)
+        ToolLineStatus status, string display, string? target, string? meta, int width, int indent,
+        int actionColumnWidth = 0)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(display);
         var w = Math.Max(MinWidth, width);
@@ -66,18 +68,32 @@ public static class TuiToolRow
         var label = DisplayLabel(display);
         var metrics = status == ToolLineStatus.Failed
             ? string.IsNullOrWhiteSpace(meta) ? "failed" : "failed · " + meta
-            : status == ToolLineStatus.Unknown ? "outcome unavailable"
+            : status == ToolLineStatus.Unknown ? string.IsNullOrWhiteSpace(meta)
+                ? "outcome unavailable" : "outcome unavailable · " + meta
             : meta ?? string.Empty;
 
         if (2 + TuiText.VisibleWidth(label) + TuiText.VisibleWidth(metrics) + 3 > usable)
         {
-            metrics = status == ToolLineStatus.Failed ? "failed" : string.Empty;
+            // Keep outcome/exit evidence ahead of the shortcut and secondary metrics.
+            var shortcut = metrics.IndexOf(" · ctrl+o", StringComparison.Ordinal);
+            if (shortcut >= 0) metrics = metrics[..shortcut];
+            if (2 + TuiText.VisibleWidth(label) + TuiText.VisibleWidth(metrics) + 3 > usable)
+            {
+                var metricStart = metrics.StartsWith("failed · ", StringComparison.Ordinal) ? "failed · ".Length : 0;
+                var firstMetric = metrics.IndexOf(" · ", metricStart, StringComparison.Ordinal);
+                if (firstMetric >= 0) metrics = metrics[..firstMetric];
+            }
+            if (2 + TuiText.VisibleWidth(label) + TuiText.VisibleWidth(metrics) + 3 > usable)
+                metrics = status == ToolLineStatus.Failed ? "failed" : status == ToolLineStatus.Unknown ? "unknown" : string.Empty;
         }
 
         var rightWidth = TuiText.VisibleWidth(metrics);
         var leftRoom = Math.Max(1, usable - rightWidth - (rightWidth > 0 ? 3 : 0));
         label = TuiText.Truncate(label, Math.Max(1, leftRoom - 2));
+        var labelWidth = TuiText.VisibleWidth(label);
+        var padding = w >= 60 ? Math.Max(0, Math.Min(actionColumnWidth, leftRoom - 4) - labelWidth) : 0;
         var used = indentWidth + 2 + TuiText.VisibleWidth(label);
+        used += padding;
 
         var segments = new List<(string Text, TuiToken Token)>(8);
         if (indentWidth > 0)
@@ -87,9 +103,9 @@ public static class TuiToolRow
 
         segments.Add((glyph, statusToken));
         segments.Add((" ", TuiToken.Line));
-        segments.Add((label, TuiToken.Meta));
+        segments.Add((label + new string(' ', padding), TuiToken.Meta));
 
-        var targetRoom = leftRoom - 2 - TuiText.VisibleWidth(label) - 2;
+        var targetRoom = leftRoom - 2 - labelWidth - padding - 2;
         if (!string.IsNullOrWhiteSpace(target) && targetRoom > 2)
         {
             var clipped = TuiText.MiddleTruncate(ChatDisplayText.Sanitize(target, 512), targetRoom);

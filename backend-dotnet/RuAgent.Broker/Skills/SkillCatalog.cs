@@ -20,7 +20,7 @@ public sealed record SkillBody(string Name, string Description, string Body, str
     IReadOnlyList<string> Requires, string Id = "", string ResourceBase = "", string Revision = "",
     bool ModelInvocable = true, bool UserInvocable = true, string? Compatibility = null);
 
-/// <summary>Workspace-scoped, metadata-only skill catalog and bounded on-demand body reader.</summary>
+/// <summary>Skill metadata and bounded on-demand bodies; workspace roots/preferences or a user-library preview.</summary>
 public sealed partial class SkillCatalog
 {
     private const int MaxRoots = 16, MaxDirectoriesPerRoot = 256, MaxItems = 128, MaxDiagnostics = 128, MaxBodyBytes = 64 * 1024,
@@ -34,14 +34,22 @@ public sealed partial class SkillCatalog
     private string _cacheKey;
 
     public SkillCatalog(string workspaceRoot, string? preferencesPath = null, IReadOnlyList<string>? roots = null)
+        : this(workspaceRoot, preferencesPath, roots, userOnly: false) { }
+
+    /// <summary>Metadata for the library before a workspace is selected; no project roots or preferences are inherited.</summary>
+    public static SkillCatalog ForUser(string? preferencesPath = null, IReadOnlyList<string>? roots = null) =>
+        new(null, preferencesPath, roots, userOnly: true);
+
+    private SkillCatalog(string? workspaceRoot, string? preferencesPath, IReadOnlyList<string>? roots, bool userOnly)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
-        _workspaceRoot = new CanonicalPathResolver(Path.GetFullPath(workspaceRoot)).CanonicalRoot;
+        if (!userOnly) ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
+        _workspaceRoot = userOnly ? string.Empty : new CanonicalPathResolver(Path.GetFullPath(workspaceRoot!)).CanonicalRoot;
         var appDataRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(appDataRoot)) appDataRoot = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (string.IsNullOrWhiteSpace(appDataRoot)) appDataRoot = Path.GetTempPath();
         _preferencesPath = Path.GetFullPath(preferencesPath ?? Path.Combine(appDataRoot, "Ru", "skill-preferences.json"));
-        _baseRoots = (roots ?? SkillRoots.For(_workspaceRoot)).Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxRoots).ToList();
+        _baseRoots = (roots ?? (userOnly ? SkillRoots.ForUser() : SkillRoots.For(_workspaceRoot)))
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxRoots).ToList();
         _roots = new(_baseRoots);
         _cacheKey = BuildCacheKey(_roots);
         RefreshRoots();

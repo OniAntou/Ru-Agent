@@ -22,6 +22,22 @@ public sealed class ApiRefreshCancellationTests
     }
 
     [Fact]
+    public async Task CreateSessionAsync_honors_cancellation_token()
+    {
+        using var handler = new BlockingHandler();
+        var session = new BackendSession(new Uri("http://127.0.0.1:59999/"), "test-secret");
+        using var api = new ApiService(session, handler);
+        using var cts = new CancellationTokenSource();
+
+        Task request = Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => api.CreateSessionAsync(cts.Token));
+
+        cts.Cancel();
+        await request;
+        Assert.True(handler.CancellationObserved);
+    }
+
+    [Fact]
     public async Task GetDiagnosticLogsAsync_honors_cancellation_token()
     {
         using var api = new ApiService("test-secret", 59999);

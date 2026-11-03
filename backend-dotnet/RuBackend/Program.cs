@@ -99,13 +99,22 @@ if (!IsLoopbackBindUrl(bindUrl))
 
 builder.WebHost.UseUrls(bindUrl);
 
-// Body-bound layering, outermost first: Kestrel -> RequestSizeMiddleware (per route) ->
-// the endpoint's own bounded reader. Kestrel's default (30,000,000 bytes) sits below the
-// import route's declared bound, so an oversized import was refused by Kestrel with a
-// generic 413 before the endpoint could answer import_too_large. This bound stays above
-// every application cap; the application caps remain the source of truth.
+// Kestrel stays above the largest application request cap; route middleware owns the
+// smaller per-request bounds. Both caps are configurable, so derive the transport
+// bound from the larger of them instead of pinning a constant: otherwise a raised cap
+// makes Kestrel answer a generic 413 before the route can return its own bounded code.
+var defaults = new BackendOptions();
+var configuredMaxBodyBytes = Math.Max(
+    ReadConfiguredBodyBytes(builder.Configuration, nameof(BackendOptions.MaxRequestBodyBytes), defaults.MaxRequestBodyBytes),
+    ReadConfiguredBodyBytes(builder.Configuration, nameof(BackendOptions.AgentRunMaxRequestBodyBytes), defaults.AgentRunMaxRequestBodyBytes));
 builder.WebHost.ConfigureKestrel(options =>
-    options.Limits.MaxRequestBodySize = BackendLimits.KestrelMaxRequestBodyBytes);
+    options.Limits.MaxRequestBodySize = BackendLimits.KestrelMaxRequestBodyBytesFor(configuredMaxBodyBytes));
+
+static long ReadConfiguredBodyBytes(IConfiguration configuration, string name, long fallback)
+{
+    var raw = configuration[$"{BackendOptions.SectionName}:{name}"];
+    return long.TryParse(raw, out var bytes) && bytes > 0 ? bytes : fallback;
+}
 
 static bool IsLoopbackBindUrl(string value)
 {
@@ -277,7 +286,6 @@ app.Use(async (context, next) =>
 app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoContent());
 
 BusinessEndpoints.Map(app);
-SessionInterchangeEndpoints.Map(app);
 AgentV1Endpoints.Map(app);
 DiagnosticEndpoints.Map(app);
 StatusEndpoints.Map(app);

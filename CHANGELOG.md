@@ -7,11 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(review)**: Terminal foreground trả output ngắn tới giao diện ngay khi lệnh
+  còn chạy kể cả khi môi trường của Host có biến bí mật: redactor chỉ giữ lại phần
+  đuôi có thể là tiền tố của một secret — không giới hạn độ dài, kể cả secret dài
+  hơn chunk hay các secret chồng lấn — thay vì giữ cố định N−1 ký tự. MCP stdio
+  không còn để lộ đầu ghi stdin cho process khác kế thừa. Hook chạy trong Job
+  Object, báo timeout và dọn tiến trình con khi chúng giữ pipe sau khi `cmd.exe`
+  thoát. Các map giới hạn 64 mục của transcript loại mục cũ nhất theo thứ tự chèn
+  thay vì `Dictionary.Keys.First()` (trước đây có thể xoá chính mục vừa thêm).
+
+- **fix(review)**: Vòng lặp SSE của CLI không còn chờ HTTP để lấy usage/metadata
+  (tối đa 4 giây mỗi bước khi Host bận); giá trị về muộn được áp theo sequence và
+  bỏ qua nếu đã chuyển run. Giới hạn body của Kestrel lấy theo
+  `RuBackend:AgentRunMaxRequestBodyBytes` đã cấu hình thay vì hằng số 30 MiB.
+  `read_file` theo dòng không serialize lại toàn bộ JSON sau mỗi dòng. Bước kiểm
+  tra quyền sở hữu submission chạy trước khi ghi workspace của phiên.
+
 - **fix(review)**: Stop huỷ lượt gửi đang chuẩn bị, và phản hồi tạo session đến
   muộn không giành lại màn hình sau khi chuyển chat. Rewind chặn câu trả lời
   muộn của lượt đã xoá. Nhánh fork giữ thông tin ảnh sau khi xoá session gốc.
   MCP stdio đưa process vào Job Object trước khi chạy, và terminal foreground
   chuyển output đã che dữ liệu nhạy cảm tới giao diện trong lúc lệnh chạy.
+
+- **fix(gui)**: Esc đóng popup model, reasoning và context trước khi xử lý dừng
+  run. Popup context chờ con trỏ rời đồng hồ trước khi mở lại bằng hover.
+  Mở lại session đang chạy giữ activity ở trạng thái live và nối tiếp text trên
+  đúng dòng cũ. Khi run hoàn tất mà GUI chỉ có văn bản từ lúc khôi phục, GUI ưu
+  tiên câu trả lời cuối đã lưu của run đó.
+
+- **perf(tui)**: Bỏ redraw toàn trang khi menu slash đã đóng hoặc kết quả lọc
+  không đổi; giữ lựa chọn bàn phím và chỉ vẽ lại danh sách khi chiều cao ổn định.
+  Mở/đóng và đổi chiều cao vẫn xóa đúng vùng cũ. Vòng lặp native nhận input/render
+  tối đa 60 lượt/giây; hoạt ảnh welcome giữ clock riêng 50 ms.
+
+- **fix(review)**: Line-mode `read_file` kiểm tra đường dẫn thực của handle trước
+  khi đọc, chặn việc đổi junction sau bước kiểm tra quyền. GUI chụp provider/model
+  đang hiển thị khi gửi, giữ nguyên qua retry và dùng contract tạo run có intent.
+  Phản hồi settings và catalog cũ không ghi đè lựa chọn model mới; thay đổi từ
+  Settings vẫn cập nhật picker theo phiên bản lựa chọn.
+
+- **BREAKING(sessions)**: Gỡ toàn bộ import/export session với ứng dụng bên ngoài:
+  OpenCode, Claude Code, Codex và Antigravity, cùng adapter, menu GUI, lệnh CLI,
+  client API và thư viện chuyển đổi. Hai route `/sessions/import` và
+  `/sessions/{sessionId}/export` không còn được đăng ký. Fork, rewind, tìm kiếm và
+  lịch sử session nội bộ của Ru vẫn được giữ; dữ liệu đã lưu không bị xóa.
+
+- **fix(gui/skills)**: Customize tải skill cấp người dùng ngay lần mở đầu khi chat
+  chưa có workspace, thay vì dừng ở trang rỗng với lời nhắc mở workspace. Skeleton
+  hiển thị trong lúc tải; khi chọn project, catalog và preference của project thay
+  thế thư viện chung. API chỉ cho phép bỏ workspace khi đọc metadata; sửa cấu hình
+  và cài package vẫn cần workspace hợp lệ.
+
+- **fix(gui)**: Model picker hiện catalog sẵn có ngay khi mở, tải provider đang chọn
+  song song với danh sách provider và không dời thời điểm hiển thị khi catalog cập
+  nhật liên tục. Customize có trạng thái tải, tự cập nhật khi Host kết nối lại hoặc
+  workspace sẵn sàng; phản hồi cũ không ghi đè trang hiện tại và refresh lỗi giữ
+  danh sách đang xem. Skeleton tĩnh hiển thị trong vùng Skills khi chưa có dữ liệu.
+  Transition lỗi khôi phục khung nội dung nhìn thấy; quay về trang hiện tại hủy lần
+  chuyển trang đang chờ, tránh callback cũ mở lại một trang đã rời.
+
+- **feat(gui)**: Chi tiết terminal trong activity có thẻ command/output riêng,
+  trạng thái, exit code và Copy. Có thể mở xem preview lệnh trước khi có output;
+  completion thiếu detail vẫn giữ preview, retry chỉ xóa output cũ. Output vượt
+  giới hạn có thông báo cắt bớt. Thay đổi chỉ thuộc hiển thị terminal trên GUI.
+
+- **fix(gui)**: Thanh mốc tin nhắn đánh dấu đúng phần đang hiển thị, với mốc cuối
+  vùng nhìn sáng nhất. Chat vừa màn hình cũng ưu tiên mốc cuối; cuộn gần đáy không
+  làm sáng tin nhắn còn nằm ngoài màn hình. Highlight cập nhật sau layout, resize
+  và thay history, thay vì chỉ đợi sự kiện cuộn.
+
+- **fix(context)**: TUI hiển thị input của request hiện tại thay vì tổng token billing
+  của run; phần trăm dùng context window đã pin, không dùng prompt budget sau khi
+  trừ output reserve. Estimate có dấu `~` và được usage thật thay thế, kể cả khi giảm.
+  TUI và GUI đối chiếu theo model step để bỏ estimate đến muộn, chống dữ liệu cũ
+  quay lại sau compaction và nhận step mới khi SSE reconnect đặt lại transient cursor.
+  Cache token được chuẩn hóa theo protocol và cờ inclusive; retained Anthropic runs
+  giữ đúng window. SSE bổ sung `model_step_id` tùy chọn, tương thích envelope cũ.
+
+- **feat(tui)**: Make agent activity compact and inspectable: aligned action verbs,
+  tool-specific result units and terminal exit codes, with each tool's safe context,
+  outcome and diff behind Ctrl+O. Late results update the same row and inspector
+  while preserving expansion and colors. Work summaries distinguish action types;
+  live status separates model waiting, reported thinking, streaming, compaction
+  and tool/request retries. Narrow layouts prioritize failure/exit evidence.
 
 - **fix(gui)**: Giảm các nhịp giật khi tạo chat mới: thay draft bằng một lần render sidebar,
   giữ trạng thái mở/gập và container của các nhóm không đổi, bỏ animation thêm/xóa chồng lên

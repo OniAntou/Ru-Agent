@@ -38,7 +38,7 @@ public sealed class TuiParagraphReflowTests
         public void AppendActivityPresentation(string activityId, TranscriptLine row, IReadOnlyList<string>? details = null) =>
             Committed.Add(row.Text);
 
-        public void UpdateActivityPresentation(string activityId, TranscriptLine row) { }
+        public void UpdateActivityPresentation(string activityId, TranscriptLine row, IReadOnlyList<string>? details = null) { }
 
         public Task<bool> ReplaceAssistantPresentationAsync(IReadOnlyList<TranscriptLine> rows) =>
             Task.FromResult(false);

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace RuApp.Tests;
 
-public sealed class ChatModelPickerViewModelTests
+public sealed partial class ChatModelPickerViewModelTests
 {
     private const string Backend = "models.dev:openai";
     private const string Model = "gpt-test";
@@ -125,6 +125,9 @@ public sealed class ChatModelPickerViewModelTests
         int trees = 0;
         viewModel.PickerProjectionReady += _ => trees++;
 
+        // Catalog publications carry selection state; only an authoritative
+        // settings signal may establish a choice before the initial read.
+        grouped.SetSelection(Backend, Model);
         grouped.Publish(Model);
         grouped.Publish(Model);
         grouped.Publish(Model);
@@ -191,6 +194,7 @@ public sealed class ChatModelPickerViewModelTests
             {
                 Id = Model,
                 Supported = true,
+                Protocol = ProviderModelProtocols.ChatCompletions,
                 ContextLength = 128000,
                 Reasoning = new ProviderReasoningCapabilities
                 {
@@ -205,7 +209,12 @@ public sealed class ChatModelPickerViewModelTests
     {
         public AppSettingsDto Settings { get; } = new() { BackendChoice = Backend, Model = Model };
 
+        public Task<AppSettingsDto?>? SettingsResponse { get; set; }
+        public Queue<Task<AppSettingsDto?>> SettingsResponses { get; } = new();
+        public Task<bool>? ModelSaveResponse { get; set; }
+
         public bool ModelSaveSucceeds { get; set; } = true;
+        public Task<IReadOnlyList<ModelsDevEntryDto>>? ModelsDevResponse { get; set; }
 
         public bool ReasoningSaveSucceeds { get; set; } = true;
 
@@ -213,15 +222,17 @@ public sealed class ChatModelPickerViewModelTests
 
         public List<(string Effort, string Model, string Identity)> ReasoningSaves { get; } = new();
 
-        public Task<AppSettingsDto?> GetSettingsAsync() => Task.FromResult<AppSettingsDto?>(Settings);
+        public Task<AppSettingsDto?> GetSettingsAsync() => SettingsResponses.Count > 0
+            ? SettingsResponses.Dequeue()
+            : SettingsResponse ?? Task.FromResult<AppSettingsDto?>(Settings);
 
         public Task<IReadOnlyList<ModelsDevEntryDto>> GetModelsDevAsync() =>
-            Task.FromResult<IReadOnlyList<ModelsDevEntryDto>>([new ModelsDevEntryDto { Id = "openai", Name = "OpenAI" }]);
+            ModelsDevResponse ?? Task.FromResult<IReadOnlyList<ModelsDevEntryDto>>([new ModelsDevEntryDto { Id = "openai", Name = "OpenAI" }]);
 
         public Task<bool> SaveProviderModelSelectionAsync(string backend, string model)
         {
             ModelSaves.Add((backend, model));
-            return Task.FromResult(ModelSaveSucceeds);
+            return ModelSaveResponse ?? Task.FromResult(ModelSaveSucceeds);
         }
 
         public Task<bool> SaveReasoningSettingsAsync(string effort, string model, string identity)
@@ -257,19 +268,45 @@ public sealed class ChatModelPickerViewModelTests
 
         public GroupedProviderCatalogState State { get; private set; } = GroupedProviderCatalogState.Empty;
 
-        public IReadOnlyList<ProviderGroupDefinition> CurrentDefinitions => ProviderGroupDefinitions.All;
+        public IReadOnlyList<ProviderGroupDefinition> CurrentDefinitions { get; set; } = ProviderGroupDefinitions.All;
 
         public (string Backend, string Model) Selection { get; private set; }
 
         public List<string> SearchTexts { get; } = new();
 
-        public void SetSelection(string backend, string model) => Selection = (backend, model);
+        public void SetSelection(string backend, string model) => UpdateSelection(backend, model, authoritative: true);
+
+        public void SynchronizeSelection(string backend, string model) => UpdateSelection(backend, model, authoritative: false);
+
+        private void UpdateSelection(string backend, string model, bool authoritative)
+        {
+            if (Selection == (backend, model)) return;
+            Selection = (backend, model);
+            State = State with
+            {
+                SelectedBackend = backend,
+                SelectedModel = model,
+                SelectionVersion = authoritative ? State.SelectionVersion + 1 : State.SelectionVersion,
+            };
+            StateChanged?.Invoke(this, State);
+        }
 
         public void SetSearchText(string searchText) => SearchTexts.Add(searchText);
 
         public Task SetModelsDevProvidersAsync(IReadOnlyList<ModelsDevEntry> entries) => Task.CompletedTask;
 
         public Task<bool> RefreshAsync(bool force = false) => Task.FromResult(true);
+
+        public void PublishCatalog(ProviderCatalogState catalog)
+        {
+            State = State with
+            {
+                SelectedBackend = Backend,
+                SelectedModel = Model,
+                Catalogs = new Dictionary<string, ProviderCatalogState> { [catalog.Backend] = catalog },
+            };
+            StateChanged?.Invoke(this, State);
+        }
 
         public void Publish(string model, bool withCatalog = false)
         {

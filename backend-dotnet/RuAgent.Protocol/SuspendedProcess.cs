@@ -85,6 +85,14 @@ public static class SuspendedProcess
                 stdinWrite.Dispose();
                 stdinWrite = null;
             }
+            else
+            {
+                // The write end belongs to this process for the child's lifetime. If it
+                // stayed inheritable, an unrelated concurrent Process.Start (a hook, an
+                // MCP server, a terminal child) could receive the handle and keep this
+                // child's stdin open after its owner closed it.
+                ClearInheritance(stdinWrite);
+            }
 
             (stdoutRead, stdoutWrite) = CreateInheritablePipe();
             ClearInheritance(stdoutRead);

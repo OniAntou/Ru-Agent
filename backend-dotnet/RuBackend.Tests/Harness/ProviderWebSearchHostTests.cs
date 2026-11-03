@@ -84,8 +84,9 @@ public sealed class ProviderWebSearchHostTests
         var root = new AgentToolRuntimeAvailability(true, true);
         Assert.True(Advertised(root));
         Assert.False(Advertised(root with { ProviderWebSearch = true }));
-        Assert.True(AgentToolRuntimeProjection.Select(root with { ProviderWebSearch = true, ToolProfile = AgentToolProfiles.Minimal })
-            .Any(definition => definition.ToolId == "web_fetch"));
+        Assert.Contains(
+            AgentToolRuntimeProjection.Select(root with { ProviderWebSearch = true, ToolProfile = AgentToolProfiles.Minimal }),
+            definition => definition.ToolId == "web_fetch");
     }
 
     [Fact]

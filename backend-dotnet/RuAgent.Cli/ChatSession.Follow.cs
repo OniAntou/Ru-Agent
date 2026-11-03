@@ -152,6 +152,7 @@ public sealed partial class AgentCommands
         /// </summary>
         async Task FollowRunAsync(string runId, long afterSequence, CancellationToken ct)
         {
+            usage.BindRun(runId);
             SseFrame? parkedTransition = null;
             async Task OnFrameAsync(SseFrame frame, CancellationToken frameCt)
             {
@@ -334,10 +335,9 @@ public sealed partial class AgentCommands
                     }
 
                     RecordAssistantStepPayload(frame);
-                    ApplyUsageFrame(frame);
+                    await ApplyUsageFrameAsync(runId, frame, frameCt).ConfigureAwait(false);
                     ApplyUsageEstimate(frame);
                     await ApplySubagentChangeAsync(frame).ConfigureAwait(false);
-                    ApplyCompactionFrame(frame);
                 }
                 await _out.FlushAsync().ConfigureAwait(false);
             }

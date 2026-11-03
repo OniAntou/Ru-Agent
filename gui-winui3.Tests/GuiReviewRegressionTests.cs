@@ -1,6 +1,7 @@
 using Markdig.Extensions.Tables;
 using RuApp.Controls;
 using RuApp.Services;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuApp.Tests;
@@ -80,7 +81,7 @@ public sealed class GuiReviewRegressionTests
     {
         var queue = new AgentTurnQueue();
         var attachment = new RuApp.Models.ImageAttachmentItem { FileName = "keep.png" };
-        queue.TryEnqueue("prompt", "prompt", [attachment]);
+        queue.TryEnqueue("prompt", "prompt", [attachment], new CreateRunProviderSelection("models.dev:openai", "gpt-test"));
         var turn = Assert.Single(queue.Items);
         await Assert.ThrowsAsync<IOException>(() => queue.DrainAsync((_, _) => throw new IOException()));
         Assert.Same(turn, Assert.Single(queue.Items));
@@ -118,8 +119,8 @@ public sealed class GuiReviewRegressionTests
     public async Task Queue_acceptance_allows_next_turn_without_old_completion_unlocking_it()
     {
         var queue = new AgentTurnQueue();
-        queue.TryEnqueue("one", "one", null);
-        queue.TryEnqueue("two", "two", null);
+        queue.TryEnqueue("one", "one", null, new CreateRunProviderSelection("models.dev:openai", "gpt-test"));
+        queue.TryEnqueue("two", "two", null, new CreateRunProviderSelection("models.dev:openai", "gpt-test"));
         var firstTail = new TaskCompletionSource<bool>();
         var secondTail = new TaskCompletionSource<bool>();
         Action? acceptSecond = null;

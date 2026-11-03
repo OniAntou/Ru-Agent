@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using RuAgent.Protocol.Harness;
 using RuApp.Models;
 using RuApp.Services;
 
@@ -26,6 +27,8 @@ internal interface IGroupedCatalogSession
     IReadOnlyList<ProviderGroupDefinition> CurrentDefinitions { get; }
 
     void SetSelection(string backend, string model);
+
+    void SynchronizeSelection(string backend, string model);
 
     void SetSearchText(string searchText);
 
@@ -60,6 +63,8 @@ internal sealed class GroupedCatalogSession(GroupedProviderCatalogController con
     public IReadOnlyList<ProviderGroupDefinition> CurrentDefinitions => controller.CurrentDefinitions;
 
     public void SetSelection(string backend, string model) => controller.SetSelection(backend, model);
+
+    public void SynchronizeSelection(string backend, string model) => controller.SynchronizeSelection(backend, model);
 
     public void SetSearchText(string searchText) => controller.SetSearchText(searchText);
 
@@ -96,6 +101,10 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
     private GroupedProviderCatalogState? _pendingGroupedState;
     private bool _isPickerDirty = true;
     private bool _disposed;
+    private int _catalogRefreshes;
+    private long _settingsReadGeneration;
+    private long _selectionVersion;
+    private long _appliedGroupedSelectionVersion;
 
     internal ChatModelPickerViewModel(Action<Action> dispatch, Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
@@ -158,13 +167,9 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
     /// </summary>
     internal ProviderCatalogState? SelectedCatalog => TryGetSelectedCatalog(out var catalog) ? catalog : null;
 
-    private string EffectiveBackend => !string.IsNullOrWhiteSpace(_grouped?.State.SelectedBackend)
-        ? _grouped!.State.SelectedBackend
-        : Backend;
+    private string EffectiveBackend => Backend;
 
-    private string EffectiveModel => !string.IsNullOrWhiteSpace(_grouped?.State.SelectedModel)
-        ? _grouped!.State.SelectedModel
-        : Model;
+    private string EffectiveModel => Model;
 
     /// <summary>Connects to a Host's settings and catalogs, releasing a previous connection first.</summary>
     internal void Attach(IChatModelBackend backend, IProviderCatalogSession catalog, IGroupedCatalogSession grouped)
@@ -174,6 +179,7 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _grouped = grouped ?? throw new ArgumentNullException(nameof(grouped));
+        _appliedGroupedSelectionVersion = grouped.State.SelectionVersion;
         _catalog.StateChanged += OnCatalogStateChanged;
         _grouped.StateChanged += OnGroupedStateChanged;
     }
@@ -183,32 +189,60 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
     {
         var backend = _backend;
         if (backend is null) return;
+        long readGeneration = ++_settingsReadGeneration;
+        long selectionVersion = _selectionVersion;
+        var grouped = _grouped;
+        long groupedSelectionVersion = grouped?.State.SelectionVersion ?? 0;
+        _catalogRefreshes++;
         try
         {
             var settings = await backend.GetSettingsAsync();
-            if (settings is null || !ReferenceEquals(backend, _backend)) return;
+            if (settings is null || !CanApplySettings(backend, grouped, readGeneration, selectionVersion, groupedSelectionVersion)) return;
             CurrentSettings = settings;
+            _appliedGroupedSelectionVersion = groupedSelectionVersion;
             _selectionRead = true;
             _selection.Adopt(settings);
             Backend = _selection.Backend;
             Model = _selection.Model;
-            _grouped?.SetSelection(Backend, Model);
-            await RefreshModelsDevGroupsAsync();
+            _grouped?.SynchronizeSelection(Backend, Model);
             ShowSelection(Backend, Model);
+            Task selectedRefresh = Task.CompletedTask;
             if (_catalog is { } catalog)
             {
                 catalog.SetBackend(Backend);
-                await catalog.RefreshAsync();
+                selectedRefresh = catalog.RefreshAsync();
             }
 
-            if (_grouped is { } grouped) await grouped.RefreshAsync(force: false);
+            // The selected provider is useful before the directory or other providers finish.
+            await Task.WhenAll(selectedRefresh, RefreshModelsDevGroupsAsync());
+            if (!CanApplySettings(backend, grouped, readGeneration, selectionVersion, groupedSelectionVersion)) return;
+
+            if (_grouped is { } currentGrouped) await currentGrouped.RefreshAsync(force: false);
             RefreshEffort();
         }
         catch (Exception ex)
         {
             GuiDiagnosticWriter.AppendTraceLine($"[ChatModelPicker] Error loading models: {ex.Message}");
         }
+        finally
+        {
+            _catalogRefreshes--;
+            if (!_disposed && IsPickerOpen && _grouped is { } current) PublishPicker(current.State);
+        }
     }
+
+    private bool CanApplySettings(
+        IChatModelBackend backend,
+        IGroupedCatalogSession? grouped,
+        long readGeneration,
+        long selectionVersion,
+        long groupedSelectionVersion) =>
+        !_disposed
+        && ReferenceEquals(backend, _backend)
+        && ReferenceEquals(grouped, _grouped)
+        && (grouped?.State.SelectionVersion ?? 0) == groupedSelectionVersion
+        && readGeneration == _settingsReadGeneration
+        && selectionVersion == _selectionVersion;
 
     /// <summary>Pulls the Models.dev provider list so the picker grows a group per generic provider.</summary>
     private async Task RefreshModelsDevGroupsAsync()
@@ -219,6 +253,7 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
         try
         {
             var providers = await backend.GetModelsDevAsync();
+            if (!ReferenceEquals(backend, _backend) || !ReferenceEquals(grouped, _grouped)) return;
             // Named custom providers (ADR 0034) come first, under the names the user gave them.
             var custom = CurrentSettings?.CustomProviders?
                 .Select(provider => new ModelsDevEntry(CustomProviderPolicy.Backend(provider.Id), provider.DisplayName))
@@ -240,17 +275,32 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
     internal void OnPickerOpened()
     {
         IsPickerOpen = true;
-        if (_isPickerDirty && _grouped is not null) PublishPicker(_grouped.State);
+        _isPickerDirty = true;
         _ = RefreshGroupedAsync();
+        if (_isPickerDirty && _grouped is not null) PublishPicker(_grouped.State);
     }
 
     internal void OnPickerClosed() => IsPickerOpen = false;
 
     private async Task RefreshGroupedAsync()
     {
-        if (_grouped is null) return;
-        await RefreshModelsDevGroupsAsync();
-        if (_grouped is { } grouped) await grouped.RefreshAsync(force: false);
+        var grouped = _grouped;
+        if (grouped is null) return;
+        _catalogRefreshes++;
+        try
+        {
+            await RefreshModelsDevGroupsAsync();
+            if (ReferenceEquals(grouped, _grouped)) await grouped.RefreshAsync(force: false);
+        }
+        catch (Exception ex)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[ChatModelPicker] Catalog refresh failed: {ex.GetType().Name}");
+        }
+        finally
+        {
+            _catalogRefreshes--;
+            if (!_disposed && IsPickerOpen && ReferenceEquals(grouped, _grouped)) PublishPicker(grouped.State);
+        }
     }
 
     /// <summary>Coalesces a burst of typing into one catalog filter.</summary>
@@ -260,57 +310,6 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
         {
             _grouped?.SetSearchText(searchText);
             return Task.CompletedTask;
-        });
-    }
-
-    private void OnGroupedStateChanged(object? sender, GroupedProviderCatalogState state) => _dispatch(() =>
-    {
-        if (_disposed) return;
-        // One publish per provider: apply only the newest state after the burst settles.
-        _pendingGroupedState = state;
-        Restart(ref _publishDelay, UiTiming.GroupedPublishCoalesce, () =>
-        {
-            var pending = _pendingGroupedState;
-            _pendingGroupedState = null;
-            if (pending is not null && _grouped is not null && ReferenceEquals(_grouped.State, pending))
-            {
-                ApplyGroupedState(pending);
-            }
-
-            return Task.CompletedTask;
-        });
-    });
-
-    internal void ApplyGroupedState(GroupedProviderCatalogState state)
-    {
-        if (!string.IsNullOrWhiteSpace(state.SelectedModel)) Model = state.SelectedModel;
-        if (!string.IsNullOrWhiteSpace(state.SelectedBackend)) Backend = state.SelectedBackend;
-        _selection.Adopt(Backend, Model);
-        ShowSelection(state.SelectedBackend, state.SelectedModel);
-        // The tree costs a full rebuild per publish; nobody sees it while closed.
-        if (IsPickerOpen) PublishPicker(state);
-        else _isPickerDirty = true;
-        SelectionChanged?.Invoke();
-        RefreshEffort();
-    }
-
-    private void PublishPicker(GroupedProviderCatalogState state)
-    {
-        PickerProjectionReady?.Invoke(ProviderModelPickerProjection.Create(
-            state.Catalogs.Values, state.SelectedBackend, state.SelectedModel, state.SearchText, _grouped?.CurrentDefinitions));
-        _isPickerDirty = false;
-    }
-
-    /// <summary>
-    /// The single catalog for the selected backend landed: the stored effort and its
-    /// levels may have arrived. Publishes for another backend are ignored, because the
-    /// shared controller is repointed by Settings too.
-    /// </summary>
-    private void OnCatalogStateChanged(object? sender, ProviderCatalogState state)
-    {
-        _dispatch(() =>
-        {
-            if (!_disposed && string.Equals(state.Backend, EffectiveBackend, StringComparison.Ordinal)) RefreshEffort();
         });
     }
 
@@ -325,6 +324,8 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
                 return;
             }
 
+            // Reads begun before or during this save must not replace the saved choice.
+            _selectionVersion++;
             var result = await _selection.SelectAsync(model, backend, api.SaveProviderModelSelectionAsync);
             if (result == ModelSelectionSaveResult.Superseded || _disposed) return;
             if (result != ModelSelectionSaveResult.Saved)
@@ -335,10 +336,13 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
 
             Model = _selection.Model;
             Backend = _selection.Backend;
+            _selectionRead = true;
+            _selectionVersion++;
+            _appliedGroupedSelectionVersion = _grouped?.State.SelectionVersion ?? _appliedGroupedSelectionVersion;
             // A stale effort must not stick when the new model has other levels; the
             // stored one arrives with the catalog refresh below.
             SelectedEffort = "default";
-            _grouped?.SetSelection(backend, model);
+            _grouped?.SynchronizeSelection(backend, model);
             ShowSelection(backend, model);
             SelectionChanged?.Invoke();
             if (_catalog is { } catalog)
@@ -443,6 +447,23 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
     /// <summary>The model the composer reports, preferring the grouped catalog's view.</summary>
     internal string DisplayModel => EffectiveModel;
 
+    /// <summary>Captures the visible selection for a new run; empty/unloaded state fails closed.</summary>
+    internal bool TryCaptureRunSelection(
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CreateRunProviderSelection? selection)
+    {
+        string backend = EffectiveBackend;
+        string model = EffectiveModel;
+        if (_disposed || _backend is null || !_selectionRead
+            || string.IsNullOrWhiteSpace(backend) || string.IsNullOrWhiteSpace(model))
+        {
+            selection = null;
+            return false;
+        }
+
+        selection = new CreateRunProviderSelection(backend, model);
+        return true;
+    }
+
     /// <summary>
     /// The catalog for the selected backend. The single controller is preferred: the
     /// grouped one holds hundreds of children behind polling and is empty long after
@@ -487,11 +508,20 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
 
     private void Detach()
     {
+        _settingsReadGeneration++;
+        _selectionVersion++;
+        _selectionRead = false;
+        CurrentSettings = null;
+        Backend = string.Empty;
+        Model = string.Empty;
+        _selection.Adopt(Backend, Model);
+        ShowSelection(Backend, Model);
         _selection.Invalidate();
         _reasoningSaves.Invalidate();
         Cancel(ref _searchDelay);
         Cancel(ref _publishDelay);
         _pendingGroupedState = null;
+        _isPickerDirty = true;
         if (_catalog is not null) _catalog.StateChanged -= OnCatalogStateChanged;
         if (_grouped is not null) _grouped.StateChanged -= OnGroupedStateChanged;
         _catalog = null;

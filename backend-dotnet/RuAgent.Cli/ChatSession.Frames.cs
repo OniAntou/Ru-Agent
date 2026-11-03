@@ -53,60 +53,6 @@ public sealed partial class AgentCommands
             }
         }
 
-        /// <summary>Applies the token counters a usage envelope carries to the tally and the header.</summary>
-        void ApplyUsageFrame(SseFrame frame)
-        {
-            if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"total_tokens\"", StringComparison.Ordinal))
-            {
-                try
-                {
-                    var usageEnvelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
-                    if (usageEnvelope is not null
-                        && (usageEnvelope.TotalTokens is not null
-                            || usageEnvelope.InputTokens is not null
-                            || usageEnvelope.OutputTokens is not null))
-                    {
-                        usage.Apply(usageEnvelope.InputTokens, usageEnvelope.OutputTokens);
-                        lastTotalTokens = usageEnvelope.TotalTokens
-                            ?? ((usageEnvelope.InputTokens ?? 0) + (usageEnvelope.OutputTokens ?? 0));
-                        sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
-                        if (tgMode)
-                        {
-                            RunOnTgUi(() => tgWindow!.Header.UpdateUsage(
-                                lastTotalTokens ?? 0,
-                                usage.ContextPercent,
-                                usage.CostKnown ? (decimal)usage.SessionCost : null));
-                        }
-                    }
-                }
-                catch (System.Text.Json.JsonException)
-                {
-                    // Non-conforming frame payload; token tally keeps its last value.
-                }
-            }
-        }
-
-        /// <summary>Shows the measured request size of the step about to run before its first token arrives.</summary>
-        void ApplyUsageEstimate(SseFrame frame)
-        {
-            if (frame.IsTransient
-                && AgentUsageEstimateModel.TryParse(frame, out var usageEstimate)
-                && usageEstimate is not null)
-            {
-                // The step's measured request size arrives before its first token,
-                // so the meter shows the context the model is about to read instead
-                // of waiting for the usage report at step end.
-                usage.ApplyEstimate(usageEstimate.EstimatedInputTokens, usageEstimate.MaxPromptTokens);
-                if (tgMode)
-                {
-                    RunOnTgUi(() => tgWindow!.Header.UpdateUsage(
-                        lastTotalTokens ?? 0,
-                        usage.ContextPercent,
-                        usage.CostKnown ? (decimal)usage.SessionCost : null));
-                }
-            }
-        }
-
         /// <summary>Follows the root's live subagent hints: announces what changed and keeps the header strip in step.</summary>
         async Task ApplySubagentChangeAsync(SseFrame frame)
         {
@@ -134,31 +80,5 @@ public sealed partial class AgentCommands
             }
         }
 
-        /// <summary>A compaction restarts the context reading; the session cost keeps accumulating.</summary>
-        void ApplyCompactionFrame(SseFrame frame)
-        {
-            if (!frame.IsTransient && frame.Data is not null)
-            {
-                try
-                {
-                    var durableEvent = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
-                    if (durableEvent?.EventType == "context.compacted")
-                    {
-                        usage.ResetContextReading();
-                        if (tgMode)
-                        {
-                            RunOnTgUi(() => tgWindow!.Header.UpdateUsage(
-                                lastTotalTokens ?? 0,
-                                null,
-                                usage.CostKnown ? (decimal)usage.SessionCost : null));
-                        }
-                    }
-                }
-                catch (JsonException)
-                {
-                    // Nonconforming event payload cannot move the context boundary.
-                }
-            }
-        }
     }
 }

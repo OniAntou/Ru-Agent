@@ -28,13 +28,14 @@ public sealed partial class TgTranscriptView
     /// Appends a summary and retains its hidden detail rows as an independent block.
     /// All rows count toward the transcript's existing retention budget.
     /// </summary>
-    public void AppendCollapsed(string summary, IReadOnlyList<string> hidden, TranscriptStyle style)
+    public void AppendCollapsed(string summary, IReadOnlyList<string> hidden, TranscriptStyle style,
+        IReadOnlyList<TgSpan>? spans = null)
     {
         ArgumentNullException.ThrowIfNull(summary);
         ArgumentNullException.ThrowIfNull(hidden);
         var wasEmpty = _lines.Count == 0;
         var boundedSummary = BoundLine(summary);
-        _lines.Add(new TgTranscriptRow(boundedSummary, style));
+        _lines.Add(new TgTranscriptRow(boundedSummary, style, spans));
         _retainedCharacters += CharacterCount(boundedSummary);
         if (wasEmpty)
         {
@@ -42,6 +43,22 @@ public sealed partial class TgTranscriptView
         }
 
         AddCollapsedBlock(hidden, style, hasSummary: true);
+    }
+
+    private void UpdateToolDetails(int row, IReadOnlyList<string> hidden)
+    {
+        var block = _collapsedBlocks.FirstOrDefault(item => item.HasSummary && item.AfterLine == row + 1);
+        if (block is null) return;
+        foreach (var previous in block.Hidden) _retainedCharacters -= CharacterCount(previous.Text);
+        block.Hidden.Clear();
+        foreach (var line in hidden.Take(MaxRetainedRows))
+        {
+            var bounded = BoundLine(line);
+            block.Hidden.Add((bounded, TranscriptStyle.Tool));
+            _retainedCharacters += CharacterCount(bounded);
+        }
+        // Keep this block's selection/expansion and its place in the transcript.
+        // Retention below still accounts for every replaced hidden row.
     }
 
     /// <summary>

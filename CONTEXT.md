@@ -82,7 +82,7 @@ The provider identifier and model captured by an explicit run submission and
 stored atomically with that run. It fixes the initial selection even if shared
 defaults change before provider snapshot resolution. It contains no credentials
 and confers no tool permission; the full resolved provider pin remains immutable.
-Implementation: [TUI admission](docs/architecture/tui.md#concurrent-session-tabs).
+Implementation: [GUI submission](docs/architecture/gui.md#model-picker-loading) · [TUI admission](docs/architecture/tui.md#concurrent-session-tabs).
 
 
 **Conversation Branch**:

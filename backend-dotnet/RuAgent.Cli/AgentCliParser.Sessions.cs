@@ -26,9 +26,7 @@ public static partial class AgentCliParser
             "search" => ParseSessionSearch(args, startIndex + 1),
             "rewind" => ParseSessionRewind(args, startIndex + 1),
             "delete" => ParseSessionDelete(args, startIndex + 1),
-            "export" => ParseSessionExport(args, startIndex + 1),
-            "import" => ParseSessionImport(args, startIndex + 1),
-            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|history|search|rewind|delete|export|import.")
+            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|history|search|rewind|delete.")
         };
     }
 
@@ -203,119 +201,6 @@ public static partial class AgentCliParser
         if (query.Length > 512 || query.Any(char.IsControl))
             return Fail("invalid_query", "Session query must be at most 512 printable characters.");
         return Success(new SessionSearchCommand(query, limit, json));
-    }
-
-    private static AgentCliParseResult ParseSessionExport(string[] args, int startIndex)
-    {
-        string? sessionId = null;
-        string? harness = null;
-        string? outputDirectory = null;
-        bool json = false;
-        bool jsonSeen = false;
-        bool harnessSeen = false;
-        bool outSeen = false;
-
-        for (var index = startIndex; index < args.Length; index++)
-        {
-            var token = args[index];
-            switch (token)
-            {
-                case "--json":
-                    if (jsonSeen) return Fail("duplicate_switch", "Duplicate --json.");
-                    json = true;
-                    jsonSeen = true;
-                    continue;
-                case "--harness":
-                    if (harnessSeen) return Fail("duplicate_switch", "Duplicate --harness.");
-                    if (++index >= args.Length)
-                        return Fail("missing_value", "Missing value for --harness.");
-                    harness = args[index];
-                    harnessSeen = true;
-                    continue;
-                case "--out":
-                    if (outSeen) return Fail("duplicate_switch", "Duplicate --out.");
-                    if (++index >= args.Length)
-                        return Fail("missing_value", "Missing value for --out.");
-                    outputDirectory = args[index];
-                    outSeen = true;
-                    continue;
-            }
-
-            if (token.StartsWith("--", StringComparison.Ordinal))
-                return Fail("unknown_switch", $"Unknown switch '{token}' for session export.");
-            if (sessionId is not null)
-                return Fail("unexpected_argument", "session export takes one <session-id>.");
-            if (!SessionIdLooseRegex.IsMatch(token))
-                return Fail("invalid_session_id", "Session id contains invalid characters.");
-            sessionId = token;
-        }
-
-        if (sessionId is null)
-            return Fail("missing_session_id", "Missing required <session-id> for session export.");
-        if (string.IsNullOrWhiteSpace(harness))
-            return Fail("missing_harness", "Missing required --harness for session export.");
-        if (harness.Length > MaxHarnessLength)
-            return Fail("invalid_harness", $"Harness name must be 1..{MaxHarnessLength} characters.");
-        if (outputDirectory is { } directory
-            && (directory.Length == 0 || directory.Length > MaxFilePathLength || directory.Contains('\0')))
-            return Fail("invalid_out", "Output directory path is not a bounded path.");
-
-        return Success(new SessionExportCommand(sessionId, harness, outputDirectory, json));
-    }
-
-    private static AgentCliParseResult ParseSessionImport(string[] args, int startIndex)
-    {
-        string? filePath = null;
-        string? harness = null;
-        string? sessionId = null;
-        bool json = false;
-        bool jsonSeen = false;
-        bool harnessSeen = false;
-        bool sessionSeen = false;
-
-        for (var index = startIndex; index < args.Length; index++)
-        {
-            var token = args[index];
-            switch (token)
-            {
-                case "--json":
-                    if (jsonSeen) return Fail("duplicate_switch", "Duplicate --json.");
-                    json = true;
-                    jsonSeen = true;
-                    continue;
-                case "--harness":
-                    if (harnessSeen) return Fail("duplicate_switch", "Duplicate --harness.");
-                    if (++index >= args.Length)
-                        return Fail("missing_value", "Missing value for --harness.");
-                    harness = args[index];
-                    harnessSeen = true;
-                    continue;
-                case "--session":
-                    if (sessionSeen) return Fail("duplicate_switch", "Duplicate --session.");
-                    if (++index >= args.Length)
-                        return Fail("missing_value", "Missing value for --session.");
-                    sessionId = args[index];
-                    sessionSeen = true;
-                    continue;
-            }
-
-            if (token.StartsWith("--", StringComparison.Ordinal))
-                return Fail("unknown_switch", $"Unknown switch '{token}' for session import.");
-            if (filePath is not null)
-                return Fail("unexpected_argument", "session import takes one <file>.");
-            if (token.Length == 0 || token.Length > MaxFilePathLength || token.Contains('\0'))
-                return Fail("invalid_file_path", "File path is not a bounded path.");
-            filePath = token;
-        }
-
-        if (filePath is null)
-            return Fail("missing_file", "Missing required <file> for session import.");
-        if (harness is not null && (harness.Length == 0 || harness.Length > MaxHarnessLength))
-            return Fail("invalid_harness", $"Harness name must be 1..{MaxHarnessLength} characters.");
-        if (sessionId is not null && !SessionIdLooseRegex.IsMatch(sessionId))
-            return Fail("invalid_session_id", "Session id contains invalid characters.");
-
-        return Success(new SessionImportCommand(filePath, harness, sessionId, json));
     }
 
     private static AgentCliParseResult ParseSessionRewind(string[] args, int startIndex)

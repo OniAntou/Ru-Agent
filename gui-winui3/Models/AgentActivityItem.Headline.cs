@@ -85,7 +85,7 @@ public sealed partial class AgentActivityItem
         AgentActivityKind.Explore or AgentActivityKind.Analyze or AgentActivityKind.Edit => FileName
             ?? (Count is { } items && Kind == AgentActivityKind.Explore ? Plural(items, "item") : string.Empty),
         AgentActivityKind.Search => Symbol is { Length: > 0 } symbol ? $"\"{symbol}\"" : string.Empty,
-        AgentActivityKind.Terminal => CommandLine(Detail),
+        AgentActivityKind.Terminal => CommandLine(TerminalInputPreview),
         AgentActivityKind.Web or AgentActivityKind.Mcp or AgentActivityKind.Computer => Detail?.Trim() ?? string.Empty,
         AgentActivityKind.Skill => Detail is { } skill && skill.StartsWith("search: ", StringComparison.Ordinal)
             ? $"\"{skill["search: ".Length..]}\"" : Detail?.Trim() ?? string.Empty,

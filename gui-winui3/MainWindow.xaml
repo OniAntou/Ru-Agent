@@ -211,31 +211,6 @@
                                 <MenuFlyout Opening="OnSessionMenuOpening" Closed="OnSessionMenuClosed">
                                     <MenuFlyoutSubItem Text="Move to" Tag="{x:Bind Id}"/>
                                     <MenuFlyoutSeparator/>
-                                    <MenuFlyoutItem x:Name="ExportClaudeCodeItem"
-                                                    Text="Export as Claude Code"
-                                                    Click="OnExportSessionMenuClick"
-                                                    Tag="{x:Bind Id}">
-                                        <MenuFlyoutItem.Icon>
-                                            <!-- Handing the session to another agent's own directory. -->
-                                            <FontIcon Glyph="&#xE74E;" />
-                                        </MenuFlyoutItem.Icon>
-                                    </MenuFlyoutItem>
-                                    <MenuFlyoutItem x:Name="ExportCodexItem"
-                                                    Text="Export as Codex"
-                                                    Click="OnExportSessionMenuClick"
-                                                    Tag="{x:Bind Id}">
-                                        <MenuFlyoutItem.Icon>
-                                            <FontIcon Glyph="&#xE74E;" />
-                                        </MenuFlyoutItem.Icon>
-                                    </MenuFlyoutItem>
-                                    <MenuFlyoutItem x:Name="ImportSessionItem"
-                                                    Text="Import session from another agent…"
-                                                    Click="OnImportSessionMenuClick">
-                                        <MenuFlyoutItem.Icon>
-                                            <FontIcon Glyph="&#xE8E5;" />
-                                        </MenuFlyoutItem.Icon>
-                                    </MenuFlyoutItem>
-                                    <MenuFlyoutSeparator />
                                     <MenuFlyoutItem x:Name="SessionUsageItem"
                                                     Text="Session usage"
                                                     Click="OnSessionUsageClick"

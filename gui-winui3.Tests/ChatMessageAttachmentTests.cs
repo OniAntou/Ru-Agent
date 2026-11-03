@@ -357,11 +357,12 @@ public sealed class ChatMessageAttachmentTests
     public async Task Send_snapshots_the_session_after_creating_a_session_for_a_fresh_chat()
     {
         var history = new List<string>();
-        var captured = await ChatSubmissionPresenter.CaptureSessionAsync(
+        var captured = await ChatSubmissionPresenter.CaptureRunSubmissionAsync(
+            () => new CreateRunProviderSelection("models.dev:openai", "gpt-test"),
             () => { history.Add("created"); return Task.CompletedTask; },
             () => history[^1]);
 
-        Assert.Equal("created", captured);
+        Assert.Equal("created", captured?.SessionId);
     }
 
     [Theory]

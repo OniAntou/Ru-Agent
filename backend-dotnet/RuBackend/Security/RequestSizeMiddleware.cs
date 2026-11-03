@@ -27,13 +27,6 @@ public sealed class RequestSizeMiddleware
         {
             maxBytes = Math.Max(maxBytes, _options.Value.AgentRunMaxRequestBodyBytes);
         }
-        else if (context.Request.Path.Equals("/sessions/import", StringComparison.OrdinalIgnoreCase))
-        {
-            // Above the endpoint's own bound so an oversized import is answered by the
-            // interchange endpoint as import_too_large instead of as a transport rejection.
-            maxBytes = Math.Max(maxBytes, _options.Value.SessionImportMaxRequestBodyBytes);
-        }
-
         if (maxBytes < 0)
         {
             maxBytes = 0;

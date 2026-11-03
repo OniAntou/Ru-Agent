@@ -1,0 +1,50 @@
+<UserControl
+    x:Class="RuApp.Controls.TerminalActivityCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Background="{StaticResource RuSurfaceBrush}"
+            BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+            CornerRadius="{StaticResource AppCardCornerRadius}"
+            HorizontalAlignment="Stretch" AutomationProperties.Name="Terminal command and output">
+        <Grid RowDefinitions="Auto,Auto,Auto">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" Margin="12,6,8,0">
+                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                         Fill="{x:Bind StateBrush(Item.TerminalHasFailed, Item.State), Mode=OneWay}" />
+                <TextBlock Grid.Column="1" Text="{x:Bind Item.TerminalTitle, Mode=OneWay}"
+                           FontFamily="{StaticResource RuUiFontFamily}" FontSize="11.5"
+                           Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" MaxLines="1" />
+                <TextBlock Grid.Column="2" Text="{x:Bind Item.TerminalStatusText, Mode=OneWay}"
+                           FontFamily="{StaticResource RuMonoFontFamily}" FontSize="11"
+                           Foreground="{x:Bind StateBrush(Item.TerminalHasFailed, Item.State), Mode=OneWay}"
+                           VerticalAlignment="Center" />
+                <Button Grid.Column="3" Content="Copy" Click="OnCopyClick"
+                        Style="{StaticResource RuToolbarButtonStyle}" Padding="8,4"
+                        AutomationProperties.Name="Copy terminal command and output"
+                        ToolTipService.ToolTip="Copy terminal command and output" />
+            </Grid>
+            <ScrollViewer Grid.Row="1" MaxHeight="200" Padding="12,6,12,10"
+                          HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled"
+                          VerticalScrollBarVisibility="Auto" VerticalScrollMode="Enabled">
+                <TextBlock Text="{x:Bind Item.TerminalInputDisplayText, Mode=OneWay}"
+                           FontFamily="{StaticResource RuMonoFontFamily}" FontSize="12" LineHeight="19"
+                           Foreground="{StaticResource RuInkBrush}" TextWrapping="NoWrap"
+                           IsTextSelectionEnabled="True" AutomationProperties.Name="Command preview" />
+            </ScrollViewer>
+            <Border Grid.Row="2" BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,1,0,0" Padding="12,8,12,10">
+                <StackPanel Spacing="6">
+                    <ScrollViewer MaxHeight="220" HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled"
+                                  VerticalScrollBarVisibility="Auto" VerticalScrollMode="Enabled">
+                        <TextBlock Text="{x:Bind Item.TerminalOutputDisplayText, Mode=OneWay}"
+                                   FontFamily="{StaticResource RuMonoFontFamily}" FontSize="12" LineHeight="19"
+                                   Foreground="{StaticResource RuInkBrush}" TextWrapping="NoWrap"
+                                   IsTextSelectionEnabled="True" AutomationProperties.Name="Output" />
+                    </ScrollViewer>
+                    <TextBlock Text="Output truncated · showing the latest text" FontSize="11"
+                               Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap"
+                               Visibility="{x:Bind Item.TerminalOutputTruncated, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>

@@ -241,7 +241,7 @@
                                      PointerExited="OnActivityTogglePointerExited"
                                      GotFocus="OnActivityToggleGotFocus"
                                      LostFocus="OnActivityToggleLostFocus"
-                                     AutomationProperties.Name="Toggle edit preview">
+                                     AutomationProperties.Name="{x:Bind DetailToggleLabel, Mode=OneWay}">
                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                <Grid Width="14" VerticalAlignment="Center">
                                    <FontIcon Glyph="{x:Bind EditPreviewChevronGlyph, Mode=OneWay}"
@@ -303,51 +303,11 @@
                                                     StartLine="{x:Bind LineStart, Mode=OneWay}"
                                                     Margin="0,8,0,2"
                                                    AutomationProperties.Name="File edit preview" />
-                  <!--
-                    A terminal row's detail is what the command printed. Same clothes as the
-                    diff panel (mono, hairline, folded until asked for) because both answer
-                    the same question: what did this row actually do. Same row as the diff
-                    since a row carries one detail or the other, never both.
-                  -->
-                  <Grid Grid.Row="2"
+                  <controls:TerminalActivityCard Grid.Row="2"
+                      Item="{x:Bind}" Margin="0,8,0,2"
                       Visibility="{x:Bind ShowTerminalOutput, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                      Margin="0,8,0,2">
-                      <Border
-                              Background="{StaticResource RuSurfaceBrush}"
-                              BorderBrush="{StaticResource RuLineBrush}"
-                              BorderThickness="1"
-                              CornerRadius="{StaticResource AppCardCornerRadius}"
-                              Padding="0"
-                              HorizontalAlignment="Stretch"
-                              AutomationProperties.Name="Terminal output">
-                          <ScrollViewer MaxHeight="220"
-                                        HorizontalScrollBarVisibility="Auto"
-                                        VerticalScrollBarVisibility="Auto"
-                                        HorizontalScrollMode="Enabled"
-                                        VerticalScrollMode="Enabled"
-                                        Padding="12,8,12,8">
-                              <TextBlock Text="{x:Bind TerminalPanelText, Mode=OneWay}"
-                                         FontFamily="{StaticResource RuMonoFontFamily}"
-                                         FontSize="12"
-                                         Foreground="{StaticResource RuInkBrush}"
-                                         TextWrapping="NoWrap"
-                                         IsTextSelectionEnabled="True" />
-                          </ScrollViewer>
-                      </Border>
-                      <!-- The copy button floats over the panel rather than taking a row
-                            above it: the block keeps the height it had, and the icon only
-                            paints on hover, so output stays readable underneath. -->
-                      <Button HorizontalAlignment="Right"
-                              VerticalAlignment="Top"
-                              Margin="4"
-                              Style="{StaticResource RuToolbarButtonStyle}"
-                              Tag="{x:Bind TerminalPanelText, Mode=OneWay}"
-                              Click="OnCopyTerminalOutputClick"
-                              ToolTipService.ToolTip="Copy terminal output"
-                              AutomationProperties.Name="Copy terminal output">
-                              <FontIcon Glyph="&#xE8C8;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
-                      </Button>
-                  </Grid>
+                      Tag="{x:Bind TerminalPanelText, Mode=OneWay}"
+                      CopyRequested="OnCopyTerminalOutputClick" />
                 <!--
                   State bindings for automation and contract tests. They sit in their own row
                   and take no space. Anything without a Grid.Row lands in row 0 on top of the
@@ -1278,7 +1238,7 @@
                                               VerticalAlignment="Center" />
                                 </StackPanel>
                                 <Button.Flyout>
-                                    <Flyout x:Name="ChatReasoningFlyout" Placement="Top" Opened="OnChatReasoningFlyoutOpened">
+                                    <Flyout x:Name="ChatReasoningFlyout" Placement="Top" Opened="OnChatReasoningFlyoutOpened" Closed="OnChatReasoningFlyoutClosed">
                                         <Flyout.FlyoutPresenterStyle>
                                             <Style TargetType="FlyoutPresenter">
                                                 <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
@@ -1353,7 +1313,7 @@
                                                   VerticalAlignment="Center" />
                                 </Grid>
                                 <Button.Flyout>
-                                    <Flyout x:Name="ContextWindowFlyout" Placement="Top">
+                                    <Flyout x:Name="ContextWindowFlyout" Placement="Top" Opened="OnContextWindowFlyoutOpened" Closed="OnContextWindowFlyoutClosed">
                                         <Flyout.FlyoutPresenterStyle>
                                             <Style TargetType="FlyoutPresenter">
                                                 <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />

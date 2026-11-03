@@ -2,7 +2,7 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-54 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
+52 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
 public owner, and every entry is `aspnet-direct`. The 29 Agent v1 routes under
 `/agent/v1/*` (including the run-independent skills catalog/preferences)
 and the `POST /host/shutdown` route are active alongside the
@@ -11,7 +11,7 @@ run creation, policy/approval/input/trust, cancellation, typed command dispatch,
 replay, and reconciliation; this is not a read-only tracer surface.
 
 `POST /agent/v1/runs/selected` requires a provider/model intent and commits it
-with the root run. The native TUI uses this route so an older Host rejects the
+with the root run. The native TUI and GUI use this route so an older Host rejects the
 request instead of silently ignoring a new field. The legacy create route
 remains available to existing clients.
 
@@ -43,10 +43,8 @@ or alternate host mode. Unknown public paths are never sent to Python.
 
 ## Reserved routes
 
-25 entries intentionally have empty `winui_callers`: the message search route
-`GET /sessions/search` driven by the CLI; the two session
-interchange routes (`GET /sessions/{sessionId}/export` and `POST /sessions/import`),
-which the CLI and session flows drive; the TUI conversation branch route
+23 entries intentionally have empty `winui_callers`: the message search route
+`GET /sessions/search` driven by the CLI; the TUI conversation branch route
 (`POST /sessions/{sessionId}/fork`); 16 additive `/agent/v1/*` routes —
 the 13 run routes (legacy and selected creation, run read, event stream, payload read, approvals,
 inputs, trust, cancel, continue, compact, commands, and reconcile) and the three policy

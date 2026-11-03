@@ -1,10 +1,46 @@
 using RuApp.Services;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuApp.Tests;
 
 public sealed class ChatSubmissionPresenterTests
 {
+    [Fact]
+    public async Task Run_selection_is_captured_before_delayed_session_admission()
+    {
+        var selection = new CreateRunProviderSelection("models.dev:openai", "model-a");
+        var ensureSession = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        string? session = null;
+        var submission = ChatSubmissionPresenter.CaptureRunSubmissionAsync(
+            () => selection,
+            () => ensureSession.Task,
+            () => session!);
+
+        selection = new CreateRunProviderSelection("models.dev:anthropic", "model-b");
+        session = "session-created";
+        ensureSession.SetResult();
+        var captured = await submission;
+
+        Assert.NotNull(captured);
+        Assert.Equal("session-created", captured.SessionId);
+        Assert.Equal(new CreateRunProviderSelection("models.dev:openai", "model-a"), captured.ProviderSelection);
+    }
+
+    [Fact]
+    public async Task Missing_run_selection_does_not_start_session_admission()
+    {
+        bool ensured = false;
+
+        var submission = await ChatSubmissionPresenter.CaptureRunSubmissionAsync(
+            () => null,
+            () => { ensured = true; return Task.CompletedTask; },
+            () => "session");
+
+        Assert.Null(submission);
+        Assert.False(ensured);
+    }
+
     [Fact]
     public async Task Draft_clears_when_the_Host_accepts_the_run_not_when_the_run_ends()
     {
@@ -99,45 +135,51 @@ public sealed class ChatSubmissionPresenterTests
     {
         string session = "before";
 
-        var captured = await ChatSubmissionPresenter.CaptureSessionAsync(
+        var captured = await ChatSubmissionPresenter.CaptureRunSubmissionAsync(
+            () => new CreateRunProviderSelection("models.dev:openai", "gpt-test"),
             () => { session = "created"; return Task.CompletedTask; },
             () => session);
 
-        Assert.Equal("created", captured);
+        Assert.Equal("created", captured?.SessionId);
+        Assert.Equal(new CreateRunProviderSelection("models.dev:openai", "gpt-test"), captured?.ProviderSelection);
     }
 
     [Fact]
-    public async Task Run_submission_snapshot_captures_session_and_generation_after_admission()
-    {
-        string session = "before";
-        long generation = 4;
-        var captured = await ChatSubmissionPresenter.CaptureRunSubmissionAsync(
-            () => { session = "created"; generation = 5; return Task.CompletedTask; },
-            () => session,
-            () => generation,
-            CancellationToken.None);
-
-        Assert.Equal("created", captured.SessionId);
-        Assert.Equal(5, captured.SessionGeneration);
-        Assert.True(ChatSubmissionPresenter.OwnsAdmission(captured, () => session, () => generation));
-        generation++;
-        Assert.False(ChatSubmissionPresenter.OwnsAdmission(captured, () => session, () => generation));
-    }
-
-    [Fact]
-    public async Task Stop_cancellation_after_delayed_session_admission_prevents_a_snapshot()
+    public async Task Stop_cancellation_after_delayed_session_admission_prevents_a_submission_snapshot()
     {
         using var cancellation = new CancellationTokenSource();
         var admission = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var submission = ChatSubmissionPresenter.CaptureRunSubmissionAsync(
+            () => new CreateRunProviderSelection("models.dev:openai", "gpt-test"),
             () => admission.Task,
             () => "created-session",
-            () => 2,
-            cancellation.Token);
+            cancellationToken: cancellation.Token);
 
         cancellation.Cancel();
         admission.SetResult();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => submission);
+    }
+
+    [Fact]
+    public async Task Late_session_creation_cannot_own_a_newer_session_open_generation()
+    {
+        string session = "created-session";
+        long generation = 4;
+        var captured = await ChatSubmissionPresenter.CaptureRunSubmissionAsync(
+            () => new CreateRunProviderSelection("models.dev:openai", "gpt-test"),
+            () => Task.CompletedTask,
+            () => session,
+            () => generation);
+
+        generation++;
+        Assert.False(ChatSubmissionPresenter.OwnsAdmission(captured!, () => session, () => generation));
+
+        generation--;
+        session = "opened-session";
+        generation++;
+
+        Assert.NotNull(captured);
+        Assert.False(ChatSubmissionPresenter.OwnsAdmission(captured, () => session, () => generation));
     }
 }

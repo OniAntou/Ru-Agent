@@ -23,50 +23,40 @@ internal sealed class ChatModelUsage(
         bool hasHeader,
         CancellationToken cancellationToken)
     {
-        usage.ContextLimit = null;
-        usage.InputRate = null;
-        usage.OutputRate = null;
-        if (selection.IsRetainedRun)
+        long? context = selection.IsRetainedRun
+            && selection.Protocol is "openai_responses" or "chat_completions" or "anthropic_messages"
+                ? selection.ContextWindow : null;
+        double? input = null;
+        double? output = null;
+        // Do not publish an empty intermediate window while awaiting catalog metadata.
+        // Sequential/data-only chat never reads numbers it cannot show.
+        if (hasHeader && !string.IsNullOrWhiteSpace(selection.Model)
+            && (!selection.IsRetainedRun || !string.IsNullOrWhiteSpace(selection.Backend)))
         {
-            usage.ContextLimit = selection.Protocol is "openai_responses" or "chat_completions"
-                ? selection.ContextWindow
-                : null;
-        }
-
-        // Sequential/data-only chat never reads a catalog for numbers it cannot show.
-        if (!hasHeader || string.IsNullOrWhiteSpace(selection.Model)
-            || (selection.IsRetainedRun && string.IsNullOrWhiteSpace(selection.Backend)))
-        {
-            return;
-        }
-
-        try
-        {
-            var details = await readModelDetails(
-                selection.Backend is "(provider unknown)" ? null : selection.Backend,
-                selection.Model, cancellationToken).ConfigureAwait(false);
-            if (details is null)
+            try
             {
-                return;
+                var details = await readModelDetails(
+                    selection.Backend is "(provider unknown)" ? null : selection.Backend,
+                    selection.Model, cancellationToken).ConfigureAwait(false);
+                if (details is not null)
+                {
+                    if (!selection.IsRetainedRun) context = details.ContextLength;
+                    if (details.InputCost is { } inputRate && details.OutputCost is { } outputRate)
+                    {
+                        input = inputRate;
+                        output = outputRate;
+                    }
+                }
             }
-
-            if (!selection.IsRetainedRun)
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
             {
-                usage.ContextLimit = details.ContextLength;
-            }
-            if (details.InputCost is { } inputRate && details.OutputCost is { } outputRate)
-            {
-                usage.InputRate = inputRate;
-                usage.OutputRate = outputRate;
+                TuiDebug.Log("usage", $"model details read failed: {ex.GetType().Name}");
             }
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            TuiDebug.Log("usage", $"model details read failed: {CliErrorText.ShortMessage(ex.Message)}");
-        }
+        usage.ContextLimit = context;
+        usage.ProviderProtocol = selection.Protocol;
+        usage.InputRate = input;
+        usage.OutputRate = output;
     }
 }

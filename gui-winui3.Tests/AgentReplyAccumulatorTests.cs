@@ -9,6 +9,29 @@ namespace RuApp.Tests;
 
 public sealed class AgentReplyAccumulatorTests
 {
+    [Fact]
+    public void Adopted_reply_keeps_replayed_prefix_through_live_deltas_and_step_reset()
+    {
+        var reply = new AgentReplyAccumulator();
+        reply.Begin("session", "run", "replayed prefix.\n");
+
+        Assert.Null(reply.TakeSnapshot());
+        Assert.True(reply.TryAppend("run", "step-a", 1, "Partial answer."));
+        Assert.Equal("replayed prefix.\nPartial answer.", reply.TakeSnapshot()!.Text);
+        Assert.False(reply.TryAppend("run", "step-a", 1, "duplicate"));
+        Assert.Null(reply.TakeSnapshot());
+
+        Assert.True(reply.TryReset("run", "step-a", 2));
+        var reset = reply.TakeSnapshot()!;
+        Assert.Equal("replayed prefix.\n", reset.Text);
+        Assert.Equal("replayed prefix.\n".Length, reset.ResetOffset);
+
+        Assert.True(reply.TryAppend("run", "step-a", 3, "Replacement answer."));
+        Assert.Equal("replayed prefix.\nReplacement answer.", reply.TakeSnapshot()!.Text);
+        Assert.False(reply.TryReset("run", "step-a", 2));
+        Assert.Null(reply.TakeSnapshot());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

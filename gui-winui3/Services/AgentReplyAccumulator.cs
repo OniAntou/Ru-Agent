@@ -19,7 +19,7 @@ public sealed class AgentReplyAccumulator
     private int? _pendingResetOffset;
     private bool _hasNewText;
 
-    public void Begin(string sessionId, string runId)
+    public void Begin(string sessionId, string runId, string? initialText = null)
     {
         lock (_gate)
         {
@@ -27,6 +27,7 @@ public sealed class AgentReplyAccumulator
             _runId = runId;
             _generation++;
             _builder.Clear();
+            if (!string.IsNullOrEmpty(initialText)) _builder.Append(initialText);
             _seenKeys.Clear();
             _stepStarts.Clear();
             _pendingResetOffset = null;

@@ -124,8 +124,6 @@ public static class Program
                 SessionSearchCommand ssearch => await commands.SessionSearchAsync(ssearch, cts.Token).ConfigureAwait(false),
                 SessionRewindCommand srewind => await commands.SessionRewindAsync(srewind, cts.Token).ConfigureAwait(false),
                 SessionDeleteCommand sdelete => await commands.SessionDeleteAsync(sdelete, cts.Token).ConfigureAwait(false),
-                SessionExportCommand sexport => await commands.SessionExportAsync(sexport, cts.Token).ConfigureAwait(false),
-                SessionImportCommand simport => await commands.SessionImportAsync(simport, cts.Token).ConfigureAwait(false),
                 _ => 1
             };
         }
@@ -200,8 +198,6 @@ public static class Program
         Console.Error.WriteLine("  agent session search <query> [--limit N] [--json]");
         Console.Error.WriteLine("  agent session rewind <session-id> --index <n> [--json]");
         Console.Error.WriteLine("  agent session delete <session-id> [--yes]");
-        Console.Error.WriteLine("  agent session export <session-id> --harness <claude-code|codex> [--out <dir>] [--json]");
-        Console.Error.WriteLine("  agent session import <file> [--harness <claude-code|codex|antigravity|opencode>] [--session <id>] [--json]");
         Console.Error.WriteLine("  agent attach <run-id> [--json]");
         Console.Error.WriteLine("  agent trust <run-id> --approve|--deny");
         Console.Error.WriteLine("  agent approve <run-id> <approval-id>");

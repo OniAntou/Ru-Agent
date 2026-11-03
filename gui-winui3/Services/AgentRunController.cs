@@ -189,6 +189,7 @@ public sealed partial class AgentRunController : INotifyPropertyChanged, IDispos
     public event EventHandler<AgentToolOutputModel>? ToolOutputReceived;
 
     public event EventHandler<AgentUsageReceivedEventArgs>? UsageReceived;
+    public event EventHandler<AgentModelStepStartedEventArgs>? ContextStepStarted;
     public event EventHandler<AgentContextEstimateEventArgs>? ContextEstimateReceived;
 
     public event EventHandler<AgentRunContextCompactedEventArgs>? ContextCompacted;

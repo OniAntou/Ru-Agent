@@ -15,7 +15,7 @@ and retry, not a failure.
 
 1. Fast compile check first:
    `dotnet build backend-dotnet/RuBackend/RuBackend.csproj -c Debug`
-2. Full .NET matrix when required (13 projects, real loopback processes):
+2. Full .NET matrix when required (12 projects, real loopback processes):
    `.\scripts\test_dotnet.ps1 -Configuration Debug`
    Targeted single project while iterating:
    `.\scripts\test_dotnet.ps1 -Configuration Debug -ProjectFilter "<substring>"`

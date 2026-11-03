@@ -50,6 +50,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);
     private readonly TerminalAdapter _terminal;
+    private readonly AgentCommandEnvironment _commandEnvironment;
     private readonly BackgroundTaskRegistry _backgroundTasks;
     private readonly HelpDocsTool _helpDocs;
     private readonly Func<bool> _pythonAvailable;
@@ -68,7 +69,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         Func<bool>? pythonAvailable = null,
         string? terminalSpoolRoot = null,
         TerminalConcurrencyOptions? terminalConcurrencyOptions = null,
-        Func<string, bool>? skillCapabilityAvailable = null)
+        Func<string, bool>? skillCapabilityAvailable = null,
+        AgentCommandEnvironment? commandEnvironment = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
@@ -88,9 +90,11 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         _spools = new TerminalOutputSpool(terminalSpoolRoot);
         _helpDocs = HelpDocsTool.CreateDefault();
         _approvalTokens = approvalTokens ?? new ApprovalTokenService();
+        _commandEnvironment = commandEnvironment ?? new AgentCommandEnvironment();
         _terminal = new TerminalAdapter(
             _workspace,
             _approvalTokens,
+            _commandEnvironment,
             intentResolver: new CommandIntentResolver(
                 _workspace.Root));
         _defaultTools = new RootToolSet

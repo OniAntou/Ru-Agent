@@ -19,12 +19,14 @@ public static partial class AgentV1Endpoints
     private static async Task<IResult> GetSkillsAsync(HttpContext context, CancellationToken ct)
     {
         var workspace = context.Request.Query["workspace_path"].ToString();
-        if (!TrySkillWorkspace(workspace, out var canonical))
-            return SkillError(400, "invalid_workspace", "An existing absolute workspace path is required.");
+        SkillCatalog catalog;
+        if (!context.Request.Query.ContainsKey("workspace_path")) catalog = SkillCatalog.ForUser();
+        else if (TrySkillWorkspace(workspace, out var canonical)) catalog = new SkillCatalog(canonical);
+        else return SkillError(400, "invalid_workspace", "An existing absolute workspace path is required.");
         var query = context.Request.Query["query"].ToString();
         if (query.Length > 256) return SkillError(400, "invalid_query", "Search is limited to 256 characters.");
         var refresh = bool.TryParse(context.Request.Query["refresh"], out var requested) && requested;
-        return await SkillCatalogResponseAsync(new SkillCatalog(canonical), query, refresh, ct).ConfigureAwait(false);
+        return await SkillCatalogResponseAsync(catalog, query, refresh, ct).ConfigureAwait(false);
     }
 
     private sealed record SkillSettingsRequest(

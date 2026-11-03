@@ -93,22 +93,22 @@ public sealed partial class TgTranscriptWriter
             app.Invoke(() =>
             {
                 transcript.ClearLive();
-                if (hidden is { Length: > 0 }) transcript.AppendCollapsed(native.Text, hidden, native.Style);
+                if (hidden is { Length: > 0 }) transcript.AppendCollapsed(native.Text, hidden, native.Style, native.Spans);
                 else transcript.Append(native.Text, native.Style, native.Spans);
                 _toolRows[activityId] = (transcript.CommittedRowCount - 1, transcript.RetentionVersion);
-                while (_toolRows.Count > 64) _toolRows.Remove(_toolRows.Keys.First());
             });
         }
         catch (NotInitializedException) { }
     }
 
-    public void UpdateActivityPresentation(string activityId, TranscriptLine row)
+    public void UpdateActivityPresentation(string activityId, TranscriptLine row, IReadOnlyList<string>? details = null)
     {
         var native = NativeRow(row);
+        var hidden = details?.Select(TuiText.SanitizeUntrusted).ToArray();
         try { app.Invoke(() =>
         {
             if (_toolRows.TryGetValue(activityId, out var mark) && mark.Version == transcript.RetentionVersion)
-                transcript.ReplaceToolRow(mark.Row, native.Text);
+                transcript.ReplaceToolRow(mark.Row, native, hidden);
         }); }
         catch (NotInitializedException) { }
     }

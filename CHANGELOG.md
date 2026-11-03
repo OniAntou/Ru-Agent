@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Keep provider browsing on the welcome screen by showing the
+  catalog notice in the picker footer instead of adding a transcript row.
+  Apply the same routing to the fallback model picker. Closing a report on the
+  welcome screen also leaves it visible, while an open conversation retains the report.
+
+- **fix(tui)**: Keep welcome animation at the selected FX cadence behind choice
+  pickers, the command palette, documents and other modals. Suppress the raster
+  logo to protect panel text, reuse picker cards on animation redraws and size
+  the document card body to the visible page.
+
+- **feat(tui)**: Add a welcome-only FX button with On / Low (~8 FPS target) /
+  Off modes, accessible by mouse or Tab/Enter. Off freezes the sky and logo
+  without disabling input; unchanged sky frames reuse their raster. Share the
+  choice across session tabs for the current process. Preserve slash completion
+  and avoid root redraws when no slash dropdown needs closing.
+
+- **fix(tui)**: Escape in the model, backend and reasoning pickers closes the menu
+  without dumping its text option panel into chat. Remove the native cancel/reprint
+  flag and distinguish a missing picker from a cancelled one. Honor a wired picker
+  independently of console redirection; keep line-mode listings and explicit choices.
+  Verify Escape restores composer focus and does not save settings across native menus.
+
+- **feat(tui)**: Add Overview / Context / Session usage under `/status`, with direct
+  `/status overview|context|usage` forms. Show latest-request context partitions,
+  pinned window/reserve and a separate draft estimate; show recent-run input/output,
+  cache, peak and provider/model-specific estimated cost with explicit coverage.
+  Avoid double-counting inclusive cache tokens; missing data stays unknown and
+  compacted context is not restored from an older report. Read usage only on demand,
+  with bounded finite replay and cancellation; retain line/JSON overview behavior.
+
+- **feat(tui)**: Manage remembered approvals inside `/preset` → **Remembered rules**
+  or `/preset rules`. View global/current-workspace matchers and remove saved Allow
+  rules with a Keep-default confirmation; Esc cancels. Ask/Deny rules stay read-only,
+  project-scope lookup failures are explicit, and removal never changes the preset
+  or clears other grants. Revalidate before deletion and verify absence afterward;
+  uncertain deletion is not retried. Line/JSON mode lists only. Malformed policy-list
+  envelopes now return `invalid_response` instead of an empty list.
+
 - **fix(review)**: Terminal foreground trả output ngắn tới giao diện ngay khi lệnh
   còn chạy kể cả khi môi trường của Host có biến bí mật: redactor chỉ giữ lại phần
   đuôi có thể là tiền tố của một secret — không giới hạn độ dài, kể cả secret dài

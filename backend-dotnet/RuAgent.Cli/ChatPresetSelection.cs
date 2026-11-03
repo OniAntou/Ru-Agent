@@ -3,7 +3,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli;
 
-internal sealed record ChatPresetSelectionResult(ChatCommand? Command, string? Error = null);
+internal sealed record ChatPresetSelectionResult(ChatCommand? Command, string? Error = null, bool ManageRules = false);
 
 /// <summary>Chooses the next turn's intent; the existing run-start path still owns policy updates.</summary>
 internal static class ChatPresetSelection
@@ -20,12 +20,13 @@ internal static class ChatPresetSelection
         if (string.IsNullOrWhiteSpace(requested))
         {
             if (picker is null)
-                return new(null, "interactive_required: use /preset plan or /preset standard; full_access requires an interactive confirmation.");
+                return new(null, "interactive_required: use /preset plan, /preset standard, or /preset rules; full_access requires an interactive confirmation.");
             var presets = new[]
             {
                 new ChoiceItem("plan", "Read only; no terminal or file changes", "plan"),
                 new ChoiceItem("standard", "Workspace edits and terminal; scoped approvals", "standard"),
                 new ChoiceItem("full_access", "Skip approvals; requires explicit confirmation", "full_access"),
+                new ChoiceItem("Remembered rules", "View and remove saved approvals; keeps current preset", "rules"),
             };
             var selected = Array.FindIndex(presets, item => item.Value == current.Preset);
             requested = await picker(new ChoiceList("permissions", presets, Math.Max(0, selected),
@@ -33,8 +34,14 @@ internal static class ChatPresetSelection
             if (requested is null) return new(null);
         }
 
+        if (string.Equals(requested.Trim(), "rules", StringComparison.OrdinalIgnoreCase))
+        {
+            ct.ThrowIfCancellationRequested();
+            return new(null, ManageRules: true);
+        }
+
         if (!AgentPolicyProfileCatalog.TryNormalizePresetInput(requested, out var preset))
-            return new(null, "invalid_preset: choose plan, standard, or full_access.");
+            return new(null, "invalid_preset: choose plan, standard, full_access, or rules.");
 
         var confirmed = false;
         if (preset == "full_access")

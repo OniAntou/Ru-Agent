@@ -9,6 +9,8 @@ internal static class TgChatLayout
     public static void Apply(TgChatWindow window, int columns, int rows)
     {
         var home = window.Landing.Visible;
+        window.RefreshEffects();
+        window.EffectsButton.Visible = home && columns >= 16 && rows >= 8;
         window.Header.Visible = true;
         window.Header.ShowSessionDetails = !home;
         window.Header.X = 2;

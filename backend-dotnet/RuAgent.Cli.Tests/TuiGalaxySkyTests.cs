@@ -133,7 +133,7 @@ public sealed class TuiGalaxySkyTests
     }
 
     [Fact]
-    public void Welcome_clock_is_throttled_and_stops_when_hidden_or_covered()
+    public void Welcome_clock_is_throttled_and_stops_when_hidden()
     {
         using var view = new TgLandingView { Frame = new Rectangle(0, 0, 80, 24) };
         view.Tick(TimeSpan.Zero);
@@ -146,11 +146,7 @@ public sealed class TuiGalaxySkyTests
         view.Tick(TimeSpan.FromSeconds(5)); Assert.Equal(0.10, view.AnimationTime, 6);
         view.Visible = true;
         view.Tick(TimeSpan.FromSeconds(10)); Assert.Equal(0.10, view.AnimationTime, 6);
-        view.AnimationPaused = true;
-        view.Tick(TimeSpan.FromSeconds(11)); Assert.Equal(0.10, view.AnimationTime, 6);
-        view.AnimationPaused = false;
-        view.Tick(TimeSpan.FromSeconds(12));
-        view.Tick(TimeSpan.FromSeconds(12.05)); Assert.Equal(0.15, view.AnimationTime, 6);
+        view.Tick(TimeSpan.FromSeconds(10.05)); Assert.Equal(0.15, view.AnimationTime, 6);
         view.Tick(TimeSpan.FromSeconds(100)); Assert.Equal(0.25, view.AnimationTime, 6);
     }
 }

@@ -82,10 +82,12 @@ public sealed class TgDocumentPanel : View
 
         var width = Math.Clamp(Viewport.Width, TuiDocumentPanel.MinWidth, TuiCard.MaxWidth);
         EnsureRows(width);
-        _offset = TuiDocumentPanel.ClampOffset(_offset, _rows.Count, PageSize());
+        var pageSize = PageSize();
+        _offset = TuiDocumentPanel.ClampOffset(_offset, _rows.Count, pageSize);
 
-        var body = new List<CardRow>(_rows.Count);
-        for (var i = _offset; i < Math.Min(_rows.Count, _offset + PageSize()); i++)
+        var end = Math.Min(_rows.Count, _offset + pageSize);
+        var body = new List<CardRow>(end - _offset);
+        for (var i = _offset; i < end; i++)
         {
             body.Add(new CardRow(CardRowKind.Item, _rows[i]));
         }

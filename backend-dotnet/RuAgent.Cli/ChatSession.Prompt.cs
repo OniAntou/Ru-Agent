@@ -515,6 +515,14 @@ public sealed partial class AgentCommands
                 return true;
             }
 
+            if (slashCmd == "/status" && arg is not null && !arg.Equals("overview", StringComparison.OrdinalIgnoreCase))
+            {
+                var section = arg.ToLowerInvariant();
+                if (section is "context" or "usage") await ShowUsageReportAsync(section, cancellationToken).ConfigureAwait(false);
+                else await WriteDiagnosticLineAsync(_err, "invalid_status_section: choose overview, context, or usage.").ConfigureAwait(false);
+                return true;
+            }
+
             if (slashCmd == "/subagents")
             {
                 await ShowSubagentsAsync(arg, runSession.ActiveRunId ?? runSession.ParkedRunId ?? runSession.FollowableRunId,
@@ -570,14 +578,23 @@ public sealed partial class AgentCommands
         /// <summary>
         /// Report-only slash commands print into the read-only output window instead of
         /// scrolling straight into the transcript. Both writers the command can reach are
-        /// pointed at a capture buffer for the run, so the window shows exactly what the
-        /// command printed; when it closes the same rows are written to the transcript, so
-        /// the report is still there to scroll back to. Sequential mode keeps printing
+        /// pointed at a capture buffer for the run, so the window shows what the command
+        /// printed. An open conversation also keeps those rows after the panel closes.
+        /// Sequential mode keeps printing
         /// inline: there is no window over a scrolling region to float above.
         /// </summary>
         async Task<bool> HandleSlashLineWithDocumentAsync(string slashLine, CancellationToken cancellationToken)
         {
             var command = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)[0];
+            if (tgMode && !cmd.Json && slashLine.Trim().Equals("/status", StringComparison.OrdinalIgnoreCase))
+            {
+                var section = await ChooseStatusSectionAsync(cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (section is null) return true;
+                if (section is not ("overview" or "context" or "usage"))
+                    throw new InvalidOperationException("Invalid status selection.");
+                slashLine = "/status " + section;
+            }
             if (!tgMode || !Tui.ChatCommandCatalog.IsReportCommand(command))
             {
                 return await HandleSlashLineAsync(slashLine, cancellationToken).ConfigureAwait(false);
@@ -613,8 +630,13 @@ public sealed partial class AgentCommands
                     command.TrimStart('/'),
                     body,
                     cancellationToken).ConfigureAwait(false);
-                await transcript.WriteLineAsync(string.Join('\n', body)).ConfigureAwait(false);
-                await transcript.FlushAsync().ConfigureAwait(false);
+                var report = string.Join('\n', body);
+                RunOnTgUi(() =>
+                {
+                    if (tgWindow!.Landing.Visible || cancellationToken.IsCancellationRequested) return;
+                    transcript.WriteLine(report);
+                    transcript.Flush();
+                });
             }
 
             return handled;

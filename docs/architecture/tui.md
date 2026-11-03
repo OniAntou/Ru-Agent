@@ -290,6 +290,14 @@ on failure/cancellation; pending state owns cleanup after a successful transfer.
 Read-only document panels strip legacy ANSI sequences before wrapping into native
 card rows. Their wrap budget includes the card's item indentation, preventing
 per-row clipping; the original output still reaches the transcript's styled importer.
+Picker capability belongs to the input adapter, rather than `Console.IsInputRedirected`.
+An absent picker enables the line adapter's text listing; a null answer from an
+opened picker is cancellation. Model/backend/reasoning handlers return at that
+boundary without appending a text option panel or saving settings. Esc restores
+composer focus. The native provider and model pickers show catalog availability in
+the footer. A report opened over the welcome screen stays in its document panel.
+An open conversation keeps the report in the transcript after the panel closes.
+
 Panel and picker labels coming from a remote catalog (provider names, model ids) are
 sanitized like transcript text before they are measured or painted.
 
@@ -326,9 +334,63 @@ and rollback at run creation. The command does not mutate a live run or confer t
 authority. Busy/queued transitions and retained runs block changes; pending attachments
 remain with the draft. Noninteractive Full Access selection is refused.
 
+The same picker includes **Remembered rules**, also reachable with `/preset rules`.
+This branch leaves preset intent and Full Access confirmation unchanged. It reads
+global rules and current-workspace project rules through the existing policy API.
+Project identity comes from authenticated, paged session metadata matched against
+the canonical workspace path; no session/run is created for discovery. Reads are
+bounded to ten metadata pages and 1,000 rules. Missing, ambiguous or incomplete
+workspace metadata is an explicit project-scope notice, not an empty-rule claim.
+
+`ChatApprovalRulesWorkflow` owns list/details/removal navigation through the native
+modal request gate. Ask/Deny rules are read-only: deleting those could widen access.
+Removing an Allow rule defaults to Keep, requires explicit confirmation, rechecks
+the workspace identity and exact scoped rule, sends one interactive DELETE, and
+rereads that scope before reporting success. Esc/cancellation never confirms and a
+lost acknowledgement is never retried automatically. Removing a durable rule does
+not clear other grants, change the selected preset or rewrite existing run snapshots.
+Busy/queued/retained-run guards remain in force. Line/JSON adapters list only;
+JSON emits a `remembered_rules` record and keeps diagnostics off stdout. Policy list
+responses without an `items` array fail with `invalid_response` instead of looking empty.
+
 Terminal.Gui status/help reports are emitted without the legacy inner border, using
 the available document label width. Only the native modal supplies a frame; retained
 transcript rows remain unboxed and can reflow without splitting border columns.
+
+### Context and token reports
+
+Native `/status` selects Overview, Context or Session usage; explicit
+`/status overview|context|usage` bypasses the picker. Line/JSON keeps the bare
+overview behavior. Sections remain read-only local commands: no new conversation,
+run, permission update or model request is created. The existing queue/paused
+controls and document modal request gate retain ownership of input and attachments.
+Reports follow the existing queue and take a snapshot at command execution; they
+do not add a parallel control operation or a live-refresh timer.
+
+`ChatTokenUsage` parses optional provider counts and normalizes inclusive cached
+input into disjoint billing buckets. Missing counts/accounting/rates remain unknown,
+including partial pricing; zero requires an explicit measured zero. `ChatUsageReader`
+binds every run and durable event to the selected conversation, de-duplicates payload
+references and verifies event order. Replays use `live=0`; limits are eight recent
+listed runs, 8,192 events, 256 distinct usage reports and 8,388,608 UTF-16 code units of replay/payload text
+per run. The section read has a 20-second deadline; optional price lookup is limited
+to two seconds per run. No history/payload read is triggered by typing or drawing.
+
+Context reads only the latest run's newest usage payload after its last compaction,
+without reading historical billing payloads or prices. System/tools/messages are
+request-size estimates, distinct from provider prompt tokens and cumulative billing.
+A retained run owns its published window/reserve; next-turn catalog selection cannot
+replace them. A compaction with no newer usage keeps the reading unknown. A live
+prepared-request estimate may fill an otherwise unreported matching run; compaction
+and usage frames clear it. The unsent draft estimate uses the GUI's rough 3.5
+characters-per-token ratio plus the Protocol image allowance and is labelled separately.
+
+Session usage sums step billing while peak is the largest individual reported step.
+The display states the recent-run scope, incomplete fields and priced coverage.
+Prices use recorded provider/model identities with current catalog rates, never
+the currently selected next-turn model. JSON sections emit `context` or
+`session_usage` records, with diagnostics on stderr. `ChatUsagePresentation` builds
+plain document rows; the existing modal performs wrapping, scrolling and resize.
 
 Document modal bounds follow the wrapped body height plus card chrome, capped by
 the available window height. The wrap cache is shared by measurement and drawing;
@@ -512,7 +574,7 @@ The raster's frame must fit outside the header, composer and hint; its output is
 capped at 262,144 pixels and invalid cell resolutions are rejected. Unsupported
 terminals, constrained frames and welcome overlays retain the existing glyph
 wordmark with its small lower half-block shadow. Raster placements are removed
-when hidden or paused and restored on welcome resume. The classic header keeps
+when hidden or covered and restored when visible again. The classic header keeps
 its existing palette.
 Ice-white glints in the galaxy are sparse
 instead of covering every ridge. A rounder bulge and a few steady cross-shaped
@@ -558,8 +620,8 @@ cells are collected on the stack and merged with the sky/lower stars before
 painting the wordmark. Input bounds and the entire hint row stay excluded.
 This does not add a screen-sized buffer or inherit the galaxy raster's dimension
 cap. No retained particle objects, background tasks or extra timer are created, and
-the same hidden/overlay pause stops both effects.
-The terminal font owns glyph metrics. The existing wordmark and composer stay above the black sky. No new controls or provider calls are added.
+the same welcome clock controls both effects.
+The terminal font owns glyph metrics. The existing wordmark and composer stay above the black sky. No provider calls are added.
 The line adapter prints its existing plain startup banner.
 
 Slash suggestions align to the full composer width and end directly above its
@@ -575,17 +637,34 @@ preserve the keyboard selection and do not dirty the list. Stable-height updates
 redraw only the list; opening, closing and height changes repaint the parent to
 erase exposed cells. Hiding an already-closed list does not invalidate the page.
 
+The welcome-only top-right FX button cycles On / Low / Off through mouse or
+Tab/Enter. Plain welcome drafts route Tab to that button; leading-slash input
+keeps completion. Activation returns focus to the composer without submitting
+the draft. A weak application-keyed state shares the choice across session pages,
+without persisting settings. A new application starts On. Modal/document/palette
+overlays disable the control; transcript content hides it. The compact one-row
+button suppresses the default shadow during initialization so a shadow margin
+cannot consume its viewport.
+
 The native application caps input/render dispatch at 60 iterations per second.
-The existing UI timer still owns activity/footer updates. The welcome clock
-is independently throttled to 50 ms (at most 20 FPS);
-it stops advancing while the landing is hidden, has no viewport, or a command
-palette, modal or document panel is open. Opening the slash-command dropdown
-keeps the sky, meteors and light sweep running at the same cadence. A raster logo
-is temporarily suppressed only when its bounds intersect that dropdown, because
-raster images render after text. The normal glyph fallback stays behind the menu;
+The existing UI timer still owns activity/footer updates. Only the welcome clock
+is throttled: On uses 50 ms (at most 20 FPS), Low uses 125 ms (at most 8 FPS).
+Actual cadence depends on the shared loop and terminal output. Off preserves the
+current animation time. Resuming resets the clock baseline instead of catching up.
+The clock stops advancing while the landing is hidden, has no viewport, or FX is Off.
+Slash suggestions, the command palette, documents and all modals use the selected
+FX cadence while the landing is visible. A choice picker reuses its composed card
+until its geometry, selection or filter changes. The raster logo is temporarily
+suppressed under those panels or when slash suggestions overlap it, because raster
+images render after text. The glyph fallback stays behind the panel;
 raster rendering resumes when no longer covered. First transcript/live content hides the landing, including replay
 of an existing conversation; an empty transcript restores it. Typing an unsent
-ordinary draft leaves it visible. Resume caps a delayed step to 100 ms.
+ordinary draft leaves it visible. A delayed step is capped at 100 ms in On and
+200 ms in Low, preserving animation speed at the 125 ms Low cadence.
+`TuiGalaxySky` reuses the existing dot/color arrays when geometry and animation
+time match, so static redraws do not repeat particle calculations. An already
+closed slash dropdown no longer invalidates the entire window during typing;
+actual dropdown removal and geometry changes still repaint.
 
 Two byte buffers store masks and foreground ownership per cell; they are reused
 until resize, capped at 240 columns by 100 rows (48,000 payload bytes), with black

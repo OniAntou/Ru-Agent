@@ -127,7 +127,10 @@ internal sealed class TgChatKeyboardBindings
         }
         else if (key == Key.Tab)
         {
-            _completeCommand();
+            if (_window.Landing.Visible && _window.EffectsButton.Visible
+                && !_window.Composer.Input.Text.TrimStart().StartsWith('/'))
+                _window.EffectsButton.SetFocus();
+            else _completeCommand();
             key.Handled = true;
         }
         else if (key == Key.V.WithCtrl || key == Key.V.WithCtrl.WithShift)

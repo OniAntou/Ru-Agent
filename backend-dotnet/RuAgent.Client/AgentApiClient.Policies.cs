@@ -46,14 +46,15 @@ public sealed partial class AgentApiClient
         catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
         using (doc)
         {
-            if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
             {
                 var list = new List<JsonElement>();
                 foreach (var el in items.EnumerateArray()) list.Add(el.Clone());
                 return list;
             }
         }
-        return Array.Empty<JsonElement>();
+        throw new AgentApiException("invalid_response", "Policy list response omitted its items array.");
     }
 
     public async Task<JsonElement> CreatePolicyAsync(object policyBody, bool interactive, CancellationToken ct = default)

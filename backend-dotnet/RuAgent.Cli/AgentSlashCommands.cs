@@ -32,9 +32,8 @@ public sealed partial class AgentSlashCommands
     public bool Json { get; set; }
 
     /// <summary>
-    /// Runs an interactive picker under the composer. Wired by the CLI to the line reader;
-    /// when absent (or not interactive) the handler falls back to a text listing, which is
-    /// also what --json and redirected runs get.
+    /// Runs the native picker. Absence enables text listing; a null answer means
+    /// cancellation and must never fall through to that listing.
     /// </summary>
     public Func<Tui.ChoiceList, CancellationToken, Task<string?>>? Picker { get; set; }
 
@@ -50,14 +49,6 @@ public sealed partial class AgentSlashCommands
     /// CLI falls back to <see cref="SecretPrompt"/>.
     /// </summary>
     public Func<string, CancellationToken, Task<string?>>? SecretPanelPrompt { get; set; }
-
-    /// <summary>
-    /// Set by the Terminal.Gui wiring: the TG transcript has no scrollback behind the
-    /// floating picker, so a cancelled bare form reprints the classic option panel instead
-    /// of leaving the operator with a silent no-op. The classic full-screen and sequential
-    /// paths keep their behaviour (Escape closes the picker and nothing else is printed).
-    /// </summary>
-    public bool ReprintPanelOnPickerCancel { get; set; }
 
     /// <summary>Live run counters for the status card. Wired by the CLI; may be absent in tests.</summary>
     public Func<Tui.TuiStatusSnapshot?>? SnapshotProvider { get; set; }
@@ -259,24 +250,20 @@ public sealed partial class AgentSlashCommands
                 ? await ReadAllKeyStatesAsync(settings.Value, cancellationToken).ConfigureAwait(false)
                 : null;
             var (providers, providerError) = await ReadModelsDevProvidersAsync(cancellationToken).ConfigureAwait(false);
-            await WriteProviderListNoticeAsync(providers, providerError).ConfigureAwait(false);
+            var notice = ProviderListNotice(providers, providerError);
 
             var choices = Tui.TuiSurfaces.BackendChoices(current, keyStates, providers);
-            var list = new Tui.ChoiceList("backend", choices);
-            var picked = Picker is null ? null : await Picker(list, cancellationToken).ConfigureAwait(false);
-            if (picked is null)
+            if (Picker is null)
             {
-                // Cancelled (nothing to add) or not interactive (list the options). The TG
-                // engine also lists them: its picker panel leaves no scrollback to read.
-                if (Picker is null || !IsInteractiveConsole() || ReprintPanelOnPickerCancel)
-                {
-                    WriteBackendPanel(current, keyStates, providers);
-                }
-
+                await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  " + notice)).ConfigureAwait(false);
+                WriteBackendPanel(current, keyStates, providers);
                 await _humanOut.FlushAsync().ConfigureAwait(false);
                 return;
             }
-
+            var list = new Tui.ChoiceList("backend", choices, footer: $"{notice} · ↑↓ select · enter apply");
+            var picked = await Picker(list, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (picked is null) return;
             arg = picked;
         }
 
@@ -288,20 +275,11 @@ public sealed partial class AgentSlashCommands
     /// short catalog from a failed fetch, which is exactly the confusion the WinUI
     /// provider list hit with the same call.
     /// </summary>
-    private async Task WriteProviderListNoticeAsync(
+    private static string ProviderListNotice(
         IReadOnlyList<(string Id, string Name)>? providers,
-        string? error)
-    {
-        if (providers is not null)
-        {
-            await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
-                $"  {providers.Count} providers from models.dev")).ConfigureAwait(false);
-            return;
-        }
-
-        await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
-            $"  models.dev list unavailable ({ChatDisplayText.Sanitize(error, 160)}) - showing the known providers only")).ConfigureAwait(false);
-    }
+        string? error) => providers is not null
+        ? $"{providers.Count} providers from models.dev"
+        : $"models.dev list unavailable ({ChatDisplayText.Sanitize(error, 160)}) - showing the known providers only";
 
     /// <summary>
     /// Shows or sets the active model's reasoning effort. With no argument it offers a
@@ -324,6 +302,7 @@ public sealed partial class AgentSlashCommands
             var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
             snapshot = await _settingsClient.GetReasoningAsync(ReadBackend(settings), cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (AgentApiException ex)
         {
             await _err.WriteLineAsync($"reasoning_unavailable: {CliErrorText.Format(ex)}").ConfigureAwait(false);
@@ -348,23 +327,15 @@ public sealed partial class AgentSlashCommands
                 return;
             }
 
-            if (Picker is null || !IsInteractiveConsole())
+            if (Picker is null)
             {
                 WriteReasoningPanel(snapshot, choices);
                 return;
             }
 
             var picked = await Picker(new Tui.ChoiceList("reasoning", choices), cancellationToken).ConfigureAwait(false);
-            if (picked is null)
-            {
-                if (ReprintPanelOnPickerCancel)
-                {
-                    WriteReasoningPanel(snapshot, choices);
-                }
-
-                return;
-            }
-
+            cancellationToken.ThrowIfCancellationRequested();
+            if (picked is null) return;
             arg = picked;
         }
 
@@ -433,8 +404,6 @@ public sealed partial class AgentSlashCommands
             await _err.FlushAsync().ConfigureAwait(false);
         }
     }
-
-    private static bool IsInteractiveConsole() => !Console.IsInputRedirected && !Console.IsOutputRedirected;
 
     private void WriteBackendPanel(
         string? current,
@@ -541,6 +510,7 @@ public sealed partial class AgentSlashCommands
                         catalogError = "model list empty";
                     }
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     // Live catalog is best-effort; configured models still answer. The
@@ -549,15 +519,11 @@ public sealed partial class AgentSlashCommands
                 }
 
                 candidates ??= Tui.TuiSurfaces.ModelChoices(backend, configured, keyStates);
-                if (catalogError is not null)
-                {
-                    await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
-                        $"  catalog unavailable ({catalogError}) - showing configured models")).ConfigureAwait(false);
-                }
+                var catalogNotice = catalogError is null ? null
+                    : $"catalog unavailable ({catalogError}) - showing configured models";
 
-                // The footer names the backend and the row count on both paths, so the
-                // picker never looks clipped; null backend stays on the default hint.
-                var candidatesFooter = string.IsNullOrWhiteSpace(backend) ? null : backend;
+                // Keep the fallback notice inside the native picker so it does not open the transcript.
+                var candidatesFooter = catalogNotice ?? (string.IsNullOrWhiteSpace(backend) ? null : backend);
 
                 // Fewer than two candidates means there is nothing to choose between: show
                 // the card instead of a one-row picker. The sequential engine has no
@@ -566,13 +532,17 @@ public sealed partial class AgentSlashCommands
                 {
                     var list = new Tui.ChoiceList("model", candidates, footer: candidatesFooter, showRowCount: true);
                     var picked = await Picker(list, cancellationToken).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (!string.IsNullOrWhiteSpace(picked))
                     {
                         await SetModelAsync(root, backend, picked, cancellationToken).ConfigureAwait(false);
                         await _humanOut.FlushAsync().ConfigureAwait(false);
-                        return;
                     }
+                    return;
                 }
+
+                if (catalogNotice is not null)
+                    await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  " + catalogNotice)).ConfigureAwait(false);
 
                 if (candidates.Count > 0)
                 {
@@ -590,6 +560,7 @@ public sealed partial class AgentSlashCommands
             var current = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
             await SetModelAsync(current, ReadBackend(current), arg, cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (AgentApiException ex)
         {
             await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
@@ -618,8 +589,7 @@ public sealed partial class AgentSlashCommands
 
     /// <summary>
     /// The non-picker model surface: the active selection plus the same catalog rows the
-    /// picker would show, so a sequential terminal (or a cancelled TG picker) still names
-    /// every choice instead of only the current model.
+    /// picker would show when no picker is available, or when there is at most one choice.
     /// </summary>
     private void WriteModelPanel(JsonElement settings, string? backend, IReadOnlyList<Tui.ChoiceItem> candidates)
     {

@@ -336,7 +336,7 @@ public sealed partial class AgentCommands
 
                     RecordAssistantStepPayload(frame);
                     await ApplyUsageFrameAsync(runId, frame, frameCt).ConfigureAwait(false);
-                    ApplyUsageEstimate(frame);
+                    ApplyUsageEstimate(frame, runId);
                     await ApplySubagentChangeAsync(frame).ConfigureAwait(false);
                 }
                 await _out.FlushAsync().ConfigureAwait(false);

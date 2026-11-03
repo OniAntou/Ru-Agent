@@ -54,10 +54,12 @@ public sealed partial class TgChatWindow : Window
         Hints = new TgHintsView { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
         Landing = new TgLandingView
         {
-            IsWordmarkOccluded = frame => IsSlashDropdownOpen && _slashDropdown!.Frame.IntersectsWith(frame),
+            IsWordmarkOccluded = frame => HasBlockingOverlay
+                || (IsSlashDropdownOpen && _slashDropdown!.Frame.IntersectsWith(frame)),
         };
 
         Add(Transcript, Landing, Header, HeaderDivider, Composer, Hints);
+        AddEffectsButton();
         CanFocus = true;
 
         // The pre-chat wordmark owns the transcript region only while it is empty; the
@@ -100,7 +102,7 @@ public sealed partial class TgChatWindow : Window
 
     internal void TickWelcome()
     {
-        Landing.AnimationPaused = IsModalPanelOpen || IsDocumentPanelOpen || IsCommandPaletteOpen;
+        RefreshEffects();
         Landing.Tick();
     }
 
@@ -122,6 +124,7 @@ public sealed partial class TgChatWindow : Window
     public bool IsSlashDropdownOpen => _slashDropdown?.SuperView is not null;
     public bool IsCommandPaletteOpen => _commandPaletteView?.SuperView is not null;
     public bool IsModalPanelOpen => _panel?.SuperView is not null || _questionPanel?.SuperView is not null;
+    private bool HasBlockingOverlay => IsModalPanelOpen || IsDocumentPanelOpen || IsCommandPaletteOpen;
     internal SemaphoreSlim ModalRequestGate { get; } = new(1, 1);
     public string CommandPaletteQuery => _commandPalette.Query;
 
@@ -436,15 +439,20 @@ public sealed partial class TgChatWindow : Window
         _choices = list;
         _choicesAllowDelete = allowDelete;
         _secretPanel = false;
-        ShowPanel((width, height) => TuiCard.ComposeListFitting(
-            TuiCard.ComputeWidth(width),
-            height,
-            safeTitle,
-            "esc",
-            CardItems(list),
-            list.Selected,
-            PickerFooter(list),
-            list.Filter.Length == 0 ? SearchHint : $"{SearchHint} {list.Filter}"));
+        (int Width, int Height, int Selected, string Filter) lastLayout = default;
+        IReadOnlyList<CardLine>? lastCard = null;
+        ShowPanel((width, height) =>
+        {
+            var layout = (width, height, list.Selected, list.Filter);
+            // Background frames can repaint the picker without changing its contents.
+            if (lastCard is not null && lastLayout == layout) return lastCard;
+
+            lastLayout = layout;
+            lastCard = TuiCard.ComposeListFitting(TuiCard.ComputeWidth(width), height, safeTitle, "esc",
+                CardItems(list), list.Selected, PickerFooter(list),
+                list.Filter.Length == 0 ? SearchHint : $"{SearchHint} {list.Filter}");
+            return lastCard;
+        });
     }
 
     private const string SearchHint = "Search";

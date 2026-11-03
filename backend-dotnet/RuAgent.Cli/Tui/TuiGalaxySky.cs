@@ -19,6 +19,9 @@ internal sealed class TuiGalaxySky
     private byte[] _colors = [];
     private int _width;
     private int _height;
+    private bool _hasFrame;
+    private double _frameTime;
+    internal long RenderCount { get; private set; }
     internal int Columns { get; private set; }
     internal int Rows { get; private set; }
     internal ReadOnlySpan<byte> Dots => _dots;
@@ -28,6 +31,12 @@ internal sealed class TuiGalaxySky
     {
         columns = Math.Clamp(columns, 0, MaxColumns);
         rows = Math.Clamp(rows, 0, MaxRows);
+        if (!double.IsFinite(time) || time < 0) time = 0;
+        time %= 86400;
+        if (_hasFrame && Columns == columns && Rows == rows && _frameTime == time) return;
+        _hasFrame = true;
+        _frameTime = time;
+        RenderCount++;
         if (columns != Columns || rows != Rows)
         {
             Columns = columns; Rows = rows;
@@ -36,8 +45,6 @@ internal sealed class TuiGalaxySky
         }
         else { Array.Clear(_dots); Array.Clear(_colors); }
         if (columns == 0 || rows == 0) return;
-        if (!double.IsFinite(time) || time < 0) time = 0;
-        time %= 86400;
         _width = columns * 2;
         _height = rows * 4;
         DrawStars(time);

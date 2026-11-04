@@ -27,6 +27,21 @@ public sealed class MarkdownEngineTests
     }
 
     [Fact]
+    public void Heading_link_targets_are_not_content_blocks()
+    {
+        var document = MarkdownEngine.Parse("## One\n\ntext\n\n## Two\n\n[ref]: https://example.com");
+
+        // Each heading files a definition; they must render as nothing, or every
+        // heading adds an empty line under the reply.
+        var group = Assert.Single(document.OfType<LinkReferenceDefinitionGroup>());
+        Assert.True(group.Count >= 3);
+        Assert.True(MarkdownEngine.IsLinkTargetsOnly(group));
+        Assert.All(group, definition => Assert.True(MarkdownEngine.IsLinkTargetsOnly(definition)));
+        Assert.All(document.Where(block => block is not LinkReferenceDefinitionGroup),
+            block => Assert.False(MarkdownEngine.IsLinkTargetsOnly(block)));
+    }
+
+    [Fact]
     public void Single_newlines_stay_in_one_paragraph()
     {
         var document = MarkdownEngine.Parse("first line\nsecond line\n\nnext paragraph");

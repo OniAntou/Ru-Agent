@@ -354,6 +354,7 @@ namespace RuApp.Controls
 
             public List<Paragraph> BuildBlocks(Markdig.Syntax.Block block, int indent)
             {
+                if (MarkdownEngine.IsLinkTargetsOnly(block)) return new List<Paragraph>();
                 return block switch
                 {
                     HeadingBlock heading => new List<Paragraph> { Heading(heading, indent) },

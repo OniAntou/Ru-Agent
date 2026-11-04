@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Câu trả lời có heading không còn để lại khoảng trống lớn ở cuối. Markdig ghi một
+  link definition cho mỗi heading ở cuối tài liệu và GUI vẽ mỗi cái thành một dòng trống, nên
+  câu trả lời 15 heading kéo theo vài trăm pixel trống trước prompt tiếp theo.
+
 - **fix(context)**: Ước lượng token cho auto compact được hiệu chỉnh theo từng provider/model: Host
   nhớ tỉ lệ token thật / `byte/4` (chỉ học từ request ≥ 4.096 token, giới hạn 1,0–2,0, không bao giờ
   làm giảm ước lượng) và dùng nó khi mất neo (run mới, sau compact, có ảnh, để yên quá 30 phút). Trước

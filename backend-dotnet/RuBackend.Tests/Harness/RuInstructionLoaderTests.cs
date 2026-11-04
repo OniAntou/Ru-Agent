@@ -122,6 +122,21 @@ public sealed class RuInstructionLoaderTests
     }
 
     [Fact]
+    public void A_shadowed_duplicate_skill_is_not_reported_to_the_model_as_skipped()
+    {
+        using var fixture = TempRoot.Create();
+        var workspaceSkills = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills")).FullName;
+        var ruSkills = Directory.CreateDirectory(Path.Combine(fixture.Root, ".ru", "skills")).FullName;
+        WriteSkill(workspaceSkills, "zeta", "# Zeta\n\nWinning copy.");
+        WriteSkill(ruSkills, "zeta", "# Zeta\n\nShadowed copy.");
+
+        var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot).Load(fixture.Root);
+
+        Assert.Contains("zeta", Assert.Single(result.Blocks, block => block.SourceId == "skill:catalog").Content, StringComparison.Ordinal);
+        Assert.DoesNotContain(result.Skips, skip => skip.Reason == "duplicate");
+    }
+
+    [Fact]
     public void Appends_markdown_skills_after_fixed_roots_in_precedence_order_and_marks_origins()
     {
         using var fixture = TempRoot.Create();

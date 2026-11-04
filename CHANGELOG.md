@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(skills)**: Skill trùng ID (bản ở root ưu tiên thấp hơn, ví dụ `~/.agents/skills`) không còn
+  bị báo cho model ở mỗi lượt là "instruction chưa được nạp, hãy sửa"; bản ưu tiên cao vẫn được
+  nạp, còn cảnh báo trùng chỉ hiện trong danh sách skill của Customize.
+
 - **fix(tui)**: Mở session đã lưu nay dùng workspace ghi trên session thay vì từ chối
   `session_workspace_mismatch`; session tạo từ Desktop (kể cả workspace tạm của Ru) mở được
   trên CLI, còn thư mục đã mất thì báo `session_workspace_missing`. `Ctrl+O` chỉ còn mở

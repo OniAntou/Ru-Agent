@@ -8,7 +8,7 @@ public readonly record struct AgentToolRuntimeAvailability(
     bool WebFetchEnabled,
     SubagentRole? ChildRole = null,
     bool McpEnabled = false,
-    string ToolProfile = AgentToolProfiles.Minimal,
+    string ToolProfile = AgentToolProfiles.Current,
     bool ComputerUseEnabled = false,
     bool ProviderWebSearch = false);
 

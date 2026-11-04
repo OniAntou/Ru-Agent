@@ -12,7 +12,7 @@ public sealed record AgentRunModelMetadata(
     string ContextWindowSource,
     string ContextWindowVersion,
     int OutputTokenReserve,
-    string ToolProfile = RuAgent.Protocol.AgentToolProfiles.Minimal,
+    string ToolProfile = RuAgent.Protocol.AgentToolProfiles.Current,
     bool ComputerUse = false,
     bool ProviderWebSearch = false,
     bool ImageInputAccepted = false);

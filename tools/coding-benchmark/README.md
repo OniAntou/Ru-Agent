@@ -210,15 +210,15 @@ Cold initialize/run-start RPCs get up to 30 seconds inside the task deadline;
 ordinary RPC calls keep their 10-second bound. Preserve startup failures with no
 model steps as infrastructure evidence rather than model-quality outcomes.
 
-Use `--tool-profile coding_v2|patch_v2|coding_code_v1` to pin a trial's
+Use `--tool-profile coding_v2|coding_v3` to pin a trial's
 new Host process. A requested/actual pin mismatch fails explicitly. For matched
 tool comparisons, run the same task, model, effort, protocol and deadline with
 fresh destinations for each profile; compare externally graded success before
 latency. The trajectory records observed model steps, tool dispatches/receipts,
 approvals and completeness. Nested PTC call counts, malformed-call taxonomy and
 provider-only latency are null when RPC does not expose them; outer dispatches
-cannot be compared as though they were total nested tool usage. A selected PTC
-profile also does not prove that the model used `run_code`.
+cannot be compared as though they were total nested tool usage. `coding_v3`
+advertising `run_code` does not prove that the model used it.
 
 ```powershell
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py run-live --suite terminal --task cs-single-flight-cache --attempts 3 --destination artifacts/ru-cache-live --ru-executable backend-dotnet/RuAgent.Cli/bin/Debug/net10.0-windows/RuAgent.Cli.dll --allow-live --trust-workspace --report artifacts/ru-cache-live/report.json
@@ -243,8 +243,7 @@ a coincidentally correct final workspace.
 
 `trajectory.json` records bounded safe events and run/session IDs. The
 `tool_profile` field records the actual run pin when the Host supplies it; older
-Hosts return null. To compare `coding_v2`, `patch_v2`, and
-`coding_code_v1`, start a dedicated Host with `RU_AGENT_TOOL_PROFILE` set before its
+Hosts return null. To compare `coding_v2` and `coding_v3`, start a dedicated Host with `RU_AGENT_TOOL_PROFILE` set before its
 new runs, use fresh identical fixture copies, and hold the runtime, model,
 effort, task deadlines and toolchains fixed. Do not infer the active profile
 from the bridge's environment when it attached to an already-running Host.

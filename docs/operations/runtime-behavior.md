@@ -170,7 +170,7 @@ messages; clock, mood, and references are not appended as separate system
 messages.
 
 Host capabilities are the runtime projection of the Protocol-owned tool
-definitions selected by the run-pinned `coding_v2`, `patch_v2` or `coding_code_v1`
+definitions selected by the run-pinned `coding_v3` or `coding_v2`
 profile. File tools use explicit identities such as `write_file`/`edit_file`;
 terminal tools are `powershell`, `run_process`, `terminal_read`, `terminal_stop`.
 See the [tool inventory](agent-tools.md#current-capability-matrix).

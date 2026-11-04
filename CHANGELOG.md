@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tools)!**: Một profile mặc định `coding_v3` thay cho ba profile: mọi run mới có cả
+  `write_file`/`edit_file`, `apply_patch` và `run_code` (28 tool). Run đã ghim `coding_v2` vẫn
+  chạy như cũ. **Breaking:** `patch_v2` và `coding_code_v1` bị gỡ; run ghim hai profile này và
+  `RU_AGENT_TOOL_PROFILE=patch_v2|coding_code_v1` báo `tool_profile_invalid` (ADR 0043).
+
 - **fix(skills)**: Skill trùng ID (bản ở root ưu tiên thấp hơn, ví dụ `~/.agents/skills`) không còn
   bị báo cho model ở mỗi lượt là "instruction chưa được nạp, hãy sửa"; bản ưu tiên cao vẫn được
   nạp, còn cảnh báo trùng chỉ hiện trong danh sách skill của Customize.

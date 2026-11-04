@@ -27,7 +27,7 @@ public sealed partial class SubagentGatewayTests
         };
         foreach (var tool in codingTools)
             Assert.Equal(role == SubagentRole.Coding, tools.Contains(tool));
-        Assert.Equal(AgentToolDefinitionCatalog.Get().Where(t => AgentToolProfiles.Includes(AgentToolProfiles.Minimal, t.ToolId)).Select(t => t.ToolId),
+        Assert.Equal(AgentToolDefinitionCatalog.Get().Where(t => AgentToolProfiles.Includes(AgentToolProfiles.Current, t.ToolId)).Select(t => t.ToolId),
             AgentToolRuntimeProjection.Select(new(true, true, McpEnabled: true, ComputerUseEnabled: true)).Select(t => t.ToolId));
         // MCP is advertised only while the user declares a server, and never to a child.
         Assert.DoesNotContain("mcp", AgentToolRuntimeProjection.Select(new(true, true)).Select(t => t.ToolId));

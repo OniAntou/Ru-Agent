@@ -43,13 +43,33 @@ public sealed class CodingToolContractTests
         Assert.True(AgentToolProfiles.Includes(AgentToolProfiles.Minimal, "write_file"));
         Assert.False(AgentToolProfiles.Includes(AgentToolProfiles.Minimal, "bash"));
         Assert.True(AgentToolProfiles.Includes(AgentToolProfiles.Minimal, "powershell"));
-        foreach (var profile in new[] { AgentToolProfiles.Minimal, AgentToolProfiles.Patch })
-        {
+        foreach (var profile in new[] { AgentToolProfiles.Minimal, AgentToolProfiles.Current })
             Assert.False(AgentToolProfiles.Includes(profile, "future_catalog_tool"));
-            Assert.False(AgentToolProfiles.Includes(profile, "run_code"));
-        }
-        Assert.True(AgentToolProfiles.Includes(AgentToolProfiles.Programmatic, "run_code"));
-        Assert.Equal(AgentToolProfiles.Programmatic, AgentToolProfiles.ForNewRun("coding_code_v1"));
+        Assert.False(AgentToolProfiles.Includes(AgentToolProfiles.Minimal, "run_code"));
+        Assert.False(AgentToolProfiles.Includes(AgentToolProfiles.Minimal, "apply_patch"));
+        Assert.Equal(AgentToolProfiles.Minimal, AgentToolProfiles.ForNewRun("coding_v2"));
+    }
+
+    [Fact]
+    public void The_default_profile_carries_every_editing_tool_and_programs()
+    {
+        // ADR 0043: one default inventory instead of opt-in patch/program experiments.
+        Assert.Equal(AgentToolProfiles.Current, AgentToolProfiles.ForNewRun());
+        foreach (var tool in new[] { "write_file", "edit_file", "apply_patch", "run_code", "powershell", "run_process" })
+            Assert.True(AgentToolProfiles.Includes(AgentToolProfiles.Current, tool), tool);
+        var current = AgentToolDefinitionCatalog.Get().Count(tool => AgentToolProfiles.Includes(AgentToolProfiles.Current, tool.ToolId));
+        Assert.Equal(AgentToolDefinitionCatalog.Get().Count, current);
+    }
+
+    [Theory]
+    [InlineData("patch_v2")]
+    [InlineData("coding_code_v1")]
+    public void Retired_experiment_profiles_fail_closed_without_substitution(string retired)
+    {
+        var pin = new JsonObject { [AgentToolProfiles.PinField] = retired };
+        Assert.Equal("tool_profile_invalid", Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ReadPin(pin)).Code);
+        Assert.Null(AgentToolProfiles.ReadSupportedLabel(pin));
+        Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ForNewRun(retired));
     }
 
     [Fact]
@@ -59,7 +79,7 @@ public sealed class CodingToolContractTests
         Assert.Equal("tool_profile_invalid", Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ReadPin(pin)).Message);
         Assert.Null(AgentToolProfiles.ReadSupportedLabel(pin));
         Assert.Throws<AgentProtocolException>(() => AgentToolProfiles.ForNewRun("coding_semantic_v1"));
-        Assert.Equal(AgentToolProfiles.Minimal, AgentToolProfiles.ForNewRun());
+        Assert.Equal(AgentToolProfiles.Current, AgentToolProfiles.ForNewRun());
         Assert.DoesNotContain(AgentToolDefinitionCatalog.Get(), tool => tool.ToolId == "code_intelligence");
     }
 }

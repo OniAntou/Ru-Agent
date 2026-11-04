@@ -17,19 +17,19 @@ declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 
 ## Coding profiles
 
-New runs default to `coding_v2` (26 definitions). `patch_v2` (25) and
-`coding_code_v1` (28) are also supported, and
-must be selected explicitly for a new run; changing the Host setting does not
-alter an existing run. Set
-`RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1` in a dedicated Host
-process to choose the profile for new runs. Persisted provider selections must
+New runs use `coding_v3` (28 definitions): the coding tools plus `apply_patch`
+and `run_code` ([ADR 0043](../adr/0043-single-default-coding-profile.md)). Runs
+already pinned to `coding_v2` (26) keep it; `patch_v2` and `coding_code_v1` are
+retired. Changing the Host setting does not alter an existing run. Set
+`RU_AGENT_TOOL_PROFILE=coding_v2|coding_v3` in a dedicated Host process to choose
+the profile for new runs. Persisted provider selections must
 include a valid profile pin: a missing pin fails as `tool_profile_required`, and
 an explicit retired or unknown profile fails as `tool_profile_invalid`. Run
 status reports the actual `tool_profile`. A profile changes tool presentation,
 never permissions.
 
 Use `write_file` to create, `edit_file` with an `edits` array to modify an existing
-file atomically, or `apply_patch` in the patch profile for unified diffs. Keep
+file atomically, or `apply_patch` for unified diffs across several files. Keep
 replacements exact and disjoint. Patch paths must remain inside the run workspace;
 all targets are checked, and patch approval is one-time. For Windows command text
 use `powershell` with `script`; for literal argv use `run_process`. Read retained
@@ -41,9 +41,9 @@ Prefer `read_file` with 1-based `start_line` and `line_count`; continue at
 images, files above the 4 MiB line snapshot cap, and exceptionally long lines.
 Do not reinterpret line cursors as byte offsets. Both surfaces preserve Unicode.
 
-### Programmatic coding calls (experimental)
+### Programmatic coding calls
 
-`coding_code_v1` adds `run_code` and unified patches to the explicit coding
+`coding_v3` adds `run_code` and unified patches to the explicit coding
 surface. Supply a synchronous JavaScript function body in `code`, for example:
 
 ```javascript
@@ -124,12 +124,12 @@ Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`,
 
 The Protocol catalog contains 28 definitions; the Broker has 27 executable
 bindings because `ask_user` is intercepted by the Host. Run-pinned inventories
-contain 26 definitions in `coding_v2`, 25 in `patch_v2`, and 28 in `coding_code_v1`,
+contain 28 definitions in `coding_v3` and 26 in `coding_v2`,
 before availability/role filtering. There is no selectable
 legacy profile. The model-facing file mutation and terminal tools are
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `powershell`,
-`run_process`, `terminal_read` and `terminal_stop`; `apply_patch` is available
-in `patch_v2` and `coding_code_v1`. Internal adapter reuse does not expose a
+`run_process`, `terminal_read` and `terminal_stop`; `apply_patch` and `run_code`
+are available in `coding_v3`. Internal adapter reuse does not expose a
 retired tool identity. Persisted deny/ask matchers for old tool families remain
 effective for policy preservation, but do not restore those tools as callable
 identities. Profiles do not widen authority. `read` takes `path` with
@@ -268,7 +268,7 @@ they do not make a retired public identity executable.
 | `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external ask; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, protected paths allowed |
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator. An image read also needs the run's pinned model to accept image input, otherwise `image_unsupported_by_model` |
 | `write_file`, `edit_file`, `file_delete`, `file_restore` | present in supported coding profiles | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, protected paths allowed; preimage mismatch returns `workspace_changed` |
-| `apply_patch` | `patch_v2`, `coding_code_v1` | workspace-scoped unified patches; all targets are checked under the same policy, approval is one-time, and patch rollback preserves intervening edits |
+| `apply_patch` | `coding_v3` | workspace-scoped unified patches; all targets are checked under the same policy, approval is one-time, and patch rollback preserves intervening edits |
 | `powershell`, `run_process` | present in supported coding profiles | `plan`: deny; `standard`: workspace cwd executable/shell auto, external cwd asks; explicit ask/deny and long foreground rules apply; `full_access`: arbitrary current-Windows-user terminal auto. Children run as the current user without an OS filesystem/network sandbox. Obsolete sandbox arguments are rejected. Output, timeout, cancellation and process-tree bounds apply. |
 | `terminal_read`, `terminal_stop` | present in supported coding profiles | read retained terminal output or stop a running task by its opaque execution ID; session ownership and existing approval rules apply |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
@@ -442,7 +442,7 @@ plus user-added `RU_PROTECTED_PATHS` entries) are denied in `plan` and
 hard-link checks stay active. An ambiguous
 mutation pauses for inspection until explicit Continue.
 
-`apply_patch` is advertised only by `patch_v2` and `coding_code_v1`. Internal
+`apply_patch` is advertised only by `coding_v3`. Internal
 adapter names do not create additional public model capabilities.
 
 ## Model-first selection and native batches

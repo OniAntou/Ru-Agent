@@ -369,7 +369,7 @@ inspection and branch creation block overlapping sends before attachment admissi
 ## Current model tool surface
 
 The Agent model-step advertisement selects Protocol definitions from its pinned
-`coding_v2`, `patch_v2` or `coding_code_v1` profile. See the
+`coding_v3` (default) or `coding_v2` profile. See the
 [current tool inventory](../../docs/operations/agent-tools.md#current-capability-matrix)
 for explicit file, Windows terminal, Web, question and orchestration tools.
 A provider-native model step may return

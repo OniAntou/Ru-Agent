@@ -25,9 +25,9 @@ public sealed class SubagentChatFollowTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Reopened_session_can_follow_a_parent_waiting_for_children_from_its_cursor(bool explicitRun)
+    [InlineData("Continue")]
+    [InlineData("cOnTiNuE")]
+    public async Task Reopened_session_can_follow_a_parent_waiting_for_children_from_its_cursor(string continuation)
     {
         var followed = false;
         var mutation = false;
@@ -53,13 +53,13 @@ public sealed class SubagentChatFollowTests
         }));
         var output = new StringWriter(); var errors = new StringWriter();
         using var commands = new AgentCommands(new(new Uri("http://127.0.0.1:1/"), "synthetic-token", null!), http, output, errors,
-            new StringReader((explicitRun ? $"/follow {RunId}" : "/follow") + "\n/exit\n"));
+            new StringReader(continuation + "\n/exit\n"));
         var exit = await commands.ChatAsync(new ChatCommand(@"C:\workspace", SessionId, "standard", false), default).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(0, exit);
         Assert.True(followed, "TUI must follow the existing parent while it waits for subagents.");
         Assert.Equal(5, cursor);
         Assert.Contains("subagent result integrated", output.ToString());
-        Assert.Contains($"/follow {RunId}", output.ToString());
+        Assert.Contains("type Continue", output.ToString());
         Assert.False(mutation, "Following children must not create, continue or cancel a run.");
         Assert.DoesNotContain("run_not_followable", errors.ToString());
     }

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(tui)**: Bỏ `/follow` khỏi menu, help và xử lý lệnh. Dùng `Continue`
+  cho run đang dở đã được session ghi nhận; giữ khôi phục câu hỏi/quyền đang chờ,
+  model đã ghim và attachment còn trong ô nhập. Không có run đang dở thì
+  `Continue` vẫn là prompt bình thường.
+
 - **refactor(tui)**: Mỗi cửa sổ chỉ giữ một session hoạt động. Gỡ tab, worker session
   chạy song song, F6/Alt+N và nút FX On/Low/Off; giữ thiên hà, sao băng và mở lịch sử
   bằng `/sessions`. `/new` thay session khi rảnh; mở lại lịch sử giữ workspace và

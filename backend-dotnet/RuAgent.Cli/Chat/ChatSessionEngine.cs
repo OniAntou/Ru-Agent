@@ -38,6 +38,7 @@ public partial class ChatSessionEngine
     private Func<string, ChatSubmissionSnapshot?>? _snapshotFactory;
     private Func<string, bool>? _stateChangingCommandClassifier;
     private Func<string, bool>? _localCommandClassifier;
+    private Func<string, bool>? _retainedContinuationClassifier;
     private Action<ChatSubmissionSnapshot>? _submissionAccepted;
     private Action<ChatSubmissionSnapshot>? _submissionDiscarded;
     private Func<Task>? _shutdownSettlement;
@@ -143,6 +144,8 @@ public partial class ChatSessionEngine
         _stateChangingCommandClassifier = classifier;
 
     internal void SetLocalCommandClassifier(Func<string, bool> classifier) => _localCommandClassifier = classifier;
+
+    internal void SetRetainedContinuationClassifier(Func<string, bool> classifier) => _retainedContinuationClassifier = classifier;
 
     internal void PauseQueuedSubmissions()
     {
@@ -267,16 +270,22 @@ public partial class ChatSessionEngine
             return;
         }
 
+        var retainedContinuation = _retainedContinuationClassifier?.Invoke(line) is true;
         var isRepairCommandWhilePaused = false;
         lock (_queueGate)
         {
+            if (retainedContinuation && _busy)
+            {
+                _view.ShowFeedback("run recovery is already active · wait or cancel it", true);
+                return;
+            }
             var historyRecovery = _historyRecoveryCommand?.Invoke(line) is true;
             if (historyRecovery && _queued.Count > 0)
             {
                 _view.ShowFeedback("queued drafts are held · use /exit and reopen the session", true);
                 return;
             }
-            isRepairCommandWhilePaused = _queuePaused && !_busy && (ChatSubmissionSnapshot.IsPausedControlCommand(line) || historyRecovery);
+            isRepairCommandWhilePaused = _queuePaused && !_busy && (ChatSubmissionSnapshot.IsPausedControlCommand(line) || retainedContinuation || historyRecovery);
             if ((_busy || _queued.Count > 0 || _queuePaused)
                 && !isRepairCommandWhilePaused
                 && _stateChangingCommandClassifier?.Invoke(line) is true)
@@ -484,7 +493,7 @@ public partial class ChatSessionEngine
                 _busy = true;
                 var command = submission.Prompt.TrimStart().Split(' ', 2)[0];
                 _localCommandActive = localCommand ?? (command.Equals("/backend", StringComparison.OrdinalIgnoreCase) || command.Equals("/key", StringComparison.OrdinalIgnoreCase)
-                    || !command.Equals("/follow", StringComparison.OrdinalIgnoreCase) && ChatCommandCatalog.KnownCommands.Any(item => item.Command.Equals(command, StringComparison.OrdinalIgnoreCase)));
+                    || ChatCommandCatalog.KnownCommands.Any(item => item.Command.Equals(command, StringComparison.OrdinalIgnoreCase)));
                 // Link the session's token: a shutdown outside the input adapter
                 // must stop the in-flight turn too, not only the local Escape path.
                 _turn = CancellationTokenSource.CreateLinkedTokenSource(_outerToken);

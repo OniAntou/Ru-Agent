@@ -68,6 +68,20 @@ public sealed class TuiSingleSessionTests
         Assert.Equal(5, stage); Assert.Single(host.Cancels); Assert.True(host.Cancels.ContainsKey("session_2"));
     }
 
+    [Fact]
+    public async Task Continue_without_a_retained_run_is_an_ordinary_model_prompt()
+    {
+        using var host = new SingleHost(); var stage = 0;
+        await Run(host, (app, page) =>
+        {
+            if (stage == 0) { Send(app, page, "Continue"); stage++; return true; }
+            if (!host.Streams.ContainsKey("session_1")) return true;
+            Assert.Equal("Continue", host.Prompts["session_1"]); Assert.Equal(1, host.CreatedSessions);
+            Send(app, page, "/exit"); stage++; return false;
+        });
+        Assert.Equal(2, stage);
+    }
+
     [Theory]
     [InlineData(false)] [InlineData(true)]
     public async Task Exit_cancels_owned_work_and_detaches_adopted_work(bool adopted)

@@ -26,7 +26,7 @@ public sealed partial class AgentCommands
                     (question, token) => TgPanelRequests.RequestQuestionAsync(tgWindow!, question, token), ct).ConfigureAwait(false);
                 if (outcome == ChatInputOutcome.Deferred)
                 {
-                    sessionRenderer.Note($"question left pending · use /follow {expectedRunId} to answer", Tui.TuiToken.Warn);
+                    sessionRenderer.Note($"question left pending · type Continue to answer", Tui.TuiToken.Warn);
                     chatEngine?.PauseQueuedSubmissions();
                     throw new RunWaitingInputException(expectedRunId, request.InputId);
                 }
@@ -38,7 +38,7 @@ public sealed partial class AgentCommands
             catch (RunParkedException) { throw; }
             catch (Exception ex)
             {
-                await WriteDiagnosticLineAsync(_err, $"input_answer_error: {CliErrorText.ShortMessage(ex.Message)} · use /follow {expectedRunId} to check the run").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, $"input_answer_error: {CliErrorText.ShortMessage(ex.Message)} · type Continue to check the run").ConfigureAwait(false);
                 chatEngine?.PauseQueuedSubmissions();
                 throw new RunWaitingInputException(expectedRunId, inputId ?? "unavailable");
             }

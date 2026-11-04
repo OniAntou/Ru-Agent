@@ -21,11 +21,11 @@ public sealed class RemovedTuiCommandsTests
         if (paused) loop.PauseQueuedSubmissions();
         app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
         {
-            foreach (var command in new[] { "/delete", "/resume", "/retry", "/release", "/clear" })
+            foreach (var command in new[] { "/delete", "/resume", "/retry", "/release", "/clear", "/follow", "/FOLLOW", "/follow run_example" })
             {
                 window.Composer.Input.Text = command; loop.Submit();
                 Assert.Equal(command, window.Composer.Input.Text); Assert.True(window.Hints.FeedbackIsError);
-                Assert.Empty(ChatCommandCatalog.FindMatches(command));
+                Assert.Empty(ChatCommandCatalog.FindMatches(command.Split(' ', 2)[0]));
                 Assert.DoesNotContain(command, string.Join('\n', TuiSurfaces.Help(120)));
             }
             Assert.Equal(0, snapshots); Assert.Equal(0, dispatches); Assert.Equal(0, window.Hints.QueuedCount);

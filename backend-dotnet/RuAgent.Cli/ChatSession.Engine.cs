@@ -14,6 +14,7 @@ public sealed partial class AgentCommands
             loop.SetChangesCommandHandler((argument, token) => RunCommandControlAsync("changes", () => ShowChangesAsync(argument, token), token));
             loop.SetRewindCommandHandler((argument, token) => RunCommandControlAsync("history", () => RewindHistoryAsync(argument, token), token));
             loop.SetSubmissionGuard(RewindSubmissionGuard);
+            loop.SetRetainedContinuationClassifier(IsRetainedContinuation);
             loop.SetHistoryStateProviders(() => pendingHistoryBranch is not null,
                 line => historyReloadRequired && line.Trim().Equals("/sessions id:" + sessionId, StringComparison.OrdinalIgnoreCase));
             loop.SetShutdownSettlement(() => Task.WhenAll(
@@ -22,7 +23,7 @@ public sealed partial class AgentCommands
                 ? ChatSubmissionSnapshot.Create(line, sessionId, canonicalWorkspace, cmd.Preset, backendName ?? string.Empty, activeModel, [], [])
                 : submissions.CreateSnapshot(
                 line, sessionId, canonicalWorkspace, cmd.Preset,
-                backendName ?? string.Empty, activeModel, runSession.ParkedRunId is not null));
+                backendName ?? string.Empty, activeModel, runSession.ParkedRunId is not null || runSession.FollowableRunId is not null));
             loop.SetSubmissionOwnershipHandlers(
                 snapshot =>
                 {

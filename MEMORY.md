@@ -1,5 +1,13 @@
 # MEMORY — Ru-Agent (máy của anh steal)
 
+## 2026-11-05 — Gỡ lệnh /follow
+
+- Anh yêu cầu xóa mục `/follow`. Gỡ catalog/help/dispatch và đưa vào danh sách lệnh đã bỏ để chặn cả kiểu viết hoa hoặc kèm run-id trước khi lấy snapshot/attachment. Bỏ mục run rỗng trong help; sửa mô tả `/sessions` còn sót `close` sau lần gỡ tab.
+- Giữ cơ chế khôi phục qua chữ `Continue` chỉ khi session đã ghi nhận parked/followable run; không chọn một run-id tùy ý hoặc tự khám phá run khác. Startup native dùng Continue cho run đã nhận. Không có run được ghi nhận thì Continue là prompt thường. Giữ pin provider/model, kiểm tra session và snapshot trước quyết định quyền/answer.
+- Classifier riêng cho phép Continue khôi phục khi queue bị giữ, không lấy ảnh/file của draft và chặn gửi lặp trong lúc recovery đang chạy. Khôi phục trước khi xét history branch để không tạo nhánh/gửi draft ngoài ý muốn. Khôi phục thành công giải phóng queue đã giữ. Cập nhật chỉ dẫn cũ từ /follow sang Continue; CLI headless attach/continue/answer giữ nguyên.
+- Thêm test cho lệnh bị bỏ ở native/line, known/unknown Continue trong queue, chống gửi lặp, prompt Continue thông thường và luồng native mở câu hỏi → Esc → Continue → mở lại cùng câu hỏi mà không POST run/answer/cancel hay lấy attachment draft. Chuyển test recovery child-run/approval/input sang Continue, giữ guard cursor/foreign state/approval cũ.
+- Test lượt đầu bị lỗi compile ở API QueuedCount không public trong fixture mới; đã sửa assertion dựa trên dispatch và snapshot. Nhóm recovery sau đó 101 pass/2 fail do fixture tính cả POST activate là run mutation và fixture approval chưa khai báo run trong session list; đã sửa đúng envelope/ngữ cảnh mới. Nhóm xác nhận lại 22 pass. Full CLI Release qua đủ 2.242 test trong 5m12s (`scripts/test_dotnet.ps1 -Configuration Release -ProjectFilter RuAgent.Cli.Tests`, log `work/tui-navigation/remove-follow-full-cli.log`); 7 test tài liệu pass. Không còn lỗi `git diff --check`. Chưa chạy lại matrix 12 project vì phạm vi chỉ CLI; bản cài Ru chưa cập nhật. Anh đã yêu cầu commit phần gỡ /follow trên branch `casluminous/tui-multi-session` ở lượt tiếp theo.
+
 ## 2026-11-05 — Commit phần đơn giản hóa TUI
 
 - Anh yêu cầu commit lên branch hiện tại `casluminous/tui-multi-session`. Remote cùng tên đã bị xóa; lần push bàn giao dùng lại tên branch này, không force-push.

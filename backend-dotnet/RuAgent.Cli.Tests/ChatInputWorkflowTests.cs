@@ -183,7 +183,7 @@ public sealed class ChatInputWorkflowTests
             return Task.FromResult(Json("{}", HttpStatusCode.NotFound));
         }));
         var output = new StringWriter(); var errors = new StringWriter();
-        using var commands = new AgentCommands(Session, http, output, errors, new StringReader("/follow\n/exit\n"));
+        using var commands = new AgentCommands(Session, http, output, errors, new StringReader("Continue\n/exit\n"));
         Assert.Equal(0, await commands.ChatAsync(new ChatCommand(@"C:\workspace", SessionId, "standard", false), default).WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.True(replayed);
         Assert.Contains("waiting for an answer", output.ToString());

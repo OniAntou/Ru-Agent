@@ -152,6 +152,7 @@ public sealed class TgRunLoopTests
         var pendingAttachments = new List<string>();
         var observed = new List<string>();
         loop.SetAttachmentCountProvider(() => pendingAttachments.Count);
+        loop.SetRetainedContinuationClassifier(line => line == "Continue");
         loop.SetSubmissionSnapshotFactory(line => ChatSubmissionSnapshot.Create(
             line,
             "sess_current",
@@ -213,6 +214,7 @@ public sealed class TgRunLoopTests
         var seen = new List<string>();
         var pendingAttachments = new List<RuAgent.Cli.Attachments.CliTextAttachment>();
         loop.SetAttachmentCountProvider(() => pendingAttachments.Count);
+        loop.SetRetainedContinuationClassifier(line => line == "Continue");
         loop.SetSubmissionSnapshotFactory(line => ChatSubmissionSnapshot.Create(
             line,
             "sess_current",
@@ -221,7 +223,7 @@ public sealed class TgRunLoopTests
             "backend",
             "model",
             [],
-            ChatSubmissionSnapshot.IsPausedControlCommand(line)
+            (ChatSubmissionSnapshot.IsPausedControlCommand(line) || line == "Continue")
                 ? Array.Empty<RuAgent.Cli.Attachments.CliTextAttachment>()
                 : pendingAttachments.ToArray()));
         loop.SetSubmissionOwnershipHandlers(
@@ -245,7 +247,7 @@ public sealed class TgRunLoopTests
             {
                 loop.PauseQueuedSubmissions();
             }
-            else if (submission.Prompt == "/follow")
+            else if (submission.Prompt == "Continue")
             {
                 loop.ResumeQueuedSubmissions();
             }
@@ -277,19 +279,19 @@ public sealed class TgRunLoopTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(800), () =>
         {
-            window.Composer.Input.Text = "/follow";
+            window.Composer.Input.Text = "Continue";
             loop.Submit();
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(1000), () =>
         {
-            window.Composer.Input.Text = "/follow";
+            window.Composer.Input.Text = "Continue";
             loop.Submit();
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(1300), () =>
         {
-            Assert.Equal(["active", "message-1", "/model", "/follow", "message-2", "/follow"], seen);
+            Assert.Equal(["active", "message-1", "/model", "Continue", "message-2", "Continue"], seen);
             Assert.Single(pendingAttachments);
             app.RequestStop();
             return false;

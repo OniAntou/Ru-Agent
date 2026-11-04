@@ -432,6 +432,11 @@ public sealed partial class AgentCommands
             }
         }
 
+        /// <summary>Claims Continue only for a run tracked by this session.</summary>
+        private bool IsRetainedContinuation(string line) =>
+            (runSession.ParkedRunId is not null || runSession.FollowableRunId is not null)
+            && line.Equals("Continue", StringComparison.OrdinalIgnoreCase);
+
         /// <summary>
         /// Resumes a parked run the way the GUI's typed Continue does: read the parked
         /// run's durable cursor, post the continue, then follow the run from that cursor
@@ -548,7 +553,7 @@ public sealed partial class AgentCommands
             await _out.FlushAsync().ConfigureAwait(false);
         }
 
-        async Task FollowRetainedRunAsync(string? runIdArg, CancellationToken cancellationToken)
+        async Task FollowRetainedRunAsync(CancellationToken cancellationToken)
         {
             if (runSession.IsTurnActive)
             {
@@ -557,13 +562,7 @@ public sealed partial class AgentCommands
             }
 
             using var retainedSettlement = runSession.RetainRunSettlement();
-            var targetRunId = string.IsNullOrWhiteSpace(runIdArg)
-                ? runSession.FollowableRunId ?? runSession.ActiveRunId
-                : runIdArg.Trim();
-            if (string.IsNullOrWhiteSpace(targetRunId))
-            {
-                targetRunId = await FindNewestFollowableRunAsync(cancellationToken).ConfigureAwait(false);
-            }
+            var targetRunId = runSession.FollowableRunId ?? runSession.ActiveRunId;
 
             if (string.IsNullOrWhiteSpace(targetRunId))
             {
@@ -626,7 +625,7 @@ public sealed partial class AgentCommands
                 var refreshed = await _agentClient.GetRunAsync(targetRunId, cancellationToken).ConfigureAwait(false);
                 if (!ChatRunWorkflow.SameSnapshot(run, refreshed))
                 {
-                    await WriteDiagnosticLineAsync(_err, "input_stale: run changed during question recovery · use /follow again").ConfigureAwait(false);
+                    await WriteDiagnosticLineAsync(_err, "input_stale: run changed during question recovery · type Continue again").ConfigureAwait(false);
                     return;
                 }
                 pendingInput = recovery.Pending;
@@ -644,7 +643,7 @@ public sealed partial class AgentCommands
                 if (!ChatRunWorkflow.SameSnapshot(run, refreshed)
                     || !string.Equals(refreshed.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase))
                 {
-                    await WriteDiagnosticLineAsync(_err, $"run_changed: run {targetRunId} changed during approval recovery; use /follow again").ConfigureAwait(false);
+                    await WriteDiagnosticLineAsync(_err, $"run_changed: run {targetRunId} changed during approval recovery; type Continue again").ConfigureAwait(false);
                     return;
                 }
 
@@ -681,7 +680,7 @@ public sealed partial class AgentCommands
                     if (!ChatRunWorkflow.SameSnapshot(run, latest)
                         || !string.Equals(latest.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase))
                     {
-                        sessionRenderer.Note($"run_changed: approval for {targetRunId} is no longer current · follow again", Tui.TuiToken.Warn);
+                        sessionRenderer.Note($"run_changed: approval for {targetRunId} is no longer current · type Continue again", Tui.TuiToken.Warn);
                         await FinishTurnAsync().ConfigureAwait(false);
                         return;
                     }
@@ -704,6 +703,7 @@ public sealed partial class AgentCommands
                 await FollowRunAsync(targetRunId, run.LastSequence, runSession.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
                 runSession.ForgetCompletedRun();
+                chatEngine?.ResumeQueuedSubmissions();
             }
             catch (RunParkedException)
             {
@@ -721,21 +721,5 @@ public sealed partial class AgentCommands
             }
         }
 
-        async Task<string?> FindNewestFollowableRunAsync(CancellationToken cancellationToken)
-        {
-            try
-            {
-                return await ChatRunWorkflow.FindNewestFollowableRunIdAsync(
-                    _agentClient,
-                    sessionId,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                await WriteDiagnosticLineAsync(_err, $"follow_discovery_failed: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
-            }
-
-            return null;
-        }
     }
 }

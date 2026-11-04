@@ -21,8 +21,7 @@ internal sealed record ChatSubmissionSnapshot(
     public static bool IsPausedControlCommand(string line)
     {
         var command = line.TrimStart().Split(' ', 2)[0];
-        return command.Equals("/follow", StringComparison.OrdinalIgnoreCase)
-            || command.Equals("/backend", StringComparison.OrdinalIgnoreCase)
+        return command.Equals("/backend", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/provider", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/model", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/key", StringComparison.OrdinalIgnoreCase)

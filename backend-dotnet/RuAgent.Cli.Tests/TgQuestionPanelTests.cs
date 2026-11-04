@@ -93,10 +93,10 @@ public sealed class TgQuestionPanelTests
     }
 
     [Fact]
-    public void Paused_question_can_be_reopened_with_follow_without_attaching_the_draft()
+    public void Removed_follow_is_not_a_paused_queue_repair_command()
     {
-        Assert.True(ChatSubmissionSnapshot.IsPausedControlCommand("/follow"));
-        Assert.True(ChatSubmissionSnapshot.IsPausedControlCommand("/follow run_example"));
+        Assert.False(ChatSubmissionSnapshot.IsPausedControlCommand("/follow"));
+        Assert.False(ChatSubmissionSnapshot.IsPausedControlCommand("/follow run_example"));
         Assert.False(ChatSubmissionSnapshot.IsPausedControlCommand("new model prompt"));
     }
 

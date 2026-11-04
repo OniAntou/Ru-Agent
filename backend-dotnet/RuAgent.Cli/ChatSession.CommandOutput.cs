@@ -17,7 +17,6 @@ public sealed partial class AgentCommands
         {
             var command = line.TrimStart().Split(' ', 2)[0].ToLowerInvariant();
             if (!command.StartsWith('/')) return false;
-            if (command.Equals("/follow", StringComparison.OrdinalIgnoreCase) && sessionId.Length > 0) return false;
             if (ChatCommandCatalog.KnownCommands.Any(item => item.Command.Equals(command, StringComparison.OrdinalIgnoreCase))) return true;
             return CustomPromptCommands.Find(command, canonicalWorkspace,
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) is null;

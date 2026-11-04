@@ -31,12 +31,12 @@ internal sealed class ChatInputWorkflow(AgentApiClient client)
         var after = await client.GetRunAsync(question.RunId, cancellationToken).ConfigureAwait(false);
         ValidateRun(after, question);
         if (!ChatRunWorkflow.SameSnapshot(before, after))
-            throw new AgentApiException("input_stale", "The run changed while the question was open. Use /follow to refresh it.");
+            throw new AgentApiException("input_stale", "The run changed while the question was open. Type Continue to refresh it.");
         var result = await client.AnswerAsync(question.RunId, question.InputId, answer, cancellationToken).ConfigureAwait(false);
         if (result.ValueKind != JsonValueKind.Object
             || !result.TryGetProperty("input_id", out var id) || id.GetString() != question.InputId
             || !result.TryGetProperty("status", out var status) || status.GetString() != "answered")
-            throw new AgentApiException("invalid_response", "The Host did not acknowledge this answer. Use /follow to check the run.");
+            throw new AgentApiException("invalid_response", "The Host did not acknowledge this answer. Type Continue to check the run.");
         _answered.Add((question.RunId, question.InputId));
         if (_answered.Count > 256) _answered.Remove(_answered.First());
         return ChatInputOutcome.Answered;
@@ -50,6 +50,6 @@ internal sealed class ChatInputWorkflow(AgentApiClient client)
         if (run.RunId != question.RunId || run.SessionId != question.SessionId)
             throw new AgentApiException("run_session_mismatch", "The question no longer belongs to this session.");
         if (run.TerminalAt is not null || !string.Equals(run.Status, "waiting_input", StringComparison.OrdinalIgnoreCase))
-            throw new AgentApiException("input_stale", "The run is no longer waiting for this answer. Use /follow to refresh it.");
+            throw new AgentApiException("input_stale", "The run is no longer waiting for this answer. Type Continue to refresh it.");
     }
 }

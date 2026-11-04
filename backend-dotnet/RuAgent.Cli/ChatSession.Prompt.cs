@@ -33,8 +33,7 @@ public sealed partial class AgentCommands
             var submissionSessionId = submission?.SessionId ?? sessionId;
             var submissionWorkspace = submission?.WorkspacePath ?? canonicalWorkspace;
             var submissionPreset = submission?.Preset ?? cmd.Preset;
-            var isParkedContinuation = runSession.ParkedRunId is not null
-                && string.Equals(promptLine, "continue", StringComparison.OrdinalIgnoreCase);
+            var isRetainedContinuation = IsRetainedContinuation(promptLine);
             IReadOnlyList<Images.CliImageAttachment> submissionImages = submission is null
                 ? submissions.Images
                 : submission.Images;
@@ -49,7 +48,7 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            if (submission is not null && !isParkedContinuation)
+            if (submission is not null && !isRetainedContinuation)
             {
                 try
                 {
@@ -71,6 +70,33 @@ public sealed partial class AgentCommands
                     await WriteDiagnosticLineAsync(_err, "submission_settings_unavailable: queued prompt is held; restore settings access, then /exit and reopen the session").ConfigureAwait(false);
                     return;
                 }
+            }
+
+            // Continue recovers only the current session's known run. Without one,
+            // the same word remains an ordinary prompt. Recovery must not commit
+            // a staged history branch or send its draft as new work.
+            if (isRetainedContinuation)
+            {
+                if (!cmd.Json && !tgMode)
+                {
+                    await _out.WriteLineAsync(Tui.ChatPromptEcho.Format(promptLine)).ConfigureAwait(false);
+                }
+                try
+                {
+                    if (runSession.ParkedRunId is not null)
+                        await ContinueParkedRunAsync(ct).ConfigureAwait(false);
+                    else
+                        await FollowRetainedRunAsync(ct).ConfigureAwait(false);
+                }
+                catch (RunParkedException)
+                {
+                    // Only the --json escape ends the chat: a scripted consumer answers the
+                    // parked run out of band. A terminal keeps its REPL; the run is parked
+                    // server-side and the notice already names `ru agent answer`.
+                    if (cmd.Json) dispatcherExitCode = 0;
+                    return;
+                }
+                return;
             }
 
             if (pendingHistoryBranch is { } branch)
@@ -101,29 +127,6 @@ public sealed partial class AgentCommands
                     await WriteDiagnosticLineAsync(_err, "history_branch_error: " + ChatDisplayText.Sanitize(message, 256) + $" · reload /sessions id:{sessionId} before selecting history again");
                     return;
                 }
-            }
-
-            // The GUI accepts a bare typed "Continue" while a run is parked. Only claim
-            // that literal when a parked run is known: otherwise it is an ordinary prompt.
-            if (isParkedContinuation)
-            {
-                if (!cmd.Json && !tgMode)
-                {
-                    await _out.WriteLineAsync(Tui.ChatPromptEcho.Format(promptLine)).ConfigureAwait(false);
-                }
-                try
-                {
-                    await ContinueParkedRunAsync(ct).ConfigureAwait(false);
-                }
-                catch (RunParkedException)
-                {
-                    // Only the --json escape ends the chat: a scripted consumer answers the
-                    // parked run out of band. A terminal keeps its REPL; the run is parked
-                    // server-side and the notice already names `ru agent answer`.
-                    if (cmd.Json) dispatcherExitCode = 0;
-                    return;
-                }
-                return;
             }
 
             if (sessionId.Length == 0)
@@ -481,7 +484,7 @@ public sealed partial class AgentCommands
                 await WriteDiagnosticLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
                 return true;
             }
-            if (slashCmd is "/follow" or "/subagents" && !await RequireSavedSessionAsync().ConfigureAwait(false)) return true;
+            if (slashCmd is "/subagents" && !await RequireSavedSessionAsync().ConfigureAwait(false)) return true;
             if (RewindSubmissionGuard(slashLine) is { } guardMessage)
             {
                 await WriteDiagnosticLineAsync(_err, guardMessage).ConfigureAwait(false);
@@ -549,12 +552,6 @@ public sealed partial class AgentCommands
             if (await _slashCommands.TryHandleAsync(slashCmd, arg, string.IsNullOrEmpty(sessionId) ? null : sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
             {
                 await RefreshModelSelectionAsync().ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/follow")
-            {
-                await FollowRetainedRunAsync(arg, cancellationToken).ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
                 return true;
             }
             var custom = CustomPromptCommands.Find(

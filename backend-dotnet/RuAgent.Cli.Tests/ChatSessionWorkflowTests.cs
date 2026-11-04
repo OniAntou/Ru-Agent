@@ -241,11 +241,11 @@ public sealed class ChatSessionWorkflowTests
         Assert.Equal(0, exit);
         Assert.Contains($"/agent/v1/sessions/{targetSession}/runs?limit=100", requests);
         Assert.Equal(1, requests.Count(path => path == $"/agent/v1/runs/{ActiveRun}"));
-        Assert.Contains("no active run to follow", errors.ToString(), StringComparison.Ordinal);
+        Assert.Contains("unknown_command: /follow", errors.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task ChatAsync_FollowWaitingApproval_ExposesOnlyLatestPendingApproval()
+    public async Task ChatAsync_ContinueWaitingApproval_ExposesOnlyLatestPendingApproval()
     {
         var output = new StringWriter();
         var errors = new StringWriter();
@@ -260,6 +260,9 @@ public sealed class ChatSessionWorkflowTests
                 {
                     return Json("{\"status\":\"ok\"}");
                 }
+
+                if (path.StartsWith($"/agent/v1/sessions/{CurrentSession}/runs", StringComparison.Ordinal))
+                    return Json("{\"items\":[{\"run_id\":\"" + ActiveRun + "\"}]}");
 
                 if (path == $"/agent/v1/runs/{ActiveRun}")
                 {
@@ -291,7 +294,7 @@ public sealed class ChatSessionWorkflowTests
             })),
             output,
             errors,
-            new StringReader($"/follow {ActiveRun}\n/exit\n"));
+            new StringReader("Continue\n/exit\n"));
 
         var exit = await commands.ChatAsync(
             new ChatCommand("C:\\workspace", CurrentSession, "standard", Json: true),

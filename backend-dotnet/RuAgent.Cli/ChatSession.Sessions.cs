@@ -161,10 +161,10 @@ public sealed partial class AgentCommands
                     await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
                     runSession.RememberFollowable(candidateRunId);
                     var followNotice = string.Equals(run.Status, "waiting_input", StringComparison.OrdinalIgnoreCase)
-                        ? $"run {candidateRunId} is waiting for an answer · use /follow {candidateRunId}"
+                        ? $"run {candidateRunId} is waiting for an answer · type Continue"
                         : string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase)
-                        ? $"run {candidateRunId} is waiting for approval · use /follow {candidateRunId}"
-                        : $"run {candidateRunId} is still running · attach with 'ru agent attach {candidateRunId}' or follow with '/follow {candidateRunId}'";
+                        ? $"run {candidateRunId} is waiting for approval · type Continue"
+                        : $"run {candidateRunId} is still running · attach with 'ru agent attach {candidateRunId}' or type Continue here";
                     if (cmd.Json)
                     {
                         await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.DimPaint(followNotice)).ConfigureAwait(false);

@@ -96,13 +96,13 @@ internal sealed class ChatSubmissionState : IDisposable
 
     public ChatSubmissionSnapshot? CreateSnapshot(
         string line, string sessionId, string workspace, string preset,
-        string backend, string model, bool isParked)
+        string backend, string model, bool hasRetainedRun)
     {
         lock (_gate)
         {
             var isCommand = line.TrimStart().StartsWith('/');
             var isPresetCommand = line.TrimStart().Split(' ', 2)[0].Equals("/preset", StringComparison.OrdinalIgnoreCase);
-            var isParkedContinue = isParked && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase);
+            var isRetainedContinue = hasRetainedRun && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase);
             if (_images.Count + _texts.Count > 0 && isCommand
                 && !ChatSubmissionSnapshot.IsPausedControlCommand(line) && !isPresetCommand)
             {
@@ -111,8 +111,8 @@ internal sealed class ChatSubmissionState : IDisposable
 
             var snapshot = ChatSubmissionSnapshot.Create(
                 line, sessionId, workspace, preset, backend, model,
-                isCommand || isParkedContinue ? [] : _images,
-                isCommand || isParkedContinue ? [] : _texts);
+                isCommand || isRetainedContinue ? [] : _images,
+                isCommand || isRetainedContinue ? [] : _texts);
             return AttachedPrompt.Compose(snapshot.Prompt, snapshot.Texts).Length > MaxComposedPromptChars
                 ? null : snapshot;
         }

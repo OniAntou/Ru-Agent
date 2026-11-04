@@ -144,7 +144,11 @@ advertising model work. Short results stay in the hint row until the next input;
 multiline results use a closable document. Existing conversations retain normal
 report output. Command capture is bounded and isolated from independent run output.
 These commands retain their operation lifetime and input guards.
-Custom prompt commands and `/follow` retain their run behavior.
+Custom prompt commands retain their run behavior. `/follow` is removed from
+completion, help and dispatch. `Continue` resumes only the current session's
+known parked/followable run; without one it remains an ordinary prompt.
+A classifier admits this recovery while a queue is held, without claiming
+draft attachments. Repeated recovery input while busy stays in the draft.
 
 The first ordinary prompt creates the session before its policy/run setup; `/new`
 remains explicit creation and selecting an existing session still reopens it.
@@ -153,7 +157,7 @@ draft's materialized session. Provider/model/workspace/preset, attachments and
 idempotency key stay unchanged, and existing-session or other-session snapshots
 cannot be rebound. A lost/failed create acknowledgement does not automatically
 retry or start a run; choose a session or reopen chat. Before materialization,
-session-dependent task/change/rewind/follow/subagent controls report no session
+session-dependent task/change/rewind/subagent controls report no session
 without issuing blank-id API requests. Status labels the session `not started`.
 
 Stopping the UI keeps its two-second bound for ordinary turn handlers. The chat
@@ -170,7 +174,8 @@ reopened session is replayed. A new or reworded plan prints an inline checklist 
 most eight items around the active one, with the rest counted); a later update that
 only moves progress prints one `◦ Plan 9/16 · ▸ item` line. There are no separate
 activity, todo or project-file browser panels. Attaching to a running run with
-`/follow` counts its elapsed time from the run's start; Continue counts from the resume. Prompt history remains available with Up/Down. Detailed inspection
+Reattaching a tracked run counts elapsed time from its start; resuming a parked
+run counts from the resume. Prompt history remains available with Up/Down. Detailed inspection
 belongs in the GUI; headless CLI and RPC capabilities are independent of this UI scope.
 Terminal.Gui owns the interactive screen. Shared event and Markdown formatting
 projects semantic transcript rows and styled runs directly to native attributes;
@@ -378,7 +383,7 @@ the new page size. The popup does not clear background cells outside its card.
 the editor without submitting; only Enter confirms. Text paste and Unicode/newlines
 remain answer text, never slash commands. The composer draft/cursor survives the
 modal. Escape defers the question and pauses queued prompts without cancelling the
-Host run; `/follow` remains available while the queue is paused.
+Host run; `Continue` can reopen that tracked question while the queue is paused.
 `ChatInputWorkflow` checks the exact run/session and waiting-input snapshot before
 and after editing, sends once through `AgentApiClient.AnswerAsync`, and deduplicates
 acknowledged input events. The Host retains consume-once and policy authority.

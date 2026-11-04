@@ -36,7 +36,7 @@ internal static partial class ChatRunWorkflow
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        { return (null, "input_recovery_timeout: use /follow to retry recovery"); }
+        { return (null, "input_recovery_timeout: type Continue to retry recovery"); }
         catch (JsonException) { return (null, "input_recovery_incomplete: invalid durable event"); }
         return (null, "input_recovery_incomplete: replay did not reach the run cursor");
     }

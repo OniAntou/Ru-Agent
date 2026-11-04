@@ -14,19 +14,18 @@ public static class ChatCommandCatalog
         new("/status", "Inspect status, context and token usage", "/status [overview|context|usage]"),
         new("/preset", "Choose permissions or manage remembered rules", "/preset [plan|standard|full_access|rules]"),
         new("/new", "Start a new session", "/new"),
-        new("/sessions", "Browse sessions, reopen by id or close an idle tab", "/sessions [query|id:<session-id>|close]"),
+        new("/sessions", "Browse saved sessions and reopen by id", "/sessions [query|id:<session-id>]"),
         new("/subagents", "View child tasks and results", "/subagents [run-id] [agent result [version]]"),
         new("/tasks", "View and stop background terminal tasks", "/tasks [run-id] | /tasks kill <execution-id>"),
         new("/changes", "Summarize recorded file edits and previews", "/changes [run-id]"),
         new("/history", "Browse turns; edit or continue in a new chat branch", "/history [turn [view|edit|continue]] | /history cancel"),
-        new("/follow", "Follow a retained run", "/follow [run-id]"),
         new("/help", "Show every command", "/help"),
         new("/update", "Check or install a Ru update", "/update [--yes] [--channel stable|preview]"),
         new("/exit", "Quit", "/exit"),
     ];
 
     private static readonly HashSet<string> RemovedCommands = new(StringComparer.OrdinalIgnoreCase)
-        { "/delete", "/resume", "/retry", "/release", "/clear", "/skills", "/skill" };
+        { "/delete", "/resume", "/retry", "/release", "/clear", "/skills", "/skill", "/follow" };
 
     internal static bool IsRemovedCommand(string line) => RemovedCommands.Contains(
         line.TrimStart().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "");

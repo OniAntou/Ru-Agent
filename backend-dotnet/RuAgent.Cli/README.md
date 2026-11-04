@@ -167,10 +167,11 @@ the chat. An idle Escape preserves the draft.
 
 The interactive vocabulary omits `/delete`, `/resume`, `/retry`, `/release`, `/clear`, `/activity`, `/todos`, `/files`,
 `/tree`, `/export`, `/stats`, `/tokens`, `/history`, `/attach`,
-`/attachments`, `/paste`, `/detach`, `/continue` and `/quit`. Headless CLI
+`/attachments`, `/paste`, `/detach`, `/continue`, `/follow` and `/quit`. Headless CLI
 and RPC commands, including native session fork and rewind, remain available separately.
 
-`/follow` uses the retained run's durable provider/model metadata. Unknown pins
+`Continue` recovers only a run already tracked by the current session, using its
+durable provider/model metadata. Without a retained run it is an ordinary prompt. Unknown pins
 show unknown and suppress catalog-based cost/context estimates. Pending approval
 recovery reads a bounded tail of durable events, then rechecks the run version
 before posting an explicit decision. Another client may resolve the approval first.
@@ -212,7 +213,7 @@ agent rpc
   one of them the parser refuses with `json_requires_explicit_flags`. The
   transcript renderer is muted in this mode, so stdout carries durable/transient
   NDJSON frames only; every human line goes to stderr.
-- `chat` (or `repl`) uses Terminal.Gui for interactive streaming, tool/diff rows, approvals, command history and slash completion. `/new` creates a session; `/sessions [query]` searches a bounded list; `/sessions id:<session-id>` switches explicitly and preserves the current session on failure. Reopening a session redraws the turns of its newest 200 messages from their activity records, as they looked live, and discovers retained running, approval and parked runs. `/follow [run-id]` attaches to running output or recovers pending approval interaction; typing `Continue` resumes the tracked parked run. Use `ru agent continue <run-id>` from another terminal for an explicit run target. Use `ru agent cancel <run-id>` outside chat to abandon a parked run. A repeated blocker after Continue offers cancellation guidance. Native session switching restores the recorded workspace. The line/JSON adapter keeps the operator-selected workspace and warns when retained history belongs elsewhere; reopen with `--workspace PATH --session ID` to select that root explicitly.
+- `chat` (or `repl`) uses Terminal.Gui for interactive streaming, tool/diff rows, approvals, command history and slash completion. `/new` creates a session; `/sessions [query]` searches a bounded list; `/sessions id:<session-id>` switches explicitly and preserves the current session on failure. Reopening a session redraws the turns of its newest 200 messages from their activity records, as they looked live, and discovers retained running, approval and parked runs. Typing `Continue` resumes a tracked parked run or reopens a tracked running/input/approval run; `/follow` is removed. Use `ru agent continue <run-id>` from another terminal for an explicit run target. Use `ru agent cancel <run-id>` outside chat to abandon a parked run. A repeated blocker after Continue offers cancellation guidance. Native session switching restores the recorded workspace. The line/JSON adapter keeps the operator-selected workspace and warns when retained history belongs elsewhere; reopen with `--workspace PATH --session ID` to select that root explicitly.
 - Request skills in ordinary chat prompts, for example `Use the review skill to inspect this change`. `/skills` and `/skill` are removed from terminal chat handling, suggestions and help. Skill discovery and model-side loading retain their existing invocation policy.
 - While a turn streams, Enter queues up to eight immutable submissions. Each owns the prompt, session/workspace/preset/model intent, attachment contents and idempotency key captured at admission. The queue retains at most 32 MiB of estimated UTF-16 content; a composed prompt is capped at 16,000 UTF-16 units. Refusal leaves the draft and attachments intact. State-changing commands are refused while busy or queued. Rejected submissions are never automatically resubmitted; queued work remains paused until the chat is closed or an existing explicit run continuation settles it. Escape/Ctrl+C interrupts through the existing run-cancel endpoint; pending tool approval takes over the composer with explicit approve/deny choices.
 - All `agent chat` input uses one `ChatSessionEngine` for admission, queues, turn cancellation and the latest 100 prompt submissions. Terminal.Gui is its only interactive screen adapter. Windows uses the .NET console driver to preserve emoji across split input packets. Bracketed paste targets the active command palette, secret prompt or composer without changing a hidden draft. `--classic` retains append-only text with line input between turns; the same adapter serves redirected stdin/stdout, `--json`, any `NO_COLOR`, `TERM=dumb` and startup terminals below 80×24. It writes directly without a second transcript buffer, cursor positioning, screen clearing, resize rebuild, arrow-key picker or framed composer. Bare picker commands show options; select with an explicit argument. A trailing backslash continues the prompt on the next line; ordinary prompt quotes are preserved. Native resize stays native and never starts a separate text chat loop.
@@ -269,10 +270,10 @@ Interactive Terminal.Gui chat opens `ask_user` questions inside Ru. Tab/Shift+Ta
 cycles suggestions into an editable answer; Enter sends, Ctrl+J/Shift+Enter adds a
 newline, and PageUp/PageDown scrolls a long question. Free text and text paste are
 supported without a suggested option. Escape closes the question without answering
-or cancelling the run and pauses queued prompts. `/follow [run-id]` reopens the
+or cancelling the run and pauses queued prompts. `Continue` reopens the
 pending question, including after reopening its session. Answers use the existing
 run/input endpoint and never create a new prompt or change the run's model/preset.
-Stale or uncertain submissions stop for explicit `/follow` recovery instead of
+Stale or uncertain submissions stop for explicit `Continue` recovery instead of
 retrying automatically. Line and JSON chat keep the external `agent answer`
 flow; JSON never opens an input panel.
 

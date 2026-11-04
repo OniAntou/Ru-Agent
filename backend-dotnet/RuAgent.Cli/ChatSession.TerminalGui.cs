@@ -34,10 +34,10 @@ public sealed partial class AgentCommands
             {
                 if (Volatile.Read(ref stopping) != 0) return false;
                 tgWindow!.FocusSessionInput();
-                if (runSession.FollowableRunId is { } run && submissions.Count == 0
+                if (runSession.FollowableRunId is not null && submissions.Count == 0
                     && tgWindow.Composer.Input.Text.Length == 0)
                 {
-                    tgWindow.Composer.Input.Text = "/follow " + run;
+                    tgWindow.Composer.Input.Text = "Continue";
                     loop.Submit();
                 }
                 return false;

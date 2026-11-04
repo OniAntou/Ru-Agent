@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Mở lại session trên TUI vẽ lại mọi lượt trong 200 tin nhắn gần nhất (như GUI) y như lúc live: prompt, lời tường
+  thuật, dòng `Thought`, plan, các dòng tool theo đúng thứ tự, rồi dòng cuối lượt với thời gian thật
+  của run. Trước đây chỉ in lại text của user và câu trả lời, gom thành một khối.
+
+- **feat(tui)**: Luồng chat và activity của TUI được làm lại cho dễ đọc, khớp với GUI: dòng
+  trạng thái `ok` bị ẩn và mã trạng thái được đổi thành chữ (`started a subagent`); dòng lệnh hiện
+  câu lệnh thật đầu tiên thay vì `$ErrorActionPreference=…` và đếm phần còn lại `(+N more)`; bỏ dòng
+  `└ process exit nonzero` lặp lại exit code; mỗi lần model suy nghĩ ≥ 1 giây có một dòng
+  `◦ Thought 31.0s`; plan hiện checklist ngay trong transcript; bỏ dòng tóm tắt từng nhóm tool, chỉ
+  còn một dòng cuối lượt có số tool, số edit và số lỗi; bullet/danh sách đánh số xuống dòng theo từ
+  thay vì cắt giữa từ; header hiện tiêu đề session khi mở lại; `/follow` tính thời gian từ lúc run
+  bắt đầu.
+
 - **feat(tools)!**: Một profile mặc định `coding_v3` thay cho ba profile: mọi run mới có cả
   `write_file`/`edit_file`, `apply_patch` và `run_code` (28 tool). Run đã ghim `coding_v2` vẫn
   chạy như cũ. **Breaking:** `patch_v2` và `coding_code_v1` bị gỡ; run ghim hai profile này và

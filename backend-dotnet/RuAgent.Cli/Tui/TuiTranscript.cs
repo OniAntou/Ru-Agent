@@ -74,15 +74,10 @@ public sealed partial class TuiTranscript
     private readonly BoundedInsertionMap<string, string> _parkReasons = new(64, StringComparer.Ordinal);
     private bool _repeatedPark;
     private bool _fullScreenCards;
-    private string? _pendingPlanProgress;
+    private IReadOnlyList<RuAgent.Protocol.Harness.AgentTodoWire>? _pendingPlan;
+    private string? _lastPlanItems;
     private string? _lastPlanProgress;
 
-    // Tool-call grouping: consecutive settled tool rows form one feed block. The summary is
-    // written when the block closes, because terminal output is append-only in both sinks.
-    private bool _toolGroupOpen;
-    private int _toolGroupCount;
-    private double _toolGroupStarted;
-    private bool _toolGroupFailed;
 
     /// <summary>
     /// Full-screen transcript rendering: tool results become inline <see cref="TuiToolRow"/>
@@ -158,7 +153,23 @@ public sealed partial class TuiTranscript
 
     /// <summary>Tool rows settled in the turn in progress (or the last completed turn).</summary>
     public int ToolsSettled => _toolsSettled;
-    public double ElapsedSeconds => _turnWatch.Elapsed.TotalSeconds;
+    public double ElapsedSeconds => TurnElapsed.TotalSeconds;
+
+    // Time the turn had already run before this client attached to it.
+    private TimeSpan _turnOffset;
+    private TimeSpan TurnElapsed => _turnWatch.Elapsed + _turnOffset;
+
+    /// <summary>
+    /// Counts the current turn from the run's own start. Attaching to a run another
+    /// surface started otherwise read 0:00 although it had been working for minutes.
+    /// Only a still-running run qualifies: a parked run resumed with Continue spent its
+    /// wait idle, so its turn starts at the resume.
+    /// </summary>
+    public void StartedAt(DateTimeOffset runStart, DateTimeOffset now)
+    {
+        var already = now - runStart;
+        _turnOffset = already > TimeSpan.Zero && already < TimeSpan.FromDays(2) ? already : TimeSpan.Zero;
+    }
 
     /// <summary>
     /// Writes finished lines and repaints the live row in the same lock acquisition, so the
@@ -177,7 +188,9 @@ public sealed partial class TuiTranscript
     {
         LastTurnCompleted = false;
         _toolsSettled = 0;
-        _pendingPlanProgress = null;
+        _turnWork.Clear();
+        _pendingPlan = null;
+        _lastPlanItems = null;
         _lastPlanProgress = null;
         _hasStreamedDelta = false;
         _lineBuffer = string.Empty;
@@ -200,10 +213,8 @@ public sealed partial class TuiTranscript
         _retainedIsThinking = false;
         _markdown.Reset();
         _turnWatch.Restart();
+        _turnOffset = TimeSpan.Zero;
         _streamedAssistant.Clear();
-        _toolGroupOpen = false;
-        _toolGroupCount = 0;
-        _toolGroupFailed = false;
 
         // A blank row separates the turn from what came before. It is also the first write
         // of the turn: an output that fails here must still unwind through the restore path
@@ -237,14 +248,14 @@ public sealed partial class TuiTranscript
         _terminalCode = null;
         _summaryDetail = null;
         _sawCompletion = false;
-        _pendingPlanProgress = null;
+        _pendingPlan = null;
+        _lastPlanItems = null;
         _lastPlanProgress = null;
         _toolsSettled = 0;
-        _toolGroupOpen = false;
-        _toolGroupCount = 0;
-        _toolGroupFailed = false;
+        _turnWork.Clear();
         _markdown.Reset();
         _turnWatch.Reset();
+        _turnOffset = TimeSpan.Zero;
         if (!_paused)
         {
             _status.Reset();
@@ -351,7 +362,7 @@ public sealed partial class TuiTranscript
     /// the WinUI surface keeps the same block closed by default; printing it inline buried
     /// the answer the operator actually came to read.
     /// </summary>
-    private void RetainThinking(string detail)
+    private void RetainThinking(string detail, bool announced = false)
     {
         var flat = Escape(detail);
         if (flat.Length == 0)
@@ -376,12 +387,11 @@ public sealed partial class TuiTranscript
             Flush();
             screen.RetainDetails(_retained.ToArray());
         }
-        else Notice("Thought · ctrl+o", TuiToken.Meta);
+        else if (!announced) Notice("Thought · ctrl+o", TuiToken.Meta);
     }
 
     private void Notice(string text, TuiToken token)
     {
-        CloseToolGroup();
         Flush();
         if (!_atLineStart)
         {
@@ -542,7 +552,6 @@ public sealed partial class TuiTranscript
     /// </summary>
     public void EndTurn()
     {
-        CloseToolGroup();
         Flush();
         if (_terminalCode is not null)
         {
@@ -568,6 +577,7 @@ public sealed partial class TuiTranscript
         }
 
         _turnWatch.Reset();
+        _turnOffset = TimeSpan.Zero;
         _status.Reset();
         _status.SetState(TuiRunState.Idle);
         LastTurnCompleted = false;
@@ -576,7 +586,6 @@ public sealed partial class TuiTranscript
     public void EndTurn(TuiTurnOutcome outcome, string? errorCode)
     {
         LastTurnCompleted = outcome == TuiTurnOutcome.Completed;
-        CloseToolGroup();
         Flush();
         var streamedText = _hasStreamedDelta;
         if (_hasStreamedDelta)
@@ -594,8 +603,9 @@ public sealed partial class TuiTranscript
             _surface.Line();
         }
 
-        var seconds = _turnWatch.Elapsed.TotalSeconds;
+        var seconds = TurnElapsed.TotalSeconds;
         _turnWatch.Reset();
+        _turnOffset = TimeSpan.Zero;
         _status.Reset();
         _status.SetState(outcome == TuiTurnOutcome.Failed ? TuiRunState.Failed : TuiRunState.Idle);
         _status.SetElapsed(outcome == TuiTurnOutcome.Completed ? seconds : 0);
@@ -605,7 +615,7 @@ public sealed partial class TuiTranscript
         else switch (outcome)
         {
             case TuiTurnOutcome.Completed:
-                WriteLines(BuildFooter(seconds, _toolsSettled, _summaryDetail));
+                WriteLines(BuildFooter(seconds, _toolsSettled, _summaryDetail, TurnWork()));
                 if (!streamedText && _toolsSettled == 0)
                 {
                     // A run that completed with no assistant text and no tool row used to
@@ -628,6 +638,7 @@ public sealed partial class TuiTranscript
         }
 
         _toolsSettled = 0;
+        _turnWork.Clear();
         _terminalCode = null;
         _summaryDetail = null;
         _pendingTools.Clear();
@@ -648,13 +659,14 @@ public sealed partial class TuiTranscript
             " · the run completed but its reply never reached this terminal · retry, or switch model with /model",
             TuiToken.Line);
 
-    public static string BuildFooter(double seconds, int tools, string? detail)
+    public static string BuildFooter(double seconds, int tools, string? detail, string? work = null)
     {
         var parts = new List<string>
         {
             TuiStatusLine.FormatElapsed(seconds),
             tools == 1 ? "1 tool" : $"{tools} tools",
         };
+        if (!string.IsNullOrWhiteSpace(work)) parts.Add(work);
 
         if (!string.IsNullOrWhiteSpace(detail))
         {

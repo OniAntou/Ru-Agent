@@ -13,17 +13,10 @@ public sealed partial class TuiTranscript
             RenderStyled(rest);
         }
         FlushProseLine();
-        // Metadata must not split an unfinished word. Publish progress only at an
-        // existing transcript boundary, retaining counts rather than a second task list.
-        if (_pendingPlanProgress is { } progress && progress != _lastPlanProgress)
-        {
-            CloseToolGroup();
-            if (_surface.Presentation is not null)
-                _surface.AppendPresentation(TranscriptLine.Plain("  · " + progress, TranscriptRole.Meta, TuiToken.Meta));
-            else WriteLines(TuiPalette.Paint("  · " + progress, TuiToken.Meta));
-            _lastPlanProgress = progress;
-        }
-        _pendingPlanProgress = null;
+        // Metadata must not split an unfinished word. Publish the plan only at an
+        // existing transcript boundary.
+        if (_pendingPlan is { } plan) WritePlan(plan);
+        _pendingPlan = null;
         _surface.Flush();
     }
 
@@ -151,9 +144,6 @@ public sealed partial class TuiTranscript
     {
         if (_surface.Presentation is { } presentation)
         {
-            // Tool metadata must settle before any provisional paragraph rows, not
-            // between its frozen prefix and the tail when the source line completes.
-            CloseToolGroup();
             _streamingMarkdown ??= new StreamingMarkdownProjector(_markdown,
                 presentation.PreviewPresentation, _surface.CommitPresentation);
             _streamingMarkdown.Append(text, Width);
@@ -198,8 +188,6 @@ public sealed partial class TuiTranscript
 
     private void WriteCompleteLine(string line)
     {
-        // Prose ends a tool block: the summary lands before the first line of the reply.
-        CloseToolGroup();
         var rows = _surface.HasLineProjection
             ? _markdown.RenderLogicalLine(line, Width)
             : _markdown.RenderLine(line, Width);

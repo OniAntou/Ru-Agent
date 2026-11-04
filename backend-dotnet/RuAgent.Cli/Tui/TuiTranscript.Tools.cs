@@ -16,9 +16,22 @@ public sealed partial class TuiTranscript
                 {
                     _status.SetState(TuiRunState.Thinking);
                 }
-                else if (!string.IsNullOrWhiteSpace(activity.Detail))
+                else
                 {
-                    RetainThinking(activity.Detail);
+                    // The Desktop feed keeps one "Thought 31s" row where the model paused;
+                    // without it a long think left no trace between two tool rows.
+                    // Sub-second thoughts would only add rows to a long run.
+                    var announced = activity.State == AgentActivityState.Completed && activity.DurationMs is >= 1000;
+                    if (announced)
+                    {
+                        Flush();
+                        // Where the screen cannot keep the reasoning for the footer's hint,
+                        // the row itself says how to open it.
+                        var hint = !string.IsNullOrWhiteSpace(activity.Detail)
+                            && !(_fullScreenCards && _surface.Writer is ITranscriptLineWriter) ? " · ctrl+o" : string.Empty;
+                        MetaRow("◦ ", "Thought " + TuiStatusLine.FormatElapsed(activity.DurationMs!.Value / 1000d) + hint, TuiToken.Meta);
+                    }
+                    if (!string.IsNullOrWhiteSpace(activity.Detail)) RetainThinking(activity.Detail, announced);
                 }
 
                 return;
@@ -73,17 +86,18 @@ public sealed partial class TuiTranscript
                 }
                 // Subagent waits are announced by the subagent strip and its transition
                 // lines; a notice per wait (and per check-in) only repeated that.
-                if (activity.SafeCode is not ("frames_dropped" or "waiting_subagents"
-                    or "subagent_wait_timeout" or "subagent_wait_completed"))
-                {
-                    Notice(activity.SafeCode, TuiToken.Line);
-                }
-
+                if (activity.SafeCode is "frames_dropped" or "waiting_subagents"
+                    or "subagent_wait_timeout" or "subagent_wait_completed") return;
+                // A status row exists to explain something. "ok" explains nothing, and a
+                // raw code ("subagent_spawned") is not a sentence; the Desktop feed hides
+                // the first and words the second. A failure is never hidden.
+                if (TuiActivityLabels.IsSilentStatus(activity.State, activity.SafeCode)) return;
+                Notice(TuiActivityLabels.StatusText(activity.SafeCode),
+                    activity.State == AgentActivityState.Failed ? TuiToken.Err : TuiToken.Line);
                 return;
 
             case AgentActivityKind.Todo:
-                if (activity.Todos is { } todos)
-                    _pendingPlanProgress = $"Plan · {todos.Count(todo => todo.Status == "completed")}/{todos.Count} complete";
+                if (activity.Todos is { Count: > 0 } todos) _pendingPlan = todos;
                 if (!string.IsNullOrWhiteSpace(activity.ToolDisplay)) ApplyToolActivity(activity);
                 return;
 
@@ -176,7 +190,13 @@ public sealed partial class TuiTranscript
             && !string.IsNullOrWhiteSpace(activity.Detail))
             return ChatDisplayText.Sanitize(activity.Detail, 160);
         if (activity.Kind == AgentActivityKind.Terminal && !string.IsNullOrWhiteSpace(activity.Detail))
-            return TuiText.Truncate(Escape(activity.Detail), 160);
+        {
+            // The row keeps the start and end of a long target, so the remaining
+            // statement count survives truncation next to the command it follows.
+            var (head, more) = TuiActivityLabels.CommandHead(activity.Detail);
+            var shown = TuiText.Truncate(Escape(head), 160);
+            return more > 0 ? $"{shown}  (+{more} more)" : shown;
+        }
         if (!string.IsNullOrWhiteSpace(activity.FileName))
         {
             return activity.LineStart is { } start && activity.LineEnd is { } end && end >= start
@@ -237,10 +257,16 @@ public sealed partial class TuiTranscript
         var resultLine = ResultLine(status, detail?.State == AgentActivityState.Failed
             && detail.SafeCode is not ("started" or "succeeded" or "ok" or "failed" or "error")
             ? detail.SafeCode : envelope.SafeSummary);
+        // "process exit nonzero" under a row that already says "failed · exit 1" repeats it.
+        // A real reason (timeout, denial, invalid plan) still gets its line.
+        if (detail?.ExitCode is not null && detail.SafeCode is "process_exit_nonzero" or "process_failed" or "exit_nonzero")
+            resultLine = null;
 
         // A dropped transient frame leaves no target: the bounded safe code is the only
         // auditable detail the durable stream carries, so it takes the target column.
-        if (!failed && string.IsNullOrWhiteSpace(target) && !string.IsNullOrWhiteSpace(envelope.SafeSummary))
+        // A known tool with no target (terminal_read, terminal_stop) keeps an empty column:
+        // its summary is a policy class ("read_only"), not something it acted on.
+        if (!failed && detail is null && string.IsNullOrWhiteSpace(target) && !string.IsNullOrWhiteSpace(envelope.SafeSummary))
         {
             var safe = Escape(envelope.SafeSummary);
             if (_fullScreenCards)
@@ -267,7 +293,6 @@ public sealed partial class TuiTranscript
             var display = string.IsNullOrWhiteSpace(detail?.Display)
                 ? TitleCase(detail?.Verb ?? "tool")
                 : detail!.Display!;
-            BeginToolRow(status);
             WriteLines(TuiToolRow.Compose(status, display, target,
                 detail is null ? null : ToolRowMetrics(detail), Width));
             if (resultLine is not null)
@@ -281,6 +306,7 @@ public sealed partial class TuiTranscript
         ApplyDiffText(envelope.SafeSummary, Width);
 
         _toolsSettled++;
+        RecordGroupWork(detail, status);
         _status.AddTool();
         var pending = _pendingTools.FirstOrDefault(tool => tool.State is AgentActivityState.Started or AgentActivityState.Waiting);
         if (pending is null) _status.SetActivity(null);
@@ -296,7 +322,6 @@ public sealed partial class TuiTranscript
     /// </summary>
     private void WriteToolRow(ToolLineStatus status, ToolDetail? detail, string? target)
     {
-        BeginToolRow(status);
         if (_surface.Presentation is not null)
         {
             WriteNativeTool(detail, status, target);
@@ -379,59 +404,6 @@ public sealed partial class TuiTranscript
 
     private static string TitleCase(string value) =>
         string.IsNullOrEmpty(value) ? "Tool" : char.ToUpperInvariant(value[0]) + value[1..];
-
-    /// <summary>
-    /// Opens or extends the current feed block. A block is a run of consecutive settled tool
-    /// rows; prose, a notice, or the end of the turn closes it.
-    /// </summary>
-    private void BeginToolRow(ToolLineStatus status)
-    {
-        if (!_toolGroupOpen)
-        {
-            _toolGroupOpen = true;
-            _toolGroupCount = 0;
-            _toolGroupStarted = _turnWatch.Elapsed.TotalSeconds;
-            _toolGroupFailed = false;
-            _toolGroupSerial++;
-            _toolGroupWork.Clear();
-        }
-
-        _toolGroupCount++;
-        if (status == ToolLineStatus.Failed)
-        {
-            _toolGroupFailed = true;
-        }
-    }
-
-    /// <summary>
-    /// Closes the feed block and, for more than one row, writes its summary line. The summary
-    /// trails the block because a terminal cannot insert a header above rows it already
-    /// printed: both the screen and the redirected sink append.
-    /// </summary>
-    private void CloseToolGroup()
-    {
-        if (!_toolGroupOpen)
-        {
-            return;
-        }
-
-        var count = _toolGroupCount;
-        var failed = _toolGroupFailed;
-        var elapsed = Math.Max(0, _turnWatch.Elapsed.TotalSeconds - _toolGroupStarted);
-        _toolGroupOpen = false;
-        _toolGroupCount = 0;
-        _toolGroupFailed = false;
-        if (count < 2)
-        {
-            return;
-        }
-
-        var mark = failed ? "✗ " : string.Empty;
-        var work = _surface.Presentation is not null && _toolGroupWork.Count > 0
-            ? string.Join(" · ", _toolGroupWork.Where(pair => pair.Value > 0).Select(pair => $"{pair.Value} {pair.Key}"))
-            : $"{count} tools";
-        WriteMetaLine($"  {mark}{work} · {TuiStatusLine.FormatElapsed(elapsed)}", failed ? TuiToken.Warn : TuiToken.Meta);
-    }
 
     /// <summary>
     /// The one-line reason under a failed tool. It comes from the durable event's safe

@@ -667,12 +667,8 @@ public sealed class TuiTranscriptTests
         var text = TuiText.Strip(output.ToString());
         Assert.DoesNotContain("run.note_added", text, StringComparison.Ordinal);
         Assert.DoesNotContain("runtime_context_snapshot", text, StringComparison.Ordinal);
-        // The note must not split the block: both rows share one summary.
-        var summary = text.Split('\n')
-            .Select(line => line.TrimEnd())
-            .Where(line => line.TrimStart().StartsWith("2 tools ·", StringComparison.Ordinal))
-            .ToList();
-        Assert.Single(summary);
+        // Both rows count toward the turn's one footer; the note adds no row of its own.
+        Assert.Single(text.Split('\n'), line => line.Contains("2 tools", StringComparison.Ordinal));
     }
 
     [Fact]

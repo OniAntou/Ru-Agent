@@ -300,8 +300,9 @@ reconciliation surfaces from Phase 3:
   shifted row. Document panels own their paging keys while focused.
   The TUI intentionally keeps core chat, inline tools/diffs, approvals, attachments,
   session/model controls, run recovery, help and updates. The live header context
-  meter remains. Plans render only completed/total counts at existing transcript
-  boundaries, without splitting streamed prose or retaining a separate task list.
+  meter remains. Plans render an inline checklist when new and one progress line
+  after, at existing transcript boundaries, without splitting streamed prose or
+  retaining a separate task list.
   Activity/todo/change inspectors, the project-file browser, session tree, rewind,
   Markdown export and separate token/prompt-history reports are absent from the
   interactive command surface. Up/Down prompt recall remains. Headless CLI and RPC

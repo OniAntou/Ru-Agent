@@ -664,6 +664,9 @@ public sealed partial class AgentCommands
             sessionRenderer.Width = ChatRenderWidth();
             sessionRenderer.Status.SetTokens(lastTotalTokens);
             sessionRenderer.BeginTurn();
+            if (DateTimeOffset.TryParse(run.CreatedAt, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal, out var runStart))
+                sessionRenderer.Transcript.StartedAt(runStart, DateTimeOffset.UtcNow);
 
             try
             {

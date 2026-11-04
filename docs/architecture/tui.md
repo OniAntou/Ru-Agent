@@ -82,8 +82,14 @@ reasoning; diffs are bounded and the overflow is summarized as a line count rath
 than hidden behind a key. Completed metadata updates the same row by activity
 identity, preserving semantic colors.
 
-Consecutive native actions end with a work summary (for example, `2 read · 1
-edited`), settled before the next prose preview. Unknown outcomes stay explicit;
+A command row names the script's first real statement, skipping preference, encoding,
+environment and location setup, and counts the remaining statements (`(+3 more)`). A
+failed row's reason line is omitted when it only repeats the exit code. A status row
+that only reports `ok` is hidden, as in the Desktop feed; other status codes are worded
+(`started a subagent`) and a failed status always shows. A provider-reported thought of
+at least one second leaves a `◦ Thought 31.0s` row where it happened. Blocks of tool
+rows print no tally of their own: the turn footer carries the tool count plus edits and
+failures (`✓ 2m13s · 27 tools · 4 edits · 1 failed`). Unknown outcomes stay explicit;
 run completion never proves tool success. The live row distinguishes waiting for
 the model, provider-reported thinking, response streaming, tool execution,
 compaction and tool/request retry. Approval, trust and parked states keep their
@@ -189,9 +195,12 @@ mean the pending run is unowned.
 The terminal is a compact coding surface: chat, inline tool activity and expandable
 errors/diffs, approvals, attachments, session/model selection, run recovery and
 background terminal task inspection/control.
-The header retains its live context meter. Plans appear as compact completed/total
-counts in the transcript; there are no separate activity, todo or project-file
-browser panels. Prompt history remains available with Up/Down. Detailed inspection
+The header retains its live context meter and shows the session title as soon as a
+reopened session is replayed. A new or reworded plan prints an inline checklist (at
+most eight items around the active one, with the rest counted); a later update that
+only moves progress prints one `◦ Plan 9/16 · ▸ item` line. There are no separate
+activity, todo or project-file browser panels. Attaching to a running run with
+`/follow` counts its elapsed time from the run's start; Continue counts from the resume. Prompt history remains available with Up/Down. Detailed inspection
 belongs in the GUI; headless CLI and RPC capabilities are independent of this UI scope.
 Terminal.Gui owns the interactive screen. Shared event and Markdown formatting
 projects semantic transcript rows and styled runs directly to native attributes;
@@ -250,8 +259,8 @@ only the changed tail, keeping settled view rows intact. Retention-evicted settl
 segments stay evicted on later updates; changed unresolved content can still be
 reprojected. Reset/retry clears parser state and provisional segments together. The
 append-only output adapter continues to use its existing line renderer.
-Tool groups settle their summary before the first native prose preview, so a summary
-cannot split a cached paragraph prefix from its changing tail.
+List rows (`•` or `1.` markers) wrap on words under their marker in the native view;
+other indented rows keep exact columns.
 
 The native view does not invalidate wrapped history just because a new/tail row
 contains a pipe. It tracks the last verified table's source range and column count

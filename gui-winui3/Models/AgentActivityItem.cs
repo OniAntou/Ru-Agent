@@ -456,6 +456,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         // are still working and the main agent chose how long to wait.
         "subagent_wait_timeout" => "Checked subagents · still working",
         "subagent_wait_completed" => "Received subagent results",
+        "subagent_spawned" => "Started a subagent",
         "inspection_required" => "Waiting: an action needs a read-only check first",
         "reconciliation_required" => "Stopped: the last change is unverified",
         { Length: > 0 } code => "Status: " + code.Replace('_', ' '),

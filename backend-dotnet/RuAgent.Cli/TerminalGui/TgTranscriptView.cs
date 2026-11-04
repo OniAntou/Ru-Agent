@@ -788,11 +788,20 @@ public sealed partial class TgTranscriptView : View
         // column and words breaking mid-sentence. Indented/code-gutter rows still retain
         // their exact columns. Span-painted rows must slice their spans, so they route
         // through the span-aware wrappers in AppendWrapped instead of these helpers.
+        if (IsListRow(text, style))
+            return TgAnsiPaint.WordWrapSpans(text, [new TgSpan(text, StyleAttribute(style))], width)
+                .Select(row => row.Row).ToArray();
         return style == TranscriptStyle.Prose && text.Length > 0
             && !text.StartsWith(' ') && !text.Contains('│') && !text.Contains("  ", StringComparison.Ordinal)
                 ? TuiText.Wrap(text, width)
                 : TuiText.HardWrapLine(text, width);
     }
+
+    // A list row starts with its indent and marker, which the prose test rejects, so it
+    // fell to the column cutter and split words ("injection — tức là n" / "ó không").
+    // Its marker is a hanging indent: wrap the text on words under it.
+    private static bool IsListRow(string text, TranscriptStyle style) =>
+        style == TranscriptStyle.Prose && !text.Contains('│') && TgAnsiPaint.HasListAffix(text);
 
     private static bool proseLikeForSpans(string text, TranscriptStyle style) =>
         style == TranscriptStyle.Prose && text.Length > 0

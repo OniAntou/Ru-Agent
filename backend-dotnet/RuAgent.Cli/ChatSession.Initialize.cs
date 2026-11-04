@@ -84,11 +84,13 @@ public sealed partial class AgentCommands
                 if (replay.Title is not null)
                 {
                     sessionTitle = replay.Title;
+                    // The title probe skips a session whose title is already known, so the
+                    // header kept its "session" caption on every reopen without this.
+                    if (tgMode) RunOnTgUi(() => tgWindow!.Header.SetTitle(sessionTitle));
                 }
                 if (replay.Messages.Length > 0)
                 {
-
-                    RenderSessionReplay(sessionId, replay);
+                    await RenderSessionHistoryAsync(sessionId, replay, cancellationToken).ConfigureAwait(false);
                 }
                 else if (replay.Error is not null)
                 {

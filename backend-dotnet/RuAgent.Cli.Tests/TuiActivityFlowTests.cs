@@ -78,7 +78,7 @@ public sealed class TuiActivityFlowTests
     }
 
     [Fact]
-    public void A_closed_native_group_summarizes_the_work_before_the_next_answer()
+    public void The_turn_footer_carries_the_work_tally_and_blocks_print_no_summary()
     {
         var (renderer, view) = Create();
         foreach (var id in new[] { "first", "second" })
@@ -89,11 +89,13 @@ public sealed class TuiActivityFlowTests
         renderer.Transcript.ApplyActivity(Activity("edit", AgentActivityKind.Edit, "Edit") with { FileName = "first.cs" });
         Settle(renderer);
         renderer.Transcript.AppendAssistant("The change is ready.\n");
-        renderer.Flush();
+        renderer.Transcript.EndTurn(TuiTurnOutcome.Completed, null);
 
-        var summary = Assert.Single(view.Rows, row => row.Role == TranscriptRole.Meta && row.Text.Contains("2 read"));
-        Assert.Contains("1 edited", summary.Text);
-        Assert.True(view.Rows.IndexOf(summary) < view.Rows.FindIndex(row => row.Text.Contains("The change is ready.")));
+        // A block tally printed a second count right above the footer's own.
+        Assert.DoesNotContain(view.Rows, row => row.Text.Contains("2 read"));
+        var footer = Assert.Single(view.Rows, row => row.Text.Contains("3 tools"));
+        Assert.Contains("1 edit", footer.Text);
+        Assert.True(view.Rows.IndexOf(footer) > view.Rows.FindIndex(row => row.Text.Contains("The change is ready.")));
     }
 
     [Fact]
@@ -235,6 +237,144 @@ public sealed class TuiActivityFlowTests
         Assert.Null(renderer.PresentActivity(100).Target);
         Assert.Contains(view.Rows, row => row.Text.Contains("attempt 2"));
         Assert.DoesNotContain(view.Rows, row => row.Text.Contains("2 results"));
+    }
+
+    [Fact]
+    public void Status_rows_hide_ok_word_known_codes_and_never_hide_a_failure()
+    {
+        var (renderer, view) = Create();
+        renderer.Transcript.ApplyActivity(Activity("ok", AgentActivityKind.Status, null) with { SafeCode = "ok" });
+        renderer.Transcript.ApplyActivity(Activity("spawn", AgentActivityKind.Status, null) with { SafeCode = "subagent_spawned" });
+        renderer.Transcript.ApplyActivity(Activity("odd", AgentActivityKind.Status, null, AgentActivityState.Failed) with { SafeCode = "ok" });
+        renderer.Transcript.ApplyActivity(Activity("new", AgentActivityKind.Status, null) with { SafeCode = "brand_new_code" });
+
+        var texts = view.Rows.Select(row => row.Text.Trim()).ToArray();
+        Assert.DoesNotContain("· ok", texts);
+        Assert.Contains("· started a subagent", texts);
+        Assert.Contains("· status: ok", texts);
+        Assert.Contains("· status: brand new code", texts);
+    }
+
+    [Fact]
+    public void A_command_row_names_its_first_real_statement_and_counts_the_rest()
+    {
+        var (renderer, view) = Create();
+        var script = "$ErrorActionPreference='Stop'; Set-Location D:\\work\n$env:PYTHONIOENCODING='utf-8'\n"
+            + "python -m unittest discover -s tests; Write-Output 'done'";
+        renderer.Transcript.ApplyActivity(Activity("command", AgentActivityKind.Terminal, "Terminal") with { Detail = script, ExitCode = 0 });
+        Settle(renderer);
+
+        var row = view.Activities["command"].Text;
+        Assert.Contains("python -m unittest discover -s tests", row);
+        Assert.Contains("(+1 more)", row);
+        Assert.DoesNotContain("ErrorActionPreference", row);
+        Assert.Equal(("Write-Output 'a; b'", 0), TuiActivityLabels.CommandHead("Write-Output 'a; b'"));
+    }
+
+    [Fact]
+    public void A_nonzero_exit_reason_is_not_repeated_but_a_real_reason_is_kept()
+    {
+        var (renderer, view) = Create();
+        renderer.Transcript.ApplyActivity(Activity("exit", AgentActivityKind.Terminal, "Terminal", AgentActivityState.Failed) with
+        { Detail = "dotnet test", ExitCode = 1, SafeCode = "process_exit_nonzero" });
+        Settle(renderer);
+        renderer.Transcript.ApplyActivity(Activity("limit", AgentActivityKind.Terminal, "Terminal", AgentActivityState.Failed) with
+        { Detail = "sleep 999", SafeCode = "timeout_exceeds_hard_max" });
+        Settle(renderer, 2);
+
+        Assert.Contains("exit 1", view.Activities["exit"].Text);
+        Assert.DoesNotContain(view.Rows, row => row.Text.Contains("process exit nonzero"));
+        Assert.Contains(view.Rows, row => row.Text.Contains("timeout exceeds hard max"));
+    }
+
+    [Fact]
+    public void A_thought_leaves_one_row_with_its_duration_and_a_blink_leaves_none()
+    {
+        var (renderer, view) = Create();
+        renderer.Transcript.ApplyActivity(Activity("long", AgentActivityKind.Thinking, null) with { DurationMs = 31_000, Detail = "plan" });
+        renderer.Transcript.ApplyActivity(Activity("short", AgentActivityKind.Thinking, null) with { DurationMs = 400 });
+
+        Assert.Single(view.Rows, row => row.Text.Contains("Thought"));
+        Assert.Contains(view.Rows, row => row.Text.Contains("◦ Thought 31.0s"));
+    }
+
+    [Fact]
+    public void An_attached_turn_counts_from_the_run_start()
+    {
+        var (renderer, _) = Create();
+        var now = DateTimeOffset.UtcNow;
+        renderer.Transcript.StartedAt(now.AddMinutes(-3), now);
+        Assert.InRange(renderer.Transcript.ElapsedSeconds, 180, 200);
+        renderer.BeginTurn();
+        Assert.InRange(renderer.Transcript.ElapsedSeconds, 0, 5);
+        renderer.Transcript.StartedAt(now.AddMinutes(5), now);
+        Assert.InRange(renderer.Transcript.ElapsedSeconds, 0, 5);
+    }
+
+    [Fact]
+    public void A_replayed_turn_draws_the_same_rows_as_the_live_turn()
+    {
+        var thought = Activity("think", AgentActivityKind.Thinking, null) with { DurationMs = 12_000, Detail = "plan" };
+        var command = Activity("command", AgentActivityKind.Terminal, "Terminal") with { Detail = "dotnet test", ExitCode = 0, DurationMs = 900 };
+
+        var (live, liveView) = Create();
+        live.Transcript.ApplyActivity(thought);
+        live.Transcript.AppendAssistant("Checking the tests first.\n\n");
+        live.Transcript.ApplyActivity(command with { State = AgentActivityState.Started });
+        live.Transcript.ApplyActivity(command);
+        Settle(live);
+        live.Transcript.AppendAssistant("All green.\n\n");
+        live.Transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var (replayed, replayView) = Create();
+        var start = DateTimeOffset.Parse("2026-11-04T10:00:00Z");
+        replayed.Transcript.ReplayTurn(new AgentRunActivityReplay([thought, command],
+            [new(1, "activity", null, "think"), new(2, "text", "Checking the tests first.", null),
+             new(3, "activity", null, "command"), new(4, "text", "All green.", null)]),
+            ["All green."], start, start.AddSeconds(95), TuiTurnOutcome.Completed, null);
+
+        static string[] Body(List<TranscriptLine> rows) => rows.Select(row => row.Text.TrimEnd())
+            .Where(text => text.Length > 0 && !text.Contains("✓ ", StringComparison.Ordinal) || text.Contains("Ran", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(Body(liveView.Rows), Body(replayView.Rows));
+        // The footer carries the run's real duration, and the reply is not drawn twice.
+        Assert.Contains(replayView.Rows, row => row.Text.Contains("✓ 1m35s · 1 tool", StringComparison.Ordinal));
+        Assert.Single(replayView.Rows, row => row.Text.Contains("All green.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Replayed_narration_joins_transport_chunks_and_keeps_a_missing_final_reply()
+    {
+        var command = Activity("command", AgentActivityKind.Terminal, "Terminal") with { Detail = "dotnet test", ExitCode = 0 };
+        var (replayed, view) = Create();
+        replayed.Transcript.ReplayTurn(new AgentRunActivityReplay([command],
+            [new(1, "text", "Checking the ", null), new(2, "text", "tests first.", null), new(3, "activity", null, "command")]),
+            ["All green."], null, null, TuiTurnOutcome.Completed, null);
+
+        // Chunks are not paragraphs: the sentence stays whole.
+        Assert.Contains(view.Rows, row => row.Text.Contains("Checking the tests first.", StringComparison.Ordinal));
+        // The transcript stopped before the reply; the persisted reply still ends the turn.
+        var reply = view.Rows.FindIndex(row => row.Text.Contains("All green.", StringComparison.Ordinal));
+        Assert.True(reply > view.Rows.FindIndex(row => row.Text.Contains("dotnet test", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Reopened_messages_group_into_turns_by_their_run()
+    {
+        using var page = System.Text.Json.JsonDocument.Parse("""
+            {"messages":[
+              {"role":"user","content":"build it","source_run_id":"run_a"},
+              {"role":"user","content":"continue","source_run_id":"run_b"},
+              {"role":"ai","content":"done","source_run_id":"run_b"},
+              {"role":"user","content":"thanks"},
+              {"role":"ai","content":"you're welcome"}
+            ]}
+            """);
+        var turns = ChatSessionTurnReplay.Group(page.RootElement);
+        Assert.Equal(new string?[] { "run_a", "run_b", null }, turns.Select(turn => turn.RunId));
+        Assert.Equal(["continue"], turns[1].Prompts.ToArray());
+        Assert.Equal(["done"], turns[1].Replies.ToArray());
+        Assert.Empty(turns[0].Replies);
+        Assert.Equal(["you're welcome"], turns[2].Replies.ToArray());
     }
 
     private static (TuiSessionRenderer, ActivityView) Create()

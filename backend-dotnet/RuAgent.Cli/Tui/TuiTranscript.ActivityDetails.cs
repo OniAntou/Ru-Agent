@@ -9,8 +9,7 @@ public sealed partial class TuiTranscript
     private sealed record ToolDetail(
         string ActivityId, AgentActivityState State, string Verb, string LiveVerb,
         string? Display, string? Target, int? Count, int? Added, int? Removed, int? DurationMs,
-        AgentActivityKind Kind, int? ExitCode, string SafeCode, string? Context,
-        int Group = 0);
+        AgentActivityKind Kind, int? ExitCode, string SafeCode, string? Context);
 
     private static ToolDetail DescribeTool(AgentActivityModel activity) =>
         new(activity.ActivityId, activity.State, TuiToolVerbs.Past(activity.Kind, activity.ToolDisplay),
@@ -64,8 +63,6 @@ public sealed partial class TuiTranscript
         // Ctrl+O belongs to the model's reasoning only. A tool row carries everything
         // it will show inline; it no longer opens an inspector block, and it must not
         // suppress the footer hint for reasoning retained earlier in the turn.
-        if (detail is not null)
-            detail = detail with { Group = _toolGroupSerial };
         var row = TuiToolRow.ComposePresentation(status, ActionLabel(detail, status), target, InspectorMetrics(detail), Width,
             actionColumnWidth: ActivityActionColumnWidth);
         if (detail is null) _surface.AppendPresentation(row);
@@ -74,6 +71,5 @@ public sealed partial class TuiTranscript
             _surface.AppendActivityPresentation(detail.ActivityId, row, null);
             _settledToolRows[detail.ActivityId] = detail;
         }
-        RecordGroupWork(detail, status);
     }
 }

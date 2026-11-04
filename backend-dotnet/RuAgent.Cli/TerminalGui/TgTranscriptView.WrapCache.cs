@@ -45,7 +45,7 @@ public sealed partial class TgTranscriptView
             IReadOnlyList<TgTranscriptRow> rows;
             if (spans is { Count: > 0 })
             {
-                var wrapped = proseLikeForSpans(text, style)
+                var wrapped = proseLikeForSpans(text, style) || IsListRow(text, style)
                     ? TgAnsiPaint.WordWrapSpans(text, spans, width)
                     : TgAnsiPaint.HardWrapSpans(text, spans, width);
                 rows = wrapped.Select(row => new TgTranscriptRow(row.Row, style, row.Spans)).ToArray();

@@ -42,7 +42,7 @@ public sealed class ProgramJournalTests
         await fixture.RegisterWorkspaceAsync(1);
         var root = fixture.NewRun(1, 1, 1);
         await fixture.CreateEventStore().TryCreateRunAsync(root, default);
-        await SetRunningAsync(fixture, 255);
+        await SetRunningAsync(fixture, RuAgent.Protocol.Subagents.SubagentLimits.FamilyToolCalls - 1);
         IProgramJournal journal = fixture.PayloadStore;
         Assert.True(await journal.ReserveToolAsync(root.Run.RunId.Value, "program_one", default));
         Assert.True(await journal.ReserveToolAsync(root.Run.RunId.Value, "program_one", default));
@@ -58,7 +58,7 @@ public sealed class ProgramJournalTests
         await fixture.RegisterWorkspaceAsync(1);
         var root = fixture.NewRun(1, 1, 1);
         await fixture.CreateEventStore().TryCreateRunAsync(root, default);
-        await SetRunningAsync(fixture, tools: 250);
+        await SetRunningAsync(fixture, tools: RuAgent.Protocol.Subagents.SubagentLimits.FamilyToolCalls - 6);
         IProgramJournal journal = fixture.PayloadStore;
 
         Assert.False(await journal.ReserveToolsAsync(root.Run.RunId.Value, "program_batch", 8, default));

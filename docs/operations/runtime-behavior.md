@@ -487,8 +487,8 @@ outcome was known. Cancellation or failure also drains owned work before return.
 See [phase timing and Host benchmarks](agent-performance.md).
 
 A root run does not stop at its first full window. It opens the next window
-automatically, up to **8 windows** (1,024 model steps / 2,048 tool calls) in one
-run, so a single long prompt does not pause for a click. Only after that
+automatically, up to **192 windows** (24,576 model steps / 49,152 tool calls) in one
+run, roughly a day of unattended work, so a single long prompt does not pause for a click. Only after that
 automatic allowance does it move to `WaitingUser` with
 `model_step_budget_exhausted` / `tool_call_budget_exhausted`; an explicit
 Continue then opens one further window, and every later window is manual. The

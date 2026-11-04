@@ -71,7 +71,10 @@ public sealed partial class TuiTranscript
                     ApplyToolActivity(activity);
                     return;
                 }
-                if (activity.SafeCode != "frames_dropped")
+                // Subagent waits are announced by the subagent strip and its transition
+                // lines; a notice per wait (and per check-in) only repeated that.
+                if (activity.SafeCode is not ("frames_dropped" or "waiting_subagents"
+                    or "subagent_wait_timeout" or "subagent_wait_completed"))
                 {
                     Notice(activity.SafeCode, TuiToken.Line);
                 }

@@ -23,18 +23,20 @@ public sealed partial class SqliteHarnessEventStore
         return runs.AsReadOnly();
     }
 
-    public async Task<bool> TryWakeSubagentWaitAsync(RunId rootId, DateTimeOffset now, CancellationToken ct)
+    /// <summary>Completes a parked root's wait once a result or its deadline arrives; null when nothing was woken.</summary>
+    public async Task<SubagentWaitWake?> TryWakeSubagentWaitAsync(RunId rootId, DateTimeOffset now, CancellationToken ct,
+        IReadOnlyList<SubagentWaitProgress>? progress = null)
     {
         await using var connection = await _options.OpenConnectionAsync(ct).ConfigureAwait(false);
         using var transaction = connection.BeginTransaction(deferred: false);
         var run = await HarnessSqliteQueries.GetRunAsync(connection, transaction, rootId, ct).ConfigureAwait(false);
-        if (run?.State != HarnessRunState.WaitingSubagents) return false;
+        if (run?.State != HarnessRunState.WaitingSubagents) return null;
         var stored = await LoadSubagentWaitAsync(connection, transaction, rootId, ct).ConfigureAwait(false);
-        if (stored is null) return false;
+        if (stored is null) return null;
         var previews = await LoadSubagentWaitResultsAsync(connection, transaction, rootId, stored.Intent, ct).ConfigureAwait(false);
-        if (previews.Count == 0 && now < stored.Deadline) return false;
+        if (previews.Count == 0 && now < stored.Deadline) return null;
         var timedOut = previews.Count == 0;
-        var output = SubagentWaitOutput(previews, timedOut);
+        var output = SubagentWaitOutput(previews, timedOut, timedOut ? progress : null);
         var commit = SubagentWaitCompletion.CreateCommit(run, stored.Intent, output, timedOut,
             new("payload_" + Guid.NewGuid().ToString("N")), new("evt_" + Guid.NewGuid().ToString("N")),
             new("evt_" + Guid.NewGuid().ToString("N")), now);
@@ -61,7 +63,44 @@ public sealed partial class SqliteHarnessEventStore
             command.Parameters.RemoveAt("$version");
         }
         await transaction.CommitAsync(ct).ConfigureAwait(false);
-        return true;
+        return new SubagentWaitWake(stored.Intent.ToolCallId, timedOut);
+    }
+
+    /// <summary>
+    /// Read-only look at a parked root's wait: the latest attempt run of each child it
+    /// names, and whether the wait would complete now as a timeout. Lets the wait
+    /// coordinator gather child progress outside the write transaction.
+    /// </summary>
+    public async Task<SubagentWaitProbe?> PeekSubagentWaitAsync(RunId rootId, DateTimeOffset now, CancellationToken ct)
+    {
+        await using var connection = await _options.OpenConnectionAsync(ct).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction(deferred: true);
+        var run = await HarnessSqliteQueries.GetRunAsync(connection, transaction, rootId, ct).ConfigureAwait(false);
+        if (run?.State != HarnessRunState.WaitingSubagents) return null;
+        var stored = await LoadSubagentWaitAsync(connection, transaction, rootId, ct).ConfigureAwait(false);
+        if (stored is null) return null;
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$root", rootId.Value);
+        var agentParameter = command.Parameters.Add("$agent", SqliteType.Text);
+        var hasResult = false;
+        var attempts = new List<(string AgentId, RunId RunId)>();
+        foreach (var agentId in stored.Intent.AgentIds)
+        {
+            agentParameter.Value = agentId;
+            command.CommandText = """
+                SELECT EXISTS(SELECT 1 FROM agent_subagent_results v JOIN agent_subagents s ON s.agent_id=v.agent_id
+                    WHERE s.root_run_id=$root AND v.agent_id=$agent AND v.delivered=0)
+                """;
+            hasResult |= (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0;
+            command.CommandText = """
+                SELECT a.run_id FROM agent_subagent_attempts a JOIN agent_subagents s ON s.agent_id=a.agent_id
+                WHERE s.root_run_id=$root AND a.agent_id=$agent ORDER BY a.attempt_number DESC LIMIT 1
+                """;
+            if (await command.ExecuteScalarAsync(ct).ConfigureAwait(false) is string attemptRun)
+                attempts.Add((agentId, new RunId(attemptRun)));
+        }
+        return new SubagentWaitProbe(attempts.AsReadOnly(), TimesOutNow: !hasResult && now >= stored.Deadline);
     }
 
     private sealed record StoredSubagentWait(SubagentWaitIntent Intent, DateTimeOffset Deadline);

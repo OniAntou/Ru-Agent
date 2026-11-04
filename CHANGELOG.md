@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(subagents)**: Subagent coding chạy được trong mọi workspace đã trust (ADR 0042).
+  Workspace là git root có commit thì vẫn dùng repo đó như trước; thư mục thường, thư mục
+  nằm dưới repo hoặc repo chưa có commit thì Ru dựng một repo gốc riêng trong vùng lưu trữ
+  của nó (theo `.gitignore` của workspace, giữ nguyên byte) và đăng ký worktree con ở đó.
+  Ru không `git init` hay commit trong thư mục của người dùng; cleanup xoá luôn repo riêng.
+
+- **feat(subagents)**: Agent chính thấy subagent đang làm gì: `agent_wait` hết giờ giờ trả
+  `progress` cho từng subagent (trạng thái, số bước, số lần gọi tool, 5 activity gần nhất, câu
+  tường thuật mới nhất), nên không phải chờ mù hay tự dò thư mục. Khung chi tiết subagent trên
+  GUI hiện câu tường thuật và các dòng tool của run con trong lúc nó chạy (chỉ xem).
+
+- **feat(harness)!**: Nâng giới hạn để một run chạy được khoảng một ngày không dừng: root
+  tự mở tối đa 192 cửa sổ ngân sách (24.576 bước model / 49.152 lần gọi tool, trước đây 8
+  cửa sổ); mỗi lần chạy subagent được 128 bước / 256 lần gọi tool / 4 giờ (trước đây 32 /
+  64 / 15 phút); ngân sách chung của nhóm root + subagent là 1.024 bước / 2.048 lần gọi tool
+  mỗi cửa sổ (trước đây 128 / 256); `agent_wait.timeout_ms` tối đa 600.000 (trước đây 60.000).
+  Schema v35 dựng lại bảng `agent_subagent_budgets` với CHECK mới; DB cũ được migrate tự động
+  và không thể mở lại bằng bản Host cũ hơn.
+
+- **fix(harness)**: Phiên chạy lâu không còn bị khoá vĩnh viễn khi work state chạm giới hạn
+  16 KiB. Trước đây mỗi lệnh kiểm chứng giữ tới 4096 ký tự; khi đầy, mọi receipt, wake và
+  run mới (kể cả "continue") đều ném lỗi. Giờ lệnh được lưu tối đa 512 ký tự, state tự bỏ
+  bằng chứng cũ nhất (đánh dấu receipt chưa được tóm tắt) để vừa giới hạn, và prompt quá dài
+  chỉ giữ phần đầu trong state. Phiên đã bị khoá sẽ chạy lại được.
+
+- **fix(gui)**: Gõ "continue" rồi Enter khi run đang tạm dừng chờ Continue (ví dụ hết ngân
+  sách subagent) giờ resume run thay vì đưa vào hàng đợi.
+
+- **fix(subagents)**: Dòng `agent_wait` của agent chính không còn đứng mãi ở trạng thái
+  chạy (và chạy animation) sau mỗi lần chờ. Khi wake agent chính, wait coordinator phát
+  activity hoàn tất cho đúng dòng đó. GUI hiện "Waiting for subagents" lúc đang chờ và
+  "Checked subagents · still working" hoặc "Received subagent results" khi xong; TUI không
+  in thêm notice cho từng lần chờ.
+
+- **style(gui)**: Khung task giờ là một tab gắn dưới mép trên của ô nhập (cùng nền, bo góc
+  trên, mép dưới khuất sau composer): dấu trạng thái, việc đang làm, thanh tiến độ ngắn, số
+  đã xong/tổng và chevron trên một hàng, bấm cả hàng để mở. Danh sách mở lên phía trên trong
+  cùng tab, dấu thẳng cột với hàng và việc đã xong không còn gạch ngang.
+
+- **fix(gui)**: Khi gộp activity ở chế độ Compact, các đoạn model tự tường thuật giữa
+  các bước không còn dồn xuống dưới dòng tóm tắt. Chỉ phần trả lời sau bước cuối còn
+  hiện; mở dòng tóm tắt sẽ thấy lại từng đoạn đúng vị trí giữa các bước.
+
+- **fix(gui)**: Gỡ khung Terminal tự bật phía trên ô nhập. Output của lệnh chỉ còn
+  nằm trong thẻ mở rộng của dòng terminal trong activity (lệnh, output, exit code,
+  Copy). Khung cũ trùng với thẻ này và che khung chat mỗi khi lệnh có output.
+
 - **fix(tui)**: Keep provider browsing on the welcome screen by showing the
   catalog notice in the picker footer instead of adding a transcript row.
   Apply the same routing to the fallback model picker. Closing a report on the

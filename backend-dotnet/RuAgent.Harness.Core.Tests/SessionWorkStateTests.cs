@@ -168,6 +168,44 @@ public sealed class SessionWorkStateTests
     }
 
     [Fact]
+    public void A_session_whose_evidence_fills_the_cap_can_still_start_a_run()
+    {
+        // Regression: sixteen long verification commands filled the 16 KiB cap, after
+        // which every new run (even "continue") threw and the session could never run again.
+        var full = Enumerable.Range(0, SessionWorkState.MaximumItems)
+            .Select(index => new SessionVerificationRecord($"check-{index} " + new string('v', 900), "process_exit_code_0", true,
+                Sample.SourceRunId.Value, Sample.SourceEventId, DateTimeOffset.Parse("2026-10-04T12:01:00Z")))
+            .ToArray();
+        var previous = SessionWorkState.Fit(Sample.SessionId, Sample.WorkspaceId, Sample.WorkspaceIdentitySha256,
+            Sample.SourceRunId, 1, Sample.SourceEventId, Sample.UserGoal, [], [], false, false,
+            [], [], full, null, null);
+        Assert.True(previous.Verifications.Count < full.Length, "the cap should already have shed evidence");
+        Assert.True(previous.HasUnrepresentedReceipts);
+        Assert.Equal("check-15", previous.Verifications[^1].Command.Split(' ')[0]);
+
+        var next = SessionWorkStateReducer.StartRun(previous, Sample.SessionId, Sample.WorkspaceId,
+            Sample.WorkspaceIdentitySha256, Sample.SourceRunId, new EventId("evt_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), "continue");
+
+        Assert.Equal("continue", next.UserGoal.Text);
+        Assert.True(SessionWorkStateCodec.Serialize(next).Length <= SessionWorkState.MaximumUtf8Bytes);
+        // The newest evidence is what survives.
+        Assert.Equal("check-15", next.Verifications[^1].Command.Split(' ')[0]);
+    }
+
+    [Fact]
+    public void A_prompt_too_long_for_the_state_keeps_its_head_instead_of_failing_the_run()
+    {
+        var prompt = new string('ư', 15_000);
+        var state = SessionWorkStateReducer.StartRun(null, Sample.SessionId, Sample.WorkspaceId,
+            Sample.WorkspaceIdentitySha256, Sample.SourceRunId, new EventId("evt_cccccccccccccccccccccccccccccccc"), prompt);
+
+        Assert.StartsWith("ưưư", state.UserGoal.Text, StringComparison.Ordinal);
+        Assert.EndsWith("…", state.UserGoal.Text, StringComparison.Ordinal);
+        Assert.True(state.EarlierUserIntentOmitted);
+        Assert.True(SessionWorkStateCodec.Serialize(state).Length <= SessionWorkState.MaximumUtf8Bytes);
+    }
+
+    [Fact]
     public void Run_reducer_falls_back_within_the_work_state_byte_cap_for_many_long_constraints()
     {
         var prompt = string.Join('\n', Enumerable.Range(1, 8)

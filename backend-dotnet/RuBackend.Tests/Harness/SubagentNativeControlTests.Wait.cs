@@ -35,9 +35,18 @@ public sealed partial class SubagentNativeControlTests
         Assert.Equal(root.RunId, pending);
         Assert.Equal("run_not_runnable", (await coordinator.RunOneStepAsync(root.RunId, default)).ErrorCode);
         Assert.Equal(1, model.Calls);
+        var activities = new RecordingActivitySink();
         using var waits = new SubagentWaitCoordinator(storage.EventStore,
-            new SqliteSubagentResultStore(storage.Options, storage.PayloadStore), new SystemTimeProvider());
+            new SqliteSubagentResultStore(storage.Options, storage.PayloadStore), new SystemTimeProvider(),
+            activities: activities);
         await waits.TickAsync(default);
+        // The wait completes outside the root's tool pipeline; the coordinator must settle
+        // its row, or every wait row stays live (and animated) until the run ends.
+        var settled = Assert.Single(activities.Published);
+        Assert.Equal(root.RunId, settled.RunId);
+        Assert.Equal(RuAgent.Protocol.Harness.AgentActivityKind.Status, settled.Activity.Kind);
+        Assert.Equal(RuAgent.Protocol.Harness.AgentActivityState.Completed, settled.Activity.State);
+        Assert.Equal("subagent_wait_timeout", settled.Activity.SafeCode);
         var resumed = (await storage.EventStore.GetRunAsync(root.RunId, default))!;
         Assert.Equal(HarnessRunState.Running, resumed.State);
         Assert.Equal(parked.Run.BudgetWindow, resumed.BudgetWindow);
@@ -45,6 +54,12 @@ public sealed partial class SubagentNativeControlTests
         Assert.Equal(parked.Run.ToolCallsInWindow, resumed.ToolCallsInWindow);
         Assert.Equal(1, model.Calls);
         Assert.Empty(await storage.EventStore.ListPendingSubagentWaitsAsync(null, default));
+    }
+
+    private sealed class RecordingActivitySink : IAgentActivitySink
+    {
+        public List<(RunId RunId, AgentActivity Activity)> Published { get; } = [];
+        public void Publish(RunId runId, AgentActivity activity) => Published.Add((runId, activity));
     }
 
     private sealed class WaitModel(string agentId) : IModelStepRunner

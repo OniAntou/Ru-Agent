@@ -44,7 +44,8 @@ public sealed partial class SubagentWorkspaceTests
         public Task<GitCliResult> RunAsync(IReadOnlyList<string> arguments, string workingDirectory,
             CancellationToken cancellationToken, IReadOnlyDictionary<string, string>? additionalEnvironment = null)
         {
-            if (arguments.Contains("HEAD^{commit}") && ++_heads == 2)
+            // Read 1 chooses the Git source (ADR 0042), read 2 is the pre-allocation HEAD, read 3 the post-copy recheck.
+            if (arguments.Contains("HEAD^{commit}") && ++_heads == 3)
             {
                 var allocated = Assert.Single(Directory.GetDirectories(state));
                 SawCopiedFiles = Directory.EnumerateFiles(Path.Combine(allocated, "base")).Any();

@@ -42,14 +42,18 @@ a missing credential fails the pinned run instead of switching providers.
 
 Use `role=review` for research, web searches (including current prices), analysis and
 code review. It uses the parent's workspace read-only and does not require Git.
-Use `role=coding` only when the task needs file changes. Coding requires a usable
-Git repository at the workspace root with an existing commit; Ru does not initialize
-Git or create a commit automatically to satisfy this prerequisite.
+Use `role=coding` only when the task needs file changes. It works in any trusted
+workspace ([ADR 0042](../adr/0042-private-base-repository-for-coding-subagents.md)):
+a workspace that is a Git repository root with a commit registers the child worktree
+in that repository; any other folder (no repository, a folder below the repository
+root, or a repository without a commit) gets a private base repository inside the
+snapshot's Ru-owned directory. Ru never initializes Git or commits in the workspace.
+Git must be installed; `.gitignore` files inside the workspace decide what the child
+sees in both modes, and a nested repository is refused as `subagent_snapshot_unsupported`.
 
-`subagent_git_root_unavailable` means Git could not resolve the repository root
-(for example, the folder is not a repository, Git is unavailable, or access was denied).
-`subagent_git_root_required` means the selected workspace is below the repository root.
-`subagent_git_head_unavailable` means Git could not resolve an existing HEAD commit.
+`subagent_git_failed` means Git could not run or failed while preparing the base.
+`subagent_git_head_unavailable` after allocation means the workspace repository changed
+while it was being captured.
 When Broker proves a refusal occurred before any filesystem allocation started, Host
 releases the exact unchanged reservation and returns an ordinary tool failure. No
 child or workspace is created and the parent can continue, choosing review for a
@@ -61,12 +65,24 @@ The parent alone uses `agent_spawn`, `agent_send`, `agent_wait`, `agent_cancel` 
 `agent_apply`. Depth is one, with at most three runnable children/eight identities and
 three attempts each. Child role, immutable parent policy ceiling, budgets, deadlines and
 Broker lease lifetime intersect; none grant additional permissions.
-`agent_wait.timeout_ms` accepts 0 through 60,000 milliseconds. For longer tasks,
+Each child attempt is bounded to 128 model steps, 256 tool calls and four hours; the
+root and its children share 1,024 model steps and 2,048 tool calls per root budget
+window (persisted bounds since schema v35).
+`agent_wait.timeout_ms` accepts 0 through 600,000 milliseconds. For longer tasks,
 the parent waits again after a timeout rather than passing a larger timeout.
 A successful native `subagent_wait_timeout` receipt permits repeating that single
 wait with the same arguments. It does not spend repetition-repair notes; model-step,
 tool-call and family budgets still apply. Failed, ambiguous or already-completed
 waits remain subject to the normal repetition guard.
+The root's `agent_wait` row reads "Waiting for subagents" while the root is parked.
+The wait coordinator settles that same row when it wakes the root (`subagent_wait_completed`
+or `subagent_wait_timeout`), so a check-in that ran out of time stops looking live.
+A timed-out wait's output also carries `progress` for each pending child: state, step
+and tool-call counts, up to five recent activity rows and the latest narration (bounded,
+under the same untrusted source label as results). It is read from the child's durable
+activity replay before the wake commits and is the first thing dropped when the output
+would exceed its cap. The GUI detail pane reads the same replay on its refresh tick and
+shows the child's narration and tool rows, read-only.
 
 Harness recovery may suppress a model reply and retain it only for audit while asking
 the model to try again. Before the next child step, inbox checks use model-visible

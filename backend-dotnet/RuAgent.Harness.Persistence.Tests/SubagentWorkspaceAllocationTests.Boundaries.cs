@@ -16,7 +16,7 @@ public sealed partial class SubagentWorkspaceAllocationTests
         await using var connection = fixture.CreateRawConnection();
         await connection.OpenAsync();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE agent_runs SET model_steps_in_window=129";
+        command.CommandText = $"UPDATE agent_runs SET model_steps_in_window={RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps + 1}";
         await command.ExecuteNonQueryAsync();
         var store = new SqliteSubagentWorkspaceAllocationStore(fixture.Options, new(new FakeHarnessKeyStore()));
         var error = await Assert.ThrowsAsync<HarnessStoreException>(() => store.ReserveAsync(root.Run.RunId, "agent_one", default));

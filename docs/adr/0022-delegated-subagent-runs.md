@@ -36,6 +36,9 @@ Review forbids mutation, terminal execution and nesting even under Full Access.
 Coding requires a private Git worktree copied from the parent's current dirty
 bytes, with a separate index and immutable base. Unsupported inputs fail by name;
 there is no automatic shared-checkout substitute, setup command, commit or push.
+[ADR 0042](0042-private-base-repository-for-coding-subagents.md) replaces the Git-root
+prerequisite: a workspace without a usable Git source gets a private base repository in
+Ru-owned storage; nothing is written in the workspace.
 
 Worktrees separate coding outputs; they provide no OS filesystem/network
 confinement. Terminal processes retain the current Windows user's ambient access

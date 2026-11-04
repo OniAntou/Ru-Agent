@@ -30,7 +30,7 @@ public sealed class SubagentContractTests
     [InlineData("agent_send", "{\"agent_id\":\"a\",\"message\":\" \"}")]
     [InlineData("agent_wait", "{\"agent_ids\":[]}")]
     [InlineData("agent_wait", "{\"agent_ids\":[\"a\",\"a\"]}")]
-    [InlineData("agent_wait", "{\"agent_ids\":[\"a\"],\"timeout_ms\":60001}")]
+    [InlineData("agent_wait", "{\"agent_ids\":[\"a\"],\"timeout_ms\":600001}")]
     [InlineData("agent_apply", "{\"agent_id\":\"a\",\"result_version\":0}")]
     [InlineData("agent_apply", "{\"agent_id\":\"a\",\"result_version\":4}")]
     [InlineData("agent_cancel", "{\"agent_id\":\"../other\"}")]

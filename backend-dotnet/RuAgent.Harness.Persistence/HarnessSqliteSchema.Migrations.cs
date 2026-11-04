@@ -72,6 +72,7 @@ public static partial class HarnessSqliteSchema
                     ON business_session_source_receipts(session_id, source_role, source_run_id);
                 SELECT 1;
                 """),
+            new(34, 35, SubagentFamilyBudgetMigration),
         ];
     }
 }

@@ -38,7 +38,7 @@ public sealed class SubagentFamilyBudgetTests
         await using (var connection = await storage.Options.OpenConnectionAsync(default))
         {
             using var command = connection.CreateCommand();
-            command.CommandText = "UPDATE agent_runs SET model_steps_in_window=127,tool_calls_in_window=254";
+            command.CommandText = $"UPDATE agent_runs SET model_steps_in_window={RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps - 1},tool_calls_in_window={RuAgent.Protocol.Subagents.SubagentLimits.FamilyToolCalls - 2}";
             await command.ExecuteNonQueryAsync();
         }
         var identity = await new WindowsWorkspaceIdentityResolver().ResolveAsync(storage.RootPath, default);

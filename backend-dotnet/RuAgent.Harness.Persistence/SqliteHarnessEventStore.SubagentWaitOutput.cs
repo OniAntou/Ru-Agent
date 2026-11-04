@@ -50,15 +50,29 @@ public sealed partial class SqliteHarnessEventStore
         return previews.AsReadOnly();
     }
 
-    private static byte[] SubagentWaitOutput(IReadOnlyList<SubagentWaitPreview> previews, bool timedOut)
+    private static byte[] SubagentWaitOutput(IReadOnlyList<SubagentWaitPreview> previews, bool timedOut,
+        IReadOnlyList<SubagentWaitProgress>? progress = null)
     {
         var summaryCap = SubagentLimits.MaxInlineResultBytes;
+        // Progress is a courtesy for a timed-out wait: what each child is doing, so the
+        // parent can decide without polling. It is the first thing dropped when too big.
+        var shownProgress = progress is { Count: > 0 } ? progress : null;
         while (true)
         {
-            var output = JsonSerializer.SerializeToUtf8Bytes(new
+            var document = JsonSerializer.SerializeToNode(new
             {
                 source = "untrusted_subagent_results",
                 timed_out = timedOut,
+                progress = shownProgress?.Select(item => new
+                {
+                    agent_id = item.AgentId,
+                    run_id = item.RunId.Value,
+                    state = item.State,
+                    model_steps = item.ModelSteps,
+                    tool_calls = item.ToolCalls,
+                    recent_activity = item.RecentActivity,
+                    latest_narration = item.LatestNarration,
+                }).ToArray(),
                 results = previews.Select(preview =>
                 {
                     var length = Math.Min(preview.Prefix.Length, summaryCap);
@@ -74,8 +88,16 @@ public sealed partial class SqliteHarnessEventStore
                         code = preview.Result.Code, summary, summary_truncated = length < preview.TotalBytes,
                         summary_bytes = preview.TotalBytes, summary_payload_id = preview.Result.PayloadId.Value };
                 }).ToArray(),
-            });
+            })!.AsObject();
+            // Without progress the output keeps exactly its earlier shape.
+            if (shownProgress is null) document.Remove("progress");
+            var output = JsonSerializer.SerializeToUtf8Bytes(document);
             if (output.Length <= SubagentLimits.MaxInlineResultBytes) return output;
+            if (shownProgress is not null)
+            {
+                shownProgress = null;
+                continue;
+            }
             if (summaryCap == 0) throw new HarnessStoreException("subagent_result_too_large");
             summaryCap /= 2;
         }

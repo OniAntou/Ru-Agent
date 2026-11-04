@@ -26,7 +26,7 @@ public static class SessionWorkStateCodec
             state.Blocker, state.NextAction);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(document, JsonOptions);
         if (bytes.Length > SessionWorkState.MaximumUtf8Bytes)
-            throw new ArgumentException("Work state exceeds its serialized cap.", nameof(state));
+            throw new ArgumentException(SessionWorkState.AggregateCapMessage, nameof(state));
         return bytes;
     }
 

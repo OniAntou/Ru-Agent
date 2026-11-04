@@ -38,6 +38,34 @@ internal sealed class OwnedDirectoryDeletion
         Directory.Delete(path, recursive: false);
     }
 
+    /// <summary>
+    /// Makes a Ru-owned private base repository (ADR 0042) deletable. Git writes its
+    /// object files read-only; the general deletion treats a read-only file as a reason
+    /// to stop, which is right for anything else in owned storage. Links are not followed.
+    /// </summary>
+    public static void ReleasePrivateRepository(string ownedDirectory, CancellationToken ct)
+    {
+        var repository = Path.Combine(ownedDirectory, SubagentSnapshotCapture.PrivateRepositoryName);
+        if (!Exists(repository)) return;
+        var pending = new Stack<(string Path, int Depth)>();
+        pending.Push((repository, 0));
+        var entries = 0;
+        while (pending.Count > 0)
+        {
+            var (directory, depth) = pending.Pop();
+            if (depth > MaxDepth) throw new SubagentWorkspaceException("subagent_cleanup_too_large");
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (++entries > MaxEntries) throw new SubagentWorkspaceException("subagent_cleanup_too_large");
+                var attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReparsePoint) != 0) continue;
+                if ((attributes & FileAttributes.Directory) != 0) pending.Push((entry, depth + 1));
+                else if ((attributes & FileAttributes.ReadOnly) != 0) File.SetAttributes(entry, attributes & ~FileAttributes.ReadOnly);
+            }
+        }
+    }
+
     public static bool Exists(string path)
     {
         try

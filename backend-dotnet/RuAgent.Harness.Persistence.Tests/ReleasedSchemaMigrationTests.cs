@@ -106,7 +106,7 @@ public sealed class ReleasedSchemaMigrationTests
 
         Assert.True(upgraded.IsAvailable, upgraded.ErrorCode);
         Assert.Equal(3L, await fixture.ScalarAsync("SELECT count(*) FROM business_session_messages WHERE image_attachment_count=1;"));
-        Assert.Equal(34L, await fixture.ScalarAsync("PRAGMA user_version;"));
+        Assert.Equal((long)HarnessSqliteSchema.CurrentVersion, await fixture.ScalarAsync("PRAGMA user_version;"));
     }
 
     [Fact]

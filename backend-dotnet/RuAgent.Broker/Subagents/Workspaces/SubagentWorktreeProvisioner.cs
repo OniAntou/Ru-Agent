@@ -17,18 +17,22 @@ public sealed partial class SubagentWorktreeProvisioner(SubagentGitAdapter? git 
         using var parentGit = DirectoryHandleLease.Open(snapshot.GitDirectory, requireCanonicalPath: true);
         using var common = DirectoryHandleLease.Open(snapshot.CommonDirectory, requireCanonicalPath: true);
         if (parent.Identity != snapshot.ParentDirectoryIdentity || parentGit.Identity != snapshot.GitDirectoryIdentity
-            || common.Identity != snapshot.CommonDirectoryIdentity || await _git.GitDirectory(snapshot.ParentRoot, ct) != snapshot.GitDirectory
-            || await _git.CommonDirectory(snapshot.ParentRoot, ct) != snapshot.CommonDirectory)
+            || common.Identity != snapshot.CommonDirectoryIdentity || await _git.GitDirectory(snapshot.RepositoryRoot, ct) != snapshot.GitDirectory
+            || await _git.CommonDirectory(snapshot.RepositoryRoot, ct) != snapshot.CommonDirectory)
             throw new SubagentWorkspaceException("subagent_workspace_identity_changed");
         var directory = Path.GetDirectoryName(snapshot.BaseDirectory)!;
         using var owned = DirectoryHandleLease.Open(directory, requireCanonicalPath: true);
         if (owned.Identity != snapshot.OwnedDirectoryIdentity)
             throw new SubagentWorkspaceException("subagent_workspace_identity_changed");
+        // A private base repository (ADR 0042) is only ever the snapshot's own child.
+        if (snapshot.PrivateRepository is { } repository
+            && !SamePath(repository, Path.Combine(directory, SubagentSnapshotCapture.PrivateRepositoryName)))
+            throw new SubagentWorkspaceException("subagent_workspace_identity_changed");
         var child = Path.Combine(directory, agentId);
         if (Directory.Exists(child) || File.Exists(child)) throw new SubagentWorkspaceException("subagent_workspace_exists");
         await SubagentWorkspaceAllocationProgress.SnapshotAsync(observer, snapshot,
             SubagentWorkspaceAllocationStage.RegisteringWorktree, ct).ConfigureAwait(false);
-        await _git.Add(snapshot.ParentRoot, child, snapshot.Head, ct).ConfigureAwait(false);
+        await _git.Add(snapshot.RepositoryRoot, child, snapshot.Head, ct).ConfigureAwait(false);
         using var childHandle = DirectoryHandleLease.Open(child, requireCanonicalPath: true);
         var childGitDirectory = await _git.GitDirectory(child, ct);
         using var gitHandle = DirectoryHandleLease.Open(childGitDirectory, requireCanonicalPath: true);
@@ -57,4 +61,8 @@ public sealed partial class SubagentWorktreeProvisioner(SubagentGitAdapter? git 
             SubagentWorkspaceAllocationStage.Prepared, ct).ConfigureAwait(false);
         return result;
     }
+
+    private static bool SamePath(string left, string right) => string.Equals(
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)),
+        StringComparison.OrdinalIgnoreCase);
 }

@@ -11,14 +11,21 @@ public static class SubagentLimits
     public const int MaxIdentities = 8;
     public const int MaxRunnable = 3;
     public const int MaxAttempts = 3;
-    public const int MaxModelSteps = 32;
-    public const int MaxToolCalls = 64;
-    public const int FamilyModelSteps = 128;
-    public const int FamilyToolCalls = 256;
-    public const int MaxWaitMilliseconds = 60_000;
+    // Raised for day-long runs (owner decision, 2026-11-04). A child's own limits stay
+    // within one budget window (128 steps / 256 tool calls): a child never opens a
+    // window by itself, so a higher value would park it where nobody can continue it.
+    public const int MaxModelSteps = 128;
+    public const int MaxToolCalls = 256;
+    // Per root budget window, shared by the root and its children. The persisted
+    // counters' CHECK bounds follow these values (schema v35).
+    public const int FamilyModelSteps = 1024;
+    public const int FamilyToolCalls = 2048;
+    // Ten minutes, so a root waiting on long children parks instead of spending a
+    // model step on every check-in.
+    public const int MaxWaitMilliseconds = 600_000;
     public const int MaxSnapshotFiles = 50_000;
     public const long MaxSnapshotBytes = 256L * 1024 * 1024;
-    public static readonly TimeSpan AttemptTimeout = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan AttemptTimeout = TimeSpan.FromHours(4);
 }
 
 [JsonConverter(typeof(SubagentRoleJsonConverter))]

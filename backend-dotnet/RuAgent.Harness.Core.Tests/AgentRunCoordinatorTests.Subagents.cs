@@ -104,7 +104,9 @@ public sealed partial class AgentRunCoordinatorTests
     {
         var original = Run(new(HarnessRunState.Running));
         var run = new AgentRun(original.RunId, original.SessionId, original.WorkspaceId, original.Status,
-            original.Version, original.LastSequence, 1, modelLimit ? 32 : 0, modelLimit ? 0 : 64,
+            original.Version, original.LastSequence, 1,
+            modelLimit ? RuAgent.Protocol.Subagents.SubagentLimits.MaxModelSteps : 0,
+            modelLimit ? 0 : RuAgent.Protocol.Subagents.SubagentLimits.MaxToolCalls,
             original.Preset, original.PolicySnapshotVersion, original.PolicySnapshotSha256, original.CreatedAt, original.UpdatedAt);
         var store = new InMemoryHarnessEventStore();
         store.Seed(run);

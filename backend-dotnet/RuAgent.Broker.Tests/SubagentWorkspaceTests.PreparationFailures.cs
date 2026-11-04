@@ -6,9 +6,11 @@ namespace RuAgent.Broker.Tests;
 
 public sealed partial class SubagentWorkspaceTests
 {
+    // Read 1 decides the source (a failure there now means "use a private base", ADR 0042),
+    // read 2 is the parent HEAD before allocation, read 3 the recheck after copying.
     [Theory]
-    [InlineData(1, true)]
-    [InlineData(2, false)]
+    [InlineData(2, true)]
+    [InlineData(3, false)]
     public async Task Same_git_failure_is_known_only_before_allocation(int failedHeadRead, bool unchanged)
     {
         var capture = new SubagentSnapshotCapture(new SubagentGitAdapter(new FailingHeadGit(_git, failedHeadRead)));

@@ -177,7 +177,15 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<RuBackend.Harness.Subagents.SubagentPublicService>();
         services.AddSingleton<RuBackend.Harness.Subagents.SubagentLivePublisher>();
         services.AddSingleton<RuBackend.Harness.Subagents.SubagentControlDispatcher>();
-        services.AddSingleton<RuBackend.Harness.Subagents.SubagentWaitCoordinator>();
+        services.AddSingleton(services => new RuBackend.Harness.Subagents.SubagentWaitCoordinator(
+            services.GetRequiredService<SqliteHarnessEventStore>(),
+            services.GetRequiredService<RuAgent.Harness.Persistence.Subagents.SqliteSubagentResultStore>(),
+            services.GetRequiredService<ITimeProvider>(),
+            services.GetService<ILogger<RuBackend.Harness.Subagents.SubagentWaitCoordinator>>(),
+            services.GetService<RuBackend.Harness.Subagents.SubagentCodingResultPublisher>(),
+            services.GetService<AgentRunSummaryLivePublisher>(),
+            services.GetService<RuBackend.Harness.Subagents.SubagentWaitProgressReader>()));
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentWaitProgressReader>();
         services.AddSingleton<KnownSecretRedactor>(_ => BuildKnownSecretRedactor());
         services.AddSingleton<AgentReplyTransientRedactor>();
         services.AddSingleton<ITransientContentRedactor>(services =>

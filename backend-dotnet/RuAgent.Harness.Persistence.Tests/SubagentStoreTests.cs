@@ -21,7 +21,7 @@ public sealed class SubagentStoreTests
         {
             await connection.OpenAsync();
             using var command = connection.CreateCommand();
-            command.CommandText = "UPDATE agent_runs SET model_steps_in_window=10,tool_calls_in_window=254";
+            command.CommandText = $"UPDATE agent_runs SET model_steps_in_window=10,tool_calls_in_window={RuAgent.Protocol.Subagents.SubagentLimits.FamilyToolCalls - 2}";
             await command.ExecuteNonQueryAsync();
         }
         await new SqliteSubagentStore(fixture.Options, fixture.PayloadStore).CreateAsync(
@@ -143,7 +143,7 @@ public sealed class SubagentStoreTests
         Assert.True(await store.TryAdmitAsync("agent_one", now, default));
         var attempt = await store.GetLatestAttemptAsync(root.Run.RunId, "agent_one", default);
         Assert.Equal(HarnessRunState.Running, attempt!.Run.State);
-        Assert.Equal(now.AddMinutes(15), attempt!.DeadlineAt);
+        Assert.Equal(now.Add(RuAgent.Protocol.Subagents.SubagentLimits.AttemptTimeout), attempt!.DeadlineAt);
         Assert.False(await store.TryAdmitAsync("agent_one", now.AddMinutes(1), default));
         Assert.Equal(attempt.DeadlineAt, (await store.GetLatestAttemptAsync(root.Run.RunId, "agent_one", default))!.DeadlineAt);
         await store.CancelFamilyAsync(root.Run.RunId, default);
@@ -194,9 +194,9 @@ public sealed class SubagentStoreTests
         var root = fixture.NewRun(1, 1, 1);
         await fixture.CreateEventStore().TryCreateRunAsync(root, default);
         var budgets = new SqliteSubagentBudgetStore(fixture.Options);
-        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "step1", SubagentBudgetKind.ModelStep, 127, 0, default));
-        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "step1", SubagentBudgetKind.ModelStep, 127, 0, default));
-        Assert.False(await budgets.ReserveAsync(root.Run.RunId, 1, "step2", SubagentBudgetKind.ModelStep, 127, 0, default));
-        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "tool1", SubagentBudgetKind.ToolCall, 127, 0, default));
+        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "step1", SubagentBudgetKind.ModelStep, RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps - 1, 0, default));
+        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "step1", SubagentBudgetKind.ModelStep, RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps - 1, 0, default));
+        Assert.False(await budgets.ReserveAsync(root.Run.RunId, 1, "step2", SubagentBudgetKind.ModelStep, RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps - 1, 0, default));
+        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "tool1", SubagentBudgetKind.ToolCall, RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps - 1, 0, default));
     }
 }

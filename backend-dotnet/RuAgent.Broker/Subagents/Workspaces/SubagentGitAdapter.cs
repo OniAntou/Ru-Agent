@@ -26,6 +26,21 @@ public sealed class SubagentGitAdapter
         Run(parent, ["worktree", "add", "--no-checkout", "--detach", "--", child, head], ct);
     internal Task<string> InitializeIndex(string child, CancellationToken ct) => Run(child, ["read-tree", "HEAD"], ct);
 
+    // Private base repository (ADR 0042). Every command names the Ru-owned repository
+    // explicitly; none writes to the workspace, which is only ever a read-only work tree.
+    internal Task<string> InitializePrivate(string owner, string repository, CancellationToken ct) =>
+        Run(owner, ["init", "--quiet", "--initial-branch=ru-base", "--", repository], ct);
+    internal Task<string> UntrackedIn(string gitDirectory, string workTree, CancellationToken ct) =>
+        Run(workTree, ["--git-dir=" + gitDirectory, "--work-tree=" + workTree, "ls-files", "--others", "--exclude-standard", "-z"],
+            ct, trim: false);
+    internal async Task CommitBase(string gitDirectory, string baseDirectory, CancellationToken ct)
+    {
+        string[] tree = ["--git-dir=" + gitDirectory, "--work-tree=" + baseDirectory];
+        await Run(baseDirectory, [.. tree, "add", "--all", "--", "."], ct).ConfigureAwait(false);
+        await Run(baseDirectory, ["-c", "user.name=Ru", "-c", "user.email=ru@localhost", "-c", "commit.gpgsign=false",
+            .. tree, "commit", "--quiet", "--no-verify", "--allow-empty", "-m", "Ru subagent base snapshot"], ct).ConfigureAwait(false);
+    }
+
     private async Task<string> Run(string root, string[] command, CancellationToken ct, bool trim = true, bool missingAllowed = false,
         string failureCode = "subagent_git_failed")
     {

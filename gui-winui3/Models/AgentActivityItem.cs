@@ -396,6 +396,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
     /// </remarks>
     private static string StatusWaitingText(string safeCode) => safeCode switch
     {
+        "waiting_subagents" => "Waiting for subagents",
         "inspection_required" => "Waiting: a read-only check is needed first",
         "reconciliation_required" => "Stopped: the last change is unverified",
         { Length: > 0 } code => "Waiting: " + code.Replace('_', ' '),
@@ -451,6 +452,11 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
     private static string StatusText(string safeCode) => safeCode switch
     {
         "frames_dropped" => "Some steps were temporarily skipped",
+        // An agent_wait that ran out of time is a check-in, not a failure: the children
+        // are still working and the main agent chose how long to wait.
+        "subagent_wait_timeout" => "Checked subagents · still working",
+        "subagent_wait_completed" => "Received subagent results",
+        "subagent_spawned" => "Started a subagent",
         "inspection_required" => "Waiting: an action needs a read-only check first",
         "reconciliation_required" => "Stopped: the last change is unverified",
         { Length: > 0 } code => "Status: " + code.Replace('_', ' '),

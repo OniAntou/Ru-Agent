@@ -8,6 +8,8 @@ date: 2026-10-24
 > Partially superseded by [ADR 0029](0029-retire-legacy-tool-surface.md): legacy
 > execution and implicit legacy selection are retired. The effective decisions
 > below retain supported run-pinned inventories and shared Broker authority.
+> [ADR 0043](0043-single-default-coding-profile.md) replaces the `patch_v2`
+> experiment and the `coding_v2` default with one default `coding_v3` profile.
 
 ## Context
 

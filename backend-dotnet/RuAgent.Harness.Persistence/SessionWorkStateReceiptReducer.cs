@@ -6,8 +6,11 @@ namespace RuAgent.Harness.Persistence;
 
 internal static class SessionWorkStateReceiptReducer
 {
+    /// <summary>A verification command longer than this is stored as its head plus an ellipsis.</summary>
+    internal const int MaximumStoredCommandCharacters = 512;
+
     public static SessionWorkState MarkUnrepresented(SessionWorkState state, RunId runId, EventId eventId) =>
-        new(state.SessionId, state.WorkspaceId, state.WorkspaceIdentitySha256,
+        SessionWorkState.Fit(state.SessionId, state.WorkspaceId, state.WorkspaceIdentitySha256,
             runId, state.Version + 1, eventId.Value, state.UserGoal, state.UserConstraints,
             state.EarlierUserIntent, state.EarlierUserIntentOmitted, true,
             state.Tasks, state.ObservedFiles, state.Verifications, state.Blocker, state.NextAction);
@@ -29,7 +32,7 @@ internal static class SessionWorkStateReceiptReducer
             foreach (var nested in trace)
                 projected = Apply(projected, nested.Call, nested.Output, nested.Outcome == ToolExecutionOutcome.Succeeded,
                     runId, eventId, recordedAt) ?? MarkUnrepresented(projected, runId, eventId);
-            return new SessionWorkState(projected.SessionId, projected.WorkspaceId, projected.WorkspaceIdentitySha256,
+            return SessionWorkState.Fit(projected.SessionId, projected.WorkspaceId, projected.WorkspaceIdentitySha256,
                 runId, state.Version + 1, eventId.Value, projected.UserGoal, projected.UserConstraints,
                 projected.EarlierUserIntent, projected.EarlierUserIntentOmitted, projected.HasUnrepresentedReceipts,
                 projected.Tasks, projected.ObservedFiles, projected.Verifications, projected.Blocker, projected.NextAction);
@@ -42,7 +45,9 @@ internal static class SessionWorkStateReceiptReducer
             ? ReadVerification(call.Arguments, output, runId, eventId, recordedAt)
             : null;
         var isRepresented = tasks is not null || files is not null || verification is not null;
-        return new SessionWorkState(state.SessionId, state.WorkspaceId, state.WorkspaceIdentitySha256,
+        // Fit, not the constructor: a receipt that pushes the state over its cap must
+        // shed old evidence rather than fail the commit that carries it.
+        return SessionWorkState.Fit(state.SessionId, state.WorkspaceId, state.WorkspaceIdentitySha256,
             runId, state.Version + 1, eventId.Value, state.UserGoal, state.UserConstraints,
             state.EarlierUserIntent, state.EarlierUserIntentOmitted,
             state.HasUnrepresentedReceipts || !isRepresented,
@@ -132,6 +137,10 @@ internal static class SessionWorkStateReceiptReducer
             if (command.Length > 4096) return null;
         }
         var succeeded = code == 0;
+        // Sixteen full scripts would fill the whole state on their own; the head of a
+        // command is enough to say what was verified.
+        if (command.Length > MaximumStoredCommandCharacters)
+            command = command[..(MaximumStoredCommandCharacters - 1)] + "…";
         return new SessionVerificationRecord(command, $"process_exit_code_{code}", succeeded,
             runId.Value, eventId.Value, recordedAt);
     }

@@ -10,6 +10,22 @@ namespace RuApp.Tests;
 public sealed class ActiveRunTranscriptProjectionTests
 {
     [Fact]
+    public void A_bubble_rebuilt_on_reopen_keeps_the_runs_start_for_its_live_clock()
+    {
+        // Regression: switching sessions and back rebuilt the live bubble stamped "now",
+        // so the summary's elapsed clock restarted from 0:00.
+        var messages = new List<ChatMessageItem>();
+        var started = DateTime.Now.AddMinutes(-7);
+
+        var adopted = ActiveRunTranscriptProjection.Adopt(messages, new(), "session-a", "run-active", started);
+
+        Assert.Equal(started, adopted.Timestamp);
+        // A later start never moves an older origin forward.
+        ActiveRunTranscriptProjection.Adopt(messages, new(), "session-a", "run-active", DateTime.Now);
+        Assert.Equal(started, adopted.Timestamp);
+    }
+
+    [Fact]
     public void Adopted_run_promotes_its_replayed_bubble_and_reattaches_live_activities()
     {
         var previous = new ChatMessageItem { Role = "assistant", SourceRunId = "run-old" };

@@ -4,9 +4,13 @@ namespace RuAgent.Protocol;
 
 public static class AgentToolProfiles
 {
+    /// <summary>Earlier default, kept so runs already pinned to it continue.</summary>
     public const string Minimal = "coding_v2";
-    public const string Patch = "patch_v2";
-    public const string Programmatic = "coding_code_v1";
+    /// <summary>
+    /// The single default since ADR 0043: coding_v2 plus apply_patch and run_code.
+    /// It replaces the opt-in patch_v2 and coding_code_v1 experiments.
+    /// </summary>
+    public const string Current = "coding_v3";
     public const string PinField = "ru_tool_profile";
 
     // A versioned profile is an explicit inventory: future catalog additions must
@@ -21,7 +25,7 @@ public static class AgentToolProfiles
     {
         if (!options.ContainsKey(PinField)) throw new AgentProtocolException("tool_profile_required");
         if (options[PinField] is JsonValue value && value.TryGetValue<string>(out var profile)
-            && profile is Minimal or Patch or Programmatic) return profile;
+            && profile is Minimal or Current) return profile;
         throw new AgentProtocolException("tool_profile_invalid");
     }
 
@@ -29,14 +33,12 @@ public static class AgentToolProfiles
     // metadata or invent a replacement pin. Execution always uses ReadPin.
     public static string? ReadSupportedLabel(JsonObject options) =>
         options[PinField] is JsonValue value && value.TryGetValue<string>(out var profile)
-            && profile is Minimal or Patch or Programmatic ? profile : null;
+            && profile is Minimal or Current ? profile : null;
 
     public static bool Includes(string profile, string toolId) => profile switch
     {
         Minimal => Common.Contains(toolId) || Coding.Contains(toolId),
-        Programmatic => Common.Contains(toolId) || Coding.Contains(toolId) || toolId is "run_code" or "apply_patch",
-        Patch => Common.Contains(toolId) || toolId == "apply_patch"
-            || Coding.Contains(toolId) && toolId is not ("write_file" or "edit_file"),
+        Current => Common.Contains(toolId) || Coding.Contains(toolId) || toolId is "run_code" or "apply_patch",
         _ => throw new AgentProtocolException("tool_profile_invalid"),
     };
 
@@ -44,7 +46,7 @@ public static class AgentToolProfiles
     {
         if (configured is not null)
             return ReadPin(new JsonObject { [PinField] = configured });
-        // Opt in to patch experiments explicitly; a model-name guess is not quality evidence.
-        return Minimal;
+        // One inventory for every model; a model-name guess is not quality evidence.
+        return Current;
     }
 }

@@ -4,7 +4,8 @@ namespace RuAgent.Cli;
 
 public sealed partial class AgentCommands
 {
-    private async Task ShowSubagentsAsync(string? argument, string? currentRoot, TextWriter output, bool json, CancellationToken ct)
+    private async Task ShowSubagentsAsync(
+        string? argument, string? currentRoot, TextWriter output, bool json, TextWriter diagnostics, CancellationToken ct)
     {
         var parts = (argument ?? "").Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var root = currentRoot;
@@ -15,10 +16,10 @@ public sealed partial class AgentCommands
         }
         if (root is null)
         {
-            await _err.WriteLineAsync("No current root. Use /subagents <run-id>.");
+            await diagnostics.WriteLineAsync("No current root. Use /subagents <run-id>.").ConfigureAwait(false);
             return;
         }
         try { await Subagents.SubagentPresenter.ExecuteAsync(_agentClient, root, argument, output, json, ct).ConfigureAwait(false); }
-        catch (AgentApiException error) { await _err.WriteLineAsync(CliErrorText.Format(error)); }
+        catch (AgentApiException error) { await diagnostics.WriteLineAsync(CliErrorText.Format(error)).ConfigureAwait(false); }
     }
 }

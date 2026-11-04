@@ -197,11 +197,14 @@ client may resolve the approval first; no approval is granted automatically.
 delete it — because the transcript, status card, and parked-run tracking all
 point at it. With `--json` or no interactive picker it reports
 `interactive_required` and deletes nothing; the non-interactive route is the CLI
-`agent session delete <session-id> --yes`. Opening `chat --session <id>` replays
-only the newest 20 user/assistant text messages, each capped at 2000 characters;
-tool and thinking rows are never replayed, `--json` skips replay entirely, and
-the assistant header shows the replay time because session payloads carry no
-timestamp.
+`agent session delete <session-id> --yes`. Opening `chat --session <id>` redraws
+every turn of the newest history page (up to 200 messages, as the Desktop opens it)
+through the live renderer, within the transcript's 2,000-row retention: prompt, narration, thought, plan
+and tool rows from each finished run's activity record, then its footer with the
+run's real duration. A turn whose record cannot be read falls back to its text; a
+run still working is drawn by the follow that adopts it. Ctrl+O reasoning, diffs
+and tool output are not part of the record, `--json` skips replay entirely, and a
+history rewind still replays text only.
 
 ### RPC subscriptions can end without a terminal event
 

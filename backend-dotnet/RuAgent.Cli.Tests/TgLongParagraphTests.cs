@@ -90,7 +90,10 @@ public sealed class TgLongParagraphTests
             foreach (var width in new[] { 79, 44, 120 })
             {
                 view.Frame = new System.Drawing.Rectangle(0, 0, width, 12);
-                var expected = TgAnsiPaint.HardWrapSpans(text, spans, view.Viewport.Width);
+                // A list row wraps on words under its marker; other affixes keep columns.
+                var expected = TgAnsiPaint.HasListAffix(text)
+                    ? TgAnsiPaint.WordWrapSpans(text, spans, view.Viewport.Width)
+                    : TgAnsiPaint.HardWrapSpans(text, spans, view.Viewport.Width);
                 Assert.Equal(expected.Select(row => row.Row), view.WrappedLines.Select(row => row.Text));
             }
         });
@@ -288,7 +291,7 @@ public sealed class TgLongParagraphTests
     }
 
     [Fact]
-    public void Tool_group_summary_precedes_the_streaming_paragraph_without_replacing_its_prefix()
+    public void Settled_tool_rows_precede_the_streaming_paragraph_without_replacing_its_prefix()
     {
         WithWriter((view, writer) =>
         {
@@ -308,9 +311,11 @@ public sealed class TgLongParagraphTests
             Assert.Equal(string.Concat(MarkdigInline.Parse(reply).Select(run => run.Text)), view.CopyText().Trim());
             Assert.Equal(string.Concat(MarkdigInline.Parse(reply).Select(run => run.Text)),
                 string.Concat(view.Lines.Where(row => row.Style == TranscriptStyle.Prose).Select(row => row.Text)).Trim());
-            var summary = Assert.Single(view.Lines, row => row.Text.Contains("2 searched ·", StringComparison.Ordinal));
+            // The settled rows stay ahead of the paragraph, and no block tally sits between.
+            Assert.DoesNotContain(view.Lines, row => row.Text.Contains("2 searched", StringComparison.Ordinal));
+            var lastTool = view.Lines.ToList().FindLastIndex(row => row.Text.Contains("README.md", StringComparison.Ordinal));
             var firstProse = view.Lines.ToList().FindIndex(row => row.Text.Contains("answer words", StringComparison.Ordinal));
-            Assert.True(view.Lines.ToList().IndexOf(summary) < firstProse);
+            Assert.True(lastTool >= 0 && lastTool < firstProse);
         });
     }
 
@@ -336,6 +341,28 @@ public sealed class TgLongParagraphTests
             writer.PreviewPresentation(markdown.RenderParagraphPresentation("short replacement"));
             writer.CommitPresentation(markdown.RenderParagraphPresentation("short replacement"));
             Assert.Equal("short replacement", view.CopyText());
+        });
+    }
+
+    [Theory]
+    [InlineData("  •  ")]
+    [InlineData("    •  ")]
+    [InlineData("  12.  ")]
+    public void A_list_row_wraps_on_words_under_its_marker(string marker)
+    {
+        WithWriter((view, writer) =>
+        {
+            // Regression: list rows fell to the column cutter ("tức là n" / "ó không").
+            var body = string.Concat(Enumerable.Repeat("thổi phồng phát hiện ", 12)).Trim();
+            writer.CommitPresentation([TranscriptLine.Plain(marker + body)]);
+            view.Frame = new System.Drawing.Rectangle(0, 0, 50, 20);
+            var rows = view.WrappedLines.Select(row => row.Text).Where(row => row.Trim().Length > 0).ToArray();
+            Assert.True(rows.Length > 1);
+            Assert.StartsWith(marker, rows[0]);
+            Assert.All(rows.Skip(1), row => Assert.StartsWith(new string(' ', marker.Length), row));
+            var words = body.Split(' ').ToHashSet();
+            Assert.All(rows, row => Assert.All(row.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Where(word => word is not "•" && !word.EndsWith('.')), word => Assert.Contains(word, words)));
         });
     }
 

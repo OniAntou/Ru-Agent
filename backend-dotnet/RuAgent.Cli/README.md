@@ -103,9 +103,10 @@ thinking, response streaming, compaction and tool/request retries have distinct
 labels. Idle omits status text, response deltas
 show “Writing response”, and parked states have no spinner or running clock.
 Tool rows align common action labels and targets, show actual terminal exit codes
-when available, and retain a compact inspector behind Ctrl+O. Failure remains
+when available, and keep every visible detail inline; Ctrl+O belongs to the
+model's reasoning only. Failure remains
 explicit when a long command is shortened; narrow rows prioritize outcome/exit
-evidence over the shortcut. Frames
+evidence over secondary metrics. Frames
 shorter than 20 rows use a single heading row. The feed
 uses the available width without a side panel. Picker cards page their entries
 to fit the current height while keeping the selection and footer visible.
@@ -139,9 +140,9 @@ parameters or fragments.
 PageUp/PageDown scroll the transcript. Ctrl+Home reads the oldest retained output;
 Ctrl+End returns to following new output. Streaming preserves a detached scroll
 position and marks new output until Ctrl+End returns to the tail. Ctrl+O toggles
-the selected tool/diff or reasoning block, defaulting to the newest retained block.
-Ctrl+Alt+Up/Down select and reveal earlier/later blocks. Ctrl+Shift+C copies the
-selected block's retained detail text, or the latest contiguous assistant text
+the model's reasoning block, defaulting to the newest retained reasoning.
+Ctrl+Alt+Up/Down select and reveal earlier/later reasoning blocks. Ctrl+Shift+C copies
+the selected reasoning block's retained text, or the latest contiguous assistant text
 when no block is selected; copied content includes any retained formatting or
 code gutters. Ctrl+End clears block selection and resumes following output.
 Running, waiting for approval and paused states show the queued prompt count;
@@ -166,9 +167,9 @@ send a message or select a session first.
 
 The TUI focuses on chat and coding, with inline tool activity and expandable
 errors/diffs, approvals, attachments, session/model controls and run recovery.
-The header keeps the live context meter. Plans show compact completed/total
-counts in the transcript; use the GUI for dedicated activity and plan
-inspection or file browsing. Drop a known file path or use Ctrl+V to add it to
+The header keeps the live context meter. A new plan prints an inline checklist
+and later progress one line naming the active item; use the GUI for dedicated
+activity and plan inspection or file browsing. Drop a known file path or use Ctrl+V to add it to
 the composer. Up/Down still recalls previous prompts. `/exit` is the only quit
 command; Escape closes an overlay or interrupts an active turn and never exits
 the chat. An idle Escape preserves the draft.
@@ -220,7 +221,7 @@ agent rpc
   one of them the parser refuses with `json_requires_explicit_flags`. The
   transcript renderer is muted in this mode, so stdout carries durable/transient
   NDJSON frames only; every human line goes to stderr.
-- `chat` (or `repl`) uses Terminal.Gui for interactive streaming, tool/diff rows, approvals, command history and slash completion. `/new` creates a session; `/sessions [query]` searches a bounded list; `/sessions id:<session-id>` switches explicitly and preserves the current session on failure. Reopening a session prints its newest 20 text messages and discovers retained running, approval and parked runs. `/follow [run-id]` attaches to running output or recovers pending approval interaction; typing `Continue` resumes the tracked parked run. Use `ru agent continue <run-id>` from another terminal for an explicit run target. Use `ru agent cancel <run-id>` outside chat to abandon a parked run. A repeated blocker after Continue offers cancellation guidance. Session switching keeps the operator-selected workspace and warns about a different retained workspace; reopen with `--workspace PATH --session ID` to select that root explicitly.
+- `chat` (or `repl`) uses Terminal.Gui for interactive streaming, tool/diff rows, approvals, command history and slash completion. `/new` creates a session; `/sessions [query]` searches a bounded list; `/sessions id:<session-id>` switches explicitly and preserves the current session on failure. Reopening a session redraws the turns of its newest 200 messages from their activity records, as they looked live, and discovers retained running, approval and parked runs. `/follow [run-id]` attaches to running output or recovers pending approval interaction; typing `Continue` resumes the tracked parked run. Use `ru agent continue <run-id>` from another terminal for an explicit run target. Use `ru agent cancel <run-id>` outside chat to abandon a parked run. A repeated blocker after Continue offers cancellation guidance. Session switching keeps the operator-selected workspace and warns about a different retained workspace; reopen with `--workspace PATH --session ID` to select that root explicitly.
 - Request skills in ordinary chat prompts, for example `Use the review skill to inspect this change`. `/skills` and `/skill` are removed from terminal chat handling, suggestions and help. Skill discovery and model-side loading retain their existing invocation policy.
 - While a turn streams, Enter queues up to eight immutable submissions. Each owns the prompt, session/workspace/preset/model intent, attachment contents and idempotency key captured at admission. The queue retains at most 32 MiB of estimated UTF-16 content; a composed prompt is capped at 16,000 UTF-16 units. Refusal leaves the draft and attachments intact. State-changing commands are refused while busy or queued. Rejected submissions are never automatically resubmitted; queued work remains paused until the chat is closed or an existing explicit run continuation settles it. Escape/Ctrl+C interrupts through the existing run-cancel endpoint; pending tool approval takes over the composer with explicit approve/deny choices.
 - All `agent chat` input uses one `ChatSessionEngine` for admission, queues, turn cancellation and the latest 100 prompt submissions. Terminal.Gui is its only interactive screen adapter. Windows uses the .NET console driver to preserve emoji across split input packets. Bracketed paste targets the active command palette, secret prompt or composer without changing a hidden draft. `--classic` retains append-only text with line input between turns; the same adapter serves redirected stdin/stdout, `--json`, any `NO_COLOR`, `TERM=dumb` and startup terminals below 80×24. It writes directly without a second transcript buffer, cursor positioning, screen clearing, resize rebuild, arrow-key picker or framed composer. Bare picker commands show options; select with an explicit argument. A trailing backslash continues the prompt on the next line; ordinary prompt quotes are preserved. Native resize stays native and never starts a separate text chat loop.
@@ -368,7 +369,7 @@ inspection and branch creation block overlapping sends before attachment admissi
 ## Current model tool surface
 
 The Agent model-step advertisement selects Protocol definitions from its pinned
-`coding_v2`, `patch_v2` or `coding_code_v1` profile. See the
+`coding_v3` (default) or `coding_v2` profile. See the
 [current tool inventory](../../docs/operations/agent-tools.md#current-capability-matrix)
 for explicit file, Windows terminal, Web, question and orchestration tools.
 A provider-native model step may return

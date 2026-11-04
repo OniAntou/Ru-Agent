@@ -231,4 +231,28 @@ public sealed class TuiMarkdownTests
         // would swallow the wrapper itself.
         Assert.Equal(0, TuiMarkdown.Holdback("<tool_call>\n"));
     }
+
+    [Fact]
+    public void StyledTextDoesNotGainAnExtraSpaceFromEscapeOnlyRuns()
+    {
+        // A reset sequence is a zero-width run. It used to take the word-separator
+        // branch and turn "a b c" into "a  b c" on a colour terminal.
+        using var _ = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        var rows = new TuiMarkdown().RenderLine("a **b** c", 80);
+
+        Assert.Equal("a b c", TuiText.Strip(Assert.Single(rows)));
+    }
+
+    [Fact]
+    public void AWrappedBoldRunKeepsItsStyleOnContinuationRows()
+    {
+        // The SGR that opened the run was emitted only on the row where the run
+        // started; continuation rows painted the remainder plain.
+        using var _ = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        var rows = new TuiMarkdown().RenderLine("aaaa **bbbbbbbb**", 6);
+
+        Assert.True(rows.Count > 1);
+        Assert.Contains("\u001b[1m", rows[^1], StringComparison.Ordinal);
+        Assert.Contains("bb", TuiText.Strip(rows[^1]), StringComparison.Ordinal);
+    }
 }

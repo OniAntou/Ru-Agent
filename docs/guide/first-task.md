@@ -56,8 +56,8 @@ Ru shows what it does as it does it.
 
 - **Desktop:** an activity feed lists each tool call, a changes view shows edited files, and an
   integrated terminal runs beside the chat.
-- **Terminal:** each tool call is a row. Press `Ctrl+O` to expand a diff, an error or the model's
-  reasoning. Press `Esc` to interrupt a turn.
+- **Terminal:** each tool call is a row with its target and result inline. Press `Ctrl+O` to
+  expand the model's reasoning. Press `Esc` to interrupt a turn.
 
 When Ru needs your permission it stops and asks. Read the command or path in the request before you
 approve it.

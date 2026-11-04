@@ -113,12 +113,36 @@ public sealed class TuiFeedContinuityTests
 
         var text = TuiText.Strip(output.ToString());
         Assert.Contains("Cấu trúc dự án đã đầy đủ.", text);
-        Assert.Equal(1, text.Split("Plan · 1/2 complete").Length - 1);
-        Assert.DoesNotContain("Finished task", text);
+        // A new plan prints its checklist once; the identical update adds nothing.
+        Assert.Equal(1, text.Split("Plan 1/2").Length - 1);
+        Assert.Equal(1, text.Split("☑ Finished task").Length - 1);
+        Assert.Contains("☐ Next task", text);
+
+        // Progress on the same items is one line naming the active item, not a second list.
+        transcript.ApplyActivity(plan with { Todos = [new("Finished task", "completed"), new("Next task", "in_progress")] });
+        transcript.Flush();
+        text = TuiText.Strip(output.ToString());
+        Assert.Contains("Plan 1/2 · ▸ Next task", text);
+        Assert.Equal(1, text.Split("☑ Finished task").Length - 1);
+
+        // A cleared plan is not news.
         transcript.BeginTurn();
         transcript.ApplyActivity(plan with { Todos = [] });
         transcript.Flush();
-        Assert.Contains("Plan · 0/0 complete", TuiText.Strip(output.ToString()));
+        Assert.DoesNotContain("Plan 0/0", TuiText.Strip(output.ToString()));
+    }
+
+    [Fact]
+    public void A_long_plan_shows_a_window_around_the_active_item()
+    {
+        var plan = Enumerable.Range(1, 16).Select(index => new AgentTodoWire($"step {index}",
+            index <= 8 ? "completed" : index == 9 ? "in_progress" : "pending")).ToArray();
+        var rows = TuiTranscript.PlanWindow(plan);
+        Assert.Equal(TuiTranscript.PlanChecklistLimit, rows.Count);
+        Assert.Equal(-6, rows[0].Overflow);
+        Assert.Contains(rows, row => row.Item?.Content == "step 9");
+        Assert.True(rows[^1].Overflow > 0);
+        Assert.Equal(plan.Length, -rows[0].Overflow + rows.Count(row => row.Item is not null) + rows[^1].Overflow);
     }
 
     private static HarnessSafeEventEnvelope Event(string type, long sequence, string status = "running") =>

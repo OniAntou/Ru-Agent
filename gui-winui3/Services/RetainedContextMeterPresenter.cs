@@ -8,6 +8,7 @@ public sealed class RetainedContextMeterPresenter
 {
     private string? _runId;
     private string? _sessionId;
+    private string? _conversationId;
     private int _visibleMessageStart;
     private bool _hasKnownHistoryBoundary = true;
     private readonly RequestContextReading _reading = new();
@@ -44,11 +45,24 @@ public sealed class RetainedContextMeterPresenter
             return;
         }
 
+        // A new prompt in the same conversation starts a new run whose request still
+        // carries the whole history, so the last reading is the right floor until the
+        // new request's estimate or usage arrives. Clearing it dropped the meter from
+        // the real context (hundreds of thousands of tokens) to the size of the visible
+        // messages. The TUI tracker already keeps it the same way.
+        // The conversation is the session on screen, not the run: between two runs no
+        // run is current, and that gap must not erase the reading either.
+        bool sameConversation = activeSessionId is not null
+            && string.Equals(_conversationId, activeSessionId, StringComparison.Ordinal);
+        _conversationId = activeSessionId;
         _runId = runId;
         _sessionId = sessionId;
-        _reading.Reset();
-        _visibleMessageStart = 0;
-        _hasKnownHistoryBoundary = true;
+        _reading.Reset(preserveReading: sameConversation);
+        if (!sameConversation)
+        {
+            _visibleMessageStart = 0;
+            _hasKnownHistoryBoundary = true;
+        }
     }
 
     public void MarkHistoryBoundaryUnknown(string runId, string sessionId, long sequence = 0)

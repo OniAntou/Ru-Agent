@@ -21,14 +21,17 @@ public static class SessionWorkStateReducer
         var hasOmitted = constraintsOmitted || (previous?.EarlierUserIntentOmitted ?? false)
             || (previous is not null
                 && previous.EarlierUserIntent.Count >= SessionWorkState.MaximumItems);
+        var goal = explicitUserPrompt;
         while (true)
         {
             try
             {
-                return new SessionWorkState(
+                // Fit first sheds old verification and file evidence; only then do the
+                // catches below give up earlier intent and constraints.
+                return SessionWorkState.Fit(
                     sessionId, workspaceId, workspaceIdentitySha256, sourceRunId,
                     (previous?.Version ?? 0) + 1, sourceEventId.Value,
-                    new SessionWorkFact(explicitUserPrompt, sourceRunId.Value, sourceEventId.Value),
+                    new SessionWorkFact(goal, sourceRunId.Value, sourceEventId.Value),
                     constraints,
                     earlierIntent,
                     hasOmitted,
@@ -49,8 +52,22 @@ public static class SessionWorkStateReducer
                 constraints = OmitOldestConstraint(constraints);
                 hasOmitted = true;
             }
+            catch (ArgumentException error) when (IsSizeCap(error) && goal.Length > MinimumGoalCharacters + 1)
+            {
+                // Last resort, so a long prompt cannot make the session unable to start:
+                // keep the head of the goal. The full prompt stays in the transcript.
+                var keep = Math.Max(MinimumGoalCharacters, goal.Length / 2);
+                if (char.IsHighSurrogate(goal[keep - 1])) keep--;
+                goal = goal[..keep].TrimEnd() + "…";
+                hasOmitted = true;
+            }
         }
     }
+
+    private const int MinimumGoalCharacters = 256;
+
+    private static bool IsSizeCap(ArgumentException error) =>
+        IsAggregateCap(error) || error.Message.Contains("text exceeds its cap", StringComparison.Ordinal);
 
     // This lexical screen intentionally captures only clear imperative forms; it is not
     // a semantic extractor for every constraint expressed in a user prompt.
@@ -130,6 +147,5 @@ public static class SessionWorkStateReducer
         _ => [facts[0], .. facts.Skip(2)],
     };
 
-    private static bool IsAggregateCap(ArgumentException error) =>
-        error.Message.Contains("serialized cap", StringComparison.Ordinal);
+    private static bool IsAggregateCap(ArgumentException error) => SessionWorkState.IsAggregateCap(error);
 }

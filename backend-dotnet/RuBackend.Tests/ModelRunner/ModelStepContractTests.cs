@@ -14,9 +14,11 @@ public sealed class ModelStepContractTests
 {
     [Theory]
     [InlineData("coding_v2", "edit_file", "apply_patch")]
-    [InlineData("patch_v2", "apply_patch", "edit_file")]
-    [InlineData("coding_code_v1", "run_code", "bash")]
-    public void Profile_selects_one_mutation_surface(string profile, string included, string excluded)
+    [InlineData("coding_v2", "write_file", "run_code")]
+    [InlineData("coding_v3", "apply_patch", "bash")]
+    [InlineData("coding_v3", "edit_file", "bash")]
+    [InlineData("coding_v3", "run_code", "bash")]
+    public void Profile_selects_its_pinned_inventory(string profile, string included, string excluded)
     {
         var ids = AgentToolRuntimeProjection.Select(new AgentToolRuntimeAvailability(false, false, ToolProfile: profile))
             .Select(tool => tool.ToolId).ToArray();

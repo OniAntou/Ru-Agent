@@ -6,6 +6,9 @@ namespace RuApp.Models;
 /// <summary>Bounded display data for one terminal activity; never an execution request.</summary>
 public sealed partial class AgentActivityItem
 {
+    /// <summary>Streamed output a terminal row keeps, so a runaway command cannot grow the row without limit.</summary>
+    public const int MaximumTerminalOutputCharacters = 32 * 1024;
+
     private string _terminalOutputText = string.Empty;
     private string _terminalInputPreview = string.Empty;
 
@@ -42,9 +45,9 @@ public sealed partial class AgentActivityItem
     {
         if (string.IsNullOrEmpty(chunk)) return;
         var combined = _terminalOutputText + chunk;
-        if (combined.Length > TerminalOutputBlock.MaximumCharacters)
+        if (combined.Length > MaximumTerminalOutputCharacters)
         {
-            combined = combined[^TerminalOutputBlock.MaximumCharacters..];
+            combined = combined[^MaximumTerminalOutputCharacters..];
             TerminalOutputTruncated = true;
         }
         if (_terminalOutputText == combined) return;

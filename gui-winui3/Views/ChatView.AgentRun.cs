@@ -463,6 +463,14 @@ namespace RuApp.Views
                     if (!shiftDown)
                     {
                         e.Handled = true;
+                        if (IsTypedContinueForResumableRun())
+                        {
+                            // A run parked for Continue still counts as in hand (it can be
+                            // stopped), so the queue below used to swallow the very word the
+                            // pause message asks for. The send path resumes it instead.
+                            await SendCurrentMessageAsync();
+                            return;
+                        }
                         if (_isSendButtonInStopMode || IsActiveAgentRunPending())
                         {
                             // A second thought lands in the queue instead of being
@@ -953,6 +961,10 @@ namespace RuApp.Views
                 throw new OperationCanceledException(cancellationToken);
             }
         }
+
+        private bool IsTypedContinueForResumableRun() =>
+            _agentController?.CanContinue == true
+            && IsContinueResumeCommand(ChatInputTextBox.Text, Composer.Attachments);
 
         public static bool IsContinueResumeCommand(string text, IReadOnlyCollection<ImageAttachmentItem> attachments)
         {

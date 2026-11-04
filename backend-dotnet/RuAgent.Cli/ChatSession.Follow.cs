@@ -360,8 +360,22 @@ public sealed partial class AgentCommands
                 }
                 // Parking deliberately cancels the subscription. Preserve the
                 // durable-text recovery leg before the caller winds down the turn.
+                // The turn token is already cancelled here, so the read needs its own
+                // bounded deadline; a stuck payload read must not hold the wind-down.
                 sessionRenderer.Flush();
-                await RecoverMissingAssistantTextAsync(runId, runSession.AssistantPayloads, ct).ConfigureAwait(false);
+                using (var recoveryDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    recoveryDeadline.CancelAfter(TimeSpan.FromSeconds(5));
+                    try
+                    {
+                        await RecoverMissingAssistantTextAsync(runId, runSession.AssistantPayloads, recoveryDeadline.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        // Bounded miss: the parked turn still winds down normally.
+                    }
+                }
+
                 throw;
             }
             sessionRenderer.Flush();
@@ -492,7 +506,7 @@ public sealed partial class AgentCommands
 
             runSession.BeginContinue(targetRunId, cancellationToken);
             sessionRenderer.Width = ChatRenderWidth();
-            sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+            sessionRenderer.Status.SetTokens(lastTotalTokens);
             sessionRenderer.BeginTurn();
 
             try
@@ -648,8 +662,11 @@ public sealed partial class AgentCommands
 
             runSession.BeginFollow(targetRunId, cancellationToken);
             sessionRenderer.Width = ChatRenderWidth();
-            sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+            sessionRenderer.Status.SetTokens(lastTotalTokens);
             sessionRenderer.BeginTurn();
+            if (DateTimeOffset.TryParse(run.CreatedAt, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal, out var runStart))
+                sessionRenderer.Transcript.StartedAt(runStart, DateTimeOffset.UtcNow);
 
             try
             {

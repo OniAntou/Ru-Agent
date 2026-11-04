@@ -146,6 +146,13 @@
                         <TextBlock x:Name="ResultStatus" FontSize="11" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" />
                         <TextBlock x:Name="PendingResult" Text="Working on this task. The result will appear here."
                                    FontSize="13" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" />
+                        <!-- Read-only: what the child is doing and saying, from its own run replay. -->
+                        <StackPanel x:Name="ChildActivityPanel" Spacing="6" Visibility="Collapsed"
+                                    AutomationProperties.Name="Subagent activity">
+                            <TextBlock Text="Activity" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuMutedBrush}" />
+                            <StackPanel x:Name="ChildActivityList" Spacing="6" />
+                        </StackPanel>
                         <TextBlock x:Name="ResultLoading" Text="Loading result…" Visibility="Collapsed" FontSize="12"
                                    Foreground="{StaticResource RuMutedBrush}" AutomationProperties.LiveSetting="Polite" />
                         <controls:MarkdownBlock x:Name="ResultBody" MarkdownText="" FontSize="14" Foreground="{StaticResource RuInkBrush}"

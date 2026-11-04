@@ -128,7 +128,8 @@ public static class AgentActivityProjector
             metadata.Added,
             metadata.Removed,
             ClampDuration(durationMs),
-            SafeCodeFor(state, safeCode ?? receipt?.Code),
+            SafeCodeFor(state, safeCode ?? receipt?.Code
+                ?? (proposal.ToolId == "agent_wait" && state == AgentActivityState.Started ? SubagentWaitingCode : null)),
             ToolDisplay: toolDisplay,
             Detail: detail,
             ExitCode: kind == AgentActivityKind.Terminal ? ToolActivityMetadataExtractor.ReadExitCode(receipt) : null);
@@ -417,6 +418,21 @@ public static class AgentActivityProjector
             Count: ClampCount(attempt),
             DurationMs: ClampDuration(durationMs),
             SafeCode: SafeCodeFor(state, "retrying"));
+
+    /// <summary>Safe code of an <c>agent_wait</c> row while the root is parked on its children.</summary>
+    public const string SubagentWaitingCode = "waiting_subagents";
+
+    /// <summary>
+    /// Settles the row an <c>agent_wait</c> call opened. The wait completes outside the
+    /// tool pipeline (the wait coordinator wakes the parked root), so nothing else ever
+    /// published its end and every wait row kept its live state until the run finished.
+    /// The id matches <see cref="ProjectTool"/>'s, so the existing row settles in place.
+    /// </summary>
+    public static AgentActivity ProjectSubagentWaitSettled(ToolCallId toolCallId, bool timedOut) =>
+        ProjectStatus(
+            ActivityId(toolCallId.Value),
+            AgentActivityState.Completed,
+            timedOut ? "subagent_wait_timeout" : "subagent_wait_completed");
 
     public static AgentActivity ProjectStatus(
         string activityId,

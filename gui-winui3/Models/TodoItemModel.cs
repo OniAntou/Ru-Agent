@@ -35,8 +35,10 @@ namespace RuApp.Models
         public string MarkGlyph => Status switch
         {
             Completed => "\uE73E",
-            InProgress => "\uE73A",
-            _ => "\uE739",
+            // One family with the shelf's status dot: ring while pending, filled circle in
+            // progress, check once done. A ticked box for the active task read as finished.
+            InProgress => "\uEA3B",
+            _ => "\uEA3A",
         };
 
         /// <summary>The state in words, for the accessibility name.</summary>

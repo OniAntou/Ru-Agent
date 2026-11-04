@@ -47,6 +47,9 @@ Local packages can still be edited in place and refreshed from the catalog.
 Diagnostic codes identify invalid YAML, unsupported fields, unreadable files,
 linked paths, duplicate IDs and scan/metadata limits. A truncated catalog reports
 omissions; search narrows the listing rather than silently claiming completeness.
+A duplicate ID stays a catalog diagnostic only: the highest-precedence copy is
+loaded, so the model's prompt does not report the shadowed copy as a skipped
+instruction.
 
 ## Explicit GitHub package installation
 

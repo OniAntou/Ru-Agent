@@ -48,13 +48,13 @@ public sealed class TgTranscriptWrapCacheTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Streaming_tail_reuses_wrapped_history_with_pipes_or_expanded_details(bool expanded)
+    public void Streaming_tail_reuses_wrapped_history_with_pipes_or_expanded_reasoning(bool expanded)
     {
         using var view = new TgTranscriptView { Frame = new Rectangle(0, 0, 100, 25) };
         for (var i = 0; i < 1800; i++) view.Append($"{i:D4} " + new string('a', 75), TranscriptStyle.Prose);
         if (expanded)
         {
-            view.AppendCollapsed("tool summary", ["detail one", "detail two"], TranscriptStyle.Tool);
+            view.SetCollapsedDetails(["detail one", "detail two"], TranscriptStyle.Meta);
             view.ToggleExpanded();
         }
         view.Append("tail", TranscriptStyle.Prose);

@@ -11,10 +11,11 @@ public static class AgentBudgetPolicy
     public const int ModelStepLimit = 128;
     public const int ToolCallLimit = 256;
 
-    // Eight windows is at least 1,024 model steps and 2,048 tool calls in one
-    // run, far beyond a real coding task, while still bounding a runaway loop
-    // that never reaches a terminal reply.
-    public const int AutomaticWindowLimit = 8;
+    // 192 windows is 24,576 model steps and 49,152 tool calls in one run: roughly a
+    // day of unattended work at a few seconds per step (owner decision,
+    // 2026-11-04), while a runaway loop that never reaches a terminal reply is
+    // still stopped and parked for an explicit Continue.
+    public const int AutomaticWindowLimit = 192;
 
     public static AgentBudgetReservation ReserveModelStep(
         AgentRun run,

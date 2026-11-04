@@ -24,6 +24,54 @@ public sealed partial class AgentCommands
         /// echo for user rows and the streaming/markdown assistant path for replies. Nothing
         /// is invented here, so a replay row reads exactly like the row the turn produced.
         /// </summary>
+        /// <summary>
+        /// Redraws a reopened session's newest turns the way they looked live: prompt,
+        /// narration, thoughts, tool rows and the footer. Falls back to the text replay
+        /// when the turn record cannot be read.
+        /// </summary>
+        async Task RenderSessionHistoryAsync(
+            string targetSessionId,
+            ChatSessionReplayResult fallback,
+            CancellationToken cancellationToken)
+        {
+            var turns = await ChatSessionTurnReplay.LoadAsync(_sessionClient, _agentClient, targetSessionId, cancellationToken)
+                .ConfigureAwait(false);
+            if (turns is not { Length: > 0 } loaded)
+            {
+                if (fallback.Messages.Length > 0) RenderSessionReplay(targetSessionId, fallback);
+                return;
+            }
+
+            sessionRenderer.Note(
+                $"↺ replayed the last {loaded.Length} {(loaded.Length == 1 ? "turn" : "turns")} from session {targetSessionId}",
+                Tui.TuiToken.Meta);
+            foreach (var turn in loaded)
+            {
+                foreach (var prompt in turn.Prompts)
+                    sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.Format(prompt));
+                if (turn.Run is { TerminalAt: not null } run)
+                {
+                    sessionRenderer.BeginTurn();
+                    sessionRenderer.Transcript.ReplayTurn(turn.Activity, turn.Replies,
+                        ChatSessionTurnReplay.Time(run.CreatedAt), ChatSessionTurnReplay.Time(run.TerminalAt),
+                        ChatSessionTurnReplay.Outcome(run.Status), run.TerminalErrorCode);
+                }
+                else if (turn.Run is null)
+                {
+                    // No record (or an unreadable one): the reply text is all there is.
+                    foreach (var reply in turn.Replies)
+                    {
+                        sessionRenderer.Transcript.AppendAssistant(reply);
+                        sessionRenderer.Flush();
+                        sessionRenderer.Surface.Line();
+                    }
+                }
+                // A run still working is drawn by the follow that adopts it next.
+            }
+
+            sessionRenderer.Flush();
+        }
+
         void RenderSessionReplay(
             string targetSessionId,
             ChatSessionReplayResult replay)
@@ -245,7 +293,7 @@ public sealed partial class AgentCommands
 
             if (replay.Messages.Length > 0 && !cmd.Json)
             {
-                RenderSessionReplay(targetSessionId, replay);
+                await RenderSessionHistoryAsync(targetSessionId, replay, cancellationToken).ConfigureAwait(false);
             }
 
             await AdoptSessionRunAsync(targetSessionId).ConfigureAwait(false);

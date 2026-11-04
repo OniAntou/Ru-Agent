@@ -59,7 +59,7 @@ public sealed partial class AgentCommands
         private async Task<long> ReadDraftEstimateAsync(CancellationToken ct)
         {
             long Estimate(string text) => ChatUsagePresentation.DraftEstimate(text,
-                submissions.Texts.Sum(item => (long)item.TextContent.Length), submissions.Images.Count);
+                submissions.TextCharacters, submissions.ImageCount);
             if (!tgMode) return Estimate(string.Empty);
             var captured = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
             tgApp!.Invoke(() => captured.TrySetResult(Estimate(tgWindow!.Composer.Input.Text)));

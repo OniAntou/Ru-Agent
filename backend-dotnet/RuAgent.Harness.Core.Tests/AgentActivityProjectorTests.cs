@@ -31,6 +31,28 @@ public sealed partial class AgentActivityProjectorTests
     private static readonly ModelStepId Step = new("step_22222222222222222222222222222222");
 
     [Fact]
+    public void A_subagent_wait_row_names_its_wait_and_settles_in_place()
+    {
+        var proposal = Proposal("agent_wait", "{\"agent_ids\":[\"agent_one\"],\"timeout_ms\":30000}");
+        var started = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+        Assert.Equal(AgentActivityKind.Status, started.Kind);
+        Assert.Equal(AgentActivityProjector.SubagentWaitingCode, started.SafeCode);
+
+        // The wake publishes the end under the same id, so the open row settles
+        // instead of a second row appearing beside a row that never stops.
+        var timedOut = AgentActivityProjector.ProjectSubagentWaitSettled(proposal.ToolCallId, timedOut: true);
+        Assert.Equal(started.ActivityId, timedOut.ActivityId);
+        Assert.Equal(AgentActivityState.Completed, timedOut.State);
+        Assert.Equal("subagent_wait_timeout", timedOut.SafeCode);
+        Assert.Equal("subagent_wait_completed",
+            AgentActivityProjector.ProjectSubagentWaitSettled(proposal.ToolCallId, timedOut: false).SafeCode);
+
+        // Other tools that fall to Status keep the generic live code.
+        Assert.Equal("in_progress", AgentActivityProjector.ProjectTool(
+            Proposal("agent_send", "{\"agent_id\":\"agent_one\",\"message\":\"go\"}"), AgentActivityState.Started).SafeCode);
+    }
+
+    [Fact]
     public void Model_step_projection_exposes_duration_but_never_reasoning()
     {
         var activity = AgentActivityProjector.ProjectModelStep(

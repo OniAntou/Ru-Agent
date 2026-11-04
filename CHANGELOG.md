@@ -7,6 +7,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Mở lại session trên TUI vẽ lại mọi lượt trong 200 tin nhắn gần nhất (như GUI) y như lúc live: prompt, lời tường
+  thuật, dòng `Thought`, plan, các dòng tool theo đúng thứ tự, rồi dòng cuối lượt với thời gian thật
+  của run. Trước đây chỉ in lại text của user và câu trả lời, gom thành một khối.
+
+- **feat(tui)**: Luồng chat và activity của TUI được làm lại cho dễ đọc, khớp với GUI: dòng
+  trạng thái `ok` bị ẩn và mã trạng thái được đổi thành chữ (`started a subagent`); dòng lệnh hiện
+  câu lệnh thật đầu tiên thay vì `$ErrorActionPreference=…` và đếm phần còn lại `(+N more)`; bỏ dòng
+  `└ process exit nonzero` lặp lại exit code; mỗi lần model suy nghĩ ≥ 1 giây có một dòng
+  `◦ Thought 31.0s`; plan hiện checklist ngay trong transcript; bỏ dòng tóm tắt từng nhóm tool, chỉ
+  còn một dòng cuối lượt có số tool, số edit và số lỗi; bullet/danh sách đánh số xuống dòng theo từ
+  thay vì cắt giữa từ; header hiện tiêu đề session khi mở lại; `/follow` tính thời gian từ lúc run
+  bắt đầu.
+
+- **feat(tools)!**: Một profile mặc định `coding_v3` thay cho ba profile: mọi run mới có cả
+  `write_file`/`edit_file`, `apply_patch` và `run_code` (28 tool). Run đã ghim `coding_v2` vẫn
+  chạy như cũ. **Breaking:** `patch_v2` và `coding_code_v1` bị gỡ; run ghim hai profile này và
+  `RU_AGENT_TOOL_PROFILE=patch_v2|coding_code_v1` báo `tool_profile_invalid` (ADR 0043).
+
+- **fix(skills)**: Skill trùng ID (bản ở root ưu tiên thấp hơn, ví dụ `~/.agents/skills`) không còn
+  bị báo cho model ở mỗi lượt là "instruction chưa được nạp, hãy sửa"; bản ưu tiên cao vẫn được
+  nạp, còn cảnh báo trùng chỉ hiện trong danh sách skill của Customize.
+
+- **fix(tui)**: Mở session đã lưu nay dùng workspace ghi trên session thay vì từ chối
+  `session_workspace_mismatch`; session tạo từ Desktop (kể cả workspace tạm của Ru) mở được
+  trên CLI, còn thư mục đã mất thì báo `session_workspace_missing`. `Ctrl+O` chỉ còn mở
+  reasoning của model; tool row không còn inspector/diff ẩn, diff quá 12 dòng chỉ ghi số dòng
+  còn lại, footer `ctrl+o thinking` vẫn giữ.
+
+- **fix(tui)**: Trạng thái attachment của draft được khoá khi thread nền đọc ảnh/tệp trong lúc
+  UI gửi; hai lần tải ảnh đồng thời không còn vượt giới hạn 4 ảnh/20 MB và snapshot không còn
+  liệt kê list đang bị sửa (trước đây có thể ném lỗi ngay từ phím Enter). Khôi phục text khi run
+  park dùng deadline riêng thay cho token đã bị huỷ. Lỗi `/subagents` đi vào transcript thay vì
+  stderr sau frame. Markdown có màu không còn thêm dấu cách trước span và giữ style trên dòng
+  tiếp theo khi wrap.
+
+- **fix(gui)**: Câu trả lời có heading không còn để lại khoảng trống lớn ở cuối. Markdig ghi một
+  link definition cho mỗi heading ở cuối tài liệu và GUI vẽ mỗi cái thành một dòng trống, nên
+  câu trả lời 15 heading kéo theo vài trăm pixel trống trước prompt tiếp theo.
+
+- **fix(context)**: Ước lượng token cho auto compact được hiệu chỉnh theo từng provider/model: Host
+  nhớ tỉ lệ token thật / `byte/4` (chỉ học từ request ≥ 4.096 token, giới hạn 1,0–2,0, không bao giờ
+  làm giảm ước lượng) và dùng nó khi mất neo (run mới, sau compact, có ảnh, để yên quá 30 phút). Trước
+  đây `byte/4` đếm thiếu DeepSeek khoảng 25%, nên ngưỡng nén 80% thực chất thành gần 100% cửa sổ.
+
+- **fix(context)**: Đồng hồ context không còn về 0 mỗi khi gửi prompt mới: GUI giữ số đo của
+  request trước cho tới khi request mới có ước lượng hoặc usage (TUI đã làm vậy). Host giờ ghi
+  `model.usage_recorded` cho **mọi** bước model, kể cả bước gọi tool; trước đây chỉ bước trả lời
+  cuối có, nên run 74 bước chỉ có một số đo thật ở cuối, đồng hồ chạy bằng ước lượng suốt lượt và
+  tổng token/chi phí của run chỉ tính một bước. Số đo context của TUI chỉ đọc request mới nhất
+  nên vẫn chạy với run trên 256 request; `/status usage` vẫn từ chối (không hiện tổng một phần).
+
+- **fix(gui)**: Đồng hồ của lượt đang chạy không còn về 0:00 khi chuyển sang phiên khác rồi quay
+  lại; bubble dựng lại khi mở phiên lấy giờ bắt đầu run từ Host.
+
+- **fix(agent)**: Từ phản hồi của model sau bài test dài: tiến độ `agent_wait` có thêm
+  `elapsed_seconds`; mô tả `powershell` chỉ rõ cách giữ tiếng Việt trong Windows PowerShell 5.1
+  (output theo codepage hệ thống, `-Body` chuỗi gửi ISO-8859-1); `expected_exit_code` nói rõ với
+  `powershell` mã thoát là của cả script (lệnh cuối pipeline), muốn chờ một chương trình fail thì
+  dùng `run_process`.
+
+- **feat(subagents)**: Subagent coding chạy được trong mọi workspace đã trust (ADR 0042).
+  Workspace là git root có commit thì vẫn dùng repo đó như trước; thư mục thường, thư mục
+  nằm dưới repo hoặc repo chưa có commit thì Ru dựng một repo gốc riêng trong vùng lưu trữ
+  của nó (theo `.gitignore` của workspace, giữ nguyên byte) và đăng ký worktree con ở đó.
+  Ru không `git init` hay commit trong thư mục của người dùng; cleanup xoá luôn repo riêng.
+
+- **feat(subagents)**: Agent chính thấy subagent đang làm gì: `agent_wait` hết giờ giờ trả
+  `progress` cho từng subagent (trạng thái, số bước, số lần gọi tool, 5 activity gần nhất, câu
+  tường thuật mới nhất), nên không phải chờ mù hay tự dò thư mục. Khung chi tiết subagent trên
+  GUI hiện câu tường thuật và các dòng tool của run con trong lúc nó chạy (chỉ xem).
+
+- **feat(harness)!**: Nâng giới hạn để một run chạy được khoảng một ngày không dừng: root
+  tự mở tối đa 192 cửa sổ ngân sách (24.576 bước model / 49.152 lần gọi tool, trước đây 8
+  cửa sổ); mỗi lần chạy subagent được 128 bước / 256 lần gọi tool / 4 giờ (trước đây 32 /
+  64 / 15 phút); ngân sách chung của nhóm root + subagent là 1.024 bước / 2.048 lần gọi tool
+  mỗi cửa sổ (trước đây 128 / 256); `agent_wait.timeout_ms` tối đa 600.000 (trước đây 60.000).
+  Schema v35 dựng lại bảng `agent_subagent_budgets` với CHECK mới; DB cũ được migrate tự động
+  và không thể mở lại bằng bản Host cũ hơn.
+
+- **fix(harness)**: Phiên chạy lâu không còn bị khoá vĩnh viễn khi work state chạm giới hạn
+  16 KiB. Trước đây mỗi lệnh kiểm chứng giữ tới 4096 ký tự; khi đầy, mọi receipt, wake và
+  run mới (kể cả "continue") đều ném lỗi. Giờ lệnh được lưu tối đa 512 ký tự, state tự bỏ
+  bằng chứng cũ nhất (đánh dấu receipt chưa được tóm tắt) để vừa giới hạn, và prompt quá dài
+  chỉ giữ phần đầu trong state. Phiên đã bị khoá sẽ chạy lại được.
+
+- **fix(gui)**: Gõ "continue" rồi Enter khi run đang tạm dừng chờ Continue (ví dụ hết ngân
+  sách subagent) giờ resume run thay vì đưa vào hàng đợi.
+
+- **fix(subagents)**: Dòng `agent_wait` của agent chính không còn đứng mãi ở trạng thái
+  chạy (và chạy animation) sau mỗi lần chờ. Khi wake agent chính, wait coordinator phát
+  activity hoàn tất cho đúng dòng đó. GUI hiện "Waiting for subagents" lúc đang chờ và
+  "Checked subagents · still working" hoặc "Received subagent results" khi xong; TUI không
+  in thêm notice cho từng lần chờ.
+
+- **style(gui)**: Khung task giờ là một tab gắn dưới mép trên của ô nhập (cùng nền, bo góc
+  trên, mép dưới khuất sau composer): dấu trạng thái, việc đang làm, thanh tiến độ ngắn, số
+  đã xong/tổng và chevron trên một hàng, bấm cả hàng để mở. Danh sách mở lên phía trên trong
+  cùng tab, dấu thẳng cột với hàng và việc đã xong không còn gạch ngang.
+
+- **fix(gui)**: Khi gộp activity ở chế độ Compact, các đoạn model tự tường thuật giữa
+  các bước không còn dồn xuống dưới dòng tóm tắt. Chỉ phần trả lời sau bước cuối còn
+  hiện; mở dòng tóm tắt sẽ thấy lại từng đoạn đúng vị trí giữa các bước.
+
+- **fix(gui)**: Gỡ khung Terminal tự bật phía trên ô nhập. Output của lệnh chỉ còn
+  nằm trong thẻ mở rộng của dòng terminal trong activity (lệnh, output, exit code,
+  Copy). Khung cũ trùng với thẻ này và che khung chat mỗi khi lệnh có output.
+
 - **fix(tui)**: Keep provider browsing on the welcome screen by showing the
   catalog notice in the picker footer instead of adding a transcript row.
   Apply the same routing to the fallback model picker. Closing a report on the

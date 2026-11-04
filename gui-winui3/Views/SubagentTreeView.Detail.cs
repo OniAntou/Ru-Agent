@@ -25,6 +25,7 @@ public sealed partial class SubagentTreeView
         _model.ShowList();
         ResetDetailRead();
         ClearResult();
+        ClearChildActivity();
         ShowFeedback("");
         RenderSnapshot();
         (Working.Count > 0 ? WorkingList : Attention.Count > 0 ? AttentionList : FinishedList).Focus(FocusState.Programmatic);
@@ -43,11 +44,13 @@ public sealed partial class SubagentTreeView
         if (e.ClickedItem is not SubagentRow row || !_model.SelectAgent(row.AgentId)) return;
         ResetDetailRead();
         ClearResult();
+        ClearChildActivity();
         ShowFeedback("");
         RenderSnapshot();
         RenderDetailHeader();
         DetailScroll.ChangeView(null, 0, null, disableAnimation: true);
         BackButton.Focus(FocusState.Programmatic);
+        await RefreshChildActivityAsync();
         await ReadPageAsync(0);
     }
 

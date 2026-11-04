@@ -84,7 +84,7 @@ and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 and encrypted policy snapshots) is the current path. A model step performs
 exactly one provider generation per typed request and returns provider-neutral
 `AssistantStep(text, tool_calls, finish_reason)`. Its model-visible surface is
-selected by its pinned `coding_v2`, `patch_v2` or `coding_code_v1` inventory.
+selected by its pinned `coding_v3` (default) or `coding_v2` inventory.
 The [tool contract](../docs/operations/agent-tools.md#coding-profiles) defines
 explicit file and Windows-terminal operations, reads/search, Web, questions,
 MCP and subagent control. File mutations remain hash-guarded; delete recovery

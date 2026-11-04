@@ -158,7 +158,7 @@ public sealed class SubagentLaunchTests
         Assert.Equal(3, states.Count(state => state == HarnessRunState.Running));
         Assert.Equal(corruptScope ? 0 : 1, states.Count(state => state == HarnessRunState.Created));
         if (cancelFamily) await agents.CancelFamilyAsync(root.Run.RunId, default);
-        else clock.UtcNow = clock.UtcNow.AddMinutes(16);
+        else clock.UtcNow = clock.UtcNow.Add(RuAgent.Protocol.Subagents.SubagentLimits.AttemptTimeout + TimeSpan.FromMinutes(1));
         await scheduler.TickAsync(cleanup, default);
         Assert.Equal(4, cleanup.Calls);
         foreach (var agent in await agents.ListAsync(root.Run.RunId, default))

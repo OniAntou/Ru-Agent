@@ -106,8 +106,10 @@ snapshot; subsequent run reads/reconnects receive the existing not-found respons
 Opening Ru does not call a model, so startup alone has no provider token usage.
 For an actual model step, adapters preserve provider-reported input, output,
 total, cache-read, and cache-write counts through the typed model step
-result. The Host persists those counts as a `ModelUsage` payload alongside a
-final reply and inside an `AssistantStep` for tool turns. The payload is a
+result. The Host persists those counts as a `ModelUsage` payload with a
+`model.usage_recorded` event for every model step, final reply and tool turn alike
+(tool turns also keep the copy inside their `AssistantStep`), so live context meters
+and run billing see each request rather than only the last one. The payload is a
 sidecar record for authenticated telemetry consumers; the current chat bubble
 fetches it from the durable `model.usage_recorded` event and renders the
 reported counts below the assistant text. A missing `usage`
@@ -168,7 +170,7 @@ messages; clock, mood, and references are not appended as separate system
 messages.
 
 Host capabilities are the runtime projection of the Protocol-owned tool
-definitions selected by the run-pinned `coding_v2`, `patch_v2` or `coding_code_v1`
+definitions selected by the run-pinned `coding_v3` or `coding_v2`
 profile. File tools use explicit identities such as `write_file`/`edit_file`;
 terminal tools are `powershell`, `run_process`, `terminal_read`, `terminal_stop`.
 See the [tool inventory](agent-tools.md#current-capability-matrix).
@@ -487,8 +489,8 @@ outcome was known. Cancellation or failure also drains owned work before return.
 See [phase timing and Host benchmarks](agent-performance.md).
 
 A root run does not stop at its first full window. It opens the next window
-automatically, up to **8 windows** (1,024 model steps / 2,048 tool calls) in one
-run, so a single long prompt does not pause for a click. Only after that
+automatically, up to **192 windows** (24,576 model steps / 49,152 tool calls) in one
+run, roughly a day of unattended work, so a single long prompt does not pause for a click. Only after that
 automatic allowance does it move to `WaitingUser` with
 `model_step_budget_exhausted` / `tool_call_budget_exhausted`; an explicit
 Continue then opens one further window, and every later window is manual. The

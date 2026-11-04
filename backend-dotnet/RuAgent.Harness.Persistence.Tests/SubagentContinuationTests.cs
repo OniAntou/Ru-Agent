@@ -67,7 +67,7 @@ public sealed class SubagentContinuationTests
             await using var connection = fixture.CreateRawConnection();
             await connection.OpenAsync();
             using var command = connection.CreateCommand();
-            command.CommandText = "UPDATE agent_subagent_budgets SET model_steps=128";
+            command.CommandText = $"UPDATE agent_subagent_budgets SET model_steps={RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps}";
             await command.ExecuteNonQueryAsync();
         }
         var next = fixture.NewRun(3, failure == "foreign_session" ? 3 : 2, 1,

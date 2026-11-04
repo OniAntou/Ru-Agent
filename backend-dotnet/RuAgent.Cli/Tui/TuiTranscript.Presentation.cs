@@ -7,6 +7,7 @@ public sealed partial class TuiTranscript
         if (outcome == TuiTurnOutcome.Completed)
         {
             var parts = new List<string> { TuiStatusLine.FormatElapsed(seconds), _toolsSettled == 1 ? "1 tool" : $"{_toolsSettled} tools" };
+            if (TurnWork() is { } work) parts.Add(work);
             if (!string.IsNullOrWhiteSpace(_summaryDetail)) parts.Add(_summaryDetail);
             if (_fullScreenCards && _retainedIsThinking && _retained.Count > 0) parts.Add("ctrl+o thinking");
             _surface.AppendPresentation(new TranscriptRunBuilder().Append("  ✓ ", TuiToken.Ok)

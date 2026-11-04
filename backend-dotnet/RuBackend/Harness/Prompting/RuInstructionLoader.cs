@@ -188,6 +188,10 @@ public sealed partial class RuInstructionLoader
             if (skip.Code == "missing_frontmatter"
                 || skip.Code == "invalid_field:metadata"
                 || skip.Code.StartsWith("unsupported_field:", StringComparison.Ordinal)) continue;
+            // A duplicate is a lower-precedence copy of a skill whose winning copy is in
+            // the catalog. Telling the model "not loaded, repair it" on every turn sent it
+            // after user configuration it cannot and should not change.
+            if (skip.Code == "duplicate") continue;
             // The Markdown roots are optional. Keep the established
             // fixed-file missing diagnostics without adding noisy root-missing
             // entries on every prompt build.

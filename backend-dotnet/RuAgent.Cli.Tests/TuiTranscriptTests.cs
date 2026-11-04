@@ -667,12 +667,8 @@ public sealed class TuiTranscriptTests
         var text = TuiText.Strip(output.ToString());
         Assert.DoesNotContain("run.note_added", text, StringComparison.Ordinal);
         Assert.DoesNotContain("runtime_context_snapshot", text, StringComparison.Ordinal);
-        // The note must not split the block: both rows share one summary.
-        var summary = text.Split('\n')
-            .Select(line => line.TrimEnd())
-            .Where(line => line.TrimStart().StartsWith("2 tools ·", StringComparison.Ordinal))
-            .ToList();
-        Assert.Single(summary);
+        // Both rows count toward the turn's one footer; the note adds no row of its own.
+        Assert.Single(text.Split('\n'), line => line.Contains("2 tools", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -687,7 +683,7 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void DiffBlock_IsBoundedAndOffersExpansion()
+    public void DiffBlock_IsBoundedAndSummarizesOverflow()
     {
         var (transcript, output) = Create();
         transcript.BeginTurn();
@@ -696,14 +692,15 @@ public sealed class TuiTranscriptTests
 
         var rows = Rows(output);
         Assert.Equal(12, rows.Count(row => row.Contains("+line", StringComparison.Ordinal)));
-        Assert.Contains(rows, row => row.Contains("8 more lines · ctrl+o", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Contains("8 more lines", StringComparison.Ordinal));
+        Assert.DoesNotContain(rows, row => row.Contains("ctrl+o", StringComparison.Ordinal));
         Assert.DoesNotContain(rows, row => row.Contains("+line 19", StringComparison.Ordinal));
 
         transcript.ToggleExpand();
 
         var expanded = Rows(output);
-        Assert.Contains(expanded, row => row.Contains("+line 19", StringComparison.Ordinal));
-        Assert.Contains(expanded, row => row.Contains("end of expanded block", StringComparison.Ordinal));
+        Assert.DoesNotContain(expanded, row => row.Contains("+line 19", StringComparison.Ordinal));
+        Assert.DoesNotContain(expanded, row => row.Contains("end of expanded block", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1045,5 +1042,26 @@ public sealed class TuiTranscriptTests
         int? count, int? added, int? removed, string? expected)
     {
         Assert.Equal(expected, TuiTranscript.ComposeToolRowMeta(count, added, removed));
+    }
+
+    [Fact]
+    public void LastTurnCompletedOnlyTracksCompletedTurns()
+    {
+        // The tab strip used to infer "completed" from turn > 0, so an Escape-cancel
+        // or a failed turn was advertised with the completed marker.
+        TuiPalette.Level = TuiColorLevel.None;
+        var renderer = new TuiSessionRenderer(new StringWriter());
+
+        renderer.BeginTurn();
+        renderer.EndTurn(TuiTurnOutcome.Completed, null);
+        Assert.True(renderer.Transcript.LastTurnCompleted);
+
+        renderer.BeginTurn();
+        renderer.EndTurn(TuiTurnOutcome.Cancelled, null);
+        Assert.False(renderer.Transcript.LastTurnCompleted);
+
+        renderer.BeginTurn();
+        renderer.EndTurn(TuiTurnOutcome.Failed, "run_failed");
+        Assert.False(renderer.Transcript.LastTurnCompleted);
     }
 }

@@ -300,8 +300,9 @@ reconciliation surfaces from Phase 3:
   shifted row. Document panels own their paging keys while focused.
   The TUI intentionally keeps core chat, inline tools/diffs, approvals, attachments,
   session/model controls, run recovery, help and updates. The live header context
-  meter remains. Plans render only completed/total counts at existing transcript
-  boundaries, without splitting streamed prose or retaining a separate task list.
+  meter remains. Plans render an inline checklist when new and one progress line
+  after, at existing transcript boundaries, without splitting streamed prose or
+  retaining a separate task list.
   Activity/todo/change inspectors, the project-file browser, session tree, rewind,
   Markdown export and separate token/prompt-history reports are absent from the
   interactive command surface. Up/Down prompt recall remains. Headless CLI and RPC
@@ -424,7 +425,8 @@ were no matches.
 
 [ADR 0027](../adr/0027-pinned-coding-tool-profiles.md) introduced run-pinned
 profiles. [ADR 0029](../adr/0029-retire-legacy-tool-surface.md) retires its legacy
-compatibility: only `coding_v2`, `patch_v2` and `coding_code_v1` remain supported.
+compatibility, and [ADR 0043](../adr/0043-single-default-coding-profile.md) folds the
+experiments into one default: only `coding_v3` (default) and `coding_v2` remain supported.
 The profile is pinned alongside the provider selection and removed from request
 options before provider transport. Missing pins fail as `tool_profile_required`;
 retired or unknown pins fail as `tool_profile_invalid`, without provider access
@@ -435,8 +437,8 @@ still let saved policy-family deny/ask rules constrain the corresponding modern
 tools; they cannot dispatch a retired tool. Shared file/terminal adapters remain
 behind the same execution authority.
 
-[ADR 0028](../adr/0028-bounded-programmatic-coding-tools.md) adds the opt-in
-`coding_code_v1` profile. `run_code` is a Broker orchestration barrier over the
+[ADR 0028](../adr/0028-bounded-programmatic-coding-tools.md) introduced `run_code`,
+now part of the default `coding_v3` profile. `run_code` is a Broker orchestration barrier over the
 existing tool authority. Jint runs pure synchronous computation, yields on each
 uncached SDK call or read-only batch and replays saved JSON results in a fresh interpreter. Nested
 calls re-enter normal evaluate/execute with the same run lease. Children cannot

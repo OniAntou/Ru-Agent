@@ -116,18 +116,12 @@ public sealed partial class SubagentNativeControlTests
         var spawned = await Execute(spawn, ToolAccessKind.Mutation);
         if (recoveryDecision is "non_git" or "unborn_git")
         {
-            Assert.Equal(ToolExecutionOutcome.Failed, spawned.Outcome);
-            Assert.False(spawned.SideEffectsPossible);
-            Assert.Equal(recoveryDecision == "non_git" ? "subagent_git_root_unavailable" : "subagent_git_head_unavailable", spawned.Code);
-            Assert.Empty(await agents.ListAsync(root.RunId, default));
-            Assert.Empty(await allocations.ListAsync(root.RunId, default));
-            Assert.False(Directory.Exists(paths.Root));
-            Assert.Equal(ToolExecutionOutcome.Failed, (await Execute(spawn, ToolAccessKind.Mutation)).Outcome);
-            Assert.Empty(await allocations.ListAsync(root.RunId, default));
-            // The parent can recover by delegating research without a Git workspace.
-            var research = await Execute(Proposal("agent_spawn", new { role = "review", task = "Research today's gold price using web_search" }, 'e'), ToolAccessKind.Mutation);
-            Assert.Equal(ToolExecutionOutcome.Succeeded, research.Outcome);
+            // ADR 0042: a workspace without a usable Git source gets a private base
+            // repository in Ru's storage; the workspace itself gains no Git state.
+            Assert.Equal(ToolExecutionOutcome.Succeeded, spawned.Outcome);
             Assert.Single(await agents.ListAsync(root.RunId, default));
+            if (recoveryDecision == "non_git") Assert.False(Directory.Exists(Path.Combine(repo, ".git")));
+            else Assert.Empty(Directory.EnumerateFiles(Path.Combine(repo, ".git", "refs", "heads"), "*", SearchOption.AllDirectories));
             return;
         }
         Assert.Equal(ToolExecutionOutcome.Succeeded, spawned.Outcome);

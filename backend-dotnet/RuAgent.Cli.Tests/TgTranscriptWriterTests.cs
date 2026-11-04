@@ -36,9 +36,9 @@ public sealed class TgTranscriptWriterTests
             renderer.Transcript.EndTurn(TuiTurnOutcome.Completed, null);
             var footer = window.Transcript.Lines.Last(row => row.Text.TrimStart().StartsWith("✓", StringComparison.Ordinal)).Text;
             Assert.Contains("0 tools", footer);
-            Assert.Equal(reasoning && !laterDiff, footer.Contains("ctrl+o thinking", StringComparison.Ordinal));
+            Assert.Equal(reasoning, footer.Contains("ctrl+o thinking", StringComparison.Ordinal));
             Assert.DoesNotContain(window.Transcript.Lines, row => row.Text.Contains("reported reasoning example", StringComparison.Ordinal));
-            if (reasoning && !laterDiff)
+            if (reasoning)
             {
                 window.Transcript.ToggleExpanded();
                 Assert.True(window.Transcript.IsExpanded);
@@ -353,42 +353,25 @@ public sealed class TgTranscriptWriterTests
     }
 
     /// <summary>
-    /// I2: a bridged summary line that advertises expansion becomes a collapsed block whose
-    /// hidden rows Ctrl+O can reveal; the retained rows are stripped on the way in.
+    /// Ctrl+O expands reasoning only. A literal classic affordance from old output is a
+    /// plain row now, even when the renderer still has retained rows to offer.
     /// </summary>
     [Fact]
-    public void CollapsedAffordance_BridgesRetainedRows_AndCtrlOExpands()
+    public void ClassicCollapsedAffordance_IsAPlainRowAndCtrlODoesNotExpandIt()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
-        var writer = new TgTranscriptWriter(app, window.Transcript)
-        {
-            RetainedLinesProvider = () =>
-            [
-                "\u001b[32m    │ + added line\u001b[0m",
-                "\u001b[31m    │ - removed line\u001b[0m",
-            ],
-        };
+        var writer = new TgTranscriptWriter(app, window.Transcript);
 
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             writer.WriteLine("\u001b[2m    │ · 2 more lines · ctrl+o\u001b[0m");
             Assert.False(window.Transcript.IsExpanded);
             Assert.Equal("    │ · 2 more lines · ctrl+o", Assert.Single(window.Transcript.Lines).Text);
-            var hidden = window.Transcript.CollapsedRows;
-            Assert.Contains(hidden, row => row.Text == "    │ + added line");
-            Assert.Contains(hidden, row => row.Text == "    │ - removed line");
-            Assert.DoesNotContain(hidden, row => row.Text.Contains('\u001b', StringComparison.Ordinal));
+            Assert.Empty(window.Transcript.CollapsedRows);
             window.Transcript.ToggleExpanded();
-            return false;
-        });
-        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
-        {
-            var text = string.Join('\n', TgSnapshot.Capture(app));
-            Assert.Contains("+ added line", text);
-            Assert.Contains("- removed line", text);
-            Assert.Contains("end of expanded block", text);
+            Assert.False(window.Transcript.IsExpanded);
             app.RequestStop();
             return false;
         });

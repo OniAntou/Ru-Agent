@@ -79,14 +79,28 @@ public sealed class SubagentWaitStoreTests
                 if (summaryVariant == 3)
                     await results.PublishFailureAsync(root.Run.RunId, "agent_one", child.RunId, "subagent_snapshot_changed", default);
                 else await results.PublishTerminalAsync(root.Run.RunId, "agent_one", child.RunId, default);
-                Assert.True(await fixture.CreateEventStore().TryWakeSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(2), default));
+                var woken = await fixture.CreateEventStore().TryWakeSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(2), default);
+                Assert.NotNull(woken);
+                Assert.False(woken!.TimedOut);
             }
             else
             {
-                Assert.False(await events.TryWakeSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(29), default));
-                Assert.True(await fixture.CreateEventStore().TryWakeSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(30), default));
+                Assert.Null(await events.TryWakeSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(29), default));
+                Assert.False((await events.PeekSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(29), default))!.TimesOutNow);
+                var probe = await events.PeekSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(30), default);
+                Assert.True(probe!.TimesOutNow);
+                var (probedAgent, probedRun) = Assert.Single(probe.Attempts);
+                Assert.Equal("agent_one", probedAgent);
+                var progress = new[]
+                {
+                    new SubagentWaitProgress(probedAgent, probedRun, "running", 7, 12,
+                        ["terminal completed · dotnet test · exit 0"], "Tests pass; writing the importer next.", 95),
+                };
+                var woken = await fixture.CreateEventStore().TryWakeSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(30), default, progress);
+                Assert.NotNull(woken);
+                Assert.True(woken!.TimedOut);
             }
-            Assert.False(await events.TryWakeSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(31), default));
+            Assert.Null(await events.TryWakeSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(31), default));
             var resumed = await events.GetRunAsync(root.Run.RunId, default);
             Assert.Equal(HarnessRunState.Running, resumed!.State);
             Assert.Equal(parked.BudgetWindow, resumed.BudgetWindow);
@@ -100,6 +114,17 @@ public sealed class SubagentWaitStoreTests
             Assert.Equal(summaryVariant == 0 ? "subagent_wait_timeout" : "subagent_wait_completed", completion.SafeCode);
             var content = await fixture.PayloadStore.ReadForModelAsync(root.Run.RunId, completion.PayloadId!.Value, default);
             Assert.True(content.Plaintext.Length <= SubagentLimits.MaxInlineResultBytes);
+            if (summaryVariant == 0 && owned)
+            {
+                // A timed-out wait tells the parent what each child is doing.
+                using var output = JsonDocument.Parse(content.Plaintext);
+                var item = Assert.Single(output.RootElement.GetProperty("progress").EnumerateArray());
+                Assert.Equal("agent_one", item.GetProperty("agent_id").GetString());
+                Assert.Equal(7, item.GetProperty("model_steps").GetInt32());
+                Assert.Equal("terminal completed · dotnet test · exit 0", item.GetProperty("recent_activity")[0].GetString());
+                Assert.Equal("Tests pass; writing the importer next.", item.GetProperty("latest_narration").GetString());
+                Assert.Equal(95, item.GetProperty("elapsed_seconds").GetInt64());
+            }
             if (summaryVariant != 0)
             {
                 using var output = JsonDocument.Parse(content.Plaintext);

@@ -24,8 +24,12 @@ public sealed partial class SubagentSnapshotCapture
             // allocation it created, including when the caller cancelled copying.
             // A different identity is retained; never guess its ownership.
             if (allocation is not null)
-                SubagentWorkspaceFailureCleanup.Run(token => new OwnedDirectoryDeletion().Delete(
-                    allocation.Directory, allocation.Identity, token), "subagent_snapshot_cleanup_incomplete", original);
+                SubagentWorkspaceFailureCleanup.Run(token =>
+                {
+                    OwnedDirectoryDeletion.Verify(allocation.Directory, allocation.Identity);
+                    OwnedDirectoryDeletion.ReleasePrivateRepository(allocation.Directory, token);
+                    new OwnedDirectoryDeletion().Delete(allocation.Directory, allocation.Identity, token);
+                }, "subagent_snapshot_cleanup_incomplete", original);
             throw;
         }
     }

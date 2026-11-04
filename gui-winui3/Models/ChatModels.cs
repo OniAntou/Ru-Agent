@@ -91,6 +91,8 @@ namespace RuApp.Models
                     OnPropertyChanged(nameof(ShowContent));
                     if (!value)
                     {
+                        // A settled turn may fall back to its last prose (see UpdateCompactSegments).
+                        UpdateCompactSegments();
                         AutoCollapseCompletedTurn();
                     }
                 }

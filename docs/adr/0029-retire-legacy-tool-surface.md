@@ -5,6 +5,9 @@ date: 2026-10-25
 
 # Retire the legacy tool surface
 
+> Partially superseded by [ADR 0043](0043-single-default-coding-profile.md): the
+> supported profiles are now `coding_v3` (default) and `coding_v2`.
+
 ## Context
 
 The explicit coding tools replace the multiplexed file and terminal surface.

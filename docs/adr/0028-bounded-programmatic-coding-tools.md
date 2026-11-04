@@ -5,6 +5,10 @@ date: 2026-10-25
 
 # Bounded programmatic coding tools
 
+> The opt-in `coding_code_v1` profile is retired by
+> [ADR 0043](0043-single-default-coding-profile.md); `run_code` is part of the
+> default `coding_v3` profile.
+
 ## Context
 
 Read/filter/repeat workflows currently require a provider round trip per tool

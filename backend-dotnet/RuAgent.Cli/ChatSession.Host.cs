@@ -55,6 +55,8 @@ public sealed partial class AgentCommands
             _host.StreamRunEventsResumedAsync(runId, onFrameAsync, ct, afterSequence, stopWhen);
 
         private Task ShowSubagentsAsync(string? argument, string? currentRoot, TextWriter output, bool json, CancellationToken ct) =>
-            _host.ShowSubagentsAsync(argument, currentRoot, output, json, ct);
+            _host.ShowSubagentsAsync(
+                argument, currentRoot, output, json,
+                ResolveDiagnosticWriter(tgMode, tgWriter, _err), ct);
     }
 }

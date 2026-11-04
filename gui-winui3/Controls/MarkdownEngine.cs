@@ -18,6 +18,15 @@ public static class MarkdownEngine
     public static MarkdownDocument Parse(string markdown) =>
         Markdown.Parse(markdown ?? string.Empty, Pipeline);
 
+    /// <summary>
+    /// True for blocks that hold link targets, not content. The auto-identifier
+    /// extension files one definition per heading at the end of the document; drawn
+    /// as literal leaves they became one empty line each, so a reply with fifteen
+    /// headings ended in a blank several hundred pixels tall.
+    /// </summary>
+    public static bool IsLinkTargetsOnly(Block block) =>
+        block is LinkReferenceDefinitionGroup or LinkReferenceDefinition;
+
     // Tables currently display plain cell text. Walk containers too so emphasis
     // and link labels survive both rendering and the copy-as-TSV action.
     public static string TableCellText(Markdig.Extensions.Tables.TableCell cell)

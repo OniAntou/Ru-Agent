@@ -264,7 +264,14 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
     /// Each row parses through the same wire codec as the live transient frames,
     /// so replayed rows render exactly like the ones watched live.
     /// </summary>
-    public async Task<IReadOnlyList<AgentActivityModel>> ListRunActivitiesAsync(string runId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<AgentActivityModel>> ListRunActivitiesAsync(string runId, CancellationToken ct = default) =>
+        (await ListRunActivityReplayAsync(runId, ct).ConfigureAwait(false)).Activities;
+
+    /// <summary>
+    /// The same replay plus its narration transcript: the model's own words between
+    /// tool rows, in event order. A host that predates the transcript yields none.
+    /// </summary>
+    public async Task<AgentRunActivityReplay> ListRunActivityReplayAsync(string runId, CancellationToken ct = default)
     {
         ValidateRunId(runId);
         var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/activities");
@@ -317,7 +324,21 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
                     wire.ExitCode));
             }
 
-            return rows;
+            var transcript = new List<AgentRunTranscriptEntry>();
+            if (doc.RootElement.TryGetProperty("transcript", out var entries) && entries.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entry in entries.EnumerateArray())
+                {
+                    if (entry.ValueKind != JsonValueKind.Object
+                        || !entry.TryGetProperty("sequence", out var sequence) || !sequence.TryGetInt64(out var position)
+                        || !entry.TryGetProperty("kind", out var kind) || kind.ValueKind != JsonValueKind.String) continue;
+                    transcript.Add(new AgentRunTranscriptEntry(position, kind.GetString()!,
+                        entry.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String ? text.GetString() : null,
+                        entry.TryGetProperty("activity_id", out var id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null));
+                }
+            }
+
+            return new AgentRunActivityReplay(rows, transcript);
         }
         catch (JsonException ex)
         {

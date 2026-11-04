@@ -26,15 +26,12 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
     public void AppendToolRow(string activityId, string text)
     {
         var clean = TuiText.SanitizeUntrusted(text);
-        var hidden = clean.Contains("ctrl+o", StringComparison.Ordinal)
-            ? RetainedLinesProvider?.Invoke().Select(TuiText.SanitizeUntrusted).ToArray() : null;
         try
         {
             app.Invoke(() =>
             {
                 transcript.ClearLive();
-                if (hidden is { Length: > 0 }) transcript.AppendCollapsed(clean, hidden, TranscriptStyle.Tool);
-                else transcript.Append(clean, TranscriptStyle.Tool);
+                transcript.Append(clean, TranscriptStyle.Tool);
                 _toolRows[activityId] = (transcript.CommittedRowCount - 1, transcript.RetentionVersion);
             });
         }
@@ -202,13 +199,6 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
         catch (NotInitializedException) { }
     }
 
-    /// <summary>
-    /// The classic renderer's retained <c>ctrl+o</c> rows. When a committed line advertises
-    /// expansion and this supplies rows, the line is bridged as a collapsed block instead
-    /// of a plain row, so Ctrl+O reveals the hidden diff/thinking lines end to end.
-    /// </summary>
-    public Func<IReadOnlyList<string>>? RetainedLinesProvider { get; set; }
-
     public override Encoding Encoding => Encoding.UTF8;
 
     public override void Write(char value)
@@ -314,46 +304,14 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
     }
 
     /// <summary>
-    /// One completed line: parses the palette escapes into spans (markdown rows keep their
-    /// paint), and when the line carries the classic <c>ctrl+o</c> affordance, bridges the
-    /// renderer's retained rows as a collapsed block so <see cref="TgTranscriptView.ToggleExpanded"/>
-    /// reveals them.
+    /// One completed line: parses the palette escapes into spans so rendered rows keep
+    /// their paint. A literal <c>ctrl+o</c> in old output is ordinary text now; the key
+    /// only expands model reasoning.
     /// </summary>
     private void EmitLine(string line)
     {
         var (text, spans) = TgAnsiPaint.Parse(line);
-        if (text.EndsWith("ctrl+o", StringComparison.Ordinal)
-            && RetainedLinesProvider?.Invoke() is { Count: > 0 } hidden)
-        {
-            var stripped = hidden.Select(TuiText.Strip).ToList();
-            stripped.Add("    │ · end of expanded block");
-            var style = Classify(text);
-            // A collapsed supplementary block is dim like the affordance that opened it,
-            // never prose-bright, even when the summary row itself classifies as prose.
-            EmitCollapsed(text, stripped, style == TranscriptStyle.Prose ? TranscriptStyle.Tool : style);
-            return;
-        }
-
         Emit(text, spans, Classify(text), append: false);
-    }
-
-    private void EmitCollapsed(string summary, IReadOnlyList<string> hidden, TranscriptStyle style)
-    {
-        try
-        {
-            app.Invoke(() =>
-            {
-                // A collapsed tool/diff block is the settle of a running activity: the
-                // live row must leave before the permanent rows land in its place.
-                transcript.ClearLive();
-                transcript.AppendCollapsed(summary, hidden, style);
-            });
-        }
-        catch (NotInitializedException)
-        {
-            // The TG session has already shut down; late renderer output is dropped
-            // instead of crashing the wind-down.
-        }
     }
 
     private void Emit(string text, IReadOnlyList<TgSpan>? spans, TranscriptStyle style, bool append)

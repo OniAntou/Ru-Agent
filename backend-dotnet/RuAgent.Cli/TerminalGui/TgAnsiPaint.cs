@@ -717,6 +717,9 @@ internal static class TgAnsiPaint
         return new WrapAffix(length, length, Slice(text, spans, 0, length).Spans, [indent]);
     }
 
+    /// <summary>A Markdown list row: a bullet or ordered marker whose text wraps under itself.</summary>
+    internal static bool HasListAffix(string text) => BulletPrefixLength(text) > 0 || OrderedPrefixLength(text) > 0;
+
     private static int BulletPrefixLength(string text)
     {
         if (text.StartsWith("    •  ", StringComparison.Ordinal))

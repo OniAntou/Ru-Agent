@@ -61,7 +61,7 @@ public sealed partial class SqliteSubagentStore
             VALUES($root,$window,$steps,$tools) ON CONFLICT DO NOTHING;
             SELECT model_steps FROM agent_subagent_budgets WHERE root_run_id=$root AND window=$window;
             """;
-        if ((long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 128L) >= SubagentLimits.FamilyModelSteps)
+        if ((long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? (long)SubagentLimits.FamilyModelSteps) >= SubagentLimits.FamilyModelSteps)
             throw new HarnessStoreException("subagent_family_budget_exhausted");
         await HarnessSqliteWriteSet.InsertRunAsync(connection, transaction, next, ct).ConfigureAwait(false);
         await MarkInternalRunAsync(connection, transaction, next.Run.RunId, rootId, ct).ConfigureAwait(false);

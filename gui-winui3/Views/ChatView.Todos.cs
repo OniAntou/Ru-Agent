@@ -26,10 +26,14 @@ public sealed partial class ChatView
         TodoPanelProgress.Value = state.Done;
         AutomationProperties.SetName(TodoPanelProgress, $"Tasks {state.Done} of {state.Total} done");
         TodoPanelScroll.MaxHeight = state.ListHeight;
-        TodoPanelHeader.Visibility = _todoPanelExpanded ? Visibility.Collapsed : Visibility.Visible;
+        // Filled accent dot while a task is in progress; a muted ring while only
+        // pending tasks remain.
+        TodoPanelMark.Fill = state.HasActive ? ThemeBrush("RuAccentBrush") : null;
+        TodoPanelMark.Stroke = state.HasActive ? null : ThemeBrush("RuMutedBrush");
         TodoPanelScroll.Visibility = _todoPanelExpanded ? Visibility.Visible : Visibility.Collapsed;
         TodoPanelList.Visibility = TodoPanelScroll.Visibility;
-        TodoPanelToggleIcon.Glyph = _todoPanelExpanded ? "\uE70E" : "\uE70D";
+        // The list opens above the line, so the chevron points the way it will open.
+        TodoPanelToggleIcon.Glyph = _todoPanelExpanded ? "\uE70D" : "\uE70E";
         AutomationProperties.SetName(TodoPanelToggle, _todoPanelExpanded ? "Collapse task list" : "Expand task list");
         ToolTipService.SetToolTip(TodoPanelToggle, _todoPanelExpanded ? "Collapse task list" : "Expand task list");
         if (_todoPanelExpanded) TodoPanelList.Render(todos);
@@ -37,6 +41,9 @@ public sealed partial class ChatView
         // yields while one is up instead of showing its header above the card's edge.
         UiMotion.SetVisible(TodoPanel, !IsPromptCardShown);
     }
+
+    private static Microsoft.UI.Xaml.Media.Brush? ThemeBrush(string key) =>
+        Application.Current.Resources.TryGetValue(key, out var value) ? value as Microsoft.UI.Xaml.Media.Brush : null;
 
     private bool IsPromptCardShown => RunPanel.Approval is not null || RunPanel.Question is not null;
 
@@ -52,7 +59,7 @@ public sealed partial class ChatView
     {
         _latestTodos = null;
         _todoPanelExpanded = false;
-        TodoPanelToggleIcon.Glyph = "\uE70D";
+        TodoPanelToggleIcon.Glyph = "\uE70E";
         TodoPanelList.Render(null);
         TodoPanelScroll.Visibility = Visibility.Collapsed;
         UiMotion.SetVisible(TodoPanel, false);

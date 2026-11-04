@@ -6,12 +6,10 @@ namespace RuAgent.Cli.Tui;
 public sealed partial class TuiTranscript
 {
     private const int ActivityActionColumnWidth = TuiActivityPresentation.ActionColumnWidth;
-    private const int MaxInspectorDiffLineCharacters = 16_000;
     private sealed record ToolDetail(
         string ActivityId, AgentActivityState State, string Verb, string LiveVerb,
         string? Display, string? Target, int? Count, int? Added, int? Removed, int? DurationMs,
-        AgentActivityKind Kind, int? ExitCode, string SafeCode, string? Context,
-        IReadOnlyList<string>? Diff = null, int Group = 0);
+        AgentActivityKind Kind, int? ExitCode, string SafeCode, string? Context);
 
     private static ToolDetail DescribeTool(AgentActivityModel activity) =>
         new(activity.ActivityId, activity.State, TuiToolVerbs.Past(activity.Kind, activity.ToolDisplay),
@@ -54,55 +52,24 @@ public sealed partial class TuiTranscript
         _ => ToolLineStatus.Unknown,
     };
 
-    private static IReadOnlyList<string> InspectTool(ToolDetail detail, ToolLineStatus status)
-    {
-        var rows = new List<string>
-        {
-            "    Tool     " + ChatDisplayText.Sanitize(detail.Display ?? detail.Verb, 64),
-            "    Outcome  " + (status switch
-            {
-                ToolLineStatus.Ok => "Completed",
-                ToolLineStatus.Failed => "Failed",
-                _ => "Outcome unavailable",
-            }),
-        };
-        if (!string.IsNullOrWhiteSpace(detail.Context))
-            rows.Add((detail.Kind == AgentActivityKind.Terminal ? "    Command  " : "    Target   ") + detail.Context);
-        var metrics = ToolRowMetrics(detail, includeExitCode: true);
-        if (!string.IsNullOrWhiteSpace(metrics)) rows.Add("    Result   " + metrics);
-        if (status == ToolLineStatus.Failed && !string.IsNullOrWhiteSpace(detail.SafeCode))
-            rows.Add("    Code     " + detail.SafeCode);
-        if (detail.Diff is { Count: > 0 })
-        {
-            rows.Add("    Diff");
-            rows.AddRange(detail.Diff.Take(MaxRetainedLines - rows.Count)
-                .Select(line => "    " + TuiText.SafeCut(TuiText.SanitizeUntrusted(line), MaxInspectorDiffLineCharacters - 4)));
-        }
-        return rows;
-    }
-
     private static string InspectorMetrics(ToolDetail? detail)
     {
         if (detail is null) return string.Empty;
-        var metrics = ToolRowMetrics(detail, includeExitCode: true);
-        return string.IsNullOrWhiteSpace(metrics) ? "ctrl+o details" : metrics + " · ctrl+o details";
+        return ToolRowMetrics(detail, includeExitCode: true) ?? string.Empty;
     }
 
-    private void WriteNativeTool(ToolDetail? detail, ToolLineStatus status, string? target, string? diffText)
+    private void WriteNativeTool(ToolDetail? detail, ToolLineStatus status, string? target)
     {
-        // Ctrl+O now belongs to this activity's inspector; older reasoning remains
-        // available in its own block, without a misleading hint on the turn footer.
-        _retainedIsThinking = false;
-        if (detail is not null)
-            detail = detail with { Diff = ExtractDiffLines(diffText).Take(MaxRetainedLines).ToArray(), Group = _toolGroupSerial };
+        // Ctrl+O belongs to the model's reasoning only. A tool row carries everything
+        // it will show inline; it no longer opens an inspector block, and it must not
+        // suppress the footer hint for reasoning retained earlier in the turn.
         var row = TuiToolRow.ComposePresentation(status, ActionLabel(detail, status), target, InspectorMetrics(detail), Width,
             actionColumnWidth: ActivityActionColumnWidth);
         if (detail is null) _surface.AppendPresentation(row);
         else
         {
-            _surface.AppendActivityPresentation(detail.ActivityId, row, InspectTool(detail, status));
+            _surface.AppendActivityPresentation(detail.ActivityId, row, null);
             _settledToolRows[detail.ActivityId] = detail;
         }
-        RecordGroupWork(detail, status);
     }
 }

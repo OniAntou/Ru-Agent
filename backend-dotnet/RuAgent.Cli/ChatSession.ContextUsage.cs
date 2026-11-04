@@ -25,18 +25,20 @@ public sealed partial class AgentCommands
 
             if (envelope.EventType == "model.step_started")
             {
-                if (usage.BeginStep(envelope.ModelStepId, envelope.Sequence)) preparedContext = null;
+                usage.BeginStep(envelope.ModelStepId, envelope.Sequence);
                 QueuePinnedContextMetadata(runId, ct);
             }
             if (envelope.TotalTokens is not null || envelope.InputTokens is not null || envelope.OutputTokens is not null)
             {
+                // A usage report supersedes the prepared request estimate /status context shows.
+                if (envelope.EventType == "model.usage_recorded" && preparedContext?.Run == envelope.RunId)
+                    preparedContext = null;
                 usage.ApplyBilling(envelope.InputTokens, envelope.OutputTokens);
                 lastTotalTokens = envelope.TotalTokens ?? ((envelope.InputTokens ?? 0) + (envelope.OutputTokens ?? 0));
-                sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+                sessionRenderer.Status.SetTokens(lastTotalTokens);
             }
             if (tgMode && envelope.EventType == "model.usage_recorded")
             {
-                preparedContext = null;
                 QueuePinnedContextMetadata(runId, ct);
                 if (!string.IsNullOrWhiteSpace(envelope.PayloadRef))
                 {
@@ -53,7 +55,11 @@ public sealed partial class AgentCommands
                     usage.ObserveUsage(envelope.Sequence, envelope.ModelStepId, null, null);
                 }
             }
-            if (envelope.EventType == "context.compacted" && usage.Compact(envelope.Sequence)) preparedContext = null;
+            if (envelope.EventType == "context.compacted")
+            {
+                preparedContext = null;
+                usage.Compact(envelope.Sequence);
+            }
             PaintContextUsage();
         }
 
@@ -149,12 +155,11 @@ public sealed partial class AgentCommands
 
         private void ApplyUsageEstimate(SseFrame frame, string runId)
         {
-            if (AgentUsageEstimateModel.TryParse(frame, out var estimate) && estimate is not null
-                && usage.ObserveEstimate(estimate))
-            {
+            if (!AgentUsageEstimateModel.TryParse(frame, out var estimate) || estimate is null) return;
+            // Kept for /status context until the step's usage report arrives.
+            if (preparedContext?.Run != runId || estimate.TransientSequence > preparedContext.Value.Estimate.TransientSequence)
                 preparedContext = (runId, estimate);
-                PaintContextUsage();
-            }
+            if (usage.ObserveEstimate(estimate)) PaintContextUsage();
         }
 
         private void PaintContextUsage()

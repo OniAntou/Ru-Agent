@@ -14,7 +14,7 @@ public sealed class SqliteSubagentBudgetStore(HarnessSqliteOptions options)
         int priorRootModelSteps, int priorRootToolCalls, CancellationToken ct)
     {
         if (window < 1 || !SubagentContractValidator.IsValidId(invocationId) || !Enum.IsDefined(kind)
-            || priorRootModelSteps < 0 || priorRootToolCalls < 0 || amount < 1 || amount > SubagentLimits.FamilyToolCalls
+            || priorRootModelSteps < 0 || priorRootToolCalls < 0 || amount < 1 || amount > AgentBudgetPolicy.ToolCallLimit
             || kind == SubagentBudgetKind.ModelStep && amount != 1) throw new HarnessStoreException("subagent_budget_invalid");
         await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
         using var transaction = connection.BeginTransaction(deferred: false);
@@ -50,8 +50,8 @@ public sealed class SqliteSubagentBudgetStore(HarnessSqliteOptions options)
             """;
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         command.CommandText = kind == SubagentBudgetKind.ModelStep
-            ? "UPDATE agent_subagent_budgets SET model_steps=model_steps+$amount WHERE root_run_id=$root AND window=$window AND model_steps<=128-$amount"
-            : "UPDATE agent_subagent_budgets SET tool_calls=tool_calls+$amount WHERE root_run_id=$root AND window=$window AND tool_calls<=256-$amount";
+            ? $"UPDATE agent_subagent_budgets SET model_steps=model_steps+$amount WHERE root_run_id=$root AND window=$window AND model_steps<={SubagentLimits.FamilyModelSteps}-$amount"
+            : $"UPDATE agent_subagent_budgets SET tool_calls=tool_calls+$amount WHERE root_run_id=$root AND window=$window AND tool_calls<={SubagentLimits.FamilyToolCalls}-$amount";
         if (await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false) != 1) return false;
         command.CommandText = "INSERT INTO agent_subagent_reservations(root_run_id,window,invocation_id,kind,amount) VALUES($root,$window,$invocation,$kind,$amount)";
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);

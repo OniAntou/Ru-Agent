@@ -640,7 +640,9 @@ preparation and captures physical cleanup evidence before bulk copying and after
 Git registration. A live Broker refusal before allocation starts can release only
 the exact still-reserved identity without requiring write reconciliation; journal
 stage alone is insufficient proof. Research/review tasks, including web searches,
-skip Git preparation; coding requires a repository root with an existing commit.
+skip Git preparation; coding uses the workspace repository when it is a root with a
+commit and otherwise a private base repository in the snapshot's owned directory
+([ADR 0042](../adr/0042-private-base-repository-for-coding-subagents.md)).
 Session deletion can reclaim proved allocations after restart
 even without a child run or execution scope. An unproven directory or interrupted
 Git registration without captured identity stays pending with a named error;

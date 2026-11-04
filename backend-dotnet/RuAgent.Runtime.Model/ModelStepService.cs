@@ -208,7 +208,8 @@ public sealed partial class ModelStepService
             (estimatedInputTokens, maxPromptTokens) = MeasurePreparedRequest(modelRequest, providerBootstrap);
             if (contextScope is not null && !modelRequest.AllImages.Any() && request.PromptInHistory)
                 estimatedInputTokens = _tokenAnchors.Estimate(contextScope, body,
-                    providerBootstrap.Protocol + "|" + providerBootstrap.Endpoint.AbsoluteUri, estimatedInputTokens);
+                    providerBootstrap.Protocol + "|" + providerBootstrap.Endpoint.AbsoluteUri, estimatedInputTokens,
+                    providerBootstrap.Model);
         }
         else if (requireExactProjection)
         {

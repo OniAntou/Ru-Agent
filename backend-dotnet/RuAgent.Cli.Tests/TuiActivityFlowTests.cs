@@ -8,7 +8,7 @@ namespace RuAgent.Cli.Tests;
 public sealed class TuiActivityFlowTests
 {
     [Fact]
-    public void Read_result_uses_lines_and_retains_its_own_inspectable_context()
+    public void Read_result_uses_lines_and_has_no_hidden_inspector()
     {
         var (renderer, view) = Create();
         renderer.Transcript.ApplyActivity(Activity("read", AgentActivityKind.Explore, "Read") with
@@ -16,15 +16,15 @@ public sealed class TuiActivityFlowTests
         Settle(renderer);
 
         Assert.Contains("63 lines", view.Activities["read"].Text);
-        Assert.Contains("ctrl+o", view.Activities["read"].Text);
-        Assert.Contains(view.Details["read"], line => line.Contains("src/Session.cs:24-86"));
+        Assert.DoesNotContain("ctrl+o", view.Activities["read"].Text);
+        Assert.Empty(view.Details["read"]);
         Assert.DoesNotContain("matches", view.Activities["read"].Text);
     }
 
     [Theory]
     [InlineData(0, AgentActivityState.Completed)]
     [InlineData(2, AgentActivityState.Failed)]
-    public void Command_result_reports_actual_exit_code_and_preserves_the_full_bounded_command(int exit, AgentActivityState state)
+    public void Command_result_reports_actual_exit_code_inline_without_an_inspector(int exit, AgentActivityState state)
     {
         var (renderer, view) = Create();
         var command = "dotnet test " + new string('a', 180) + " --filter SessionTests";
@@ -33,11 +33,10 @@ public sealed class TuiActivityFlowTests
         Settle(renderer);
 
         Assert.Contains($"exit {exit}", view.Activities["command"].Text);
-        Assert.Contains(view.Details["command"], line => line.Contains("--filter SessionTests"));
+        Assert.Empty(view.Details["command"]);
         if (state == AgentActivityState.Failed)
         {
             Assert.Contains("failed", view.Activities["command"].Text);
-            Assert.Contains(view.Details["command"], line => line.Contains("process_failed"));
         }
     }
 
@@ -56,7 +55,8 @@ public sealed class TuiActivityFlowTests
         Assert.Contains("+12", view.Activities["ok"].Text);
         Assert.DoesNotContain("Edited", view.Activities["bad"].Text);
         Assert.Contains("failed", view.Activities["bad"].Text);
-        Assert.Contains(view.Details["bad"], line => line.Contains("permission_denied"));
+        Assert.Contains(view.Rows, row => row.Text.Contains("permission", StringComparison.Ordinal));
+        Assert.Empty(view.Details["bad"]);
     }
 
     [Fact]
@@ -74,12 +74,11 @@ public sealed class TuiActivityFlowTests
         Assert.Single(view.Activities);
         Assert.Equal(1, renderer.Transcript.ToolsSettled);
         Assert.Contains("exit 1", view.Activities["command"].Text);
-        Assert.Contains(view.Details["command"], line => line.Contains("process_failed"));
-        Assert.DoesNotContain(view.Details["command"], line => line.Contains("Outcome unavailable"));
+        Assert.Empty(view.Details["command"]);
     }
 
     [Fact]
-    public void A_closed_native_group_summarizes_the_work_before_the_next_answer()
+    public void The_turn_footer_carries_the_work_tally_and_blocks_print_no_summary()
     {
         var (renderer, view) = Create();
         foreach (var id in new[] { "first", "second" })
@@ -90,11 +89,13 @@ public sealed class TuiActivityFlowTests
         renderer.Transcript.ApplyActivity(Activity("edit", AgentActivityKind.Edit, "Edit") with { FileName = "first.cs" });
         Settle(renderer);
         renderer.Transcript.AppendAssistant("The change is ready.\n");
-        renderer.Flush();
+        renderer.Transcript.EndTurn(TuiTurnOutcome.Completed, null);
 
-        var summary = Assert.Single(view.Rows, row => row.Role == TranscriptRole.Meta && row.Text.Contains("2 read"));
-        Assert.Contains("1 edited", summary.Text);
-        Assert.True(view.Rows.IndexOf(summary) < view.Rows.FindIndex(row => row.Text.Contains("The change is ready.")));
+        // A block tally printed a second count right above the footer's own.
+        Assert.DoesNotContain(view.Rows, row => row.Text.Contains("2 read"));
+        var footer = Assert.Single(view.Rows, row => row.Text.Contains("3 tools"));
+        Assert.Contains("1 edit", footer.Text);
+        Assert.True(view.Rows.IndexOf(footer) > view.Rows.FindIndex(row => row.Text.Contains("The change is ready.")));
     }
 
     [Fact]
@@ -125,21 +126,19 @@ public sealed class TuiActivityFlowTests
         renderer.Transcript.ApplyActivity(Activity("command", AgentActivityKind.Terminal, "Terminal") with
         { Detail = "dotnet\u001b[2J test\r\n" + new string('x', 10_000), ExitCode = 0 });
         Settle(renderer);
-        Assert.NotEmpty(view.Details["command"]);
-        Assert.All(view.Details["command"], line =>
-        {
-            Assert.DoesNotContain('\u001b', line);
-            Assert.DoesNotContain('\r', line);
-            Assert.DoesNotContain('\n', line);
-            Assert.True(line.Length <= 1100);
-        });
+        Assert.Empty(view.Details["command"]);
+        var row = view.Activities["command"].Text;
+        Assert.DoesNotContain('\u001b', row);
+        Assert.DoesNotContain('\r', row);
+        Assert.DoesNotContain('\n', row);
+        Assert.True(TuiText.VisibleWidth(row) <= 120);
     }
 
     [Fact]
-    public void A_narrow_failed_command_prioritizes_exit_code_over_the_detail_shortcut()
+    public void A_narrow_failed_command_prioritizes_exit_code_over_secondary_metrics()
     {
         var row = TuiToolRow.ComposePresentation(ToolLineStatus.Failed, "Run", "dotnet test",
-            "exit 2 · 12 lines · 1.2s · ctrl+o details", 40);
+            "exit 2 · 12 lines · 1.2s", 40);
         Assert.Contains("failed", row.Text);
         Assert.Contains("exit 2", row.Text);
         Assert.True(TuiText.VisibleWidth(row.Text) <= 40);
@@ -154,8 +153,8 @@ public sealed class TuiActivityFlowTests
         Settle(renderer);
         renderer.Transcript.ApplyActivity(Activity("read", AgentActivityKind.Explore, "Read") with { Count = 21 });
         Assert.Contains("src/Session.cs:10-30", view.Activities["read"].Text);
-        Assert.Contains(view.Details["read"], line => line.Contains("src/Session.cs:10-30"));
         Assert.Contains("21 lines", view.Activities["read"].Text);
+        Assert.Empty(view.Details["read"]);
     }
 
     [Fact]
@@ -170,7 +169,7 @@ public sealed class TuiActivityFlowTests
     }
 
     [Fact]
-    public void A_later_tool_detail_does_not_advertise_thinking_on_the_turn_footer()
+    public void A_later_tool_row_keeps_the_thinking_footer_hint()
     {
         var (renderer, view) = Create();
         renderer.Transcript.ApplyActivity(Activity("thinking", AgentActivityKind.Thinking, null) with { Detail = "Reported reasoning" });
@@ -178,7 +177,7 @@ public sealed class TuiActivityFlowTests
         Settle(renderer);
         renderer.Transcript.AppendAssistant("Ready.\n");
         renderer.EndTurn(TuiTurnOutcome.Completed, null);
-        Assert.DoesNotContain(view.Rows, row => row.Role == TranscriptRole.Meta && row.Text.Contains("ctrl+o thinking"));
+        Assert.Contains(view.Rows, row => row.Role == TranscriptRole.Meta && row.Text.Contains("ctrl+o thinking"));
     }
 
     [Theory]
@@ -211,13 +210,14 @@ public sealed class TuiActivityFlowTests
     }
 
     [Fact]
-    public void Inspecting_a_long_diff_keeps_the_existing_line_budget_and_tail()
+    public void A_long_diff_is_bounded_inline_and_keeps_its_tail()
     {
         var (renderer, view) = Create();
         renderer.Transcript.ApplyActivity(Activity("edit", AgentActivityKind.Edit, "Edit") with { FileName = "src/Session.cs" });
         renderer.Transcript.ApplyDurable(new(1, "evt_diff", "run_1", "sess_1", 1,
             "tool.execution_completed", "2026-11-02T00:00:00Z", "succeeded", "@@ -1 +1 @@\n-previous\n+" + new string('x', 1500) + "DIFF_TAIL"));
-        Assert.Contains(view.Details["edit"], line => line.EndsWith("DIFF_TAIL", StringComparison.Ordinal));
+        Assert.Contains(view.Rows, row => row.Text.EndsWith("DIFF_TAIL", StringComparison.Ordinal));
+        Assert.Empty(view.Details["edit"]);
     }
 
     [Fact]
@@ -237,6 +237,144 @@ public sealed class TuiActivityFlowTests
         Assert.Null(renderer.PresentActivity(100).Target);
         Assert.Contains(view.Rows, row => row.Text.Contains("attempt 2"));
         Assert.DoesNotContain(view.Rows, row => row.Text.Contains("2 results"));
+    }
+
+    [Fact]
+    public void Status_rows_hide_ok_word_known_codes_and_never_hide_a_failure()
+    {
+        var (renderer, view) = Create();
+        renderer.Transcript.ApplyActivity(Activity("ok", AgentActivityKind.Status, null) with { SafeCode = "ok" });
+        renderer.Transcript.ApplyActivity(Activity("spawn", AgentActivityKind.Status, null) with { SafeCode = "subagent_spawned" });
+        renderer.Transcript.ApplyActivity(Activity("odd", AgentActivityKind.Status, null, AgentActivityState.Failed) with { SafeCode = "ok" });
+        renderer.Transcript.ApplyActivity(Activity("new", AgentActivityKind.Status, null) with { SafeCode = "brand_new_code" });
+
+        var texts = view.Rows.Select(row => row.Text.Trim()).ToArray();
+        Assert.DoesNotContain("· ok", texts);
+        Assert.Contains("· started a subagent", texts);
+        Assert.Contains("· status: ok", texts);
+        Assert.Contains("· status: brand new code", texts);
+    }
+
+    [Fact]
+    public void A_command_row_names_its_first_real_statement_and_counts_the_rest()
+    {
+        var (renderer, view) = Create();
+        var script = "$ErrorActionPreference='Stop'; Set-Location D:\\work\n$env:PYTHONIOENCODING='utf-8'\n"
+            + "python -m unittest discover -s tests; Write-Output 'done'";
+        renderer.Transcript.ApplyActivity(Activity("command", AgentActivityKind.Terminal, "Terminal") with { Detail = script, ExitCode = 0 });
+        Settle(renderer);
+
+        var row = view.Activities["command"].Text;
+        Assert.Contains("python -m unittest discover -s tests", row);
+        Assert.Contains("(+1 more)", row);
+        Assert.DoesNotContain("ErrorActionPreference", row);
+        Assert.Equal(("Write-Output 'a; b'", 0), TuiActivityLabels.CommandHead("Write-Output 'a; b'"));
+    }
+
+    [Fact]
+    public void A_nonzero_exit_reason_is_not_repeated_but_a_real_reason_is_kept()
+    {
+        var (renderer, view) = Create();
+        renderer.Transcript.ApplyActivity(Activity("exit", AgentActivityKind.Terminal, "Terminal", AgentActivityState.Failed) with
+        { Detail = "dotnet test", ExitCode = 1, SafeCode = "process_exit_nonzero" });
+        Settle(renderer);
+        renderer.Transcript.ApplyActivity(Activity("limit", AgentActivityKind.Terminal, "Terminal", AgentActivityState.Failed) with
+        { Detail = "sleep 999", SafeCode = "timeout_exceeds_hard_max" });
+        Settle(renderer, 2);
+
+        Assert.Contains("exit 1", view.Activities["exit"].Text);
+        Assert.DoesNotContain(view.Rows, row => row.Text.Contains("process exit nonzero"));
+        Assert.Contains(view.Rows, row => row.Text.Contains("timeout exceeds hard max"));
+    }
+
+    [Fact]
+    public void A_thought_leaves_one_row_with_its_duration_and_a_blink_leaves_none()
+    {
+        var (renderer, view) = Create();
+        renderer.Transcript.ApplyActivity(Activity("long", AgentActivityKind.Thinking, null) with { DurationMs = 31_000, Detail = "plan" });
+        renderer.Transcript.ApplyActivity(Activity("short", AgentActivityKind.Thinking, null) with { DurationMs = 400 });
+
+        Assert.Single(view.Rows, row => row.Text.Contains("Thought"));
+        Assert.Contains(view.Rows, row => row.Text.Contains("◦ Thought 31.0s"));
+    }
+
+    [Fact]
+    public void An_attached_turn_counts_from_the_run_start()
+    {
+        var (renderer, _) = Create();
+        var now = DateTimeOffset.UtcNow;
+        renderer.Transcript.StartedAt(now.AddMinutes(-3), now);
+        Assert.InRange(renderer.Transcript.ElapsedSeconds, 180, 200);
+        renderer.BeginTurn();
+        Assert.InRange(renderer.Transcript.ElapsedSeconds, 0, 5);
+        renderer.Transcript.StartedAt(now.AddMinutes(5), now);
+        Assert.InRange(renderer.Transcript.ElapsedSeconds, 0, 5);
+    }
+
+    [Fact]
+    public void A_replayed_turn_draws_the_same_rows_as_the_live_turn()
+    {
+        var thought = Activity("think", AgentActivityKind.Thinking, null) with { DurationMs = 12_000, Detail = "plan" };
+        var command = Activity("command", AgentActivityKind.Terminal, "Terminal") with { Detail = "dotnet test", ExitCode = 0, DurationMs = 900 };
+
+        var (live, liveView) = Create();
+        live.Transcript.ApplyActivity(thought);
+        live.Transcript.AppendAssistant("Checking the tests first.\n\n");
+        live.Transcript.ApplyActivity(command with { State = AgentActivityState.Started });
+        live.Transcript.ApplyActivity(command);
+        Settle(live);
+        live.Transcript.AppendAssistant("All green.\n\n");
+        live.Transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var (replayed, replayView) = Create();
+        var start = DateTimeOffset.Parse("2026-11-04T10:00:00Z");
+        replayed.Transcript.ReplayTurn(new AgentRunActivityReplay([thought, command],
+            [new(1, "activity", null, "think"), new(2, "text", "Checking the tests first.", null),
+             new(3, "activity", null, "command"), new(4, "text", "All green.", null)]),
+            ["All green."], start, start.AddSeconds(95), TuiTurnOutcome.Completed, null);
+
+        static string[] Body(List<TranscriptLine> rows) => rows.Select(row => row.Text.TrimEnd())
+            .Where(text => text.Length > 0 && !text.Contains("✓ ", StringComparison.Ordinal) || text.Contains("Ran", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(Body(liveView.Rows), Body(replayView.Rows));
+        // The footer carries the run's real duration, and the reply is not drawn twice.
+        Assert.Contains(replayView.Rows, row => row.Text.Contains("✓ 1m35s · 1 tool", StringComparison.Ordinal));
+        Assert.Single(replayView.Rows, row => row.Text.Contains("All green.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Replayed_narration_joins_transport_chunks_and_keeps_a_missing_final_reply()
+    {
+        var command = Activity("command", AgentActivityKind.Terminal, "Terminal") with { Detail = "dotnet test", ExitCode = 0 };
+        var (replayed, view) = Create();
+        replayed.Transcript.ReplayTurn(new AgentRunActivityReplay([command],
+            [new(1, "text", "Checking the ", null), new(2, "text", "tests first.", null), new(3, "activity", null, "command")]),
+            ["All green."], null, null, TuiTurnOutcome.Completed, null);
+
+        // Chunks are not paragraphs: the sentence stays whole.
+        Assert.Contains(view.Rows, row => row.Text.Contains("Checking the tests first.", StringComparison.Ordinal));
+        // The transcript stopped before the reply; the persisted reply still ends the turn.
+        var reply = view.Rows.FindIndex(row => row.Text.Contains("All green.", StringComparison.Ordinal));
+        Assert.True(reply > view.Rows.FindIndex(row => row.Text.Contains("dotnet test", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Reopened_messages_group_into_turns_by_their_run()
+    {
+        using var page = System.Text.Json.JsonDocument.Parse("""
+            {"messages":[
+              {"role":"user","content":"build it","source_run_id":"run_a"},
+              {"role":"user","content":"continue","source_run_id":"run_b"},
+              {"role":"ai","content":"done","source_run_id":"run_b"},
+              {"role":"user","content":"thanks"},
+              {"role":"ai","content":"you're welcome"}
+            ]}
+            """);
+        var turns = ChatSessionTurnReplay.Group(page.RootElement);
+        Assert.Equal(new string?[] { "run_a", "run_b", null }, turns.Select(turn => turn.RunId));
+        Assert.Equal(["continue"], turns[1].Prompts.ToArray());
+        Assert.Equal(["done"], turns[1].Replies.ToArray());
+        Assert.Empty(turns[0].Replies);
+        Assert.Equal(["you're welcome"], turns[2].Replies.ToArray());
     }
 
     private static (TuiSessionRenderer, ActivityView) Create()

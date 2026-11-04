@@ -97,12 +97,25 @@ public partial class ChatMessageItem
         }
     }
 
+    /// <summary>True while the collapsed view shows the settled fallback rather than the tail.</summary>
+    private bool _compactShowsFallback;
+
+    /// <summary>
+    /// The prose a collapsed turn shows: only the text after its last activity row.
+    /// Narration written between rows belongs to the process the summary line folds,
+    /// so it reappears in place when the turn is expanded instead of piling up under
+    /// the summary. A settled turn whose tail is empty (it ended on an activity) shows
+    /// its last prose instead, so a collapsed turn never hides its final answer.
+    /// </summary>
     private void UpdateCompactSegments(NotifyCollectionChangedEventArgs? change = null)
     {
-        // Live activity adds append an activity and a text tail. Keep those text
-        // objects, including their streaming/error state, without rescanning history.
-        if (change?.Action == NotifyCollectionChangedAction.Add && change.NewItems is { } added
-            && change.NewStartingIndex == Segments!.Count - added.Count)
+        // A live text-only append extends the shown tail. Keep those text objects,
+        // including their streaming/error state, without rescanning history. An
+        // appended activity starts a new tail and rebuilds below.
+        if (!_compactShowsFallback
+            && change?.Action == NotifyCollectionChangedAction.Add && change.NewItems is { } added
+            && change.NewStartingIndex == Segments!.Count - added.Count
+            && !added.OfType<ActivitySegment>().Any())
         {
             foreach (var item in added)
                 if (item is TextSegment text) _compactTextSegments.Add(text);
@@ -110,9 +123,32 @@ public partial class ChatMessageItem
             return;
         }
 
-        _compactTextSegments = new ObservableCollection<AssistantSegment>(
-            Segments?.OfType<TextSegment>() ?? Enumerable.Empty<TextSegment>());
+        _compactTextSegments = new ObservableCollection<AssistantSegment>(CompactProse(out _compactShowsFallback));
         OnPropertyChanged(nameof(DisplayedSegments));
         UpdateActivityGaps();
+    }
+
+    private IEnumerable<TextSegment> CompactProse(out bool isFallback)
+    {
+        isFallback = false;
+        if (Segments is not { } segments) return Enumerable.Empty<TextSegment>();
+
+        var tailStart = 0;
+        for (var i = segments.Count - 1; i >= 0; i--)
+        {
+            if (segments[i] is ActivitySegment)
+            {
+                tailStart = i + 1;
+                break;
+            }
+        }
+
+        var tail = segments.Skip(tailStart).OfType<TextSegment>().ToList();
+        if (IsStreaming || tail.Any(text => text.HasText)) return tail;
+
+        var lastProse = segments.Take(tailStart).OfType<TextSegment>().LastOrDefault(text => text.HasText);
+        if (lastProse is null) return tail;
+        isFallback = true;
+        return new[] { lastProse };
     }
 }

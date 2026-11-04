@@ -95,6 +95,66 @@ public sealed record SessionWorkState
     public SessionWorkFact? Blocker { get; }
     public SessionWorkFact? NextAction { get; }
 
+    /// <summary>
+    /// Builds a state that fits the serialized cap by dropping the oldest verification
+    /// records, then the oldest observed files, and marking receipts unrepresented.
+    /// </summary>
+    /// <remarks>
+    /// The constructor rejects an oversize state, and that rejection used to reach every
+    /// commit that touched the session: once sixteen long verification commands filled
+    /// the cap, each later receipt, wake and new run failed, and the session could never
+    /// run again. Old evidence is the cheapest thing to forget, and the unrepresented
+    /// flag tells the model that some receipts are no longer summarized here. User
+    /// intent and constraints are trimmed by their own reducer, not here.
+    /// </remarks>
+    public static SessionWorkState Fit(
+        SessionId sessionId,
+        WorkspaceId workspaceId,
+        string workspaceIdentitySha256,
+        RunId sourceRunId,
+        long version,
+        string sourceEventId,
+        SessionWorkFact userGoal,
+        IReadOnlyList<SessionWorkFact> userConstraints,
+        IReadOnlyList<SessionWorkFact> earlierUserIntent,
+        bool earlierUserIntentOmitted,
+        bool hasUnrepresentedReceipts,
+        IReadOnlyList<SessionWorkItem> tasks,
+        IReadOnlyList<SessionObservedFile> observedFiles,
+        IReadOnlyList<SessionVerificationRecord> verifications,
+        SessionWorkFact? blocker,
+        SessionWorkFact? nextAction)
+    {
+        var files = observedFiles;
+        var checks = verifications;
+        var unrepresented = hasUnrepresentedReceipts;
+        while (true)
+        {
+            try
+            {
+                return new SessionWorkState(sessionId, workspaceId, workspaceIdentitySha256, sourceRunId, version,
+                    sourceEventId, userGoal, userConstraints, earlierUserIntent, earlierUserIntentOmitted,
+                    unrepresented, tasks, files, checks, blocker, nextAction);
+            }
+            catch (ArgumentException error) when (IsAggregateCap(error) && checks.Count > 0)
+            {
+                checks = checks.Skip(1).ToArray();
+                unrepresented = true;
+            }
+            catch (ArgumentException error) when (IsAggregateCap(error) && files.Count > 0)
+            {
+                files = files.Skip(1).ToArray();
+                unrepresented = true;
+            }
+        }
+    }
+
+    /// <summary>Whether a construction failure is the whole-state cap rather than a bad field.</summary>
+    internal static bool IsAggregateCap(ArgumentException error) =>
+        error.Message.Contains(AggregateCapMessage, StringComparison.Ordinal);
+
+    internal const string AggregateCapMessage = "Work state exceeds its serialized cap.";
+
     public SessionWorkState WithUnrepresentedReceipts() => HasUnrepresentedReceipts
         ? this
         : new SessionWorkState(SessionId, WorkspaceId, WorkspaceIdentitySha256, SourceRunId, Version,

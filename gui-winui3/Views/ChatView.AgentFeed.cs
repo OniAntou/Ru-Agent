@@ -162,9 +162,6 @@ namespace RuApp.Views
 
             AgentActivityGrouper.SettleRunningRows(AgentActivities);
             AgentActivityGrouper.Reconcile(AgentActivities);
-            // A block that never recorded its completion cannot keep claiming
-            // "running" once the run has ended.
-            TerminalPanelControl.SettleRunningBlocks();
         }
 
         private void ApplyAgentActivity(AgentActivityModel activity, bool allowWhenIdle = false)
@@ -191,7 +188,6 @@ namespace RuApp.Views
                 // running affordance while the tool had already finished.
                 if (update.Value.Changed)
                 {
-                    TrackTerminalToolState(item);
                     TrackTerminalOutputRow(item);
                 }
             }
@@ -211,7 +207,6 @@ namespace RuApp.Views
                 // previous step's work — a run failing on step 2 read as though it had
                 // failed before the tool it ran.
                 FreezeTextSegmentForActivity(item);
-                TrackTerminalToolState(item);
                 TrackTerminalOutputRow(item);
             }
 
@@ -227,18 +222,9 @@ namespace RuApp.Views
         /// <remarks>
         /// One command runs at a time, so the row still in the Started state is the row the
         /// next output chunk belongs to; a row that settled stops accepting chunks and keeps
-        /// what it already captured. Matching by tool call id instead would need the feed to
-        /// know how the terminal panel names its blocks, which is the panel's business.
+        /// what it already captured.
         /// </remarks>
         private AgentActivityItem? _runningTerminalItem;
-
-        /// <summary>
-        /// The panel block the running command streams into, bound on its first
-        /// output chunk. Completion settles the block by this id, never by label:
-        /// "Running X" and "Ran X" are different strings, and settling the newest
-        /// unfinished block instead would land one command's outcome on another.
-        /// </summary>
-        private string? _runningTerminalExecutionId;
 
         private void TrackTerminalOutputRow(AgentActivityItem item)
         {
@@ -358,29 +344,6 @@ namespace RuApp.Views
             else
             {
                 message.Segments = null;
-            }
-        }
-
-        private void TrackTerminalToolState(AgentActivityItem item)
-        {
-            if (item.Kind != RuAgent.Protocol.Harness.AgentActivityKind.Terminal)
-            {
-                return;
-            }
-
-            if (item.State == RuAgent.Protocol.Harness.AgentActivityState.Started)
-            {
-                TerminalPanelControl.NoteToolLabel(item.DisplayText);
-                _runningTerminalExecutionId = null;
-                return;
-            }
-
-            if (item.State is RuAgent.Protocol.Harness.AgentActivityState.Completed
-                or RuAgent.Protocol.Harness.AgentActivityState.Failed)
-            {
-                CompleteTerminalBlock(
-                    _runningTerminalExecutionId,
-                    failed: item.State == RuAgent.Protocol.Harness.AgentActivityState.Failed);
             }
         }
 
@@ -606,7 +569,11 @@ namespace RuApp.Views
                 Messages,
                 AgentActivities,
                 adopted.Run.SessionId,
-                adopted.Run.RunId);
+                adopted.Run.RunId,
+                DateTimeOffset.TryParse(adopted.Run.CreatedAt, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out var runCreated)
+                    ? runCreated.LocalDateTime
+                    : null);
             if (!alreadyAdopted)
             {
                 _segmentFrozenLength = _activeAgentAssistantMessage.Content?.Length ?? 0;
@@ -788,12 +755,12 @@ namespace RuApp.Views
                 }
             }
             ClearAgentActivities();
-            ClearTerminalBlocks();
+            _runningTerminalItem = null;
         }
 
-        // ── Terminal output panel ──────────────────────────────
-        // The block list, its bound, the label carried onto the next block, and the
-        // show/hide state all live in TerminalPanelControl. The view only forwards.
+        // ── Terminal output ────────────────────────────────────
+        // Streamed command output lands only in the running terminal row's
+        // expandable detail; there is no separate docked output panel.
         private void OnAgentToolOutputReceived(object? sender, AgentToolOutputModel output)
         {
             if (DispatcherQueue.HasThreadAccess)
@@ -816,31 +783,13 @@ namespace RuApp.Views
             {
                 // A retried execution replaces the superseded attempt's text:
                 // drop what it streamed before the retry's output arrives.
-                TerminalPanelControl.ResetOutput(output.ExecutionId);
                 _runningTerminalItem?.ResetTerminalOutput();
                 return;
             }
 
-            TerminalPanelControl.AppendOutput(output.ExecutionId, output.Text);
-            _runningTerminalExecutionId ??= output.ExecutionId;
-
-            // The feed row for the command being run reads the same stream, so the reader
-            // can see what a command printed without leaving the transcript. A row that
-            // nobody is running anymore keeps what it already received.
+            // The row for the command being run shows the stream in its expandable
+            // detail. A row that nobody is running anymore keeps what it already received.
             _runningTerminalItem?.AppendTerminalOutput(output.Text);
-        }
-
-        private void CompleteTerminalBlock(string? executionId, bool failed)
-        {
-            TerminalPanelControl.CompleteBlock(executionId, failed);
-            _runningTerminalExecutionId = null;
-        }
-
-        private void ClearTerminalBlocks()
-        {
-            TerminalPanelControl.Clear();
-            _runningTerminalItem = null;
-            _runningTerminalExecutionId = null;
         }
 
         // ── Activity text wave animation ──────────────────────────────

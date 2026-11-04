@@ -237,7 +237,7 @@ public sealed partial class MainWindow
         var element = FocusManager.GetFocusedElement(Content.XamlRoot) as DependencyObject;
         while (element is not null)
         {
-            if (element is Controls.InteractiveTerminalControl or Controls.TerminalPanelControl) return true;
+            if (element is Controls.InteractiveTerminalControl) return true;
             element = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(element);
         }
 

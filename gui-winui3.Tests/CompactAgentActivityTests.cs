@@ -21,13 +21,14 @@ public sealed class CompactAgentActivityTests
 
         Assert.Same(segments, message.DisplayedSegments);
         message.CompactAgentActivity = true;
-        Assert.Equal(new AssistantSegment[] { before, live }, message.DisplayedSegments);
+        // The narration before the row folds into the summary with the row itself.
+        Assert.Equal(new AssistantSegment[] { live }, message.DisplayedSegments);
         Assert.Equal(3, segments.Count);
         Assert.Single(message.AgentActivities!);
         live.Text = "Result still streams";
-        Assert.Same(live, message.DisplayedSegments![1]);
-        Assert.True(((TextSegment)message.DisplayedSegments[1]).IsLive);
-        Assert.True(((TextSegment)message.DisplayedSegments[1]).IsError);
+        Assert.Same(live, message.DisplayedSegments![0]);
+        Assert.True(((TextSegment)message.DisplayedSegments[0]).IsLive);
+        Assert.True(((TextSegment)message.DisplayedSegments[0]).IsError);
 
         message.IsActivityDetailsExpanded = true;
         Assert.Same(segments, message.DisplayedSegments);
@@ -37,29 +38,87 @@ public sealed class CompactAgentActivityTests
     }
 
     [Fact]
-    public void Live_appends_replacements_and_resets_keep_all_prose_without_revealing_activity_rows()
+    public void Live_appends_replacements_and_resets_show_only_the_tail_without_revealing_activity_rows()
     {
         var segments = new ObservableCollection<AssistantSegment>();
-        var message = new ChatMessageItem { CompactAgentActivity = true, Segments = segments };
+        var message = new ChatMessageItem { Role = "assistant", IsStreaming = true, CompactAgentActivity = true, Segments = segments };
         var text = new TextSegment("before");
         var activity = Activity("tool", AgentActivityKind.Terminal, AgentActivityState.Started);
         segments.Add(text);
+        Assert.Equal(new AssistantSegment[] { text }, message.DisplayedSegments);
         segments.Add(new ActivitySegment(activity.ActivityId, activity));
         var tail = new TextSegment("after");
         segments.Add(tail);
-        Assert.Equal(new AssistantSegment[] { text, tail }, message.DisplayedSegments);
+        Assert.Equal(new AssistantSegment[] { tail }, message.DisplayedSegments);
+        var more = new TextSegment(" and more");
+        segments.Add(more);
+        Assert.Equal(new AssistantSegment[] { tail, more }, message.DisplayedSegments);
 
         var inserted = new TextSegment("middle");
         segments.Insert(1, inserted);
-        Assert.Equal(new AssistantSegment[] { text, inserted, tail }, message.DisplayedSegments);
+        Assert.Equal(new AssistantSegment[] { tail, more }, message.DisplayedSegments);
         segments.Remove(text);
-        Assert.Equal(new AssistantSegment[] { inserted, tail }, message.DisplayedSegments);
+        Assert.Equal(new AssistantSegment[] { tail, more }, message.DisplayedSegments);
         segments.Clear();
         Assert.Empty(message.DisplayedSegments!);
         message.Segments = new() { tail };
         Assert.Same(tail, Assert.Single(message.DisplayedSegments!));
         message.Segments = null;
         Assert.Null(message.DisplayedSegments);
+    }
+
+    [Fact]
+    public void Collapsing_folds_narration_between_rows_instead_of_stacking_it_under_the_summary()
+    {
+        // Regression: collapsing kept every text slice, so each "now I will…" line
+        // written between tool rows piled up below the summary in a block.
+        var first = Activity("mkdir", AgentActivityKind.Terminal, AgentActivityState.Completed);
+        var second = Activity("test", AgentActivityKind.Terminal, AgentActivityState.Completed);
+        var opening = new TextSegment("Python is installed. Creating the folder.");
+        var between = new TextSegment("Folder created. Running the tests.");
+        var answer = new TextSegment("Done.");
+        var segments = new ObservableCollection<AssistantSegment>
+        {
+            opening,
+            new ActivitySegment(first.ActivityId, first),
+            between,
+            new ActivitySegment(second.ActivityId, second),
+            answer,
+        };
+        var message = new ChatMessageItem
+        {
+            Role = "assistant", CompactAgentActivity = true, Segments = segments,
+            AgentActivities = new() { first, second },
+        };
+
+        Assert.Equal(new AssistantSegment[] { answer }, message.DisplayedSegments);
+
+        // Expanding restores the narration in place, between its rows.
+        message.IsActivityDetailsExpanded = true;
+        Assert.Same(segments, message.DisplayedSegments);
+    }
+
+    [Fact]
+    public void A_settled_turn_that_ends_on_a_row_still_shows_its_last_prose()
+    {
+        var plan = Activity("plan", AgentActivityKind.Todo, AgentActivityState.Completed);
+        var answer = new TextSegment("All done.");
+        var tail = new TextSegment(string.Empty);
+        var segments = new ObservableCollection<AssistantSegment>
+        {
+            answer, new ActivitySegment(plan.ActivityId, plan), tail,
+        };
+        var message = new ChatMessageItem
+        {
+            Role = "assistant", IsStreaming = true, CompactAgentActivity = true, Segments = segments,
+            AgentActivities = new() { plan },
+        };
+
+        // While the turn runs the empty tail is where the next prose will stream.
+        Assert.Equal(new AssistantSegment[] { tail }, message.DisplayedSegments);
+
+        message.IsStreaming = false;
+        Assert.Equal(new AssistantSegment[] { answer }, message.DisplayedSegments);
     }
 
     [Fact]
@@ -264,9 +323,9 @@ public sealed class CompactAgentActivityTests
         Assert.Equal(new Microsoft.UI.Xaml.Thickness(0, 0, 0, 12), lead.ActivityGap);
         Assert.Equal(new Microsoft.UI.Xaml.Thickness(0, 12, 0, 0), reply.ActivityGap);
 
-        // Collapsed compact turns show prose only, so nothing needs room.
+        // Collapsed compact turns show the final prose only, so nothing needs room.
         message.CompactAgentActivity = true;
-        Assert.Equal(default, lead.ActivityGap);
+        Assert.Equal(new AssistantSegment[] { reply }, message.DisplayedSegments);
         Assert.Equal(default, reply.ActivityGap);
 
         message.IsActivityDetailsExpanded = true;

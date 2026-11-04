@@ -53,8 +53,8 @@ public sealed class TodoChecklistTests
     }
 
     [Theory]
-    [InlineData("pending", "\uE739", "Pending")]
-    [InlineData("in_progress", "\uE73A", "In progress")]
+    [InlineData("pending", "\uEA3A", "Pending")]
+    [InlineData("in_progress", "\uEA3B", "In progress")]
     [InlineData("completed", "\uE73E", "Completed")]
     public void Each_status_has_its_own_mark_and_its_own_words(string status, string glyph, string name)
     {
@@ -87,7 +87,7 @@ public sealed class TodoChecklistTests
         // transcript down with it.
         var model = new TodoItemModel("Do the thing", "something-new");
 
-        Assert.Equal("\uE739", model.MarkGlyph);
+        Assert.Equal("\uEA3A", model.MarkGlyph);
         Assert.Equal("Pending", model.StatusName);
     }
 
@@ -110,7 +110,7 @@ public sealed class TodoChecklistTests
         var inputContainer = GuiSource.Require(document, "InputContainer");
 
         Assert.True(GuiSource.IsDescendantOf(panel, inputContainer));
-        Assert.Equal("1", GuiSource.AttributeValue(panel, "Row"));
+        Assert.Equal("2", GuiSource.AttributeValue(panel, "Row")); // directly above the composer (row 3)
         Assert.True(GuiSource.IsDescendantOf(list, panel));
     }
 
@@ -125,19 +125,39 @@ public sealed class TodoChecklistTests
     }
 
     [Fact]
-    public void The_panel_is_its_own_card_above_the_composer()
+    public void The_shelf_is_a_tab_tucked_under_the_composer()
     {
-        // A separate outlined shelf keeps a gap and leaves composer corners alone.
+        // Redesigned by owner request: a free-floating line with a hairline read as a
+        // stray underline. The shelf now shares the composer's surface, is rounded on
+        // top only, and tucks its open bottom edge under the composer.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var panel = GuiSource.Require(document, "TodoPanel");
 
-        Assert.Equal("0,0,0,8", GuiSource.AttributeValue(panel, "Margin"));
-        Assert.Equal("1", GuiSource.AttributeValue(panel, "BorderThickness"));
-        Assert.Contains("AppCardCornerRadius", GuiSource.AttributeValue(panel, "CornerRadius"), StringComparison.Ordinal);
-        Assert.Null(GuiSource.AttributeValue(panel, "Shadow"));
+        Assert.Equal("Border", panel.Name.LocalName);
+        Assert.Equal("1,1,1,0", GuiSource.AttributeValue(panel, "BorderThickness"));
+        Assert.Equal("12,12,0,0", GuiSource.AttributeValue(panel, "CornerRadius"));
+        Assert.Contains("RuSurfaceBrush", GuiSource.AttributeValue(panel, "Background"), StringComparison.Ordinal);
+        Assert.StartsWith("14,0,14,-", GuiSource.AttributeValue(panel, "Margin"), StringComparison.Ordinal);
 
-        GuiSource.Require(document, "TodoPanelCount");
-        GuiSource.Require(document, "TodoPanelProgress");
+        var toggle = GuiSource.Require(document, "TodoPanelToggle");
+        foreach (var name in new[] { "TodoPanelMark", "TodoPanelHeader", "TodoPanelProgress", "TodoPanelCount", "TodoPanelToggleIcon" })
+            Assert.True(GuiSource.IsDescendantOf(GuiSource.Require(document, name), toggle), name);
+        Assert.Equal("44", GuiSource.AttributeValue(GuiSource.Require(document, "TodoPanelProgress"), "Width"));
+    }
+
+    [Fact]
+    public void The_line_mark_follows_whether_a_task_is_in_progress()
+    {
+        string update = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateTodoPanel");
+        Assert.Contains("TodoPanelMark.Fill = state.HasActive", update, StringComparison.Ordinal);
+
+        var active = RuApp.Services.AgentTodoPanelPresentation.Create(
+            [new("Working", TodoItemModel.InProgress), new("Later", TodoItemModel.Pending)], 800);
+        var waiting = RuApp.Services.AgentTodoPanelPresentation.Create(
+            [new("Done", TodoItemModel.Completed), new("Later", TodoItemModel.Pending)], 800);
+        Assert.True(active.HasActive);
+        Assert.False(waiting.HasActive);
+        Assert.Equal("Later", waiting.Current);
     }
 
     [Fact]
@@ -220,12 +240,12 @@ public sealed class TodoChecklistTests
     [Fact]
     public void The_panel_always_stays_above_the_composer()
     {
-        // Collapsed or expanded, the panel never leaves row 1 above the input:
+        // Collapsed or expanded, the panel never leaves row 2 directly above the input:
         // collapsing hides the rows, it does not move the block.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var panel = GuiSource.Require(document, "TodoPanel");
 
-        Assert.Equal("1", GuiSource.AttributeValue(panel, "Row"));
+        Assert.Equal("2", GuiSource.AttributeValue(panel, "Row"));
 
         string code = GuiSource.ViewText("ChatView");
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");

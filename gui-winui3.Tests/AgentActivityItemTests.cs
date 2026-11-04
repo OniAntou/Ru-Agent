@@ -203,6 +203,17 @@ public sealed class AgentActivityItemTests
         var statusDropped = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Status, safeCode: "frames_dropped"));
         Assert.Equal("Some steps were temporarily skipped", statusDropped.DisplayText);
 
+        // A subagent wait reads as one, and settles out of its live (animated) state when
+        // the Host publishes the wake: a check-in that timed out is not a failure.
+        var subagentWait = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Status, safeCode: "waiting_subagents"));
+        Assert.Equal("Waiting for subagents", subagentWait.DisplayText);
+        Assert.True(subagentWait.IsRunning);
+        subagentWait.UpdateFrom(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Status, safeCode: "subagent_wait_timeout"));
+        Assert.False(subagentWait.IsRunning);
+        Assert.Equal("Checked subagents · still working", subagentWait.DisplayText);
+        Assert.Equal("Received subagent results", new AgentActivityItem(
+            Activity(AgentActivityState.Completed, kind: AgentActivityKind.Status, safeCode: "subagent_wait_completed")).DisplayText);
+
         // Waiting
         var waitingStatus = new AgentActivityItem(Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Status));
         Assert.Equal("Waiting for confirmation", waitingStatus.DisplayText);

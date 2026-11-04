@@ -56,6 +56,7 @@ public sealed class CornerRadiusScaleTests
     {
         "0,6,6,0",     // sidebar: the left edge is the window edge
         "14,14,4,14",  // user bubble: bottom-right pulls in as a tail
+        "12,12,0,0",   // task tab: the composer card's radius on top, its open edge tucked under the composer
         "0",           // progress tracks: a filled square reads as level
     };
 

@@ -51,8 +51,8 @@ public sealed class TerminalActivityPresentationTests
     public void Output_is_bounded_and_the_card_reports_truncation_until_reset()
     {
         var item = new AgentActivityItem(Activity(AgentActivityState.Started, "generate-output"));
-        item.AppendTerminalOutput(new string('x', TerminalOutputBlock.MaximumCharacters + 100));
-        Assert.Equal(TerminalOutputBlock.MaximumCharacters, item.TerminalOutputText.Length);
+        item.AppendTerminalOutput(new string('x', AgentActivityItem.MaximumTerminalOutputCharacters + 100));
+        Assert.Equal(AgentActivityItem.MaximumTerminalOutputCharacters, item.TerminalOutputText.Length);
         Assert.True(item.TerminalOutputTruncated);
         item.ResetTerminalOutput();
         Assert.False(item.TerminalOutputTruncated);

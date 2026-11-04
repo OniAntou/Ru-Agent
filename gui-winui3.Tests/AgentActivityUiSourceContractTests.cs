@@ -427,34 +427,15 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
-    public void The_terminal_panel_is_hosted_by_the_chat_view_and_owns_its_own_controls()
+    public void Terminal_output_has_no_docked_panel_above_the_composer()
     {
+        // Removed by owner request: streamed output belongs in the terminal row's
+        // expandable detail, not in a second panel that opens over the composer.
         var chatView = GuiSource.Xml("Views", "ChatView.xaml");
-
-        // The view hosts the panel; the panel itself lives in its own control.
-        // x:Name is in the x: namespace, which AttributeValue deliberately skips, so
-        // it is read directly here.
-        Assert.Contains(
+        Assert.DoesNotContain(
             chatView.Descendants(),
-            element => element.Name.LocalName == "TerminalPanelControl"
-                && element.Attribute(GuiSource.Xaml + "Name")?.Value is { Length: > 0 });
-
-        var terminal = GuiSource.NamedElements(GuiSource.Xml("Controls", "TerminalPanelControl.xaml"));
-        Assert.True(terminal.ContainsKey("Panel"), "The terminal control must own its panel.");
-        Assert.True(terminal.ContainsKey("TerminalScrollHost"), "It must own its scroll host.");
-
-        // Presented as terminal output for assistive technology.
-        Assert.Equal("TerminalPanel", GuiSource.AttributeValue(terminal["Panel"], "AutomationId"));
-
-        // Every element with an automation id, not only the named ones: the clear
-        // button carries an id but no x:Name.
-        var ids = GuiSource.Xml("Controls", "TerminalPanelControl.xaml").Descendants()
-            .SelectMany(element => element.Attributes())
-            .Where(attribute => attribute.Name.LocalName.EndsWith(".AutomationId", StringComparison.Ordinal))
-            .Select(attribute => attribute.Value)
-            .ToList();
-        Assert.Contains("TerminalClearButton", ids);
-        Assert.Contains("TerminalCollapseButton", ids);
+            element => element.Name.LocalName == "TerminalPanelControl");
+        Assert.DoesNotContain("TerminalPanelControl", GuiSource.ViewText("ChatView"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -504,47 +485,6 @@ public sealed class AgentActivityUiSourceContractTests
 
         var chrome = GuiSource.ViewText("ChatView");
         Assert.DoesNotContain("FeedDensity", chrome, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void The_terminal_block_bounds_what_it_keeps()
-    {
-        var block = new TerminalOutputBlock("exec_1", "git status");
-
-        // Feed it far more than the budget, one line at a time.
-        for (var index = 0; index < 400; index++)
-        {
-            block.AppendText(new string('x', 1024) + "\n");
-        }
-
-        Assert.True(block.IsTruncated, "Overrunning the budget must mark the block truncated.");
-        Assert.True(
-            block.Text.Length <= TerminalOutputBlock.MaximumCharacters,
-            $"Kept {block.Text.Length} characters, budget is {TerminalOutputBlock.MaximumCharacters}.");
-        Assert.True(
-            block.Text.Count(character => character == '\n') <= TerminalOutputBlock.MaximumLines,
-            "Kept more lines than the block may show.");
-        Assert.Equal("… output truncated", block.FooterText);
-    }
-
-    [Fact]
-    public void The_terminal_block_completes_with_a_typed_state_and_wording()
-    {
-        var ok = new TerminalOutputBlock("exec_1", "build");
-        ok.AppendText("done\n");
-        ok.Complete(failed: false);
-
-        Assert.True(ok.IsCompleted);
-        Assert.False(ok.IsFailed);
-        Assert.False(ok.IsTruncated);
-        Assert.Equal(string.Empty, ok.FooterText);
-
-        var bad = new TerminalOutputBlock("exec_2", "build");
-        bad.Complete(failed: true);
-
-        Assert.True(bad.IsCompleted);
-        Assert.True(bad.IsFailed);
-        Assert.NotEqual(ok.StateText, bad.StateText);
     }
 
     private static XElement ActivityTemplate()

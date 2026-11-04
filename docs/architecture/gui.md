@@ -193,6 +193,8 @@ a completion frame omits detail. Resetting a retried attempt clears only capture
 output and preserves the disclosure state. Copy carries that card's preview and
 captured output through the existing handler. This introduces no raw-argument
 fetch, execution path, context-meter change or new activity-grouping policy.
+This card is the only place streamed command output appears: there is no
+separate docked terminal panel above the composer.
 
 Each row of the detailed timeline is one line built from three parts. The verb stays
 the named label (`AgentActivityText`, `ThinkingLabel` or `EditPreviewLabel`) that the
@@ -232,9 +234,11 @@ ends in an elapsed clock measured from the reply's creation. Failures and waits 
 a tail ("waiting for you · 1 failed") and tint the line warning or danger. The
 leading glyph names the main kind of work and turns into the disclosure chevron on
 hover, keyboard focus or while open. No total duration is shown for a finished turn,
-because the transcript does not record when a turn ended. Reply text stays visible.
-Expanding the line restores the original interleaved text/activity timeline;
-collapsing filters only activity segments and preserves the same live text objects.
+because the transcript does not record when a turn ended. The reply text after the
+last activity row stays visible; narration written between rows folds into the line
+with those rows instead of stacking under it. A settled turn that ended on a row
+shows its last prose. Expanding the line restores the original interleaved
+text/activity timeline; collapsing reuses the same live text objects.
 The legacy replay layout uses the same disclosure. Expansion is per message and
 is not reset when more activity arrives. Existing approval/question surfaces and
 file-change summaries stay outside this disclosure.
@@ -483,7 +487,11 @@ Activity labels share transcript typography across plain and detail-toggle
 headers, including transitions that reveal reasoning or terminal output. Expanded
 reasoning stretches across the available reading column instead of a fixed
 left-aligned width.
-The task shelf is separate from the composer. Expanded tasks use a scroll
+The task shelf is a tab tucked under the composer: the composer surface with a
+hairline on its open sides, rounded on top, its bottom edge hidden beneath the
+composer. One row (status mark, current task, a short progress bar, done/total count
+and chevron) is the disclosure; the list opens above it and shares its mark column.
+Expanded tasks use a scroll
 viewport capped at 180 pixels and one quarter of the chat height (64-pixel
 minimum). Incoming activity data and session replay own its current plan;
 realizing or recycling a transcript row cannot update it. Routine run/model-step

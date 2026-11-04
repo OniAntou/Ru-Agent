@@ -52,6 +52,7 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
         _client = client;
         _model.Bind(root, reset: true);
         ResetDetailRead();
+        ClearChildActivity();
         _exporting = false;
         _refreshFailed = false;
         ClearResult();
@@ -108,6 +109,7 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
             {
                 RenderDetailHeader();
                 if (_model.Result is null) { ResetDetailRead(); ClearResult(); }
+                await RefreshChildActivityAsync();
                 if (priorVersion != _model.SelectedVersion) { ResetDetailRead(); ClearResult(); await ReadPageAsync(0); }
             }
         }

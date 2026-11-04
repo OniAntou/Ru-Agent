@@ -192,6 +192,5 @@ public sealed class TerminalKeyPassThroughTests
         Assert.Contains("VirtualKey.K or VirtualKey.L or VirtualKey.J && IsFocusInsideTerminal()", handler, StringComparison.Ordinal);
         string probe = GuiSource.MethodBody(GuiSource.Text("MainWindow.CommandPalette.cs"), "IsFocusInsideTerminal");
         Assert.Contains("InteractiveTerminalControl", probe, StringComparison.Ordinal);
-        Assert.Contains("TerminalPanelControl", probe, StringComparison.Ordinal);
     }
 }

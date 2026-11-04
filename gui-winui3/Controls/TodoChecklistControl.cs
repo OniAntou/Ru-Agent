@@ -33,7 +33,7 @@ namespace RuApp.Controls
         private static readonly SolidColorBrush FallbackAccentBrush =
             new(Color.FromArgb(255, 129, 140, 248));
 
-        private readonly StackPanel _rows = new() { Spacing = 9 };
+        private readonly StackPanel _rows = new() { Spacing = 7 };
 
         public TodoChecklistControl()
         {
@@ -60,7 +60,9 @@ namespace RuApp.Controls
         private static Grid BuildRow(TodoItemModel todo)
         {
             var row = new Grid { ColumnSpacing = 8 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            // A fixed mark column, the width of the shelf line's own mark slot, so the list
+            // and the line above the composer share one left edge.
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             var mark = new FontIcon
@@ -69,6 +71,7 @@ namespace RuApp.Controls
                 // Scaled with the text so the mark never drifts out of proportion with the
                 // line it belongs to.
                 FontSize = RuApp.Services.TranscriptTypography.Instance.ActivityFontSize - 1.5,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(0, 4, 0, 0),
                 Foreground = todo.IsInProgress ? Brush("RuAccentBrush", FallbackAccentBrush)
@@ -90,9 +93,6 @@ namespace RuApp.Controls
                 Foreground = todo.IsCompleted
                     ? Brush("RuMutedBrush", FallbackMutedBrush)
                     : Brush("RuInkBrush", FallbackInkBrush),
-                TextDecorations = todo.IsCompleted
-                    ? Windows.UI.Text.TextDecorations.Strikethrough
-                    : Windows.UI.Text.TextDecorations.None,
             };
 
             Grid.SetColumn(mark, 0);

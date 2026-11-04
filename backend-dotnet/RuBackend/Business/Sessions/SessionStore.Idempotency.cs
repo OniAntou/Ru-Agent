@@ -47,6 +47,13 @@ public sealed partial class SessionStore
                     : SessionAppendOutcome.InvalidMessage;
             }
 
+            if (message.Role == "ai"
+                && await WasUserDeliveryRewoundAsync(sessionId, message.SourceRunId!, connection,
+                    transaction, cancellationToken).ConfigureAwait(false))
+            {
+                return SessionAppendOutcome.StaleDelivery;
+            }
+
             await AppendUnlockedAsync(current, [message], connection, transaction, cancellationToken)
                 .ConfigureAwait(false);
             transaction.Commit();
@@ -120,16 +127,35 @@ public sealed partial class SessionStore
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
     }
 
+    private static async Task<bool> WasUserDeliveryRewoundAsync(
+        string sessionId, string sourceRunId, SqliteConnection connection,
+        SqliteTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT EXISTS (SELECT 1 FROM business_session_source_receipts
+                WHERE session_id=$id AND source_role='user' AND source_run_id=$run)
+                AND NOT EXISTS (SELECT 1 FROM business_session_messages
+                WHERE session_id=$id AND role='user' AND source_run_id=$run);
+            """;
+        command.Parameters.AddWithValue("$id", sessionId);
+        command.Parameters.AddWithValue("$run", sourceRunId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)) != 0;
+    }
+
     private static async Task InsertReceiptAsync(
         string sessionId, SessionMessage message, SqliteConnection connection,
         SqliteTransaction transaction, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "INSERT INTO business_session_source_receipts(session_id, source_message_id, fingerprint) VALUES ($id, $source, $fingerprint);";
+        command.CommandText = "INSERT INTO business_session_source_receipts(session_id, source_message_id, fingerprint, source_role, source_run_id) VALUES ($id, $source, $fingerprint, $role, $run);";
         command.Parameters.AddWithValue("$id", sessionId);
         command.Parameters.AddWithValue("$source", message.SourceMessageId!);
         command.Parameters.AddWithValue("$fingerprint", SourceFingerprint(message));
+        command.Parameters.AddWithValue("$role", message.Role);
+        command.Parameters.AddWithValue("$run", message.SourceRunId!);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -188,6 +214,8 @@ public sealed partial class SessionStore
 
     private static string SourceFingerprint(SessionMessage message)
     {
+        // Attachment counts are durable receipt metadata, not delivery identity.
+        // Keeping the original tuple preserves idempotency for pre-migration receipts.
         var canonical = JsonSerializer.SerializeToUtf8Bytes(new[]
         {
             message.Role,

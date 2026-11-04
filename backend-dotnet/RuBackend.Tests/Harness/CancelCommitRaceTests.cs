@@ -27,7 +27,7 @@ public sealed class CancelCommitRaceTests
                     HarnessEventKind.RunStateChanged, safeCode: "worker_settled")], [], []), ct);
             Assert.Equal(HarnessCommitOutcome.Committed, result.Outcome);
         });
-        using var services = new AgentV1ServiceTestBuilder(fixture).WithRuntimeRoots(roots).Build();
+        var services = new AgentV1ServiceTestBuilder(fixture).WithRuntimeRoots(roots).Build();
 
         var cancelled = await services.Lifecycle.CancelAsync(seeded.Run.RunId.Value, default);
         var replay = await services.Lifecycle.CancelAsync(seeded.Run.RunId.Value, default);
@@ -51,7 +51,7 @@ public sealed class CancelCommitRaceTests
         var seeded = await fixture.SeedRunAsync(new HarnessRunStatus(HarnessRunState.Running));
         var store = new ConflictingStore(fixture.EventStore, conflicts);
         var roots = new ShutdownProgressRoots((_, _) => Task.CompletedTask);
-        using var services = new AgentV1ServiceTestBuilder(fixture)
+        var services = new AgentV1ServiceTestBuilder(fixture)
             .WithRuntimeRoots(roots).WithLifecycleStore(store).Build();
 
         var result = await services.Lifecycle.CancelAsync(seeded.Run.RunId.Value, default);

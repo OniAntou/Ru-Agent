@@ -10,15 +10,15 @@ This page owns the operating permission matrix; the executable source is the
 Other guides link here instead of maintaining a separate preset matrix.
 
 This checkpoint includes declarative Skills, bounded headless terminal execution
-(`powershell` and `run_process`), session rewind, managed Git commit workflow,
-and dynamic model context compaction. MCP servers the user
+(`powershell` and `run_process`), session rewind and dynamic model context
+compaction. MCP servers the user
 declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 [MCP servers](#mcp-servers)); connector libraries are not advertised Agent tools.
 
 ## Coding profiles
 
-New runs default to `coding_v2` (27 definitions). `patch_v2` (26) and
-`coding_code_v1` (29) are also supported, and
+New runs default to `coding_v2` (26 definitions). `patch_v2` (25) and
+`coding_code_v1` (28) are also supported, and
 must be selected explicitly for a new run; changing the Host setting does not
 alter an existing run. Set
 `RU_AGENT_TOOL_PROFILE=coding_v2|patch_v2|coding_code_v1` in a dedicated Host
@@ -117,14 +117,14 @@ current user's explicit instructions or the system execution contract.
 
 ## Current capability matrix
 
-Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`, `git_status`,
+Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`,
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `apply_patch`,
 `powershell`, `run_process`, `terminal_read`, `terminal_stop`,
 `web_search` and `web_fetch`. Profile and availability filters apply below.
 
-The Protocol catalog contains 29 definitions; the Broker has 28 executable
+The Protocol catalog contains 28 definitions; the Broker has 27 executable
 bindings because `ask_user` is intercepted by the Host. Run-pinned inventories
-contain 27 definitions in `coding_v2`, 26 in `patch_v2`, and 29 in `coding_code_v1`,
+contain 26 definitions in `coding_v2`, 25 in `patch_v2`, and 28 in `coding_code_v1`,
 before availability/role filtering. There is no selectable
 legacy profile. The model-facing file mutation and terminal tools are
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `powershell`,
@@ -159,19 +159,10 @@ directory; `powershell` takes a script. Both use the same Broker terminal
 policy and bounded process lifecycle. `terminal_read` pages retained output and
 `terminal_stop` stops a running task.
 
-`git_status` takes no arguments and reports the run workspace's Git state from one
-fixed read-only `git status --porcelain=v2 --branch` invocation: `branch` (null when
-detached), `detached`, `head_oid`, `upstream`, `ahead`/`behind` (null without an
-upstream), and `staged`, `unstaged`, `untracked` and `unmerged` lists. Staged and
-unstaged rows carry the porcelain code and a rename's `original_path`; conflicts
-stay in `unmerged` instead of appearing as ordinary staged work. Paths are
-workspace-relative: when the workspace is a subdirectory of a larger repository,
-only that subtree is reported and nothing outside it appears. The status entry cap
-is 2000 (`truncated: true` marks an incomplete list), `unparsed_lines` counts lines
-the shared parser could not interpret, and `clean: true` carries a `notice`. A
-workspace outside Git answers `is_repository: false` with a notice rather than
-failing the call. The tool never diffs, stages, commits, fetches or runs repository
-hooks; use `run_process` for those reads or a managed Git action.
+Ru has no Git tool. Run `git` through `run_process` or `powershell` like any other
+command; the terminal policy above decides whether it may run, and it does what Git
+does. `git commit` commits what is staged, including anything the user staged, and
+runs the repository's hooks.
 
 Every running terminal task reserves a per-session slot when launched, including
 foreground tasks that may later move to background. Promotion keeps that slot;
@@ -276,7 +267,6 @@ they do not make a retired public identity executable.
 | --- | --- | --- |
 | `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external ask; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, protected paths allowed |
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator. An image read also needs the run's pinned model to accept image input, otherwise `image_unsupported_by_model` |
-| `git_status` | always advertised (`workspace.read`) | one fixed read-only `git status --porcelain=v2 --branch` run in the run workspace, bounded by the shared 2000-entry status cap and a workspace-subtree pathspec; no path or revision argument. Automatic in `plan`, `standard` and `full_access`; a workspace outside Git answers `is_repository: false`. It never diffs, stages, commits or fetches |
 | `write_file`, `edit_file`, `file_delete`, `file_restore` | present in supported coding profiles | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, protected paths allowed; preimage mismatch returns `workspace_changed` |
 | `apply_patch` | `patch_v2`, `coding_code_v1` | workspace-scoped unified patches; all targets are checked under the same policy, approval is one-time, and patch rollback preserves intervening edits |
 | `powershell`, `run_process` | present in supported coding profiles | `plan`: deny; `standard`: workspace cwd executable/shell auto, external cwd asks; explicit ask/deny and long foreground rules apply; `full_access`: arbitrary current-Windows-user terminal auto. Children run as the current user without an OS filesystem/network sandbox. Obsolete sandbox arguments are rejected. Output, timeout, cancellation and process-tree bounds apply. |
@@ -490,10 +480,13 @@ provider-transient failures retain their existing retry/Continue behavior, and
 prompt failures never take the note path.
 
 The shared budget remains 256 model-initiated tool calls per window; there is no
-new low per-step cap. Read-only calls may execute concurrently in chunks of at
-most eight while receipts retain model order. Mutations and terminal calls are
-sequential and act as barriers; an unknown mutation outcome stops later work
-until reconciliation. A model cannot claim success before durable receipts.
+new low per-step cap. A root run opens up to eight windows by itself before it
+parks for an explicit Continue, so one long prompt does not pause at the first
+128 steps; internal children keep their own bound. Read-only calls may execute
+concurrently in chunks of at most eight while receipts retain model order.
+Mutations and terminal calls are sequential and act as barriers; an unknown
+mutation outcome stops later work until reconciliation. A model cannot claim
+success before durable receipts.
 
 Use the `help` tool when the user asks how Ru's own features, architecture,
 configuration, tools, providers, or operating boundaries work. It returns
@@ -642,9 +635,7 @@ while the model was working is noticed without polling; the GUI's compact
 right-hand card lists the same session tasks, and its details panel stops one
 through the `/tasks` command.
 
-The managed Git commit workflow retains temporary-index isolation, path rollback
-attribution, and refusal when the real index already contains staged user
-changes. A zero exit is `succeeded`; non-zero exit and start failure are
+A zero exit is `succeeded`; non-zero exit and start failure are
 `failed`; timeout is `timed_out`. Standard structured-file tools use the trusted
 root, a session-scoped canonical folder grant, or a remembered project folder
 pattern; Full Access uses an ephemeral
@@ -743,6 +734,11 @@ and no workspace editor. The `Full Access` choice needs one explicit
 confirmation per session, is stored server-side with a monotonic version, and
 flows into runs;
 a version conflict surfaces as `preset_mismatch` / `preset_version_conflict`.
+A run request that pins a preset version but names a different preset than the
+stored selection is rejected as `preset_mismatch` before any run is created: the
+stored selection stays authoritative, and a stale client cannot leave a live run
+it is unable to bind or cancel. Legacy requests without a pinned version keep the
+stored-selection rule.
 The sidebar
 keeps only primary conversation surfaces; Log, Diagnostics, Policy, and
 Audit remain reachable from the `Công cụ` flyout. Agent prompts are
@@ -989,7 +985,9 @@ error the tool returns.
 
 For stdio, the Broker execution runtime starts a server on its first `list_tools` or `call`, at most one
 instance per Host, inside a kill-on-close job object, as the current Windows user with the
-credential-stripped agent environment plus its declared variables. A server whose
+credential-stripped agent environment plus its declared variables. The server starts
+suspended and joins the job before its code runs, so descendants it creates are covered
+by the same cleanup. A server whose
 declaration changed or that exited is restarted; all servers stop with the Host. Startup is
 bounded to 20 seconds and each request to the server's `timeout_seconds` (default 60,
 at most 600). `arguments` is a JSON object encoded as a string (at most 64 KB) and follows
@@ -1076,7 +1074,7 @@ what a granted application does with the input.
 
 Two run-level events use the same file. **UserPromptSubmit** runs when a run is created, before anything of it is written; exit code `2` refuses the prompt with HTTP 422 `prompt_blocked_by_hook` and the hook's stderr (first 200 characters) as the message, so no run exists. Its stdin carries `event`, `session_id`, `workspace`, `workspace_trusted` and `prompt` (null with `prompt_omitted: true` above 32 KB). Until the workspace is trusted only the user's own `~/.ru/hooks.json` prompt hooks run, and they start in the user's profile folder so `cmd.exe` cannot resolve a bare program name against workspace files. **Stop** runs once when a run finishes, without being waited for, with `event`, `run_id`, `session_id`, `workspace`, `workspace_trusted`, `status` and `terminal_error_code`; it cannot change the run. Trust is checked when the hook fires: a run that finished because trust was declined or expired, or whose trust cannot be read, runs only the user's own Stop hooks, from the profile folder. Both ignore `matcher`.
 
-The hook runs through `cmd.exe` in the workspace root with the same credential-stripped environment as agent terminal children plus `RU_HOOK_EVENT`; it receives one JSON object on stdin (`event`, `tool_id`, `tool_call_id`, `run_id`, `workspace`, `arguments` unless larger than 32 KB, and for PostToolUse `outcome` and `code`). Files over 64 KB, links and malformed JSON are ignored; at most 32 hooks per event are read. A workspace `hooks.json` is workspace-supplied code that runs as your Windows user once tools are evaluated, so open only workspaces you trust. Hooks are loaded when a run's gateway is created, apply to subagents, and are not a security boundary. Because a hook's command runs outside terminal policy, `.ru\hooks.json` (in the workspace or the user profile) is a structured protected path: the model's `write_file`/`edit_file` are denied in `plan` and `standard`. A terminal command in `standard` can still write the file; that residual is the terminal launch authority `standard` already grants.
+The hook runs through `cmd.exe` in the workspace root with the same credential-stripped environment as agent terminal children plus `RU_HOOK_EVENT`; it receives one JSON object on stdin (`event`, `tool_id`, `tool_call_id`, `run_id`, `workspace`, `arguments` unless larger than 32 KB, and for PostToolUse `outcome` and `code`). The hook starts suspended inside a kill-on-close Job Object, so a process it spawns belongs to that tree and cannot outlive the hook; a descendant that keeps the hook's pipes open ends the call as a timeout instead of a silent success. Files over 64 KB, links and malformed JSON are ignored; at most 32 hooks per event are read. A workspace `hooks.json` is workspace-supplied code that runs as your Windows user once tools are evaluated, so open only workspaces you trust. Hooks are loaded when a run's gateway is created, apply to subagents, and are not a security boundary. Because a hook's command runs outside terminal policy, `.ru\hooks.json` (in the workspace or the user profile) is a structured protected path: the model's `write_file`/`edit_file` are denied in `plan` and `standard`. A terminal command in `standard` can still write the file; that residual is the terminal launch authority `standard` already grants.
 
 ### Declaring terminal checks
 
@@ -1157,8 +1155,11 @@ trusted adapter, session scopes and access class derive from that row. To add a 
 3. Bind an executor in the Broker execution runtime. `ToolCatalog` rejects an executor without a row
    and a bound row without an executor.
 4. Teach `PolicyContextFactory` the tool's policy identity: its operation class, its `op` value and
-   whether it is target-free. Its switch throws `malformed_call` for an id it does not know, which
-   denies every call before execution.
+   whether it is target-free. Its fallback denies before execution and separates the two causes: an
+   unadvertised id fails as `malformed_call`, while an advertised Broker-bound id with no branch fails
+   as `tool_policy_unconfigured`, which names a host registration defect rather than a model error.
+   `Every_broker_evaluated_advertised_tool_has_a_policy_branch` pins the parity; `agent_apply` and
+   `ask_user` are Host-evaluated and outside it.
 5. For a new risk or adapter value, add an explicit arm in `ToolDescriptorMapping`. Unmapped values
    throw. The trusted adapter allowlist follows the `AgentToolAdapter` enum automatically.
 6. Add deliberate membership where the tool should be advertised: a coding profile in

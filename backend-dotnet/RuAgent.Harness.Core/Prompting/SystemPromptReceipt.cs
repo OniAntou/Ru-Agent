@@ -19,24 +19,6 @@ public sealed record SystemPromptReceipt
 {
     public const string SupportedComposerVersion = "2.0.0";
 
-    /// <summary>
-    /// A deterministic receipt for the transitional empty context. It is kept for
-    /// fixture shape compatibility only: <see cref="ValidateAgainst(SystemPromptContext)"/>
-    /// rejects it, because a zero prompt digest never comes from a rendered prompt.
-    /// </summary>
-    public static SystemPromptReceipt Empty => new(
-        SupportedComposerVersion,
-        new string('0', 64),
-        new[]
-        {
-            new PromptBlockDigest("ru.persona", new string('0', 64)),
-            new PromptBlockDigest("agent.contract", new string('0', 64)),
-            new PromptBlockDigest("environment", new string('0', 64)),
-            new PromptBlockDigest("profile", new string('0', 64)),
-            new PromptBlockDigest("capabilities", new string('0', 64)),
-            new PromptBlockDigest("runtime", new string('0', 64)),
-        });
-
     public SystemPromptReceipt(
         string composerVersion,
         string promptSha256,

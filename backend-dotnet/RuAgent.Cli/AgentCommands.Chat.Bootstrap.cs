@@ -141,6 +141,9 @@ public sealed partial class AgentCommands
         IApplication? tgApp = tgMode ? Application.Create() : null;
         if (tgApp is not null)
         {
+            // Keep input/render dispatch responsive; the welcome animation
+            // retains its independent 50 ms clock and hidden-view pauses.
+            Application.MaximumIterationsPerSecond = 60;
             TgTerminalInput.Initialize(tgApp);
         }
 

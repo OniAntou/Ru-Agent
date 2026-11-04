@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli.Tui;
@@ -43,7 +44,7 @@ public sealed partial class TuiTranscript
     private readonly TuiMarkdown _markdown = new();
     private readonly List<ToolDetail> _pendingTools = [];
     private readonly Queue<string> _settledActivityIds = new();
-    private readonly Dictionary<string, ToolDetail> _settledToolRows = new(StringComparer.Ordinal);
+    private readonly BoundedInsertionMap<string, ToolDetail> _settledToolRows = new(64, StringComparer.Ordinal);
     private readonly List<string> _retained = [];
     private bool _retainedIsThinking;
     private readonly StringBuilder _streamedAssistant = new();
@@ -63,7 +64,7 @@ public sealed partial class TuiTranscript
     private bool _paused;
     private string? _pausedRunId;
     private string? _lastParkReason;
-    private readonly Dictionary<string, string> _parkReasons = new(StringComparer.Ordinal);
+    private readonly BoundedInsertionMap<string, string> _parkReasons = new(64, StringComparer.Ordinal);
     private bool _repeatedPark;
     private bool _fullScreenCards;
     private string? _pendingPlanProgress;
@@ -165,18 +166,6 @@ public sealed partial class TuiTranscript
         else _surface.WriteBlock(lines);
     }
 
-    private sealed record ToolDetail(
-        string ActivityId,
-        AgentActivityState State,
-        string Verb,
-        string LiveVerb,
-        string? Display,
-        string? Target,
-        int? Count,
-        int? Added,
-        int? Removed,
-        int? DurationMs);
-
     public void BeginTurn()
     {
         _toolsSettled = 0;
@@ -267,7 +256,8 @@ public sealed partial class TuiTranscript
         {
             return;
         }
-        if (_status.State == TuiRunState.Thinking) _status.SetResponding();
+        if (_status.State is TuiRunState.Thinking or TuiRunState.WaitingModel
+            or TuiRunState.Retrying or TuiRunState.Compacting) _status.SetResponding();
 
         if (_streamedAssistant.Length < MaxRetainedAssistantCharacters)
         {
@@ -322,7 +312,8 @@ public sealed partial class TuiTranscript
 
     private void ResetAssistantCore(bool clearRawText)
     {
-        if (_status.State == TuiRunState.Thinking) _status.SetState(TuiRunState.Thinking);
+        if (_status.State == TuiRunState.Thinking)
+            _status.SetState(_fullScreenCards ? TuiRunState.WaitingModel : TuiRunState.Thinking);
         // A superseded attempt's answer is replaced by the retry: drop its pending
         // render buffer, and its raw text from gap tracking, so the retry -- not the
         // stale head it replaced -- is what gets compared against the durable payload.

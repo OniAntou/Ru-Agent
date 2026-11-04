@@ -37,22 +37,13 @@ public sealed partial class BusinessEndpointTests
         using var exportSession = await client.PostAsync("/sessions/new", null);
         var exportId = (await exportSession.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("session_id").GetString()!;
         var store = factory.Services.GetRequiredService<ISessionStore>();
-        Assert.True(await store.AppendAsync(exportId, [new("user", "Imported CLI prompt")], CancellationToken.None));
-        var exported = await client.GetFromJsonAsync<JsonElement>($"/sessions/{exportId}/export?harness=claude-code");
-        using var importRequest = new HttpRequestMessage(HttpMethod.Post, "/sessions/import")
-        {
-            Content = JsonContent.Create(new { harness = "claude-code", content = exported.GetProperty("files")[0].GetProperty("content").GetString() }),
-        };
-        importRequest.Headers.Add("X-Ru-Client-Source", "cli");
-        using var imported = await client.SendAsync(importRequest);
-        var importedId = (await imported.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("session").GetProperty("id").GetString()!;
-        Assert.Equal("cli", (await store.GetAsync(importedId, CancellationToken.None))!.ClientSource);
+        Assert.NotNull(await store.GetAsync(exportId, CancellationToken.None));
         using var invalid = new HttpRequestMessage(HttpMethod.Post, "/sessions/new");
         invalid.Headers.Add("X-Ru-Client-Source", "unknown");
         using var denied = await client.SendAsync(invalid);
         Assert.Equal(HttpStatusCode.BadRequest, denied.StatusCode);
         using var final = await client.GetAsync("/sessions");
-        Assert.Equal(5, (await final.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("sessions").GetArrayLength());
+        Assert.Equal(4, (await final.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("sessions").GetArrayLength());
     }
 
     [Fact]
@@ -649,12 +640,6 @@ public sealed partial class BusinessEndpointTests
             Assert.NotNull(entry);
             Assert.Equal(Path.GetFileName(workspacePath), entry.Value.GetProperty("workspace_label").GetString());
             Assert.Equal(workspacePath, entry.Value.GetProperty("workspace_path").GetString());
-            foreach (var format in RuAgent.SessionInterchange.SessionFormatCatalog.All.Where(value => value.CanWrite).Select(value => value.Id))
-            {
-                var exported = await client.GetFromJsonAsync<JsonElement>($"/sessions/{sessionId}/export?harness={format}");
-                Assert.True(exported.GetProperty("status").GetString() == "ok", $"Export failed for {format}: {exported}");
-                Assert.Equal(workspacePath, exported.GetProperty("session").GetProperty("working_directory").GetString());
-            }
             Assert.False(string.IsNullOrEmpty(entry.Value.GetProperty("workspace_id").GetString()));
         }
         finally
@@ -778,155 +763,6 @@ public sealed partial class BusinessEndpointTests
         Assert.Empty(await BusinessSqliteTestData.ReadActivityAsync(data.Paths));
     }
 
-    /// <summary>
-    /// A conversation that leaves in one agent's format comes back as the same
-    /// conversation. That round trip is the whole promise of the interchange routes.
-    /// </summary>
-    [Fact]
-    public async Task Session_interchange_round_trips_a_conversation_through_another_agent()
-    {
-        using var data = TemporaryBusinessData.Create();
-        using var factory = CreateAspNetFactory(data.Paths);
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var createdResponse = await client.PostAsync("/sessions/new", null);
-        var created = await createdResponse.Content.ReadFromJsonAsync<JsonElement>();
-        var sessionId = created.GetProperty("session_id").GetString()!;
-        var store = factory.Services.GetRequiredService<ISessionStore>();
-        Assert.True(await store.AppendAsync(
-            sessionId,
-            [
-                new SessionMessage("user", "Bring me across"),
-                new SessionMessage("ai", "I am here"),
-            ],
-            CancellationToken.None));
-
-        var exported = await client.GetFromJsonAsync<JsonElement>(
-            $"/sessions/{sessionId}/export?harness=claude-code");
-        Assert.Equal("ok", exported.GetProperty("status").GetString());
-
-        var claudeFile = exported.GetProperty("files")[0];
-        var claudeContent = claudeFile.GetProperty("content").GetString()!;
-        Assert.EndsWith(".jsonl", claudeFile.GetProperty("name").GetString()!, StringComparison.Ordinal);
-        Assert.Contains("Bring me across", claudeContent, StringComparison.Ordinal);
-
-        // Back in as the format the file actually is, then out again as the other agent:
-        // two hops, and the words are still there at the end of them.
-        using var importedResponse = await client.PostAsJsonAsync(
-            "/sessions/import",
-            new { harness = "claude-code", content = claudeContent });
-        var imported = await importedResponse.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("ok", imported.GetProperty("status").GetString());
-        Assert.Equal(2, imported.GetProperty("session").GetProperty("messages").GetInt32());
-
-        var reExported = await client.GetFromJsonAsync<JsonElement>(
-            $"/sessions/{imported.GetProperty("session").GetProperty("id").GetString()}/export?harness=codex");
-        var reExportedContent = reExported.GetProperty("files")[0].GetProperty("content").GetString()!;
-
-        Assert.Contains("Bring me across", reExportedContent, StringComparison.Ordinal);
-        Assert.True(
-            reExportedContent.Contains("I am here", StringComparison.Ordinal),
-            $"The assistant turn was lost on the way back: {reExportedContent}");
-    }
-
-    [Fact]
-    public async Task Session_import_counts_the_entries_it_could_not_store()
-    {
-        // Ru's session log holds turns, not steps: reasoning and tool traffic belong to
-        // runs that really executed something. They are counted back to the caller rather
-        // than written in as messages no model produced.
-        using var data = TemporaryBusinessData.Create();
-        using var factory = CreateAspNetFactory(data.Paths);
-        using var client = factory.CreateAuthenticatedClient();
-
-        const string Rollout = """
-            {"timestamp":"2026-09-07T15:14:34.810Z","ordinal":0,"type":"session_meta","payload":{"session_id":"01a07c6e-aff5-7fa3-b7f6-9e7cd8096ae4","id":"01a07c6e-aff5-7fa3-b7f6-9e7cd8096ae4","timestamp":"2026-09-07T15:13:44.040Z","cwd":"D:\\LLM","thread_source":"user"}}
-            {"timestamp":"2026-09-07T15:14:35.000Z","ordinal":1,"type":"response_item","payload":{"type":"message","id":"msg_1","role":"user","content":[{"type":"input_text","text":"Fix the widget"}]}}
-            {"timestamp":"2026-09-07T15:14:36.000Z","ordinal":2,"type":"response_item","payload":{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"Planning the edit"}],"content":null}}
-            {"timestamp":"2026-09-07T15:14:37.000Z","ordinal":3,"type":"response_item","payload":{"type":"function_call","id":"fc_1","name":"exec","arguments":"{}","call_id":"call_1"}}
-            {"timestamp":"2026-09-07T15:14:38.000Z","ordinal":4,"type":"response_item","payload":{"type":"function_call_output","id":"fco_1","call_id":"call_1","output":"Script completed"}}
-            {"timestamp":"2026-09-07T15:14:39.000Z","ordinal":5,"type":"response_item","payload":{"type":"message","id":"msg_2","role":"assistant","content":[{"type":"output_text","text":"Fixed the widget"}]}}
-            """;
-
-        using var response = await client.PostAsJsonAsync(
-            "/sessions/import",
-            new { harness = "codex", content = Rollout });
-        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-
-        Assert.Equal("ok", payload.GetProperty("status").GetString());
-        Assert.Equal(2, payload.GetProperty("session").GetProperty("messages").GetInt32());
-        Assert.Equal(3, payload.GetProperty("dropped_entries").GetInt32());
-    }
-
-    [Fact]
-    public async Task Session_import_retains_all_messages_beyond_the_initial_display_window()
-    {
-        using var data = TemporaryBusinessData.Create();
-        using var factory = CreateAspNetFactory(data.Paths);
-        using var client = factory.CreateAuthenticatedClient();
-        var content = string.Join("\n", Enumerable.Range(0, 202).Select(index =>
-            ClaudeMessage(index % 2 == 0 ? "user" : "assistant", $"message-{index}")));
-
-        using var response = await client.PostAsJsonAsync(
-            "/sessions/import",
-            new { harness = "claude-code", content });
-        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var session = payload.GetProperty("session");
-        var document = await factory.Services.GetRequiredService<ISessionStore>()
-            .GetAsync(session.GetProperty("id").GetString()!, CancellationToken.None);
-
-        Assert.Equal("ok", payload.GetProperty("status").GetString());
-        Assert.Equal(202, session.GetProperty("messages").GetInt32());
-        Assert.Equal(0, payload.GetProperty("dropped_entries").GetInt32());
-        Assert.False(payload.GetProperty("partial_import").GetBoolean());
-        Assert.NotNull(document);
-        Assert.Equal(200, document!.Messages.Count);
-        Assert.Equal("message-2", document.Messages[0].Content);
-        Assert.Equal("message-201", document.Messages[^1].Content);
-    }
-
-    [Fact]
-    public async Task Session_import_reports_oversized_messages_as_dropped()
-    {
-        using var data = TemporaryBusinessData.Create();
-        using var factory = CreateAspNetFactory(data.Paths);
-        using var client = factory.CreateAuthenticatedClient();
-        var content = string.Join("\n", new[]
-        {
-            ClaudeMessage("user", "kept"),
-            ClaudeMessage("assistant", new string('x', 1024 * 1024 + 1)),
-        });
-
-        using var response = await client.PostAsJsonAsync(
-            "/sessions/import",
-            new { harness = "claude-code", content });
-        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-
-        Assert.Equal("ok", payload.GetProperty("status").GetString());
-        Assert.Equal(1, payload.GetProperty("session").GetProperty("messages").GetInt32());
-        Assert.Equal(1, payload.GetProperty("dropped_entries").GetInt32());
-        Assert.True(payload.GetProperty("partial_import").GetBoolean());
-    }
-
-    [Fact]
-    public async Task Session_import_does_not_create_an_empty_session_when_all_messages_are_oversized()
-    {
-        using var data = TemporaryBusinessData.Create();
-        using var factory = CreateAspNetFactory(data.Paths);
-        using var client = factory.CreateAuthenticatedClient();
-        var content = ClaudeMessage("user", new string('x', 1024 * 1024 + 1));
-
-        using var response = await client.PostAsJsonAsync(
-            "/sessions/import",
-            new { harness = "claude-code", content });
-        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var sessions = await factory.Services.GetRequiredService<ISessionStore>()
-            .ListAsync(CancellationToken.None);
-
-        Assert.Equal("error", payload.GetProperty("status").GetString());
-        Assert.Empty(sessions);
-    }
-
     [Fact]
     public async Task Session_list_ignores_legacy_file_edits_after_import()
     {
@@ -948,16 +784,6 @@ public sealed partial class BusinessEndpointTests
         Assert.Equal("before replacement", Assert.Single(second).Title);
     }
 
-    private static string ClaudeMessage(string role, string text) =>
-        JsonSerializer.Serialize(new
-        {
-            type = role,
-            message = new
-            {
-                content = new[] { new { type = "text", text } },
-            },
-        });
-
     private static string SessionJson(string id, string title, int messageCount) =>
         JsonSerializer.Serialize(new
         {
@@ -969,83 +795,6 @@ public sealed partial class BusinessEndpointTests
                 .Select(index => new { role = "user", content = $"message-{index}" })
                 .ToArray(),
         });
-
-    [Fact]
-    public async Task Session_import_rejects_content_above_the_shared_cap_with_a_413()
-    {
-        using var data = TemporaryBusinessData.Create();
-        using var factory = CreateAspNetFactory(data.Paths);
-        using var client = factory.CreateAuthenticatedClient();
-
-        // Just over the 16 MiB content cap the CLI and GUI measure before reading, and
-        // far below the endpoint's transport bound (sized for worst-case JSON escaping)
-        // and the route/Kestrel bounds above it. The endpoint's own content check must be
-        // the layer that answers, with the interchange envelope rather than the generic
-        // transport body.
-        var oversized = new string('a', RuAgent.SessionInterchange.SessionInterchangeLimits.MaxImportContentBytes + 1);
-        using var response = await client.PostAsJsonAsync(
-            "/sessions/import",
-            new { harness = "claude-code", content = oversized });
-
-        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
-        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("error", payload.GetProperty("status").GetString());
-        Assert.False(payload.TryGetProperty("detail", out _));
-        Assert.Contains(
-            "import_too_large",
-            payload.GetProperty("message").GetString()!,
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Session_interchange_names_the_formats_it_knows_instead_of_failing_silently()
-    {
-        using var data = TemporaryBusinessData.Create();
-        using var factory = CreateAspNetFactory(data.Paths);
-        using var client = factory.CreateAuthenticatedClient();
-
-        var exported = await client.GetFromJsonAsync<JsonElement>("/sessions/anything/export?harness=cursor");
-        Assert.Equal("error", exported.GetProperty("status").GetString());
-        Assert.Contains("claude-code", exported.GetProperty("message").GetString()!, StringComparison.Ordinal);
-        Assert.Contains("codex", exported.GetProperty("message").GetString()!, StringComparison.Ordinal);
-
-        using var imported = await client.PostAsJsonAsync(
-            "/sessions/import",
-            new { harness = "codex", content = "{\"hello\":\"world\"}" });
-        var payload = await imported.Content.ReadFromJsonAsync<JsonElement>();
-
-        Assert.Equal("error", payload.GetProperty("status").GetString());
-        Assert.Contains("Codex", payload.GetProperty("message").GetString()!, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// A partner whose store Ru cannot produce is refused before a file is written, and the
-    /// refusal names what is missing rather than calling the format unsupported.
-    /// </summary>
-    [Fact]
-    public async Task Session_export_refuses_a_format_it_cannot_write()
-    {
-        using var data = TemporaryBusinessData.Create();
-        using var factory = CreateAspNetFactory(data.Paths);
-        using var client = factory.CreateAuthenticatedClient();
-
-        var exported = await client.GetFromJsonAsync<JsonElement>("/sessions/anything/export?harness=antigravity");
-
-        Assert.Equal("error", exported.GetProperty("status").GetString());
-        Assert.Contains("protobuf", exported.GetProperty("message").GetString()!, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Session_export_refuses_a_session_that_does_not_exist()
-    {
-        using var data = TemporaryBusinessData.Create();
-        using var factory = CreateAspNetFactory(data.Paths);
-        using var client = factory.CreateAuthenticatedClient();
-
-        var exported = await client.GetFromJsonAsync<JsonElement>("/sessions/missing/export?harness=codex");
-
-        Assert.Equal("error", exported.GetProperty("status").GetString());
-    }
 
     private static BackendWebApplicationFactory CreateAspNetFactory(
         DataPaths paths,

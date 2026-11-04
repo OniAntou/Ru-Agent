@@ -1,98 +1,145 @@
+using RuAgent.Client;
+using RuAgent.Protocol.Harness;
+
 namespace RuAgent.Cli.Tui;
 
 /// <summary>
-/// Accumulates the header's usage cluster from the run-cumulative envelope counters: step
-/// deltas feed the context meter and the published per-million rates feed the session cost.
-/// A step delta is clamped at zero because every run restarts its counters; BeginTurn
-/// resets that baseline while the session cost keeps accumulating across turns.
+/// Per-request context and cumulative session billing have separate lifecycles.
 /// </summary>
+/// <remarks>
+/// The SSE frame loop applies durable usage while optional metadata (provider
+/// window, per-request prompt tokens) is fetched over HTTP in the background.
+/// Both paths update the tracker, so every mutation and every read the renderer
+/// performs takes the same lock. No member calls another public member while it
+/// already holds the lock.
+/// </remarks>
 public sealed class TuiUsageTracker
 {
-    private long _cumulativeInput;
-    private long _cumulativeOutput;
-    private long _maxStepInputTokens;
+    private readonly object _gate = new();
+    private readonly RequestContextReading _context = new();
+    private long _cumulativeInput, _cumulativeOutput;
+    private string? _runId;
+    private long? _contextLimit;
+    private string? _providerProtocol;
+    private double? _inputRate;
+    private double? _outputRate;
+    private double _sessionCost;
+    private bool _costKnown;
 
-    /// <summary>Published context window for the active model, when the catalog has one.</summary>
-    public long? ContextLimit { get; set; }
-
-    /// <summary>Published rates, US dollars per million tokens, when the catalog has them.</summary>
-    public double? InputRate { get; set; }
-
-    public double? OutputRate { get; set; }
-
-    public double SessionCost { get; private set; }
-
-    /// <summary>True once at least one step was priced, so a free model still shows $0.00.</summary>
-    public bool CostKnown { get; private set; }
-
-    /// <summary>Context window usage of the largest step seen this turn, or null.</summary>
-    /// <remarks>Keeps fractional precision: the header renders two decimals.</remarks>
-    public double? ContextPercent { get; private set; }
-
-    public void BeginTurn()
+    public long? ContextLimit
     {
-        _cumulativeInput = 0;
-        _cumulativeOutput = 0;
-        _maxStepInputTokens = 0;
-        ContextPercent = null;
+        get { lock (_gate) return _contextLimit; }
+        set { lock (_gate) _contextLimit = value; }
     }
 
-    public void ResetContextReading()
+    public string? ProviderProtocol
     {
-        _maxStepInputTokens = 0;
-        ContextPercent = null;
+        get { lock (_gate) return _providerProtocol; }
+        set { lock (_gate) _providerProtocol = value; }
     }
 
-    /// <summary>
-    /// Folds one pre-dispatch request-size estimate into the context reading. Provider
-    /// usage only arrives when a step ends, so without this the meter stays on the
-    /// previous step's figure — or blank on the first turn — while the model works.
-    /// The estimate is the same serialized-request measure the admission policy uses,
-    /// and the reported usage supersedes it as steps complete (the reading is a max,
-    /// like the desktop meter, so the number never bounces).
-    /// </summary>
-    public void ApplyEstimate(long estimatedInputTokens, long maxPromptTokens)
+    public double? InputRate
     {
-        if (maxPromptTokens > 0)
-        {
-            // The step's own prompt budget is authoritative for the percent: it is the
-            // limit the estimate was measured against, ahead of any stale catalog value.
-            ContextLimit = maxPromptTokens;
-        }
-
-        if (estimatedInputTokens <= 0)
-        {
-            return;
-        }
-
-        _maxStepInputTokens = Math.Max(_maxStepInputTokens, estimatedInputTokens);
-        ContextPercent = ContextLimit is { } limit and > 0
-            ? Math.Clamp(100.0 * _maxStepInputTokens / limit, 0, 999)
-            : null;
+        get { lock (_gate) return _inputRate; }
+        set { lock (_gate) _inputRate = value; }
     }
 
-    /// <summary>Feeds one usage envelope and recomputes the cluster.</summary>
-    public void Apply(long? inputTokens, long? outputTokens)
+    public double? OutputRate
     {
-        var cumulativeInput = inputTokens ?? _cumulativeInput;
-        var cumulativeOutput = outputTokens ?? _cumulativeOutput;
-        var stepInput = Math.Max(0, cumulativeInput - _cumulativeInput);
-        var stepOutput = Math.Max(0, cumulativeOutput - _cumulativeOutput);
-        _cumulativeInput = cumulativeInput;
-        _cumulativeOutput = cumulativeOutput;
-        if (stepInput > 0)
-        {
-            _maxStepInputTokens = Math.Max(_maxStepInputTokens, stepInput);
-        }
+        get { lock (_gate) return _outputRate; }
+        set { lock (_gate) _outputRate = value; }
+    }
 
-        if (InputRate is { } inputRate && OutputRate is { } outputRate)
-        {
-            SessionCost += ((stepInput * inputRate) + (stepOutput * outputRate)) / 1_000_000d;
-            CostKnown = true;
-        }
+    public double SessionCost
+    {
+        get { lock (_gate) return _sessionCost; }
+    }
 
-        ContextPercent = ContextLimit is { } limit and > 0 && _maxStepInputTokens > 0
-            ? Math.Clamp(100.0 * _maxStepInputTokens / limit, 0, 999)
-            : null;
+    public bool CostKnown
+    {
+        get { lock (_gate) return _costKnown; }
+    }
+
+    public long? ContextTokens
+    {
+        get { lock (_gate) return _context.Tokens; }
+    }
+
+    public bool ContextIsEstimated
+    {
+        get { lock (_gate) return _context.IsEstimated; }
+    }
+
+    public double? ContextPercent
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _contextLimit is > 0 && _context.Tokens is { } tokens
+                    ? Math.Clamp(100d * tokens / _contextLimit.Value, 0, 999)
+                    : null;
+            }
+        }
+    }
+
+    /// <summary>Whether the tracker still belongs to this run, for deferred callbacks.</summary>
+    public bool IsBoundTo(string runId)
+    {
+        lock (_gate)
+        {
+            return string.Equals(_runId, runId, StringComparison.Ordinal);
+        }
+    }
+
+    public void BindRun(string runId)
+    {
+        lock (_gate)
+        {
+            if (_runId == runId) return;
+            _runId = runId;
+            _cumulativeInput = _cumulativeOutput = 0;
+            // Keep the last reading while the next request is being prepared.
+            _context.Reset(preserveReading: true);
+        }
+    }
+
+    public bool BeginStep(string? stepId, long sequence)
+    {
+        lock (_gate) return _context.BeginStep(stepId, sequence);
+    }
+
+    public bool ObserveEstimate(AgentUsageEstimateModel estimate)
+    {
+        lock (_gate) return _context.ObserveEstimate(estimate);
+    }
+
+    public bool ObserveUsage(long sequence, string? stepId, long? tokens, ContextTokenBreakdown? breakdown)
+    {
+        lock (_gate) return _context.ObserveUsage(sequence, stepId, tokens, breakdown);
+    }
+
+    public bool Compact(long sequence)
+    {
+        lock (_gate) return _context.Compact(sequence);
+    }
+
+    /// <summary>Cumulative counters price the run; context comes from its per-request modelusage payload.</summary>
+    public void ApplyBilling(long? inputTokens, long? outputTokens)
+    {
+        lock (_gate)
+        {
+            var input = inputTokens ?? _cumulativeInput;
+            var output = outputTokens ?? _cumulativeOutput;
+            var stepInput = Math.Max(0, input - _cumulativeInput);
+            var stepOutput = Math.Max(0, output - _cumulativeOutput);
+            _cumulativeInput = input;
+            _cumulativeOutput = output;
+            if (_inputRate is { } inputRate && _outputRate is { } outputRate)
+            {
+                _sessionCost += (stepInput * inputRate + stepOutput * outputRate) / 1_000_000d;
+                _costKnown = true;
+            }
+        }
     }
 }

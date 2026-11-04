@@ -4,19 +4,29 @@ public static class AgentBudgetPolicy
 {
     // Bounds one budget window. A window is large enough for a real coding task
     // (many exploratory tool calls plus edit/verify cycles) without letting a
-    // runaway loop spend without limit: when a window is exhausted the run moves
-    // to WaitingUser and only an explicit Continue opens a fresh window.
+    // runaway loop spend without limit. A root run opens the next window by
+    // itself, up to AutomaticWindowLimit windows; only after that does it move to
+    // WaitingUser and require an explicit Continue. Internal subagent runs never
+    // take the automatic path: their own limits fail them instead.
     public const int ModelStepLimit = 128;
     public const int ToolCallLimit = 256;
 
+    // Eight windows is at least 1,024 model steps and 2,048 tool calls in one
+    // run, far beyond a real coding task, while still bounding a runaway loop
+    // that never reaches a terminal reply.
+    public const int AutomaticWindowLimit = 8;
+
     public static AgentBudgetReservation ReserveModelStep(
         AgentRun run,
-        DateTimeOffset updatedAt)
+        DateTimeOffset updatedAt,
+        bool allowAutomaticWindow = false)
     {
         RequireState(run, HarnessRunState.Running);
         if (run.ModelStepsInWindow >= ModelStepLimit)
         {
-            return Exhaust(run, updatedAt, "model_step_budget_exhausted");
+            return CanOpenAutomaticWindow(run, allowAutomaticWindow)
+                ? AgentBudgetReservation.Grant(OpenAutomaticWindow(run, updatedAt, modelSteps: 1, toolCalls: 0))
+                : Exhaust(run, updatedAt, "model_step_budget_exhausted");
         }
 
         return AgentBudgetReservation.Grant(run.Advance(
@@ -31,7 +41,8 @@ public static class AgentBudgetPolicy
     public static AgentBudgetReservation ReserveToolCalls(
         AgentRun run,
         int count,
-        DateTimeOffset updatedAt)
+        DateTimeOffset updatedAt,
+        bool allowAutomaticWindow = false)
     {
         RequireState(run, HarnessRunState.Running);
         if (count <= 0)
@@ -41,7 +52,11 @@ public static class AgentBudgetPolicy
 
         if (count > ToolCallLimit - run.ToolCallsInWindow)
         {
-            return Exhaust(run, updatedAt, "tool_call_budget_exhausted");
+            // A batch that cannot fit an entire fresh window is rejected even when
+            // a window is available: opening one would only reach the same ceiling.
+            return CanOpenAutomaticWindow(run, allowAutomaticWindow) && count <= ToolCallLimit
+                ? AgentBudgetReservation.Grant(OpenAutomaticWindow(run, updatedAt, modelSteps: 0, toolCalls: count))
+                : Exhaust(run, updatedAt, "tool_call_budget_exhausted");
         }
 
         return AgentBudgetReservation.Grant(run.Advance(
@@ -52,6 +67,26 @@ public static class AgentBudgetPolicy
             1,
             updatedAt));
     }
+
+    /// <summary>
+    /// A new window is a counter reset, not a park: the run stays Running and the
+    /// admission that needed it is counted in the new window.
+    /// </summary>
+    private static AgentRun OpenAutomaticWindow(
+        AgentRun run,
+        DateTimeOffset updatedAt,
+        int modelSteps,
+        int toolCalls) =>
+        run.Advance(
+            run.Status,
+            checked(run.BudgetWindow + 1),
+            modelSteps,
+            toolCalls,
+            1,
+            updatedAt);
+
+    private static bool CanOpenAutomaticWindow(AgentRun run, bool allowAutomaticWindow) =>
+        allowAutomaticWindow && run.BudgetWindow < AutomaticWindowLimit;
 
     public static AgentRun EnterApprovalWait(AgentRun run, DateTimeOffset updatedAt)
     {

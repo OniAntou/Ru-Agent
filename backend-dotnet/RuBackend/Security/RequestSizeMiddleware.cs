@@ -19,17 +19,14 @@ public sealed class RequestSizeMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         var maxBytes = _options.Value.MaxRequestBodyBytes;
-        if (context.Request.Path.Equals("/agent/v1/runs", StringComparison.OrdinalIgnoreCase))
+        // Both create routes carry the same optional provider/image payload and share
+        // one endpoint reader; a path-only check here used to cap /runs/selected at the
+        // general 8 MiB limit while /runs was allowed the larger bound.
+        if (context.Request.Path.Equals("/agent/v1/runs", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.Equals("/agent/v1/runs/selected", StringComparison.OrdinalIgnoreCase))
         {
             maxBytes = Math.Max(maxBytes, _options.Value.AgentRunMaxRequestBodyBytes);
         }
-        else if (context.Request.Path.Equals("/sessions/import", StringComparison.OrdinalIgnoreCase))
-        {
-            // Above the endpoint's own bound so an oversized import is answered by the
-            // interchange endpoint as import_too_large instead of as a transport rejection.
-            maxBytes = Math.Max(maxBytes, _options.Value.SessionImportMaxRequestBodyBytes);
-        }
-
         if (maxBytes < 0)
         {
             maxBytes = 0;

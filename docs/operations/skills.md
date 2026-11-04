@@ -15,6 +15,10 @@ grants permissions from `allowed-tools` or other metadata.
 - In the GUI, **Customize** under New Chat (or `/skills` typed in the composer)
   opens the Skills tab: a searchable list with enable/disable, automatic-selection
   and reload controls. **Use in chat** returns with `/skill <id>` in the composer.
+  Opening it before selecting a workspace shows user-level skills immediately.
+  Search, reload and Use in chat remain available; availability settings and
+  registered folders require a workspace. Selecting one replaces that preview
+  with its catalog and workspace-specific preferences.
 - The GUI can register or remove a local root such as `D:\MySkills` containing
   skill folders for this workspace. This registers
   files in place; it does not copy, download, update or execute a package.
@@ -32,6 +36,13 @@ skills take precedence over matching IDs in that shared library.
 
 Local preferences live in `%LOCALAPPDATA%/Ru/skill-preferences.json`, scoped by
 workspace. They control guidance availability, not file/terminal permissions.
+The authenticated `GET /agent/v1/skills` accepts an omitted `workspace_path` for
+a metadata-only user-library listing. An explicitly supplied path must still be
+an existing absolute directory; empty, relative and invalid paths are rejected.
+This mode reads `RU_SKILLS_ROOT` and the existing per-user roots, without project
+roots or any project's preferences. Settings and package-install POST requests
+retain their workspace requirement. It creates no session, workspace or skill
+installation, and does not read workflow bodies.
 Local packages can still be edited in place and refreshed from the catalog.
 Diagnostic codes identify invalid YAML, unsupported fields, unreadable files,
 linked paths, duplicate IDs and scan/metadata limits. A truncated catalog reports
@@ -105,9 +116,12 @@ tools under Broker policy. A registered external root does not grant external
 file or terminal access.
 
 Models can use `skill` with `query` instead of `name` to search metadata omitted
-from the prompt listing. The query result is bounded and discloses truncation;
-exact-ID lookup can load a skill beyond the listing limit. Disabled and
-explicit-only workflows are excluded from this implicit search.
+from the prompt listing. A query is split on whitespace and every token must
+appear in the id, name or description, so word order does not matter. `total`
+counts matching entries, `hidden` counts matches that are disabled or
+explicit-only and therefore cannot be loaded implicitly, and `truncated`
+reports a real scan or listing bound rather than a filtered-out match. Exact-ID
+lookup can load a skill beyond the listing limit.
 
 Discovery reads bounded metadata, independently of the 64 KiB package body cap.
 One budgeted prompt listing replaces per-skill instruction slots. The shared

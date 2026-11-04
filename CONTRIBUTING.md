@@ -104,7 +104,7 @@ dotnet build backend-dotnet/RuBackend/RuBackend.csproj -c Debug
 Choose the build target and `-ProjectFilter` for the changed module. Full matrices:
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # currently 13 projects
+.\scripts\test_dotnet.ps1 -Configuration Debug   # currently 12 projects
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 

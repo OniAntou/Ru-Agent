@@ -45,6 +45,220 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uncertain deletion is not retried. Line/JSON mode lists only. Malformed policy-list
   envelopes now return `invalid_response` instead of an empty list.
 
+- **fix(review)**: Terminal foreground trả output ngắn tới giao diện ngay khi lệnh
+  còn chạy kể cả khi môi trường của Host có biến bí mật: redactor chỉ giữ lại phần
+  đuôi có thể là tiền tố của một secret — không giới hạn độ dài, kể cả secret dài
+  hơn chunk hay các secret chồng lấn — thay vì giữ cố định N−1 ký tự. MCP stdio
+  không còn để lộ đầu ghi stdin cho process khác kế thừa. Hook chạy trong Job
+  Object, báo timeout và dọn tiến trình con khi chúng giữ pipe sau khi `cmd.exe`
+  thoát. Các map giới hạn 64 mục của transcript loại mục cũ nhất theo thứ tự chèn
+  thay vì `Dictionary.Keys.First()` (trước đây có thể xoá chính mục vừa thêm).
+
+- **fix(review)**: Vòng lặp SSE của CLI không còn chờ HTTP để lấy usage/metadata
+  (tối đa 4 giây mỗi bước khi Host bận); giá trị về muộn được áp theo sequence và
+  bỏ qua nếu đã chuyển run. Giới hạn body của Kestrel lấy theo
+  `RuBackend:AgentRunMaxRequestBodyBytes` đã cấu hình thay vì hằng số 30 MiB.
+  `read_file` theo dòng không serialize lại toàn bộ JSON sau mỗi dòng. Bước kiểm
+  tra quyền sở hữu submission chạy trước khi ghi workspace của phiên.
+
+- **fix(review)**: Stop huỷ lượt gửi đang chuẩn bị, và phản hồi tạo session đến
+  muộn không giành lại màn hình sau khi chuyển chat. Rewind chặn câu trả lời
+  muộn của lượt đã xoá. Nhánh fork giữ thông tin ảnh sau khi xoá session gốc.
+  MCP stdio đưa process vào Job Object trước khi chạy, và terminal foreground
+  chuyển output đã che dữ liệu nhạy cảm tới giao diện trong lúc lệnh chạy.
+
+- **fix(gui)**: Esc đóng popup model, reasoning và context trước khi xử lý dừng
+  run. Popup context chờ con trỏ rời đồng hồ trước khi mở lại bằng hover.
+  Mở lại session đang chạy giữ activity ở trạng thái live và nối tiếp text trên
+  đúng dòng cũ. Khi run hoàn tất mà GUI chỉ có văn bản từ lúc khôi phục, GUI ưu
+  tiên câu trả lời cuối đã lưu của run đó.
+
+- **perf(tui)**: Bỏ redraw toàn trang khi menu slash đã đóng hoặc kết quả lọc
+  không đổi; giữ lựa chọn bàn phím và chỉ vẽ lại danh sách khi chiều cao ổn định.
+  Mở/đóng và đổi chiều cao vẫn xóa đúng vùng cũ. Vòng lặp native nhận input/render
+  tối đa 60 lượt/giây; hoạt ảnh welcome giữ clock riêng 50 ms.
+
+- **fix(review)**: Line-mode `read_file` kiểm tra đường dẫn thực của handle trước
+  khi đọc, chặn việc đổi junction sau bước kiểm tra quyền. GUI chụp provider/model
+  đang hiển thị khi gửi, giữ nguyên qua retry và dùng contract tạo run có intent.
+  Phản hồi settings và catalog cũ không ghi đè lựa chọn model mới; thay đổi từ
+  Settings vẫn cập nhật picker theo phiên bản lựa chọn.
+
+- **BREAKING(sessions)**: Gỡ toàn bộ import/export session với ứng dụng bên ngoài:
+  OpenCode, Claude Code, Codex và Antigravity, cùng adapter, menu GUI, lệnh CLI,
+  client API và thư viện chuyển đổi. Hai route `/sessions/import` và
+  `/sessions/{sessionId}/export` không còn được đăng ký. Fork, rewind, tìm kiếm và
+  lịch sử session nội bộ của Ru vẫn được giữ; dữ liệu đã lưu không bị xóa.
+
+- **fix(gui/skills)**: Customize tải skill cấp người dùng ngay lần mở đầu khi chat
+  chưa có workspace, thay vì dừng ở trang rỗng với lời nhắc mở workspace. Skeleton
+  hiển thị trong lúc tải; khi chọn project, catalog và preference của project thay
+  thế thư viện chung. API chỉ cho phép bỏ workspace khi đọc metadata; sửa cấu hình
+  và cài package vẫn cần workspace hợp lệ.
+
+- **fix(gui)**: Model picker hiện catalog sẵn có ngay khi mở, tải provider đang chọn
+  song song với danh sách provider và không dời thời điểm hiển thị khi catalog cập
+  nhật liên tục. Customize có trạng thái tải, tự cập nhật khi Host kết nối lại hoặc
+  workspace sẵn sàng; phản hồi cũ không ghi đè trang hiện tại và refresh lỗi giữ
+  danh sách đang xem. Skeleton tĩnh hiển thị trong vùng Skills khi chưa có dữ liệu.
+  Transition lỗi khôi phục khung nội dung nhìn thấy; quay về trang hiện tại hủy lần
+  chuyển trang đang chờ, tránh callback cũ mở lại một trang đã rời.
+
+- **feat(gui)**: Chi tiết terminal trong activity có thẻ command/output riêng,
+  trạng thái, exit code và Copy. Có thể mở xem preview lệnh trước khi có output;
+  completion thiếu detail vẫn giữ preview, retry chỉ xóa output cũ. Output vượt
+  giới hạn có thông báo cắt bớt. Thay đổi chỉ thuộc hiển thị terminal trên GUI.
+
+- **fix(gui)**: Thanh mốc tin nhắn đánh dấu đúng phần đang hiển thị, với mốc cuối
+  vùng nhìn sáng nhất. Chat vừa màn hình cũng ưu tiên mốc cuối; cuộn gần đáy không
+  làm sáng tin nhắn còn nằm ngoài màn hình. Highlight cập nhật sau layout, resize
+  và thay history, thay vì chỉ đợi sự kiện cuộn.
+
+- **fix(context)**: TUI hiển thị input của request hiện tại thay vì tổng token billing
+  của run; phần trăm dùng context window đã pin, không dùng prompt budget sau khi
+  trừ output reserve. Estimate có dấu `~` và được usage thật thay thế, kể cả khi giảm.
+  TUI và GUI đối chiếu theo model step để bỏ estimate đến muộn, chống dữ liệu cũ
+  quay lại sau compaction và nhận step mới khi SSE reconnect đặt lại transient cursor.
+  Cache token được chuẩn hóa theo protocol và cờ inclusive; retained Anthropic runs
+  giữ đúng window. SSE bổ sung `model_step_id` tùy chọn, tương thích envelope cũ.
+
+- **feat(tui)**: Make agent activity compact and inspectable: aligned action verbs,
+  tool-specific result units and terminal exit codes, with each tool's safe context,
+  outcome and diff behind Ctrl+O. Late results update the same row and inspector
+  while preserving expansion and colors. Work summaries distinguish action types;
+  live status separates model waiting, reported thinking, streaming, compaction
+  and tool/request retries. Narrow layouts prioritize failure/exit evidence.
+
+- **fix(gui)**: Giảm các nhịp giật khi tạo chat mới: thay draft bằng một lần render sidebar,
+  giữ trạng thái mở/gập và container của các nhóm không đổi, bỏ animation thêm/xóa chồng lên
+  reposition. Chat vừa tạo hiển thị trống ngay sau bước detach, không tải lại history/replay/usage
+  hoặc chạy lại điều hướng đang ở màn chat. Giữ chế độ giảm chuyển động theo Windows.
+
+- **fix(gui)**: Gộp menu workspace thành một nút **Delete workspace…**. Sau xác nhận,
+  xóa các chat trong nhóm và gỡ workspace khỏi Ru; workspace rỗng cũng xóa được. Giữ nguyên
+  thư mục project trên đĩa. Nếu xóa chat hoặc lưu trạng thái ghim thất bại, giữ workspace để
+  thử lại; chat mới phát sinh ngoài danh sách đã xác nhận được giữ lại.
+
+- **fix(gui)**: Chat không chọn project nằm trong **Recents**, kể cả sau khi gửi tin nhắn
+  và refresh từ Host. Không tạo nhóm **Scratch** trên sidebar; thư mục scratch chỉ là nơi
+  làm việc nội bộ. Vị trí do người dùng chủ động chuyển vẫn được giữ. Thêm regression cho
+  luồng draft → gửi chat → refresh và trạng thái mở/đóng Recents.
+
+- **fix(review)**: Giữ nguyên scratch files khi xoá session chính thất bại; chỉ nhận scratch
+  khi marker, session và canonical path cùng khớp. Khôi phục file phân biệt file thiếu với file
+  rỗng và chặn ghi đè thay đổi xen ngang. Từ chối Base64 sai trước khi lưu hoặc gửi model.
+  Xoá workspace tải đủ các trang trước xác nhận, giữ UI context và điều hướng đúng khi chat
+  đang mở bị xoá. Lỗi dựng runtime được ghi terminal trước khi nhả registration; drag/scroll
+  kiểm tra lại quyền target trước từng sự kiện input. Sửa các lỗi Ruff và encoding của CI.
+
+- **feat(gui/host)**: **Chat không chọn folder dùng scratch workspace, và xoá chat/workspace xoá luôn
+  folder scratch.** GUI không còn lấy thư mục cha của app làm workspace mặc định (trước đây `D:\LLM`
+  thành `D:\`). Run tạo với `workspace_path` rỗng sẽ được Host cấp scratch workspace dưới data root
+  (`workspaces/<sessionId>`) kèm marker sở hữu; response trả `workspace_path`/`workspace_kind`, sidebar
+  đưa chat không chọn project vào **Recents**, và trust request của scratch được duyệt im lặng.
+  Xoá session xoá folder scratch của nó; sweeper lúc Host khởi động dọn folder mồ côi. Folder không có
+  marker thì không bao giờ bị xoá. Thêm **Delete workspace…** trong menu workspace group của GUI: xoá
+  toàn bộ chat của nhóm qua đúng đường xoá từng session và gỡ ghim workspace, không xoá folder project trên đĩa. CLI vẫn chỉ
+  xoá từng session như cũ, nhưng session delete giờ cũng dọn scratch folder qua Host.
+
+- **fix(agent)**: **`skill` query nhiều từ không còn trả rỗng, và `total`/`truncated` không còn gây
+  hiểu nhầm.** Query giờ tách theo khoảng trắng và mọi token phải khớp id/tên/mô tả (AND), nên
+  "debug worktrees" tìm được skill thay vì đòi đúng một chuỗi con. `total` đếm số entry khớp query
+  (trước đây là toàn bộ catalog), `truncated` chỉ báo giới hạn scan/liệt kê thật, và field mới
+  `hidden` cho biết bao nhiêu kết quả khớp bị loại vì disabled hoặc explicit-only — trước đây một
+  match như vậy trả `items: []`, `total: 53`, `truncated: true` mà không giải thích.
+
+- **fix(agent)**: **Thiếu policy identity không còn bị báo như lỗi model.** Một tool đã advertise và
+  Broker-bound nhưng `PolicyContextFactory` không có nhánh giờ trả `tool_policy_unconfigured` kèm hint
+  "product defect" thay vì `malformed_call` / "unknown tool id"; id không tồn tại vẫn là
+  `malformed_call`. Prompt phân biệt hai ca: gặp `tool_policy_unconfigured` thì báo lỗi sản phẩm và dừng
+  đường đó, không đi vòng bằng tool khác; GUI/CLI có copy "Tool registration incomplete". Thêm test parity
+  buộc mọi tool do Broker đánh giá phải có nhánh policy.
+
+- **fix(agent)**: **Tool `skill` không còn bị Broker policy từ chối.** `skill` được advertise trong mọi
+  tool profile nhưng `PolicyContextFactory` không có nhánh cho id này, nên mọi call rơi vào
+  `malformed_call` / "unknown tool id" trước khi chạm executor — đúng lúc model cần nó để liệt kê các
+  skill bị omit khỏi prompt. Giờ `skill` là target-free read op như `help`/`todo_write`: metadata và body
+  vẫn chỉ đọc từ skill roots, `allowed-tools` vẫn không cấp quyền gì.
+
+- **fix(gui)**: **Context popup không còn gọi estimate là "used" sau khi provider từ chối.** Khi run
+  failed trước khi có usage, popup ghi "estimated for next request", thêm `(estimated)` cạnh token và
+  note "Last request failed · no provider usage reported" thay vì "1.5% of context used".
+
+- **feat(gui)**: **Agent activity mặc định Compact; turn Verbose tự gập sau khi xong.** Cài mới mặc
+  định thấy một dòng process mỗi turn (mở được); file preference cũ vẫn giữ lựa chọn trước đó. Chế độ
+  Verbose vẫn stream từng row khi đang chạy, rồi tự gập turn đã có câu trả lời và không còn row
+  running/waiting; turn lỗi không có answer vẫn mở để thấy lỗi ngay.
+
+- **chore(cli)**: **Bỏ `agent run --worktree`.** Đây là tiện ích dogfood/headless, không phải tính
+  năng cho GUI; script nào cần isolation thì dùng `git worktree add` thủ công. Xoá switch, helper
+  `GitWorktreeIsolation`, các mã lỗi `worktree_*`, test và đoạn README tương ứng. Worktree riêng của
+  subagent vẫn giữ nguyên.
+
+- **chore(cleanup)**: **Xoá tàn dư WebSocket và member chết.** Contract đã 0 route WebSocket từ lâu;
+  bỏ `app.UseWebSockets()` và nhánh `4401` trong `DesktopTokenMiddleware` (upgrade chưa auth giờ trả
+  401 JSON, không còn handshake WS), kèm test hồi quy. Xoá `SystemPromptReceipt.Empty` — không còn
+  caller nào; `SystemPromptContext.Empty` vẫn giữ vì đang được dùng.
+
+- **feat(agent)!**: **Gỡ tích hợp git khỏi Ru.** Bỏ tool `git_status` (catalog còn 28 tool), dòng
+  `workspace_git` trong prompt, managed commit và store `run_git_state`; Host không còn tự chạy git cho
+  prompt hay reconciliation. Model vẫn gọi `git` qua terminal như lệnh thường theo Broker policy;
+  worktree riêng của subagent giữ nguyên.
+  - `git commit` giờ là commit thường: có thể gồm cả thay đổi người dùng đã stage (guard
+    `index_not_empty` không còn), không tự stage file đã sửa, và chạy hook của repo như bình thường.
+  - `snapshot_hash` của `POST .../reconcile` giờ là hash của yêu cầu reconciliation đã lưu, không còn
+    phát hiện thay đổi file trong workspace. Bù lại, reconcile chạy được sau khi Host khởi động lại
+    và với workspace không có git; trước đây các trường hợp đó luôn trả `reconcile_stale`.
+  - File `agent_git_state.db` trong thư mục dữ liệu không còn được dùng, có thể xoá thủ công.
+
+- **fix(agent)**: **SSE cap 32 MiB thay vì 5 MiB.** Một reply dài chia nhiều delta có thể vượt cap cũ
+  dù text còn dưới 1M ký tự; cap mới vẫn chặn provider không dừng, line/event vẫn 256 KiB.
+
+- **fix(cli/broker)**: **Prompt bound 16.000 dùng chung cho Host, CLI và RPC**, CLI đếm **ký tự** thay
+  vì byte nên prompt tiếng Việt không bị từ chối sớm; README CLI cập nhật theo. `RU_PROTECTED_PATHS`
+  resolve junction/symlink ở cả entry lẫn thư mục cha; `WebPolicy` chặn thêm `::/96`,
+  `::ffff:0:0/96`, `64:ff9b:1::/48`, `192.88.99.0/24`.
+
+- **fix(agent)**: **Compaction không còn vượt 4 checkpoint call khi budget window tự mở.** Bộ đếm
+  `ModelStepsInWindow` reset khi auto window, nên `callsLeft -= run.ModelStepsInWindow - beforeCalls`
+  tăng allowance thay vì giảm (có thể tới 6 call). Giờ đếm số admission trả về từ
+  `BuildCheckpointAsync`, giữ đúng trần 4 call/compaction kể cả khi cửa sổ đổi giữa chừng.
+
+- **fix(gui/host)**: **Prompt limit và body cap khớp Host.** GUI inline file văn bản tới 5 MiB vào
+  prompt nhưng Host chỉ nhận 16.000 ký tự, nên turn chết ở create; GUI giờ kiểm tra prompt đã ghép
+  (text + mọi tài liệu) trước khi gửi và trước khi queue, giữ nguyên composer kèm thông báo. Cùng lúc,
+  `/agent/v1/runs/selected` không còn bị middleware cap 8 MiB trong khi `/runs` được bound lớn hơn —
+  hai route dùng chung một luồng ảnh và một endpoint reader.
+
+- **fix(host)**: **Restore không ghi đè chỉnh sửa đến sau SHA check.** Restore kiểm tra SHA trước khi
+  giải mã/mã hóa journal rồi mới ghi file; một editor hoặc run khác sửa trong khoảng đó bị mất. Giờ
+  Host đọc lại SHA ngay trước `File.Move` (sau decrypt/encrypt và temp write) và trả
+  `workspace_restore_stale` thay vì overwrite nội dung mới hơn.
+
+- **fix(gui/host)**: **Đổi preset rồi gửi không còn tạo run "mồ côi".** GUI cache version
+  theo *lựa chọn đang xem* thay vì *giá trị đã lưu*: mở session (adopt `plan`), chọn `standard`,
+  rồi gửi — nó tưởng đã lưu `standard` nên bỏ qua bước ghi, gửi `standard` + version cũ. Host
+  tạo run bằng `plan` (stored thắng), trả response `plan`; client strict-check từ chối binding
+  nên GUI báo "Coding Agent could not start" trong khi run vẫn chạy và session bị queue. Giờ
+  cache chỉ được tái dùng khi preset đã lưu khớp lựa chọn hiện tại; Host trả `409 preset_mismatch`
+  trước khi tạo bất cứ thứ gì nếu request pin version nhưng preset khác stored. Request legacy
+  không pin version giữ nguyên hành vi.
+
+- **feat(agent)**: **Run dài tự mở cửa sổ budget, không dừng ở 128 bước đầu.** Một root run giờ tự mở
+  cửa sổ tiếp theo (128 model step / 256 tool call mỗi cửa sổ) tối đa 8 cửa sổ — 1.024 bước / 2.048
+  tool call — trước khi park `waiting_user` và cần Continue; mỗi cửa sổ sau đó là manual. Subagent
+  không auto, vẫn fail ở limit riêng. Checkpoint/compaction dùng cùng quy tắc này. Đây là điểm giống
+  cách OpenCode/Gemini/Cursor xử lý (không có trần per-turn hiển thị), nhưng Ru vẫn giữ một chốt chặn
+  runaway thay vì chạy vô hạn; bộ đếm cửa sổ vẫn là thứ chặn, không phải đồng hồ.
+
+- **fix(agent)**: **Đóng app giữa lúc model đang trả lời không còn để run treo `running`.** Khi host dừng
+  trong lúc chờ provider, run giữ `model.step_started` mà không có completion; lần mở sau startup
+  recovery thấy mọi tool đã có receipt nên coi run là "mid-flight", mở thêm một bước model nữa và giữ
+  session ownership — prompt mới vào queue, session cứ hiện đang chạy. Recovery giờ theo dõi bước model
+  cuối: nếu nó chưa completion, scanner ghi completion `interrupted` cho đúng step rồi fail run với
+  `recovery_model_step_incomplete` (copy UI "Model reply interrupted"), trả session về rảnh. Run có
+  bước model đã completion và receipt đầy đủ vẫn được để chạy tiếp như cũ.
+
 - **refactor(tui)**: Remove `/skills` and `/skill` from terminal chat handling,
   suggestions and help. Keep ordinary skill requests in prompts and existing
   Host skill discovery/invocation rules.

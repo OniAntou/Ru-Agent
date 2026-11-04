@@ -11,6 +11,7 @@ public enum AgentOutboxDispatchOutcome
 {
     Idle,
     Delivered,
+    StaleDelivery,
     RetryScheduled,
     RunFailed,
     TransitionRecovered,
@@ -77,8 +78,20 @@ public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
             throw new InvalidOperationException("runtime_root_unknown");
         }
 
-        var coordinator = await _factory.CreateAsync(workspaceRoot, policySnapshot, runId, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        AgentRunCoordinator coordinator;
+        try
+        {
+            coordinator = await _factory.CreateAsync(workspaceRoot, policySnapshot, runId, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException && _events is not null)
+        {
+            // A provider/gateway construction error cannot be repaired by asking that same
+            // factory to acknowledge the outbox forever. Settle through persistence alone.
+            await new AgentRunFailureTransition(_events).FailAsync(runId,
+                AgentRuntimeLoopService.NormalizeDriveFailureCode(error), cancellationToken).ConfigureAwait(false);
+            return;
+        }
         _ = await coordinator.AcknowledgeHistoryAsync(
                 runId,
                 historyWaitKind,
@@ -91,6 +104,13 @@ public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
         string errorCode,
         CancellationToken cancellationToken)
     {
+        if (_events is not null)
+        {
+            await new AgentRunFailureTransition(_events).FailAsync(runId, errorCode, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
         if (!_roots.TryGetRoot(runId, out var workspaceRoot) || workspaceRoot is null
             || !_roots.TryGetPolicySnapshot(runId, out var policySnapshot) || policySnapshot is null)
         {
@@ -200,15 +220,20 @@ public sealed class AgentConversationOutboxDispatcher
                 .ConfigureAwait(false);
         }
 
+        int imageAttachmentCount = claim.Role == ConversationOutboxRole.User
+            ? await _payloads.ReadUserImageCountAsync(claim.RunId, cancellationToken).ConfigureAwait(false)
+            : 0;
         var append = await _sessions.AppendIfAbsentAsync(
                 claim.SessionId.Value,
                 new SessionMessage(
                     claim.Role == ConversationOutboxRole.User ? "user" : "ai",
                     content,
                     claim.IntentId.Value,
-                    claim.RunId.Value),
+                    claim.RunId.Value,
+                    imageAttachmentCount),
                 cancellationToken)
             .ConfigureAwait(false);
+        var staleDelivery = append == SessionAppendOutcome.StaleDelivery;
         switch (append)
         {
             case SessionAppendOutcome.TransientFailure:
@@ -261,6 +286,7 @@ public sealed class AgentConversationOutboxDispatcher
                     .ConfigureAwait(false);
             case SessionAppendOutcome.Appended:
             case SessionAppendOutcome.AlreadyPresent:
+            case SessionAppendOutcome.StaleDelivery:
                 break;
             default:
                 throw new InvalidOperationException("unknown_session_append_outcome");
@@ -323,7 +349,7 @@ public sealed class AgentConversationOutboxDispatcher
                 cancellationToken)
             .ConfigureAwait(false);
         return new AgentOutboxDispatchResult(
-            AgentOutboxDispatchOutcome.Delivered,
+            staleDelivery ? AgentOutboxDispatchOutcome.StaleDelivery : AgentOutboxDispatchOutcome.Delivered,
             claim.IntentId,
             claim.AttemptCount);
     }

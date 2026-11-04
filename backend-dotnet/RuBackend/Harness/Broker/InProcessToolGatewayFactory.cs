@@ -212,6 +212,13 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
                 await CloseLeaseThroughRuntimeAsync(lease).ConfigureAwait(false);
             }
 
+            // Tool hooks are loaded here for a run the loop actually drives. A root
+            // run is admitted by AgentRunCreationService with the same
+            // IsTrustedAsync(identity, preset) decision RunLifecycleHooks consults: an
+            // untrusted workspace starts in WaitingWorkspaceTrust (never driven), a
+            // trusted one may pass through WaitingHistory, and a subagent run is
+            // provisioned from an already trusted parent. Loading the workspace's
+            // hooks here therefore follows that decision instead of skipping it.
             var hooks = RuBackend.Harness.Hooks.HookConfiguration.Load(
                 canonicalRoot, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             return hooks.IsEmpty

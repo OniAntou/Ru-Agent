@@ -1219,6 +1219,93 @@ public sealed class HarnessRecoveryScannerTests
     }
 
     [Fact]
+    public async Task Model_step_interrupted_by_host_stop_fails_the_run_and_closes_the_step()
+    {
+        // A desktop host can be closed while the provider is still generating.
+        // The reply was never committed, so leaving the run Running made the next
+        // start open another step on top of the orphaned one and kept the session
+        // busy, queueing every new prompt behind a model that was already gone.
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var tracked = new List<RunId>();
+            var run = await SeedRunningAsync(fixture, tracked);
+            var step = new ModelStepId("step_" + new string('a', 32));
+            await CommitEventAsync(
+                fixture,
+                run,
+                new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ModelStepStarted,
+                    modelStepId: step));
+
+            var summaries = await ScanAsync(fixture, tracked);
+
+            var summary = Assert.Single(summaries);
+            Assert.Equal(run.RunId, summary.RunId);
+            Assert.Equal("failed_model_step_incomplete", summary.Action);
+            var after = await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.Failed, after!.State);
+            Assert.Equal("recovery_model_step_incomplete", after.TerminalErrorCode);
+            var events = await ReadEventsAsync(fixture, run.RunId);
+            Assert.Contains(
+                events,
+                item => item.Event.Kind == "model.step_completed"
+                    && item.Event.ModelStepId == step
+                    && item.Event.SafeCode == "interrupted");
+            Assert.Contains(
+                events,
+                item => item.Event.Kind == "run.failed"
+                    && item.Event.SafeCode == "recovery_model_step_incomplete");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Completed_model_step_with_committed_execution_stays_running()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var tracked = new List<RunId>();
+            var run = await SeedRunningAsync(fixture, tracked);
+            var step = new ModelStepId("step_" + new string('b', 32));
+            await CommitEventAsync(
+                fixture,
+                run,
+                new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ModelStepStarted,
+                    modelStepId: step));
+            await CommitEventAsync(
+                fixture,
+                (await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None))!,
+                new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ModelStepCompleted,
+                    modelStepId: step));
+            await CommitRequestedAsync(
+                fixture,
+                (await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None))!,
+                safeCode: "read_only");
+            await CommitCompletedAsync(fixture, run, AmbiguousExecution, AmbiguousCall);
+
+            var summaries = await ScanAsync(fixture, tracked);
+
+            Assert.Empty(summaries);
+            var after = await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.Running, after!.State);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task Fresh_approval_wait_and_terminal_runs_are_never_touched()
     {
         var fixture = await BackendHarnessTestFixture.CreateAsync();

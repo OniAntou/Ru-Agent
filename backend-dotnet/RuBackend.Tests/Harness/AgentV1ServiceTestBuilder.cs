@@ -9,10 +9,8 @@ using RuBackend.Business;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
 using RuBackend.Harness;
-using RuBackend.Harness.Git;
 using RuBackend.Harness.Broker;
 using RuBackend.Harness.Policy;
-using RuBackend.Harness.Reconciliation;
 using RuBackend.Harness.Workspace;
 
 namespace RuBackend.Tests.Harness;
@@ -22,6 +20,7 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
     private IAgentRuntimeRootRegistry? _runtimeRoots;
     private IHarnessEventStore? _lifecycleStore;
     private RuBackend.Harness.Subagents.SubagentCancellationCoordinator? _subagentCancellation;
+    private ScratchWorkspaceStore? _scratchWorkspaces;
 
     public AgentV1ServiceTestBuilder WithRuntimeRoots(IAgentRuntimeRootRegistry runtimeRoots)
     {
@@ -42,6 +41,12 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
         return this;
     }
 
+    public AgentV1ServiceTestBuilder WithScratchWorkspaces(ScratchWorkspaceStore scratchWorkspaces)
+    {
+        _scratchWorkspaces = scratchWorkspaces;
+        return this;
+    }
+
     public AgentV1ServiceTestBundle Build()
     {
         var workspaces = new SqliteWorkspaceStore(fixture.Options);
@@ -49,12 +54,6 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
         var resolver = new WindowsWorkspaceIdentityResolver();
         var trust = new WorkspaceTrustService(resolver, workspaces, trustRequests, fixture.KeyStore);
         var roots = _runtimeRoots ?? new AgentRuntimeRootRegistry();
-        var gitState = new RuBackend.Harness.Git.SqliteRunGitStateStore(
-            Path.Combine(fixture.RootPath, "agent_git_state.db"));
-        var snapshots = new WorkspaceStateSnapshotService(
-            gitState,
-            runId => roots.Snapshot().Where(pair => pair.RunId == runId.Value)
-                .Select(pair => pair.WorkspaceRoot).FirstOrDefault());
         var sessions = new SessionStore(new DataPaths(
             Path.Combine(fixture.RootPath, "settings.json"),
             Path.Combine(fixture.RootPath, "sessions"),
@@ -75,12 +74,12 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
             Path.Combine(fixture.RootPath, "settings.json"),
             Path.Combine(fixture.RootPath, "sessions"),
             Path.Combine(fixture.RootPath, "activity.log")));
-        var commands = new AgentCommandsService(fixture.EventStore, ids, time, roots, snapshots,
+        var commands = new AgentCommandsService(fixture.EventStore, ids, time, roots,
             inspectionGate, gateway, guard);
         var workspaceAdmission = new AgentRunWorkspaceAdmissionService(
             resolver, trust, workspaces, workspaceCoordinator, policySnapshotService, ids, time);
         var creation = new AgentRunCreationService(fixture.EventStore, sessions, permissionStore,
-            workspaceAdmission, roots, ids, time, guard);
+            workspaceAdmission, roots, ids, time, guard, scratchWorkspaces: _scratchWorkspaces);
         var queries = new AgentRunQueryService(fixture.EventStore, sessions, workspaceTrust, guard,
             new SqliteAgentRunProviderSelectionStore(fixture.Options), fixture.PayloadStore, fixture.Options);
         var subagentStore = new SqliteSubagentStore(fixture.Options, fixture.PayloadStore);
@@ -101,8 +100,7 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
                 sessions, permissionStore, fixture.KeyStore),
             new AgentWorkspaceService(fixture.Options, workspaces, trust, time, workspaceCoordinator, journalProtector),
             workspaceTrust,
-            new AgentActivitiesService(fixture.EventStore, fixture.PayloadStore, new RuBackend.Conversation.MetadataPolicy()),
-            gitState);
+            new AgentActivitiesService(fixture.EventStore, fixture.PayloadStore, new RuBackend.Conversation.MetadataPolicy()));
     }
 
     private sealed class NoChildrenCleanup : IAgentRuntimeRunCleanup
@@ -123,8 +121,4 @@ internal sealed record AgentV1ServiceTestBundle(
     AgentPoliciesService Policies,
     AgentWorkspaceService Workspace,
     AgentWorkspaceTrustService WorkspaceTrust,
-    AgentActivitiesService Activities,
-    SqliteRunGitStateStore GitStateStore) : IDisposable
-{
-    public void Dispose() => GitStateStore.Dispose();
-}
+    AgentActivitiesService Activities);

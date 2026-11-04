@@ -68,6 +68,10 @@ model, selected reasoning effort and provider sit on the meta row inside the blo
 appears in green beside the token cluster in the top header during chat; the
 empty welcome screen hides it. The top workspace/path label is removed.
 The reasoning label shows only its value, for example `max` or `high`.
+The header's tokens and percentage describe the current request's prompt context,
+using the pinned model's full window. A `~` marks a prepared estimate until provider
+input usage arrives; the corrected value can decrease. Run billing totals and output
+tokens do not enter this count. Unknown window capacity omits the percentage.
 The welcome logo uses green/blue RU and muted green AGENT colors, with
 a warm light sweep that visibly brightens the darker AGENT face. Terminals that
 report Sixel or enabled Kitty graphics show square tiles, small rims and layered
@@ -94,10 +98,14 @@ without reading as a slab. Other shortcuts remain available through help.
 The header puts the session title (without a product-name prefix)
 title/known usage on the first row and workspace on the second. Live activity
 occupies a row at the end of the transcript. A colored glyph precedes the readable action; targets
-are muted and elapsed/tool count align right. Idle omits status text, response deltas
+are emphasized and elapsed/tool count align right. Waiting for the model, reported
+thinking, response streaming, compaction and tool/request retries have distinct
+labels. Idle omits status text, response deltas
 show “Writing response”, and parked states have no spinner or running clock.
-Tool rows distinguish action, target and metrics; failure remains explicit even
-when a long command is shortened. Frames
+Tool rows align common action labels and targets, show actual terminal exit codes
+when available, and retain a compact inspector behind Ctrl+O. Failure remains
+explicit when a long command is shortened; narrow rows prioritize outcome/exit
+evidence over the shortcut. Frames
 shorter than 20 rows use a single heading row. The feed
 uses the available width without a side panel. Picker cards page their entries
 to fit the current height while keeping the selection and footer visible.
@@ -123,7 +131,7 @@ Plain line output waits for newline or Flush before committing Markdown.
 Markdown tables are grouped from retained raw header/separator/body rows, align
 their columns (numeric columns right-align even without a `:` marker, `:---:`
 centres) and switch to labeled values below 40 cells. A failed tool row adds one
-`└ <reason>` line from the event's safe summary. Reasoning remains behind Ctrl+O
+`└ <reason>` line from its typed failure code or the event's safe summary. Reasoning remains behind Ctrl+O
 without adding a Thought row for every model step. Web activity targets use
 redacted query detail and host names; URLs do not expose credentials, query
 parameters or fragments.
@@ -168,7 +176,7 @@ the chat. An idle Escape preserves the draft.
 The interactive vocabulary omits `/delete`, `/resume`, `/retry`, `/release`, `/clear`, `/activity`, `/todos`, `/files`,
 `/tree`, `/export`, `/stats`, `/tokens`, `/history`, `/attach`,
 `/attachments`, `/paste`, `/detach`, `/continue` and `/quit`. Headless CLI
-and RPC commands, including session interchange, remain available separately.
+and RPC commands, including native session fork and rewind, remain available separately.
 
 `/follow` uses the retained run's durable provider/model metadata. Unknown pins
 show unknown and suppress catalog-based cost/context estimates. Pending approval
@@ -188,8 +196,6 @@ agent chat [--preset plan|standard|full_access] [--workspace PATH] [--session <i
 agent session list [--json]
 agent session rewind <session-id> --index <n> [--json]
 agent session delete <session-id> [--yes]
-agent session export <session-id> --harness <claude-code|codex> [--out <dir>] [--json]
-agent session import <file> [--harness <claude-code|codex|antigravity|opencode>] [--session <id>] [--json]
 agent run [--preset plan|standard|full_access] --workspace PATH "prompt" [--session <id>] [--image PATH]... [--json] [--trust-workspace] [--confirm-full-access]
 agent attach <run-id> [--json]
 agent trust <run-id> --approve|--deny
@@ -253,10 +259,8 @@ agent rpc
 - Provider HTTP 402 and Responses streamed payment errors report `provider_payment_required` without transient retries. The remedy names provider billing/credit instead of assuming a bad key or model. Provider/model selection stays pinned for the run.
 - Terminal.Gui relayouts and redraws after screen-size changes. Startup selection remains 80×24; an already active frame stays available while resizing and hands control to append-only output only after remaining below 20×12 for 400 ms. Transcript bounds and detached scrolling survive layout changes. `RU_TUI_DEBUG=1` writes diagnostic events to `%TEMP%\ru-tui-debug.log`; a file path selects another diagnostic destination. Native terminal resize and IME acceptance are recorded separately from headless tests.
 - `session list`, `session rewind` and `session delete` provide explicit command-line controls for listing sessions, time-travel rewinds, and deletion. `session delete <session-id>` asks for a `y/N` confirmation (default No) and only `--yes` skips it; a partial cleanup from the backend (`Session đã xoá nhưng artifacts còn sót…`) surfaces as `session_delete_failed` bounded to one line instead of reading as success.
-- `session import <file>` reads Claude Code and Codex JSONL transcripts, Antigravity's `transcript.jsonl`, and opencode's `.db` store (naming the session when more than one is present). JSONL imports are size-checked before read: a file above **16 MiB** is refused with one bounded `import_too_large` line; an opencode `.db` store is checked on the payload after extraction, never on the whole database, and only the CLI reads it. `session export` writes Claude Code and Codex formats only, by design. The desktop picker imports `.jsonl` and points opencode users at `ru agent session import <opencode.db> --harness opencode`.
 - `rpc` runs the stdio JSON-RPC 2.0 bridge for external tools (`ru agent rpc` takes no further arguments); it reuses the same loopback host and bearer as every other command and adds no HTTP route. See [the RPC bridge contract](../../docs/operations/rpc.md).
-- `run` creates a single-shot Agent run. If `--session` is omitted, the tracer creates one dedicated session via `POST /sessions/new`, prints `session_id` and `run_id`, and sends a fresh `idempotency_key` (32-char hex GUID). Workspace is canonicalized and bounded to 512 chars; prompt is bounded to 8192 chars; max argument count is 64.
-- `--worktree` runs in a fresh git worktree of the workspace's HEAD, created under `%LOCALAPPDATA%\Ru\worktrees` (override with `RU_WORKTREE_ROOT`), so the caller's tree and any uncommitted changes are untouched. Only committed state is copied; the branch `ru/worktree/<id>` and the worktree stay after the run for review, and the path is printed (`worktree:` on stderr when `--json` owns stdout). Remove it with `git worktree remove <path>`. The generated workspace is a new identity, so it still needs `--trust-workspace`; the flag cannot be combined with `--session`.
+- `run` creates a single-shot Agent run. If `--session` is omitted, the tracer creates one dedicated session via `POST /sessions/new`, prints `session_id` and `run_id`, and sends a fresh `idempotency_key` (32-char hex GUID). Workspace is canonicalized and bounded to 512 chars; prompt is bounded to 16,000 characters; max argument count is 64.
 - `--preset` selects one canonical, session-scoped profile: `plan` is read-only — workspace read/Web auto, terminal/mutation denied outright, external structured access asks; `standard` auto-allows workspace mutation and executable/shell launches from a workspace cwd; external structured paths and external launch directories ask; `full_access` (alias `full`) is the skip-all mode — external structured files, arbitrary terminal, and structured protected paths (harness key/database files and runtime descriptors) are automatic, while hard-invalid requests remain denied. Repository cleanliness is not an input.
 - Workspace trust is explicit once per canonical identity. `--trust-workspace` approves the returned identity and continues the same run; without it, an untrusted identity returns `workspace_trust_required` without prompting, and the notice names both recovery options. A moved or recreated identity requires trust again: `--trust-workspace` re-approves the new identity in one step, so unattended runs recover the same way.
 - `--preset full_access` requires `--confirm-full-access`; without it the command returns `full_access_confirmation_required` before session creation or preset mutation. With it, the existing policy route receives `X-Interactive-Confirmed: true`. Terminal children run as the current Windows user, can access data outside the workspace and network resources, and have no OS filesystem/network confinement; timeout, output, cancellation, and process-tree controls remain.
@@ -403,16 +407,13 @@ Interrupting a chat turn is server-side, not just a local detach: Escape during 
 
 ## Bounds
 
-- Session export: 128 MiB serialized JSON envelope, shared with Host and GUI.
-  JSON is read from a bounded stream; the general 8 MiB API cap does not apply.
-  Oversized exports return `export_too_large` before any file is written.
 - Running terminal tasks: default 8 per session, configurable from 1–64 with
   `RU_MAX_BACKGROUND_TERMINAL_TASKS` before Host startup. Foreground launches
   reserve a slot and keep it on background promotion; a full session refuses
   new launches without stopping existing tasks.
 - Max arguments: 64
 - Workspace path: 1..512
-- Prompt: 1..8192 (the composed prompt with inlined attachments is refused above 16,000 chars)
+- Prompt: 1..16,000 (the composed prompt with inlined attachments uses the same bound)
 - Image attachments: max 4, 10MB per file, 4MB decoded each, 20MB per turn, png/jpeg/webp/bmp
 - Text/code attachments: 5MB per file; Office/binary documents are unsupported
 - Session id: 1..64 (alphanum, `_`, `-`)

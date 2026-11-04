@@ -314,6 +314,10 @@ public static class AgentFailureCopy
             "Blocked by policy",
             "the permission preset denied this tool call",
             "switch preset or rephrase the request, then retry");
+        Add(table, ["tool_policy_unconfigured"],
+            "Tool registration incomplete",
+            "Ru advertised this tool but the execution authority has no policy identity for it",
+            "report this product defect; retrying the same tool cannot succeed");
         Add(table, ["model_step_budget_exhausted"],
             "Model step budget used up",
             "the run reached its 128 model steps for this budget window",
@@ -360,6 +364,10 @@ public static class AgentFailureCopy
             "Read-only check incomplete",
             "the host stopped during a read-only step, so its result is unknown",
             "send the request again; no workspace change was left behind");
+        Add(table, ["recovery_model_step_incomplete"],
+            "Model reply interrupted",
+            "the app stopped while the model was replying, so its answer was never saved",
+            "send the request again");
 
         // Web tools.
         Add(table, ["web_response_too_large"],

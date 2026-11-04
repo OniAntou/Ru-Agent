@@ -465,7 +465,7 @@ public sealed partial class ToolExecutionService
                 context.ConfinementRequired && !context.IsAuthenticatedV2Execution,
                 token,
                 retain,
-                killTimeoutMs: lifetimeMs));
+                killTimeoutMs: lifetimeMs, output: isBackground ? null : context.TerminalOutput));
         if (isBackground)
         {
             return StartedBackgroundOutcome(executionId, lifetimeMs);
@@ -534,7 +534,7 @@ public sealed partial class ToolExecutionService
                 token,
                 retain,
                 killTimeoutMs: lifetimeMs,
-                grant: grant));
+                grant: grant, output: isBackground ? null : context.TerminalOutput));
         if (isBackground)
         {
             return StartedBackgroundOutcome(executionId, lifetimeMs);
@@ -725,7 +725,9 @@ public sealed partial class ToolExecutionService
             if (arguments["expected_revision"] is not null || arguments["expected_body_sha256"] is not null)
                 throw new ArgumentException("skill_query_does_not_accept_body_version");
             var catalog = skillBodies.Discover(query, cancellationToken: cancellationToken);
-            var items = catalog.Items.Where(item => item.Enabled && item.ModelInvocable).Take(32).Select(item => (JsonNode?)new JsonObject
+            var matching = catalog.Items;
+            var invocable = matching.Where(item => item.Enabled && item.ModelInvocable).ToArray();
+            var items = invocable.Take(32).Select(item => (JsonNode?)new JsonObject
             {
                 ["id"] = item.Id,
                 ["name"] = item.Name,
@@ -749,8 +751,12 @@ public sealed partial class ToolExecutionService
                 {
                     ["items"] = new JsonArray(items),
                     ["diagnostics"] = new JsonArray(diagnostics),
-                    ["truncated"] = catalog.Truncated || catalog.Items.Count > items.Length,
+                    // Truncation means more results existed, never that a match was filtered
+                    // out: `hidden` counts matching entries this caller cannot load (disabled
+                    // or manual-only), so an empty page with total > 0 explains itself.
+                    ["truncated"] = catalog.Truncated || catalog.Total > matching.Count || invocable.Length > items.Length,
                     ["total"] = catalog.Total,
+                    ["hidden"] = matching.Count - invocable.Length,
                 }, ToolVerificationStates.NotRequired, "Workspace skill catalog searched."));
         }
         var expectedRevision = arguments["expected_revision"]?.GetValue<string>();

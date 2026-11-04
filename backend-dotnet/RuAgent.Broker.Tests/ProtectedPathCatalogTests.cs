@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using RuAgent.Broker.Tools.Paths;
 using Xunit;
 
@@ -5,6 +6,64 @@ namespace RuAgent.Broker.Tests;
 
 public sealed class ProtectedPathCatalogTests
 {
+    [Fact]
+    public void Extra_path_through_a_junction_protects_the_final_target()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-protected-" + Guid.NewGuid().ToString("N"));
+        var target = Path.Combine(root, "target");
+        var link = Path.Combine(root, "link");
+        Directory.CreateDirectory(target);
+        try
+        {
+            var made = Process.Start(new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c mklink /J \"{link}\" \"{target}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+            });
+            Assert.NotNull(made);
+            var output = made!.StandardOutput.ReadToEnd() + made.StandardError.ReadToEnd();
+            made.WaitForExit();
+            Assert.True(made.ExitCode == 0, output);
+
+            var file = Path.Combine(target, "secret.txt");
+            File.WriteAllText(file, "x");
+
+            Assert.True(ProtectedPathCatalog.IsProtected(file, _ => link));
+
+            // A configured entry below the junction must resolve through the parent.
+            var nested = Path.Combine(target, "sub");
+            Directory.CreateDirectory(nested);
+            var nestedFile = Path.Combine(nested, "secret.txt");
+            File.WriteAllText(nestedFile, "x");
+            Assert.True(ProtectedPathCatalog.IsProtected(nestedFile, _ => Path.Combine(link, "sub")));
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(link))
+                {
+                    Directory.Delete(link);
+                }
+            }
+            catch (IOException)
+            {
+            }
+
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
     [Fact]
     public void Catalog_version_is_locked_at_3()
     {

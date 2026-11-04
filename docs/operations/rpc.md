@@ -97,7 +97,7 @@ truncating it.
 | `session.create` | — | `{ "session_id": "..." }` | `POST /sessions/new` |
 | `session.list` | — | session list (passthrough) | `GET /sessions` |
 | `session.rewind` | `sessionId`, `index` | rewind payload (passthrough) | `POST /sessions/{sessionId}/rewind` |
-| `run.start` | `workspace`, `prompt`, `preset`?, `sessionId`?, `trustWorkspace`?, `confirmFullAccess`? | `{ "run_id", "session_id", "status", "workspace_id" }` | `POST /agent/v1/runs` |
+| `run.start` | `workspace`, `prompt`, `preset`?, `sessionId`?, `trustWorkspace`?, `confirmFullAccess`?; `prompt` is bounded to 16,000 characters | `{ "run_id", "session_id", "status", "workspace_id" }` | `POST /agent/v1/runs` |
 | `run.attach` | `runId`, `afterSequence`?, `includeTransient`? | `{ "subscription_id", "run_id", "include_transient" }` | `GET /agent/v1/runs/{runId}/events` (SSE) |
 | `run.detach` | `subscriptionId` (or `runId` for cleanup) | `{ "detached": "<subscriptionId>" }` or `{ "detached": <count>, "run_id": "<runId>" }` | internal |
 | `run.trust` | `runId`, `approve`? | `{ "run_id", "status" }` | `POST /agent/v1/runs/{runId}/trust` |
@@ -133,7 +133,8 @@ Details that are easy to get wrong:
 - `run.approve` — `decision` is one of `allow_once`, `allow_session_directory`,
   `allow_always`, `deny`.
 - `run.command` — `command` text is bounded to 8192 characters.
-- `run.reconcile` — both `outcome` and `hash` are required; `hash` must be exactly 64
+- `run.reconcile` — `hash` proves the caller decided on the current durable
+  reconciliation request, not the state of the workspace files. Both `outcome` and `hash` are required; `hash` must be exactly 64
   characters. Accepted outcomes are `applied`, `not_applied` (or `not-applied`) and
   `unknown_continue` (or `unknown`).
 - `policy.import` and `policy.remove` require `confirm: true`; without it the call is

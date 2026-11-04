@@ -34,7 +34,7 @@
                     <TextBlock Text="{x:Bind Origin}" FontSize="11.5" Foreground="{StaticResource RuMutedBrush}"
                                TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Origin}" />
                 </StackPanel>
-                <ToggleSwitch Grid.Column="2" IsOn="{x:Bind Enabled}" Tag="{x:Bind}"
+                <ToggleSwitch Grid.Column="2" IsOn="{x:Bind Enabled}" IsEnabled="{x:Bind CanManage}" Tag="{x:Bind}"
                               OnContent="" OffContent="" MinWidth="0" VerticalAlignment="Center"
                               Toggled="OnSkillEnabledToggled"
                               AutomationProperties.Name="{x:Bind Name}" />
@@ -47,10 +47,26 @@
                         <MenuFlyout Opening="OnSkillMenuOpening">
                             <MenuFlyoutItem Text="Use in chat" Tag="{x:Bind}" IsEnabled="{x:Bind CanUse}" Click="OnUseSkillClick" />
                             <MenuFlyoutSeparator />
-                            <ToggleMenuFlyoutItem Text="Ru may use it automatically" Tag="{x:Bind}" Click="OnSkillAutomaticClick" />
+                            <ToggleMenuFlyoutItem Text="Ru may use it automatically" Tag="{x:Bind}" IsEnabled="{x:Bind CanManage}" Click="OnSkillAutomaticClick" />
                         </MenuFlyout>
                     </Button.Flyout>
                 </Button>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="SkillSkeletonTemplate">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Padding="4,16"
+                  BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,0,1">
+                <Border Width="32" Height="32" CornerRadius="{StaticResource AppControlCornerRadius}"
+                        Background="{StaticResource RuLineBrush}" Opacity="0.5" />
+                <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
+                    <Border Height="10" MaxWidth="220" HorizontalAlignment="Left" Width="220"
+                            CornerRadius="{StaticResource AppMicroPillCornerRadius}" Background="{StaticResource RuLineBrush}" Opacity="0.65" />
+                    <Border Height="8" MaxWidth="360" CornerRadius="{StaticResource AppMicroPillCornerRadius}"
+                            Background="{StaticResource RuLineBrush}" Opacity="0.4" />
+                </StackPanel>
+                <Border Grid.Column="2" Width="36" Height="18" CornerRadius="{StaticResource AppPillCornerRadius}"
+                        Background="{StaticResource RuLineBrush}" Opacity="0.4" />
             </Grid>
         </DataTemplate>
     </UserControl.Resources>
@@ -99,6 +115,9 @@
         <Grid Grid.Row="2">
             <ScrollViewer x:Name="SkillsPanel" VerticalScrollBarVisibility="Auto">
                 <StackPanel>
+                    <ItemsControl x:Name="SkillsSkeleton" Visibility="Collapsed" IsHitTestVisible="False"
+                                  ItemTemplate="{StaticResource SkillSkeletonTemplate}"
+                                  AutomationProperties.AccessibilityView="Raw" />
                     <ItemsControl x:Name="SkillsList" ItemTemplate="{StaticResource SkillRowTemplate}"
                                   AutomationProperties.Name="Skills" />
                     <TextBlock x:Name="SkillsEmptyText" Visibility="Collapsed" Margin="4,16"
@@ -133,6 +152,7 @@
         </Grid>
 
         <TextBlock x:Name="StatusText" Grid.Row="3" FontSize="12.5" Foreground="{StaticResource RuMutedBrush}"
-                   TextWrapping="Wrap" MaxLines="4" Visibility="Collapsed" IsTextSelectionEnabled="True" />
+                   TextWrapping="Wrap" MaxLines="4" Visibility="Collapsed" IsTextSelectionEnabled="True"
+                   AutomationProperties.LiveSetting="Polite" />
     </Grid>
 </UserControl>

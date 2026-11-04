@@ -76,14 +76,23 @@ portable newline paths; Shift+Enter depends on terminal key reporting. Explicit
 copy returns retained text, including any code gutters, rather than original
 tool payloads. See the [CLI controls](../../backend-dotnet/RuAgent.Cli/README.md).
 
+The [2026-10-31 typing investigation](../history/verification/2026-10-31-tui-typing.md)
+identified redundant whole-window redraws during slash-menu edits and the native
+loop's default iteration cap. The current implementation skips closed/stable-menu
+parent redraws, preserves unchanged match selection and uses a 60-iteration native
+input/render cap while retaining the welcome animation's independent clock.
+[Controlled native measurements](../history/verification/2026-11-03-native-acceptance-and-tui-performance.md)
+use real ConPTY input and production views with pinned logical viewports; they do
+not measure the physical Windows Terminal font/compositor or IME composition.
+
 ### The live row and the animation clock
 
 The transcript's live activity row (thinking / running tool / writing) is drawn
 from a pure time-based clock (`TuiSpinner`), so its spinner advances at
 100 ms per frame whatever the ticker cadence; the running-tool glyph rotates its
 half-circle on the same clock. The row clears when the activity settles (the
-writer clears it as the permanent tool row lands), when the turn ends, or on
-`/clear`. A parked run keeps the row static (no rotation) with its reason;
+writer clears it as the permanent tool row lands) or when the turn ends.
+A parked run keeps the row static (no rotation) with its reason;
 scrolled back, the live row sits below the viewport and the hints-row spinner is
 the only running indicator. The 18 ms frame timer still runs for the landing
 meteors while the frame is live; when idle its callback only clears the live row
@@ -193,19 +202,6 @@ only the newest 20 user/assistant text messages, each capped at 2000 characters;
 tool and thinking rows are never replayed, `--json` skips replay entirely, and
 the assistant header shows the replay time because session payloads carry no
 timestamp.
-
-### Session import bounds, and the `.db` path is CLI-only
-
-`agent session import` refuses a file above **16 MiB** before reading it and
-re-checks the cap while reading; for the opencode `.db` store the cap applies to
-the extracted session payload, not to the whole database. Only the CLI reads
-that `.db` store: the desktop picker imports `.jsonl` (Claude Code, Codex,
-Antigravity) and points opencode users at
-`ru agent session import <opencode.db> --harness opencode`.
-The supported SQLite layout is OpenCode v1: scalar `session` metadata columns
-and JSON `message.data`/`part.data` payloads. Missing columns and newer layouts
-such as `session_v2` fail with `opencode_schema_unsupported` rather than being
-guessed. Database paths containing semicolons are handled as literal paths.
 
 ### RPC subscriptions can end without a terminal event
 

@@ -7,6 +7,7 @@ namespace RuApp.Models;
 public partial class ChatMessageItem
 {
     private bool _compactAgentActivity;
+    private bool _autoCollapseCompleted;
     private bool _isActivityDetailsExpanded;
     private ObservableCollection<AssistantSegment> _compactTextSegments = new();
 
@@ -30,7 +31,39 @@ public partial class ChatMessageItem
         }
     }
 
-    public bool ActivityDetailsCollapsed => CompactAgentActivity && !IsActivityDetailsExpanded;
+    public bool ActivityDetailsCollapsed => ShowActivitySummary && !IsActivityDetailsExpanded;
+
+    /// <summary>
+    /// Whether this turn has a compact activity summary. Compact mode shows one from
+    /// the start; verbose mode gets one only after a finished turn is auto-collapsed,
+    /// so a running turn keeps every row.
+    /// </summary>
+    public bool ShowActivitySummary => CompactAgentActivity || AutoCollapseCompleted;
+
+    /// <summary>True once a finished verbose turn collapsed its own process rows.</summary>
+    public bool AutoCollapseCompleted => _autoCollapseCompleted;
+
+    /// <summary>
+    /// Collapses a finished assistant turn that has an answer and no row still
+    /// running or waiting. Failed turns without an answer stay verbose so the
+    /// failure is visible without an extra click.
+    /// </summary>
+    internal void AutoCollapseCompletedTurn()
+    {
+        if (_autoCollapseCompleted
+            || IsStreaming
+            || Role != "assistant"
+            || !HasText
+            || AgentActivities is not { Count: > 0 } activities
+            || activities.Any(item => item.IsRunning || item.IsWaiting))
+        {
+            return;
+        }
+
+        _autoCollapseCompleted = true;
+        OnPropertyChanged(nameof(AutoCollapseCompleted));
+        NotifyActivityDisplayChanged();
+    }
 
     public ObservableCollection<AssistantSegment>? DisplayedSegments =>
         ActivityDetailsCollapsed && Segments is not null ? _compactTextSegments : Segments;
@@ -38,6 +71,7 @@ public partial class ChatMessageItem
     private void NotifyActivityDisplayChanged()
     {
         OnPropertyChanged(nameof(ActivityDetailsCollapsed));
+        OnPropertyChanged(nameof(ShowActivitySummary));
         OnPropertyChanged(nameof(DisplayedSegments));
         OnPropertyChanged(nameof(ShowLegacyActivityFeed));
         UpdateActivityGaps();

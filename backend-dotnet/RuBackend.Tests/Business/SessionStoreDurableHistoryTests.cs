@@ -86,6 +86,22 @@ public sealed class SessionStoreDurableHistoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Rewind_between_user_and_assistant_delivery_keeps_receipt_without_orphaning_assistant()
+    {
+        var store = new SessionStore(Paths);
+        var sessionId = (await store.CreateAsync(default))!;
+        var user = new SessionMessage("user", "prompt", "evt_user", "run_pending");
+        var assistant = new SessionMessage("ai", "late answer", "evt_ai", "run_pending");
+        Assert.Equal(SessionAppendOutcome.Appended, await store.AppendIfAbsentAsync(sessionId, user, default));
+
+        Assert.NotNull(await store.RewindAsync(sessionId, -1, default));
+
+        Assert.Equal(SessionAppendOutcome.AlreadyPresent, await store.AppendIfAbsentAsync(sessionId, user, default));
+        Assert.Equal(SessionAppendOutcome.StaleDelivery, await store.AppendIfAbsentAsync(sessionId, assistant, default));
+        Assert.Empty((await store.GetAsync(sessionId, default))!.Messages);
+    }
+
+    [Fact]
     public async Task Summary_pages_filter_title_and_content_with_literal_wildcards()
     {
         var store = new SessionStore(Paths);

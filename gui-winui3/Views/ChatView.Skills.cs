@@ -14,6 +14,15 @@ public sealed partial class ChatView
     /// <summary>The workspace whose skills the Customize page manages.</summary>
     public string? CurrentWorkspace => _agentWorkspace;
 
+    public event EventHandler? CurrentWorkspaceChanged;
+
+    private void SetAgentWorkspace(string workspace)
+    {
+        if (string.Equals(_agentWorkspace, workspace, StringComparison.OrdinalIgnoreCase)) return;
+        _agentWorkspace = workspace;
+        CurrentWorkspaceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>
     /// Puts <c>/skill &lt;id&gt;</c> at the front of the composer, keeping whatever the user
     /// had typed after an earlier skill command as the skill's arguments.

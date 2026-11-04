@@ -26,7 +26,7 @@ public sealed partial class TuiTranscript
             case AgentActivityKind.Compaction:
                 if (activity.State is AgentActivityState.Started or AgentActivityState.Waiting)
                 {
-                    _status.SetState(TuiRunState.Thinking);
+                    _status.SetState(_fullScreenCards ? TuiRunState.Compacting : TuiRunState.Thinking);
                     return;
                 }
                 if (activity.State == AgentActivityState.Failed)
@@ -49,10 +49,20 @@ public sealed partial class TuiTranscript
                     Notice(string.Join(" · ", parts), TuiToken.Brand2);
                 }
 
+                if (_fullScreenCards) _status.SetState(TuiRunState.WaitingModel);
                 return;
 
             case AgentActivityKind.Retry:
-                Notice($"retrying {RetryTarget(activity)}", TuiToken.Warn);
+                if (_fullScreenCards)
+                {
+                    var action = string.IsNullOrWhiteSpace(activity.ToolDisplay) ? "Retrying request" : "Retrying tool";
+                    var target = HasToolContext(activity) ? BuildTarget(activity) : null;
+                    var attempt = activity.Count is > 0 ? $" · attempt {activity.Count}" : string.Empty;
+                    Notice(action.ToLowerInvariant() + (target is null ? string.Empty : " · " + target) + attempt, TuiToken.Warn);
+                    _status.SetActivity(action, target);
+                    _status.SetState(TuiRunState.Retrying);
+                }
+                else Notice($"retrying {RetryTarget(activity)}", TuiToken.Warn);
                 return;
 
             case AgentActivityKind.Status:
@@ -94,7 +104,6 @@ public sealed partial class TuiTranscript
 
     private void ApplyToolActivity(AgentActivityModel activity)
     {
-        var verb = TuiToolVerbs.Past(activity.Kind, activity.ToolDisplay);
         if (_settledActivityIds.Contains(activity.ActivityId))
         {
             UpdateSettledTool(activity);
@@ -105,17 +114,7 @@ public sealed partial class TuiTranscript
         switch (activity.State)
         {
             case AgentActivityState.Started:
-                if (index < 0) _pendingTools.Add(new ToolDetail(
-                    activity.ActivityId,
-                    activity.State,
-                    verb,
-                    TuiToolVerbs.Present(activity.Kind, activity.ToolDisplay),
-                    activity.ToolDisplay,
-                    BuildTarget(activity),
-                    activity.Count,
-                    activity.Added,
-                    activity.Removed,
-                    activity.DurationMs));
+                if (index < 0) _pendingTools.Add(DescribeTool(activity));
                 TrimPending();
                 _status.SetState(TuiRunState.Tool);
                 _status.SetActivity(TuiToolVerbs.Present(activity.Kind, activity.ToolDisplay), BuildTarget(activity));
@@ -125,30 +124,11 @@ public sealed partial class TuiTranscript
             case AgentActivityState.Failed:
                 if (index >= 0)
                 {
-                    var last = _pendingTools[index];
-                    _pendingTools[index] = last with
-                    {
-                        State = activity.State,
-                        Target = BuildTarget(activity) ?? last.Target,
-                        Count = activity.Count ?? last.Count,
-                        Added = activity.Added ?? last.Added,
-                        Removed = activity.Removed ?? last.Removed,
-                        DurationMs = activity.DurationMs ?? last.DurationMs,
-                    };
+                    _pendingTools[index] = MergeTool(_pendingTools[index], activity);
                 }
                 else
                 {
-                    _pendingTools.Add(new ToolDetail(
-                        activity.ActivityId,
-                        activity.State,
-                        verb,
-                        TuiToolVerbs.Present(activity.Kind, activity.ToolDisplay),
-                        activity.ToolDisplay,
-                        BuildTarget(activity),
-                        activity.Count,
-                        activity.Added,
-                        activity.Removed,
-                        activity.DurationMs));
+                    _pendingTools.Add(DescribeTool(activity));
                     TrimPending();
                 }
 
@@ -161,24 +141,19 @@ public sealed partial class TuiTranscript
 
     private void UpdateSettledTool(AgentActivityModel activity)
     {
-        if (!_fullScreenCards || _surface.Writer is not ITranscriptActivityWriter screen
-            || activity.State is not (AgentActivityState.Completed or AgentActivityState.Failed)
+        if (!_fullScreenCards || activity.State is not (AgentActivityState.Completed or AgentActivityState.Failed)
             || !_settledToolRows.TryGetValue(activity.ActivityId, out var previous)) return;
-        var detail = previous with
-        {
-            State = activity.State,
-            Target = BuildTarget(activity) ?? previous.Target,
-            Count = activity.Count ?? previous.Count,
-            Added = activity.Added ?? previous.Added,
-            Removed = activity.Removed ?? previous.Removed,
-            DurationMs = activity.DurationMs ?? previous.DurationMs,
-        };
+        var detail = MergeTool(previous, activity);
         _settledToolRows[activity.ActivityId] = detail;
-        var status = activity.State == AgentActivityState.Completed ? ToolLineStatus.Ok : ToolLineStatus.Failed;
+        var status = ToolStatus(detail);
         if (_surface.Presentation is { } presentation)
+        {
+            UpdateGroupWork(previous, detail);
             presentation.UpdateActivityPresentation(activity.ActivityId, TuiToolRow.ComposePresentation(status,
-                detail.Display ?? TitleCase(detail.Verb), detail.Target, ToolRowMetrics(detail), Width));
-        else screen.UpdateToolRow(activity.ActivityId, TuiToolRow.Compose(status,
+                ActionLabel(detail, status), detail.Target, InspectorMetrics(detail), Width,
+                actionColumnWidth: ActivityActionColumnWidth), InspectTool(detail, status));
+        }
+        else if (_surface.Writer is ITranscriptActivityWriter screen) screen.UpdateToolRow(activity.ActivityId, TuiToolRow.Compose(status,
             detail.Display ?? TitleCase(detail.Verb), detail.Target, ToolRowMetrics(detail), Width));
     }
 
@@ -256,7 +231,9 @@ public sealed partial class TuiTranscript
         var failed = status == ToolLineStatus.Failed;
 
         var target = detail?.Target;
-        var resultLine = ResultLine(status, envelope.SafeSummary);
+        var resultLine = ResultLine(status, detail?.State == AgentActivityState.Failed
+            && detail.SafeCode is not ("started" or "succeeded" or "ok" or "failed" or "error")
+            ? detail.SafeCode : envelope.SafeSummary);
 
         // A dropped transient frame leaves no target: the bounded safe code is the only
         // auditable detail the durable stream carries, so it takes the target column.
@@ -302,7 +279,9 @@ public sealed partial class TuiTranscript
         var pending = _pendingTools.FirstOrDefault(tool => tool.State is AgentActivityState.Started or AgentActivityState.Waiting);
         if (pending is null) _status.SetActivity(null);
         else _status.SetActivity(pending.LiveVerb, pending.Target);
-        _status.SetState(pending is null ? TuiRunState.Thinking : TuiRunState.Tool);
+        _status.SetState(pending is null
+            ? _fullScreenCards ? TuiRunState.WaitingModel : TuiRunState.Thinking
+            : TuiRunState.Tool);
     }
 
     /// <summary>
@@ -314,6 +293,11 @@ public sealed partial class TuiTranscript
         ToolLineStatus status, ToolDetail? detail, string? target, string? diffText)
     {
         BeginToolRow(status);
+        if (_surface.Presentation is not null)
+        {
+            WriteNativeTool(detail, status, target, diffText);
+            return;
+        }
         var display = string.IsNullOrWhiteSpace(detail?.Display)
             ? TitleCase(detail?.Verb ?? "tool")
             : detail!.Display!;
@@ -349,40 +333,30 @@ public sealed partial class TuiTranscript
             _retained.Add(rule);
             foreach (var line in diffLines)
             {
-                _retained.Add("    " + RetainedPaint("│ ", TuiToken.Line)
-                    + (_surface.Presentation is not null ? TuiText.SafeCut(line, 16_000) : FormatDiffLine(line)));
+                _retained.Add("    " + RetainedPaint("│ ", TuiToken.Line) + FormatDiffLine(line));
             }
 
             _retained.Add(rule);
         }
 
         TrimRetained();
-        if (_surface.Presentation is not null)
-        {
-            WriteStructuredTool(detail?.ActivityId, status, display, target, meta);
-            if (detail is not null)
-            {
-                _settledToolRows[detail.ActivityId] = detail;
-                while (_settledToolRows.Count > 64) _settledToolRows.Remove(_settledToolRows.Keys.First());
-            }
-            return;
-        }
         var row = TuiToolRow.Compose(status, display, target, meta, Width);
         if (detail is not null && _surface.Writer is ITranscriptActivityWriter)
         {
             _surface.WriteActivityLine(detail.ActivityId, row);
             _settledToolRows[detail.ActivityId] = detail;
-            while (_settledToolRows.Count > 64) _settledToolRows.Remove(_settledToolRows.Keys.First());
         }
         else WriteLines(row);
     }
 
-    private static string? ToolRowMetrics(ToolDetail detail)
+    private static string? ToolRowMetrics(ToolDetail detail, bool includeExitCode = false)
     {
         var meta = ComposeToolRowMeta(detail.Count, detail.Added, detail.Removed, detail.Display ?? detail.Verb);
         if (detail.DurationMs is > 0)
             meta = string.IsNullOrWhiteSpace(meta) ? FormatDuration(detail.DurationMs.Value)
                 : meta + " · " + FormatDuration(detail.DurationMs.Value);
+        if (includeExitCode && detail.ExitCode is { } code)
+            meta = string.IsNullOrWhiteSpace(meta) ? $"exit {code}" : $"exit {code} · " + meta;
         return meta;
     }
 
@@ -443,6 +417,8 @@ public sealed partial class TuiTranscript
             _toolGroupCount = 0;
             _toolGroupStarted = _turnWatch.Elapsed.TotalSeconds;
             _toolGroupFailed = false;
+            _toolGroupSerial++;
+            _toolGroupWork.Clear();
         }
 
         _toolGroupCount++;
@@ -476,7 +452,10 @@ public sealed partial class TuiTranscript
         }
 
         var mark = failed ? "✗ " : string.Empty;
-        WriteMetaLine($"  {mark}{count} tools · {TuiStatusLine.FormatElapsed(elapsed)}", TuiToken.Meta);
+        var work = _surface.Presentation is not null && _toolGroupWork.Count > 0
+            ? string.Join(" · ", _toolGroupWork.Where(pair => pair.Value > 0).Select(pair => $"{pair.Value} {pair.Key}"))
+            : $"{count} tools";
+        WriteMetaLine($"  {mark}{work} · {TuiStatusLine.FormatElapsed(elapsed)}", failed ? TuiToken.Warn : TuiToken.Meta);
     }
 
     /// <summary>

@@ -15,22 +15,30 @@ internal sealed partial class AgentRunCompaction
     private readonly Subagents.IAgentFamilyBudget? _familyBudget;
     private readonly bool _internalRun;
 
-    private async Task<(AgentRun Run, ContextCompactionPlan? Plan, string? ErrorCode)> BuildCheckpointAsync(
+    private async Task<(AgentRun Run, ContextCompactionPlan? Plan, string? ErrorCode, int AdmittedCalls)> BuildCheckpointAsync(
         AgentRun run, ContextCompactionPlan plan, CancellationToken ct, int maximumCalls = MaximumCheckpointCalls)
     {
         var entries = plan.CoveredEntries.ToArray();
         var snapshot = new ModelContextSnapshot(entries, ModelContextSnapshot.Canonicalize(entries),
             verificationEvidence: plan.VerificationEvidence);
         string? lastInvalidCandidate = null;
+        var admittedCalls = 0;
         for (var call = 0; call < maximumCalls; call++)
         {
             var stepId = _ids.NewModelStepId();
             var admitted = await AdmitCheckpointCallAsync(run, stepId, ct).ConfigureAwait(false);
             run = admitted.Run;
             if (admitted.ErrorCode is not null)
-                return admitted.ErrorCode == "commit_conflict"
-                    ? (run, null, admitted.ErrorCode)
-                    : await PauseOrFailCheckpointAsync(run, admitted.ErrorCode, ct).ConfigureAwait(false);
+            {
+                if (admitted.ErrorCode == "commit_conflict")
+                    return (run, null, admitted.ErrorCode, admittedCalls);
+                var paused = await PauseOrFailCheckpointAsync(run, admitted.ErrorCode, ct).ConfigureAwait(false);
+                return (paused.Run, paused.Plan, paused.ErrorCode, admittedCalls);
+            }
+
+            // Count the admission explicitly: a window reset moves ModelStepsInWindow
+            // backwards, so a before/after counter delta is not a call count.
+            admittedCalls++;
 
             try
             {
@@ -51,7 +59,8 @@ internal sealed partial class AgentRunCompaction
                     run.Preset, run.PolicySnapshotVersion, run.PolicySnapshotSha256, sessionId: run.SessionId), ct).ConfigureAwait(false);
 
                 var accountingError = await RecordCheckpointCallAsync(run, stepId, prompt, result, ct).ConfigureAwait(false);
-                if (accountingError.ErrorCode is not null) return (accountingError.Run, null, accountingError.ErrorCode);
+                if (accountingError.ErrorCode is not null)
+                    return (accountingError.Run, null, accountingError.ErrorCode, admittedCalls);
                 run = accountingError.Run;
                 if (result.ErrorCode is not null)
                 {
@@ -61,8 +70,11 @@ internal sealed partial class AgentRunCompaction
                         continue;
                     }
                     if (result.ErrorCode is "checkpoint_timeout" or "checkpoint_provider_transient")
-                        return await PauseOrFailCheckpointAsync(run, result.ErrorCode, ct).ConfigureAwait(false);
-                    return (run, null, result.ErrorCode);
+                    {
+                        var paused = await PauseOrFailCheckpointAsync(run, result.ErrorCode, ct).ConfigureAwait(false);
+                        return (paused.Run, paused.Plan, paused.ErrorCode, admittedCalls);
+                    }
+                    return (run, null, result.ErrorCode, admittedCalls);
                 }
 
                 string text;
@@ -80,28 +92,37 @@ internal sealed partial class AgentRunCompaction
                     ModelContextSnapshot.Canonicalize(projected), verificationEvidence: plan.VerificationEvidence));
                 var coveredTokens = ModelContextSizeEstimator.EstimateTokens(snapshot);
                 var summaryTokens = (Encoding.UTF8.GetByteCount(frame) + 3L) / 4;
-                if (summaryTokens >= coveredTokens) return (run, null, "checkpoint_not_smaller");
-                return (run, plan with { SummaryText = frame, ProjectedEntries = projected, AfterTokens = after }, null);
+                if (summaryTokens >= coveredTokens) return (run, null, "checkpoint_not_smaller", admittedCalls);
+                return (run, plan with { SummaryText = frame, ProjectedEntries = projected, AfterTokens = after }, null, admittedCalls);
             }
             catch (ContextCheckpointException error) when (error.Code is "checkpoint_timeout" or "checkpoint_provider_transient")
-            { return await PauseOrFailCheckpointAsync(run, error.Code, ct).ConfigureAwait(false); }
-            catch (ContextCheckpointException error) { return (run, null, error.Code); }
+            {
+                var paused = await PauseOrFailCheckpointAsync(run, error.Code, ct).ConfigureAwait(false);
+                return (paused.Run, paused.Plan, paused.ErrorCode, admittedCalls);
+            }
+            catch (ContextCheckpointException error) { return (run, null, error.Code, admittedCalls); }
         }
-        return (run, null, "checkpoint_invalid");
+        return (run, null, "checkpoint_invalid", admittedCalls);
     }
 
     private async Task<(AgentRun Run, string? ErrorCode)> AdmitCheckpointCallAsync(
         AgentRun run, ModelStepId stepId, CancellationToken ct)
     {
-        var limit = _internalRun ? RuAgent.Protocol.Subagents.SubagentLimits.MaxModelSteps : AgentBudgetPolicy.ModelStepLimit;
-        if (run.ModelStepsInWindow >= limit)
-            return (run, _internalRun ? "subagent_model_step_limit" : "model_step_budget_exhausted");
-        if (_familyBudget is not null && !await _familyBudget.ReserveCheckpointAsync(run, stepId, ct).ConfigureAwait(false))
+        // A checkpoint is a model call: it takes the same root window as any other
+        // step, and a root run may open the next window by itself. Internal
+        // children keep their own limit and never take the automatic path.
+        var admission = _internalRun
+            ? Subagents.SubagentBudgetPolicy.ReserveModelStep(run, _time.UtcNow)
+            : AgentBudgetPolicy.ReserveModelStep(run, _time.UtcNow, allowAutomaticWindow: true);
+        if (!admission.Granted)
+            return (run, admission.ErrorCode!);
+        if (_familyBudget is not null && !await _familyBudget.ReserveCheckpointAsync(admission.NextRun, stepId, ct).ConfigureAwait(false))
             return (run, "subagent_family_budget_exhausted");
 
-        // Reserve and persist before each provider dispatch, including a format repair.
-        var started = run.Advance(run.Status, run.BudgetWindow, run.ModelStepsInWindow + 1,
-            run.ToolCallsInWindow, 1, _time.UtcNow);
+        // The reservation supplied the (possibly new) window counters; this commit
+        // records the checkpoint admission beside them before provider dispatch.
+        var started = run.Advance(run.Status, admission.NextRun.BudgetWindow,
+            admission.NextRun.ModelStepsInWindow, admission.NextRun.ToolCallsInWindow, 1, _time.UtcNow);
         var admitted = await _store.CommitAsync(new HarnessCommit(run.RunId, run.Version, started,
             [new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunNoteAdded,
                 modelStepId: stepId, safeCode: "checkpoint_started")], [], []), ct).ConfigureAwait(false);

@@ -4,6 +4,7 @@ public sealed record ModelImage(string MimeType, string Base64Data)
 {
     /// <summary>Base64 length of a 4 MiB image, with headroom.</summary>
     public const int MaximumBase64Chars = 5_600_000;
+    public const int MaximumDecodedBytes = 4 * 1024 * 1024;
 
     private readonly bool _validated = Validate(MimeType, Base64Data);
 
@@ -16,7 +17,11 @@ public sealed record ModelImage(string MimeType, string Base64Data)
             throw new ArgumentException("MimeType is invalid. Only image/png, image/jpeg, image/webp are allowed.", "MimeType");
         }
 
-        if (string.IsNullOrWhiteSpace(base64Data) || base64Data.Length > MaximumBase64Chars)
+        if (!BoundedBase64Validator.TryGetDecodedLength(
+                base64Data,
+                MaximumBase64Chars,
+                MaximumDecodedBytes,
+                out _))
         {
             throw new ArgumentException("Base64Data is invalid.", "Base64Data");
         }

@@ -29,6 +29,54 @@ public sealed class SidebarOrganizationTests : IDisposable
     }
 
     [Fact]
+    public void Scratch_sessions_stay_in_recents_regardless_of_their_private_session_folder()
+    {
+        var preferences = new SidebarOrganizationPreferences();
+        var first = new SessionInfo
+        {
+            Id = "a",
+            WorkspacePath = @"C:\Users\USER\AppData\Local\Ru\workspaces\aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            WorkspaceKind = "scratch",
+        };
+        var second = new SessionInfo
+        {
+            Id = "b",
+            WorkspacePath = @"C:\Users\USER\AppData\Local\Ru\workspaces\bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            WorkspaceKind = "scratch",
+        };
+
+        var group = SidebarSessionOrganization.GroupFor(first, appRoot: null, preferences);
+        Assert.Equal(SidebarSessionOrganization.RecentsKey, group.Key);
+        Assert.Equal("Recents", group.Label);
+        Assert.Null(group.Path);
+        Assert.Equal(group.Key, SidebarSessionOrganization.GroupFor(second, appRoot: null, preferences).Key);
+
+        var projection = WorkspaceSessionProjection.Project(
+            [first, second],
+            row => SidebarSessionOrganization.GroupFor(row, appRoot: null, preferences));
+        var only = Assert.Single(projection.Groups);
+        Assert.Equal(2, only.Sessions.Count);
+    }
+
+    [Fact]
+    public void Explicit_user_placement_can_group_a_scratch_backed_chat_with_a_project()
+    {
+        var preferences = new SidebarOrganizationPreferences();
+        var session = new SessionInfo { Id = "chat", WorkspaceKind = "scratch",
+            WorkspacePath = @"C:\RuData\workspaces\chat" };
+        preferences.Groups[session.Id] = @"C:\selected-project";
+
+        var group = SidebarSessionOrganization.GroupFor(session, appRoot: null, preferences);
+
+        Assert.Equal(SidebarSessionOrganization.PathKey(@"C:\selected-project"), group.Key);
+        Assert.Equal(@"C:\selected-project", group.Path);
+        Assert.Equal(@"C:\RuData\workspaces\chat", session.WorkspacePath);
+        preferences.Groups.Remove(session.Id);
+        Assert.Equal(SidebarSessionOrganization.RecentsKey,
+            SidebarSessionOrganization.GroupFor(session, appRoot: null, preferences).Key);
+    }
+
+    [Fact]
     public void Source_change_invalidates_sidebar_poll_fingerprint()
     {
         var session = new SessionInfo { Id = "s", MessageCount = 2 };

@@ -8,6 +8,17 @@ public sealed class AgentCliParserTests
     private static string ValidRunId2 => "run_" + new string('b', 32);
     private static string ValidWorkspace => Path.GetTempPath().TrimEnd('\\', '/');
 
+    [Theory]
+    [InlineData("import")]
+    [InlineData("export")]
+    public void ParseSession_RejectsRetiredExternalExchangeCommands(string subcommand)
+    {
+        var result = AgentCliParser.Parse(["agent", "session", subcommand, "placeholder"]);
+
+        Assert.False(result.Success);
+        Assert.Equal("unknown_subcommand", result.ErrorCode);
+    }
+
     [Fact]
     public void ParseRun_SucceedsWithRequiredArgs()
     {
@@ -151,43 +162,9 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
-    public void ParseRun_AcceptsWorktreeIsolation()
+    public void ParseRun_RejectsRemovedWorktreeSwitch()
     {
         var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--trust-workspace", "--worktree", "prompt" };
-        var res = AgentCliParser.Parse(args);
-        Assert.True(res.Success);
-        Assert.True(Assert.IsType<RunCommand>(res.Command).Worktree);
-    }
-
-    [Fact]
-    public void ParseRun_RejectsWorktreeWithSession()
-    {
-        // A resumed session keeps the workspace it was created with.
-        var args = new[]
-        {
-            "agent", "run", "--workspace", ValidWorkspace, "--worktree", "--session", new string('a', 32), "prompt",
-        };
-        var res = AgentCliParser.Parse(args);
-        Assert.False(res.Success);
-        Assert.Equal("worktree_session_conflict", res.ErrorCode);
-    }
-
-    [Fact]
-    public void ParseRun_RejectsDuplicateWorktree()
-    {
-        var args = new[]
-        {
-            "agent", "run", "--workspace", ValidWorkspace, "--worktree", "--worktree", "prompt",
-        };
-        var res = AgentCliParser.Parse(args);
-        Assert.False(res.Success);
-        Assert.Equal("duplicate_switch", res.ErrorCode);
-    }
-
-    [Fact]
-    public void ParseChat_RejectsWorktree()
-    {
-        var args = new[] { "agent", "chat", "--workspace", ValidWorkspace, "--worktree" };
         var res = AgentCliParser.Parse(args);
         Assert.False(res.Success);
         Assert.Equal("unknown_switch", res.ErrorCode);

@@ -54,6 +54,7 @@ public sealed partial class MainWindow
         bool enabled = _sessionMotionSettings.AnimationsEnabled;
         if (enabled == _sessionWaveAnimationsEnabled) return;
         _sessionWaveAnimationsEnabled = enabled;
+        InitializeSidebarMotion();
         RefreshSessionTitleWaves();
     }
 

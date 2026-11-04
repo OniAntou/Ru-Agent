@@ -24,7 +24,9 @@ public enum EscapeOutcome
 /// one. The rule is a precedence, and the order is the whole design:
 ///
 /// <list type="number">
-/// <item>An open approval outranks everything. A pending question has exactly one right
+/// <item>An open flyout owns Escape to dismiss itself without changing the run or
+/// answering any pending decision.</item>
+/// <item>An open approval otherwise outranks the run. A pending question has exactly one right
 /// answer, and stopping the run instead of answering it punishes the user for a
 /// decision they were asked to make. Denying is also the answer that costs least when it
 /// is wrong: the agent asked again, nothing ran.</item>
@@ -56,8 +58,18 @@ public static class AgentRunKeyboardPolicy
     /// </param>
     /// <param name="approvalShowing">Whether the approval prompt is on screen.</param>
     /// <param name="questionShowing">Whether the question prompt is on screen.</param>
-    public static EscapeOutcome Resolve(bool runInHand, bool approvalShowing, bool questionShowing = false)
+    /// <param name="flyoutShowing">Whether an open popup owns Escape to dismiss itself.</param>
+    public static EscapeOutcome Resolve(
+        bool runInHand,
+        bool approvalShowing,
+        bool questionShowing = false,
+        bool flyoutShowing = false)
     {
+        if (flyoutShowing)
+        {
+            return EscapeOutcome.None;
+        }
+
         if (approvalShowing)
         {
             return EscapeOutcome.DenyApproval;

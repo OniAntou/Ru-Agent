@@ -69,7 +69,7 @@ public sealed partial class AgentActivitySummaryControl : UserControl
             _observedMessage = message;
             message.PropertyChanged += OnMessagePropertyChanged;
             // Detailed mode pays no per-row subscription or summary scan cost.
-            if (message.CompactAgentActivity && message.AgentActivities is { } activities)
+            if (message.ShowActivitySummary && message.AgentActivities is { } activities)
             {
                 _observedActivities = activities;
                 activities.CollectionChanged += OnActivitiesChanged;
@@ -97,7 +97,7 @@ public sealed partial class AgentActivitySummaryControl : UserControl
 
     private void OnMessagePropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName is null or nameof(ChatMessageItem.AgentActivities) or nameof(ChatMessageItem.CompactAgentActivity))
+        if (args.PropertyName is null or nameof(ChatMessageItem.AgentActivities) or nameof(ChatMessageItem.ShowActivitySummary))
             BindMessage();
         else if (args.PropertyName == nameof(ChatMessageItem.IsActivityDetailsExpanded)) RenderSummary();
         else if (args.PropertyName is nameof(ChatMessageItem.IsStreaming) or nameof(ChatMessageItem.Role)) ScheduleRefresh();
@@ -127,7 +127,7 @@ public sealed partial class AgentActivitySummaryControl : UserControl
 
     private void ScheduleRefresh()
     {
-        if (!IsLoaded || Message?.CompactAgentActivity != true) return;
+        if (!IsLoaded || Message?.ShowActivitySummary != true) return;
         if (_refreshTimer is null)
         {
             _refreshTimer = DispatcherQueue.CreateTimer();
@@ -143,7 +143,7 @@ public sealed partial class AgentActivitySummaryControl : UserControl
 
     private void RenderSummary()
     {
-        var summary = Message?.CompactAgentActivity == true
+        var summary = Message?.ShowActivitySummary == true
             ? AgentActivitySummaryProjection.ForMessage(Message) : AgentActivitySummary.Empty;
         Visibility = summary.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (summary.Count == 0)

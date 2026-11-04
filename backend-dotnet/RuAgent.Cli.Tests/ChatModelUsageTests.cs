@@ -6,6 +6,22 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class ChatModelUsageTests
 {
+    [Fact]
+    public async Task Refresh_does_not_blank_the_meter_while_catalog_metadata_is_in_flight()
+    {
+        var pending = new TaskCompletionSource<CatalogModelDetails?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resolver = new ChatModelUsage((_, _, _) => pending.Task);
+        var usage = new TuiUsageTracker { ContextLimit = 128_000, InputRate = 1, OutputRate = 2 };
+        usage.ObserveUsage(1, "a", 64_000, null);
+        var refresh = resolver.RefreshAsync(usage, new("provider", "model"), true, default);
+        Assert.Equal(50d, usage.ContextPercent);
+        Assert.Equal(1d, usage.InputRate);
+        pending.SetResult(new(256_000, 3, 4, null, null));
+        await refresh;
+        Assert.Equal(25d, usage.ContextPercent);
+        Assert.Equal(3d, usage.InputRate);
+    }
+
     [Theory]
     [InlineData(false, "provider", "model", false)]
     [InlineData(true, "provider", "", false)]

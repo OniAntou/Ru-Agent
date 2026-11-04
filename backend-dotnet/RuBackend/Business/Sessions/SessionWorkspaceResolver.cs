@@ -6,7 +6,7 @@ using RuBackend.Harness.Workspace;
 
 namespace RuBackend.Business.Sessions;
 
-/// <summary>Latest-run workspace lookup for session lists and exports.</summary>
+/// <summary>Latest-run workspace lookup for session lists and history.</summary>
 public static class SessionWorkspaceResolver
 {
     public const int MaximumRequestedSessions = 500;

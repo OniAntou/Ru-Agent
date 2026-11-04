@@ -31,7 +31,9 @@ Empty, malformed, truncated, filtered or tool-producing responses return named
 one repair per source span using the original covered history and at most 4,000 characters of
 the rejected candidate as untrusted data. Input-window rejection can select a
 smaller complete source span: at most three
-spans and four admitted calls total per compaction, including format repairs.
+spans and four admitted calls total per compaction, including format repairs,
+counted by admission rather than by the window counter. An automatic budget
+window therefore does not extend the allowance.
 An unchanged or irreducible span is not retried. Other failures are not
 format-retried. Production does not
 substitute deterministic excerpts after a failed provider summary. Test/scripted
@@ -47,8 +49,10 @@ does not replace original history. An exhausted format repair or permanent check
 failure stops the run with its named error. Transient provider failures, operator-repairable account limits and the
 checkpoint deadline park a root run for explicit Continue; internal children
 fail instead of requesting user input. Neither path loops automatically.
-Budget exhaustion follows ordinary run policy: root runs wait for explicit
-Continue, while internal child runs fail at their bound; no extra call dispatches.
+Budget exhaustion follows ordinary run policy: a root run opens its automatic
+windows first and only waits for explicit Continue after the automatic
+allowance (8 windows) is spent, while internal child runs fail at their bound;
+no extra call dispatches without an admitted reservation.
 
 A successful summary must shrink the selected span. It is encrypted and
 committed with covered ranges and an input digest through the existing

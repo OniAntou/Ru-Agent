@@ -124,6 +124,20 @@ public sealed class SessionPresetViewModelTests
     }
 
     [Fact]
+    public async Task A_choice_made_after_adoption_is_written_instead_of_reusing_the_cached_version()
+    {
+        // The cached version describes the stored value, not the user's current
+        // choice: adopting plan and then choosing standard must write standard.
+        _backend.Stored["sess-a"] = new ApiService.SessionPresetRead("plan", 5);
+        await _presets.AdoptStoredAsync("sess-a", () => "sess-a", CancellationToken.None);
+
+        _presets.Choose(AgentPermissionPreset.Standard);
+        await _presets.EnsureStoredAsync(AgentPermissionPreset.Standard, "sess-a", () => true, CancellationToken.None);
+
+        Assert.Equal([("sess-a", "standard")], _backend.Writes);
+    }
+
+    [Fact]
     public async Task Ensuring_writes_once_per_session_and_preset_then_reuses_the_version()
     {
         long first = await _presets.EnsureStoredAsync(AgentPermissionPreset.Plan, "sess-a", () => true, CancellationToken.None);

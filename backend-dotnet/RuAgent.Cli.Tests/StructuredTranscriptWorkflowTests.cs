@@ -8,7 +8,7 @@ using Xunit;
 namespace RuAgent.Cli.Tests;
 
 /// <summary>Exercises the typed renderer through its real queued UI adapter and retained view.</summary>
-public sealed class StructuredTranscriptWorkflowTests
+public sealed partial class StructuredTranscriptWorkflowTests
 {
     [Theory]
     [InlineData(1)]

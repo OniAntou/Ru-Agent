@@ -8,7 +8,10 @@ public sealed record SessionMessage(
     [property: JsonPropertyName("source_message_id")]
     string? SourceMessageId = null,
     [property: JsonPropertyName("source_run_id")]
-    string? SourceRunId = null);
+    string? SourceRunId = null,
+    [property: JsonPropertyName("image_attachment_count")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    int ImageAttachmentCount = 0);
 
 public enum SessionAppendOutcome
 {
@@ -16,6 +19,7 @@ public enum SessionAppendOutcome
     AlreadyPresent,
     SessionNotFound,
     InvalidMessage,
+    StaleDelivery,
     TransientFailure,
 }
 
@@ -78,7 +82,7 @@ public sealed class SessionHistoryException(string code) : Exception(code)
     public string Code { get; } = code;
 }
 
-public sealed record ConversationTurn(string Prompt, string Response, string? SourceRunId = null);
+public sealed record ConversationTurn(string Prompt, string Response, string? SourceRunId = null, int ImageAttachmentCount = 0);
 
 public interface ISessionStore
 {

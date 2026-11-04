@@ -41,12 +41,18 @@ public sealed class TgSlashDropdown : View
     public void SetMatches(IReadOnlyList<ChatCommandCatalog.SlashCommandInfo> matches)
     {
         ArgumentNullException.ThrowIfNull(matches);
+        if (_matches.SequenceEqual(matches))
+        {
+            return;
+        }
+
         var previousHeight = PanelHeight;
         _matches = matches;
         _selected = 0;
         // Height and Y are functions of the match count. Equal layout delegates
         // do not invalidate a frame when only their captured data changes.
-        if (PanelHeight != previousHeight) SetNeedsLayout();
+        var heightChanged = PanelHeight != previousHeight;
+        if (heightChanged) SetNeedsLayout();
         SetNeedsDraw();
     }
 

@@ -82,7 +82,7 @@ namespace RuApp.Models
 
         public static string FormatTokens(int tokens)
         {
-            return RuAgent.SessionInterchange.TranscriptText.FormatTokens(tokens);
+            return RuAgent.Client.TokenCountFormatter.Format(tokens);
         }
 
         /// <summary>

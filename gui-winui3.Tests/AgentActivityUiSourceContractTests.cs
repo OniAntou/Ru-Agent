@@ -476,20 +476,20 @@ public sealed class AgentActivityUiSourceContractTests
     public void The_terminal_block_offers_a_copy_of_its_own_output()
     {
         var template = ActivityTemplate();
-        Assert.Contains(
+        // The component owns its Copy button; the view receives the exact text
+        // bound to that card, so a click cannot copy another activity's output.
+        var card = Assert.Single(
             template.Descendants(),
-            element => GuiSource.AttributeValue(element, "Click") == "OnCopyTerminalOutputClick");
-
-        // The button copies the panel's text through its Tag rather than reaching
-        // for the row, so one handler serves every terminal row in the feed.
-        var copyButton = Assert.Single(
-            template.Descendants(),
-            element => GuiSource.AttributeValue(element, "Click") == "OnCopyTerminalOutputClick");
-        Assert.Equal("Button", copyButton.Name.LocalName);
+            element => element.Name.LocalName == "TerminalActivityCard");
+        Assert.Equal("OnCopyTerminalOutputClick", GuiSource.AttributeValue(card, "CopyRequested"));
         Assert.True(
-            copyButton.Attributes().Any(attribute =>
+            card.Attributes().Any(attribute =>
                 attribute.Value.Contains("x:Bind TerminalPanelText", StringComparison.Ordinal)),
-            "The copy button must carry the panel text it copies.");
+            "The card must carry the panel text it copies.");
+        var copyButton = Assert.Single(GuiSource.Xml("Controls", "TerminalActivityCard.xaml").Descendants(),
+            element => GuiSource.AttributeValue(element, "Click") == "OnCopyClick");
+        Assert.Equal("Button", copyButton.Name.LocalName);
+        Assert.Equal("Copy terminal command and output", GuiSource.AttributeValue(copyButton, "Name"));
     }
 
     [Fact]

@@ -40,7 +40,8 @@ public static partial class BusinessEndpoints
 
     private static async Task<IResult> ListSessionPageAsync(HttpRequest request, ISessionStore sessions,
         HarnessSqliteOptions sqliteOptions, SqliteWorkspaceStore workspaceStore,
-        WorkspaceTrustService trustService, ILoggerFactory loggers, CancellationToken cancellationToken)
+        WorkspaceTrustService trustService, RuBackend.Harness.Workspace.ScratchWorkspaceStore scratchWorkspaces,
+        ILoggerFactory loggers, CancellationToken cancellationToken)
     {
         if (!TryHistoryArguments(request, 100, out var cursor, out var limit, out var query))
             return HistoryError("session_history_arguments_invalid", 400);
@@ -48,7 +49,7 @@ public static partial class BusinessEndpoints
         {
             var page = await sessions.ListPageAsync(cursor, limit, query, cancellationToken).ConfigureAwait(false);
             var rows = await ProjectSessionSummariesAsync(page.Sessions, sqliteOptions, workspaceStore,
-                trustService, cancellationToken).ConfigureAwait(false);
+                trustService, scratchWorkspaces, cancellationToken).ConfigureAwait(false);
             return Results.Ok(new { status = "ok", sessions = rows, next_cursor = page.NextCursor,
                 sessions_truncated = page.NextCursor is not null });
         }
@@ -111,7 +112,8 @@ public static partial class BusinessEndpoints
 
     private static async Task<object[]> ProjectSessionSummariesAsync(IReadOnlyList<SessionSummary> values,
         HarnessSqliteOptions sqliteOptions, SqliteWorkspaceStore workspaceStore,
-        WorkspaceTrustService trustService, CancellationToken cancellationToken)
+        WorkspaceTrustService trustService, RuBackend.Harness.Workspace.ScratchWorkspaceStore scratchWorkspaces,
+        CancellationToken cancellationToken)
     {
         var ids = values.Select(value => value.Id).ToArray();
         var running = await SessionRunActivityResolver.ResolveAsync(ids, sqliteOptions, cancellationToken).ConfigureAwait(false);
@@ -131,6 +133,7 @@ public static partial class BusinessEndpoints
                 message_count = value.MessageCount, parent_session_id = value.ParentSessionId,
                 forked_from_message_id = value.ForkedFromMessageId, workspace_id = value.WorkspaceId,
                 workspace_label = value.WorkspaceLabel, workspace_path = value.WorkspacePath,
+                workspace_kind = scratchWorkspaces.OwnsCanonicalWorkspace(value.WorkspacePath, value.Id) ? "scratch" : "project",
                 client_source = value.ClientSource, is_agent_running = running.Contains(value.Id),
             };
         }).ToArray();

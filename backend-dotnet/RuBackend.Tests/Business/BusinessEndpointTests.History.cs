@@ -2,6 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using RuAgent.Protocol.Harness;
+using RuBackend.Harness;
+using RuBackend.Harness.Workspace;
 using RuBackend.Business.Sessions;
 using Xunit;
 
@@ -9,6 +12,50 @@ namespace RuBackend.Tests.Business;
 
 public sealed partial class BusinessEndpointTests
 {
+    [Fact]
+    public async Task Session_listing_does_not_label_an_unmarked_scratch_root_child_as_scratch()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessions = factory.Services.GetRequiredService<ISessionStore>();
+        var sessionId = (await sessions.CreateAsync(CancellationToken.None))!;
+        var scratch = factory.Services.GetRequiredService<ScratchWorkspaceStore>();
+        const string otherSessionId = "12121212121212121212121212121212";
+        var path = scratch.PathFor(otherSessionId);
+        Directory.CreateDirectory(path);
+        await File.WriteAllTextAsync(Path.Combine(path, "user.txt"), "not Ru-owned");
+
+        var creation = factory.Services.GetRequiredService<AgentRunCreationService>();
+        var created = await creation.CreateRunAsync(new CreateAgentRunRequest(
+            sessionId,
+            path,
+            "session list scratch provenance",
+            "standard",
+            null,
+            "session-list-scratch-" + Guid.NewGuid().ToString("N")), CancellationToken.None);
+        Assert.Equal(201, created.StatusCode);
+
+        var scratchSessionId = (await sessions.CreateAsync(CancellationToken.None))!;
+        var scratchRun = await creation.CreateRunAsync(new CreateAgentRunRequest(
+            scratchSessionId,
+            string.Empty,
+            "owned scratch session list provenance",
+            "standard",
+            null,
+            "session-list-owned-scratch-" + Guid.NewGuid().ToString("N")), CancellationToken.None);
+        Assert.Equal(201, scratchRun.StatusCode);
+
+        var page = await client.GetFromJsonAsync<JsonElement>("/sessions/page?limit=100");
+        var rows = page.GetProperty("sessions").EnumerateArray().ToArray();
+        var row = rows
+            .Single(item => item.GetProperty("id").GetString() == sessionId);
+        var scratchRow = rows
+            .Single(item => item.GetProperty("id").GetString() == scratchSessionId);
+        Assert.Equal("project", row.GetProperty("workspace_kind").GetString());
+        Assert.Equal("scratch", scratchRow.GetProperty("workspace_kind").GetString());
+    }
+
     [Theory]
     [InlineData("/sessions/page?limit=0")]
     [InlineData("/sessions/page?limit=1&limit=2")]

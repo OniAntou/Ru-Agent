@@ -72,11 +72,16 @@ namespace RuApp.Views
 
         private void OnChatModelFlyoutOpened(object sender, object e)
         {
+            AttachChatFlyoutEscape(ChatModelFlyout);
             ModelPicker.FocusSearch();
             ModelSelection.OnPickerOpened();
         }
 
-        private void OnChatModelFlyoutClosed(object sender, object e) => ModelSelection.OnPickerClosed();
+        private void OnChatModelFlyoutClosed(object sender, object e)
+        {
+            OnChatOwnedFlyoutClosed(ChatModelFlyout);
+            ModelSelection.OnPickerClosed();
+        }
 
         private void OnModelPickerSearchTextChanged(object? sender, string searchText) =>
             ModelSelection.SetSearchText(searchText);
@@ -123,6 +128,7 @@ namespace RuApp.Views
         /// </remarks>
         private void OnChatReasoningFlyoutOpened(object sender, object e)
         {
+            AttachChatFlyoutEscape(ChatReasoningFlyout);
             ReasoningOptionsContainer.Children.Clear();
             _reasoningRows.Clear();
             _reasoningEfforts.Clear();
@@ -203,6 +209,15 @@ namespace RuApp.Views
 
             ReasoningOptionsContainer.Focus(FocusState.Programmatic);
         }
+
+        private void OnChatReasoningFlyoutClosed(object sender, object e) =>
+            OnChatOwnedFlyoutClosed(ChatReasoningFlyout);
+
+        private void OnContextWindowFlyoutOpened(object sender, object e) =>
+            AttachChatFlyoutEscape(ContextWindowFlyout);
+
+        private void OnContextWindowFlyoutClosed(object sender, object e) =>
+            OnChatOwnedFlyoutClosed(ContextWindowFlyout);
 
         /// <summary>
         /// The pointer is the cursor, exactly as in the model picker: one marked row, so

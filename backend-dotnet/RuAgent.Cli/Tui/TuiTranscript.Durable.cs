@@ -64,7 +64,13 @@ public sealed partial class TuiTranscript
             return;
         }
 
-        if (type is "model.step_started" or "model.step_completed"
+        if (type == "model.step_started")
+        {
+            if (_fullScreenCards && !_paused) _status.SetState(TuiRunState.WaitingModel);
+            return;
+        }
+
+        if (type is "model.step_completed"
             or "prompt_receipt" or "model.usage_recorded" or "model.reasoning_recorded"
             or "tool.proposed" or "input.requested" or "context.compacted")
         {
@@ -224,7 +230,6 @@ public sealed partial class TuiTranscript
         if (reason is not null)
         {
             _parkReasons[envelope.RunId] = reason;
-            while (_parkReasons.Count > 64) _parkReasons.Remove(_parkReasons.Keys.First());
         }
         _status.SetState(TuiRunState.Paused);
         _status.SetDetail(_lastParkReason is null ? "waiting to continue"
@@ -248,6 +253,6 @@ public sealed partial class TuiTranscript
         _pausedRunId = null;
         _lastParkReason = null;
         _status.SetDetail(null);
-        _status.SetState(TuiRunState.Thinking);
+        _status.SetState(_fullScreenCards ? TuiRunState.WaitingModel : TuiRunState.Thinking);
     }
 }

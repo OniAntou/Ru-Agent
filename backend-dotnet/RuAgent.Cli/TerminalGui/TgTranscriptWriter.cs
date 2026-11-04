@@ -1,5 +1,6 @@
 using System.Text;
 using RuAgent.Cli.Tui;
+using RuAgent.Protocol;
 using Terminal.Gui.App;
 
 namespace RuAgent.Cli.TerminalGui;
@@ -20,7 +21,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
     private int _assistantStepMark = -1;
     private int _turnMark = -1;
     private long _turnRetentionVersion;
-    private readonly Dictionary<string, (int Row, long Version)> _toolRows = new(StringComparer.Ordinal);
+    private readonly BoundedInsertionMap<string, (int Row, long Version)> _toolRows = new(64, StringComparer.Ordinal);
 
     public void AppendToolRow(string activityId, string text)
     {
@@ -35,7 +36,6 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
                 if (hidden is { Length: > 0 }) transcript.AppendCollapsed(clean, hidden, TranscriptStyle.Tool);
                 else transcript.Append(clean, TranscriptStyle.Tool);
                 _toolRows[activityId] = (transcript.CommittedRowCount - 1, transcript.RetentionVersion);
-                while (_toolRows.Count > 64) _toolRows.Remove(_toolRows.Keys.First());
             });
         }
         catch (NotInitializedException) { }

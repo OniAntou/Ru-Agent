@@ -30,6 +30,8 @@ namespace RuApp.Views
     public sealed partial class ChatView
     {
         private long _agentTurnGeneration;
+        private CancellationTokenSource? _submissionCancellation;
+        private TaskCompletionSource? _submissionSettled;
 
         /// <summary>The run panel's state: status line, Stop, send face, approval, question, trust guard.</summary>
         public AgentRunPanelViewModel RunPanel { get; } = new();
@@ -328,6 +330,7 @@ namespace RuApp.Views
 
         private void ResetAgentState(bool preserveTranscript = false)
         {
+            CancelPreparingSubmission();
             ClearChangeNavigation();
             _changesPanelExplicitlyOpened = false;
             _sidePanelTasksRunId = null;
@@ -418,6 +421,12 @@ namespace RuApp.Views
 
                 if (e.Key == Windows.System.VirtualKey.Escape)
                 {
+                    if (TryDismissChatOwnedFlyout())
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+
                     // Escape is the one key that belongs to the app rather than to the
                     // text field, so it is the only way out of a run that needs no mouse.
                     // The decision is not made here: an open approval outranks the run, and
@@ -425,7 +434,8 @@ namespace RuApp.Views
                     var escape = AgentRunKeyboardPolicy.Resolve(
                         runInHand: _isSendButtonInStopMode || IsActiveAgentRunPending(),
                         approvalShowing: ApprovalPanel?.IsShown == true,
-                        questionShowing: QuestionPanel?.IsShown == true);
+                        questionShowing: QuestionPanel?.IsShown == true,
+                        flyoutShowing: IsChatFlyoutShowing());
 
                     switch (escape)
                     {
@@ -493,10 +503,17 @@ namespace RuApp.Views
                 return;
             }
 
+            if (TryDismissChatOwnedFlyout())
+            {
+                e.Handled = true;
+                return;
+            }
+
             var escape = AgentRunKeyboardPolicy.Resolve(
                 runInHand: _isSendButtonInStopMode || IsActiveAgentRunPending(),
                 approvalShowing: ApprovalPanel?.IsShown == true,
-                questionShowing: QuestionPanel?.IsShown == true);
+                questionShowing: QuestionPanel?.IsShown == true,
+                flyoutShowing: IsChatFlyoutShowing());
 
             if (escape == EscapeOutcome.DenyApproval)
             {
@@ -541,6 +558,8 @@ namespace RuApp.Views
             }
 
             long submittedGeneration = _agentTurnGeneration;
+            CancellationTokenSource? submissionCancellation = null;
+            TaskCompletionSource? submissionSettled = null;
             try
             {
                 var snapshot = Composer.TakeSnapshot(ChatInputTextBox.Text);
@@ -548,6 +567,16 @@ namespace RuApp.Views
                 var attachments = snapshot.Attachments.ToList();
 
                 if (snapshot.IsEmpty) return;
+
+                // The Host rejects a prompt over its bound after the run request is
+                // already in flight, so check the composed text (typed text plus every
+                // inlined document) before the composer enters its sending face.
+                string effectivePrompt = ChatComposerViewModel.BuildEffectivePrompt(text, attachments);
+                if (ChatComposerViewModel.PromptLimitStatus(effectivePrompt) is { } promptLimit)
+                {
+                    ShowAgentInlineStatus(promptLimit);
+                    return;
+                }
 
                 if (attachments.Count == 0 && text.Trim().Equals("/skills", StringComparison.OrdinalIgnoreCase))
                 {
@@ -576,16 +605,39 @@ namespace RuApp.Views
                     return;
                 }
 
+                submissionCancellation = new CancellationTokenSource();
+                CancelPreparingSubmission();
+                _submissionCancellation = submissionCancellation;
+                submissionSettled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _submissionSettled = submissionSettled;
+                CancellationToken submissionToken = submissionCancellation.Token;
+                Task<ChatSubmissionPresenter.RunSubmissionSnapshot?> submissionTask =
+                    ChatSubmissionPresenter.CaptureRunSubmissionAsync(
+                        () => ModelSelection.TryCaptureRunSelection(out var selection) ? selection : null,
+                        () => EnsureAgentSessionAsync(submissionToken, _sessionOpenGeneration),
+                        () => _activeSessionId,
+                        () => _sessionOpenGeneration,
+                        submissionToken);
+
                 _isSendingUserTurn = true;
                 UpdateSendButtonMode(isAgentRunning: true);
 
-                string submittedSessionId = await ChatSubmissionPresenter.CaptureSessionAsync(
-                    () => EnsureAgentSessionAsync(CancellationToken.None),
-                    () => _activeSessionId);
+                var submission = await submissionTask;
+                submissionToken.ThrowIfCancellationRequested();
+                if (submission is null)
+                {
+                    ShowAgentInlineStatus("Model selection is still loading. Choose a provider and model before sending.");
+                    UpdateSendButtonMode(isAgentRunning: false);
+                    return;
+                }
+
+                string submittedSessionId = submission.SessionId;
                 bool accepted = await ChatSubmissionPresenter.SubmitAsync(
                     onAccepted => SendAgentTurnAsync(
-                        ChatComposerViewModel.BuildEffectivePrompt(text, attachments),
-                        CancellationToken.None,
+                        effectivePrompt,
+                        submissionToken,
+                        submission.ProviderSelection,
+                        expectedSubmission: submission,
                         attachments: attachments,
                         displayUserText: text,
                         onAccepted: onAccepted),
@@ -600,6 +652,10 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
+                if (ex is OperationCanceledException && submissionCancellation?.IsCancellationRequested == true)
+                {
+                    return;
+                }
                 if (submittedGeneration == _agentTurnGeneration)
                 {
                     FailActiveAgentReply(ex);
@@ -613,15 +669,46 @@ namespace RuApp.Views
                     _isSendingUserTurn = false;
                     UpdateAgentInlineState();
                 }
+                if (submissionCancellation is { } current)
+                {
+                    if (ReferenceEquals(_submissionCancellation, current))
+                    {
+                        _submissionCancellation = null;
+                    }
+                    current.Dispose();
+                }
+                if (submissionSettled is { } settled)
+                {
+                    if (ReferenceEquals(_submissionSettled, settled)) _submissionSettled = null;
+                    settled.TrySetResult();
+                }
             }
         }
+
+        private void CancelPreparingSubmission() => _submissionCancellation?.Cancel();
 
         /// <summary>
         /// Takes what the composer holds and puts it behind the run in hand. False
         /// means the text stayed where it was: nothing to queue, or the queue is full.
         /// </summary>
-        private bool QueueCurrentComposerTurn() =>
-            Composer.QueueCurrent(_activeSessionId, ChatInputTextBox?.Text ?? string.Empty);
+        private bool QueueCurrentComposerTurn()
+        {
+            if (!ModelSelection.TryCaptureRunSelection(out var providerSelection))
+            {
+                ShowAgentInlineStatus("Model selection is still loading. Choose a provider and model before sending.");
+                return false;
+            }
+
+            var snapshot = Composer.TakeSnapshot(ChatInputTextBox?.Text ?? string.Empty);
+            string effectivePrompt = ChatComposerViewModel.BuildEffectivePrompt(snapshot.Text, snapshot.Attachments);
+            if (ChatComposerViewModel.PromptLimitStatus(effectivePrompt) is { } promptLimit)
+            {
+                ShowAgentInlineStatus(promptLimit);
+                return false;
+            }
+
+            return Composer.QueueCurrent(_activeSessionId, snapshot.Text, providerSelection);
+        }
 
         /// <summary>
         /// Shows a row's fold chevron while the pointer is on it, or while it holds focus.
@@ -669,6 +756,8 @@ namespace RuApp.Views
         private async Task<bool> SendAgentTurnAsync(
             string text,
             CancellationToken cancellationToken,
+            CreateRunProviderSelection providerSelection,
+            ChatSubmissionPresenter.RunSubmissionSnapshot? expectedSubmission = null,
             bool allowSessionRecovery = true,
             List<ImageAttachmentItem>? attachments = null,
             string? displayUserText = null,
@@ -697,17 +786,24 @@ namespace RuApp.Views
                 return false;
             }
 
-            await EnsureAgentSessionAsync(cancellationToken);
-            string workspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
-                ?? _defaultAgentWorkspace
-                ?? throw new InvalidOperationException("App root workspace is not configured.");
+            await EnsureAgentSessionAsync(cancellationToken, expectedSubmission?.SessionGeneration);
+            // The submission owns the view only while the same session generation
+            // is open. Claim that ownership before touching session-scoped view
+            // state, and check it again after the dialogs/preset round trip below,
+            // which can span a navigation.
+            string? submittedSessionId = expectedSubmission?.SessionId ?? _activeSessionId;
+            long submittedSessionGeneration = _sessionOpenGeneration;
+            EnsureSubmissionOwnsView(expectedSubmission, submittedSessionId, cancellationToken);
 
-            _agentWorkspace = workspace;
+            // Empty means "no project chosen": the Host allocates a Ru-owned scratch workspace
+            // and returns its canonical path with the created run.
+            string workspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace) ?? string.Empty;
+
+            SetAgentWorkspace(workspace);
             UpdateChatHeaderWorkspace();
             // The exact folder this run is created for, so the trust prompt can name it.
-            _requestedWorkspaceBySession[_activeSessionId] = workspace;
+            _requestedWorkspaceBySession[submittedSessionId] = workspace;
 
-            string? submittedSessionId = null;
             try
             {
                 AgentPermissionPreset preset = Presets.Preset;
@@ -730,7 +826,10 @@ namespace RuApp.Views
                     .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
                     .ToList();
 
-                submittedSessionId = _activeSessionId;
+                cancellationToken.ThrowIfCancellationRequested();
+                submittedSessionId = expectedSubmission?.SessionId ?? _activeSessionId;
+                submittedSessionGeneration = _sessionOpenGeneration;
+                EnsureSubmissionOwnsView(expectedSubmission, submittedSessionId, cancellationToken);
                 var request = new CreateAgentRunRequest(
                     submittedSessionId,
                     workspace,
@@ -738,7 +837,8 @@ namespace RuApp.Views
                     wirePreset,
                     presetVersion,
                     Guid.NewGuid().ToString("N"),
-                    imagePayloads);
+                    imagePayloads,
+                    providerSelection);
 
                 _activeWorkspaceId = null;
 
@@ -764,25 +864,51 @@ namespace RuApp.Views
                 }
 
                 _activeWorkspaceId = _agentController.CurrentRun?.WorkspaceId;
+
+                // Adopt the Host's canonical workspace: for a scratch run this is the path the
+                // Host allocated, so later turns, the header and the trust prompt all name it.
+                var createdWorkspace = _agentController.CurrentRun?.WorkspacePath;
+                if (!string.IsNullOrWhiteSpace(createdWorkspace))
+                {
+                    SetAgentWorkspace(createdWorkspace);
+                    _requestedWorkspaceBySession[submittedSessionId!] = createdWorkspace;
+                    UpdateChatHeaderWorkspace();
+                }
             }
             catch (AgentApiException error)
             {
+                var retrySubmission = expectedSubmission;
                 bool? recovered = await AgentSessionRecovery.TryRecoverAsync(
                     error,
                     allowSessionRecovery,
                     submittedSessionId,
-                    () => string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal),
+                    () => !cancellationToken.IsCancellationRequested
+                        && string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal)
+                        && _sessionOpenGeneration == submittedSessionGeneration,
                     () => submittedSessionId is not null && _agentSessionRecovery.TryBegin(submittedSessionId),
                     async () =>
                     {
                         // Preserve the completion gate while replacing the stale
                         // session and retrying this same logical turn once.
                         AbandonActiveAgentReply(removeUserMessage: true);
-                        await RecoverAgentSessionAsync(cancellationToken);
+                        string recoveredSessionId = await RecoverAgentSessionAsync(
+                            cancellationToken,
+                            submittedSessionId!,
+                            submittedSessionGeneration);
+                        if (expectedSubmission is not null)
+                        {
+                            retrySubmission = expectedSubmission with
+                            {
+                                SessionId = recoveredSessionId,
+                                SessionGeneration = _sessionOpenGeneration,
+                            };
+                        }
                     },
                     () => SendAgentTurnAsync(
                         text,
                         cancellationToken,
+                        providerSelection,
+                        retrySubmission,
                         allowSessionRecovery: false,
                         attachments: attachments,
                         displayUserText: displayUserText,
@@ -805,6 +931,27 @@ namespace RuApp.Views
             }
             UpdateAgentInlineState();
             return true;
+        }
+
+        /// <summary>
+        /// Throws when the submission no longer owns the open session, so a stale
+        /// send cannot mutate session-scoped view state or start a run after the
+        /// user navigated to another chat.
+        /// </summary>
+        private void EnsureSubmissionOwnsView(
+            ChatSubmissionPresenter.RunSubmissionSnapshot? expectedSubmission,
+            string? submittedSessionId,
+            CancellationToken cancellationToken)
+        {
+            if (!string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal)
+                || (expectedSubmission is not null
+                    && !ChatSubmissionPresenter.OwnsAdmission(
+                        expectedSubmission,
+                        () => _activeSessionId,
+                        () => _sessionOpenGeneration)))
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
         }
 
         public static bool IsContinueResumeCommand(string text, IReadOnlyCollection<ImageAttachmentItem> attachments)

@@ -170,9 +170,6 @@ public sealed partial class AgentCommands
                 });
             }
 
-            // The usage envelope's input/output counters restart with every run, so the
-            // step-delta baseline resets here; the session cost itself keeps accumulating.
-            usage.BeginTurn();
             ClearSubagentStrip();
             turn++;
             var presetUpdate = await _runStartCore.UpdateSessionPresetAsync(

@@ -450,9 +450,11 @@ def compare_cohorts(entries, *, track="harness"):
                     for key in ("model", "effort", "protocol", "tool_profile")):
                 raise ValueError("matched-model track requires matched model, effort, protocol and tool profile")
             provider_values = (pins.get("provider_identity"), expected_pins.get("provider_identity"))
-            if normalized_track == "matched-model" and any(value is not None for value in provider_values):
-                if not all(isinstance(value, str) and value for value in provider_values) or provider_values[0] != provider_values[1]:
-                    raise ValueError("matched-model track requires matching provider identity when supplied")
+            if (normalized_track == "matched-model"
+                    and any(value is not None for value in provider_values)
+                    and (not all(isinstance(value, str) and value for value in provider_values)
+                         or provider_values[0] != provider_values[1])):
+                raise ValueError("matched-model track requires matching provider identity when supplied")
         report = aggregate(manifest, records)
         normalized.append({"label": entry["label"], "report": report})
         configurations.append(dict(manifest["cohort"]))

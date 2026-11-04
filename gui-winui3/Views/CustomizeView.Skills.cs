@@ -15,7 +15,7 @@ public sealed partial class CustomizeView
     private SkillsApiClient? _skills;
     private CancellationTokenSource? _skillWork;
     private CancellationTokenSource? _searchDelay;
-    private long _loadGeneration;
+    private IReadOnlyList<SkillCatalogItem>? _renderedSkills;
     private bool _rendering;
 
     private CancellationToken BeginSkillWork()
@@ -26,7 +26,6 @@ public sealed partial class CustomizeView
 
     private void CancelSkillWork()
     {
-        ++_loadGeneration;
         _searchDelay?.Cancel();
         _skillWork?.Cancel();
         _skillWork?.Dispose();
@@ -37,53 +36,45 @@ public sealed partial class CustomizeView
     {
         skills = null!;
         workspace = _workspace() ?? string.Empty;
-        WorkspaceText.Text = string.IsNullOrWhiteSpace(workspace)
-            ? "Open a workspace in chat to manage its skills."
-            : $"Skills for {workspace}";
-        if (_api is null || string.IsNullOrWhiteSpace(workspace)) return false;
+        if (_api is null) return false;
+        if (string.IsNullOrWhiteSpace(workspace))
+        {
+            ShowStatus("Open a workspace in chat to change skill availability or registered folders.");
+            return false;
+        }
         skills = _skills ??= _api.CreateSkillsApiClient();
         return true;
     }
 
-    private async Task LoadSkillsAsync(bool refresh = false)
-    {
-        if (!TryGetSkillsTarget(out var skills, out var workspace))
-        {
-            Render(Array.Empty<SkillCatalogItem>());
-            return;
-        }
+    private Task LoadSkillsAsync(bool refresh = false) => _skillsLoader.LoadAsync(SearchBox.Text, refresh);
 
-        var generation = ++_loadGeneration;
-        try
+    private void ApplySkillsState(CustomizeSkillsState state)
+    {
+        if (!_active) return;
+        var hasWorkspace = !string.IsNullOrWhiteSpace(state.Workspace);
+        WorkspaceText.Text = hasWorkspace ? $"Skills for {state.Workspace}"
+            : "User skills · open a workspace to change availability or add folders.";
+        AddButton.IsEnabled = hasWorkspace;
+        var showSkeleton = state.IsLoading && state.Items.Count == 0;
+        SkillsSkeleton.Visibility = showSkeleton ? Visibility.Visible : Visibility.Collapsed;
+        SkillsList.Visibility = showSkeleton ? Visibility.Collapsed : Visibility.Visible;
+        if (!ReferenceEquals(_renderedSkills, state.Items))
         {
-            var result = await skills.ListAsync(workspace, SearchBox.Text, refresh, BeginSkillWork());
-            if (!_active || generation != _loadGeneration) return;
-            Render(result.Items);
-            // Problems in individual SKILL.md files are a summary line; the details are a
-            // hover away instead of a wall of paths under the list.
-            var parts = new List<string>();
-            if (result.Truncated) parts.Add($"Showing {result.Items.Count} of {result.Total} skills.");
-            if (result.Diagnostics.Count > 0)
-                parts.Add(result.Diagnostics.Count == 1
-                    ? "1 note while reading skill files."
-                    : $"{result.Diagnostics.Count} notes while reading skill files.");
-            ShowStatus(parts.Count == 0 ? null : string.Join(" ", parts),
-                result.Diagnostics.Count == 0 ? null
-                    : string.Join(Environment.NewLine, result.Diagnostics.Take(40).Select(diagnostic => $"{diagnostic.Code}: {diagnostic.SourcePath}")));
+            _renderedSkills = state.Items;
+            Render(state.Items, hasWorkspace);
         }
-        catch (OperationCanceledException) { }
-        catch (Exception error)
-        {
-            if (generation == _loadGeneration) ShowStatus($"Could not load skills: {error.Message}");
-        }
+        SkillsEmptyText.Text = hasWorkspace ? "No skills found. Add a local skill folder with Add." : "No user skills found.";
+        SkillsEmptyText.Visibility = !state.IsLoading && state.Items.Count == 0
+            ? Visibility.Visible : Visibility.Collapsed;
+        if (SkillsTab.IsChecked == true) ShowStatus(state.Status, state.Details);
     }
 
-    private void Render(IReadOnlyList<SkillCatalogItem> items)
+    private void Render(IReadOnlyList<SkillCatalogItem> items, bool canManage)
     {
         _rendering = true;
         try
         {
-            SkillsList.ItemsSource = items.Select(item => new CustomizeSkillRow(item)).ToList();
+            SkillsList.ItemsSource = items.Select(item => new CustomizeSkillRow(item, canManage)).ToList();
         }
         finally
         {

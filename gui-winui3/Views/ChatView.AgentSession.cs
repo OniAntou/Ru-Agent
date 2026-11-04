@@ -36,7 +36,7 @@ namespace RuApp.Views
                 throw new InvalidOperationException("Backend session is unavailable.");
             }
 
-            SessionInfo? created = await _apiService.CreateSessionAsync();
+            SessionInfo? created = await _apiService.CreateSessionAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             string? sessionId = created?.Id?.Trim();
             if (created is null || !AgentSessionSelection.IsValid(sessionId))
@@ -49,9 +49,19 @@ namespace RuApp.Views
             return created;
         }
 
-        private async Task RecoverAgentSessionAsync(CancellationToken cancellationToken)
+        private async Task<string> RecoverAgentSessionAsync(
+            CancellationToken cancellationToken,
+            string expectedSessionId,
+            long expectedGeneration)
         {
             SessionInfo created = await CreateValidatedAgentSessionAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!string.Equals(_activeSessionId, expectedSessionId, StringComparison.Ordinal)
+                || _sessionOpenGeneration != expectedGeneration)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+
             string sessionId = created.Id.Trim();
 
             ActivateSession(sessionId);
@@ -66,9 +76,12 @@ namespace RuApp.Views
                 new SessionOpenedEventArgs(
                     sessionId,
                     created.Title ?? "New Conversation"));
+            return sessionId;
         }
 
-        private async Task EnsureAgentSessionAsync(CancellationToken cancellationToken)
+        private async Task EnsureAgentSessionAsync(
+            CancellationToken cancellationToken,
+            long? expectedGeneration = null)
         {
             if (AgentSessionSelection.IsValid(_activeSessionId))
             {
@@ -76,6 +89,12 @@ namespace RuApp.Views
             }
 
             SessionInfo created = await CreateValidatedAgentSessionAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (expectedGeneration is long generation && generation != _sessionOpenGeneration)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+
             string validSessionId = created.Id.Trim();
             ActivateSession(validSessionId);
             SessionOpened?.Invoke(

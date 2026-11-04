@@ -65,6 +65,7 @@ namespace RuApp.Views
             {
                 await Composer.Queue.DrainAsync((next, accepted) => SendAgentTurnAsync(
                     ChatComposerViewModel.BuildEffectivePrompt(next.Text, next.Attachments), cancellationToken,
+                    next.ProviderSelection,
                     attachments: next.Attachments.ToList(), displayUserText: next.DisplayText,
                     onAccepted: accepted));
             }

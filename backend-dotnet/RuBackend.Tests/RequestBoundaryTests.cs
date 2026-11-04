@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using RuAgent.SessionInterchange;
 using RuBackend.Configuration;
 using Xunit;
 
@@ -19,6 +18,40 @@ public sealed class RequestBoundaryTests
         using var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Options, "/status"));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/agent/v1/runs")]
+    [InlineData("/agent/v1/runs/selected")]
+    public async Task Agent_run_routes_share_the_larger_body_bound(string path)
+    {
+        // Both create routes accept the optional image payloads and share one
+        // endpoint reader; the per-route middleware must not cap the selected route
+        // at the general 8 MiB bound.
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+        using var content = new ByteArrayContent(new byte[9 * 1024 * 1024]);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+        using var response = await client.PostAsync(path, content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Unauthenticated_websocket_upgrade_is_rejected_as_unauthorized()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/agent/v1/runs");
+        request.Headers.TryAddWithoutValidation("Connection", "Upgrade");
+        request.Headers.TryAddWithoutValidation("Upgrade", "websocket");
+        request.Headers.TryAddWithoutValidation("Sec-WebSocket-Version", "13");
+        request.Headers.TryAddWithoutValidation("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -38,13 +71,7 @@ public sealed class RequestBoundaryTests
         Assert.Equal((HttpStatusCode)413, response.StatusCode);
     }
 
-    /// <summary>
-    /// The body-bound layering, pinned where it can actually be observed: Kestrel is the
-    /// outer wall, above the route bound, which is above the endpoint's own reader. The
-    /// test server does not enforce Kestrel's limit itself, so this asserts the app
-    /// *wires* Kestrel above every application cap — a default Kestrel bound sits below
-    /// the import route's and would pre-empt the endpoint's import_too_large 413.
-    /// </summary>
+    /// <summary>The test pins Kestrel above the largest application request bound.</summary>
     [Fact]
     public void Kestrel_bound_is_wired_above_every_application_body_bound()
     {
@@ -57,11 +84,51 @@ public sealed class RequestBoundaryTests
 
         var applicationCaps = new BackendOptions();
         Assert.Equal(BackendLimits.KestrelMaxRequestBodyBytes, kestrelBound);
-        Assert.True(kestrelBound > applicationCaps.SessionImportMaxRequestBodyBytes);
         Assert.True(kestrelBound > applicationCaps.AgentRunMaxRequestBodyBytes);
+    }
 
-        // Within the application: route bound > endpoint body bound > content cap.
-        Assert.True(applicationCaps.SessionImportMaxRequestBodyBytes > SessionInterchangeLimits.MaxImportBodyBytes);
-        Assert.True(SessionInterchangeLimits.MaxImportBodyBytes > SessionInterchangeLimits.MaxImportContentBytes);
+    /// <summary>
+    /// A raised run-body cap must raise the transport bound with it; a fixed
+    /// 30 MiB Kestrel limit would reject the route before it could answer its own
+    /// bounded 413 code.
+    /// </summary>
+    [Fact]
+    public void Configured_larger_run_cap_raises_the_transport_bound()
+    {
+        const long configuredCap = 64L * 1024 * 1024;
+        using var factory = new BackendWebApplicationFactory(
+            settings: new Dictionary<string, string>
+            {
+                ["RuBackend:AgentRunMaxRequestBodyBytes"] = configuredCap.ToString(),
+            });
+        var kestrelBound = factory.Services
+            .GetRequiredService<IOptions<KestrelServerOptions>>()
+            .Value
+            .Limits
+            .MaxRequestBodySize;
+
+        Assert.Equal(BackendLimits.KestrelMaxRequestBodyBytesFor(configuredCap), kestrelBound);
+        Assert.True(kestrelBound > configuredCap);
+        Assert.True(kestrelBound > BackendLimits.KestrelMaxRequestBodyBytes);
+    }
+
+    /// <summary>The generic cap is configurable too and must raise the same bound.</summary>
+    [Fact]
+    public void Configured_larger_generic_cap_raises_the_transport_bound()
+    {
+        const long configuredCap = 48L * 1024 * 1024;
+        using var factory = new BackendWebApplicationFactory(
+            settings: new Dictionary<string, string>
+            {
+                ["RuBackend:MaxRequestBodyBytes"] = configuredCap.ToString(),
+            });
+        var kestrelBound = factory.Services
+            .GetRequiredService<IOptions<KestrelServerOptions>>()
+            .Value
+            .Limits
+            .MaxRequestBodySize;
+
+        Assert.Equal(BackendLimits.KestrelMaxRequestBodyBytesFor(configuredCap), kestrelBound);
+        Assert.True(kestrelBound > configuredCap);
     }
 }

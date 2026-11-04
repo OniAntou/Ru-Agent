@@ -6,45 +6,31 @@ namespace RuApp.Services;
 
 public sealed class RetainedContextMeterPresenter
 {
-    private const string OpenAiChatProtocol = "chat_completions";
-    private const string OpenAiResponsesProtocol = "openai_responses";
-    private const string AnthropicMessagesProtocol = "anthropic_messages";
-    private const int MaximumPromptTokens = int.MaxValue;
-
     private string? _runId;
     private string? _sessionId;
-    private long _boundarySequence;
-    private long _usageSequence;
     private int _visibleMessageStart;
-    private int? _reportedPromptTokens;
     private bool _hasKnownHistoryBoundary = true;
-    private long _estimateSequence;
-    private int? _preparedInputTokens;
-    public ContextTokenBreakdown? ContextTokens { get; private set; }
+    private readonly RequestContextReading _reading = new();
+    public ContextTokenBreakdown? ContextTokens => _reading.Breakdown;
+
+    /// <summary>Whether the provider reported real prompt usage for this scope.</summary>
+    public bool HasReportedUsage => _reading.HasReportedUsage;
 
     public void RestoreUsage(string runId, string sessionId, string? protocol, AgentModelUsage usage)
     {
-        if (!Owns(runId, sessionId) || _usageSequence > 0 || _estimateSequence > 0) return;
-        _reportedPromptTokens = ResolvePromptTokens(protocol, usage);
-        ContextTokens = usage.ContextTokens;
+        if (!Owns(runId, sessionId)) return;
+        _reading.Restore(ResolvePromptTokens(protocol, usage), usage.ContextTokens);
     }
 
     public bool ObserveEstimate(string runId, string sessionId, AgentUsageEstimateModel estimate)
     {
-        if (!Owns(runId, sessionId) || estimate.TransientSequence <= _estimateSequence) return false;
-        _estimateSequence = estimate.TransientSequence;
-        _preparedInputTokens = (int)Math.Min(int.MaxValue, estimate.EstimatedInputTokens);
-        _reportedPromptTokens = null;
-        ContextTokens = estimate.ContextTokens;
+        if (!Owns(runId, sessionId) || !_reading.ObserveEstimate(estimate)) return false;
         _hasKnownHistoryBoundary = true;
         return true;
     }
 
-    private void ClearBreakdown()
-    {
-        _preparedInputTokens = null;
-        ContextTokens = null;
-    }
+    public bool ObserveModelStep(string runId, string sessionId, long sequence, string? modelStepId) =>
+        Owns(runId, sessionId) && _reading.BeginStep(modelStepId, sequence);
 
     public void ScopeToRun(AgentRunModel? run, string? activeSessionId)
     {
@@ -60,12 +46,8 @@ public sealed class RetainedContextMeterPresenter
 
         _runId = runId;
         _sessionId = sessionId;
-        _boundarySequence = 0;
-        _usageSequence = 0;
-        _estimateSequence = 0;
-        ClearBreakdown();
+        _reading.Reset();
         _visibleMessageStart = 0;
-        _reportedPromptTokens = null;
         _hasKnownHistoryBoundary = true;
     }
 
@@ -77,45 +59,34 @@ public sealed class RetainedContextMeterPresenter
         }
 
         _visibleMessageStart = int.MaxValue;
-        _boundarySequence = Math.Max(_boundarySequence, sequence);
-        _usageSequence = Math.Max(_usageSequence, sequence);
-        _reportedPromptTokens = null;
+        _reading.Invalidate(sequence);
         _hasKnownHistoryBoundary = false;
-        ClearBreakdown();
     }
 
     public bool ObserveCompaction(string runId, string sessionId, long sequence, int visibleMessageCount)
     {
-        if (!Owns(runId, sessionId) || sequence <= _boundarySequence)
+        if (!Owns(runId, sessionId) || !_reading.Compact(sequence))
         {
             return false;
         }
 
-        _boundarySequence = sequence;
-        _usageSequence = sequence;
         _visibleMessageStart = Math.Max(0, visibleMessageCount);
-        _reportedPromptTokens = null;
         _hasKnownHistoryBoundary = true;
-        ClearBreakdown();
         return true;
     }
 
-    public bool ObserveUsage(string runId, string sessionId, long? sequence, string? protocol, AgentModelUsage usage)
+    public bool ObserveUsage(string runId, string sessionId, long? sequence, string? protocol, AgentModelUsage usage,
+        string? modelStepId = null)
     {
         ArgumentNullException.ThrowIfNull(usage);
         if (!Owns(runId, sessionId)
             || sequence is null
-            || sequence <= _boundarySequence
-            || sequence <= _usageSequence)
+            || !_reading.ObserveUsage(sequence.Value, modelStepId, ResolvePromptTokens(protocol, usage), usage.ContextTokens))
         {
             return false;
         }
 
-        _reportedPromptTokens = ResolvePromptTokens(protocol, usage);
-        _usageSequence = sequence.Value;
-        _preparedInputTokens = null;
-        ContextTokens = usage.ContextTokens;
-        if (_reportedPromptTokens is not null)
+        if (_reading.Tokens is not null)
         {
             _hasKnownHistoryBoundary = true;
         }
@@ -147,10 +118,10 @@ public sealed class RetainedContextMeterPresenter
         int unsentImages = Math.Max(0, pendingImages);
         int historyEstimate = ModelContextSpecs.EstimateTokens(historyCharacters, historyImages);
         int unsentEstimate = ModelContextSpecs.EstimateTokens(unsentCharacters, unsentImages);
-        int reported = _reportedPromptTokens ?? 0;
+        int reported = _reading.HasReportedUsage ? (int)Math.Min(int.MaxValue, _reading.Tokens ?? 0) : 0;
         int estimate = historyEstimate + unsentEstimate;
-        int used = (_reportedPromptTokens ?? _preparedInputTokens) is { } promptTokens
-            ? (int)Math.Min(int.MaxValue, (long)promptTokens + unsentEstimate)
+        int used = _reading.Tokens is { } promptTokens
+            ? (int)Math.Min(int.MaxValue, Math.Min(int.MaxValue, promptTokens) + unsentEstimate)
             : estimate;
         return (historyCharacters + unsentCharacters, historyImages + unsentImages, reported, estimate, used, _hasKnownHistoryBoundary);
     }
@@ -158,21 +129,8 @@ public sealed class RetainedContextMeterPresenter
     public static int? ResolvePromptTokens(string? protocol, AgentModelUsage usage)
     {
         ArgumentNullException.ThrowIfNull(usage);
-        if (protocol is OpenAiChatProtocol or OpenAiResponsesProtocol)
-        {
-            return usage.InputTokens;
-        }
-
-        if (protocol == AnthropicMessagesProtocol
-            && (usage.InputTokens is not null || usage.CacheReadInputTokens is not null || usage.CacheWriteInputTokens is not null))
-        {
-            long total = (long)(usage.InputTokens ?? 0)
-                + (usage.CacheReadInputTokens ?? 0)
-                + (usage.CacheWriteInputTokens ?? 0);
-            return (int)Math.Min(MaximumPromptTokens, total);
-        }
-
-        return null;
+        return ProviderPromptTokens.Resolve(protocol, usage.InputTokens, usage.CacheReadInputTokens,
+            usage.CacheWriteInputTokens, usage.InputTokensIncludeCache) is { } tokens ? (int)Math.Min(int.MaxValue, tokens) : null;
     }
 
     private bool Owns(string runId, string sessionId) =>

@@ -22,6 +22,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
     private readonly HttpMessageHandler? _providerHandler;
     private readonly Action<IServiceCollection>? _configureServices;
+    private readonly IReadOnlyDictionary<string, string>? _settings;
 
     public BackendWebApplicationFactory(
         DataPaths? dataPaths = null,
@@ -30,9 +31,11 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         IDiagnosticEmitter? diagnosticEmitter = null,
         RuAgent.Harness.Core.IModelStepRunner? modelStepRunner = null,
         HttpMessageHandler? providerHandler = null,
-        Action<IServiceCollection>? configureServices = null)
+        Action<IServiceCollection>? configureServices = null,
+        IReadOnlyDictionary<string, string>? settings = null)
     {
         _configureServices = configureServices;
+        _settings = settings;
         _ownedDataRoot = dataPaths is null
             ? Path.Combine(Path.GetTempPath(), "ru-backend-test-" + Guid.NewGuid().ToString("N"))
             : null;
@@ -49,6 +52,13 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("RU_DESKTOP_TOKEN", "test-secret");
+        if (_settings is not null)
+        {
+            foreach (var (key, value) in _settings)
+            {
+                builder.UseSetting(key, value);
+            }
+        }
         if (_ownedDataRoot is not null)
         {
             builder.UseSetting("RU_DATA_ROOT", _ownedDataRoot);

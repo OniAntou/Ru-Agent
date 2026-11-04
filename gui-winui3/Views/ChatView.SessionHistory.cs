@@ -163,6 +163,21 @@ namespace RuApp.Views
             }
             var history = FlattenHistoryPages(pages);
 
+            // Adoption can seed the bubble with an intermediate model step.
+            // Once the final reply for that run is persisted, replay it instead
+            // of treating the seed as freshly streamed text.
+            if (!_activeAgentReplyReceived
+                && runId is not null
+                && _agentController?.CurrentRun is { } currentRun
+                && string.Equals(currentRun.RunId, runId, StringComparison.Ordinal)
+                && IsTerminalStatus(currentRun.Status)
+                && history.Any(row => row.Role is "ai" or "assistant"
+                    && string.Equals(row.SourceRunId, runId, StringComparison.Ordinal)
+                    && !string.IsNullOrWhiteSpace(row.Content)))
+            {
+                preserveLiveTurn = false;
+            }
+
             var projectedHistory = SessionHistoryProjection.Project(history.Select(row => (row.Role, row.Content)));
             var normalizedHistory = projectedHistory
                 .Select(row => (row.Role, row.Content))
@@ -354,9 +369,34 @@ namespace RuApp.Views
 
         private async Task StopActiveAgentAsync()
         {
+            // The Stop face also represents a send that has not reached the controller.
+            Task? submissionSettled = _submissionSettled?.Task;
+            var controller = _agentController;
+            string sessionId = _activeSessionId;
+            long sessionGeneration = _sessionOpenGeneration;
+            bool OwnsStop() => ReferenceEquals(controller, _agentController)
+                && string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal)
+                && sessionGeneration == _sessionOpenGeneration;
+            CancelPreparingSubmission();
             await RunAgentActionAsync(
-                () => _agentController?.CancelAsync() ?? Task.CompletedTask,
+                async () =>
+                {
+                    if (controller is null || !OwnsStop()) return;
+                    await controller.CancelAsync();
+                    if (submissionSettled is not null)
+                    {
+                        await submissionSettled;
+                        // The first cancel may have raced before CreateRun returned.
+                        // Reconcile only the unknown create owned by this session;
+                        // this avoids cancelling a later run after navigation.
+                        if (OwnsStop() && controller.HasPendingCreateOutcomeUnknown)
+                        {
+                            await controller.CancelAsync();
+                        }
+                    }
+                },
                 "Stopping Coding Agent…");
+            if (!OwnsStop()) return;
             // Stopping is an interrupt: queued turns stay put until the user asks for
             // them, instead of a new run starting underneath the click that meant stop.
             if (!Composer.Queue.IsEmpty)
@@ -442,7 +482,11 @@ namespace RuApp.Views
             _requestedWorkspace = string.IsNullOrWhiteSpace(workspacePath) ? null : workspacePath.Trim();
         }
 
-        public async Task OpenSessionAsync(string sessionId, string title)       {
+        public async Task OpenSessionAsync(string sessionId, string title, bool isNewSession = false)
+        {
+            // Navigation supersedes a send that is still preparing a session or preset.
+            // Cancel before detach/open yields so its late result cannot start in this view.
+            CancelPreparingSubmission();
             // Visible to the catch below: a superseded load must not paint its
             // failure into the session that replaced it.
             long generation = -1;
@@ -462,17 +506,17 @@ namespace RuApp.Views
                 _isLoadingEarlierHistory = false;
                 _historyPageCursor.Reset(sessionId, generation);
                 _historyReplay = Array.Empty<SessionRunReplay>();
+                DeferSidePanelLayout();
                 UpdateLoadEarlierHistoryButton();
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 UpdateChatHeaderTitle();
-                _agentWorkspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
-                    ?? _agentWorkspace;
+                SetAgentWorkspace(AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
+                    ?? (isNewSession ? string.Empty : _agentWorkspace));
                 ResetAgentState(preserveTranscript: true);
                 _sidePanelRunRunning = null;
                 // The outgoing rows stay on screen until the history arrives; laying
                 // the incoming session's side panel out over them would reflow them
                 // to its width first, so the switch would paint twice.
-                DeferSidePanelLayout();
                 UpdateSidePanel(false);
                 // A preset belongs to the session it was set for. The send path
                 // pushes the composer's preset onto whichever session is open,
@@ -489,6 +533,14 @@ namespace RuApp.Views
                 // Bulk load: one reset notification for the whole transcript
                 // instead of one add notification per row.
                 var opened = new List<ChatMessageItem>();
+                if (isNewSession)
+                {
+                    if (!IsCurrentOpen(generation)) return;
+                    // The create response already proves this session is empty. Paint
+                    // it in this dispatcher turn instead of replaying history/usage I/O.
+                    PresentNewSession();
+                    return;
+                }
                 // Every await below is a chance for another switch to take over. Opening a
                 // session out of order used to paint its history under the newer session's
                 // title, and the backend's active session (activation is a POST) could end
@@ -610,6 +662,16 @@ namespace RuApp.Views
                     UpdateContextUsage(force: true);
                 }
             }
+        }
+
+        /// <summary>Commits the known-empty transcript and its layout without history I/O.</summary>
+        private void PresentNewSession()
+        {
+            ClearAgentActivities();
+            ClearTodoPanel();
+            JumpToLatestForNewTurn();
+            Messages.ReplaceAll(Array.Empty<ChatMessageItem>());
+            EndSidePanelLayoutDeferral();
         }
 
         /// <summary>
@@ -982,6 +1044,7 @@ namespace RuApp.Views
                 _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
                 _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
+                _agentController.ContextStepStarted -= OnAgentContextStepStarted;
                 _agentController.ContextCompacted -= OnAgentContextCompacted;
                 _agentController.ContextEstimateReceived -= OnContextEstimateReceived;
                 _agentController.RunAdopted -= OnAgentRunAdopted;

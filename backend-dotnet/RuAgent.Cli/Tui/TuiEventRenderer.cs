@@ -48,7 +48,7 @@ public sealed class TuiSessionRenderer
     {
         if (_surface.Writer is ITranscriptTurnRewriter screen) screen.BeginAssistantTurn();
         _transcript.BeginTurn();
-        _status.SetState(TuiRunState.Thinking);
+        _status.SetState(_transcript.FullScreenCards ? TuiRunState.WaitingModel : TuiRunState.Thinking);
     }
 
     public void EndTurn() => _transcript.EndTurn();
@@ -59,7 +59,7 @@ public sealed class TuiSessionRenderer
 
     public TuiActivityPresentation PresentActivity(int width)
     {
-        if (_status.State is TuiRunState.Thinking or TuiRunState.Tool)
+        if (_status.IsWorking)
         {
             _status.SetElapsed(_transcript.ElapsedSeconds);
         }

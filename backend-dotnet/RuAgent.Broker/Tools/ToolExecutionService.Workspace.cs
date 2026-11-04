@@ -178,6 +178,7 @@ public sealed partial class ToolExecutionService
                 root,
                 _approvalTokens,
                 _recoveryStore,
+                _commandEnvironment,
                 allowProtectedPaths);
         }
 
@@ -192,6 +193,7 @@ public sealed partial class ToolExecutionService
                 root,
                 _approvalTokens,
                 _recoveryStore,
+                _commandEnvironment,
                 allowProtectedPaths));
     }
 
@@ -220,6 +222,7 @@ public sealed partial class ToolExecutionService
             string canonicalRoot,
             ApprovalTokenService approvalTokens,
             InMemoryRecoveryStore recoveryStore,
+            AgentCommandEnvironment commandEnvironment,
             bool allowProtectedPaths = false)
         {
             return new RootToolSet
@@ -236,6 +239,7 @@ public sealed partial class ToolExecutionService
                 Terminal = new TerminalAdapter(
                     new WorkspacePathGuard(canonicalRoot),
                     approvalTokens,
+                    commandEnvironment,
                     intentResolver: new CommandIntentResolver(
                         canonicalRoot)),
                 CanonicalRoot = canonicalRoot,

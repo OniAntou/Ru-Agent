@@ -34,9 +34,6 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
     private readonly AgentToolRuntimeAvailability _availability;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly IAgentRunModelMetadataResolver? _runModelMetadataResolver;
-    private readonly object _gitStateGate = new();
-    private static readonly TimeSpan GitStateLifetime = TimeSpan.FromSeconds(3);
-    private (string? Value, DateTimeOffset ObservedAt) _gitState;
 
     /// <summary>
     /// Optional probe returning one bounded note about this session's background
@@ -102,7 +99,7 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
             TimeZoneInfo.Local.Id,
             now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
             WorkspaceLabel(_canonicalRoot),
-            ToolInventoryProbe.Probe(), metadata?.ImageInputAccepted, WorkspaceGitState());
+            ToolInventoryProbe.Probe(), metadata?.ImageInputAccepted);
         var runtime = await BuildRuntimeContextAsync(run, modelContext, cancellationToken).ConfigureAwait(false);
         var projectMemory = await ProjectMemoryReferenceAsync(cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
@@ -410,25 +407,4 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
         System.Globalization.CultureInfo.CurrentCulture.Name is { Length: > 0 } name
             ? name
             : "en-US";
-
-    /// <summary>
-    /// Reports the workspace git state for the prompt. Cached briefly so a multi-step
-    /// run does not pay one git process per model step, while still noticing edits the
-    /// agent made a few seconds ago.
-    /// </summary>
-    private string? WorkspaceGitState()
-    {
-        lock (_gitStateGate)
-        {
-            if (_gitState.Value is not null
-                && _time.UtcNow - _gitState.ObservedAt < GitStateLifetime)
-            {
-                return _gitState.Value;
-            }
-
-            var value = WorkspaceGitProbe.Describe(_canonicalRoot);
-            _gitState = (value, _time.UtcNow);
-            return value;
-        }
-    }
 }

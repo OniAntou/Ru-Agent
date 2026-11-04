@@ -17,6 +17,7 @@ using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Models;
 using RuBackend.Business.Sessions;
 using RuBackend.Harness.Policy;
 using RuBackend.Harness.Workspace;
@@ -27,6 +28,9 @@ namespace RuBackend.Harness;
 
 public sealed class AgentRunCreationService
 {
+    public const string WorkspaceKindProject = "project";
+    public const string WorkspaceKindScratch = "scratch";
+
     private readonly IHarnessEventStore _store;
     private readonly ISessionStore _sessions;
     private readonly AgentSessionPermissionStore _permissionStore;
@@ -37,15 +41,18 @@ public sealed class AgentRunCreationService
     private readonly AgentV1SubagentGuard _subagentGuard;
     private readonly ILogger<AgentRunCreationService>? _logger;
     private readonly Hooks.RunLifecycleHooks? _lifecycleHooks;
+    private readonly Workspace.ScratchWorkspaceStore? _scratchWorkspaces;
 
     public AgentRunCreationService(IHarnessEventStore store, ISessionStore sessions,
         AgentSessionPermissionStore permissionStore, AgentRunWorkspaceAdmissionService workspaceAdmission,
         IAgentRuntimeRootRegistry runtimeRoots, IIdGenerator ids, ITimeProvider time,
         AgentV1SubagentGuard subagentGuard,
         ILogger<AgentRunCreationService>? logger = null,
-        Hooks.RunLifecycleHooks? lifecycleHooks = null)
+        Hooks.RunLifecycleHooks? lifecycleHooks = null,
+        Workspace.ScratchWorkspaceStore? scratchWorkspaces = null)
     {
         _lifecycleHooks = lifecycleHooks;
+        _scratchWorkspaces = scratchWorkspaces;
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _permissionStore = permissionStore ?? throw new ArgumentNullException(nameof(permissionStore));
@@ -83,7 +90,7 @@ public sealed class AgentRunCreationService
             const long MaxSingleImageBytes = 4L * 1024 * 1024;
             const long MaxTotalImagesBytes = 20L * 1024 * 1024;
 
-            long totalEstimatedBytes = 0;
+            long totalDecodedBytes = 0;
             foreach (var url in request.ImageAttachments)
             {
                 if (string.IsNullOrWhiteSpace(url))
@@ -114,35 +121,22 @@ public sealed class AgentRunCreationService
                 }
 
                 var b64 = url.Substring(semi + 8);
-                if (b64.Length == 0)
+                if (!BoundedBase64Validator.TryGetDecodedLength(
+                        b64,
+                        MaxImageDataUrlChars,
+                        int.MaxValue,
+                        out var decodedBytes))
                 {
-                    return BoundedError(400, "invalid_image_base64", "Base64 data cannot be empty.");
+                    return BoundedError(400, "invalid_image_base64", "Image Base64 data is malformed.");
                 }
 
-                // Validate base64 charset without allocating
-                for (var i = 0; i < b64.Length; i++)
-                {
-                    var ch = b64[i];
-                    if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '+' || ch == '/' || ch == '='))
-                    {
-                        return BoundedError(400, "invalid_image_base64", "Base64 data contains invalid characters or whitespace.");
-                    }
-                }
-
-                // Estimate decoded size from base64 length: ceil(b64_len * 3 / 4)
-                // Account for padding: each '=' reduces decoded size by 1
-                var padding = 0;
-                if (b64.EndsWith("==", StringComparison.Ordinal)) padding = 2;
-                else if (b64.EndsWith("=", StringComparison.Ordinal)) padding = 1;
-                var estimatedDecoded = (b64.Length * 3L) / 4 - padding;
-
-                if (estimatedDecoded > MaxSingleImageBytes)
+                if (decodedBytes > MaxSingleImageBytes)
                 {
                     return BoundedError(413, "image_too_large", "Image decoded size exceeds 4MB.");
                 }
 
-                totalEstimatedBytes += estimatedDecoded;
-                if (totalEstimatedBytes > MaxTotalImagesBytes)
+                totalDecodedBytes += decodedBytes;
+                if (totalDecodedBytes > MaxTotalImagesBytes)
                 {
                     return BoundedError(413, "image_too_large", "Total images decoded size exceeds 20MB.");
                 }
@@ -166,7 +160,8 @@ public sealed class AgentRunCreationService
         }
 
         var workspacePath = request.WorkspacePath?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(workspacePath) || workspacePath.Length > 4096)
+        var allocateScratchWorkspace = workspacePath.Length == 0;
+        if (!allocateScratchWorkspace && workspacePath.Length > 4096)
         {
             return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
         }
@@ -183,7 +178,7 @@ public sealed class AgentRunCreationService
                 return BoundedError(400, "invalid_prompt", "prompt invalid.");
             }
         }
-        else if (prompt.Length > 16000)
+        else if (prompt.Length > AgentRunLimits.MaxPromptChars)
         {
             return BoundedError(400, "invalid_prompt", "prompt invalid.");
         }
@@ -192,8 +187,9 @@ public sealed class AgentRunCreationService
         // means standard; the request string validates only and never elevates
         // a run — the stored session selection (see below) decides the preset.
         AgentPermissionPreset preset = AgentPermissionPreset.Standard;
+        string requestedPresetWire = string.Empty;
         if (!string.IsNullOrWhiteSpace(request.Preset)
-            && !AgentPolicyProfileCatalog.TryNormalizePresetInput(request.Preset, out _))
+            && !AgentPolicyProfileCatalog.TryNormalizePresetInput(request.Preset, out requestedPresetWire))
         {
             return BoundedError(400, "invalid_preset", "preset must be plan, standard, or full_access.");
         }
@@ -214,6 +210,26 @@ public sealed class AgentRunCreationService
         if (sessionDoc is null)
         {
             return BoundedError(404, "session_not_found", "Session not found.");
+        }
+
+        if (allocateScratchWorkspace)
+        {
+            // Allocate only after the conversation is known to exist. Scratch provenance
+            // comes from the Host-created marker, not from the eventual display path.
+            if (_scratchWorkspaces is null)
+            {
+                return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
+            }
+
+            try
+            {
+                workspacePath = _scratchWorkspaces.Ensure(sessionIdRaw);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                _logger?.LogWarning(error, "scratch workspace could not be created");
+                return BoundedError(503, "scratch_workspace_unavailable", "Scratch workspace could not be created.");
+            }
         }
 
         var workspaceResolution = await _workspaceAdmission.ResolveAndRegisterAsync(workspacePath, cancellationToken)
@@ -266,6 +282,19 @@ public sealed class AgentRunCreationService
             preset = existingSelection.Preset;
         }
 
+        // A caller that pins a selection version also expects the run to carry
+        // that preset. If the stored selection changed underneath it, creating a
+        // run under a different preset would leave the caller with a live run it
+        // cannot bind (and likely cannot cancel). Fail before anything is created;
+        // legacy callers that do not pin a version keep the stored-selection rule.
+        if (clientVersion is not null
+            && requestedPresetWire.Length != 0
+            && !string.Equals(requestedPresetWire, AgentPermissionPresetMapper.ToWireValue(preset), StringComparison.Ordinal))
+        {
+            return BoundedError(409, "preset_mismatch",
+                "The session preset changed. Refresh the session preset and try again.");
+        }
+
         var workspaceAdmission = await _workspaceAdmission
             .AdmitRunAsync(workspaceRegistration, preset, cancellationToken)
             .ConfigureAwait(false);
@@ -279,6 +308,9 @@ public sealed class AgentRunCreationService
         var runId = admittedWorkspace.RunId;
         var workspaceIdentity = admittedWorkspace.Identity;
         var canonicalWorkspacePath = admittedWorkspace.CanonicalRoot;
+        var workspaceKind = _scratchWorkspaces?.OwnsCanonicalWorkspace(canonicalWorkspacePath, sessionIdRaw) == true
+            ? WorkspaceKindScratch
+            : WorkspaceKindProject;
         var pendingTrustRequest = admittedWorkspace.PendingTrustRequest;
         var isTrusted = admittedWorkspace.IsTrusted;
         var policySnapshot = admittedWorkspace.PolicySnapshot;
@@ -403,8 +435,9 @@ public sealed class AgentRunCreationService
         {
             _runtimeRoots.Register(storeResult.Run.RunId, canonicalWorkspacePath, policySnapshot);
             var resp = isTrusted
-                ? MapCreateRun(storeResult.Run)
-                : MapCreateRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
+                ? MapCreateRun(storeResult.Run, canonicalWorkspacePath, workspaceKind)
+                : MapCreateRun(storeResult.Run, canonicalWorkspacePath, workspaceKind,
+                    pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
             return new AgentServiceResult(201, resp);
         }
 
@@ -416,8 +449,9 @@ public sealed class AgentRunCreationService
                 _runtimeRoots.Register(storeResult.Run.RunId, canonicalWorkspacePath, policySnapshot);
             }
             var resp = isTrusted
-                ? MapCreateRun(storeResult.Run)
-                : MapCreateRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
+                ? MapCreateRun(storeResult.Run, canonicalWorkspacePath, workspaceKind)
+                : MapCreateRun(storeResult.Run, canonicalWorkspacePath, workspaceKind,
+                    pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
             return new AgentServiceResult(200, resp);
         }
 
@@ -437,6 +471,8 @@ public sealed class AgentRunCreationService
 
     private static CreateAgentRunResponse MapCreateRun(
         AgentRun run,
+        string workspacePath,
+        string workspaceKind,
         string? trustRequestId = null,
         string? displayIdentityHash = null) => new(
         RunId: run.RunId.Value,
@@ -454,6 +490,8 @@ public sealed class AgentRunCreationService
         TerminalAt: run.TerminalAt?.ToUniversalTime().ToString("O"),
         TerminalErrorCode: run.TerminalErrorCode,
         TrustRequestId: trustRequestId,
-        DisplayIdentityHash: displayIdentityHash);
+        DisplayIdentityHash: displayIdentityHash,
+        WorkspacePath: workspacePath,
+        WorkspaceKind: workspaceKind);
 
 }

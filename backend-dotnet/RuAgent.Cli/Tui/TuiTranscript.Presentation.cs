@@ -34,11 +34,4 @@ public sealed partial class TuiTranscript
     private string RetainedPaint(string text, TuiToken token) =>
         _surface.Presentation is not null ? text : TuiPalette.Paint(text, token);
 
-    private void WriteStructuredTool(string? activityId, ToolLineStatus status, string display, string? target, string? meta)
-    {
-        var row = TuiToolRow.ComposePresentation(status, display, target, meta, Width);
-        if (activityId is null) _surface.AppendPresentation(row);
-        else _surface.AppendActivityPresentation(activityId, row,
-            meta?.Contains("ctrl+o", StringComparison.Ordinal) == true ? _retained.ToArray() : null);
-    }
 }

@@ -1,18 +1,21 @@
 using RuApp.Models;
 using RuApp.Services;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuApp.Tests;
 
 public sealed class AgentTurnQueueTests
 {
+    private static CreateRunProviderSelection Selection => new("models.dev:openai", "gpt-test");
+
     [Fact]
     public void Queued_turns_keep_the_order_they_were_typed()
     {
         var queue = new AgentTurnQueue();
 
-        Assert.True(queue.TryEnqueue("first", "first", null));
-        Assert.True(queue.TryEnqueue("second", "second", null));
+        Assert.True(queue.TryEnqueue("first", "first", null, Selection));
+        Assert.True(queue.TryEnqueue("second", "second", null, Selection));
 
         Assert.Equal(2, queue.Items.Count);
         Assert.Equal("first", queue.TakeFirst()!.Text);
@@ -21,15 +24,27 @@ public sealed class AgentTurnQueueTests
     }
 
     [Fact]
+    public void Queued_turn_keeps_the_provider_model_selected_at_enqueue_time()
+    {
+        var queue = new AgentTurnQueue();
+        var selectedAtEnqueue = new CreateRunProviderSelection("models.dev:openai", "model-a");
+
+        Assert.True(queue.TryEnqueue("follow-up", "follow-up", null, selectedAtEnqueue));
+        selectedAtEnqueue = new CreateRunProviderSelection("models.dev:anthropic", "model-b");
+
+        Assert.Equal(new CreateRunProviderSelection("models.dev:openai", "model-a"), queue.Items[0].ProviderSelection);
+    }
+
+    [Fact]
     public void Enqueue_refuses_a_turn_past_the_limit()
     {
         var queue = new AgentTurnQueue();
         for (int index = 0; index < AgentTurnQueuePolicy.MaxTurns; index++)
         {
-            Assert.True(queue.TryEnqueue($"turn {index}", $"turn {index}", null));
+            Assert.True(queue.TryEnqueue($"turn {index}", $"turn {index}", null, Selection));
         }
 
-        Assert.False(queue.TryEnqueue("one too many", "one too many", null));
+        Assert.False(queue.TryEnqueue("one too many", "one too many", null, Selection));
         Assert.Equal(AgentTurnQueuePolicy.MaxTurns, queue.Items.Count);
     }
 
@@ -38,8 +53,8 @@ public sealed class AgentTurnQueueTests
     {
         var queue = new AgentTurnQueue();
 
-        Assert.False(queue.TryEnqueue(string.Empty, string.Empty, null));
-        Assert.False(queue.TryEnqueue("   ", string.Empty, null));
+        Assert.False(queue.TryEnqueue(string.Empty, string.Empty, null, Selection));
+        Assert.False(queue.TryEnqueue("   ", string.Empty, null, Selection));
         Assert.True(queue.IsEmpty);
     }
 
@@ -47,7 +62,7 @@ public sealed class AgentTurnQueueTests
     public void The_stop_hold_suppresses_exactly_one_drain()
     {
         var queue = new AgentTurnQueue();
-        queue.TryEnqueue("next", "next", null);
+        queue.TryEnqueue("next", "next", null, Selection);
         queue.HoldAfterStop();
 
         // The completion the user caused: the queued turn must not start itself.
@@ -73,8 +88,8 @@ public sealed class AgentTurnQueueTests
     public void Requeue_puts_a_taken_turn_back_at_the_head()
     {
         var queue = new AgentTurnQueue();
-        queue.TryEnqueue("first", "first", null);
-        queue.TryEnqueue("second", "second", null);
+        queue.TryEnqueue("first", "first", null, Selection);
+        queue.TryEnqueue("second", "second", null, Selection);
 
         var taken = queue.TakeFirst()!;
         queue.RequeueFirst(taken);
@@ -88,8 +103,8 @@ public sealed class AgentTurnQueueTests
     public void Remove_drops_the_exact_turn_even_when_two_are_identical()
     {
         var queue = new AgentTurnQueue();
-        queue.TryEnqueue("same", "same", null);
-        queue.TryEnqueue("same", "same", null);
+        queue.TryEnqueue("same", "same", null, Selection);
+        queue.TryEnqueue("same", "same", null, Selection);
         var first = queue.Items[0];
         var second = queue.Items[1];
 
@@ -102,7 +117,7 @@ public sealed class AgentTurnQueueTests
     public void Clear_drops_turns_and_the_stop_hold()
     {
         var queue = new AgentTurnQueue();
-        queue.TryEnqueue("next", "next", null);
+        queue.TryEnqueue("next", "next", null, Selection);
         queue.HoldAfterStop();
 
         queue.Clear();
@@ -118,11 +133,12 @@ public sealed class AgentTurnQueueTests
         var queue = new AgentTurnQueue();
         var attachment = new ImageAttachmentItem { FileName = "shot.png" };
 
-        Assert.True(queue.TryEnqueue("look", "look", new[] { attachment }));
+        Assert.True(queue.TryEnqueue("look", "look", new[] { attachment }, Selection));
 
         var queued = queue.Items[0];
         Assert.True(queued.HasAttachments);
         Assert.Same(attachment, queued.Attachments[0]);
+        Assert.Equal(Selection, queued.ProviderSelection);
     }
 
     [Fact]

@@ -26,6 +26,7 @@ namespace RuApp.Views
             Messages.CollectionChanged += OnMessageRailMessagesChanged;
             MessageRail.MessageInvoked += OnMessageRailInvoked;
             ChatContentGrid.SizeChanged += OnMessageRailHostSizeChanged;
+            ChatListView.LayoutUpdated += OnMessageRailLayoutUpdated;
             Loaded += OnMessageRailLoaded;
         }
 
@@ -79,14 +80,24 @@ namespace RuApp.Views
 
         private void OnMessageRailViewChanged(object? sender, ScrollViewerViewChangedEventArgs e) => UpdateMessageRailCurrent();
 
+        private void OnMessageRailLayoutUpdated(object? sender, object e)
+        {
+            if (_scrollingDisposed || MessageRail.Visibility != Visibility.Visible) return;
+            EnsureMessageRailScrollWired();
+            UpdateMessageRailCurrent();
+        }
+
         private void UpdateMessageRailCurrent()
         {
-            if (Messages.Count == 0 || ChatListView.ItemsPanelRoot is not ItemsStackPanel panel) return;
-            var current = _messageRailScroller is { } scroller
-                          && ChatScrollPolicy.IsNearBottom(scroller.VerticalOffset, scroller.ScrollableHeight)
-                ? Messages.Count - 1
-                : panel.FirstVisibleIndex;
-            if (current >= 0) MessageRail.SetCurrentMessage(current);
+            if (_scrollingDisposed) return;
+            if (Messages.Count == 0 || ChatListView.ItemsPanelRoot is not ItemsStackPanel panel)
+            {
+                MessageRail.SetViewport(MessageRailSelection.Empty);
+                return;
+            }
+            var selection = MessageRailPolicy.SelectViewport(Messages.Count, panel.FirstVisibleIndex, panel.LastVisibleIndex,
+                _messageRailScroller?.VerticalOffset ?? double.NaN, _messageRailScroller?.ScrollableHeight ?? double.NaN);
+            MessageRail.SetViewport(selection);
         }
 
         /// <summary>
@@ -111,6 +122,7 @@ namespace RuApp.Views
             Messages.CollectionChanged -= OnMessageRailMessagesChanged;
             MessageRail.MessageInvoked -= OnMessageRailInvoked;
             ChatContentGrid.SizeChanged -= OnMessageRailHostSizeChanged;
+            ChatListView.LayoutUpdated -= OnMessageRailLayoutUpdated;
             Loaded -= OnMessageRailLoaded;
             if (_messageRailScroller is not null) _messageRailScroller.ViewChanged -= OnMessageRailViewChanged;
             _messageRailScroller = null;

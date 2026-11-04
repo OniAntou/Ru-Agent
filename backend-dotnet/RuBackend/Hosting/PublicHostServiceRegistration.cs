@@ -93,6 +93,8 @@ internal static class PublicHostServiceRegistration
     {
         services.AddSingleton(services => new HarnessSqliteOptions(
             services.GetRequiredService<DataPaths>().AgentHarnessDatabase));
+        services.AddSingleton(services => new RuBackend.Harness.Workspace.ScratchWorkspaceStore(
+            services.GetRequiredService<DataPaths>()));
         services.AddSingleton<WindowsWorkspaceIdentityResolver>();
         services.AddSingleton<RuBackend.Harness.Prompting.RuInstructionLoader>();
         services.AddSingleton<SqliteWorkspaceStore>(services =>
@@ -135,6 +137,8 @@ internal static class PublicHostServiceRegistration
         });
         services.AddSingleton<WorkspaceJournalProtector>(services =>
             new WorkspaceJournalProtector(services.GetRequiredService<IHarnessKeyStore>()));
+        services.AddSingleton<IWorkspaceJournalProtector>(services =>
+            services.GetRequiredService<WorkspaceJournalProtector>());
         services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore>();
         services.AddSingleton<RuAgent.Harness.Core.Subagents.ISubagentInbox>(services =>
             services.GetRequiredService<RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore>());
@@ -256,17 +260,6 @@ internal static class PublicHostServiceRegistration
                   ObserveToolResult = (lease, tool, output, ct) => services.GetRequiredService<AgentRuntimeLoopService>()
                       .ObserveFileToolResultAsync(lease.CanonicalRoot, tool, output, ct),
             });
-        services.AddSingleton(sp => new RuBackend.Harness.Git.SqliteRunGitStateStore(
-            Path.Combine(
-                Path.GetDirectoryName(sp.GetRequiredService<HarnessSqliteOptions>().DatabasePath)!,
-                "agent_git_state.db")));
-        services.AddSingleton(sp => new RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService(
-            sp.GetRequiredService<RuBackend.Harness.Git.SqliteRunGitStateStore>(),
-            runId => sp.GetRequiredService<IAgentRuntimeRootRegistry>()
-                .Snapshot()
-                .Where(pair => string.Equals(pair.RunId, runId.Value, StringComparison.Ordinal))
-                .Select(pair => pair.WorkspaceRoot)
-                .FirstOrDefault()));
         services.AddHostedService<RuBackend.Harness.Reconciliation.HarnessRecoveryStartupService>();
         return services;
     }

@@ -18,19 +18,21 @@ and reports incomplete cleanup. Mutex release stays on the dedicated owner
 thread; deferred cleanup retains synchronization resources until admitted work
 has quiesced.
 
-Session lists and interchange exports share `SessionWorkspaceResolver` to resolve
-the latest durable run's encrypted workspace metadata. Export resolves the requested
-session directly, independently of the session-list cap. Sessions without a readable
-workspace retain an unset working directory.
+Session lists use `SessionWorkspaceResolver` to resolve the latest durable run's
+encrypted workspace metadata. Sessions without a readable workspace retain an
+unset working directory. External session import/export routes and format
+adapters are retired; native Ru fork, rewind and retained history remain.
+Both run-create routes (`/agent/v1/runs` and `/agent/v1/runs/selected`) use the
+larger run body bound; only the selected route's path check used to fall back to
+the general 8 MiB cap.
 
-Interchange exports have a shared 128 MiB bound on the actual serialized JSON
-envelope, including nested format escaping (`SessionInterchangeLimits`). The
-Host measures it with the same serializer used for the response and returns
-413 `export_too_large` before sending an oversized success. CLI and GUI use
-`ResponseHeadersRead` and parse a bounded JSON stream, independently of the
-general API reader's 8 MiB cap. Declared and actual stream lengths are checked.
-Format file contents and the parsed JSON still live in memory; this is bounded
-buffering, not a constant-memory export directly to disk.
+Workspace change restore first checks the expected hash, then validates it again
+after journal decryption. Existing targets are hashed and rewritten through one
+write-excluding handle, with bounded original bytes retained for rollback on an
+I/O failure. Missing targets use the all-zero SHA marker and an exclusive
+no-overwrite move; an intervening creation is stale. Empty files use SHA-256 of
+empty bytes. A target changed since the expected hash returns
+`workspace_restore_stale`. These guards do not provide crash or power-loss atomicity.
 
 The coding core is the product: Public Host, Broker execution authority, the
 in-process Agent v2 model runner, the durable Agent SSE stream, and the
@@ -67,7 +69,7 @@ Closing the GUI sends an authenticated `POST /host/shutdown` so the Host exits g
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../../backend-dotnet/public-route-contract.json):
-54 HTTP method/path pairs with no WebSocket route (29 `/agent/v1/*` and 25
+52 HTTP method/path pairs with no WebSocket route (29 `/agent/v1/*` and 23
 non-Agent routes); REST and SSE clients authenticate with the desktop secret
 (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE
@@ -106,7 +108,8 @@ and run handles.
 
 The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP.NET Core Public Host, the in-process model step, and LLM providers:
 - **Client preparation:** WinUI 3 `ImageAttachmentResizer` scales images exceeding 2048px on their longest dimension down proportionally and compresses them to JPEG (quality 0.85) or PNG (if alpha present). Up to 4 images can be attached per user turn.
-- **Backend validation & persistence:** `POST /agent/v1/runs` has a 26 MiB JSON request-body bound for encoded `image_attachments` data URLs, distinct from decoded image bounds. ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), base64 structure, decoded per-image size (<=4 MiB), total decoded size (<=20 MiB), and retains valid images even when the selected model accepts only text. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
+- **Backend validation & persistence:** `POST /agent/v1/runs` has a 26 MiB JSON request-body bound for encoded `image_attachments` data URLs, distinct from decoded image bounds. ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), canonical decodable Base64 (including padding and trailing bits), actual decoded per-image size (<=4 MiB), total decoded size (<=20 MiB), and retains valid images even when the selected model accepts only text. Validation is bounded before allocation and is repeated by `ModelImage` at the adapter boundary. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
+  An empty `workspace_path` is also valid after the session is verified to exist: the Host allocates its scratch workspace under the data root (`workspaces/<session id>`). Existing directories require a matching ownership marker; the Host does not adopt unmarked or foreign folders. Run responses and session listings return `workspace_kind: "scratch"` only when the canonical workspace matches the same session's marked non-reparse directory. A session delete removes that folder only after successful or confirmed-absent primary deletion, and a startup sweeper reclaims folders whose session is gone. A folder without a matching marker is never deleted ([ADR 0041](../adr/0041-scratch-workspaces.md)).
 - **Model step integration:** the typed `ModelGenerationRequest.Images` carries decrypted `UserImage` payloads. `ModelStepService` projects these into `ModelRequest.Images` (`IReadOnlyList<ModelImage>`).
 - **Provider projection:** Model adapters project images into provider-native payloads:
   - OpenAI Responses: `{"type": "input_image", "image_url": "data:image/..."}`
@@ -142,7 +145,7 @@ _Avoid_: Python backend, upstream server
 ## Public Contract
 
 The stable authenticated surface of HTTP method/path pairs with no WebSocket
-route (25 non-Agent plus 29 additive `/agent/v1/*`; Agent v2 is
+route (23 non-Agent plus 29 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC
@@ -197,6 +200,13 @@ for WinUI and CLI. Durable event IDs advance the resume cursor; transient frames
 remain outside durable history. WinUI keeps its cumulative reconnect retry
 bound, while CLI progress can refill its retry budget. Consumer callback errors
 propagate and are not retried as transport failures.
+
+Protocol v1 durable envelopes expose optional `model_step_id`, copied from the
+stored event when present. It correlates per-request context usage with transient
+request estimates without comparing durable and connection-local transient cursors.
+Old envelopes may omit it; old clients ignore the added field. Envelope token counters
+remain run-cumulative billing totals; request occupancy comes from the referenced
+`modelusage` payload (`json` encoding), not those totals.
 _Avoid_: replaying transient frames as durable history or hiding callback errors
 
 ## Multimodal Image Payload

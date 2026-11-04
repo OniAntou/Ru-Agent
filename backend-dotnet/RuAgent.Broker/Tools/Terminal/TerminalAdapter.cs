@@ -1,6 +1,5 @@
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Policy.Commands;
-using RuAgent.Broker.Tools.Git;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
@@ -37,9 +36,6 @@ public sealed class TerminalAdapter
     private readonly StreamingProcessRunner _runner;
     private readonly CommandIntentResolver _resolver;
     private readonly CommandAnalyzerRegistry _analyzers;
-    private readonly IGitCli _gitCli;
-    private readonly ManagedCommitService _managedCommit;
-    private readonly GitRepositoryLocator _gitLocator;
 
     public TerminalAdapter(
         WorkspacePathGuard workspace,
@@ -47,9 +43,7 @@ public sealed class TerminalAdapter
         AgentCommandEnvironment? commandEnvironment = null,
         StreamingProcessRunner? runner = null,
         CommandIntentResolver? intentResolver = null,
-        CommandAnalyzerRegistry? analyzers = null,
-        ManagedCommitService? managedCommit = null,
-        IGitCli? gitCli = null)
+        CommandAnalyzerRegistry? analyzers = null)
     {
         _workspace = workspace;
         _approvalTokens = approvalTokens;
@@ -59,9 +53,6 @@ public sealed class TerminalAdapter
             TerminalLimits.MaxSpoolFileBytes);
         _resolver = intentResolver ?? new CommandIntentResolver(_workspace.Root);
         _analyzers = analyzers ?? new CommandAnalyzerRegistry();
-        _gitCli = gitCli ?? new StreamingGitCli(_runner, _environment.ChildEnvironment);
-        _managedCommit = managedCommit ?? new ManagedCommitService(_gitCli);
-        _gitLocator = new GitRepositoryLocator(_gitCli);
     }
 
     /// <summary>Same credential redaction as terminal output, before retaining a bounded UI label.</summary>
@@ -123,7 +114,8 @@ public sealed class TerminalAdapter
         bool confineWorkspace,
         CancellationToken cancellationToken,
         Action<string>? retainOutput = null,
-        int? killTimeoutMs = null)
+        int? killTimeoutMs = null,
+        TerminalOutputDeltaHandler? output = null)
     {
         ArgumentNullException.ThrowIfNull(grant);
         ArgumentNullException.ThrowIfNull(request);
@@ -177,7 +169,7 @@ public sealed class TerminalAdapter
             intent,
             cancellationToken,
             retainOutput,
-            killTimeoutMs);
+            killTimeoutMs, output);
     }
 
     /// <summary>
@@ -201,7 +193,8 @@ public sealed class TerminalAdapter
         CancellationToken cancellationToken,
         Action<string>? retainOutput = null,
         int? killTimeoutMs = null,
-        PolicyGrant? grant = null)
+        PolicyGrant? grant = null,
+        TerminalOutputDeltaHandler? output = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateWriteSet(request.ReadOnly, request.WriteSet);
@@ -225,7 +218,7 @@ public sealed class TerminalAdapter
                 _environment.ChildEnvironment,
                 killTimeoutMs ?? intent.TimeoutMs,
                 TerminalLimits.MaxSpoolFileBytes),
-            WrapRetain(retainOutput),
+            WrapRetain(retainOutput, output),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -233,13 +226,9 @@ public sealed class TerminalAdapter
         CanonicalCommandIntent intent,
         CancellationToken cancellationToken,
         Action<string>? retainOutput = null,
-        int? killTimeoutMs = null)
+        int? killTimeoutMs = null,
+        TerminalOutputDeltaHandler? output = null)
     {
-        if (ManagedCommitService.IsManagedCommitInvocation(intent.ResolvedExecutable, intent.Arguments))
-        {
-            return await ExecuteManagedCommitAsync(intent, cancellationToken).ConfigureAwait(false);
-        }
-
         var arguments = IsAutomaticGitRead(intent)
             ? BuildSafeGitReadArguments(intent.Arguments)
             : intent.Arguments;
@@ -252,7 +241,7 @@ public sealed class TerminalAdapter
                 _environment.ChildEnvironment,
                 killTimeoutMs ?? intent.TimeoutMs,
                 TerminalLimits.MaxSpoolFileBytes),
-            WrapRetain(retainOutput),
+            WrapRetain(retainOutput, output),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -306,129 +295,12 @@ public sealed class TerminalAdapter
     /// already bounds total frames by the output limit and redacts before
     /// emitting, so the spool inherits both properties without new trust.
     /// </summary>
-    private static TerminalOutputDeltaHandler? WrapRetain(Action<string>? retainOutput)
-    {
-        if (retainOutput is null)
-        {
-            return null;
-        }
-
-        return (stream, sequence, text, redacted, emitToken) =>
+    private static TerminalOutputDeltaHandler? WrapRetain(Action<string>? retainOutput, TerminalOutputDeltaHandler? output) =>
+        retainOutput is null ? output : (stream, sequence, text, redacted, token) =>
         {
             retainOutput(text);
-            return ValueTask.CompletedTask;
+            return output?.Invoke(stream, sequence, text, redacted, token) ?? ValueTask.CompletedTask;
         };
-    }
-
-    private async Task<StreamingProcessResult> ExecuteManagedCommitAsync(
-        CanonicalCommandIntent intent,
-        CancellationToken cancellationToken)
-    {
-        var message = ManagedCommitService.TryExtractCommitMessage(intent.Arguments);
-        if (string.IsNullOrWhiteSpace(message))
-        {
-            var err = "error: commit message must be provided using -m or --message";
-            return new StreamingProcessResult(
-                "failed", 1, 0, string.Empty, string.Empty, err, err, 0, err.Length, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
-        }
-
-        var location = await _gitLocator.LocateAsync(intent.CanonicalWorkingDirectory, cancellationToken).ConfigureAwait(false);
-        if (location.Resolution == GitRepositoryResolution.NoRepository)
-        {
-            var err = "error: not a git repository (or any of the parent directories)";
-            return new StreamingProcessResult(
-                "failed", 1, 0, string.Empty, string.Empty, err, err, 0, err.Length, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
-        }
-
-        if (location.Resolution != GitRepositoryResolution.Found || string.IsNullOrEmpty(location.RepositoryRoot))
-        {
-            return ManagedCommitFailure(intent, location.StderrTail);
-        }
-
-        var repoRoot = location.RepositoryRoot;
-
-        // Check git status to find modified/untracked files and verify real index
-        var statusResult = await _gitCli.RunAsync(
-            new[] { "status", "--porcelain=v2", "--branch" },
-            repoRoot,
-            cancellationToken).ConfigureAwait(false);
-
-        if (!statusResult.Succeeded)
-        {
-            if (statusResult.ExitCode < 0)
-            {
-                return ManagedCommitFailure(intent, statusResult.FailureReason);
-            }
-
-            var err = "error: unable to read git status before commit: " + statusResult.Stderr;
-            return new StreamingProcessResult(
-                "failed", 1, 0, string.Empty, string.Empty, err, err, 0, err.Length, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
-        }
-
-        var parsed = GitStatusParser.Parse(statusResult.Stdout);
-        var hasStaged = parsed.Entries.Any(e => e.HasStagedChanges);
-        if (hasStaged)
-        {
-            var err = "error: managed commit refused: index_not_empty. Existing staged changes would be overwritten. Please unstage or commit them manually.";
-            return new StreamingProcessResult(
-                "failed", 1, 0, string.Empty, string.Empty, err, err, 0, err.Length, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
-        }
-
-        var changedPaths = parsed.Entries
-            .Where(e => e.HasUnstagedChanges || e.Kind == RunGitEntryKind.Untracked)
-            .Select(e => e.Path)
-            .ToArray();
-
-        if (changedPaths.Length == 0)
-        {
-            var err = "error: managed commit refused: nothing_attributed. No modified or untracked files to commit.";
-            return new StreamingProcessResult(
-                "failed", 1, 0, string.Empty, string.Empty, err, err, 0, err.Length, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
-        }
-
-        var preview = await _managedCommit.BuildPreviewAsync(
-            repoRoot,
-            changedPaths,
-            Array.Empty<string>(),
-            cancellationToken).ConfigureAwait(false);
-
-        if (!preview.Succeeded || preview.Plan is null)
-        {
-            var err = $"error: managed commit preview refused: {preview.RefusalCode}";
-            return new StreamingProcessResult(
-                "failed", 1, 0, string.Empty, string.Empty, err, err, 0, err.Length, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
-        }
-
-        var outcome = await _managedCommit.ExecuteApprovedAsync(
-            preview.Plan,
-            message,
-            cancellationToken).ConfigureAwait(false);
-
-        if (outcome.Phase == ManagedCommitPhase.Committed)
-        {
-            var outText = $"[managed commit {outcome.NewHeadOid}] {message}\n";
-            return new StreamingProcessResult(
-                "succeeded", 0, 50, outText, outText, string.Empty, string.Empty, outText.Length, 0, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
-        }
-
-        var failMsg = outcome.Phase == ManagedCommitPhase.ReconciliationRequired
-            ? $"error: managed commit failed with reconciliation required: {outcome.Code}"
-            : $"error: managed commit aborted: {outcome.Code}";
-
-        return new StreamingProcessResult(
-            "failed", 1, 50, string.Empty, string.Empty, failMsg, failMsg, 0, failMsg.Length, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
-    }
-
-    private static StreamingProcessResult ManagedCommitFailure(CanonicalCommandIntent intent, string failureCode)
-    {
-        var timedOut = failureCode == "git_timed_out";
-        var code = failureCode == "process_start_failed"
-            ? failureCode
-            : timedOut ? failureCode : "git_command_failed";
-        return new StreamingProcessResult(
-            timedOut ? "timed_out" : "failed", code == "git_command_failed" ? 1 : null, 0, string.Empty, string.Empty, code, string.Empty,
-            0, code.Length, 0, 0, 0, 0, intent.CanonicalWorkingDirectory);
-    }
 
     private void EnforceWorkingDirectoryPolicy(CanonicalCommandIntent intent, bool confineWorkspace)
     {

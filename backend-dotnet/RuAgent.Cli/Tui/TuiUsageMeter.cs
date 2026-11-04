@@ -61,12 +61,12 @@ public static class TuiUsageMeter
     public const double CriticalPercent = 90;
 
     /// <summary>The cluster pieces in display order, omitting unpublished members.</summary>
-    public static IReadOnlyList<TuiUsagePart> Compose(long? tokens, double? percent, decimal? cost)
+    public static IReadOnlyList<TuiUsagePart> Compose(long? tokens, double? percent, decimal? cost, bool estimated = false)
     {
         var parts = new List<TuiUsagePart>(4);
         if (tokens is > 0)
         {
-            parts.Add(new TuiUsagePart(tokens.Value.ToString("N0", CultureInfo.InvariantCulture), TuiToken.Meta));
+            parts.Add(new TuiUsagePart((estimated ? "~" : "") + tokens.Value.ToString("N0", CultureInfo.InvariantCulture), TuiToken.Meta));
         }
 
         if (percent is { } value)

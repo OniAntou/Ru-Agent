@@ -11,7 +11,7 @@ using Xunit;
 
 namespace RuApp.Tests;
 
-public sealed class AgentRunControllerTests
+public sealed partial class AgentRunControllerTests
 {
     [Fact]
     public async Task Request_context_estimate_reaches_its_session_without_entering_durable_history()
@@ -2090,6 +2090,7 @@ public sealed class AgentRunControllerTests
         images[0] = "data:image/png;base64,mutated";
 
         Assert.Contains("agent_create_outcome_unknown", controller.StatusText, StringComparison.Ordinal);
+        Assert.True(controller.HasPendingCreateOutcomeUnknown);
         Assert.False(await controller.CreateAndRunAsync(new CreateAgentRunRequest(
             "sess_1", "C:\\work", "second turn", "standard", null, "idem-overlap")));
 
@@ -2102,6 +2103,7 @@ public sealed class AgentRunControllerTests
         Assert.Equal(new[] { RunId }, fake.CancelledRunIds);
         Assert.Null(controller.CurrentRun);
         Assert.False(controller.CanCancel);
+        Assert.False(controller.HasPendingCreateOutcomeUnknown);
     }
 
     [Fact]

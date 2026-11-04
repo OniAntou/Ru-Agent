@@ -87,19 +87,41 @@ public sealed class TgTranscriptTests
         var transcript = new TgTranscriptView { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() };
         window.Add(transcript);
         transcript.Append(new string('a', 100) + " " + new string('b', 50), TranscriptStyle.Prose);
-        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        var resizeClock = System.Diagnostics.Stopwatch.StartNew();
+        var stable = false;
+        Exception? failure = null;
+        var finished = false;
+        app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
         {
-            app.Driver!.SetScreenSize(160, 12);
-            return false;
-        });
-        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
-        {
-            var rows = TgSnapshot.Capture(app);
-            Assert.Contains(new string('b', 50), rows[0]);
+            var sizeMatches = app.Driver!.Cols == 160 && app.Driver.Rows == 12
+                && window.Frame.Width == 160 && window.Frame.Height == 12;
+            if (resizeClock.Elapsed < TimeSpan.FromSeconds(3) && (!sizeMatches || !stable))
+            {
+                if (!sizeMatches) app.Driver.SetScreenSize(160, 12);
+                stable = sizeMatches;
+                return true;
+            }
+
+            try
+            {
+                Assert.Equal(160, window.Frame.Width);
+                Assert.Equal(12, window.Frame.Height);
+                var rows = TgSnapshot.Capture(app);
+                Assert.Contains(new string('b', 50), rows[0]);
+                finished = true;
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+
             app.RequestStop();
             return false;
         });
+        app.AddTimeout(TimeSpan.FromSeconds(5), () => { app.RequestStop(); return false; });
         app.Run(window);
+        if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+        Assert.True(finished);
     }
 
     [Fact]

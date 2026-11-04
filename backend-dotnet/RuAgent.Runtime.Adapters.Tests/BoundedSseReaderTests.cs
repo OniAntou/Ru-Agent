@@ -124,14 +124,27 @@ public sealed class BoundedSseReaderTests
     }
 
     [Fact]
-    public async Task Rejects_total_over_5MiB()
+    public async Task Rejects_total_over_32MiB()
     {
-        var chunk = new string('x', 200 * 1024);
+        var chunk = new string('x', 1024 * 1024);
         var sb = new StringBuilder();
-        for (int i = 0; i < 26; i++)
+        for (int i = 0; i < 33; i++)
             sb.Append($"data: {chunk}\n\n");
         var ex = await Assert.ThrowsAsync<ModelProviderException>(async () => await DrainAsync(Stream(sb.ToString())));
         Assert.Equal("response_too_large", ex.Code);
+    }
+
+    [Fact]
+    public async Task Accepts_a_multi_megabyte_stream_below_the_cap()
+    {
+        // Six MiB of framing is well past the old 5 MiB bound but a healthy
+        // response for a 1M-character reply split into small events.
+        var chunk = new string('x', 200 * 1024);
+        var sb = new StringBuilder();
+        for (int i = 0; i < 30; i++)
+            sb.Append($"data: {chunk}\n\n");
+        var events = await DrainAsync(Stream(sb.ToString()));
+        Assert.Equal(30, events.Count);
     }
 
     [Fact]

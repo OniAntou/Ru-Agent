@@ -16,7 +16,8 @@ public sealed record HarnessSafeEventEnvelope(
     [property: JsonPropertyName("approval_id")] string? ApprovalId = null,
     [property: JsonPropertyName("input_tokens")] long? InputTokens = null,
     [property: JsonPropertyName("output_tokens")] long? OutputTokens = null,
-    [property: JsonPropertyName("total_tokens")] long? TotalTokens = null)
+    [property: JsonPropertyName("total_tokens")] long? TotalTokens = null,
+    [property: JsonPropertyName("model_step_id")] string? ModelStepId = null)
 {
     public const int CurrentProtocolVersion = 1;
 

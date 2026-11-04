@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli;
 
@@ -26,8 +27,6 @@ public enum CliCommandKind
     SessionSearch,
     SessionRewind,
     SessionDelete,
-    SessionExport,
-    SessionImport,
     Rpc,
 }
 
@@ -48,8 +47,7 @@ public sealed record RunCommand(
     bool Json,
     bool TrustWorkspace = false,
     bool ConfirmFullAccess = false,
-    IReadOnlyList<string>? Images = null,
-    bool Worktree = false) : AgentCommand(CliCommandKind.Run, Json);
+    IReadOnlyList<string>? Images = null) : AgentCommand(CliCommandKind.Run, Json);
 
 public sealed record AttachCommand(
     string RunId,
@@ -180,24 +178,6 @@ public sealed record SessionDeleteCommand(
     string SessionId,
     bool Yes) : AgentCommand(CliCommandKind.SessionDelete, Json: false);
 
-/// <summary>Writes one of Ru's sessions out in another agent's format.</summary>
-public sealed record SessionExportCommand(
-    string SessionId,
-    string Harness,
-    string? OutputDirectory,
-    bool Json) : AgentCommand(CliCommandKind.SessionExport, Json);
-
-/// <summary>Takes another agent's session file and makes it a Ru session.</summary>
-/// <param name="SessionId">
-/// Which session to take from a store that holds many. Only opencode needs it: its sessions
-/// live in one database rather than one file each.
-/// </param>
-public sealed record SessionImportCommand(
-    string FilePath,
-    string? Harness,
-    string? SessionId,
-    bool Json) : AgentCommand(CliCommandKind.SessionImport, Json);
-
 public sealed record RpcCommand() : AgentCommand(CliCommandKind.Rpc, Json: false);
 
 public sealed record AgentCliParseResult(
@@ -210,7 +190,7 @@ public static partial class AgentCliParser
 {
     public const int MaxArgCount = 64;
     public const int MaxWorkspacePathLength = 512;
-    public const int MaxPromptLength = 8192;
+    public const int MaxPromptLength = AgentRunLimits.MaxPromptChars;
     public const int MaxSessionIdLength = 64;
     public const int MaxRunIdLength = 36;
     public const int MaxPresetLength = 16;
@@ -218,7 +198,6 @@ public static partial class AgentCliParser
     public const int MaxInputIdLength = 36;
     public const int MaxRuleIdLength = 37;
     public const int MaxFilePathLength = 4096;
-    public const int MaxHarnessLength = 32;
 
     private static readonly Regex RunIdRegex = new(@"^run_[0-9a-f]{32}$", RegexOptions.Compiled);
     private static readonly Regex ApprovalIdRegex = new(@"^apr_[0-9a-f]{32}$", RegexOptions.Compiled);
@@ -234,12 +213,12 @@ public static partial class AgentCliParser
         if (args.Length > MaxArgCount)
             return Fail("too_many_arguments", $"Argument count {args.Length} exceeds maximum {MaxArgCount}.");
 
-        var maxArgumentBytes = args.Length > 1 && string.Equals(args[1], "command", StringComparison.Ordinal)
+        var maxArgumentChars = args.Length > 1 && string.Equals(args[1], "command", StringComparison.Ordinal)
             ? 16 * 1024
             : MaxPromptLength;
         foreach (var a in args)
         {
-            if (a is not null && Encoding.UTF8.GetByteCount(a) > maxArgumentBytes)
+            if (a is not null && a.Length > maxArgumentChars)
             {
                 return Fail("argument_too_long", $"Argument too long ({a.Length}).");
             }

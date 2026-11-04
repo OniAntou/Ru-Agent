@@ -569,7 +569,7 @@ internal sealed partial class AgentRunStepHandlers
         ProviderContinuation? providerContinuation = null)
     {
         var reservation = _internalRun ? Subagents.SubagentBudgetPolicy.ReserveToolCalls(run, step.ToolCalls.Count, _time.UtcNow)
-            : AgentBudgetPolicy.ReserveToolCalls(run, step.ToolCalls.Count, _time.UtcNow);
+            : AgentBudgetPolicy.ReserveToolCalls(run, step.ToolCalls.Count, _time.UtcNow, allowAutomaticWindow: true);
         if (reservation.Granted && _familyBudget is not null
             && !await _familyBudget.ReserveToolsAsync(run, modelStepId, step.ToolCalls.Count, cancellationToken).ConfigureAwait(false))
             reservation = Subagents.SubagentBudgetPolicy.Reject(run, _internalRun, "subagent_family_budget_exhausted", _time.UtcNow);

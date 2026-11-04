@@ -53,7 +53,7 @@ implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Dat
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
 batch statements. Release migration tests build the original released v18 DDL and frozen
 development DDL independently of current schema creation. The selected upgrade suffix commits atomically
-at v33. Version 29 consolidated earlier development changes; v30
+at v34. Version 29 consolidated earlier development changes; v30
 normalizes retained conversation history and source receipts. Version 31 adds
 context mutation fences and indexed compaction/intent lookup; v32 indexes exact
 execution-request provenance. The schema keeps this index, but verification no longer reads the
@@ -61,9 +61,13 @@ workspace journal. Version 33 adds `agent_run_provider_intents`: an optional
 provider/model choice inserted in the same transaction as its root run, without
 credentials or permission grants. Explicit intent participates in request
 idempotency identity and constrains the initial provider pin; existing pins and
-legacy runs retain their prior behavior. Versions below v18 fail with
+legacy runs retain their prior behavior. Version 34 records delivery provenance
+on source receipts and keeps image attachment counts with retained messages.
+Rewind acknowledges late replies to removed prompts without appending them.
+Forks copy the attachment counts so context survives deletion of the source run.
+Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
-v19-v32 databases remain eligible sources; adding a migration extends one ordered
+v19-v33 databases remain eligible sources; adding a migration extends one ordered
 catalog instead of every historical branch. Fresh installs use the same released
 baseline and upgrade batch. Tests cover every retained source, identical schema,
 rollback/retry, restored FKs and two simultaneous initializer processes.
@@ -262,6 +266,8 @@ The primary conversation store reports deletion, confirmed absence and failure
 separately. Only confirmed absence can complete a retained-artifact retry; a
 storage failure stays an error even if harness rows were successfully removed.
 Legacy stores returning an ambiguous false are treated as failures.
+Scratch cleanup follows the same primary-store result: failure preserves its
+files and approval ledger; successful deletion or confirmed absence permits cleanup.
 The schema retains scope evidence with the
 owned run after relation loss, without restoring execution authority. A
 root-bound preparation journal records reservation before filesystem creation,
@@ -950,6 +956,13 @@ _Avoid_: embedded fallback persona
 
 `AgentRuntimeLoopService` drives runs; `AgentRuntimeRootRegistry` owns registered
 roots/coordinators, and `AgentRuntimeCoordinatorFactory` composes a drive.
+If composition fails before a coordinator exists, `AgentRunFailureTransition`
+commits a named terminal failure directly through the event store before runtime
+registration is released. It re-reads on version conflicts, preserves concurrent
+terminal states, and bounds each attempt to eight commits. Store failure retains
+registration for a later retry. History acknowledgement uses the same persistence
+path when composition fails; a history-delivery failure also needs no provider or
+tool gateway to settle the run.
 `AgentRuntimeParkingState` owns client-wait and recovered-approval/version fences.
 `AgentRuntimeRunLifecycle` releases registration, Broker resources and retained
 approval state only after pending user-apply and child work is cancelled.

@@ -15,6 +15,171 @@ public sealed class ComputerUseTests
     private static readonly PixelRect Primary = new(0, 0, 2560, 1440);
 
     [Fact]
+    public void Drag_revalidates_before_each_input_and_releases_after_target_change()
+    {
+        var events = new List<string>();
+        var validations = new List<(int X, int Y)>();
+        var deniedX = 2;
+
+        var error = Assert.Throws<ComputerUseException>(() => PointerInputSequence.Drag(
+            0, 0, 12, 0,
+            (x, y) =>
+            {
+                validations.Add((x, y));
+                if (x == deniedX)
+                    throw new ComputerUseException("computer_app_not_granted", "overlay is not granted");
+                return x == 0 ? (nint)1 : (nint)2;
+            },
+            (x, y, _) => events.Add($"move:{x},{y}"),
+            (x, y, _) => events.Add($"down:{x},{y}"),
+            (x, y, _) => events.Add($"up:{x},{y}"),
+            () => { },
+            CancellationToken.None));
+
+        Assert.Equal("computer_app_not_granted", error.Code);
+        Assert.Equal(new[] { "move:0,0", "down:0,0", "move:1,0", "up:1,0" }, events);
+        Assert.Equal(new[] { (0, 0), (0, 0), (1, 0), (2, 0) }, validations);
+    }
+
+    [Fact]
+    public void Drag_allows_separately_authorized_source_and_destination_windows()
+    {
+        var validatedRoots = new List<string>();
+        var allowedRoots = new HashSet<string>(StringComparer.Ordinal) { "source", "destination" };
+
+        PointerInputSequence.Drag(
+            0, 0, 12, 0,
+            (x, _) =>
+            {
+                var root = x < 12 ? "source" : "destination";
+                Assert.Contains(root, allowedRoots);
+                validatedRoots.Add(root);
+                return root == "source" ? (nint)1 : (nint)2;
+            },
+            (_, _, _) => { }, (_, _, _) => { }, (_, _, _) => { }, () => { }, CancellationToken.None);
+
+        Assert.Contains("source", validatedRoots);
+        Assert.Contains("destination", validatedRoots);
+    }
+
+    [Fact]
+    public void Drag_cancellation_releases_at_the_last_allowed_point_without_jumping_to_destination()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var events = new List<string>();
+
+        Assert.Throws<OperationCanceledException>(() => PointerInputSequence.Drag(
+            0, 0, 12, 0,
+            (_, _) => (nint)7,
+            (x, y, _) =>
+            {
+                events.Add($"move:{x},{y}");
+                if (x == 1)
+                    cancellation.Cancel();
+            },
+            (x, y, _) => events.Add($"down:{x},{y}"),
+            (x, y, _) => events.Add($"up:{x},{y}"),
+            () => { },
+            cancellation.Token));
+
+        Assert.Equal(new[] { "move:0,0", "down:0,0", "move:1,0", "up:1,0" }, events);
+    }
+
+    [Fact]
+    public void Scroll_revalidates_before_each_scroll_input_and_stops_at_denied_target()
+    {
+        var events = new List<string>();
+        var validations = 0;
+
+        var error = Assert.Throws<ComputerUseException>(() => PointerInputSequence.Scroll(
+            4, 5, 120, 240,
+            (_, _) =>
+            {
+                if (++validations == 3)
+                    throw new ComputerUseException("computer_app_not_granted", "overlay is not granted");
+                return (nint)1;
+            },
+            (x, y, _) => events.Add($"move:{x},{y}"),
+            (delta, _) => events.Add($"vertical:{delta}"),
+            (delta, _) => events.Add($"horizontal:{delta}")));
+
+        Assert.Equal("computer_app_not_granted", error.Code);
+        Assert.Equal(new[] { "move:4,5", "vertical:240" }, events);
+        Assert.Equal(3, validations);
+    }
+
+    [Fact]
+    public async Task Drag_rechecks_broker_grants_during_the_path_and_releases_without_entering_denied_window()
+    {
+        var granted = Window("notepad.exe", Primary);
+        var overlay = Window("mail.exe", Primary);
+        var desktop = new FakeDesktop(granted) { WindowAtPoint = granted };
+        var service = Service(desktop);
+        await Grant(service, granted.AppName);
+        await service.ExecuteAsync(Run, Session, true, true, Args("screenshot"), CancellationToken.None);
+        var authorizations = 0;
+        desktop.BeforePointerAuthorization = (kind, _, _) =>
+        {
+            if (kind == "drag" && ++authorizations == 3)
+                desktop.WindowAtPoint = overlay;
+        };
+
+        var result = await service.ExecuteAsync(Run, Session, false, true,
+            Args("drag", new JsonObject { ["x"] = 640, ["y"] = 360, ["to_x"] = 900, ["to_y"] = 360 }),
+            CancellationToken.None);
+
+        Assert.Equal("computer_app_not_granted", result.ErrorCode);
+        Assert.Equal(new[] { "move", "down", "up" }, desktop.PointerEvents.Select(item => item.Kind));
+        Assert.Equal(granted.Handle, desktop.PointerEvents[^1].Root);
+    }
+
+    [Fact]
+    public async Task Drag_can_cross_between_two_separately_granted_windows()
+    {
+        var source = Window("notepad.exe", Primary);
+        var destination = Window("paint.exe", Primary);
+        var desktop = new FakeDesktop(source) { WindowAtPoint = source };
+        var destinationX = ComputerGeometry.ToPhysical(Primary, 1280, 720, 900, 360).X;
+        desktop.RootWindowLookup = (x, _) => x < destinationX ? source : destination;
+        var service = Service(desktop);
+        await Grant(service, source.AppName);
+        await Grant(service, destination.AppName);
+        await service.ExecuteAsync(Run, Session, true, true, Args("screenshot"), CancellationToken.None);
+
+        var result = await service.ExecuteAsync(Run, Session, false, true,
+            Args("drag", new JsonObject { ["x"] = 640, ["y"] = 360, ["to_x"] = 900, ["to_y"] = 360 }),
+            CancellationToken.None);
+
+        Assert.Null(result.ErrorCode);
+        Assert.Contains(desktop.PointerEvents, item => item.Root == source.Handle);
+        Assert.Contains(desktop.PointerEvents, item => item.Root == destination.Handle);
+    }
+
+    [Fact]
+    public async Task Scroll_rechecks_broker_grants_before_each_scroll_event()
+    {
+        var granted = Window("notepad.exe", Primary);
+        var overlay = Window("mail.exe", Primary);
+        var desktop = new FakeDesktop(granted) { WindowAtPoint = granted };
+        var service = Service(desktop);
+        await Grant(service, granted.AppName);
+        await service.ExecuteAsync(Run, Session, true, true, Args("screenshot"), CancellationToken.None);
+        var authorizations = 0;
+        desktop.BeforePointerAuthorization = (kind, _, _) =>
+        {
+            if (kind == "scroll" && ++authorizations == 2)
+                desktop.WindowAtPoint = overlay;
+        };
+
+        var result = await service.ExecuteAsync(Run, Session, false, true,
+            Args("scroll", new JsonObject { ["x"] = 640, ["y"] = 360, ["direction"] = "down", ["amount"] = 2 }),
+            CancellationToken.None);
+
+        Assert.Equal("computer_app_not_granted", result.ErrorCode);
+        Assert.Equal(new[] { "move" }, desktop.PointerEvents.Select(item => item.Kind));
+    }
+
+    [Fact]
     public void Visible_regions_keep_only_uncovered_parts_of_allowed_windows()
     {
         var top = Window("secret.exe", new PixelRect(100, 100, 300, 300));
@@ -343,6 +508,9 @@ public sealed class ComputerUseTests
     {
         public PixelRect MonitorBounds { get; set; } = Primary;
         public DesktopWindow? WindowAtPoint { get; set; }
+        public Func<int, int, DesktopWindow?>? RootWindowLookup { get; set; }
+        public Action<string, int, int>? BeforePointerAuthorization { get; set; }
+        public List<(string Kind, int X, int Y, nint Root)> PointerEvents { get; } = [];
         public DesktopWindow? Foreground { get; set; }
         public bool Shielded { get; set; }
         public bool DesktopAvailable { get; set; } = true;
@@ -360,7 +528,7 @@ public sealed class ComputerUseTests
         public byte[] Capture(PixelRect bounds) =>
             LastCapture = Enumerable.Repeat((byte)255, bounds.Width * bounds.Height * 4).ToArray();
 
-        public DesktopWindow? RootWindowAt(int x, int y) => WindowAtPoint;
+        public DesktopWindow? RootWindowAt(int x, int y) => RootWindowLookup?.Invoke(x, y) ?? WindowAtPoint;
         public DesktopWindow? ForegroundWindow() => Foreground;
 
         public List<DesktopWindow> Minimized { get; } = [];
@@ -378,8 +546,32 @@ public sealed class ComputerUseTests
         public bool IsShieldedFromInput(int processId) => Shielded;
         public void MovePointer(int x, int y) { }
         public void Click(int x, int y, PointerButton button, int count, nint expectedRoot) => LastClick = (x, y, button, count);
-        public void Drag(int fromX, int fromY, int toX, int toY, CancellationToken cancellationToken) { }
-        public void Scroll(int x, int y, int deltaX, int deltaY) { }
+        public void Drag(int fromX, int fromY, int toX, int toY,
+            Func<int, int, nint> authorizeTargetAt, CancellationToken cancellationToken) =>
+            PointerInputSequence.Drag(
+                fromX, fromY, toX, toY,
+                (x, y) =>
+                {
+                    BeforePointerAuthorization?.Invoke("drag", x, y);
+                    return authorizeTargetAt(x, y);
+                },
+                (x, y, root) => PointerEvents.Add(("move", x, y, root)),
+                (x, y, root) => PointerEvents.Add(("down", x, y, root)),
+                (x, y, root) => PointerEvents.Add(("up", x, y, root)),
+                () => { },
+                cancellationToken);
+
+        public void Scroll(int x, int y, int deltaX, int deltaY, Func<int, int, nint> authorizeTargetAt) =>
+            PointerInputSequence.Scroll(
+                x, y, deltaX, deltaY,
+                (pointX, pointY) =>
+                {
+                    BeforePointerAuthorization?.Invoke("scroll", pointX, pointY);
+                    return authorizeTargetAt(pointX, pointY);
+                },
+                (pointX, pointY, root) => PointerEvents.Add(("move", pointX, pointY, root)),
+                (delta, root) => PointerEvents.Add(("vertical", x, y, root)),
+                (delta, root) => PointerEvents.Add(("horizontal", x, y, root)));
 
         public void TypeText(string text, nint expectedRoot, CancellationToken cancellationToken)
         {

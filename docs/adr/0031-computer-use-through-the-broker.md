@@ -55,7 +55,7 @@ invariants:
    the model still has to request access in each session.
 4. **Grant enforcement at execution.** Immediately before each input event the
    Broker resolves the target: the root window under the pointer for clicks,
-   moves and scrolls (both ends of a drag), and the foreground window for typing
+   moves and scrolls (every interpolated move of a drag), and the foreground window for typing
    and keys. In `standard` the target process must hold a session grant
    (`computer_app_not_granted`). The target is checked again before every click
    of a multi-click and every typed character, and the action stops with
@@ -63,6 +63,11 @@ invariants:
    is refused unless Explorer is granted (`computer_key_not_allowed`). A UWP
    window is attributed to its app's own executable, never to
    `ApplicationFrameHost`.
+   Amendment 2026-11-01: drag validates each move and button-down separately;
+   scroll validates its move and each vertical/horizontal wheel event. The native
+   controller checks the resolved root again immediately before injection. Drag
+   between separately granted applications remains permitted. Cancellation or
+   denial releases a held button without injecting another pointer movement.
 5. **Protected applications are never targets.** Ru itself (`RuApp`, `RuBackend`,
    `RuAgent.Cli`, `ru`), terminal hosts (`WindowsTerminal`, `OpenConsole`,
    `conhost`), and credential and elevation UI (`consent`, `CredentialUIBroker`,

@@ -249,38 +249,51 @@ public sealed partial class TgChatWindow : Window
 
         if (_slashDropdown is null)
         {
-            _slashDropdown = new TgSlashDropdown
+            var dropdown = new TgSlashDropdown
             {
                 X = Pos.Left(Composer),
                 Width = Dim.Width(Composer)
             };
-            _slashDropdown.CommandAccepted += command =>
+            int DropdownHeight() => Math.Min(dropdown.PanelHeight, Math.Max(3, Composer.Frame.Y));
+            dropdown.Height = Dim.Func(_ => DropdownHeight());
+            // Frame.Height still describes the previous match set while Y is measured.
+            // Use the current measurement for both so filtering cannot leave a gap.
+            dropdown.Y = Pos.Func(_ => Math.Max(0, Composer.Frame.Y - DropdownHeight()));
+            dropdown.CommandAccepted += command =>
             {
                 Composer.Input.Text = command + " ";
                 Composer.Input.InsertionPoint = Composer.Input.Text.Length;
                 HideSlashDropdown();
                 Composer.Input.SetFocus();
             };
-            _slashDropdown.Closed += HideSlashDropdown;
+            dropdown.Closed += HideSlashDropdown;
+            _slashDropdown = dropdown;
         }
 
+        var wasOpen = _slashDropdown.SuperView is not null;
+        var previousHeight = _slashDropdown.PanelHeight;
         _slashDropdown.SetMatches(matches);
-        int DropdownHeight() => Math.Min(_slashDropdown.PanelHeight, Math.Max(3, Composer.Frame.Y));
-        _slashDropdown.Height = Dim.Func(_ => DropdownHeight());
-        // Frame.Height still describes the previous match set while Y is measured.
-        // Use the current measurement for both so filtering cannot leave a gap.
-        _slashDropdown.Y = Pos.Func(_ => Math.Max(0, Composer.Frame.Y - DropdownHeight()));
-        if (_slashDropdown.SuperView is null)
+        var heightChanged = _slashDropdown.PanelHeight != previousHeight;
+        if (!wasOpen)
         {
             Add(_slashDropdown);
         }
 
-        SetNeedsDraw();
+        // Opening and height changes expose cells from the old menu bounds; redraw
+        // the parent to erase those cells. Stable-height updates only draw the list.
+        if (!wasOpen || heightChanged)
+        {
+            SetNeedsDraw();
+        }
     }
 
     public void HideSlashDropdown()
     {
-        if (_slashDropdown?.SuperView is null) return;
+        if (_slashDropdown?.SuperView is null)
+        {
+            return;
+        }
+
         Remove(_slashDropdown);
         SetNeedsDraw();
     }

@@ -43,9 +43,15 @@ public interface IDesktopController
     /// <summary>Clicks; before each click the root window under the point must still be <paramref name="expectedRoot"/>.</summary>
     void Click(int x, int y, PointerButton button, int count, nint expectedRoot);
 
-    void Drag(int fromX, int fromY, int toX, int toY, CancellationToken cancellationToken);
+    /// <summary>
+    /// Drags while resolving authorization for each pointer event. The callback may return
+    /// different roots along the path when both applications have separate session grants.
+    /// </summary>
+    void Drag(int fromX, int fromY, int toX, int toY, Func<int, int, nint> authorizeTargetAt,
+        CancellationToken cancellationToken);
 
-    void Scroll(int x, int y, int deltaX, int deltaY);
+    /// <summary>Scrolls while resolving authorization immediately before every pointer event.</summary>
+    void Scroll(int x, int y, int deltaX, int deltaY, Func<int, int, nint> authorizeTargetAt);
 
     /// <summary>Types; before each character the foreground root window must still be <paramref name="expectedRoot"/>.</summary>
     void TypeText(string text, nint expectedRoot, CancellationToken cancellationToken);

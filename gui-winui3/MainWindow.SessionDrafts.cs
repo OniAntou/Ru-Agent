@@ -19,8 +19,10 @@ public sealed partial class MainWindow
         if (_closed || session is null) return;
 
         _chatView.SetRequestedWorkspace(workspacePath);
-        OnNavClick(NavChat, new RoutedEventArgs());
-        await _chatView.OpenSessionAsync(session.Id, SessionDraftPresentation.PlaceholderTitle);
+        // Staying on chat should not restart navigation's model/catalog refreshes.
+        if (!ReferenceEquals(ContentFrame.Content, _chatView) || Shell.IsSettingsOpen)
+            OnNavClick(NavChat, new RoutedEventArgs());
+        await _chatView.OpenSessionAsync(session.Id, SessionDraftPresentation.PlaceholderTitle, isNewSession: true);
     }
 
     private void OnChatSessionStarted(object? sender, SessionStartedEventArgs e) => Sidebar.MarkStarted(e.SessionId, e.Prompt);

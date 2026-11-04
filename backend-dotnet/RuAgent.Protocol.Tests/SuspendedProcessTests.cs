@@ -78,6 +78,37 @@ public sealed class SuspendedProcessTests : IDisposable
         finally { KillAndDispose(started); }
     }
 
+    [Fact]
+    public async Task Optional_standard_input_pipe_remains_writable_after_resume()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell\\v1.0\\powershell.exe"))
+        {
+            UseShellExecute = false,
+            WorkingDirectory = _root,
+        };
+        info.ArgumentList.Add("-NoProfile");
+        info.ArgumentList.Add("-NonInteractive");
+        info.ArgumentList.Add("-Command");
+        info.ArgumentList.Add("$line = [Console]::ReadLine(); [Console]::WriteLine($line)");
+
+        var started = SuspendedProcess.StartSuspended(info, redirectStandardInput: true);
+        try
+        {
+            Assert.NotNull(started.StandardInput);
+            Assert.True(SuspendedProcess.Resume(started.ThreadHandle));
+            started.ThreadHandle.Dispose();
+            using (var input = new StreamWriter(started.StandardInput!, Encoding.UTF8))
+            {
+                await input.WriteLineAsync("mcp-input");
+            }
+
+            Assert.Equal("mcp-input", (await started.StandardOutput.ReadLineAsync().WaitAsync(StartupBudget)));
+            await started.Process.WaitForExitAsync().WaitAsync(StartupBudget);
+        }
+        finally { KillAndDispose(started); }
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }

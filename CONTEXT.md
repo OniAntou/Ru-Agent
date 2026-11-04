@@ -82,7 +82,7 @@ The provider identifier and model captured by an explicit run submission and
 stored atomically with that run. It fixes the initial selection even if shared
 defaults change before provider snapshot resolution. It contains no credentials
 and confers no tool permission; the full resolved provider pin remains immutable.
-Implementation: [TUI admission](docs/architecture/tui.md#concurrent-session-tabs).
+Implementation: [GUI submission](docs/architecture/gui.md#model-picker-loading) · [TUI admission](docs/architecture/tui.md#concurrent-session-tabs).
 
 
 **Conversation Branch**:
@@ -331,6 +331,12 @@ _Avoid_: mutable rule set
 A scoped allow/ask/deny record with stable identity, canonical matcher and ordering. Sensitive matcher values are encrypted at rest; repository instructions do not create rules.
 Implementation: [broker](docs/architecture/broker.md#policy-rule).
 _Avoid_: repository-stored authority
+
+
+**Scratch Workspace**:
+A Ru-owned workspace under the Ru data root for a chat that never chose a project folder. Ownership requires a matching session marker and canonical path to the non-reparse session directory; path shape alone does not establish ownership. It is ordinary workspace territory for trust, policy and tools; the GUI places its chats in Recents unless the user explicitly changes sidebar placement. It is deleted after successful or confirmed-absent session deletion and reclaimed by a startup sweeper.
+Implementation: [host](docs/architecture/host.md), [ADR 0041](docs/adr/0041-scratch-workspaces.md).
+_Avoid_: install directory or drive root as a default workspace, project-derived authority
 
 
 **Workspace Trust**:

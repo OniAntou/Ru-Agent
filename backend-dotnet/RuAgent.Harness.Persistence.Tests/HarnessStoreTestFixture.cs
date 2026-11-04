@@ -85,6 +85,7 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
 
     public async Task ResetContextProjectionSchemaToV30Async()
     {
+        await RemoveVersion34SchemaFeaturesAsync();
         await using var connection = CreateRawConnection();
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
@@ -105,6 +106,27 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
         // This fixture deliberately moves the schema backwards. A pooled handle
         // from the newer shape is not a faithful process opening a v30 database.
+        await using var pooled = await Options.OpenConnectionAsync(default);
+        SqliteConnection.ClearPool(pooled);
+    }
+
+    public async Task RemoveVersion34SchemaFeaturesAsync()
+    {
+        await using (var connection = CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DROP INDEX IF EXISTS ix_business_session_source_receipts_run_role;
+                ALTER TABLE business_session_source_receipts DROP COLUMN source_run_id;
+                ALTER TABLE business_session_source_receipts DROP COLUMN source_role;
+                ALTER TABLE business_session_messages DROP COLUMN image_attachment_count;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        // The fixture deliberately models an older on-disk schema. Discard
+        // pooled handles so the next initializer sees the same shape as a new process.
         await using var pooled = await Options.OpenConnectionAsync(default);
         SqliteConnection.ClearPool(pooled);
     }

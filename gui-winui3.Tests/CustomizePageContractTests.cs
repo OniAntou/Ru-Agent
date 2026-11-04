@@ -31,8 +31,33 @@ public sealed class CustomizePageContractTests
         GuiSource.Require(document, "SkillsList");
         GuiSource.Require(document, "SearchBox");
         var computerUse = GuiSource.Require(document, "ComputerUseToggle");
-        Assert.True(computerUse.Ancestors().Any(element => (string?)element.Attribute(GuiSource.Xaml + "Name") == "PluginsPanel"));
+        Assert.Contains(
+            computerUse.Ancestors(),
+            element => (string?)element.Attribute(GuiSource.Xaml + "Name") == "PluginsPanel");
         Assert.Equal("OnComputerUseToggled", computerUse.Attribute("Toggled")?.Value);
+    }
+
+    [Fact]
+    public void User_catalog_rows_can_be_used_in_chat_but_do_not_edit_workspace_preferences()
+    {
+        var skill = new RuAgent.Client.SkillCatalogItem("review", "Review", "Review changes", "SKILL.md",
+            "user", "revision", true, true, true, [], null);
+        var row = new RuApp.Models.CustomizeSkillRow(skill, canManage: false);
+        Assert.True(row.CanUse);
+        Assert.False(row.CanManage);
+        Assert.True(new RuApp.Models.CustomizeSkillRow(skill).CanManage);
+    }
+
+    [Fact]
+    public void Loading_placeholders_belong_to_the_skills_region_and_status_is_announced_without_focus_changes()
+    {
+        var document = GuiSource.Xml("Views", "CustomizeView.xaml");
+        var skeleton = GuiSource.Require(document, "SkillsSkeleton");
+        Assert.Contains(GuiSource.Require(document, "SkillsPanel"), skeleton.Ancestors());
+        Assert.DoesNotContain(GuiSource.Require(document, "SkillsTab"), skeleton.Descendants());
+        Assert.Equal("False", skeleton.Attribute("IsHitTestVisible")?.Value);
+        Assert.Equal("Raw", skeleton.Attribute("AutomationProperties.AccessibilityView")?.Value);
+        Assert.Equal("Polite", GuiSource.Require(document, "StatusText").Attribute("AutomationProperties.LiveSetting")?.Value);
     }
 
     [Fact]

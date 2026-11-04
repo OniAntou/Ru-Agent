@@ -174,14 +174,11 @@ reconciliation surfaces from Phase 3:
   - recovery caps are configurable below a 4 MiB hard maximum.
   - `apply_patch` exposes a workspace-scoped unified diff through the existing patch adapter, with
     all-target policy checks, internal preimage hashes and preparation before mutation.
-  - `git_status` reads the run workspace's repository state through one fixed, bounded
-    `git status --porcelain=v2 --branch` invocation and the shared porcelain-v2 parser
-    (`GitStatusParser`). The pathspec is the workspace subtree, so a workspace that is a
-    subdirectory of a larger repository never reports paths outside it; there is no path or
-    revision argument, and it never diffs, stages, commits, fetches or runs repository hooks.
-    A workspace outside Git answers `is_repository: false` rather than failing the call.
+  - Ru has no Git tool. `git` is an ordinary terminal command under Broker policy; automatic
+    terminal Git reads pin `core.fsmonitor=false` and disable external diff and textconv.
+    Subagent worktree setup is the only Git the Broker runs itself, through `StreamingGitCli`.
   - See the pinned coding profiles below.
-- Model surface: the Protocol tool definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. The `mcp` tool connects to user-declared stdio or Streamable HTTP servers through the Broker under [ADR 0025](../adr/0025-mcp-servers-through-the-broker.md); workspace files cannot declare servers, and subagents cannot use it. The opt-in `computer` tool ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)) captures monitors and sends pointer and keyboard input through `ComputerUseService` behind the same execution authority; `plan` denies it, `standard` grants apps per session, protected apps and Ru's terminal hosts are never targets, and Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) cancels the controlling run. Mail/calendar/task connectors are not advertised Agent tools.
+- Model surface: the Protocol tool definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The `mcp` tool connects to user-declared stdio or Streamable HTTP servers through the Broker under [ADR 0025](../adr/0025-mcp-servers-through-the-broker.md); workspace files cannot declare servers, and subagents cannot use it. The opt-in `computer` tool ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)) captures monitors and sends pointer and keyboard input through `ComputerUseService` behind the same execution authority; `plan` denies it, `standard` grants apps per session, protected apps and Ru's terminal hosts are never targets, and Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) cancels the controlling run. Mail/calendar/task connectors are not advertised Agent tools.
 - Terminal authority: [ADR 0017](../adr/0017-workspace-terminal-policy.md) replaces
   command-form approval with canonical launch-directory permission. `run` preserves
   literal argv; `shell` explicitly selects PowerShell syntax. Both are automatic
@@ -200,11 +197,13 @@ reconciliation surfaces from Phase 3:
   storage/redaction are unchanged.
   Terminal children retain the trusted parent's `PSModulePath` for PowerShell
   module discovery; model input cannot supply or override environment entries.
-  Secret variables remain stripped and seeded into output redaction.
+  Secret variables remain stripped and seeded into output redaction. The
+  redactor withholds only a trailing run that could still become a seed, so the
+  live stream is not batched until the command exits when the environment
+  carries a credential.
   Glob traversal also checks its elapsed request budget directly, so delayed
   cancellation timers cannot turn an expired scan into a successful receipt.
-  Read-only Git preparation and the managed-commit temporary-index workflow remain
-  execution behavior, not separate authority. Legacy adapter-only callers retain
+  Legacy adapter-only callers retain
   their older approval contract; production v2 calls use Broker authorization.
   `RU_MAX_CONCURRENT_MODEL_STEPS` still bounds concurrent provider generation.
 - Managed Web: `web_search` resolves the configured engine against a fixed set
@@ -220,6 +219,8 @@ reconciliation surfaces from Phase 3:
   reading. Full-file hashing observes caller cancellation and a five-second
   deadline (`read_hash_timeout`); mutation preimage hashes remain Host/Broker
   owned and cannot be supplied by the model.
+  Byte-paged and line-paged reads verify the opened handle's final path before
+  reading, so an ancestor junction swap after resolution cannot widen the target.
   On-demand skill bodies also use handle-based final-path and hard-link checks.
   Image reads additionally enforce byte signatures and bounded dimensions/size;
   only a pinned model that accepts image input receives an encrypted image result.
@@ -395,7 +396,13 @@ execution schemas, timeout, output limit, and trust class. Its ID/version and
 proposal schema digest must match the immutable definition in
 `RuAgent.Protocol`; it does not itself make a tool model-visible.
 
-Manifests are derived from `AgentToolDescriptorTable` rather than hand-written. `ToolCatalog` builds one manifest per Broker-bound row (28 of the 29 rows; `ask_user` has none) and requires executors and manifests to match in both directions. The trusted adapter allowlist in `ToolRegistry` comes from the `AgentToolAdapter` enum, with the Host-intercepted member excluded. Risk and adapter values map through explicit arms that throw when unmapped. A session grant adds each advertised tool's manifest scopes. The access class (`ReadOnly`, `Mutation` or `Terminal`) comes from the row through `ToolAccessClassification`, which the Broker gateway and the hook gateway both call. See [ADR 0038](../adr/0038-tool-descriptor-table.md).
+Manifests are derived from `AgentToolDescriptorTable` rather than hand-written. `ToolCatalog` builds one manifest per Broker-bound row (27 of the 28 rows; `ask_user` has none) and requires executors and manifests to match in both directions. The trusted adapter allowlist in `ToolRegistry` comes from the `AgentToolAdapter` enum, with the Host-intercepted member excluded. Risk and adapter values map through explicit arms that throw when unmapped. A session grant adds each advertised tool's manifest scopes. The access class (`ReadOnly`, `Mutation` or `Terminal`) comes from the row through `ToolAccessClassification`, which the Broker gateway and the hook gateway both call. See [ADR 0038](../adr/0038-tool-descriptor-table.md).
+
+Computer drag and scroll resolve and authorize the target immediately before
+each injected move, button-down or wheel event, with a final native root-window
+check before sending. A drag may cross separately granted apps; an ungranted,
+protected or replaced target stops further movement. Cancellation or denial
+releases a held button without moving the pointer toward the denied destination.
 
 ## Tool Definition
 
@@ -422,7 +429,7 @@ The profile is pinned alongside the provider selection and removed from request
 options before provider transport. Missing pins fail as `tool_profile_required`;
 retired or unknown pins fail as `tool_profile_invalid`, without provider access
 or substitution. Run queries return null for unsupported historical labels.
-The catalog has 29 definitions and the Broker 28 bindings (`ask_user` is Host-only).
+The catalog has 28 definitions and the Broker 27 bindings (`ask_user` is Host-only).
 There are no public `write`, `edit` or `bash` bindings. Internal operation tags
 still let saved policy-family deny/ask rules constrain the corresponding modern
 tools; they cannot dispatch a retired tool. Shared file/terminal adapters remain
@@ -518,7 +525,7 @@ Hard-invalid requests remain denied; structured protected paths stay denied in
 default; `full_access` requires a GUI confirmation or CLI
 `--confirm-full-access`. The model-visible tool list remains the runtime projection of
 Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
-`list` (`max_entries`), `grep`, `glob`, `git_status`, `help` (five bundled offline documents),
+`list` (`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
 `todo_write`, `write_file`, `edit_file`, `file_delete`, `file_restore`,
 `powershell`, `run_process`, `terminal_read`, `terminal_stop`, `skill`,
 standalone `web_search`/`web_fetch`, and Host-intercepted `ask_user` (it parks
@@ -581,7 +588,7 @@ matchers it receives and derives none ([Host approval flow](host.md#approval-flo
   argv and canonical cwd. `mcp` `list_tools` and `call` bind the server (`mcp:<server>`) and its argv
   (`list_tools`, or `call` with the tool name). `computer` `request_access` and `focus` bind the exact
   app list or app. Every other id is not rememberable, including `apply_patch`, `file_restore`, `run_code`,
-  `terminal_read`, `terminal_stop`, `git_status`, the subagent tools, `web_search`, `web_fetch`, `skill`, `help`,
+  `terminal_read`, `terminal_stop`, the subagent tools, `web_search`, `web_fetch`, `skill`, `help`,
   `todo_write` and unknown ids.
 - A matcher that cannot bind its identity is not made. That covers an empty argv (an argument-less
   terminal launch), a missing identity field such as the workspace root, which has no relative path, a
@@ -670,6 +677,10 @@ automation.
 ## Workspace Terminal
 
 Definition: [Workspace Terminal](../../CONTEXT.md) (glossary).
+
+While a foreground command is attached, the in-process gateway publishes
+bounded, redacted stdout and stderr chunks in sequence. The Broker retains
+the spool independently for background tasks and later output reads.
 
 The terminal adapter runs under execution-authority policy with bounded output,
 hard timeout, cancellation, redaction, and process-tree cleanup. `plan` denies

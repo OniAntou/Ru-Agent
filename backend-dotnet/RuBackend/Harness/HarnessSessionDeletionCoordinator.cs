@@ -29,6 +29,7 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
     private readonly IAgentRuntimeRunCleanup? _runCleanup;
     private readonly Subagents.SubagentCancellationCoordinator? _subagentCancellation;
     private readonly Subagents.SubagentArtifactCleanupCoordinator? _subagentArtifacts;
+    private readonly Workspace.ScratchWorkspaceStore? _scratchWorkspaces;
 
     public HarnessSessionDeletionCoordinator(
         IHarnessSessionArtifactStore artifacts,
@@ -37,7 +38,8 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
         Broker.IToolGatewayFactory? brokerGateways = null,
         IAgentRuntimeRunCleanup? runCleanup = null,
         Subagents.SubagentCancellationCoordinator? subagentCancellation = null,
-        Subagents.SubagentArtifactCleanupCoordinator? subagentArtifacts = null)
+        Subagents.SubagentArtifactCleanupCoordinator? subagentArtifacts = null,
+        Workspace.ScratchWorkspaceStore? scratchWorkspaces = null)
     {
         _artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
@@ -46,6 +48,7 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
         _runCleanup = runCleanup;
         _subagentCancellation = subagentCancellation;
         _subagentArtifacts = subagentArtifacts;
+        _scratchWorkspaces = scratchWorkspaces;
     }
 
     public async Task<HarnessSessionDeletionOutcome> DeleteAsync(
@@ -118,14 +121,35 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
             artifactsDeleted = false;
         }
         var primary = await _sessions.DeleteWithOutcomeAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (primary == SessionDeleteOutcome.Failed)
+        {
+            return HarnessSessionDeletionOutcome.SessionDeleteFailed;
+        }
+
         // Session memory dies with the session: a deleted session starts from
         // zero approvals even if its id were ever observed again.
         SessionApprovalLedger.ClearSession(sessionId);
-        if (primary == SessionDeleteOutcome.Failed) return HarnessSessionDeletionOutcome.SessionDeleteFailed;
-        if (!artifactsDeleted) return HarnessSessionDeletionOutcome.ArtifactsPending;
+        // A scratch workspace is Ru-owned and dies with its session. It is deleted after the
+        // record so a failed session delete cannot destroy files for a session that survives;
+        // a retry after "deleted" still reaches this path and finishes a locked folder.
+        var hadScratch = _scratchWorkspaces?.Exists(sessionId) == true;
+        var scratchDeleted = true;
+        if (_scratchWorkspaces is not null)
+        {
+            try
+            {
+                scratchDeleted = _scratchWorkspaces.TryDelete(sessionId);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                scratchDeleted = false;
+            }
+        }
+
+        if (!artifactsDeleted || !scratchDeleted) return HarnessSessionDeletionOutcome.ArtifactsPending;
         // A retry can finish retained harness cleanup after the conversation
         // record was deleted by the first pass. Report that completed work.
-        return primary == SessionDeleteOutcome.Deleted || deletedRunCount > 0
+        return primary == SessionDeleteOutcome.Deleted || deletedRunCount > 0 || hadScratch
             ? HarnessSessionDeletionOutcome.Deleted : HarnessSessionDeletionOutcome.SessionNotFound;
     }
 }

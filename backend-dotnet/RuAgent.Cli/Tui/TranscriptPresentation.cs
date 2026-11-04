@@ -22,7 +22,7 @@ public interface ITranscriptPresentationWriter
     void AppendPresentation(TranscriptLine row);
     void AppendPresentationChunk(TranscriptLine row);
     void AppendActivityPresentation(string activityId, TranscriptLine row, IReadOnlyList<string>? details = null);
-    void UpdateActivityPresentation(string activityId, TranscriptLine row);
+    void UpdateActivityPresentation(string activityId, TranscriptLine row, IReadOnlyList<string>? details = null);
     Task<bool> ReplaceAssistantPresentationAsync(IReadOnlyList<TranscriptLine> rows);
 }
 

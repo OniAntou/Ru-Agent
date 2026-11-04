@@ -14,6 +14,19 @@ namespace RuApp.Views
     {
         private bool _suppressContextUsageUpdate;
 
+        private void OnAgentContextStepStarted(object? sender, AgentModelStepStartedEventArgs step)
+        {
+            if (!DispatcherQueue.HasThreadAccess)
+            {
+                DispatcherQueue.TryEnqueue(() => OnAgentContextStepStarted(sender, step));
+                return;
+            }
+            if (_agentController?.CurrentRun is not { } run
+                || run.RunId != step.RunId || run.SessionId != _activeSessionId || run.SessionId != step.SessionId) return;
+            _retainedContextMeter.ScopeToRun(run, _activeSessionId);
+            _retainedContextMeter.ObserveModelStep(step.RunId, step.SessionId, step.Sequence, step.ModelStepId);
+        }
+
         public void UpdateContextUsage(bool force = false)
         {
             if (_suppressContextUsageUpdate) return;
@@ -84,12 +97,19 @@ namespace RuApp.Views
             int usedTokens = meter.UsedTokens;
             int draftEstimate = ModelContextSpecs.EstimateTokens(draftText.Length
                 + Composer.Attachments.Where(item => !item.IsImage).Sum(item => item.TextContent?.Length ?? 0), Composer.ImageCount);
-            var reading = ContextPanelPresenter.Project(_retainedContextMeter.ContextTokens, draftEstimate,
-                measured.EstimatedTokens, measured.HasKnownHistoryBoundary);
+            var reading = ContextPanelPresenter.Project(
+                _retainedContextMeter.ContextTokens,
+                draftEstimate,
+                measured.EstimatedTokens,
+                measured.HasKnownHistoryBoundary,
+                requestFailed: string.Equals(retainedRun?.Status, "failed", StringComparison.OrdinalIgnoreCase),
+                hasReportedUsage: _retainedContextMeter.HasReportedUsage);
             PaintContextBreakdown(reading, usedTokens, meter.MaximumTokens);
             AutomationProperties.SetHelpText(ContextMeterButton,
                 (isRetainedRun ? RetainedRunIdentityText.Text + ". " : string.Empty)
-                + $"Context used ~{ModelContextSpecs.FormatTokens(usedTokens)} tokens. "
+                + (reading.NextRequestOnly
+                    ? $"Context estimated for the next request ~{ModelContextSpecs.FormatTokens(usedTokens)} tokens. "
+                    : $"Context used ~{ModelContextSpecs.FormatTokens(usedTokens)} tokens. ")
                 + $"System prompt {reading.System}; Tool definitions {reading.Tools}; Messages {reading.Messages}. "
                 + reading.Note);
 
@@ -110,8 +130,12 @@ namespace RuApp.Views
 
                 ContextProgressRing.Foreground = brush;
 
-                ContextUsedLabel.Text = $"~{ModelContextSpecs.FormatTokens(usedTokens)} / {meter.DisplayLimit}";
-                ContextPercentLabel.Text = percentage.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "% of context used";
+                ContextUsedLabel.Text = reading.NextRequestOnly
+                    ? $"~{ModelContextSpecs.FormatTokens(usedTokens)} / {meter.DisplayLimit} (estimated)"
+                    : $"~{ModelContextSpecs.FormatTokens(usedTokens)} / {meter.DisplayLimit}";
+                ContextPercentLabel.Text = reading.NextRequestOnly
+                    ? percentage.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "% estimated for next request"
+                    : percentage.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "% of context used";
                 ContextPercentLabel.Foreground = meter.Severity == AgentContextMeterSeverity.Normal
                     ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"]
                     : brush;

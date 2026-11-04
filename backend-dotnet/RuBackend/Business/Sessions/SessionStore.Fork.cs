@@ -76,11 +76,11 @@ public sealed partial class SessionStore
         // Copy retained rows and only their delivery receipts inside the same transaction.
         // Older pages need not be loaded into memory; no execution/workflow authority is copied.
         command.CommandText = """
-            INSERT INTO business_session_messages(session_id, message_index, role, content, source_message_id, source_run_id)
-            SELECT $child, message_index, role, content, source_message_id, source_run_id
+            INSERT INTO business_session_messages(session_id, message_index, role, content, source_message_id, source_run_id, image_attachment_count)
+            SELECT $child, message_index, role, content, source_message_id, source_run_id, image_attachment_count
             FROM business_session_messages WHERE session_id = $source AND message_index < $count;
-            INSERT INTO business_session_source_receipts(session_id, source_message_id, fingerprint)
-            SELECT $child, r.source_message_id, r.fingerprint FROM business_session_source_receipts r
+            INSERT INTO business_session_source_receipts(session_id, source_message_id, fingerprint, source_role, source_run_id)
+            SELECT $child, r.source_message_id, r.fingerprint, r.source_role, r.source_run_id FROM business_session_source_receipts r
             WHERE r.session_id = $source AND EXISTS (
                 SELECT 1 FROM business_session_messages m WHERE m.session_id = $source
                     AND m.message_index < $count AND m.source_message_id = r.source_message_id);

@@ -102,6 +102,24 @@ public sealed class HookProcessRunnerTests
     }
 
     [Fact]
+    public async Task Descendant_holding_the_pipe_is_a_timeout_and_does_not_outlive_the_hook()
+    {
+        // cmd.exe exits immediately, but the started child inherits the hook's
+        // stdout/stderr pipes and keeps them open. The old runner drained the
+        // pipes under the timeout token, whose cancellation the reader swallowed,
+        // so it reported a normal exit and left the child behind. The hook must
+        // report a timeout and kill the process tree.
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = await new HookProcessRunner().RunAsync(
+            Hook("start \"\" /b ping -n 60 127.0.0.1", seconds: 1), "{}", Path.GetTempPath(), CancellationToken.None);
+
+        Assert.True(result.TimedOut);
+        Assert.False(result.Blocks);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(15));
+    }
+
+    [Fact]
     public async Task Credential_environment_is_not_inherited()
     {
         Environment.SetEnvironmentVariable("RU_TEST_HOOK_API_KEY", "super-secret-value");

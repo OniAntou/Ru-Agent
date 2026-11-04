@@ -17,7 +17,8 @@ public sealed record AgentEventModel(
     long? Sequence,
     bool IsTransient,
     long? TransientSequence,
-    string? TransientData)
+    string? TransientData,
+    string? ModelStepId = null)
 {
     public static AgentEventModel FromSseFrame(SseFrame frame)
     {
@@ -97,7 +98,8 @@ public sealed record AgentEventModel(
             envelope.Sequence,
             false,
             null,
-            null);
+            null,
+            envelope.ModelStepId);
     }
 
     public override string ToString() =>

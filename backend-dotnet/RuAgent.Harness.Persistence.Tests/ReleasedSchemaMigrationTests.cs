@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace RuAgent.Harness.Persistence.Tests;
@@ -68,6 +69,44 @@ public sealed class ReleasedSchemaMigrationTests
         Assert.Equal(1L, await fixture.ScalarAsync("SELECT total_message_count FROM business_sessions WHERE session_id='released-session';"));
         Assert.Equal("[]", await fixture.ScalarAsync("SELECT json_extract(CAST(document AS TEXT),'$.messages') FROM business_sessions WHERE session_id='released-session';"));
         Assert.Equal(1L, await fixture.ScalarAsync("SELECT count(*) FROM business_session_message_search WHERE business_session_message_search MATCH 'legacy';"));
+    }
+
+    [Fact]
+    public async Task V33_to_v34_backfills_image_facts_for_existing_nested_fork_messages()
+    {
+        await using var fixture = await ReleasedSchemaFixture.CreateAsync();
+        var initialized = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+        Assert.True(initialized.IsAvailable, initialized.ErrorCode);
+        await fixture.ExecuteAsync("""
+            INSERT INTO agent_payloads(payload_id,run_id,kind,audience,encoding,byte_cap,protected_content,
+                protection_version,nonce,authentication_tag,created_at_utc)
+            VALUES ('payload_55555555555555555555555555555555','run_22222222222222222222222222222222',11,3,0,4096,
+                X'01',1,zeroblob(12),zeroblob(16),'2026-10-01');
+            INSERT INTO business_sessions(session_id,document,summary,updated_at_utc,parent_session_id)
+            VALUES ('fork-session',X'01','{}','2026-10-01','released-session');
+            INSERT INTO business_sessions(session_id,document,summary,updated_at_utc,parent_session_id)
+            VALUES ('nested-fork-session',X'01','{}','2026-10-01','fork-session');
+            INSERT INTO business_session_messages(session_id,message_index,role,content,source_message_id,source_run_id,image_attachment_count)
+            VALUES ('released-session',0,'user','parent','evt_parent','run_22222222222222222222222222222222',0),
+                ('fork-session',0,'user','fork','evt_fork','run_22222222222222222222222222222222',0),
+                ('nested-fork-session',0,'user','nested','evt_nested','run_22222222222222222222222222222222',0);
+            DROP INDEX ix_business_session_source_receipts_run_role;
+            ALTER TABLE business_session_source_receipts DROP COLUMN source_run_id;
+            ALTER TABLE business_session_source_receipts DROP COLUMN source_role;
+            ALTER TABLE business_session_messages DROP COLUMN image_attachment_count;
+            PRAGMA user_version=33;
+            """);
+        Assert.Equal(0L, await fixture.ScalarAsync("SELECT count(*) FROM pragma_table_info('business_session_source_receipts') WHERE name='source_role';"));
+        Assert.Equal(0L, await fixture.ScalarAsync("SELECT count(*) FROM pragma_table_info('business_session_messages') WHERE name='image_attachment_count';"));
+        Assert.Equal(33L, await fixture.ScalarAsync("PRAGMA user_version;"));
+        await using (var pooled = await fixture.Options.OpenConnectionAsync(default))
+            SqliteConnection.ClearPool(pooled);
+
+        var upgraded = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+
+        Assert.True(upgraded.IsAvailable, upgraded.ErrorCode);
+        Assert.Equal(3L, await fixture.ScalarAsync("SELECT count(*) FROM business_session_messages WHERE image_attachment_count=1;"));
+        Assert.Equal(34L, await fixture.ScalarAsync("PRAGMA user_version;"));
     }
 
     [Fact]

@@ -58,7 +58,7 @@ public sealed partial class ChatView
         SidePanel.SetSessionTitle(_activeSessionTitle);
         SidePanel.SetWorkspace(_agentWorkspace);
         UpdateChatHeaderWorkspace();
-        SidePanel.SetTerminalWorkingDirectory(_agentWorkspace);
+        SidePanel.SetTerminalWorkingDirectory(string.IsNullOrWhiteSpace(_agentWorkspace) ? null : _agentWorkspace);
         ApplySidePanelState();
         UpdateWelcomeWorkspaceText();
         RefreshSidePanelEdits();

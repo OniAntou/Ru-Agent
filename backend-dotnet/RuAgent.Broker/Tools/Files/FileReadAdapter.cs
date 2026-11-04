@@ -13,12 +13,20 @@ public sealed partial class FileReadAdapter
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
+    private readonly Func<string, FileStream> _lineReadOpener;
 
     public FileReadAdapter(string workspaceRoot, bool allowProtectedPaths = false)
+        : this(workspaceRoot, OpenLineRead, allowProtectedPaths)
+    {
+    }
+
+    internal FileReadAdapter(string workspaceRoot, Func<string, FileStream> lineReadOpener, bool allowProtectedPaths = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
+        ArgumentNullException.ThrowIfNull(lineReadOpener);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
         _resolver = new CanonicalPathResolver(_workspaceRoot, allowProtectedPaths);
+        _lineReadOpener = lineReadOpener;
     }
 
     /// <summary>

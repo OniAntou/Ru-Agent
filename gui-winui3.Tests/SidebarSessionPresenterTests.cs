@@ -6,12 +6,52 @@ namespace RuApp.Tests;
 
 public sealed class SidebarSessionPresenterTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Scratch_chat_renders_in_recents_and_respects_its_expansion(bool isExpanded)
+    {
+        var scratch = new SessionInfo { Id = "scratch", Title = "Hello", MessageCount = 2,
+            WorkspaceKind = "scratch", WorkspacePath = @"C:\RuData\workspaces\one" };
+        var project = new SessionInfo { Id = "project", MessageCount = 2, WorkspacePath = @"C:\project" };
+        var result = SidebarSessionPresenter.Build(
+            [scratch, project], null, new SidebarOrganizationPreferences(), [], "scratch",
+            (key, fallback) => key == SidebarSessionOrganization.RecentsKey ? isExpanded : fallback,
+            _ => false);
+
+        var header = Assert.Single(result.Rows.OfType<SidebarSectionRow>(),
+            row => row.Key == SidebarSessionOrganization.RecentsKey);
+        Assert.Equal(isExpanded, header.IsExpanded);
+        Assert.Equal(isExpanded, result.Rows.OfType<SessionInfo>().Any(row => row.Id == scratch.Id));
+        Assert.DoesNotContain(result.Rows.OfType<WorkspaceGroupRow>(), row => row.Group.Label == "Scratch");
+        Assert.Single(result.Rows.OfType<WorkspaceGroupRow>());
+        if (isExpanded)
+        {
+            Assert.True(result.Rows.ToList().IndexOf(header) < result.Rows.ToList().IndexOf(scratch));
+            Assert.True(result.Rows.ToList().IndexOf(scratch) < result.Rows.ToList().FindIndex(
+                row => row is SidebarSectionRow section && section.IsCli));
+        }
+        Assert.DoesNotContain(result.Rows.OfType<SidebarEmptyRow>(),
+            row => row.Key == SidebarSessionOrganization.WorkspacesKey);
+    }
+
     [Fact]
     public void New_chat_uses_selected_workspace_and_defaults_to_recents()
     {
         Assert.Equal("work", SidebarSessionPresenter.ResolveNewChatWorkspace("work"));
         Assert.Equal(SidebarSessionOrganization.RecentsKey, SidebarSessionPresenter.ResolveNewChatWorkspace(null));
     }
+
+    [Theory]
+    [InlineData("scratch", null, false)]
+    [InlineData("recents", null, true)]
+    [InlineData("path:project", @"C:\project", true)]
+    [InlineData("path:project", null, false)]
+    [InlineData("cli", null, false)]
+    [InlineData("unknown", null, false)]
+    public void Chat_creation_allows_recents_or_a_resolved_project_path(
+        string key, string? path, bool expected) =>
+        Assert.Equal(expected, SidebarSessionPresenter.CanCreateChatInGroup(key, path));
 
     [Fact]
     public void Group_toggle_uses_the_bound_effective_state_before_the_stored_default()

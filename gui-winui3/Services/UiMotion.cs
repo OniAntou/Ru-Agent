@@ -106,17 +106,31 @@ namespace RuApp.Services
             {
                 var visual = ElementVisual(host);
                 Animate(visual, toOpacity: 0f, translationY: 0f, SwapOutMilliseconds);
-                After(SwapOutMilliseconds, () =>
-                {
-                    swap();
-                    Animate(visual, toOpacity: 1f, translationY: 0f, SwapInMilliseconds);
-                });
+                After(SwapOutMilliseconds, () => CompleteSwap(swap,
+                    () => Animate(ElementVisual(host), toOpacity: 1f, translationY: 0f, SwapInMilliseconds),
+                    () => Reset(host)));
             }
             catch (Exception error)
             {
                 Trace("swap", error);
                 Reset(host);
                 swap();
+            }
+        }
+
+        internal static void CompleteSwap(Action swap, Action reveal, Action restoreVisibility)
+        {
+            try
+            {
+                swap();
+                reveal();
+            }
+            catch
+            {
+                // The timer's error handler reports the failure, but cannot reveal
+                // a host left transparent by a failed mount or composition call.
+                restoreVisibility();
+                throw;
             }
         }
 

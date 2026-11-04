@@ -103,7 +103,7 @@ public sealed class AgentRunLifecycleService
 
     /// <summary>
     /// Applies the typed user reconciliation decision. The snapshot hash the client
-    /// presents must equal this host's freshly computed workspace/Git hash; anything
+    /// presents must equal the hash of the durable reconciliation request; anything
     /// else fails closed with reconcile_stale and leaves the run untouched.
     /// </summary>
 

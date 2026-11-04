@@ -34,8 +34,8 @@ internal static class HarnessSqliteSchemaValidator
                 "client_source", "total_message_count", "history_epoch",
             ],
             ["business_session_messages"] =
-                ["message_id", "session_id", "message_index", "role", "content", "source_message_id", "source_run_id"],
-            ["business_session_source_receipts"] = ["session_id", "source_message_id", "fingerprint"],
+                ["message_id", "session_id", "message_index", "role", "content", "source_message_id", "source_run_id", "image_attachment_count"],
+            ["business_session_source_receipts"] = ["session_id", "source_message_id", "fingerprint", "source_role", "source_run_id"],
             ["business_activity"] = ["sequence", "event_id", "timestamp", "document"],
             ["agent_workspaces"] =
             [
@@ -263,10 +263,11 @@ internal static class HarnessSqliteSchemaValidator
                   'ix_agent_session_work_states_workspace',
                   'ix_business_session_messages_session_index',
                   'business_sessions_updated',
-                  'business_activity_timestamp')
+                  'business_activity_timestamp',
+                  'ix_business_session_source_receipts_run_role')
             """;
         if ((long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
-                .ConfigureAwait(false) ?? 0L) != 16)
+                .ConfigureAwait(false) ?? 0L) != 17)
             return false;
 
         await using var searchCommand = connection.CreateCommand();

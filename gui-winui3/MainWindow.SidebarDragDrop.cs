@@ -28,7 +28,7 @@ public sealed partial class MainWindow
     private void InitializeSidebarMotion()
     {
         SidebarSessionList.ItemContainerTransitions = UiTiming.AnimationsEnabled
-            ? new TransitionCollection { new AddDeleteThemeTransition(), new RepositionThemeTransition() }
+            ? new TransitionCollection { new RepositionThemeTransition() }
             : new TransitionCollection();
     }
 

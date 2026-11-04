@@ -9,6 +9,9 @@ public enum TuiRunState
     WaitingTrust,
     Paused,
     Failed,
+    WaitingModel,
+    Compacting,
+    Retrying,
 }
 
 /// <summary>
@@ -35,6 +38,8 @@ public sealed class TuiStatusLine
     }
 
     public TuiRunState State => _state;
+    public bool IsWorking => _state is TuiRunState.Thinking or TuiRunState.Tool
+        or TuiRunState.WaitingModel or TuiRunState.Compacting or TuiRunState.Retrying;
 
     /// <summary>
     /// Current braille spinner frame, reused by the composer hint row. Derived from
@@ -52,7 +57,11 @@ public sealed class TuiStatusLine
         _responding = false;
     }
 
-    public void SetResponding() => _responding = true;
+    public void SetResponding()
+    {
+        _state = TuiRunState.Thinking;
+        _responding = true;
+    }
 
     public void SetActivity(string? activity)
     {
@@ -73,6 +82,9 @@ public sealed class TuiStatusLine
         var (glyph, label, tone) = _state switch
         {
             TuiRunState.Thinking => (SpinnerFrame, _responding ? "Writing response" : "Thinking", TuiToken.Brand),
+            TuiRunState.WaitingModel => (SpinnerFrame, "Waiting for model", TuiToken.Brand),
+            TuiRunState.Compacting => (SpinnerFrame, "Compacting context", TuiToken.Brand2),
+            TuiRunState.Retrying => (SpinnerFrame, _activityAction ?? "Retrying request", TuiToken.Warn),
             TuiRunState.Tool => (TuiSpinner.ToolGlyphAt(_elapsedSeconds), string.IsNullOrWhiteSpace(_activityAction) ? "Running tool" : _activityAction, TuiToken.Brand),
             TuiRunState.WaitingApproval => ("?", "Approval needed", TuiToken.Warn),
             TuiRunState.WaitingTrust => ("?", "Workspace needs trust", TuiToken.Warn),
@@ -82,10 +94,11 @@ public sealed class TuiStatusLine
         };
         label = char.ToUpperInvariant(label[0]) + label[1..];
         var metrics = new List<string>();
-        if (_state is TuiRunState.Thinking or TuiRunState.Tool || _elapsedSeconds > 0)
+        if (IsWorking || _elapsedSeconds > 0)
             metrics.Add(FormatElapsed(_elapsedSeconds));
         if (_tools > 0 && width >= 64) metrics.Add(_tools == 1 ? "1 tool" : $"{_tools} tools");
         var target = _state == TuiRunState.Tool ? _activityTarget
+            : _state == TuiRunState.Retrying ? _activityTarget ?? _detail
             : _state is TuiRunState.WaitingTrust or TuiRunState.Paused or TuiRunState.Idle ? _detail : null;
         if (_state is TuiRunState.WaitingApproval or TuiRunState.WaitingTrust or TuiRunState.Paused)
             metrics.Clear();
@@ -152,6 +165,12 @@ public sealed class TuiStatusLine
     {
         switch (_state)
         {
+            case TuiRunState.WaitingModel:
+            case TuiRunState.Compacting:
+            case TuiRunState.Retrying:
+                var phase = Presentation(80);
+                return TuiPalette.Paint(phase.Glyph + " " + phase.Action, phase.Tone)
+                    + TuiPalette.Paint(" · " + FormatElapsed(_elapsedSeconds), TuiToken.Line);
             case TuiRunState.Thinking:
                 // Same wording as Presentation(): the classic row used to keep saying
                 // "Thinking" while the TG row already reported "Writing response".
@@ -244,6 +263,6 @@ public sealed class TuiStatusLine
 
     public static string FormatTokens(long tokens)
     {
-        return RuAgent.SessionInterchange.TranscriptText.FormatTokens(tokens);
+        return RuAgent.Client.TokenCountFormatter.Format(tokens);
     }
 }

@@ -27,7 +27,9 @@ public sealed record AgentRunModel(
     long? ContextWindowTokens = null,
     string? ContextWindowSource = null,
     string? ContextWindowVersion = null,
-    int? OutputTokenReserve = null)
+    int? OutputTokenReserve = null,
+    string? WorkspacePath = null,
+    string? WorkspaceKind = null)
 {
     public static AgentRunModel FromCreateResponse(CreateAgentRunResponse response) => new(
         response.RunId,
@@ -45,7 +47,9 @@ public sealed record AgentRunModel(
         response.TerminalAt,
         response.TerminalErrorCode,
         response.TrustRequestId,
-        response.DisplayIdentityHash);
+        response.DisplayIdentityHash,
+        WorkspacePath: response.WorkspacePath,
+        WorkspaceKind: response.WorkspaceKind);
 
     public static AgentRunModel FromGetResponse(GetAgentRunResponse response) => new(
         response.RunId,

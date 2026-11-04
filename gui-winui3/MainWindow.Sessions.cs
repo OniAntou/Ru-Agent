@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml.Automation;
 using RuAgent.Hosting;
-using RuAgent.SessionInterchange;
 using RuApp.Models;
 using RuApp.Services;
 using RuApp.ViewModels;
@@ -65,12 +64,73 @@ namespace RuApp
             }
         }
 
-        /// <summary>Removes a pinned workspace; its folder and sessions stay untouched.</summary>
-        private void OnWorkspaceRemoveClick(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// Deletes every session in one workspace after one explicit confirmation. The workspace
+        /// folder on disk is untouched: only Ru's chat records and its own scratch folders go.
+        /// </summary>
+        private async void OnWorkspaceDeleteClick(object sender, RoutedEventArgs e)
         {
-            if (sender is FrameworkElement { Tag: string key })
+            try
             {
-                Sidebar.Unpin(key);
+                if (sender is not FrameworkElement { Tag: string key }
+                    || ShellRoot.XamlRoot is null)
+                {
+                    return;
+                }
+
+                var plan = await Sidebar.PlanWorkspaceDeletionAsync(key);
+                if (plan is null)
+                {
+                    SetSessionActionError("This workspace is no longer available");
+                    return;
+                }
+
+                var dialog = new ContentDialog
+                {
+                    Title = "Delete workspace?",
+                    Content = plan.SessionIds.Count == 0
+                        ? $"Remove {plan.Label} from Ru? This workspace has no chats. "
+                            + "The project folder and its files stay on disk."
+                        : $"Remove {plan.Label} from Ru and permanently delete its {plan.SessionIds.Count} chat(s)? "
+                            + "Files stored by Ru for those chats are also deleted. "
+                            + "The project folder and its files stay on disk. This cannot be undone.",
+                    PrimaryButtonText = "Delete",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = ShellRoot.XamlRoot,
+                };
+                if (await ContentDialogGate.ShowAsync(dialog) != ContentDialogResult.Primary)
+                {
+                    return;
+                }
+
+                var result = await Sidebar.DeleteWorkspaceSessionsAsync(plan);
+                switch (result.FollowUp)
+                {
+                    case SessionDeletionFollowUp.OpenSession open:
+                        SidebarSessionList.SelectedItem = open.Session;
+                        if (_chatView is not null)
+                        {
+                            await _chatView.OpenSessionAsync(open.Session.Id, open.Session.Title);
+                        }
+                        break;
+                    case SessionDeletionFollowUp.StartNewChat:
+                        OnNewChatClick(NavNewChat, new RoutedEventArgs());
+                        break;
+                }
+
+                SetSessionActionError(result.Failed > 0
+                    ? $"Deleted {result.Deleted} of {result.Total} chat(s); {result.Failed} failed. Try again."
+                    : !result.WorkspaceRemoved
+                        ? "Some chats remain or the workspace could not be removed. Try again."
+                        : result.Partial > 0
+                            ? $"Workspace removed; {result.Partial} chat(s) still cleaning up"
+                            : $"Workspace removed; deleted {result.Deleted} chat(s)");
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Workspace delete failed: {ex.Message}");
+                SetSessionActionError("Could not delete this workspace's chats");
             }
         }
 
@@ -80,7 +140,7 @@ namespace RuApp
             {
                 if (sender is not Button { Tag: string key }) return;
                 var path = Sidebar.ResolveWorkspacePath(key);
-                if (path is null && key != SidebarSessionOrganization.RecentsKey) return;
+                if (!SidebarSessionPresenter.CanCreateChatInGroup(key, path)) return;
                 await CreateDraftSessionAsync(key, path);
             }
             catch (Exception ex)

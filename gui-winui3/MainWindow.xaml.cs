@@ -10,7 +10,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml.Automation;
 using RuAgent.Hosting;
-using RuAgent.SessionInterchange;
 using RuApp.Models;
 using RuApp.Services;
 using RuApp.ViewModels;
@@ -617,7 +616,7 @@ namespace RuApp
             _ => _chatView,
         };
 
-        private long _navSwapGeneration;
+        private readonly Services.NavigationContentSwap _navContentSwap = new();
 
         /// <summary>
         /// Shows the destination view with a dip-fade, so switching screens reads as
@@ -627,21 +626,10 @@ namespace RuApp
         private void SwapNavContent(Services.ShellDestination destination)
         {
             var content = ViewFor(destination);
-            if (ReferenceEquals(ContentFrame.Content, content))
-            {
-                return;
-            }
-
-            long generation = ++_navSwapGeneration;
-            Services.UiMotion.SwapContent(ContentFrame, () =>
-            {
-                if (generation != _navSwapGeneration)
-                {
-                    return;
-                }
-
-                ContentFrame.Content = content;
-            });
+            _navContentSwap.Show(ContentFrame.Content, content,
+                next => ContentFrame.Content = next,
+                swap => Services.UiMotion.SwapContent(ContentFrame, swap),
+                () => Services.UiMotion.Reset(ContentFrame));
         }
 
         private void OnToolsMenuItemClick(object sender, RoutedEventArgs e)
@@ -714,6 +702,8 @@ namespace RuApp
         {
             if (_closed) return;
             _closed = true;
+            _navContentSwap.Cancel();
+            DisposeCustomizeView();
             StopSessionTitleWaves();
             WelcomeOverlay?.Dispose();
             Shell.Close();

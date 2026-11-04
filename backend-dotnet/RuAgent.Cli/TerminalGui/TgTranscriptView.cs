@@ -176,14 +176,22 @@ public sealed partial class TgTranscriptView : View
         SetNeedsDraw();
     }
 
-    internal void ReplaceToolRow(int index, string text)
+    internal void ReplaceToolRow(int index, string text) =>
+        ReplaceToolRow(index, new TgTranscriptRow(text, TranscriptStyle.Tool));
+
+    internal void ReplaceToolRow(int index, TgTranscriptRow row, IReadOnlyList<string>? details = null)
     {
         if (index < 0 || index >= _lines.Count || _lines[index].Style != TranscriptStyle.Tool) return;
-        if (_lines[index].Text.Contains("ctrl+o", StringComparison.Ordinal) && !text.Contains("ctrl+o", StringComparison.Ordinal))
+        var text = row.Text;
+        // Structured rows already budget every painted span for the current width.
+        // Only the legacy text importer needs to preserve a missing shortcut.
+        if (row.Spans is null && details is null
+            && _lines[index].Text.Contains("ctrl+o", StringComparison.Ordinal) && !text.Contains("ctrl+o", StringComparison.Ordinal))
             text += " · ctrl+o";
         var bounded = BoundLine(text);
         _retainedCharacters += CharacterCount(bounded) - CharacterCount(_lines[index].Text);
-        _lines[index] = new TgTranscriptRow(bounded, TranscriptStyle.Tool);
+        _lines[index] = row with { Text = bounded };
+        if (details is not null) UpdateToolDetails(index, details);
         _wrapWidth = -1;
         EnforceRetention();
         SetNeedsDraw();

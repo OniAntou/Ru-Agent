@@ -990,6 +990,7 @@ internal static class HarnessEventMapper
                 : MapStatus(run),
             SafeSummary: ToSafeSummary(evt),
             PayloadRef: payloadRef,
-            ApprovalId: evt.ApprovalId?.Value);
+            ApprovalId: evt.ApprovalId?.Value,
+            ModelStepId: evt.ModelStepId?.Value);
     }
 }

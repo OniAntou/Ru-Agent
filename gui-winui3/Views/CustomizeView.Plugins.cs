@@ -14,9 +14,13 @@ public sealed partial class CustomizeView
 
     private async Task LoadComputerUseAsync()
     {
-        if (_api is null) return;
-        var settings = await _api.GetSettingsAsync();
-        if (_active) SetComputerUseToggle(settings?.ComputerUseEnabled == true);
+        var api = _api;
+        if (api is null) return;
+        var generation = _activationGeneration;
+        var settings = await api.GetSettingsAsync();
+        if (!_active || generation != _activationGeneration || !ReferenceEquals(api, _api)) return;
+        if (settings is not null) SetComputerUseToggle(settings.ComputerUseEnabled);
+        else if (PluginsTab.IsChecked == true) ShowStatus("Could not load plugin settings.");
     }
 
     private void SetComputerUseToggle(bool enabled)

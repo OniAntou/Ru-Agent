@@ -18,6 +18,7 @@ public static class SidebarRowFingerprint
                 session.ParentSessionId,
                 session.ForkedFromMessageId,
                 session.WorkspaceId,
+                session.WorkspaceKind,
                 session.WorkspaceLabel,
                 session.WorkspacePath,
                 session.ClientSource)));

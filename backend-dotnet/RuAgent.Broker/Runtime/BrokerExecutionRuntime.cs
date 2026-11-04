@@ -19,7 +19,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
     private readonly BrokerSession _session;
     private readonly IReadOnlySet<string> _executableScopes;
     private readonly Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? _authenticatedToolHandler;
-    private readonly Func<AgentEnvelope, CanonicalCommandIntent, CancellationToken, Task<ToolResult>>? _authenticatedTerminalHandler;
+    private readonly Func<AgentEnvelope, CanonicalCommandIntent, CancellationToken, TerminalOutputDeltaHandler?, Task<ToolResult>>? _authenticatedTerminalHandler;
     private readonly Func<string, string?, JsonObject>? _sessionTasksHandler;
     private readonly Func<string, Task>? _sessionClosedHandler;
     private readonly Func<string, Task>? _sessionGrantsRevokedHandler;
@@ -529,7 +529,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
         Func<string, string?, JsonObject>? SessionTasksHandler,
         Func<string, Task>? SessionClosedHandler,
         Func<string, Task>? SessionGrantsRevokedHandler = null,
-        Func<AgentEnvelope, CanonicalCommandIntent, CancellationToken, Task<ToolResult>>? AuthenticatedTerminalHandler = null)
+        Func<AgentEnvelope, CanonicalCommandIntent, CancellationToken, TerminalOutputDeltaHandler?, Task<ToolResult>>? AuthenticatedTerminalHandler = null)
     {
         public static ToolExecutionBackend From(ToolExecutionService tools)
         {
@@ -540,7 +540,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
                 tools.HandleSessionTasks,
                 tools.RemoveSessionAsync,
                 tools.RevokeSessionGrantsAsync,
-                (request, intent, ct) => tools.ExecuteAuthenticatedV2Async(request, intent, ct));
+                tools.ExecuteAuthenticatedV2Async);
         }
     }
 }

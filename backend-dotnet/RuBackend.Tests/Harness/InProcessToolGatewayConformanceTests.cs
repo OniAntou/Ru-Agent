@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
@@ -22,8 +23,86 @@ namespace RuBackend.Tests.Harness;
 public sealed class InProcessToolGatewayConformanceTests : ToolGatewayConformance
 {
     private readonly List<InProcessExecutionFixture> _fixtures = [];
+    private IReadOnlyDictionary<string, string>? _commandEnvironment;
 
     protected override bool StreamsToolOutputDeltas => false;
+
+    [Fact]
+    public async Task Foreground_terminal_publishes_output_before_command_can_finish()
+    {
+        var gateway = await CreatePresetGatewayAsync(FullAccessPreset);
+        var marker = "stream-ack-" + Guid.NewGuid().ToString("N");
+        var received = false;
+        var receipt = await ExecuteOnAsync(gateway, "powershell", new JsonObject
+        {
+            ["script"] = $"[Console]::Error.WriteLine('live-marker'); while (!(Test-Path '{marker}')) {{ Start-Sleep -Milliseconds 50 }}",
+            ["working_directory"] = ".",
+            ["timeout_ms"] = 10000,
+        }, chunk =>
+        {
+            if (chunk.Stream == ToolOutputStream.Stderr && chunk.Content.Contains("live-marker", StringComparison.Ordinal))
+            {
+                received = true;
+                File.WriteAllText(Path.Combine(_fixtures[^1].WorkspaceRoot, marker), "");
+            }
+            return ValueTask.CompletedTask;
+        });
+
+        Assert.True(received);
+        Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+        Assert.False(ParseModelContent(receipt)["background"]?.GetValue<bool>() ?? false);
+    }
+
+    [Fact]
+    public async Task Foreground_terminal_streams_and_redacts_when_the_environment_carries_a_secret()
+    {
+        // Regression: a credential in the host environment used to withhold the
+        // whole short stream until the command exited, so live output never
+        // reached the caller. The fixture now supplies its own snapshot; this
+        // case proves a seeded secret is redacted without stalling the stream.
+        var secret = "synthetic-secret-" + Guid.NewGuid().ToString("N");
+        var snapshot = InProcessExecutionFixture.DeterministicEnvironmentSnapshot();
+        snapshot["RU_TEST_API_KEY"] = secret;
+        _commandEnvironment = snapshot;
+        try
+        {
+            var gateway = await CreatePresetGatewayAsync(FullAccessPreset);
+            var marker = "stream-ack-" + Guid.NewGuid().ToString("N");
+            var received = false;
+            var leaked = false;
+            var receipt = await ExecuteOnAsync(gateway, "powershell", new JsonObject
+            {
+                ["script"] = $"[Console]::Error.WriteLine('live-marker'); [Console]::Out.WriteLine('{secret}'); while (!(Test-Path '{marker}')) {{ Start-Sleep -Milliseconds 50 }}",
+                ["working_directory"] = ".",
+                ["timeout_ms"] = 10000,
+            }, chunk =>
+            {
+                if (chunk.Content.Contains(secret, StringComparison.Ordinal))
+                {
+                    leaked = true;
+                }
+
+                if (chunk.Stream == ToolOutputStream.Stderr && chunk.Content.Contains("live-marker", StringComparison.Ordinal))
+                {
+                    received = true;
+                    File.WriteAllText(Path.Combine(_fixtures[^1].WorkspaceRoot, marker), "");
+                }
+
+                return ValueTask.CompletedTask;
+            });
+
+            Assert.True(received);
+            Assert.False(leaked);
+            Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+            var content = Encoding.UTF8.GetString(receipt.ModelContent.Span);
+            Assert.DoesNotContain(secret, content, StringComparison.Ordinal);
+            Assert.Contains("[redacted]", content, StringComparison.Ordinal);
+        }
+        finally
+        {
+            _commandEnvironment = null;
+        }
+    }
 
     [Fact]
     public async Task Failed_terminal_command_delivers_diagnostics_to_the_model()
@@ -89,7 +168,9 @@ public sealed class InProcessToolGatewayConformanceTests : ToolGatewayConformanc
 
     protected override Task<IToolGateway> CreateGatewayAsync(string workspaceRoot, string preset)
     {
-        var fixture = new InProcessExecutionFixture(workspaceRoot);
+        var fixture = new InProcessExecutionFixture(
+            workspaceRoot,
+            commandEnvironmentSnapshot: _commandEnvironment);
         _fixtures.Add(fixture);
         // The shared suite builds proposals with a fixed run id; the factory
         // opens its lease for that same run so approval state keys line up.

@@ -11,6 +11,7 @@ public sealed class HarnessSqliteSchemaTests
     public async Task V31_upgrade_preserves_data_and_indexes_execution_request_provenance()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RemoveVersion34SchemaFeaturesAsync();
         await using var connection = fixture.CreateRawConnection();
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();

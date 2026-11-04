@@ -73,6 +73,16 @@ The Continue path is the same on both clients: a parked run
 (`waiting_user`, `reconciliation_required`) resumes only when the client
 continues or reconciles it.
 
+Startup recovery compares the durable event stream with dispatch boundaries: a
+crash before any dispatch fails the run as `recovery_pre_dispatch`, an incomplete
+read-only execution as `recovery_read_only_incomplete`, an ambiguous
+side-effecting execution parks it for reconciliation, and a model step that
+started but never completed — the host stopped while the provider was
+generating — fails as `recovery_model_step_incomplete`. That last reply was
+never committed, so resuming it would silently open a second step on every
+restart and keep the session's active-run ownership; failing it by name releases
+the session for a fresh prompt.
+
 The runtime polls the conversation outbox and registered runs independently of
 long model/tool work. A new registration, a successful client POST to a run
 (trust, approval, answer, continue, cancel) and a drive pass that changed the run
@@ -475,14 +485,20 @@ barriers. Receipts retain model order. An observed unknown outcome stops new
 starts; every already-started read drains, including reads admitted before that
 outcome was known. Cancellation or failure also drains owned work before return.
 See [phase timing and Host benchmarks](agent-performance.md).
-Exhausting a window moves the run to `WaitingUser`; only an
-explicit Continue opens a fresh window, and the TUI offers the same path: the
-parked run shows a `▲ run paused` row plus `resume with Continue (or 'ru
-agent continue <run-id>')`. Typing `Continue` while a parked run is known
-POSTs the resume and follows that tracked run from its
-durable cursor. Native calls, text-selected JSON,
-arguments, and outputs never enter the visible transcript as execution markup,
-mood state, or public diagnostics.
+
+A root run does not stop at its first full window. It opens the next window
+automatically, up to **8 windows** (1,024 model steps / 2,048 tool calls) in one
+run, so a single long prompt does not pause for a click. Only after that
+automatic allowance does it move to `WaitingUser` with
+`model_step_budget_exhausted` / `tool_call_budget_exhausted`; an explicit
+Continue then opens one further window, and every later window is manual. The
+per-window counters, not a wall-clock timer, bound the loop. Internal subagent
+runs never take an automatic window: their own limits fail them. When a park
+happens, the TUI shows a `▲ run paused` row plus `resume with Continue (or 'ru
+agent continue <run-id>')`; typing `Continue` while a parked run is known POSTs
+the resume and follows that tracked run from its durable cursor. Native calls,
+text-selected JSON, arguments, and outputs never enter the visible transcript
+as execution markup, mood state, or public diagnostics.
 
 A dead-end model step does not end the run by default. Ordinary prose after a
 failed or unverified tool receipt is suppressed and answered with a durable
@@ -557,9 +573,7 @@ never become instructions. `grep`
 searches the workspace, `web_search` searches the public web, and `help`
 searches only bundled Ru documentation. Unbound connectors and `app.open`
 remain outside the model-visible catalog.
-The managed Git commit workflow is shipped inside terminal execution, using a
-temporary index and refusing dirty user index state. Other Git commands remain
-ordinary terminal requests governed by Broker policy. The
+Git commands are ordinary terminal requests governed by Broker policy. The
 GUI renders the actual `agent.session` grant received from the Host. Managed
 startup enables the bounded WebOptions instance with Google HTML as its primary
 search engine, so standalone `web_search` and `web_fetch` are advertised as

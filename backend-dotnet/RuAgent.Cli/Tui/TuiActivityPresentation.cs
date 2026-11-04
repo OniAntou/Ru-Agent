@@ -12,6 +12,7 @@ public sealed record TuiActivityPresentation(
 {
     /// <summary>Feed rows sit two cells inside the transcript's text column.</summary>
     public const int Indent = 2;
+    internal const int ActionColumnWidth = 10;
 
     public IReadOnlyList<TuiActivitySpan> Fit(int width)
     {
@@ -34,6 +35,9 @@ public sealed record TuiActivityPresentation(
         var rightWidth = TuiText.VisibleWidth(metrics);
         var leftRoom = Math.Max(1, usable - rightWidth - (rightWidth > 0 ? 3 : 0));
         var head = TuiText.Truncate(glyph + " " + action, leftRoom);
+        if (target.Length > 0 && w >= 60)
+            head = TuiText.Pad(head, Math.Max(TuiText.VisibleWidth(head),
+                Math.Min(2 + ActionColumnWidth, leftRoom - 4)));
 
         var spans = new List<TuiActivitySpan>(8);
         if (indent > 0)

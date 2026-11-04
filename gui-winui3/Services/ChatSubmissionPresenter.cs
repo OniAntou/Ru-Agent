@@ -1,15 +1,40 @@
+using RuAgent.Protocol.Harness;
+
 namespace RuApp.Services;
 
 /// <summary>Owns submission snapshot and accepted-draft commit rules.</summary>
 internal static class ChatSubmissionPresenter
 {
-    internal static async Task<string> CaptureSessionAsync(Func<Task> ensureSession, Func<string> readSession)
+    internal sealed record RunSubmissionSnapshot(
+        string SessionId,
+        long SessionGeneration,
+        CreateRunProviderSelection ProviderSelection);
+
+    /// <summary>Snapshots run intent before session admission can yield to other UI work.</summary>
+    internal static async Task<RunSubmissionSnapshot?> CaptureRunSubmissionAsync(
+        Func<CreateRunProviderSelection?> captureProviderSelection,
+        Func<Task> ensureSession,
+        Func<string> readSession,
+        Func<long>? readSessionGeneration = null,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(captureProviderSelection);
         ArgumentNullException.ThrowIfNull(ensureSession);
         ArgumentNullException.ThrowIfNull(readSession);
+        cancellationToken.ThrowIfCancellationRequested();
+        var providerSelection = captureProviderSelection();
+        if (providerSelection is null) return null;
         await ensureSession().ConfigureAwait(true);
-        return readSession();
+        cancellationToken.ThrowIfCancellationRequested();
+        return new RunSubmissionSnapshot(readSession(), readSessionGeneration?.Invoke() ?? 0, providerSelection);
     }
+
+    internal static bool OwnsAdmission(
+        RunSubmissionSnapshot snapshot,
+        Func<string> readSession,
+        Func<long> readSessionGeneration) =>
+        string.Equals(snapshot.SessionId, readSession(), StringComparison.Ordinal)
+        && snapshot.SessionGeneration == readSessionGeneration();
 
     /// <summary>
     /// Submits a turn and clears the draft the moment the Host accepts it.

@@ -67,6 +67,8 @@ public sealed class AgentUsageEnrichmentTests
         Assert.Equal(1200, totalProp.GetInt64());
         Assert.Equal(1000, usageEnvelope.GetProperty("input_tokens").GetInt64());
         Assert.Equal(200, usageEnvelope.GetProperty("output_tokens").GetInt64());
+        Assert.Equal(stepId.Value, usageEnvelope.GetProperty("model_step_id").GetString());
+        Assert.Equal(stepId.Value, events.Single(e => TypeOf(e) == "model.step_completed").GetProperty("model_step_id").GetString());
     }
 
     [Fact]

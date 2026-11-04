@@ -65,7 +65,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(54, doc.RootElement.GetArrayLength()); // Includes skill packages and explicit provider/model admission.
+        Assert.Equal(52, doc.RootElement.GetArrayLength()); // Skills/selected admission remain; external session exchange is retired.
     }
 
     [Theory]

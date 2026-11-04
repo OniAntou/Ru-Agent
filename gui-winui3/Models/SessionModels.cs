@@ -54,6 +54,10 @@ namespace RuApp.Models
         [JsonPropertyName("workspace_path")]
         public string? WorkspacePath { get => _workspacePath; set => SetField(ref _workspacePath, value); }
 
+        /// <summary>"scratch" for a Ru-owned, session-scoped workspace; "project" otherwise.</summary>
+        [JsonPropertyName("workspace_kind")]
+        public string? WorkspaceKind { get; set; }
+
         [JsonIgnore]
         public bool IsForked => !string.IsNullOrEmpty(ParentSessionId);
 

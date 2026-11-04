@@ -105,6 +105,11 @@ public sealed partial class AgentRunController
             }
 
             Events.Add(model);
+            if (!model.IsTransient && model.EventType == "model.step_started" && model.Sequence is { } stepSequence)
+            {
+                ContextStepStarted?.Invoke(this, new AgentModelStepStartedEventArgs(
+                    model.RunId, model.SessionId, stepSequence, model.ModelStepId));
+            }
             if (!model.IsTransient && string.Equals(model.EventType, "context.compacted", StringComparison.Ordinal))
             {
                 ContextCompacted?.Invoke(
@@ -219,7 +224,7 @@ public sealed partial class AgentRunController
             {
                 UsageReceived?.Invoke(
                     this,
-                    new AgentUsageReceivedEventArgs(model.RunId, model.SessionId, usage, model.Sequence));
+                    new AgentUsageReceivedEventArgs(model.RunId, model.SessionId, usage, model.Sequence, model.ModelStepId));
             }
 
             RefreshCommands();

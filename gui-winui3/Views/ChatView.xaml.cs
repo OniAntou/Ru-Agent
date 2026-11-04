@@ -119,7 +119,7 @@ namespace RuApp.Views
         private AgentRunController? _agentController;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
         private bool _agentBusySeen;
-        private string _agentWorkspace = Environment.CurrentDirectory;
+        private string _agentWorkspace = string.Empty;
         private string? _defaultAgentWorkspace;
         private string? _requestedWorkspace;
         /// <summary>Last approved identity hash per workspace path; drives the re-trust copy only.</summary>
@@ -257,12 +257,16 @@ namespace RuApp.Views
         }
 
         private DispatcherTimer? _contextHoverTimer;
+        private readonly ContextHoverState _contextHoverState = new();
 
         private void OnContextMeterPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             if (ContextMeterButton is null) return;
+            _contextHoverState.ObservePointer(inside: true);
             var canvas = (Brush)Application.Current.Resources["RuCanvasBrush"];
             Services.UiMotion.FadeBrush(ContextMeterButton, Control.BackgroundProperty, canvas);
+            if (!_contextHoverState.CanOpen) return;
+
             // One timer for the control's lifetime: a fresh DispatcherTimer per
             // hover churned allocations and left the previous Tick handler behind
             // until the next hover.
@@ -282,7 +286,10 @@ namespace RuApp.Views
         private void OnContextHoverTimerTick(object? sender, object e)
         {
             _contextHoverTimer?.Stop();
-            if (ContextWindowFlyout != null && !ContextWindowFlyout.IsOpen && ContextMeterButton != null)
+            if (_contextHoverState.CanOpen
+                && ContextWindowFlyout != null
+                && !ContextWindowFlyout.IsOpen
+                && ContextMeterButton != null)
             {
                 try
                 {
@@ -301,6 +308,16 @@ namespace RuApp.Views
         private void OnContextMeterPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             if (ContextMeterButton is null) return;
+            var position = e.GetCurrentPoint(ContextMeterButton).Position;
+            bool pointerStillInside = ContextMeterButton.ActualWidth > 0
+                && ContextMeterButton.ActualHeight > 0
+                && position.X >= 0
+                && position.Y >= 0
+                && position.X < ContextMeterButton.ActualWidth
+                && position.Y < ContextMeterButton.ActualHeight;
+            _contextHoverState.ObservePointer(pointerStillInside);
+            if (pointerStillInside) return;
+
             Services.UiMotion.FadeBrush(ContextMeterButton, Control.BackgroundProperty, null);
             _contextHoverTimer?.Stop();
         }
@@ -351,11 +368,13 @@ namespace RuApp.Views
             _harnessEvents = harnessEvents;
             _harnessScenario = harnessScenario;
             _agentController = agentController;
-            string defaultWorkspace = string.IsNullOrWhiteSpace(defaultAgentWorkspace)
-                ? Environment.CurrentDirectory
+            // A chat without a chosen folder has no workspace yet: the Host allocates a scratch
+            // workspace when the first run is created. Never fall back to the install directory.
+            string? defaultWorkspace = string.IsNullOrWhiteSpace(defaultAgentWorkspace)
+                ? null
                 : defaultAgentWorkspace.Trim();
             _defaultAgentWorkspace = defaultWorkspace;
-            _agentWorkspace = defaultWorkspace;
+            SetAgentWorkspace(defaultWorkspace ?? string.Empty);
             UpdateChatHeaderWorkspace();
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController == null;
@@ -368,6 +387,7 @@ namespace RuApp.Views
             _agentController?.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
             _agentController?.ToolOutputReceived += OnAgentToolOutputReceived;
             _agentController?.UsageReceived += OnAgentUsageReceived;
+            _agentController?.ContextStepStarted += OnAgentContextStepStarted;
             _agentController?.ContextCompacted += OnAgentContextCompacted;
             if (_agentController is not null) _agentController.ContextEstimateReceived += OnContextEstimateReceived;
             _agentController?.RunAdopted += OnAgentRunAdopted;
@@ -422,6 +442,7 @@ namespace RuApp.Views
                 _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
                 _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
+                _agentController.ContextStepStarted -= OnAgentContextStepStarted;
                 _agentController.ContextCompacted -= OnAgentContextCompacted;
                 _agentController.ContextEstimateReceived -= OnContextEstimateReceived;
                 _agentController.RunAdopted -= OnAgentRunAdopted;
@@ -442,6 +463,7 @@ namespace RuApp.Views
                 _agentController.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
                 _agentController.ToolOutputReceived += OnAgentToolOutputReceived;
                 _agentController.UsageReceived += OnAgentUsageReceived;
+                _agentController.ContextStepStarted += OnAgentContextStepStarted;
                 _agentController.ContextCompacted += OnAgentContextCompacted;
                 _agentController.ContextEstimateReceived += OnContextEstimateReceived;
                 _agentController.RunAdopted += OnAgentRunAdopted;

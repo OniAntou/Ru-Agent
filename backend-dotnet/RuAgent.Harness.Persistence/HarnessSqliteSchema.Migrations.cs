@@ -44,6 +44,34 @@ public static partial class HarnessSqliteSchema
                 SELECT 1;
                 """),
             new(32, 33, ProviderIntentMigration),
+            new(33, 34, """
+                ALTER TABLE business_session_source_receipts ADD COLUMN source_role TEXT;
+                ALTER TABLE business_session_source_receipts ADD COLUMN source_run_id TEXT;
+                ALTER TABLE business_session_messages ADD COLUMN image_attachment_count INTEGER NOT NULL DEFAULT 0 CHECK(image_attachment_count BETWEEN 0 AND 64);
+                UPDATE business_session_messages
+                SET image_attachment_count=COALESCE(image_counts.image_count, 0)
+                FROM (SELECT run_id, MIN(64, COUNT(*)) AS image_count FROM agent_payloads
+                    WHERE kind=11 AND (audience & 2) != 0 GROUP BY run_id) AS image_counts
+                WHERE business_session_messages.role='user'
+                    AND business_session_messages.source_run_id=image_counts.run_id;
+                UPDATE business_session_source_receipts
+                SET source_role=(SELECT role FROM business_session_messages m
+                        WHERE m.session_id=business_session_source_receipts.session_id
+                            AND m.source_message_id=business_session_source_receipts.source_message_id LIMIT 1),
+                    source_run_id=(SELECT source_run_id FROM business_session_messages m
+                        WHERE m.session_id=business_session_source_receipts.session_id
+                            AND m.source_message_id=business_session_source_receipts.source_message_id LIMIT 1);
+                UPDATE business_session_source_receipts
+                SET source_role=CASE o.role WHEN 0 THEN 'user' WHEN 1 THEN 'ai' END,
+                    source_run_id=o.run_id
+                FROM agent_conversation_outbox o
+                WHERE business_session_source_receipts.source_message_id=o.intent_id
+                    AND business_session_source_receipts.session_id=o.session_id
+                    AND business_session_source_receipts.source_run_id IS NULL;
+                CREATE INDEX ix_business_session_source_receipts_run_role
+                    ON business_session_source_receipts(session_id, source_role, source_run_id);
+                SELECT 1;
+                """),
         ];
     }
 }

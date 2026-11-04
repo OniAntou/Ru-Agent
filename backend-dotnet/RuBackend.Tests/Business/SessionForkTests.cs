@@ -104,6 +104,24 @@ public sealed class SessionForkTests
     }
 
     [Fact]
+    public async Task Branch_copies_durable_image_attachment_facts_with_retained_messages()
+    {
+        using var data = TemporaryBusinessData.Create(); var store = new SessionStore(data.Paths);
+        var id = (await store.CreateAsync(default))!;
+        var user = new SessionMessage("user", "", "msg_image", "run_image", ImageAttachmentCount: 2);
+        var answer = new SessionMessage("ai", "I received the images", "msg_answer", "run_image");
+        Assert.Equal(SessionAppendOutcome.Appended, await store.AppendIfAbsentAsync(id, user, default));
+        Assert.Equal(SessionAppendOutcome.Appended, await store.AppendIfAbsentAsync(id, answer, default));
+        var source = (await store.GetAsync(id, default))!;
+
+        var child = (await store.ForkAsync(id, 2, SessionStore.HistoryRevision(source), default)).Document!;
+        var reopened = new SessionStore(data.Paths);
+
+        Assert.Equal(2, (await reopened.GetAsync(child.Id, default))!.Messages[0].ImageAttachmentCount);
+    }
+
+
+    [Fact]
     public async Task Cancelled_fork_creates_nothing()
     {
         using var data = TemporaryBusinessData.Create(); var store = new SessionStore(data.Paths);

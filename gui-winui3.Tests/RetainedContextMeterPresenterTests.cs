@@ -1,3 +1,4 @@
+using RuAgent.Client;
 using RuApp.Models;
 using RuApp.Services;
 using Xunit;
@@ -7,6 +8,20 @@ namespace RuApp.Tests;
 public sealed class RetainedContextMeterPresenterTests
 {
     private const string RunId = "run_12345678901234567890123456789012";
+
+    [Fact]
+    public void Reported_usage_is_distinct_from_a_prepared_estimate()
+    {
+        var presenter = new RetainedContextMeterPresenter();
+        presenter.ScopeToRun(Run(), "session-1");
+        Assert.False(presenter.HasReportedUsage);
+
+        Assert.True(presenter.ObserveEstimate(RunId, "session-1", new AgentUsageEstimateModel(900, 10_000, "step", 5)));
+        Assert.False(presenter.HasReportedUsage);
+
+        Assert.True(presenter.ObserveUsage(RunId, "session-1", 6, "openai_responses", Usage(900)));
+        Assert.True(presenter.HasReportedUsage);
+    }
 
     [Fact]
     public void Compaction_drops_old_visible_text_and_rejects_late_usage()
@@ -85,6 +100,37 @@ public sealed class RetainedContextMeterPresenterTests
         var usage = new AgentModelUsage(int.MaxValue, 0, null, int.MaxValue, int.MaxValue);
 
         Assert.Equal(int.MaxValue, RetainedContextMeterPresenter.ResolvePromptTokens("anthropic_messages", usage));
+    }
+
+    [Fact]
+    public void An_estimate_for_an_already_reported_step_cannot_replace_real_usage()
+    {
+        var presenter = new RetainedContextMeterPresenter();
+        presenter.ScopeToRun(Run(), "session-1");
+        presenter.ObserveEstimate(RunId, "session-1", new AgentUsageEstimateModel(80_000, 100_000, "step-a", 5));
+        presenter.ObserveUsage(RunId, "session-1", 10, "openai_responses", Usage(50_000));
+        Assert.False(presenter.ObserveEstimate(RunId, "session-1", new AgentUsageEstimateModel(80_000, 100_000, "step-a", 6)));
+        Assert.Equal(50_000, presenter.Measure([], null, 0).UsedTokens);
+        Assert.True(presenter.HasReportedUsage);
+    }
+
+    [Fact]
+    public void Compaction_does_not_allow_a_buffered_estimate_to_restore_the_previous_step()
+    {
+        var presenter = new RetainedContextMeterPresenter();
+        presenter.ScopeToRun(Run(), "session-1");
+        presenter.ObserveEstimate(RunId, "session-1", new AgentUsageEstimateModel(80_000, 100_000, "step-a", 5));
+        presenter.ObserveCompaction(RunId, "session-1", 10, 0);
+        Assert.False(presenter.ObserveEstimate(RunId, "session-1", new AgentUsageEstimateModel(80_000, 100_000, "step-a", 6)));
+    }
+
+    [Fact]
+    public void A_large_prepared_estimate_plus_draft_saturates_without_integer_overflow()
+    {
+        var presenter = new RetainedContextMeterPresenter();
+        presenter.ScopeToRun(Run(), "session-1");
+        presenter.ObserveEstimate(RunId, "session-1", new(long.MaxValue, long.MaxValue, "a", 1));
+        Assert.Equal(int.MaxValue, presenter.Measure([], "draft", 0).UsedTokens);
     }
 
     private static AgentRunModel Run(string? runId = null) => new(

@@ -5,6 +5,21 @@ namespace RuAgent.Harness.Persistence;
 
 public sealed partial class HarnessPayloadStore
 {
+    public async Task<int> ReadUserImageCountAsync(RunId runId, CancellationToken cancellationToken)
+    {
+        await using var connection = await RequireOptions().OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*) FROM agent_payloads
+            WHERE run_id=$run AND kind=$kind AND (audience & $audience) != 0;
+            """;
+        command.Parameters.AddWithValue("$run", runId.Value);
+        command.Parameters.AddWithValue("$kind", (int)HarnessPayloadKind.UserImage);
+        command.Parameters.AddWithValue("$audience", (int)HarnessPayloadAudience.ModelContext);
+        var count = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+        return Math.Clamp(count, 0, 64);
+    }
+
     /// <summary>Counts image facts only for user messages still visible in this session, including retained fork prefixes.</summary>
     public async Task<IReadOnlyDictionary<string, int>> ReadSessionImageCountsAsync(
         SessionId sessionId, IReadOnlyList<string> sourceRunIds, CancellationToken cancellationToken)

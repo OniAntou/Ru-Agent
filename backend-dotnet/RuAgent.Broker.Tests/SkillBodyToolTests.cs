@@ -105,6 +105,67 @@ public sealed class SkillBodyToolTests
     }
 
     [Fact]
+    public async Task Skill_tool_query_matches_tokens_in_any_order()
+    {
+        using var fixture = Fixture.Create();
+        fixture.AddSkill("zzq-widget", "---\nname: Widget\ndescription: Tool for zzq\n---\nWidget body.");
+
+        // "widget zzq" is not a substring of any single field; only token matching finds it.
+        var result = await fixture.CreateService().ExecuteAsync(
+            Envelope("""{"query":"widget zzq"}"""), CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+        Assert.Contains(result.Output["items"]!.AsArray(), item => item!["id"]!.GetValue<string>() == "zzq-widget");
+        Assert.Equal(1, result.Output["total"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task Skill_tool_query_requires_every_token()
+    {
+        using var fixture = Fixture.Create();
+        fixture.AddSkill("zzq-widget", "---\nname: Widget\ndescription: Tool for zzq\n---\nWidget body.");
+
+        var result = await fixture.CreateService().ExecuteAsync(
+            Envelope("""{"query":"zzq missing"}"""), CancellationToken.None);
+
+        Assert.Empty(result.Output["items"]!.AsArray());
+        Assert.Equal(0, result.Output["total"]!.GetValue<int>());
+        Assert.False(result.Output["truncated"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Skill_tool_query_total_counts_only_matching_entries()
+    {
+        using var fixture = Fixture.Create();
+        fixture.AddSkill("zzq-widget", "---\nname: Widget\ndescription: First zzq tool\n---\nBody.");
+        fixture.AddSkill("zzq-gadget", "---\nname: Gadget\ndescription: Second zzq tool\n---\nBody.");
+
+        var result = await fixture.CreateService().ExecuteAsync(
+            Envelope("""{"query":"zzq"}"""), CancellationToken.None);
+
+        Assert.Equal(2, result.Output["total"]!.GetValue<int>());
+        Assert.Equal(2, result.Output["items"]!.AsArray().Count);
+        Assert.Equal(0, result.Output["hidden"]!.GetValue<int>());
+        Assert.False(result.Output["truncated"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Skill_tool_query_reports_a_hidden_match_instead_of_false_truncation()
+    {
+        using var fixture = Fixture.Create();
+        fixture.AddSkill("zzq-manual",
+            "---\nname: Manual\ndescription: zzq explicit workflow\ndisable-model-invocation: true\n---\nBody");
+
+        var result = await fixture.CreateService().ExecuteAsync(
+            Envelope("""{"query":"zzq"}"""), CancellationToken.None);
+
+        Assert.Empty(result.Output["items"]!.AsArray());
+        Assert.Equal(1, result.Output["total"]!.GetValue<int>());
+        Assert.Equal(1, result.Output["hidden"]!.GetValue<int>());
+        Assert.False(result.Output["truncated"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public async Task Unknown_skill_fails_closed_with_skill_not_found()
     {
         using var fixture = Fixture.Create();

@@ -19,7 +19,11 @@ internal static class SidebarSessionOrganization
     internal static WorkspaceGroupIdentity GroupFor(SessionInfo session, string? appRoot, SidebarOrganizationPreferences preferences)
     {
         if (session.ClientSource == "cli") return new(CliKey, "CLI Session", null);
-        var path = preferences.Groups.TryGetValue(session.Id, out var placement) ? placement : session.WorkspacePath;
+        var path = session.WorkspacePath;
+        if (preferences.Groups.TryGetValue(session.Id, out var placement)) path = placement;
+        // Host-owned scratch storage is an execution detail, not a user-selected project.
+        // An explicit sidebar move still controls presentation without changing that storage.
+        else if (string.Equals(session.WorkspaceKind, "scratch", StringComparison.Ordinal)) path = null;
         if (string.IsNullOrEmpty(path) || SamePath(path, appRoot)) return new(RecentsKey, "Recents", null);
         return new(PathKey(path), WorkspaceSessionProjection.LabelForPath(path), path);
     }

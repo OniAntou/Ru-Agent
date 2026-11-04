@@ -5,7 +5,7 @@ using Xunit;
 
 namespace RuApp.Tests;
 
-public sealed class SessionSidebarViewModelTests : IDisposable
+public sealed partial class SessionSidebarViewModelTests : IDisposable
 {
     private const string AppRoot = @"D:\LLM";
     private readonly string _root = Path.Combine(Path.GetTempPath(), "ru-sidebar-vm-" + Guid.NewGuid().ToString("N"));
@@ -356,6 +356,59 @@ public sealed class SessionSidebarViewModelTests : IDisposable
         Assert.All(backend.Requests, request => Assert.Equal("needle", request.Query));
     }
 
+    [Fact]
+    public async Task Deleting_a_workspace_group_targets_only_that_group_and_reports_counts()
+    {
+        var first = Session("a", "First");
+        first.WorkspacePath = @"D:\work\app";
+        var second = Session("b", "Second");
+        second.WorkspacePath = @"D:\work\app";
+        var other = Session("c", "Other");
+        other.WorkspacePath = @"D:\work\other";
+        var backend = new FakeSessions(first, second, other);
+        backend.DeleteOutcomes.Enqueue(new ApiService.SessionDeletionOutcome(true, false, null));
+        backend.DeleteOutcomes.Enqueue(new ApiService.SessionDeletionOutcome(true, true, "cleanup pending"));
+        var viewModel = NewViewModel(backend);
+        viewModel.SetAppRoot(null);
+        viewModel.SetRefreshActive(true);
+        Assert.True(await viewModel.RefreshLatestAsync());
+
+        var plan = await viewModel.PlanWorkspaceDeletionAsync(SidebarSessionOrganization.PathKey(@"D:\work\app"));
+        Assert.NotNull(plan);
+        Assert.Equal(2, plan!.SessionIds.Count);
+
+        var result = await viewModel.DeleteWorkspaceSessionsAsync(plan);
+
+        Assert.Equal(2, result.Total);
+        Assert.Equal(2, result.Deleted);
+        Assert.Equal(1, result.Partial);
+        Assert.Equal(0, result.Failed);
+        Assert.Equal(["a", "b"], backend.Deleted);
+    }
+
+    [Fact]
+    public async Task Workspace_delete_counts_a_failed_session_without_aborting_the_rest()
+    {
+        var first = Session("a", "First");
+        first.WorkspacePath = @"D:\work\app";
+        var second = Session("b", "Second");
+        second.WorkspacePath = @"D:\work\app";
+        var backend = new FakeSessions(first, second);
+        backend.DeleteOutcomes.Enqueue(new ApiService.SessionDeletionOutcome(false, false, "boom"));
+        backend.DeleteOutcomes.Enqueue(new ApiService.SessionDeletionOutcome(true, false, null));
+        var viewModel = NewViewModel(backend);
+        viewModel.SetAppRoot(null);
+        viewModel.SetRefreshActive(true);
+        Assert.True(await viewModel.RefreshLatestAsync());
+
+        var plan = await viewModel.PlanWorkspaceDeletionAsync(SidebarSessionOrganization.PathKey(@"D:\work\app"));
+        var result = await viewModel.DeleteWorkspaceSessionsAsync(plan!);
+
+        Assert.Equal(1, result.Deleted);
+        Assert.Equal(1, result.Failed);
+        Assert.Equal(["a", "b"], backend.Deleted);
+    }
+
     private SessionSidebarViewModel NewViewModel(FakeSessions backend) =>
         new(backend,
             action => action(),
@@ -383,11 +436,15 @@ public sealed class SessionSidebarViewModelTests : IDisposable
 
         public ApiService.SessionDeletionOutcome DeleteOutcome { get; set; } = new(true, false, null);
 
+        public TimeSpan DeleteDelay { get; set; }
+
         public Queue<ApiService.SessionDeletionOutcome> DeleteOutcomes { get; } = new();
 
         public Func<Task<SessionInfo?>>? CreateHook { get; set; }
 
         public Action? OnList { get; set; }
+
+        public Action<string>? OnDelete { get; set; }
 
         public Func<string?, string?, SessionListPageResponse?>? PageOverride { get; set; }
 
@@ -418,6 +475,7 @@ public sealed class SessionSidebarViewModelTests : IDisposable
                 Id = row.Id, Title = row.Title, MessageCount = row.MessageCount, CreatedAt = row.CreatedAt,
                 UpdatedAt = row.UpdatedAt, ClientSource = row.ClientSource, WorkspacePath = row.WorkspacePath,
                 WorkspaceId = row.WorkspaceId, WorkspaceLabel = row.WorkspaceLabel,
+                WorkspaceKind = row.WorkspaceKind,
             }).ToList();
             int next = start + copy.Count;
             return Task.FromResult<SessionListPageResponse?>(new SessionListPageResponse
@@ -431,10 +489,14 @@ public sealed class SessionSidebarViewModelTests : IDisposable
         public Task<SessionInfo?> CreateSessionAsync() =>
             CreateHook?.Invoke() ?? Task.FromResult<SessionInfo?>(new SessionInfo { Id = "draft" + ++_created });
 
-        public Task<ApiService.SessionDeletionOutcome> DeleteSessionAsync(string sessionId)
+        public async Task<ApiService.SessionDeletionOutcome> DeleteSessionAsync(string sessionId)
         {
+            OnDelete?.Invoke(sessionId);
             Deleted.Add(sessionId);
-            return Task.FromResult(DeleteOutcomes.Count > 0 ? DeleteOutcomes.Dequeue() : DeleteOutcome);
+            if (DeleteDelay > TimeSpan.Zero) await Task.Delay(DeleteDelay);
+            var outcome = DeleteOutcomes.Count > 0 ? DeleteOutcomes.Dequeue() : DeleteOutcome;
+            if (outcome.Deleted || outcome.Partial) Remove(sessionId);
+            return outcome;
         }
     }
 

@@ -15,6 +15,20 @@ public sealed class SkillCatalogDiscoveryTests : IDisposable
     }
 
     [Fact]
+    public void User_catalog_discovers_library_metadata_without_inheriting_a_projects_preferences()
+    {
+        Package("shared", "Private body is not metadata");
+        var project = Catalog();
+        Assert.True(project.SetEnabled("shared", false).Success);
+        Assert.False(Assert.Single(project.Discover(refresh: true).Items).Enabled);
+        var user = SkillCatalog.ForUser(Path.Combine(_root, "preferences.json"), [_library]);
+        var item = Assert.Single(user.Discover().Items);
+        Assert.Equal("shared", item.Id);
+        Assert.True(item.Enabled);
+        Assert.DoesNotContain("Private body", item.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Grouped_packages_are_discovered_loaded_and_keep_their_resource_base()
     {
         var path = Package("team/release", "Release workflow");

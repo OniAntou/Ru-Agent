@@ -189,6 +189,40 @@ public sealed class BrokerExecutionRuntimeTests
     }
 
     [Fact]
+    public async Task Evaluate_then_execute_skill_loads_a_workspace_workflow()
+    {
+        using var fixture = new RuntimeFixture();
+        var skill = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills", "demo"));
+        File.WriteAllText(
+            Path.Combine(skill.FullName, "SKILL.md"),
+            "---\nname: Demo\ndescription: Demo workflow\n---\nDemo body.",
+            new System.Text.UTF8Encoding(false));
+        const string sessionId = "session-runtime-skill";
+        const string runId = "run_runtime_skill1111111111111";
+
+        var opened = await fixture.Runtime.OpenRunAsync(
+            RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()),
+            default);
+        Assert.Null(opened.Error);
+
+        var arguments = new JsonObject { ["name"] = "demo" };
+        var decision = await fixture.Runtime.EvaluateAsync(
+            Evaluate("evaluate-runtime-skill", sessionId, runId, "skill", arguments),
+            default);
+        Assert.Null(decision.Error);
+        Assert.NotNull(decision.Decision);
+        Assert.Equal("allow", decision.Decision!.Decision);
+        Assert.False(string.IsNullOrWhiteSpace(decision.Decision.AuthorizationToken));
+
+        var execution = await fixture.Runtime.ExecuteAuthorizedAsync(
+            Execute("execute-runtime-skill", sessionId, runId, "skill", decision.Decision.AuthorizationToken!, arguments),
+            default);
+        Assert.NotNull(execution.Receipt);
+        Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
+        Assert.Contains("Demo body", execution.Receipt.Output["body"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Ask_approval_once_authorizes_execute_and_replayed_token_is_stale()
     {
         using var fixture = new RuntimeFixture();
@@ -578,33 +612,20 @@ public sealed class BrokerExecutionRuntimeTests
     }
 
     [Fact]
-    public async Task Standard_managed_commit_runs_its_git_children()
+    public async Task Standard_allows_a_plain_git_commit_from_a_workspace_directory()
     {
         if (!OperatingSystem.IsWindows()) return;
         using var fixture = new RuntimeFixture();
-        var repo = Path.Combine(fixture.Root, "repo");
-        Directory.CreateDirectory(repo);
-        RunGit(repo, "init", "-q");
-        RunGit(repo, "config", "user.email", "terminal@example.com");
-        RunGit(repo, "config", "user.name", "Terminal Test");
-        File.WriteAllText(Path.Combine(repo, "seed.txt"), "seed");
-        RunGit(repo, "add", "seed.txt");
-        RunGit(repo, "commit", "-q", "-m", "seed");
-        File.WriteAllText(Path.Combine(repo, "next.txt"), "next");
+        var repo = PrepareCommitRepository(fixture.Root);
 
-        const string sessionId = "session-managed-commit";
-        const string runId = "run_managed_commit111111111111111111111";
+        const string sessionId = "session-plain-commit";
+        const string runId = "run_plain_commit11111111111111111111111";
         var opened = await fixture.Runtime.OpenRunAsync(
             RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()),
             default);
         Assert.Null(opened.Error);
 
-        var arguments = new JsonObject
-        {
-            ["executable"] = "git",
-            ["arguments"] = new JsonArray("commit", "-m", "terminal commit"),
-            ["working_directory"] = "repo",
-        };
+        var arguments = PlainCommitArguments();
         var decision = await fixture.Runtime.EvaluateAsync(
             Evaluate("commit-evaluate", sessionId, runId, "run_process", arguments),
             default);
@@ -614,15 +635,55 @@ public sealed class BrokerExecutionRuntimeTests
             Execute("commit-execute", sessionId, runId, "run_process", decision.Decision.AuthorizationToken!, arguments),
             default);
         Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
-        Assert.Contains(
-            "managed commit",
-            execution.Receipt.Output["stdout_head"]!.GetValue<string>(),
-            StringComparison.Ordinal);
 
-        // The managed commit completed through its real git child processes.
         var head = RunGit(repo, "log", "--oneline", "-1");
         Assert.Contains("terminal commit", head, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Plan_denies_a_plain_git_commit()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var fixture = new RuntimeFixture();
+        var repo = PrepareCommitRepository(fixture.Root);
+
+        const string sessionId = "session-plan-commit";
+        const string runId = "run_plan_commit111111111111111111111111";
+        var opened = await fixture.Runtime.OpenRunAsync(
+            RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.Snapshot(1, "plan", [])),
+            default);
+        Assert.Null(opened.Error);
+
+        var decision = await fixture.Runtime.EvaluateAsync(
+            Evaluate("commit-evaluate", sessionId, runId, "run_process", PlainCommitArguments()),
+            default);
+
+        Assert.Equal("deny", decision.Decision!.Decision);
+        Assert.Equal("plan_preset_read_only", decision.Decision.ReasonCode);
+        Assert.DoesNotContain("terminal commit", RunGit(repo, "log", "--oneline", "-1"), StringComparison.Ordinal);
+    }
+
+    private static string PrepareCommitRepository(string root)
+    {
+        var repo = Path.Combine(root, "repo");
+        Directory.CreateDirectory(repo);
+        RunGit(repo, "init", "-q");
+        RunGit(repo, "config", "user.email", "terminal@example.com");
+        RunGit(repo, "config", "user.name", "Terminal Test");
+        File.WriteAllText(Path.Combine(repo, "seed.txt"), "seed");
+        RunGit(repo, "add", "seed.txt");
+        RunGit(repo, "commit", "-q", "-m", "seed");
+        File.WriteAllText(Path.Combine(repo, "next.txt"), "next");
+        RunGit(repo, "add", "next.txt");
+        return repo;
+    }
+
+    private static JsonObject PlainCommitArguments() => new()
+    {
+        ["executable"] = "git",
+        ["arguments"] = new JsonArray("commit", "-m", "terminal commit"),
+        ["working_directory"] = "repo",
+    };
 
     private static string RunGit(string workingDirectory, params string[] arguments)
     {

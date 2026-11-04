@@ -39,7 +39,7 @@ public sealed partial class SubagentCancellationTests
             }
         }
         var before = (await fixture.EventStore.GetRunAsync(child.RunId, default))!;
-        using var services = new AgentV1ServiceTestBuilder(fixture).Build();
+        var services = new AgentV1ServiceTestBuilder(fixture).Build();
         var response = await services.Lifecycle.ContinueAsync(child.RunId.Value, default);
         Assert.Equal(409, response.StatusCode);
         Assert.Contains("subagent_read_only", System.Text.Json.JsonSerializer.Serialize(response.Body));
@@ -100,7 +100,7 @@ public sealed partial class SubagentCancellationTests
         }
         var cleanup = new Cleanup(agents, root.Run.RunId);
         var cancellation = new SubagentCancellationCoordinator(fixture.EventStore, agents, cleanup, new SystemTimeProvider());
-        using var services = new AgentV1ServiceTestBuilder(fixture)
+        var services = new AgentV1ServiceTestBuilder(fixture)
             .WithSubagentCancellation(cancellation)
             .Build();
         async Task StopAsync()

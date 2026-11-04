@@ -1,4 +1,13 @@
+---
+status: historical
+date: 2026-10-31
+---
+
 # Điều tra typing/menu slash của Ru — 2026-10-31
+
+Historical measurements at the source revision below; installed hashes and line
+numbers describe that investigation, not the current checkout. See
+[current TUI limitations](../../operations/tui-known-limitations.md).
 
 Đã tái hiện độ trễ bằng phím giả lập qua ConPTY, không cần Host hoặc model. Hai
 yếu tố có bằng chứng rõ nhất là yêu cầu vẽ lại toàn trang mỗi lần lọc menu và

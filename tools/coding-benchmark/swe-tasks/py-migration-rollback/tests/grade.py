@@ -55,8 +55,9 @@ def future_schema_version_fails_without_mutation():
     before = schema_snapshot(connection)
     try:
         migrate(connection)
-    except ValueError:
-        pass
+    except Exception as error:
+        # The issue requires a clear refusal, not a particular exception class.
+        assert str(error).strip(), "future schema rejection must explain the failure"
     else:
         raise AssertionError("future schema versions must be rejected")
     assert schema_snapshot(connection) == before

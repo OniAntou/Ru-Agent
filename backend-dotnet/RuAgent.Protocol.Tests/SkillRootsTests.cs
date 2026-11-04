@@ -6,6 +6,14 @@ namespace RuAgent.Protocol.Tests;
 public sealed class SkillRootsTests
 {
     [Fact]
+    public void User_catalog_roots_do_not_invent_a_project_and_keep_user_library_precedence()
+    {
+        Assert.Equal(new[] { "extra", Path.Combine("home", ".ru", "skills"),
+            Path.Combine("home", ".agents", "skills"), Path.Combine("local", "Ru", "skills") },
+            SkillRoots.ForUser(localApplicationDataRoot: "local", userProfileRoot: "home", configuredRoot: "extra"));
+    }
+
+    [Fact]
     public void Lists_workspace_roots_first_then_the_configured_and_per_user_roots()
     {
         var roots = SkillRoots.For("w", localApplicationDataRoot: "local", userProfileRoot: "home", configuredRoot: "extra");

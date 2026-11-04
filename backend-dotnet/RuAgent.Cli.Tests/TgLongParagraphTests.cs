@@ -308,7 +308,7 @@ public sealed class TgLongParagraphTests
             Assert.Equal(string.Concat(MarkdigInline.Parse(reply).Select(run => run.Text)), view.CopyText().Trim());
             Assert.Equal(string.Concat(MarkdigInline.Parse(reply).Select(run => run.Text)),
                 string.Concat(view.Lines.Where(row => row.Style == TranscriptStyle.Prose).Select(row => row.Text)).Trim());
-            var summary = Assert.Single(view.Lines, row => row.Text.Contains("2 tools ·", StringComparison.Ordinal));
+            var summary = Assert.Single(view.Lines, row => row.Text.Contains("2 searched ·", StringComparison.Ordinal));
             var firstProse = view.Lines.ToList().FindIndex(row => row.Text.Contains("answer words", StringComparison.Ordinal));
             Assert.True(view.Lines.ToList().IndexOf(summary) < firstProse);
         });

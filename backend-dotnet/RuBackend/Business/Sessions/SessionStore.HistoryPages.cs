@@ -171,7 +171,7 @@ public sealed partial class SessionStore
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT message_index, role, CAST(content AS BLOB), source_message_id, source_run_id
+            SELECT message_index, role, CAST(content AS BLOB), source_message_id, source_run_id, image_attachment_count
             FROM business_session_messages
             WHERE session_id = $id AND message_index < $before
             ORDER BY message_index DESC LIMIT $limit;
@@ -186,7 +186,8 @@ public sealed partial class SessionStore
         {
             var message = new SessionMessage(reader.GetString(1), System.Text.Encoding.UTF8.GetString((byte[])reader[2]),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
-                reader.IsDBNull(4) ? null : reader.GetString(4));
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.GetInt32(5));
             var messageBytes = JsonSerializer.SerializeToUtf8Bytes(message).Length;
             if (reversed.Count == 0 && messageBytes > byteLimit && !allowSingleOverLimit)
                 throw new SessionHistoryException("session_history_message_exceeds_page_limit");

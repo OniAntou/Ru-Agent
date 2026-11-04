@@ -1,5 +1,12 @@
 # MEMORY — Ru-Agent (máy của anh steal)
 
+## 2026-11-04 — Sync dev vào branch TUI
+
+- Fetch `origin/dev` tới `af537948` rồi merge vào `casluminous/tui-multi-session`, giữ 3 commit riêng của branch. Backup trước sync `backup/casluminous-before-sync-20261104` trỏ `f1f78e81`. Giữ hai đường dẫn untracked của anh và giữ MEMORY theo yêu cầu ghi chép trước đó khi dev không còn file này.
+- Giải quyết xung đột CHANGELOG, tài liệu TUI, HideSlashDropdown và phần usage. Giữ tối ưu SSE đọc usage nền cùng cơ chế context theo model step của dev, chuyển cache preparedContext cho `/status Context` sang luồng đó. Giữ nút FX, animation dưới overlay và các bản sửa welcome. Dev gỡ session interchange ngoài ứng dụng theo commit mới nhất.
+- Focused CLI/context 52 test qua. Đã chạy đủ 12 project .NET Release: 9.718 pass và 1 fail. CLI 2.177 pass, Client 323 pass, Broker 1.437 pass, Host 1.648 pass, GUI 2.108 pass. Ca lỗi là FreshSchemaConcurrencyTests.Concurrent_initializers_can_create_a_fresh_database (1/8 worker trả harness_store_unavailable). Persistence cùng test này trùng nguyên origin/dev. Giữ log lỗi đầu tại `work/sync-20261104/dotnet-matrix.log`; probe riêng có ghi first-chance SQLite chạy lại 1pass, không thu exception, nên chưa kết luận nguyên nhân và không coi lỗi đã được sửa. Các project chưa chạy sau lần matrix dừng đã chạy tiếp theo cùng mutex, không chạy lại các project đã xanh.
+- Full Python `pytest tests -q`: 273 pass, 3 skip; log `work/sync-20261104/python-tests.log`. Diff check sạch. Chốt merge cục bộ, chưa push merge hoặc publish/cài runtime mới vào lệnh Ru. Bản CLI publish đang cài vẫn thuộc commit trước sync.
+
 ## 2026-11-03 — Kiểm tra toàn bộ lệnh TUI và gom bản sửa welcome
 
 - Rà 17 lệnh trong menu và chạy 46 kịch bản native bằng Host giả trên source khớp bản CLI đang cài. 18 ca giữ welcome, 28 ca ẩn welcome. Không có yêu cầu tạo session trong ma trận; 3 ca xác nhận đổi thiết lập chỉ POST `/settings`. Còn các nhánh cần xử lý riêng như `/model` với 0–1 lựa chọn, `/reasoning` không hỗ trợ, `/sessions` trống hoặc lỗi, hủy `/key` cũ và các lệnh cần session khi chưa có session. Chi tiết từng ca tại `work/tui-welcome-audit/outcomes.txt` trong task workspace.

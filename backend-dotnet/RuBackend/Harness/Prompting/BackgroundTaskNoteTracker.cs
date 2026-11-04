@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using RuAgent.Protocol;
 
@@ -23,7 +22,10 @@ public sealed class BackgroundTaskNoteTracker
     public const int MaxNotesPerProbe = 8;
 
     private readonly Func<CancellationToken, Task<JsonObject>> _probe;
-    private readonly ConcurrentDictionary<string, string> _lastStates = new(StringComparer.Ordinal);
+    // Insertion-ordered so the 64-entry cap drops the oldest task id rather than
+    // an arbitrary (and often the newest) one: Dictionary slot reuse put the
+    // last inserted id first in enumeration order.
+    private readonly BoundedInsertionMap<string, string> _lastStates = new(MaxTrackedTasks, StringComparer.Ordinal);
     private readonly object _gate = new();
 
     public BackgroundTaskNoteTracker(Func<CancellationToken, Task<JsonObject>> probe)
@@ -95,13 +97,8 @@ public sealed class BackgroundTaskNoteTracker
             {
                 if (!seen.Contains(tracked))
                 {
-                    _lastStates.TryRemove(tracked, out _);
+                    _lastStates.Remove(tracked);
                 }
-            }
-
-            while (_lastStates.Count > MaxTrackedTasks)
-            {
-                _lastStates.TryRemove(_lastStates.Keys.First(), out _);
             }
         }
 

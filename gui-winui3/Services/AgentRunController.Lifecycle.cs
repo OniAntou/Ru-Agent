@@ -12,6 +12,15 @@ public sealed partial class AgentRunController
     private long _runOwnershipGeneration;
     private bool _isPendingCreateOutcomeUnknown;
     private CancellationTokenSource? _subscriptionCts;
+
+    internal bool HasPendingCreateOutcomeUnknown
+    {
+        get
+        {
+            lock (_gate) return _isPendingCreateOutcomeUnknown && !_isBusy;
+        }
+    }
+
     public bool CanCancel
     {
         get

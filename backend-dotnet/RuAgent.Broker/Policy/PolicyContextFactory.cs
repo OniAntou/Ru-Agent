@@ -8,6 +8,7 @@ using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Subagents;
+using RuAgent.Protocol.Tools;
 
 namespace RuAgent.Broker.Policy;
 
@@ -260,6 +261,13 @@ public sealed partial class PolicyContextFactory
                     // through, so its "op" is its own tool id and it is target-free.
                     op = "todo_write";
                     break;
+                case "skill":
+                    // Skill metadata and bodies come from the run lease's workspace
+                    // roots, keyed by name or query. The call names no user-provided
+                    // path, so it is target-free like the help surface; its identity
+                    // stays tool id + full argument hash.
+                    op = "skill";
+                    break;
                 case "write":
                     var writeOp = OptionalText(arguments, "op")
                         ?? throw new PolicyContextException(
@@ -302,11 +310,6 @@ public sealed partial class PolicyContextFactory
                     break;
                 case "glob":
                     op = "glob";
-                    break;
-                case "git_status":
-                    // The report is bound to the run's canonical workspace, so it has no
-                    // path argument and no target: its identity is the tool id only.
-                    op = "git_status";
                     break;
                 case "web_search":
                     op = "web_search";
@@ -389,9 +392,7 @@ public sealed partial class PolicyContextFactory
                     op = control;
                     break;
                 default:
-                    throw new PolicyContextException(
-                        "malformed_call",
-                        hint: "unknown tool id; select an advertised tool and follow its schema.");
+                    throw UnconfiguredTool(advertisedToolId);
             }
 
             if (IsTargetFreeOp(toolId, op!))
@@ -520,9 +521,11 @@ public sealed partial class PolicyContextFactory
         "list" => PolicyOperationClasses.List,
         "help" or "run_code" => PolicyOperationClasses.Read,
         "todo_write" => PolicyOperationClasses.Read,
+        // Reading skill metadata and a SKILL.md body is a read of workspace/user
+        // skill roots; allowed-tools inside the body grants nothing.
+        "skill" => PolicyOperationClasses.Read,
         "grep" => PolicyOperationClasses.Search,
         "glob" => PolicyOperationClasses.Glob,
-        "git_status" => PolicyOperationClasses.Read,
         "write" => WriteOpClass(OptionalText(arguments, "op")),
         "edit" => PolicyOperationClasses.Edit,
         // A spool read or a background-task kill executes nothing: the read
@@ -570,6 +573,22 @@ public sealed partial class PolicyContextFactory
         return names.ToArray();
     }
 
+    /// <summary>
+    /// The fallback when no switch arm claims a tool id. An advertised, Broker-bound
+    /// tool that reaches this point is a host registration defect — the model
+    /// followed a schema the host publishes — so it gets a code that names the
+    /// defect instead of the malformed-call code reserved for an id the model
+    /// invented. Both fail closed.
+    /// </summary>
+    internal static PolicyContextException UnconfiguredTool(string advertisedToolId) =>
+        AgentToolDescriptorTable.Find(advertisedToolId) is { IsBrokerBound: true }
+            ? new PolicyContextException(
+                "tool_policy_unconfigured",
+                hint: "the host advertises this tool but has no policy identity for it; report this product defect and stop this path instead of retrying or routing around it.")
+            : new PolicyContextException(
+                "malformed_call",
+                hint: "unknown tool id; select an advertised tool and follow its schema.");
+
     private static bool IsSpoolRead(JsonObject arguments) =>
         string.Equals(OptionalText(arguments, "mode"), "read_output", StringComparison.Ordinal);
 
@@ -586,7 +605,7 @@ public sealed partial class PolicyContextFactory
 
     private static bool IsTargetFreeOp(string toolId, string op) =>
         toolId is "help" or "run_code"
-        || toolId is "todo_write" or "git_status"
+        || toolId is "todo_write" or "skill"
         || toolId is "web_search" or "web_fetch" or "mcp" or "computer"
         || SubagentContractValidator.IsControlTool(toolId)
         // A spool read names a session-scoped output id, not a path; a task

@@ -55,19 +55,19 @@ namespace RuApp.Services
             }
         }
 
-        public async Task<SessionInfo?> CreateSessionAsync()
+        public async Task<SessionInfo?> CreateSessionAsync(CancellationToken cancellationToken = default)
         {
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/sessions/new");
                 request.Headers.Add("X-Ru-Client-Source", "gui");
-                using var response = await _httpClient.SendAsync(request);
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {
                     return null;
                 }
 
-                var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+                var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
                 if (json.ValueKind != JsonValueKind.Object)
                 {
                     return null;
@@ -87,6 +87,10 @@ namespace RuApp.Services
                     var id = sessionIdProp.GetString() ?? string.Empty;
                     return new SessionInfo { Id = id, Title = string.Empty };
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

@@ -35,7 +35,7 @@ public sealed class TuiContextWindowWorkflowTests
         {
             try
             {
-                if (app.TopRunnableView is not TgSessionHostWindow) return true;
+                if (app.TopRunnableView is not TgChatWindow) return true;
                 if (stage == 0)
                 {
                     page.FocusComposer(); page.Composer.Input.Text = "Check context";

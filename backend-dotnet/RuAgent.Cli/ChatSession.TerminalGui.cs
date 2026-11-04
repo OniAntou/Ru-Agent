@@ -1,4 +1,5 @@
 using RuAgent.Cli.TerminalGui;
+using Terminal.Gui.App;
 
 
 namespace RuAgent.Cli;
@@ -8,15 +9,74 @@ public sealed partial class AgentCommands
     private sealed partial class ChatSession
     {
         /// <summary>
-        /// Runs the native session host. Each page binds its keys and presentation to
-        /// the same conversation controller that the line adapter uses.
+        /// Runs one native conversation controller. Saved sessions replace its state;
+        /// opening history never leaves another worker running behind the view.
         /// </summary>
-        private Task RunTerminalGuiChatAsync() => new TuiSessionManager(this).RunAsync();
+        private async Task RunTerminalGuiChatAsync()
+        {
+            using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cancellationToken = lifetime.Token;
+            var loop = CreateTerminalGuiLoop();
+            var stopping = 0;
+            stopTerminalGui = () =>
+            {
+                if (Interlocked.Exchange(ref stopping, 1) != 0) return;
+                managedShutdown = true;
+                _ = attachmentTasks.StopAsync();
+                loop.Stop();
+                lifetime.Cancel();
+                try { tgApp!.Invoke(() => tgApp.RequestStop()); }
+                catch (NotInitializedException) { }
+            };
+            using var registration = cancellationToken.Register(StopTerminalGuiChat);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var startup = tgApp!.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+            {
+                if (Volatile.Read(ref stopping) != 0) return false;
+                tgWindow!.FocusSessionInput();
+                if (runSession.FollowableRunId is { } run && submissions.Count == 0
+                    && tgWindow.Composer.Input.Text.Length == 0)
+                {
+                    tgWindow.Composer.Input.Text = "/follow " + run;
+                    loop.Submit();
+                }
+                return false;
+            });
+            var timer = tgApp.AddTimeout(TimeSpan.FromMilliseconds(Tui.TuiHeader.MeteorFrameMilliseconds), () =>
+            {
+                if (Volatile.Read(ref stopping) != 0) return false;
+                TickSession(clock.Elapsed.TotalSeconds);
+                return true;
+            });
+            try { if (Volatile.Read(ref stopping) == 0) tgApp.Run(tgWindow!); }
+            finally
+            {
+                StopTerminalGuiChat();
+                if (startup is not null) tgApp.RemoveTimeout(startup);
+                if (timer is not null) tgApp.RemoveTimeout(timer);
+                // UI completion has a bounded drain. Accepted creates and attachment
+                // handlers still own resources until their settlement completes.
+                await loop.Completion.ConfigureAwait(false);
+                await loop.WaitForShutdownSettlementAsync().ConfigureAwait(false);
+                loop.SetViewActive(null);
+                submissions.ClearPending();
+                stopTerminalGui = null;
+            }
+        }
+
+        private Action? stopTerminalGui;
+        private void StopTerminalGuiChat() => stopTerminalGui?.Invoke();
 
         private TgChatLoop CreateTerminalGuiLoop()
         {
             var loop = new TgChatLoop(tgWindow!, cancellationToken);
-            if (multiSessions is not null) loop.SetSessionCommandHandler(line => multiSessions.TryHandleCommand(this, line));
+            loop.SetImmediateCommandHandler(line =>
+            {
+                if (!line.Trim().Split(' ', 2)[0].Equals("/exit", StringComparison.OrdinalIgnoreCase)) return false;
+                tgWindow!.Composer.Input.Text = string.Empty;
+                StopTerminalGuiChat();
+                return true;
+            });
             tgLoop = loop;
             ConfigureChatEngine(loop);
             return loop;

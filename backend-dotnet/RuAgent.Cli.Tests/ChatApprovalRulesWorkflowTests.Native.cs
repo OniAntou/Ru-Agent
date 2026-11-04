@@ -30,7 +30,7 @@ public sealed partial class ChatApprovalRulesWorkflowTests
         {
             try
             {
-                if (app.TopRunnableView is not TgSessionHostWindow) return true;
+                if (app.TopRunnableView is not TgChatWindow) return true;
                 var screen = string.Join('\n', TgSnapshot.Capture(app));
                 if (stage == 0)
                 {

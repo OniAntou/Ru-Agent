@@ -156,11 +156,6 @@ public sealed partial class AgentCommands
             // A new turn uses the current selection, not the provider pinned by a run that
             // was followed or continued earlier. Reset the composer meta before the run
             // starts; a Continue returned above and keeps the retained run's identity.
-            if (modelUsageRefreshRequired)
-            {
-                await RefreshModelUsageInfoAsync(ct).ConfigureAwait(false);
-                modelUsageRefreshRequired = false;
-            }
             if (tgMode)
             {
                 RunOnTgUi(() =>
@@ -575,70 +570,35 @@ public sealed partial class AgentCommands
             return true;
         }
 
-        /// <summary>
-        /// Report-only slash commands print into the read-only output window instead of
-        /// scrolling straight into the transcript. Both writers the command can reach are
-        /// pointed at a capture buffer for the run, so the window shows what the command
-        /// printed. An open conversation also keeps those rows after the panel closes.
-        /// Sequential mode keeps printing
-        /// inline: there is no window over a scrolling region to float above.
-        /// </summary>
+        /// <summary>Local command output follows the native page that owns the command.</summary>
         async Task<bool> HandleSlashLineWithDocumentAsync(string slashLine, CancellationToken cancellationToken)
         {
-            var command = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)[0];
-            if (tgMode && !cmd.Json && slashLine.Trim().Equals("/status", StringComparison.OrdinalIgnoreCase))
-            {
-                var section = await ChooseStatusSectionAsync(cancellationToken).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (section is null) return true;
-                if (section is not ("overview" or "context" or "usage"))
-                    throw new InvalidOperationException("Invalid status selection.");
-                slashLine = "/status " + section;
-            }
-            if (!tgMode || !Tui.ChatCommandCatalog.IsReportCommand(command))
-            {
+            if (!tgMode || cmd.Json)
                 return await HandleSlashLineAsync(slashLine, cancellationToken).ConfigureAwait(false);
-            }
 
-            var capture = new StringWriter();
-            var previousWidth = _slashCommands.PanelWidth;
-            _slashCommands.PanelWidth = Math.Max(TuiPanel.MinWidth,
-                Math.Min(ChatRenderWidth(), Math.Min(TuiCard.MaxWidth, tgWindow!.Viewport.Width - 4) - TuiCard.PadX * 3 - 2));
-            var transcript = humanOut;
-            humanOut = capture;
-            _slashCommands.HumanOut = capture;
+            var command = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)[0];
+            var report = Tui.ChatCommandCatalog.IsReportCommand(command);
+            var install = command.Equals("/update", StringComparison.OrdinalIgnoreCase)
+                && slashLine.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("--yes", StringComparer.Ordinal);
             var handled = false;
-            try
+            await RunCommandControlAsync(command.TrimStart('/'), async () =>
             {
-                handled = await HandleSlashLineAsync(slashLine, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                humanOut = transcript;
-                _slashCommands.HumanOut = transcript;
-                _slashCommands.PanelWidth = previousWidth;
-            }
-
-            var body = capture.ToString()
-                .Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .ToList();
-            if (body.Count > 0)
-            {
-                await TgPanelRequests.RequestDocumentAsync(
-                    tgWindow!,
-                    command.TrimStart('/'),
-                    body,
-                    cancellationToken).ConfigureAwait(false);
-                var report = string.Join('\n', body);
-                RunOnTgUi(() =>
+                if (slashLine.Trim().Equals("/status", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (tgWindow!.Landing.Visible || cancellationToken.IsCancellationRequested) return;
-                    transcript.WriteLine(report);
-                    transcript.Flush();
-                });
-            }
-
+                    var section = await ChooseStatusSectionAsync(cancellationToken).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (section is null) { handled = true; return; }
+                    if (section is not ("overview" or "context" or "usage"))
+                        throw new InvalidOperationException("Invalid status selection.");
+                    slashLine = "/status " + section;
+                }
+                var previousWidth = _slashCommands.PanelWidth;
+                if (report)
+                    _slashCommands.PanelWidth = Math.Max(TuiPanel.MinWidth,
+                        Math.Min(ChatRenderWidth(), Math.Min(TuiCard.MaxWidth, tgWindow!.Viewport.Width - 4) - TuiCard.PadX * 3 - 2));
+                try { handled = await HandleSlashLineAsync(slashLine, cancellationToken).ConfigureAwait(false); }
+                finally { _slashCommands.PanelWidth = previousWidth; }
+            }, cancellationToken, report, captureWelcome: !install).ConfigureAwait(false);
             return handled;
         }
     }

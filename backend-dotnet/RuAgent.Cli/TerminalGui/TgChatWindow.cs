@@ -38,7 +38,6 @@ public sealed partial class TgChatWindow : Window
     private IApplication? _resizeApp;
     private ModalInputState? _modalInputState;
     private bool _relayoutInProgress;
-    internal bool IsSessionPage { get; set; }
     internal void RefreshSessionLayout() => Relayout();
 
     private TgChatWindow()
@@ -59,7 +58,6 @@ public sealed partial class TgChatWindow : Window
         };
 
         Add(Transcript, Landing, Header, HeaderDivider, Composer, Hints);
-        AddEffectsButton();
         CanFocus = true;
 
         // The pre-chat wordmark owns the transcript region only while it is empty; the
@@ -87,7 +85,11 @@ public sealed partial class TgChatWindow : Window
         // The dropdown is driven from the composer text itself: every edit (typed, history,
         // programmatic) refreshes it, and accepting writes the command back through the same
         // channel so the two can never disagree.
-        Composer.Input.ContentsChanged += (_, _) => RefreshSlashDropdown();
+        Composer.Input.ContentsChanged += (_, _) =>
+        {
+            Hints.ClearCommandFeedback();
+            RefreshSlashDropdown();
+        };
         Composer.LayoutChanged += (_, _) => Relayout();
     }
 
@@ -102,7 +104,6 @@ public sealed partial class TgChatWindow : Window
 
     internal void TickWelcome()
     {
-        RefreshEffects();
         Landing.Tick();
     }
 
@@ -605,8 +606,7 @@ public sealed partial class TgChatWindow : Window
         try
         {
             var driver = _resizeApp?.Driver ?? App?.Driver;
-            TgChatLayout.Apply(this, IsSessionPage ? Viewport.Width : driver?.Cols ?? Viewport.Width,
-                IsSessionPage ? Viewport.Height : driver?.Rows ?? Viewport.Height);
+            TgChatLayout.Apply(this, driver?.Cols ?? Viewport.Width, driver?.Rows ?? Viewport.Height);
             Layout();
             SetNeedsDraw();
         }

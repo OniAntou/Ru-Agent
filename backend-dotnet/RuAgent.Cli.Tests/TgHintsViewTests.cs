@@ -12,6 +12,21 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgHintsViewTests
 {
     [Fact]
+    public void Command_feedback_survives_idle_refresh_and_clears_on_next_input_or_run()
+    {
+        var hints = new TgHintsView();
+        hints.ShowCommandFeedback("no_session: send a message first", true);
+        hints.SetIdle("workspace");
+        Assert.Equal("no_session: send a message first", hints.FeedbackMessage);
+        Assert.True(hints.FeedbackIsError);
+        hints.ClearCommandFeedback();
+        Assert.Null(hints.FeedbackMessage);
+        hints.ShowCommandFeedback("Provider selected");
+        hints.SetRunning(0);
+        Assert.Null(hints.FeedbackMessage);
+    }
+
+    [Fact]
     public void Idle_is_silent_but_feedback_remains_visible_without_ready_or_leading_separator()
     {
         var hints = new TgHintsView();

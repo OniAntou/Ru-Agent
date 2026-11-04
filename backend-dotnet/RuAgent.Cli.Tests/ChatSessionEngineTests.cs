@@ -73,7 +73,7 @@ public sealed class ChatSessionEngineTests
         release.TrySetResult();
         await engine.WaitForIdleAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(["first", "second"], seen);
-        Assert.True(engine.CanCloseSession);
+        Assert.False(engine.IsBusy);
         engine.Stop(); await engine.Completion;
     }
 

@@ -96,62 +96,29 @@ compaction and tool/request retry. Approval, trust and parked states keep their
 nonspinning presentation. This adds no animation timer, Host protocol or execution
 authority. Line/JSON adapters retain their output ownership and plain tool layout.
 
-### Concurrent session tabs
+### One active conversation
 
-`TuiSessionManager` hosts at most eight open conversations in one canonical
-workspace. `/new` or Alt+N opens another tab even while the current run streams;
-`/sessions` opens saved conversations and reactivates an existing tab by session
-identity. F6 selects the next tab and Shift+F6 the previous one. The strip appears
-only with two or more tabs; overflow keeps the selected tab visible. Its markers
-are `◐` running, `?` waiting, `✓` completed, `!` error/held queue and `·` idle.
+The native TUI runs one `TgChatWindow` and one conversation controller. `/new`
+replaces the current idle session; `/sessions` opens saved history in the same
+window. There are no concurrent session workers, tab strip, F6 navigation or
+Alt+N shortcut. Active or held/queued work must finish or be cancelled before
+changing sessions. Opening saved history resolves its recorded workspace and
+session preset before replacing current state. A missing recorded folder fails
+closed; one session's full-access choice does not become another session's default.
 
-There is one `IApplication`, one runnable `TgSessionHostWindow` and one animation
-timer. Each session retains a `TgChatWindow` as a child view container, its own
-`ChatSession`, shared controller instance, command writer, run owner, event cursor, bounded transcript,
-usage, drafts/cursor, attachments, scroll state and submission queue. These child
-containers are never run as separate applications. Only the selected page is
-visible and receives application-level key/paste routing. Hidden transcripts defer
-wrap work until selected; their event feeds and semantic projection continue so
-transient deltas and queued work are preserved. Tab summaries refresh at most
-every 200 ms. Small resizes retain the session host and its workers; startup
-presentation selection is unchanged.
+A fresh prompt retains its submitted provider/model through
+`POST /agent/v1/runs/selected`. The Host stores that intent atomically with
+admission; already admitted runs and queued snapshots keep their original
+selection. Older Hosts refuse this route without falling back to unselected
+creation. Permission presets remain session-scoped.
 
-Background approval and `ask_user` panels belong to their session page and do not
-take the selected session's input. Activation restores that page's modal/editor
-focus. Escape cancels only the selected session's work; switching tabs never
-posts a cancellation. `/sessions close` releases an idle tab without deleting its
-saved conversation. It refuses the last tab, retained runs, held/queued work,
-pending history branches and attachments. A tab that owns an outstanding session
-create/open/picker operation remains retained until that operation settles; other
-idle tabs can still close. Normal confirmed session deletion
-keeps its existing API and rejects open tabs with pending work.
+`/exit` stops attachment admission, cancels work started by this TUI and waits
+for run/attachment settlement after the bounded UI drain. Runs adopted from
+another client are detached on exit; explicit Escape still cancels the adopted
+run. Saved conversations remain available through `/sessions`.
 
-Escape can cancel a pending task/change/history inspection before its panel opens,
-even with no model turn running. Inspection cancellation keeps priority over model
-cancellation; the model's running indicator and palette guards retain their own state.
-
-Provider/model settings remain shared defaults for new runs. An idle tab adopts
-changes made in another tab before a fresh submission; already admitted runs
-stay pinned. Queued snapshots retain their original selection and are held when
-global settings no longer match. Native run requests additionally carry the
-submitted provider/model through `POST /agent/v1/runs/selected`. The Host stores
-that intent atomically with admission, includes it in idempotency identity, and
-uses it when resolving the first provider snapshot after a delay or restart.
-Changes made after the client's settings check cannot retarget the submitted
-model. Existing full provider pins remain authoritative. Older Hosts refuse this
-route; the client reports `provider_selection_unsupported` without falling back
-to an unselected create. Permission presets remain session-scoped;
-opening saved history reads its existing preset without copying another tab's
-grants. Opening a saved session adopts the workspace recorded on that session, so a
-tab created in Desktop (or another terminal) opens here too; a recorded folder that
-no longer exists fails closed as `session_workspace_missing` instead of opening in
-the wrong place.
-
-`/exit` stops all session loops, cancels work started by this TUI, waits for every
-session's acknowledgement/cancellation settlement, then disposes retained owners
-and views. Runs adopted from another client are detached on exit; explicit
-Escape still cancels the selected adopted run. There are no new execution
-authorities or changes to Host worker/membership admission limits.
+Escape can cancel pending task/change/history inspection before its panel opens.
+Inspection cancellation keeps priority over model cancellation.
 
 The composer metadata can display the selected effort alone (for example `max` or `high`) between model and provider.
 Startup and existing selection refreshes use the settings response's selected
@@ -173,7 +140,10 @@ Fresh chat starts without a persisted session. Bootstrap reads configuration and
 builds the frame, but does not POST session creation. Local slash controls such as
 model/provider/status/help/preset do not materialize a conversation; native local
 commands keep the welcome screen instead of appending a user-message card or
-advertising model work. They retain the normal operation lifetime and input guards.
+advertising model work. Short results stay in the hint row until the next input;
+multiline results use a closable document. Existing conversations retain normal
+report output. Command capture is bounded and isolated from independent run output.
+These commands retain their operation lifetime and input guards.
 Custom prompt commands and `/follow` retain their run behavior.
 
 The first ordinary prompt creates the session before its policy/run setup; `/new`
@@ -644,30 +614,19 @@ preserve the keyboard selection and do not dirty the list. Stable-height updates
 redraw only the list; opening, closing and height changes repaint the parent to
 erase exposed cells. Hiding an already-closed list does not invalidate the page.
 
-The welcome-only top-right FX button cycles On / Low / Off through mouse or
-Tab/Enter. Plain welcome drafts route Tab to that button; leading-slash input
-keeps completion. Activation returns focus to the composer without submitting
-the draft. A weak application-keyed state shares the choice across session pages,
-without persisting settings. A new application starts On. Modal/document/palette
-overlays disable the control; transcript content hides it. The compact one-row
-button suppresses the default shadow during initialization so a shadow margin
-cannot consume its viewport.
+The welcome has no FX button or On/Low/Off selection. Galaxy, meteors and the
+wordmark remain animated. Tab retains command completion in the composer.
 
 The native application caps input/render dispatch at 60 iterations per second.
-The existing UI timer still owns activity/footer updates. Only the welcome clock
-is throttled: On uses 50 ms (at most 20 FPS), Low uses 125 ms (at most 8 FPS).
-Actual cadence depends on the shared loop and terminal output. Off preserves the
-current animation time. Resuming resets the clock baseline instead of catching up.
-The clock stops advancing while the landing is hidden, has no viewport, or FX is Off.
-Slash suggestions, the command palette, documents and all modals use the selected
-FX cadence while the landing is visible. A choice picker reuses its composed card
-until its geometry, selection or filter changes. The raster logo is temporarily
-suppressed under those panels or when slash suggestions overlap it, because raster
-images render after text. The glyph fallback stays behind the panel;
-raster rendering resumes when no longer covered. First transcript/live content hides the landing, including replay
-of an existing conversation; an empty transcript restores it. Typing an unsent
-ordinary draft leaves it visible. A delayed step is capped at 100 ms in On and
-200 ms in Low, preserving animation speed at the 125 ms Low cadence.
+The existing UI timer owns activity/footer updates; the welcome clock uses a
+50 ms budget (at most 20 FPS). Actual cadence depends on terminal output.
+The clock stops while the landing is hidden or has no viewport; it resumes
+without catching up and caps a delayed step at 100 ms. Slash suggestions,
+palette, documents and modals leave the welcome clock running. Raster images
+are suppressed while covered by panels and restored when uncovered.
+First transcript/live content hides the landing; an empty transcript restores it.
+Typing an unsent draft leaves it visible.
+
 `TuiGalaxySky` reuses the existing dot/color arrays when geometry and animation
 time match, so static redraws do not repeat particle calculations. An already
 closed slash dropdown no longer invalidates the entire window during typing;

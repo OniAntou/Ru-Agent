@@ -16,6 +16,11 @@ public sealed partial class AgentCommands
             tgWindow = bootstrap.TgWindow;
             tgWriter = bootstrap.TgWriter;
             humanOut = bootstrap.HumanOut;
+            if (tgMode && !cmd.Json)
+            {
+                nativeCommandOutput = new TgCommandOutput(tgWindow!, tgWriter!);
+                humanOut = nativeCommandOutput.Output;
+            }
             submissions = bootstrap.Submissions;
             canonicalWorkspace = bootstrap.CanonicalWorkspace;
             sessionId = bootstrap.SessionId;

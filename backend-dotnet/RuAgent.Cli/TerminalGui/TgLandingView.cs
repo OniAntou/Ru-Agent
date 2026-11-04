@@ -18,18 +18,6 @@ public sealed partial class TgLandingView : ImageView
     private double _animationTime;
     internal double AnimationTime => _animationTime;
     internal long SkyRenderCount => _sky.RenderCount;
-    private TgWelcomeEffects _effectsMode;
-    internal TgWelcomeEffects EffectsMode
-    {
-        get => _effectsMode;
-        set
-        {
-            if (_effectsMode == value) return;
-            _effectsMode = value;
-            _lastTick = null;
-            SetNeedsDraw();
-        }
-    }
     private static readonly string[] Glyphs = Enumerable.Range(0, 256)
         .Select(bits => bits == 0 ? " " : ((char)(0x2800 + bits)).ToString()).ToArray();
     private static readonly Terminal.Gui.Drawing.Attribute[] SkyColors =
@@ -69,18 +57,18 @@ public sealed partial class TgLandingView : ImageView
 
     internal void Tick(TimeSpan now)
     {
-        if (!Visible || EffectsMode == TgWelcomeEffects.Off || Viewport.Width <= 0 || Viewport.Height <= 0)
+        if (!Visible || Viewport.Width <= 0 || Viewport.Height <= 0)
         {
             _lastTick = null;
             return;
         }
         if (_lastTick is not { } previous) { _lastTick = now; return; }
         var elapsed = now - previous;
-        var frameMilliseconds = EffectsMode == TgWelcomeEffects.Low ? 125 : TuiGalaxySky.FrameMilliseconds;
+        var frameMilliseconds = TuiGalaxySky.FrameMilliseconds;
         if (elapsed.TotalMilliseconds < frameMilliseconds) return;
         _lastTick = now;
         // Resume without jumping forward after a hidden window or slow terminal.
-        _animationTime += Math.Min(elapsed.TotalSeconds, EffectsMode == TgWelcomeEffects.Low ? 0.2 : 0.1);
+        _animationTime += Math.Min(elapsed.TotalSeconds, 0.1);
         SetNeedsDraw();
     }
 

@@ -22,7 +22,7 @@ public sealed partial class AgentCommands
         // The command object owns the clients and writers; the session reaches them through
         // these forwards so the extracted bodies read exactly like the closure they came from.
         private TextWriter _out => _host._out;
-        private TextWriter _err => _host._err;
+        private TextWriter _err => nativeCommandOutput?.Error ?? _host._err;
         private TextReader _in => _host._in;
         private SessionApiClient _sessionClient => _host._sessionClient;
         private AgentApiClient _agentClient => _host._agentClient;
@@ -30,7 +30,7 @@ public sealed partial class AgentCommands
         private SettingsApiClient _settingsClient => _host._settingsClient;
         private AgentSlashCommands _slashCommands => tgMode
             ? sessionSlashCommands ??= new AgentSlashCommands(_settingsClient, _sessionClient,
-                tgWriter!, tgWriter!)
+                humanOut, _err)
             : _host._slashCommands;
         private RunStartCore _runStartCore => tgMode
             ? sessionRunStartCore ??= new RunStartCore(_sessionClient, _agentClient, tgWriter!, tgWriter!)
@@ -55,8 +55,6 @@ public sealed partial class AgentCommands
             _host.StreamRunEventsResumedAsync(runId, onFrameAsync, ct, afterSequence, stopWhen);
 
         private Task ShowSubagentsAsync(string? argument, string? currentRoot, TextWriter output, bool json, CancellationToken ct) =>
-            _host.ShowSubagentsAsync(
-                argument, currentRoot, output, json,
-                ResolveDiagnosticWriter(tgMode, tgWriter, _err), ct);
+            _host.ShowSubagentsAsync(argument, currentRoot, output, json, _err, ct);
     }
 }

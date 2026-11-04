@@ -77,13 +77,11 @@ public sealed partial class AgentCommands
         /// </summary>
         TextWriter ResolveRenderWriter() => cmd.Json ? TextWriter.Null : tgWriter ?? (TextWriter)_out;
 
-        private TuiSessionManager? multiSessions;
         private AgentSlashCommands? sessionSlashCommands;
         private RunStartCore? sessionRunStartCore;
         // The Host admits at most one active root per conversation.
         private string? ownedRunId;
         private volatile bool managedShutdown;
-        private bool modelUsageRefreshRequired;
         private readonly ChatAttachmentTasks attachmentTasks = new();
 
         public async Task<int> RunAsync()

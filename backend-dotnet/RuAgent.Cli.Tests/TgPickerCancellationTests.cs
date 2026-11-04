@@ -72,7 +72,7 @@ public sealed class TgPickerCancellationTests
         {
             try
             {
-                if (app.TopRunnableView is not TgSessionHostWindow) return true;
+                if (app.TopRunnableView is not TgChatWindow) return true;
                 if (stage == 0)
                 {
                     if (inChat) page.Transcript.Append("Existing conversation", TranscriptStyle.Prose);

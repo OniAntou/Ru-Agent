@@ -37,6 +37,7 @@ public partial class ChatSessionEngine
         (submission, ct) => Task.CompletedTask;
     private Func<string, ChatSubmissionSnapshot?>? _snapshotFactory;
     private Func<string, bool>? _stateChangingCommandClassifier;
+    private Func<string, bool>? _localCommandClassifier;
     private Action<ChatSubmissionSnapshot>? _submissionAccepted;
     private Action<ChatSubmissionSnapshot>? _submissionDiscarded;
     private Func<Task>? _shutdownSettlement;
@@ -57,17 +58,13 @@ public partial class ChatSessionEngine
     private volatile bool _localCommandActive;
     private volatile bool _stopped;
     private bool _queuePaused;
-    private Func<string, bool>? _sessionCommand;
+    private Func<string, bool>? _immediateCommand;
     internal bool IsBusy => _busy;
     internal bool HasCancelableWork
     {
         get { lock (_queueGate) return _busy || _taskControlCancellation is not null; }
     }
-    internal bool CanCloseSession
-    {
-        get { lock (_queueGate) return !_busy && !_queuePaused && _queued.Count == 0 && _taskControlCancellation is null; }
-    }
-    internal void SetSessionCommandHandler(Func<string, bool> handler) => _sessionCommand = handler;
+    internal void SetImmediateCommandHandler(Func<string, bool> handler) => _immediateCommand = handler;
 
     /// <summary>
     /// A cancel that arrived while no turn source was live (between a settled
@@ -125,6 +122,14 @@ public partial class ChatSessionEngine
         }
     }
 
+    internal void ResetInputHistory()
+    {
+        lock (_historyGate) _history.Clear();
+        _historyIndex = 0;
+        _draft = string.Empty;
+        _draftCursor = 0;
+    }
+
     public void SetPromptHandler(Func<string, CancellationToken, Task> handler)
     {
         _promptHandler = handler;
@@ -136,6 +141,8 @@ public partial class ChatSessionEngine
 
     internal void SetStateChangingCommandClassifier(Func<string, bool> classifier) =>
         _stateChangingCommandClassifier = classifier;
+
+    internal void SetLocalCommandClassifier(Func<string, bool> classifier) => _localCommandClassifier = classifier;
 
     internal void PauseQueuedSubmissions()
     {
@@ -216,9 +223,8 @@ public partial class ChatSessionEngine
     {
         if (_stopped) return;
         var line = _view.InputText;
-        // Navigation belongs to the session host, outside this session's turn and
-        // attachment queue. Switching views must never cancel the active worker.
-        if (_sessionCommand?.Invoke(line) == true) return;
+        // Exit must remain available while a turn or local picker is running.
+        if (_immediateCommand?.Invoke(line) == true) return;
         if (ChatCommandCatalog.IsRemovedCommand(line))
         {
             var command = line.TrimStart().Split(' ', 2)[0].ToLowerInvariant();
@@ -459,6 +465,7 @@ public partial class ChatSessionEngine
 
     private void StartTurn(ChatSubmissionSnapshot submission)
     {
+        var localCommand = _localCommandClassifier?.Invoke(submission.Prompt);
         TaskCompletionSource turnDone;
         CancellationToken turnToken;
         var stoppedBeforeStart = false;
@@ -476,8 +483,8 @@ public partial class ChatSessionEngine
             {
                 _busy = true;
                 var command = submission.Prompt.TrimStart().Split(' ', 2)[0];
-                _localCommandActive = command.Equals("/backend", StringComparison.OrdinalIgnoreCase) || command.Equals("/key", StringComparison.OrdinalIgnoreCase)
-                    || !command.Equals("/follow", StringComparison.OrdinalIgnoreCase) && ChatCommandCatalog.KnownCommands.Any(item => item.Command.Equals(command, StringComparison.OrdinalIgnoreCase));
+                _localCommandActive = localCommand ?? (command.Equals("/backend", StringComparison.OrdinalIgnoreCase) || command.Equals("/key", StringComparison.OrdinalIgnoreCase)
+                    || !command.Equals("/follow", StringComparison.OrdinalIgnoreCase) && ChatCommandCatalog.KnownCommands.Any(item => item.Command.Equals(command, StringComparison.OrdinalIgnoreCase)));
                 // Link the session's token: a shutdown outside the input adapter
                 // must stop the in-flight turn too, not only the local Escape path.
                 _turn = CancellationTokenSource.CreateLinkedTokenSource(_outerToken);

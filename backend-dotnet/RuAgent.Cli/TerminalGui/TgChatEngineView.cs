@@ -18,13 +18,21 @@ internal sealed class TgChatEngineView(TgChatWindow window) : IChatSessionView
     public void SetIdle(string workspace) => window.Hints.SetIdle(workspace);
     public void ClearLive() => window.Transcript.ClearLive();
     public string CopyText() => window.Transcript.CopyText();
-    public void Append(string text, ChatMessageKind kind) => window.Transcript.Append(text, kind switch
+    public void Append(string text, ChatMessageKind kind)
     {
-        ChatMessageKind.User => TranscriptStyle.User,
-        ChatMessageKind.Meta => TranscriptStyle.Meta,
-        ChatMessageKind.Error => TranscriptStyle.Error,
-        _ => TranscriptStyle.Prose,
-    });
+        if (window.Landing.Visible && kind is ChatMessageKind.Meta or ChatMessageKind.Error)
+        {
+            window.Hints.ShowCommandFeedback(text, kind == ChatMessageKind.Error);
+            return;
+        }
+        window.Transcript.Append(text, kind switch
+        {
+            ChatMessageKind.User => TranscriptStyle.User,
+            ChatMessageKind.Meta => TranscriptStyle.Meta,
+            ChatMessageKind.Error => TranscriptStyle.Error,
+            _ => TranscriptStyle.Prose,
+        });
+    }
 
     public void EchoPrompt(string prompt, bool localCommand)
     {

@@ -619,7 +619,7 @@ public sealed partial class AgentSlashCommands
             sections.Add(new Tui.PanelSection("catalog", rows));
         }
 
-        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "model", sections, "/model <name>"))
+        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "model", sections, "/model <name>", framed: !FramelessReports))
         {
             _humanOut.WriteLine(line);
         }
@@ -644,7 +644,7 @@ public sealed partial class AgentSlashCommands
             rows.Add(new Tui.PanelRow("api key", "use /provider <name> to sign in"));
         }
 
-        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "model", [new Tui.PanelSection(null, rows)], "/model <name>"))
+        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "model", [new Tui.PanelSection(null, rows)], "/model <name>", framed: !FramelessReports))
         {
             _humanOut.WriteLine(line);
         }
@@ -820,7 +820,7 @@ public sealed partial class AgentSlashCommands
             }
         }
 
-        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "keys", [new Tui.PanelSection(null, rows)], "/key <provider> · /key remove <provider>"))
+        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "keys", [new Tui.PanelSection(null, rows)], "/key <provider> · /key remove <provider>", framed: !FramelessReports))
         {
             _humanOut.WriteLine(line);
         }

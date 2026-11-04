@@ -106,7 +106,9 @@ public sealed partial class AgentCommands
         // pure and TG mode lands the line in its transcript; sequential writes go to the
         // requested writer unchanged.
         Task WriteDiagnosticLineAsync(TextWriter writer, string line) =>
-            ResolveDiagnosticWriter(tgMode, tgWriter, writer).WriteLineAsync(line);
+            (nativeCommandOutput is { } native
+                ? ReferenceEquals(writer, _err) || ReferenceEquals(writer, _host._err) ? native.Error : native.Output
+                : ResolveDiagnosticWriter(tgMode, tgWriter, writer)).WriteLineAsync(line);
 
         /// <summary>Drops the header's live subagent strip; a new turn starts with none.</summary>
         void ClearSubagentStrip()
@@ -171,7 +173,6 @@ public sealed partial class AgentCommands
                 {
                     await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
                 }
-                multiSessions?.RememberModelDefaults(this);
             }
             catch (Exception)
             {

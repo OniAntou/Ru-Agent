@@ -1,5 +1,23 @@
 # MEMORY — Ru-Agent (máy của anh steal)
 
+## 2026-11-05 — Commit phần đơn giản hóa TUI
+
+- Anh yêu cầu commit lên branch hiện tại `casluminous/tui-multi-session`. Remote cùng tên đã bị xóa; lần push bàn giao dùng lại tên branch này, không force-push.
+- Phạm vi: một session hoạt động, gỡ nút/chế độ FX nhưng giữ thiên hà, sửa điều hướng và cách hiện output local command, test hồi quy và tài liệu. Không đưa hai đường dẫn untracked riêng của anh vào commit.
+- Kết quả kiểm chứng giữ nguyên: 2.235 test CLI, 32 test sau cleanup và 7 test tài liệu qua. Bản cài của lệnh Ru chưa được cập nhật trong thay đổi này.
+
+## 2026-11-05 — Sync dev, bỏ multi-session và nút FX của TUI
+
+- Anh yêu cầu sync rồi gỡ nhiều session chạy trong một cửa sổ. Anh chốt chỉ bỏ nút FX, giữ thiên hà. Fetch dev `9a9cf90f`, tạo backup `backup/casluminous-before-sync-20261105` và merge `c4a2ffdc`. Giữ MEMORY local khi upstream bỏ file. Không tạo lại remote branch đã bị xóa.
+- Phần sửa điều hướng đang dở được giữ ở stash `5d1f9a96f05b5606e45742eef526ceae0dbb69a3` rồi áp lại; đã xử lý xung đột theo diagnostic sink mới của dev. Không động tới `TONG-KET-CONG-VIEC.md` hoặc `docs/presentation/` untracked.
+- Gỡ TuiSessionManager, runnable host/tab strip, F6/Alt+N và các worker theo từng tab. Một TgChatWindow và controller hoạt động tại một thời điểm. `/new` thay session khi rảnh; `/sessions` vẫn mở lịch sử đã lưu. Giữ workspace ghi nhận và preset của session đích; không lấy full_access của session cũ làm mặc định. Giữ settlement cho create/attachment khi thoát và phân biệt cancel run do TUI tạo với detach run được theo dõi từ client khác.
+- Gỡ nút FX và trạng thái On/Low/Off; giữ ngân hà, logo, sao băng với ngân sách welcome 50 ms. Tab trở lại completion, không đưa focus sang nút FX. Animation vẫn tiếp tục dưới panel khi welcome còn hiện.
+- Giữ bản sửa điều hướng: output local command không tự làm mất welcome; một dòng ở hint, nhiều dòng ở document có thể đóng. Capture AsyncLocal có giới hạn, không nuốt output run khác. Kết quả `/new` không tự mở lại transcript rỗng. Chặn `/sessions id:...` trong TUI khi run/queue chưa xong; điều kiện mới chỉ áp dụng native để giữ hành vi line/JSON.
+- Thay test chỉ dành cho multi-session/FX bằng test một controller, chuyển session, chặn khi busy, reset history/token, model pin, workspace/preset và fail-open prevention. Giữ các regression picker, resize, typing, raster và cache sky. Log/TRX tại task workspace `work/tui-navigation/`.
+- Verification: `scripts/test_dotnet.ps1 -Configuration Release -ProjectFilter RuAgent.Cli.Tests` lần đầu 2.234 pass/1 fail ở `ChatAsync_SwitchSession_DoesNotCarryPriorSessionFollowableRun`; điều kiện mới vô tình chặn line/JSON. Đã giới hạn chặn vào native, chạy lại toàn bộ 2.235 test pass trong 5m10s (`full-cli-single-window-fixed.log`). Sau khi bỏ cờ refresh model chỉ dành cho tab đã chết, rebuild Release và chạy 32 test model/session liên quan: pass (`single-window-final-cleanup.log/.trx`). 7 test `tests/test_current_documentation.py` pass trên tài liệu cuối. Các ca mới trước đó cũng bắt lỗi `/sessions` bị queue và output `/new` tự làm mất welcome; đã sửa, giữ log thất bại ban đầu. Hai đợt lỗi fixture do response preset/workspace giả sai đã sửa đúng contract, không nới logic product để test xanh.
+- Không có conflict hoặc lỗi `git diff --check`. Chưa chạy lại cả matrix 12 project/Python toàn bộ trong lượt gỡ TUI này. Build Release thành công nhưng chưa publish/cài bản vào lệnh Ru; chưa commit/push phần thay đổi tính năng.
+
+
 ## 2026-11-04 — Sync dev vào branch TUI
 
 - Fetch `origin/dev` tới `af537948` rồi merge vào `casluminous/tui-multi-session`, giữ 3 commit riêng của branch. Backup trước sync `backup/casluminous-before-sync-20261104` trỏ `f1f78e81`. Giữ hai đường dẫn untracked của anh và giữ MEMORY theo yêu cầu ghi chép trước đó khi dev không còn file này.

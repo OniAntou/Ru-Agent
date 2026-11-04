@@ -215,25 +215,32 @@ public sealed partial class AgentCommands
         /// </summary>
         ChatSessionCommands CreateSessionCommands() =>
             new(
-                () => multiSessions is null && runSession.IsTurnActive,
+                () => runSession.IsTurnActive || tgMode && (runSession.ParkedRunId is not null
+                    || runSession.FollowableRunId is not null || attachmentTasks.HasPending),
                 () => sessionId,
-                ct => multiSessions is null ? _sessionClient.CreateAsync(ct) : multiSessions.CreateSessionAsync(this, ct),
+                ct => _sessionClient.CreateAsync(ct),
                 async (query, ct) => ChatSessionWorkflow.Filter(
                     await _sessionClient.ListAsync(ct).ConfigureAwait(false), query),
-                target => multiSessions is null ? SwitchSessionAsync(target) : multiSessions.OpenAsync(this, target),
+                SwitchSessionAsync,
                 _slashCommands.Picker,
                 // The session card (switch + delete) and the delete call exist only where a panel
                 // can be drawn; line I/O keeps the plain list and /sessions id:<id>.
                 tgMode ? (list, ct) => TgPanelRequests.RequestSessionChoiceAsync(tgWindow!, list, ct) : null,
-                tgMode ? (target, token) => multiSessions is null ? DeleteSessionAsync(target, token)
-                    : multiSessions.DeleteAsync(this, target, token) : null,
+                tgMode ? DeleteSessionAsync : null,
                 WriteDiagnosticLineAsync,
                 humanOut,
                 _err,
                 cmd.Json);
 
-        Task<bool> HandleSessionWorkflowAsync(string slashCmd, string? arg) =>
-            sessionCommands.TryHandleAsync(slashCmd, arg, multiSessions?.LifetimeToken ?? cancellationToken);
+        async Task<bool> HandleSessionWorkflowAsync(string slashCmd, string? arg)
+        {
+            if (slashCmd is not ("/new" or "/sessions")) return false;
+            var handled = false;
+            var token = cancellationToken;
+            await RunCommandControlAsync(slashCmd.TrimStart('/'), async () =>
+                handled = await sessionCommands.TryHandleAsync(slashCmd, arg, token).ConfigureAwait(false), token, captureOnChat: true).ConfigureAwait(false);
+            return handled;
+        }
 
         async Task SwitchSessionAsync(string targetSessionId)
         {
@@ -262,16 +269,43 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            // Resolve the target's workspace and permission before replacing any
+            // current state. A failed read must not inherit this session's grants.
+            var nextWorkspace = (Path: canonicalWorkspace, Label: workspaceLabel);
+            var nextPreset = cmd.Preset;
+            if (tgMode)
+            {
+                var recorded = await ChatSessionWorkflow.ReadWorkspaceLabelAsync(
+                    _sessionClient, targetSessionId, cancellationToken).ConfigureAwait(false);
+                nextWorkspace = ChatSessionWorkflow.ResolveOpenWorkspace(canonicalWorkspace, workspaceLabel, recorded);
+                nextPreset = cmd.Preset == "plan" ? "plan" : "standard";
+                try
+                {
+                    var stored = await _agentClient.GetSessionPresetAsync(targetSessionId, cancellationToken).ConfigureAwait(false);
+                    if (stored is { } selection) nextPreset = selection.Preset;
+                }
+                catch (AgentApiException error) when (error.StatusCode == 404) { }
+            }
+
             historyReloadRequired = false;
 
             pendingHistoryBranch = null;
             sessionId = targetSessionId;
+            canonicalWorkspace = nextWorkspace.Path;
+            workspaceLabel = nextWorkspace.Label;
+            cmd = cmd with { SessionId = targetSessionId, WorkspacePath = canonicalWorkspace,
+                Preset = nextPreset, ConfirmFullAccess = nextPreset == "full_access" };
             sessionTitle = replay.Title;
             runSession.ResetSession();
             sessionTitleProbes = 0;
             turn = 0;
             lastTotalTokens = null;
             usage = new Tui.TuiUsageTracker();
+            preparedContext = null;
+            ownedRunId = null;
+            initialDraftSessionId = null;
+            draftCreationFailed = false;
+            if (tgMode) chatEngine?.ResetInputHistory();
             ClearSubagentStrip();
             await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
 
@@ -286,7 +320,9 @@ public sealed partial class AgentCommands
                 {
                     tgWindow!.ResetTranscript();
                     tgWindow.Hints.ClearWorkspaceBusy();
+                    tgWindow.Hints.SetIdle(workspaceLabel);
                     tgWindow.Header.SetTitle(sessionTitle ?? "");
+                    tgWindow.Header.UpdateUsage(0, null, null);
                     tgWindow.Composer.SetMeta(cmd.Preset, activeModel, backendName ?? "(provider unknown)");
                 });
             }

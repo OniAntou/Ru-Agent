@@ -10,9 +10,9 @@ public sealed partial class AgentCommands
         private void ConfigureChatEngine(Chat.ChatSessionEngine loop)
         {
             chatEngine = loop;
-            loop.SetTaskCommandHandler((argument, token) => ShowTasksAsync(argument, token));
-            loop.SetChangesCommandHandler((argument, token) => ShowChangesAsync(argument, token));
-            loop.SetRewindCommandHandler((argument, token) => RewindHistoryAsync(argument, token));
+            loop.SetTaskCommandHandler((argument, token) => RunCommandControlAsync("tasks", () => ShowTasksAsync(argument, token), token));
+            loop.SetChangesCommandHandler((argument, token) => RunCommandControlAsync("changes", () => ShowChangesAsync(argument, token), token));
+            loop.SetRewindCommandHandler((argument, token) => RunCommandControlAsync("history", () => RewindHistoryAsync(argument, token), token));
             loop.SetSubmissionGuard(RewindSubmissionGuard);
             loop.SetHistoryStateProviders(() => pendingHistoryBranch is not null,
                 line => historyReloadRequired && line.Trim().Equals("/sessions id:" + sessionId, StringComparison.OrdinalIgnoreCase));
@@ -30,7 +30,9 @@ public sealed partial class AgentCommands
                     RefreshAttachmentLabels();
                 },
                 snapshot => ChatSubmissionState.Release(snapshot.Images));
-            loop.SetStateChangingCommandClassifier(IsStateChangingSlashCommand);
+            loop.SetStateChangingCommandClassifier(line => IsStateChangingSlashCommand(line)
+                || tgMode && line.TrimStart().Split(' ', 2)[0].Equals("/sessions", StringComparison.OrdinalIgnoreCase));
+            if (tgMode) loop.SetLocalCommandClassifier(IsLocalInputCommand);
             loop.SetSubmissionHandler(async (submission, ct) =>
             {
                 if (submission.Prompt.TrimStart().StartsWith('/'))
@@ -43,10 +45,8 @@ public sealed partial class AgentCommands
                 }
                 if (dispatcherExitCode is not null)
                 {
-                    // Exit belongs to the conversation controller; the native host also
-                    // stops its application and the workers for its other session pages.
-                    if (multiSessions is not null) multiSessions.Stop(dispatcherExitCode.Value);
-                    else { loop.Stop(); if (tgMode) tgApp!.Invoke(() => tgApp.RequestStop()); }
+                    loop.Stop();
+                    if (tgMode) StopTerminalGuiChat();
                 }
             });
 

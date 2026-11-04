@@ -80,7 +80,7 @@ internal static class ChatSessionWorkflow
     }
 
     /// <summary>
-    /// The workspace a newly opened session tab runs in. The recorded workspace wins
+    /// The workspace a newly opened session runs in. The recorded workspace wins
     /// when it differs from the terminal's: a session created in Desktop (including a
     /// Ru-owned scratch workspace) must open in the folder its history belongs to
     /// instead of being refused. A recorded folder that no longer exists fails closed

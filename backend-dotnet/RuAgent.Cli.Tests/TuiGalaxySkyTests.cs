@@ -7,6 +7,18 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TuiGalaxySkyTests
 {
+    [Fact]
+    public void Static_sky_reuses_exact_frame_but_resize_and_new_time_render_again()
+    {
+        var sky = new TuiGalaxySky(); sky.Render(120, 40, 7);
+        var first = sky.Dots.ToArray(); var colors = sky.Colors.ToArray();
+        for (var repaint = 0; repaint < 100; repaint++) sky.Render(120, 40, 7);
+        Assert.Equal(1, sky.RenderCount); Assert.Equal(first, sky.Dots.ToArray()); Assert.Equal(colors, sky.Colors.ToArray());
+        sky.Render(80, 24, 7); Assert.Equal(2, sky.RenderCount); Assert.Equal(80 * 24, sky.Dots.Length);
+        sky.Render(80, 24, 7.5); Assert.Equal(3, sky.RenderCount);
+    }
+
+
     [Theory]
     [InlineData(80, 24)]
     [InlineData(160, 50)]

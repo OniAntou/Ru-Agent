@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(tui)**: Mỗi cửa sổ chỉ giữ một session hoạt động. Gỡ tab, worker session
+  chạy song song, F6/Alt+N và nút FX On/Low/Off; giữ thiên hà, sao băng và mở lịch sử
+  bằng `/sessions`. `/new` thay session khi rảnh; mở lại lịch sử giữ workspace và
+  permission của session đó. Local command không tự đẩy welcome vào transcript;
+  kết quả ngắn ở hint, kết quả nhiều dòng mở tài liệu có thể đóng.
+
 - **feat(tui)**: Mở lại session trên TUI vẽ lại mọi lượt trong 200 tin nhắn gần nhất (như GUI) y như lúc live: prompt, lời tường
   thuật, dòng `Thought`, plan, các dòng tool theo đúng thứ tự, rồi dòng cuối lượt với thời gian thật
   của run. Trước đây chỉ in lại text của user và câu trả lời, gom thành một khối.

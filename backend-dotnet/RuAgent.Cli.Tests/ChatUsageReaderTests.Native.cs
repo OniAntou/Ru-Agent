@@ -31,7 +31,7 @@ public sealed partial class ChatUsageReaderTests
         {
             try
             {
-                if (app.TopRunnableView is not TgSessionHostWindow) return true;
+                if (app.TopRunnableView is not TgChatWindow) return true;
                 var screen = string.Join('\n', TgSnapshot.Capture(app));
                 if (stage == 0)
                 { page.FocusComposer(); page.Composer.Input.Text = "/status"; app.InjectKey(Key.Enter); stage++; }

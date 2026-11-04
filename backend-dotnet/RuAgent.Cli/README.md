@@ -4,25 +4,18 @@ Interactive and headless client for Ru's coding loop. It delegates runs to the
 Public Host over authenticated HTTP/SSE; model execution and policy remain
 Harness/Broker owned.
 
-## Concurrent chats in one terminal
+## One active chat per terminal
 
-- `/new` or **Alt+N** opens another session while earlier sessions keep running.
-  Alt+N also preserves the draft in the current tab.
-- **F6** / **Shift+F6** switches next/previous. The tab strip appears with two or
-  more tabs and marks running, waiting, completed or failed/held work.
-- `/sessions` opens saved history or returns to a tab already open.
-- `/sessions close` closes an idle tab without deleting history. Finish retained
-  runs and pending work first; one tab always remains.
-- **Esc** affects the selected session only. `/exit` stops this window's runs
-  and drains pending acknowledgements; it detaches runs adopted from other clients.
+- `/new` replaces the current idle session in the same window.
+- `/sessions` opens saved history. Finish or cancel active/queued work before switching.
+- Saved sessions keep their recorded workspace and permission selection.
+- **Esc** cancels current work or closes its panel. `/exit` drains pending
+  acknowledgements, cancels runs started here and detaches adopted runs.
 
-Each tab keeps its own draft, attachments, queue, transcript and permission
-selection. Background questions wait in their own tab. This first version permits
-eight open tabs in the same workspace. Model/provider settings are shared defaults
-for new runs; changing them never retargets an admitted run or queued prompt.
-Native submissions retain their provider/model across a change made while
-admission is pending. This requires the matching Host build; an older Host
-reports `provider_selection_unsupported`, with no fallback to another model.
+There are no concurrent session tabs or F6/Alt+N tab shortcuts. Session history
+remains on disk. Provider/model selections stay pinned for admitted and queued
+work. Native submissions require the matching Host's selected-run route; an
+older Host reports `provider_selection_unsupported` without changing models.
 
 ## Durable history and database maintenance
 
@@ -40,12 +33,10 @@ and explicit pruning. No automatic conversation deletion is enabled.
 
 ## Transcript and command navigation
 
-On the empty welcome screen, the small top-right **FX: On** button cycles
-**On → Low → Off**. Click it, or press Tab from a draft without a leading `/`
-and then Enter. Low targets about 8 FPS; Off keeps the current sky and logo as
-a static image. The composer remains usable. The choice follows session tabs
-in the current process and resets to On when Ru restarts. Slash completion
-keeps its existing Tab behavior; the FX button disappears when chat starts.
+The welcome retains the animated galaxy, meteors and wordmark without an FX
+button or On/Low/Off modes. Tab stays in the composer for slash completion.
+Local command cancellation keeps the welcome visible; short results use the
+hint row and multiline results open a closable document.
 
 Terminal.Gui is the default interactive surface on supported terminals. Ctrl+P
 opens a searchable palette backed by the same slash catalog as help and command
@@ -221,7 +212,7 @@ agent rpc
   one of them the parser refuses with `json_requires_explicit_flags`. The
   transcript renderer is muted in this mode, so stdout carries durable/transient
   NDJSON frames only; every human line goes to stderr.
-- `chat` (or `repl`) uses Terminal.Gui for interactive streaming, tool/diff rows, approvals, command history and slash completion. `/new` creates a session; `/sessions [query]` searches a bounded list; `/sessions id:<session-id>` switches explicitly and preserves the current session on failure. Reopening a session redraws the turns of its newest 200 messages from their activity records, as they looked live, and discovers retained running, approval and parked runs. `/follow [run-id]` attaches to running output or recovers pending approval interaction; typing `Continue` resumes the tracked parked run. Use `ru agent continue <run-id>` from another terminal for an explicit run target. Use `ru agent cancel <run-id>` outside chat to abandon a parked run. A repeated blocker after Continue offers cancellation guidance. Session switching keeps the operator-selected workspace and warns about a different retained workspace; reopen with `--workspace PATH --session ID` to select that root explicitly.
+- `chat` (or `repl`) uses Terminal.Gui for interactive streaming, tool/diff rows, approvals, command history and slash completion. `/new` creates a session; `/sessions [query]` searches a bounded list; `/sessions id:<session-id>` switches explicitly and preserves the current session on failure. Reopening a session redraws the turns of its newest 200 messages from their activity records, as they looked live, and discovers retained running, approval and parked runs. `/follow [run-id]` attaches to running output or recovers pending approval interaction; typing `Continue` resumes the tracked parked run. Use `ru agent continue <run-id>` from another terminal for an explicit run target. Use `ru agent cancel <run-id>` outside chat to abandon a parked run. A repeated blocker after Continue offers cancellation guidance. Native session switching restores the recorded workspace. The line/JSON adapter keeps the operator-selected workspace and warns when retained history belongs elsewhere; reopen with `--workspace PATH --session ID` to select that root explicitly.
 - Request skills in ordinary chat prompts, for example `Use the review skill to inspect this change`. `/skills` and `/skill` are removed from terminal chat handling, suggestions and help. Skill discovery and model-side loading retain their existing invocation policy.
 - While a turn streams, Enter queues up to eight immutable submissions. Each owns the prompt, session/workspace/preset/model intent, attachment contents and idempotency key captured at admission. The queue retains at most 32 MiB of estimated UTF-16 content; a composed prompt is capped at 16,000 UTF-16 units. Refusal leaves the draft and attachments intact. State-changing commands are refused while busy or queued. Rejected submissions are never automatically resubmitted; queued work remains paused until the chat is closed or an existing explicit run continuation settles it. Escape/Ctrl+C interrupts through the existing run-cancel endpoint; pending tool approval takes over the composer with explicit approve/deny choices.
 - All `agent chat` input uses one `ChatSessionEngine` for admission, queues, turn cancellation and the latest 100 prompt submissions. Terminal.Gui is its only interactive screen adapter. Windows uses the .NET console driver to preserve emoji across split input packets. Bracketed paste targets the active command palette, secret prompt or composer without changing a hidden draft. `--classic` retains append-only text with line input between turns; the same adapter serves redirected stdin/stdout, `--json`, any `NO_COLOR`, `TERM=dumb` and startup terminals below 80×24. It writes directly without a second transcript buffer, cursor positioning, screen clearing, resize rebuild, arrow-key picker or framed composer. Bare picker commands show options; select with an explicit argument. A trailing backslash continues the prompt on the next line; ordinary prompt quotes are preserved. Native resize stays native and never starts a separate text chat loop.

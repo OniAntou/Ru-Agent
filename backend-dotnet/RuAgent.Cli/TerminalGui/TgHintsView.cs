@@ -17,6 +17,7 @@ public sealed class TgHintsView : View
     private string? _busyHint;
     private string? _feedbackMessage;
     private bool _feedbackIsError;
+    private bool _commandFeedback;
     private bool _hasUnseenTranscript;
     private bool _scrolledBack;
     private string? _busyRunId;
@@ -51,7 +52,7 @@ public sealed class TgHintsView : View
         _queuedCount = 0;
         _waveBucket = 0;
         _busyHint = null;
-        ClearFeedback();
+        if (!_commandFeedback) ClearFeedback();
         SetNeedsDraw();
     }
 
@@ -117,6 +118,7 @@ public sealed class TgHintsView : View
 
     public void ShowFeedback(string message, bool isError = false)
     {
+        _commandFeedback = false;
         _feedbackMessage = string.IsNullOrWhiteSpace(message)
             ? null
             : ChatDisplayText.Sanitize(message, 200);
@@ -124,8 +126,20 @@ public sealed class TgHintsView : View
         SetNeedsDraw();
     }
 
+    internal void ShowCommandFeedback(string message, bool isError = false)
+    {
+        ShowFeedback(message, isError);
+        _commandFeedback = true;
+    }
+
+    internal void ClearCommandFeedback()
+    {
+        if (_commandFeedback) ClearFeedback();
+    }
+
     public void ClearFeedback()
     {
+        _commandFeedback = false;
         _feedbackMessage = null;
         _feedbackIsError = false;
         SetNeedsDraw();

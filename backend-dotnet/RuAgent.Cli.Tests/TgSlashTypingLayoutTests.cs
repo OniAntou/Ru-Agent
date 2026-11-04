@@ -10,17 +10,13 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgSlashTypingLayoutTests
 {
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public void Typing_partial_model_and_backspacing_keeps_the_painted_card_adjacent_to_input(bool chat, bool hosted)
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Typing_partial_model_and_backspacing_keeps_the_painted_card_adjacent_to_input(bool chat)
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var page = TgChatWindow.Build();
-        using var shell = new TgSessionHostWindow();
-        if (hosted) { shell.AddPage(page); shell.Activate(page); }
         if (chat) page.Transcript.Append("Existing conversation", TranscriptStyle.Prose);
         var loop = new TgChatLoop(page);
         const int columns = 94, rows = 28;
@@ -35,7 +31,7 @@ public sealed class TgSlashTypingLayoutTests
                 if (app.Driver!.Cols != columns || app.Driver.Rows != rows)
                 {
                     app.Driver.SetScreenSize(columns, rows);
-                    if (hosted) shell.RefreshPageLayout(true); else page.RefreshSessionLayout();
+                    page.RefreshSessionLayout();
                     return true;
                 }
                 if (step < 0)
@@ -47,7 +43,6 @@ public sealed class TgSlashTypingLayoutTests
                     step = 0;
                     return true;
                 }
-                if (hosted) shell.RefreshPageLayout(); // Production skips stable-size relayout.
                 page.TickWelcome();
                 Assert.Equal(expected[step], page.Composer.Input.Text);
                 if (expected[step].Length > 0)
@@ -70,7 +65,7 @@ public sealed class TgSlashTypingLayoutTests
             catch (Exception error) { failure = error; app.RequestStop(); return false; }
         });
         app.AddTimeout(TimeSpan.FromSeconds(7), () => { app.RequestStop(); return false; });
-        if (hosted) app.Run(shell); else app.Run(page);
+        app.Run(page);
         loop.SetViewActive(null);
         page.SetHostedApplication(null);
         loop.Stop();

@@ -11,37 +11,6 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TgSquareWordmarkIntegrationTests
 {
-    [Fact]
-    public void Effects_off_keeps_the_raster_logo_and_reuses_its_encoded_image()
-    {
-        RasterImageCommand? frozenImage = null;
-        double frozenTime = 0;
-        Run(true, (app, w, stage) =>
-        {
-            if (stage == 0)
-            {
-                w.EffectsButton.SetFocus(); app.InjectKey(Key.Enter);
-                w.EffectsButton.SetFocus(); app.InjectKey(Key.Enter);
-                Assert.Equal(TgWelcomeEffects.Off, w.Landing.EffectsMode);
-                frozenTime = w.Landing.AnimationTime;
-                return true;
-            }
-            Assert.True(w.Landing.SquareWordmarkActive);
-            Assert.Equal(frozenTime, w.Landing.AnimationTime);
-            var image = Assert.Single(app.Driver!.GetOutputBuffer().GetRasterImages());
-            if (stage == 1)
-            {
-                frozenImage = image;
-                for (var tick = 0; tick < 100; tick++) w.TickWelcome();
-                w.Landing.SetNeedsDraw();
-                return true;
-            }
-            Assert.Equal(frozenImage!.SourceVersion, image.SourceVersion);
-            Assert.Same(frozenImage.EncodedSixel, image.EncodedSixel);
-            return false;
-        });
-    }
-
     [Theory]
     [InlineData(true)] [InlineData(false)]
     public void Raster_is_used_only_when_the_driver_supports_it(bool supported)

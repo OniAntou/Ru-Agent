@@ -11,7 +11,8 @@ internal static class ActiveRunTranscriptProjection
         IList<ChatMessageItem> messages,
         ObservableCollection<AgentActivityItem> liveActivities,
         string sessionId,
-        string runId)
+        string runId,
+        DateTime? runStartedAt = null)
     {
         ArgumentNullException.ThrowIfNull(messages);
         ArgumentNullException.ThrowIfNull(liveActivities);
@@ -31,6 +32,11 @@ internal static class ActiveRunTranscriptProjection
             };
             messages.Add(active);
         }
+
+        // The live clock counts from the bubble's timestamp. A bubble rebuilt on
+        // reopening the session was stamped "now", so switching away and back reset
+        // the turn's elapsed time; the Host's run start is the durable origin.
+        if (runStartedAt is { } started && started < active.Timestamp) active.Timestamp = started;
 
         foreach (var message in messages)
         {

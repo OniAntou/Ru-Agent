@@ -72,6 +72,7 @@ public sealed partial class SqliteHarnessEventStore
                     tool_calls = item.ToolCalls,
                     recent_activity = item.RecentActivity,
                     latest_narration = item.LatestNarration,
+                    elapsed_seconds = item.ElapsedSeconds,
                 }).ToArray(),
                 results = previews.Select(preview =>
                 {

@@ -146,6 +146,17 @@ public sealed partial class ChatUsageReaderTests
     }
 
     [Fact]
+    public async Task Context_reading_of_a_run_with_more_reports_than_the_bound_reads_only_the_newest()
+    {
+        // Every model step reports usage, so a long run exceeds MaxReports; the context
+        // meter still needs its latest reading, and fetches nothing older.
+        using var host = new Host { ReportCount = ChatUsageReader.MaxReports + 1 };
+        var row = Assert.Single((await Read(host, context: true)).Runs);
+        Assert.NotNull(row.LatestContext); Assert.Null(row.Notice);
+        Assert.Single(host.Requests, request => request.Contains("/payloads/"));
+    }
+
+    [Fact]
     public async Task Pricing_uses_the_recorded_provider_model_and_keeps_missing_rates_unknown()
     {
         using var host = new Host { NoRates = true };

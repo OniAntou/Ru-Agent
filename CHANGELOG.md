@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(context)**: Ước lượng token cho auto compact được hiệu chỉnh theo từng provider/model: Host
+  nhớ tỉ lệ token thật / `byte/4` (chỉ học từ request ≥ 4.096 token, giới hạn 1,0–2,0, không bao giờ
+  làm giảm ước lượng) và dùng nó khi mất neo (run mới, sau compact, có ảnh, để yên quá 30 phút). Trước
+  đây `byte/4` đếm thiếu DeepSeek khoảng 25%, nên ngưỡng nén 80% thực chất thành gần 100% cửa sổ.
+
+- **fix(context)**: Đồng hồ context không còn về 0 mỗi khi gửi prompt mới: GUI giữ số đo của
+  request trước cho tới khi request mới có ước lượng hoặc usage (TUI đã làm vậy). Host giờ ghi
+  `model.usage_recorded` cho **mọi** bước model, kể cả bước gọi tool; trước đây chỉ bước trả lời
+  cuối có, nên run 74 bước chỉ có một số đo thật ở cuối, đồng hồ chạy bằng ước lượng suốt lượt và
+  tổng token/chi phí của run chỉ tính một bước. Số đo context của TUI chỉ đọc request mới nhất
+  nên vẫn chạy với run trên 256 request; `/status usage` vẫn từ chối (không hiện tổng một phần).
+
+- **fix(gui)**: Đồng hồ của lượt đang chạy không còn về 0:00 khi chuyển sang phiên khác rồi quay
+  lại; bubble dựng lại khi mở phiên lấy giờ bắt đầu run từ Host.
+
+- **fix(agent)**: Từ phản hồi của model sau bài test dài: tiến độ `agent_wait` có thêm
+  `elapsed_seconds`; mô tả `powershell` chỉ rõ cách giữ tiếng Việt trong Windows PowerShell 5.1
+  (output theo codepage hệ thống, `-Body` chuỗi gửi ISO-8859-1); `expected_exit_code` nói rõ với
+  `powershell` mã thoát là của cả script (lệnh cuối pipeline), muốn chờ một chương trình fail thì
+  dùng `run_process`.
+
 - **feat(subagents)**: Subagent coding chạy được trong mọi workspace đã trust (ADR 0042).
   Workspace là git root có commit thì vẫn dùng repo đó như trước; thư mục thường, thư mục
   nằm dưới repo hoặc repo chưa có commit thì Ru dựng một repo gốc riêng trong vùng lưu trữ

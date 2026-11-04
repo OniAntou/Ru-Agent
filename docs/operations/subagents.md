@@ -77,8 +77,8 @@ waits remain subject to the normal repetition guard.
 The root's `agent_wait` row reads "Waiting for subagents" while the root is parked.
 The wait coordinator settles that same row when it wakes the root (`subagent_wait_completed`
 or `subagent_wait_timeout`), so a check-in that ran out of time stops looking live.
-A timed-out wait's output also carries `progress` for each pending child: state, step
-and tool-call counts, up to five recent activity rows and the latest narration (bounded,
+A timed-out wait's output also carries `progress` for each pending child: state, elapsed
+seconds, step and tool-call counts, up to five recent activity rows and the latest narration (bounded,
 under the same untrusted source label as results). It is read from the child's durable
 activity replay before the wake commits and is the first thing dropped when the output
 would exceed its cap. The GUI detail pane reads the same replay on its refresh tick and

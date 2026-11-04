@@ -46,20 +46,26 @@ public sealed class RetainedContextMeterPresenterTests
     }
 
     [Fact]
-    public void New_run_clears_old_reported_reading_and_unknown_protocol_is_not_guessed()
+    public void A_new_prompt_keeps_the_last_reading_until_its_own_request_reports()
     {
+        // Regression: each prompt starts a run, and scoping to it cleared the reading,
+        // so a 340k context dropped to the visible-message estimate on every prompt.
         var presenter = new RetainedContextMeterPresenter();
         presenter.ScopeToRun(Run(), "session-1");
         Assert.True(presenter.ObserveUsage(RunId, "session-1", 1, "openai_responses", Usage(900)));
         Assert.Null(RetainedContextMeterPresenter.ResolvePromptTokens("vendor_unknown", Usage(400)));
 
+        // Between runs nothing is current; that gap keeps the reading too.
+        presenter.ScopeToRun(null, "session-1");
         presenter.ScopeToRun(Run(RunId + "2"), "session-1");
 
-        Assert.Equal(0, presenter.Measure([("new run", 0, 0)], null, 0).ReportedPromptTokens);
-        Assert.Equal("old transcript".Length + "new run".Length,
-            presenter.Measure([("old transcript", 0, 0), ("new run", 0, 0)], null, 0).Characters);
-        Assert.True(presenter.ObserveUsage(RunId + "2", "session-1", 1, "openai_responses", Usage(350)));
-        Assert.Equal(350, presenter.Measure([("old transcript", 0, 0), ("new run", 0, 0)], null, 0).UsedTokens);
+        Assert.Equal(900, presenter.Measure([("old transcript", 0, 0), ("new run", 0, 0)], null, 0).UsedTokens);
+        Assert.True(presenter.ObserveUsage(RunId + "2", "session-1", 1, "openai_responses", Usage(1_350)));
+        Assert.Equal(1_350, presenter.Measure([("old transcript", 0, 0), ("new run", 0, 0)], null, 0).UsedTokens);
+
+        // Another conversation never inherits it.
+        presenter.ScopeToRun(null, "session-2");
+        Assert.Equal(0, presenter.Measure([("other chat", 0, 0)], null, 0).ReportedPromptTokens);
     }
 
     [Fact]

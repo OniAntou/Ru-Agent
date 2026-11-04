@@ -94,7 +94,7 @@ public sealed class SubagentWaitStoreTests
                 var progress = new[]
                 {
                     new SubagentWaitProgress(probedAgent, probedRun, "running", 7, 12,
-                        ["terminal completed · dotnet test · exit 0"], "Tests pass; writing the importer next."),
+                        ["terminal completed · dotnet test · exit 0"], "Tests pass; writing the importer next.", 95),
                 };
                 var woken = await fixture.CreateEventStore().TryWakeSubagentWaitAsync(root.Run.RunId, parked.UpdatedAt.AddSeconds(30), default, progress);
                 Assert.NotNull(woken);
@@ -123,6 +123,7 @@ public sealed class SubagentWaitStoreTests
                 Assert.Equal(7, item.GetProperty("model_steps").GetInt32());
                 Assert.Equal("terminal completed · dotnet test · exit 0", item.GetProperty("recent_activity")[0].GetString());
                 Assert.Equal("Tests pass; writing the importer next.", item.GetProperty("latest_narration").GetString());
+                Assert.Equal(95, item.GetProperty("elapsed_seconds").GetInt64());
             }
             if (summaryVariant != 0)
             {

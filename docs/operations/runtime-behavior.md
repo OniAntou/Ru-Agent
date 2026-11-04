@@ -106,8 +106,10 @@ snapshot; subsequent run reads/reconnects receive the existing not-found respons
 Opening Ru does not call a model, so startup alone has no provider token usage.
 For an actual model step, adapters preserve provider-reported input, output,
 total, cache-read, and cache-write counts through the typed model step
-result. The Host persists those counts as a `ModelUsage` payload alongside a
-final reply and inside an `AssistantStep` for tool turns. The payload is a
+result. The Host persists those counts as a `ModelUsage` payload with a
+`model.usage_recorded` event for every model step, final reply and tool turn alike
+(tool turns also keep the copy inside their `AssistantStep`), so live context meters
+and run billing see each request rather than only the last one. The payload is a
 sidecar record for authenticated telemetry consumers; the current chat bubble
 fetches it from the durable `model.usage_recorded` event and renders the
 reported counts below the assistant text. A missing `usage`

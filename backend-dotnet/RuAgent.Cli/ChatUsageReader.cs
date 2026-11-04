@@ -65,7 +65,14 @@ internal sealed class ChatUsageReader(AgentApiClient agents, AgentSseClient even
             if (reference is not { Length: > 0 and <= 128 } || reference.Any(ch => !char.IsAsciiLetterOrDigit(ch) && ch is not ('_' or '-')))
                 throw Invalid();
             if (!seen.Add(reference)) continue;
-            if (references.Count >= MaxReports) throw Limit();
+            // Every step reports usage, so a long run outgrows the bound. The context
+            // reading needs only the newest report and keeps a sliding window; billing
+            // fails closed rather than showing a cheap partial total.
+            if (references.Count >= MaxReports)
+            {
+                if (!contextOnly) throw Limit();
+                references.RemoveAt(0);
+            }
             references.Add((reference, envelope.Sequence));
         }
         var reports = new List<ChatTokenUsage>();

@@ -177,7 +177,9 @@ estimate for the same step; compaction retires old steps, and a new durable step
 accepts the transient cursor restarting after reconnect. Raw provider input is
 normalized using the exact pinned protocol and `input_tokens_include_cache`, so
 inclusive cache buckets are not added twice. Older envelopes without the optional
-step identity remain readable and retain durable-sequence guards.
+step identity remain readable and retain durable-sequence guards. A new run in the
+same conversation keeps the previous reading as its floor until the new request's
+estimate or usage arrives; only switching conversations clears it.
 The meter button's accessible help includes the total and all three values, so
 the reading remains available even when the flyout opens as a transient hover.
 

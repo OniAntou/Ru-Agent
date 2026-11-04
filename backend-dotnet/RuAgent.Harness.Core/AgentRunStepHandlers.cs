@@ -613,6 +613,27 @@ internal sealed partial class AgentRunStepHandlers
             stepEvents.Add(new(_ids.NewEventId(), HarnessEventKind.RunFailed, safeCode: reservation.ErrorCode));
         var stepPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, modelPayload };
         if (reservation.Granted) AddProviderContinuation(stepEvents, stepPayloads, modelStepId, providerContinuation);
+        // Tool-calling steps report usage too. Only the final reply recorded it, so a
+        // long run published one reading at its end and every context meter ran on
+        // byte estimates for the whole turn (and the Host's estimate anchor starved).
+        if (step.Usage is not null && (reservation.Granted || !_internalRun))
+        {
+            var usageBytes = SerializeUsage(step.Usage);
+            var usagePayloadId = _ids.NewPayloadId();
+            stepPayloads.Add(new HarnessPayloadIntent(
+                usagePayloadId,
+                HarnessPayloadKind.ModelUsage,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                HarnessPayloadEncoding.Json,
+                Math.Max(usageBytes.Length, 1),
+                usageBytes));
+            stepEvents.Add(new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.ModelUsageRecorded,
+                modelStepId: modelStepId,
+                payloadId: usagePayloadId,
+                safeCode: "reported"));
+        }
         if (reasoningEvent is not null && reasoningPayload is not null)
         {
             stepEvents.Add(reasoningEvent);

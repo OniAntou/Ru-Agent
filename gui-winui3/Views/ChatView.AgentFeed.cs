@@ -569,7 +569,11 @@ namespace RuApp.Views
                 Messages,
                 AgentActivities,
                 adopted.Run.SessionId,
-                adopted.Run.RunId);
+                adopted.Run.RunId,
+                DateTimeOffset.TryParse(adopted.Run.CreatedAt, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out var runCreated)
+                    ? runCreated.LocalDateTime
+                    : null);
             if (!alreadyAdopted)
             {
                 _segmentFrozenLength = _activeAgentAssistantMessage.Content?.Length ?? 0;

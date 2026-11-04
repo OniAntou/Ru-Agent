@@ -153,6 +153,15 @@ text-selection use the existing estimator. The in-memory cache is bounded to
 not prompts or credentials. It is an estimate, not exact tokenization or a
 billing ledger, and does not survive Host restart.
 
+Beside the per-run anchor, each protocol/endpoint/model keeps one calibration: the
+ratio of reported input to the bytes/4 heuristic of the same request, learned only from
+requests of at least 4,096 heuristic tokens and clamped to 1.0–2.0. When no valid anchor
+exists (a new run, a compaction, an image, a rewritten prefix or an expired anchor) the
+heuristic is scaled by that ratio, and the anchored path scales only the appended delta.
+It never lowers an estimate. Without it a tokenizer that bytes/4 undercounts (DeepSeek
+by about 25% on a long coding run) pushed the 80% compaction trigger to about the full
+window, so the provider rejected the request before Ru compacted.
+
 ## Nested workspace instructions
 
 The fixed root/user instruction sources remain system-prompt blocks. Successful

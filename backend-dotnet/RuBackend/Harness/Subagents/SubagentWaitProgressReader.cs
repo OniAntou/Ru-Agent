@@ -63,8 +63,10 @@ public sealed class SubagentWaitProgressReader(IHarnessEventStore store, AgentAc
                     : null;
         }
 
+        // How long the attempt has existed, so a parent can tell a slow child from a stuck one.
+        var elapsed = (long)Math.Max(0, (DateTimeOffset.UtcNow - run.CreatedAt).TotalSeconds);
         return new SubagentWaitProgress(agentId, runId, run.State.ToString().ToLowerInvariant(),
-            run.ModelStepsInWindow, run.ToolCallsInWindow, recent.AsReadOnly(), narration);
+            run.ModelStepsInWindow, run.ToolCallsInWindow, recent.AsReadOnly(), narration, elapsed);
     }
 
     /// <summary>"Terminal completed · dotnet test" — kind, state and the row's own target.</summary>

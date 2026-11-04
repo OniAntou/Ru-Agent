@@ -137,6 +137,29 @@ public sealed partial class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Tool_calling_step_records_its_provider_usage_too()
+    {
+        // Regression: only the final reply recorded usage, so a 74-step run published one
+        // reading at its end, meters ran on estimates and billing counted one step.
+        var tools = ToolStep();
+        var model = new FakeModelStepRunner();
+        model.Enqueue(new AssistantStep(tools.Text, tools.ToolCalls, AssistantFinishReason.ToolCalls, 16,
+            new ModelUsage(340_000, 900, 340_900, 330_000, null, inputTokensIncludeCache: true)));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, new FakeToolGateway(), store);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        var commit = Assert.Single(store.Commits, item => item.Events.Any(evt => evt.Kind == HarnessEventKind.ModelStepCompleted));
+        var usageEvent = Assert.Single(commit.Events, item => item.Kind == HarnessEventKind.ModelUsageRecorded);
+        var payload = Assert.Single(commit.Payloads, item => item.Kind == HarnessPayloadKind.ModelUsage);
+        Assert.Equal(payload.PayloadId, usageEvent.PayloadId);
+        using var document = JsonDocument.Parse(payload.Plaintext);
+        Assert.Equal(340_000, document.RootElement.GetProperty("input_tokens").GetInt32());
+    }
+
+    [Fact]
     public async Task Final_reply_policy_failure_prevents_final_commit()
     {
         var model = new FakeModelStepRunner();

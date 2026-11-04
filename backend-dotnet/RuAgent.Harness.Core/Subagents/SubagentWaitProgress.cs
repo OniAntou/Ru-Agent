@@ -12,7 +12,8 @@ public sealed record SubagentWaitProgress(
     int ModelSteps,
     int ToolCalls,
     IReadOnlyList<string> RecentActivity,
-    string? LatestNarration);
+    string? LatestNarration,
+    long? ElapsedSeconds = null);
 
 /// <summary>A parked root's wait as seen before it is completed.</summary>
 public sealed record SubagentWaitProbe(IReadOnlyList<(string AgentId, RunId RunId)> Attempts, bool TimesOutNow);

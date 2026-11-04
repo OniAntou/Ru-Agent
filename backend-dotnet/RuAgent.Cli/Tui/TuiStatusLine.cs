@@ -115,6 +115,12 @@ public sealed class TuiStatusLine
         _tools = tools;
     }
 
+    /// <summary>
+    /// Updates the token counter alone. Usage frames arrive between tool calls; using
+    /// <see cref="SetCounters"/> there reset the live row's tool count to zero.
+    /// </summary>
+    public void SetTokens(long? tokens) => _tokens = tokens;
+
     public void AddTool() => _tools++;
 
     public void Reset()

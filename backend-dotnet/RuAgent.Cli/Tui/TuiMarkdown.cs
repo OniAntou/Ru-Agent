@@ -457,6 +457,11 @@ public sealed partial class TuiMarkdown
         var current = new StringBuilder();
         var used = 0;
         var limit = Math.Max(1, width - indent);
+        // SGR state carried into the next row: a styled run that crosses a wrap
+        // boundary must keep its colour/bold on the continuation row, otherwise the
+        // remainder of the run is painted plain.
+        var activeSgr = string.Empty;
+        var continuationStart = continuation;
 
         void Commit()
         {
@@ -465,9 +470,16 @@ public sealed partial class TuiMarkdown
                 return;
             }
 
-            rows.Add((rows.Count == 0 ? prefix : continuation) + current);
+            rows.Add((rows.Count == 0 ? prefix : continuationStart) + current);
             current.Clear();
             used = 0;
+            continuationStart = continuation + activeSgr;
+        }
+
+        void Append(string text)
+        {
+            current.Append(text);
+            activeSgr = TrackActiveSgr(activeSgr, text);
         }
 
         foreach (var run in SplitRuns(styled))
@@ -476,12 +488,20 @@ public sealed partial class TuiMarkdown
             {
                 var text = word;
                 var wordWidth = TuiText.VisibleWidth(text);
-                if (current.Length > 0 && used + 1 + wordWidth > limit)
+                if (wordWidth == 0)
+                {
+                    // A reset/escape-only fragment separates nothing: it belongs to the
+                    // row exactly where it appeared and must not add a visible space.
+                    Append(text);
+                    continue;
+                }
+
+                if (used > 0 && used + 1 + wordWidth > limit)
                 {
                     Commit();
                 }
 
-                if (current.Length > 0)
+                if (used > 0)
                 {
                     current.Append(' ');
                     used += 1;
@@ -497,12 +517,18 @@ public sealed partial class TuiMarkdown
                     {
                         var chunk = chunks[chunkIndex];
                         var chunkWidth = TuiText.VisibleWidth(chunk);
-                        if (current.Length > 0 && used + 1 + chunkWidth > limit)
+                        if (chunkWidth == 0)
+                        {
+                            Append(chunk);
+                            continue;
+                        }
+
+                        if (used > 0 && used + 1 + chunkWidth > limit)
                         {
                             Commit();
                         }
 
-                        if (current.Length > 0)
+                        if (used > 0)
                         {
                             current.Append(' ');
                             used += 1;
@@ -510,12 +536,12 @@ public sealed partial class TuiMarkdown
 
                         if (chunkIndex < chunks.Count - 1)
                         {
-                            current.Append(chunk);
+                            Append(chunk);
                             Commit();
                         }
                         else
                         {
-                            current.Append(chunk);
+                            Append(chunk);
                             used += chunkWidth;
                         }
                     }
@@ -523,13 +549,78 @@ public sealed partial class TuiMarkdown
                     continue;
                 }
 
-                current.Append(text);
+                Append(text);
                 used += wordWidth;
             }
         }
 
         Commit();
         return rows;
+    }
+
+    /// <summary>
+    /// The SGR state after appending <paramref name="text"/>: reset sequences clear
+    /// it, a sequence that starts with a reset (e.g. <c>0;1</c>) replaces it, and any
+    /// other SGR accumulates. Non-SGR escapes are ignored.
+    /// </summary>
+    private static string TrackActiveSgr(string active, string text)
+    {
+        var index = 0;
+        while (index < text.Length)
+        {
+            var escape = text.IndexOf('\u001b', index);
+            if (escape < 0)
+            {
+                break;
+            }
+
+            if (escape + 1 >= text.Length || text[escape + 1] != '[')
+            {
+                index = escape + 1;
+                continue;
+            }
+
+            var cursor = escape + 2;
+            while (cursor < text.Length && (text[cursor] < '@' || text[cursor] > '~'))
+            {
+                cursor++;
+            }
+
+            if (cursor >= text.Length)
+            {
+                break;
+            }
+
+            var sequence = text[escape..(cursor + 1)];
+            if (text[cursor] == 'm')
+            {
+                active = SgrAfter(active, sequence);
+            }
+
+            index = cursor + 1;
+        }
+
+        return active;
+    }
+
+    private static string SgrAfter(string active, string sequence)
+    {
+        var body = sequence[2..^1];
+        if (body.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var parts = body.Split(';');
+        var allReset = parts.All(part => part.Length == 0 || part == "0");
+        if (allReset)
+        {
+            return string.Empty;
+        }
+
+        // A leading reset inside the sequence (0;1m) replaces the previous state;
+        // re-emitting the whole sequence reproduces reset plus the new attributes.
+        return parts[0].Length == 0 || parts[0] == "0" ? sequence : active + sequence;
     }
 
     private static IEnumerable<string> SplitRuns(string styled)

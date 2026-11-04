@@ -167,10 +167,12 @@ public sealed partial class AgentCommands
                 if (existing is not null) { await OnUi(() => Activate(existing)).ConfigureAwait(false); return; }
                 if (Snapshot().Length >= MaxOpenSessions)
                     throw new InvalidOperationException("session_limit: 8 open tabs · use /sessions close on an idle tab");
-                var workspace = await ChatSessionWorkflow.ReadWorkspaceLabelAsync(source._sessionClient, sessionId, _lifetime.Token).ConfigureAwait(false);
-                if (workspace is { } recorded && !Path.TrimEndingDirectorySeparator(recorded.Path)
-                        .Equals(Path.TrimEndingDirectorySeparator(source.canonicalWorkspace), StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("session_workspace_mismatch: open this session from its own workspace");
+                var recordedWorkspace = await ChatSessionWorkflow.ReadWorkspaceLabelAsync(source._sessionClient, sessionId, _lifetime.Token).ConfigureAwait(false);
+                // A session opened from another surface (Desktop, another terminal) keeps
+                // its own workspace; refusing it made Desktop-created sessions unopenable
+                // here even though the reverse direction always worked.
+                var (openWorkspace, openWorkspaceLabel) = ChatSessionWorkflow.ResolveOpenWorkspace(
+                    source.canonicalWorkspace, source.workspaceLabel, recordedWorkspace);
                 var preset = source.cmd.Preset == "plan" ? "plan" : "standard";
                 try
                 {
@@ -189,8 +191,8 @@ public sealed partial class AgentCommands
                     var submissions = new ChatSubmissionState();
                     var command = source.cmd with { SessionId = sessionId, Images = null,
                         Preset = preset, ConfirmFullAccess = preset == "full_access" };
-                    var bootstrap = new ChatBootstrapContext(submissions, writer, source.canonicalWorkspace,
-                        source.workspaceLabel, sessionId, source.backendName, source.activeModel, source.activeReasoningEffort,
+                    var bootstrap = new ChatBootstrapContext(submissions, writer, openWorkspace,
+                        openWorkspaceLabel, sessionId, source.backendName, source.activeModel, source.activeReasoningEffort,
                         null, source.bootstrap.Presentation, true, writer, page, _app);
                     created = new ChatSession(source._host, command, bootstrap, _lifetime.Token) { multiSessions = this };
                 }).ConfigureAwait(false);
@@ -275,7 +277,11 @@ public sealed partial class AgentCommands
                 session.tgWindow!.IsModalPanelOpen || session.runSession.ParkedRunId is not null ? "?" : session.tgLoop!.IsBusy ? "◐"
                     : session.tgWindow.Hints.FeedbackIsError || session.draftCreationFailed || session.historyReloadRequired
                         || session.tgWindow.Hints.ActiveState == TgHintsState.Paused
-                        || session.sessionRenderer.Status.State == Tui.TuiRunState.Failed ? "!" : session.turn > 0 ? "✓" : "·",
+                        || session.sessionRenderer.Status.State == Tui.TuiRunState.Failed ? "!"
+                    // A turn interrupted by Escape (or ended without a completed event)
+                    // is not "completed"; only the transcript knows which terminal event
+                    // actually settled the turn.
+                    : session.turn > 0 && session.sessionRenderer.Transcript.LastTurnCompleted ? "✓" : "·",
                 ReferenceEquals(session, _active))).ToArray());
 
             private void CloseIdle(ChatSession session)
@@ -285,14 +291,49 @@ public sealed partial class AgentCommands
                     session.tgWindow!.Hints.ShowFeedback("session selection is still running · wait before closing this tab", true);
                     return;
                 }
-                if (Snapshot().Length <= 1 || !CanRelease(session))
+                if (Snapshot().Length <= 1)
                 {
-                    session.tgWindow!.Hints.ShowFeedback("keep one tab · finish the run and clear pending attachments before closing", true);
+                    session.tgWindow!.Hints.ShowFeedback("keep one tab open", true);
+                    return;
+                }
+                if (!CanRelease(session))
+                {
+                    session.tgWindow!.Hints.ShowFeedback(ReleaseRefusal(session), true);
                     return;
                 }
                 var next = Snapshot().First(other => !ReferenceEquals(other, session));
                 Activate(next);
                 RemoveIdle(session);
+            }
+
+            /// <summary>
+            /// Names the state that keeps a tab open so the operator has an action to
+            /// take; the previous single message mentioned only runs and attachments,
+            /// which is not what a paused answer or a history branch needs.
+            /// </summary>
+            private static string ReleaseRefusal(ChatSession session)
+            {
+                if (session.runSession.ParkedRunId is { } parked)
+                {
+                    return $"this tab is paused on run {parked} · answer it with /follow {parked} before closing";
+                }
+
+                if (session.runSession.ActiveRunId is not null || session.runSession.FollowableRunId is not null)
+                {
+                    return "this tab owns a run · finish or cancel it before closing";
+                }
+
+                if (session.submissions.Count > 0 || session.submissions.Retryable is not null || session.attachmentTasks.HasPending)
+                {
+                    return "this tab has pending attachments · send or remove them before closing";
+                }
+
+                if (session.pendingHistoryBranch is not null)
+                {
+                    return "this tab has a pending history branch · press esc or run /history cancel first";
+                }
+
+                return "this tab is paused · answer the pending question or run /follow before closing";
             }
 
             private static bool CanRelease(ChatSession session) => session.tgLoop!.CanCloseSession

@@ -95,7 +95,7 @@ public sealed partial class StructuredTranscriptWorkflowTests
                     ui.Writer.AppendPresentation(TranscriptLine.Plain("retained " + index));
             else
                 await ui.OnUi(() => ui.View.Clear());
-            ui.Writer.AppendActivityPresentation("new", TranscriptLine.Plain("✓ Read new.txt", TranscriptRole.Tool), ["NEW_DETAIL"]);
+            ui.Writer.AppendActivityPresentation("new", TranscriptLine.Plain("✓ Read new.txt", TranscriptRole.Tool));
             ui.Writer.UpdateActivityPresentation("old", TranscriptLine.Plain("WRONG LATE UPDATE", TranscriptRole.Tool));
             ui.Writer.UpdateActivityPresentation("new", TranscriptLine.Plain("✓ Read new.txt (3 matches)", TranscriptRole.Tool));
             await ui.OnUi(() =>
@@ -103,18 +103,19 @@ public sealed partial class StructuredTranscriptWorkflowTests
                 Assert.DoesNotContain(ui.View.Lines, row => row.Text.Contains("WRONG", StringComparison.Ordinal));
                 Assert.EndsWith("(3 matches)", ui.View.Lines[^1].Text);
                 Assert.Equal(TranscriptStyle.Tool, ui.View.Lines[^1].Style);
-                Assert.Equal("NEW_DETAIL", Assert.Single(ui.View.CollapsedRows).Text);
+                Assert.Empty(ui.View.CollapsedRows);
                 Assert.InRange(ui.View.RetainedRowCount, 1, TgTranscriptView.MaxRetainedRows);
             });
         });
 
     [Fact]
-    public Task Typed_output_keeps_detached_scroll_and_collapsed_copy_then_resumes_tail() =>
+    public Task Typed_output_keeps_detached_scroll_and_reasoning_copy_then_resumes_tail() =>
         RunWorker(async ui =>
         {
             for (var index = 0; index < 100; index++)
                 ui.Writer.AppendPresentation(TranscriptLine.Plain("history " + index));
-            ui.Writer.AppendActivityPresentation("detail", TranscriptLine.Plain("✓ Edit file · ctrl+o", TranscriptRole.Tool), ["+DETAIL 😀"]);
+            ui.Writer.AppendActivityPresentation("detail", TranscriptLine.Plain("✓ Edit file", TranscriptRole.Tool));
+            ui.Writer.RetainDetails(["+DETAIL 😀"]);
             await ui.OnUi(() => ui.View.ScrollToTop());
             ui.Writer.AppendPresentation(TranscriptLine.Plain("new answer"));
             await ui.OnUi(() =>

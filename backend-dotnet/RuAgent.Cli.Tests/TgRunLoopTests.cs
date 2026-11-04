@@ -395,17 +395,19 @@ public sealed class TgRunLoopTests
     }
 
     [Fact]
-    public void CtrlO_TogglesTheLastCollapsedBlock()
+    public void CtrlO_TogglesOnlyTheReasoningBlock()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
         var loop = new TgChatLoop(window);
         loop.SetPromptHandler((_, _, _) => Task.CompletedTask);
+        // A legacy summary block is not a reasoning block: Ctrl+O must leave it closed.
         window.Transcript.AppendCollapsed(
             "    │ · 2 more lines · ctrl+o",
             ["    │ + added line", "    │ - removed line"],
             TranscriptStyle.Tool);
+        window.Transcript.SetCollapsedDetails(["    │ reasoning detail"], TranscriptStyle.Meta);
 
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () => { window.FocusComposer(); return false; });
         app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
@@ -416,15 +418,15 @@ public sealed class TgRunLoopTests
         app.AddTimeout(TimeSpan.FromMilliseconds(500), () =>
         {
             var expanded = string.Join('\n', TgSnapshot.Capture(app));
-            Assert.Contains("+ added line", expanded);
-            Assert.Contains("- removed line", expanded);
+            Assert.Contains("reasoning detail", expanded);
+            Assert.DoesNotContain("+ added line", expanded);
             app.InjectKey(Key.O.WithCtrl);
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(700), () =>
         {
             var collapsed = string.Join('\n', TgSnapshot.Capture(app));
-            Assert.DoesNotContain("+ added line", collapsed);
+            Assert.DoesNotContain("reasoning detail", collapsed);
             app.RequestStop();
             return false;
         });

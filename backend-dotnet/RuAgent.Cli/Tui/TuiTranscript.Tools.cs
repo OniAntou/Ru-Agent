@@ -154,7 +154,7 @@ public sealed partial class TuiTranscript
             UpdateGroupWork(previous, detail);
             presentation.UpdateActivityPresentation(activity.ActivityId, TuiToolRow.ComposePresentation(status,
                 ActionLabel(detail, status), detail.Target, InspectorMetrics(detail), Width,
-                actionColumnWidth: ActivityActionColumnWidth), InspectTool(detail, status));
+                actionColumnWidth: ActivityActionColumnWidth), null);
         }
         else if (_surface.Writer is ITranscriptActivityWriter screen) screen.UpdateToolRow(activity.ActivityId, TuiToolRow.Compose(status,
             detail.Display ?? TitleCase(detail.Verb), detail.Target, ToolRowMetrics(detail), Width));
@@ -256,7 +256,7 @@ public sealed partial class TuiTranscript
 
         if (_fullScreenCards || _surface.Presentation is not null)
         {
-            WriteToolRow(status, detail, target, envelope.SafeSummary);
+            WriteToolRow(status, detail, target);
             if (resultLine is not null)
             {
                 WriteResultLine(resultLine);
@@ -274,8 +274,11 @@ public sealed partial class TuiTranscript
             {
                 WriteResultLine(resultLine);
             }
-            ApplyDiffText(envelope.SafeSummary, Width);
         }
+
+        // A bounded diff is part of the inline result now that tool rows have no
+        // inspector; both surfaces show the same first lines and overflow count.
+        ApplyDiffText(envelope.SafeSummary, Width);
 
         _toolsSettled++;
         _status.AddTool();
@@ -288,17 +291,15 @@ public sealed partial class TuiTranscript
     }
 
     /// <summary>
-    /// The full-screen settled tool result, OpenCode style: one inline row with the display
-    /// name, target and bounded metrics; the diff hunks (no 12-line cap) are retained behind
-    /// <c>ctrl+o</c>, reusing the existing expansion key handling.
+    /// The settled tool result: one inline row with the display name, target and bounded
+    /// metrics. The row carries no hidden inspector; Ctrl+O belongs to reasoning only.
     /// </summary>
-    private void WriteToolRow(
-        ToolLineStatus status, ToolDetail? detail, string? target, string? diffText)
+    private void WriteToolRow(ToolLineStatus status, ToolDetail? detail, string? target)
     {
         BeginToolRow(status);
         if (_surface.Presentation is not null)
         {
-            WriteNativeTool(detail, status, target, diffText);
+            WriteNativeTool(detail, status, target);
             return;
         }
         var display = string.IsNullOrWhiteSpace(detail?.Display)
@@ -316,30 +317,6 @@ public sealed partial class TuiTranscript
                 || target.EndsWith(" results", StringComparison.Ordinal)))
         {
             target = null;
-        }
-
-        var diffLines = ExtractDiffLines(diffText);
-        if (diffLines.Count > 0)
-        {
-            meta = string.IsNullOrWhiteSpace(meta) ? "· ctrl+o" : meta + " · ctrl+o";
-        }
-
-        if (diffLines.Count > 0)
-        {
-            // One affordance owns one block: without this, a second diff-bearing tool
-            // appended its rows to the previous tool's block and ctrl+o showed a mixture.
-            _retained.Clear();
-            _retainedIsThinking = false;
-            // The expanded diff keeps its tinted rows between two dim rules, so the
-            // block reads as one framed unit instead of loose lines.
-            var rule = "    " + RetainedPaint(new string('─', Math.Max(4, Width - 4)), TuiToken.Line);
-            _retained.Add(rule);
-            foreach (var line in diffLines)
-            {
-                _retained.Add("    " + RetainedPaint("│ ", TuiToken.Line) + FormatDiffLine(line));
-            }
-
-            _retained.Add(rule);
         }
 
         TrimRetained();
@@ -402,11 +379,6 @@ public sealed partial class TuiTranscript
 
     private static string TitleCase(string value) =>
         string.IsNullOrEmpty(value) ? "Tool" : char.ToUpperInvariant(value[0]) + value[1..];
-
-    private static List<string> ExtractDiffLines(string? text) =>
-        string.IsNullOrWhiteSpace(text)
-            ? []
-            : TuiText.SanitizeUntrusted(text).Split('\n').Where(IsDiffLine).ToList();
 
     /// <summary>
     /// Opens or extends the current feed block. A block is a run of consecutive settled tool

@@ -183,11 +183,6 @@ public sealed partial class TgTranscriptView : View
     {
         if (index < 0 || index >= _lines.Count || _lines[index].Style != TranscriptStyle.Tool) return;
         var text = row.Text;
-        // Structured rows already budget every painted span for the current width.
-        // Only the legacy text importer needs to preserve a missing shortcut.
-        if (row.Spans is null && details is null
-            && _lines[index].Text.Contains("ctrl+o", StringComparison.Ordinal) && !text.Contains("ctrl+o", StringComparison.Ordinal))
-            text += " · ctrl+o";
         var bounded = BoundLine(text);
         _retainedCharacters += CharacterCount(bounded) - CharacterCount(_lines[index].Text);
         _lines[index] = row with { Text = bounded };
@@ -220,6 +215,12 @@ public sealed partial class TgTranscriptView : View
 
         _lines.RemoveRange(mark, _lines.Count - mark);
         RemoveBlocksAfter(mark);
+        // A reasoning block has no summary row to anchor it; when the cut lands exactly
+        // at its anchor it belongs to the dropped step, not to the surviving rows.
+        foreach (var block in _collapsedBlocks.Where(block => !block.HasSummary && block.AfterLine == mark).ToArray())
+        {
+            RemoveCollapsedBlock(block);
+        }
 
         if (_historyTruncated && mark == 0)
         {

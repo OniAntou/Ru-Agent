@@ -79,6 +79,43 @@ internal static class ChatSessionWorkflow
         }
     }
 
+    /// <summary>
+    /// The workspace a newly opened session tab runs in. The recorded workspace wins
+    /// when it differs from the terminal's: a session created in Desktop (including a
+    /// Ru-owned scratch workspace) must open in the folder its history belongs to
+    /// instead of being refused. A recorded folder that no longer exists fails closed
+    /// with a named error rather than silently opening elsewhere.
+    /// </summary>
+    public static (string Path, string Label) ResolveOpenWorkspace(
+        string currentPath,
+        string currentLabel,
+        (string Path, string Label)? recorded)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(currentPath);
+        if (recorded is not { } workspace || string.IsNullOrWhiteSpace(workspace.Path))
+        {
+            return (currentPath, currentLabel);
+        }
+
+        var recordedPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace.Path));
+        var currentFull = Path.TrimEndingDirectorySeparator(Path.GetFullPath(currentPath));
+        if (string.Equals(recordedPath, currentFull, StringComparison.OrdinalIgnoreCase))
+        {
+            return (currentPath, currentLabel);
+        }
+
+        if (!Directory.Exists(recordedPath))
+        {
+            throw new InvalidOperationException(
+                "session_workspace_missing: the session's recorded workspace no longer exists");
+        }
+
+        var label = string.IsNullOrWhiteSpace(workspace.Label)
+            ? ChatDisplayText.Sanitize(Path.GetFileName(recordedPath), 64)
+            : workspace.Label;
+        return (recordedPath, label);
+    }
+
     public static IReadOnlyList<ChatSessionChoice> Filter(JsonElement root, string? query)
     {
         if (root.ValueKind != JsonValueKind.Object

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Mở session đã lưu nay dùng workspace ghi trên session thay vì từ chối
+  `session_workspace_mismatch`; session tạo từ Desktop (kể cả workspace tạm của Ru) mở được
+  trên CLI, còn thư mục đã mất thì báo `session_workspace_missing`. `Ctrl+O` chỉ còn mở
+  reasoning của model; tool row không còn inspector/diff ẩn, diff quá 12 dòng chỉ ghi số dòng
+  còn lại, footer `ctrl+o thinking` vẫn giữ.
+
+- **fix(tui)**: Trạng thái attachment của draft được khoá khi thread nền đọc ảnh/tệp trong lúc
+  UI gửi; hai lần tải ảnh đồng thời không còn vượt giới hạn 4 ảnh/20 MB và snapshot không còn
+  liệt kê list đang bị sửa (trước đây có thể ném lỗi ngay từ phím Enter). Khôi phục text khi run
+  park dùng deadline riêng thay cho token đã bị huỷ. Lỗi `/subagents` đi vào transcript thay vì
+  stderr sau frame. Markdown có màu không còn thêm dấu cách trước span và giữ style trên dòng
+  tiếp theo khi wrap.
+
 - **fix(gui)**: Câu trả lời có heading không còn để lại khoảng trống lớn ở cuối. Markdig ghi một
   link definition cho mỗi heading ở cuối tài liệu và GUI vẽ mỗi cái thành một dòng trống, nên
   câu trả lời 15 heading kéo theo vài trăm pixel trống trước prompt tiếp theo.

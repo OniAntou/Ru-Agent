@@ -9,7 +9,7 @@ namespace RuAgent.Cli.Tests;
 public sealed partial class StructuredTranscriptWorkflowTests
 {
     [Fact]
-    public Task Each_activity_opens_only_its_own_details_and_keeps_semantic_paint() =>
+    public Task Each_activity_row_keeps_its_own_paint_and_inline_result() =>
         RunWorker(async ui =>
         {
             ui.Renderer.BeginTurn();
@@ -22,19 +22,16 @@ public sealed partial class StructuredTranscriptWorkflowTests
             await ui.OnUi(() =>
             {
                 Assert.False(ui.View.IsExpanded);
+                Assert.Empty(ui.View.CollapsedRows);
                 var failure = Assert.Single(ui.View.Lines, row => row.Style == TranscriptStyle.Tool && row.Text.Contains("locked.cs"));
                 Assert.Contains(failure.Spans!, span => span.Attr.Foreground == TgPalette.ToColor(TuiToken.Err));
-                ui.View.MoveBlockSelection(-1);
-                Assert.Contains("dotnet test", ui.View.CopyText());
-                Assert.DoesNotContain("permission_denied", ui.View.CopyText());
-                ui.View.MoveBlockSelection(-1);
-                Assert.Contains("permission_denied", ui.View.CopyText());
-                Assert.DoesNotContain("dotnet test", ui.View.CopyText());
+                Assert.Contains(ui.View.Lines, row => row.Text.Contains("permission", StringComparison.Ordinal));
+                Assert.DoesNotContain(ui.View.Lines, row => row.Text.Contains("Tool     ", StringComparison.Ordinal));
             });
         });
 
     [Fact]
-    public Task Late_activity_completion_refreshes_expanded_details_without_duplicating_a_row() =>
+    public Task Late_activity_completion_refreshes_the_row_without_an_inspector() =>
         RunWorker(async ui =>
         {
             ui.Renderer.BeginTurn();
@@ -42,21 +39,16 @@ public sealed partial class StructuredTranscriptWorkflowTests
             { State = AgentActivityState.Started, FileName = "src/Session.cs" };
             ui.Renderer.Transcript.ApplyActivity(activity);
             SettleInspectionActivity(ui.Renderer, 1);
-            await ui.OnUi(() =>
-            {
-                ui.View.ToggleExpanded();
-                Assert.True(ui.View.IsExpanded);
-            });
+            await ui.OnUi(() => Assert.False(ui.View.IsExpanded));
             ui.Renderer.Transcript.ApplyActivity(activity with
             { State = AgentActivityState.Completed, Added = 12, Removed = 4, SafeCode = "succeeded" });
             await ui.OnUi(() =>
             {
                 var row = Assert.Single(ui.View.Lines, line => line.Style == TranscriptStyle.Tool);
                 Assert.Contains("Edited", row.Text);
+                Assert.Contains("+12", row.Text);
                 Assert.Contains(row.Spans!, span => span.Attr.Foreground == TgPalette.ToColor(TuiToken.Ok));
-                Assert.True(ui.View.IsExpanded);
-                Assert.Contains(ui.View.CollapsedRows, line => line.Text.Contains("+12"));
-                Assert.DoesNotContain(ui.View.CollapsedRows, line => line.Text.Contains("Outcome unavailable"));
+                Assert.Empty(ui.View.CollapsedRows);
                 Assert.True(ui.View.RetainedRowCount <= TgTranscriptView.MaxRetainedRows);
             });
         });
@@ -80,8 +72,7 @@ public sealed partial class StructuredTranscriptWorkflowTests
                 Assert.True(TuiText.VisibleWidth(row.Text) <= 40);
                 Assert.Equal(row.Text, string.Concat(row.Spans!.Select(span => span.Text)));
                 Assert.Contains("exit 1", row.Text);
-                ui.View.ToggleExpanded();
-                Assert.Contains(ui.View.CollapsedRows, line => line.Text.Contains("process_failed"));
+                Assert.Empty(ui.View.CollapsedRows);
             });
         });
 

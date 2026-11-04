@@ -103,9 +103,10 @@ thinking, response streaming, compaction and tool/request retries have distinct
 labels. Idle omits status text, response deltas
 show “Writing response”, and parked states have no spinner or running clock.
 Tool rows align common action labels and targets, show actual terminal exit codes
-when available, and retain a compact inspector behind Ctrl+O. Failure remains
+when available, and keep every visible detail inline; Ctrl+O belongs to the
+model's reasoning only. Failure remains
 explicit when a long command is shortened; narrow rows prioritize outcome/exit
-evidence over the shortcut. Frames
+evidence over secondary metrics. Frames
 shorter than 20 rows use a single heading row. The feed
 uses the available width without a side panel. Picker cards page their entries
 to fit the current height while keeping the selection and footer visible.
@@ -139,9 +140,9 @@ parameters or fragments.
 PageUp/PageDown scroll the transcript. Ctrl+Home reads the oldest retained output;
 Ctrl+End returns to following new output. Streaming preserves a detached scroll
 position and marks new output until Ctrl+End returns to the tail. Ctrl+O toggles
-the selected tool/diff or reasoning block, defaulting to the newest retained block.
-Ctrl+Alt+Up/Down select and reveal earlier/later blocks. Ctrl+Shift+C copies the
-selected block's retained detail text, or the latest contiguous assistant text
+the model's reasoning block, defaulting to the newest retained reasoning.
+Ctrl+Alt+Up/Down select and reveal earlier/later reasoning blocks. Ctrl+Shift+C copies
+the selected reasoning block's retained text, or the latest contiguous assistant text
 when no block is selected; copied content includes any retained formatting or
 code gutters. Ctrl+End clears block selection and resumes following output.
 Running, waiting for approval and paused states show the queued prompt count;

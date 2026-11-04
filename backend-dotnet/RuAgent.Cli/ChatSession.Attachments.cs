@@ -69,10 +69,13 @@ public sealed partial class AgentCommands
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (pendingImages.Count >= Images.CliImagePolicy.MaxImageCount)
+                // Fast path: do not decode/resize an image that cannot be admitted.
+                // TryAddImage below remains the authoritative, atomic check.
+                if (submissions.ImageCount >= Images.CliImagePolicy.MaxImageCount)
                 {
-                    if (tgMode) ShowPasteFeedback(Images.CliImagePolicy.TooManyImagesStatus);
-                    await WriteDiagnosticLineAsync(humanOut, Images.CliImagePolicy.TooManyImagesStatus).ConfigureAwait(false);
+                    var fullMessage = Images.CliImagePolicy.TooManyImagesStatus;
+                    if (tgMode) ShowPasteFeedback(fullMessage);
+                    await WriteDiagnosticLineAsync(humanOut, fullMessage).ConfigureAwait(false);
                     return;
                 }
 
@@ -86,20 +89,28 @@ public sealed partial class AgentCommands
                     return;
                 }
 
-                var totalBytes = pendingImages.Sum(image => image.ByteSize) + attachment.ByteSize;
-                if (totalBytes > Images.CliImagePolicy.MaxTotalImageBytes)
-                {
-                    await WriteAttachFeedbackAsync(
-                        $"image_too_large: this turn's images would total {Images.CliImageAttachment.FormatBytes(totalBytes)} (limit {Images.CliImageAttachment.FormatBytes(Images.CliImagePolicy.MaxTotalImageBytes)}); this image was not added").ConfigureAwait(false);
-                    return;
-                }
-
                 if (tempPath is not null)
                 {
                     attachment = attachment with { TempPath = tempPath };
                 }
 
-                submissions.Add(attachment);
+                // Count and byte caps are checked and applied under the state's lock:
+                // two concurrent loads must not both pass a check that the other one
+                // already invalidated.
+                if (!submissions.TryAddImage(
+                        attachment,
+                        Images.CliImagePolicy.MaxImageCount,
+                        Images.CliImagePolicy.MaxTotalImageBytes,
+                        out var totalBytes))
+                {
+                    var message = submissions.ImageCount >= Images.CliImagePolicy.MaxImageCount
+                        ? Images.CliImagePolicy.TooManyImagesStatus
+                        : $"image_too_large: this turn's images would total {Images.CliImageAttachment.FormatBytes(totalBytes)} (limit {Images.CliImageAttachment.FormatBytes(Images.CliImagePolicy.MaxTotalImageBytes)}); this image was not added";
+                    if (tgMode) ShowPasteFeedback(message);
+                    await WriteDiagnosticLineAsync(humanOut, message).ConfigureAwait(false);
+                    return;
+                }
+
                 attached = true; // The pending state now owns cleanup of this image's temp file.
                 RefreshAttachmentLabels();
                 if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))

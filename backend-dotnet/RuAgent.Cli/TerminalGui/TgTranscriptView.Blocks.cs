@@ -22,7 +22,15 @@ public sealed partial class TgTranscriptView
         SelectedOrLatestBlock?.Hidden ?? [];
 
     private bool HasExpandedBlocks => _collapsedBlocks.Any(block => block.Expanded);
-    private CollapsedBlock? SelectedOrLatestBlock => _selectedBlock ?? _collapsedBlocks.LastOrDefault();
+
+    /// <summary>
+    /// The thinking block the expansion keys act on. Tool rows no longer retain a
+    /// hidden inspector, so a summary block is never a toggle target.
+    /// </summary>
+    private CollapsedBlock? SelectedOrLatestBlock =>
+        _selectedBlock is { HasSummary: false } selected
+            ? selected
+            : _collapsedBlocks.LastOrDefault(block => !block.HasSummary);
 
     /// <summary>
     /// Appends a summary and retains its hidden detail rows as an independent block.
@@ -93,20 +101,21 @@ public sealed partial class TgTranscriptView
         }
     }
 
-    /// <summary>Selects and reveals a retained block while parking the viewport on it.</summary>
+    /// <summary>Selects and reveals a retained thinking block while parking the viewport on it.</summary>
     public void MoveBlockSelection(int delta)
     {
-        if (_collapsedBlocks.Count == 0)
+        var blocks = _collapsedBlocks.Where(block => !block.HasSummary).ToArray();
+        if (blocks.Length == 0)
         {
             _selectedBlock = null;
             return;
         }
 
-        var currentIndex = _selectedBlock is null
-            ? delta < 0 ? _collapsedBlocks.Count : delta > 0 ? -1 : _collapsedBlocks.Count - 1
-            : _collapsedBlocks.IndexOf(_selectedBlock);
-        var nextIndex = (int)Math.Clamp((long)currentIndex + delta, 0, _collapsedBlocks.Count - 1);
-        _selectedBlock = _collapsedBlocks[nextIndex];
+        var currentIndex = _selectedBlock is { HasSummary: false } selected
+            ? Array.IndexOf(blocks, selected)
+            : delta < 0 ? blocks.Length : delta > 0 ? -1 : blocks.Length - 1;
+        var nextIndex = (int)Math.Clamp((long)currentIndex + delta, 0, blocks.Length - 1);
+        _selectedBlock = blocks[nextIndex];
         _selectedBlock.Expanded = true;
         SetFollowingTail(false);
         _wrapWidth = -1;

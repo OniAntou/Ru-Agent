@@ -8,7 +8,7 @@ namespace RuAgent.Cli.Tests;
 public sealed class TuiActivityFlowTests
 {
     [Fact]
-    public void Read_result_uses_lines_and_retains_its_own_inspectable_context()
+    public void Read_result_uses_lines_and_has_no_hidden_inspector()
     {
         var (renderer, view) = Create();
         renderer.Transcript.ApplyActivity(Activity("read", AgentActivityKind.Explore, "Read") with
@@ -16,15 +16,15 @@ public sealed class TuiActivityFlowTests
         Settle(renderer);
 
         Assert.Contains("63 lines", view.Activities["read"].Text);
-        Assert.Contains("ctrl+o", view.Activities["read"].Text);
-        Assert.Contains(view.Details["read"], line => line.Contains("src/Session.cs:24-86"));
+        Assert.DoesNotContain("ctrl+o", view.Activities["read"].Text);
+        Assert.Empty(view.Details["read"]);
         Assert.DoesNotContain("matches", view.Activities["read"].Text);
     }
 
     [Theory]
     [InlineData(0, AgentActivityState.Completed)]
     [InlineData(2, AgentActivityState.Failed)]
-    public void Command_result_reports_actual_exit_code_and_preserves_the_full_bounded_command(int exit, AgentActivityState state)
+    public void Command_result_reports_actual_exit_code_inline_without_an_inspector(int exit, AgentActivityState state)
     {
         var (renderer, view) = Create();
         var command = "dotnet test " + new string('a', 180) + " --filter SessionTests";
@@ -33,11 +33,10 @@ public sealed class TuiActivityFlowTests
         Settle(renderer);
 
         Assert.Contains($"exit {exit}", view.Activities["command"].Text);
-        Assert.Contains(view.Details["command"], line => line.Contains("--filter SessionTests"));
+        Assert.Empty(view.Details["command"]);
         if (state == AgentActivityState.Failed)
         {
             Assert.Contains("failed", view.Activities["command"].Text);
-            Assert.Contains(view.Details["command"], line => line.Contains("process_failed"));
         }
     }
 
@@ -56,7 +55,8 @@ public sealed class TuiActivityFlowTests
         Assert.Contains("+12", view.Activities["ok"].Text);
         Assert.DoesNotContain("Edited", view.Activities["bad"].Text);
         Assert.Contains("failed", view.Activities["bad"].Text);
-        Assert.Contains(view.Details["bad"], line => line.Contains("permission_denied"));
+        Assert.Contains(view.Rows, row => row.Text.Contains("permission", StringComparison.Ordinal));
+        Assert.Empty(view.Details["bad"]);
     }
 
     [Fact]
@@ -74,8 +74,7 @@ public sealed class TuiActivityFlowTests
         Assert.Single(view.Activities);
         Assert.Equal(1, renderer.Transcript.ToolsSettled);
         Assert.Contains("exit 1", view.Activities["command"].Text);
-        Assert.Contains(view.Details["command"], line => line.Contains("process_failed"));
-        Assert.DoesNotContain(view.Details["command"], line => line.Contains("Outcome unavailable"));
+        Assert.Empty(view.Details["command"]);
     }
 
     [Fact]
@@ -125,21 +124,19 @@ public sealed class TuiActivityFlowTests
         renderer.Transcript.ApplyActivity(Activity("command", AgentActivityKind.Terminal, "Terminal") with
         { Detail = "dotnet\u001b[2J test\r\n" + new string('x', 10_000), ExitCode = 0 });
         Settle(renderer);
-        Assert.NotEmpty(view.Details["command"]);
-        Assert.All(view.Details["command"], line =>
-        {
-            Assert.DoesNotContain('\u001b', line);
-            Assert.DoesNotContain('\r', line);
-            Assert.DoesNotContain('\n', line);
-            Assert.True(line.Length <= 1100);
-        });
+        Assert.Empty(view.Details["command"]);
+        var row = view.Activities["command"].Text;
+        Assert.DoesNotContain('\u001b', row);
+        Assert.DoesNotContain('\r', row);
+        Assert.DoesNotContain('\n', row);
+        Assert.True(TuiText.VisibleWidth(row) <= 120);
     }
 
     [Fact]
-    public void A_narrow_failed_command_prioritizes_exit_code_over_the_detail_shortcut()
+    public void A_narrow_failed_command_prioritizes_exit_code_over_secondary_metrics()
     {
         var row = TuiToolRow.ComposePresentation(ToolLineStatus.Failed, "Run", "dotnet test",
-            "exit 2 · 12 lines · 1.2s · ctrl+o details", 40);
+            "exit 2 · 12 lines · 1.2s", 40);
         Assert.Contains("failed", row.Text);
         Assert.Contains("exit 2", row.Text);
         Assert.True(TuiText.VisibleWidth(row.Text) <= 40);
@@ -154,8 +151,8 @@ public sealed class TuiActivityFlowTests
         Settle(renderer);
         renderer.Transcript.ApplyActivity(Activity("read", AgentActivityKind.Explore, "Read") with { Count = 21 });
         Assert.Contains("src/Session.cs:10-30", view.Activities["read"].Text);
-        Assert.Contains(view.Details["read"], line => line.Contains("src/Session.cs:10-30"));
         Assert.Contains("21 lines", view.Activities["read"].Text);
+        Assert.Empty(view.Details["read"]);
     }
 
     [Fact]
@@ -170,7 +167,7 @@ public sealed class TuiActivityFlowTests
     }
 
     [Fact]
-    public void A_later_tool_detail_does_not_advertise_thinking_on_the_turn_footer()
+    public void A_later_tool_row_keeps_the_thinking_footer_hint()
     {
         var (renderer, view) = Create();
         renderer.Transcript.ApplyActivity(Activity("thinking", AgentActivityKind.Thinking, null) with { Detail = "Reported reasoning" });
@@ -178,7 +175,7 @@ public sealed class TuiActivityFlowTests
         Settle(renderer);
         renderer.Transcript.AppendAssistant("Ready.\n");
         renderer.EndTurn(TuiTurnOutcome.Completed, null);
-        Assert.DoesNotContain(view.Rows, row => row.Role == TranscriptRole.Meta && row.Text.Contains("ctrl+o thinking"));
+        Assert.Contains(view.Rows, row => row.Role == TranscriptRole.Meta && row.Text.Contains("ctrl+o thinking"));
     }
 
     [Theory]
@@ -211,13 +208,14 @@ public sealed class TuiActivityFlowTests
     }
 
     [Fact]
-    public void Inspecting_a_long_diff_keeps_the_existing_line_budget_and_tail()
+    public void A_long_diff_is_bounded_inline_and_keeps_its_tail()
     {
         var (renderer, view) = Create();
         renderer.Transcript.ApplyActivity(Activity("edit", AgentActivityKind.Edit, "Edit") with { FileName = "src/Session.cs" });
         renderer.Transcript.ApplyDurable(new(1, "evt_diff", "run_1", "sess_1", 1,
             "tool.execution_completed", "2026-11-02T00:00:00Z", "succeeded", "@@ -1 +1 @@\n-previous\n+" + new string('x', 1500) + "DIFF_TAIL"));
-        Assert.Contains(view.Details["edit"], line => line.EndsWith("DIFF_TAIL", StringComparison.Ordinal));
+        Assert.Contains(view.Rows, row => row.Text.EndsWith("DIFF_TAIL", StringComparison.Ordinal));
+        Assert.Empty(view.Details["edit"]);
     }
 
     [Fact]

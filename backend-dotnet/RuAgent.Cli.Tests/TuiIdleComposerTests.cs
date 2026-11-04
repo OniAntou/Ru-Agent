@@ -12,7 +12,7 @@ namespace RuAgent.Cli.Tests;
 public sealed class TuiIdleComposerTests
 {
     [Fact]
-    public void TranscriptFullScreenCards_RendersInlineToolRowAndExpandsTheDiff()
+    public void TranscriptFullScreenCards_RendersInlineToolRowAndDiff()
     {
         TuiPalette.Level = TuiColorLevel.None;
         var writer = new StringWriter();
@@ -27,14 +27,13 @@ public sealed class TuiIdleComposerTests
 
         var text = writer.ToString();
         Assert.Contains("✓ Edit  app.cs", TuiText.Strip(text), StringComparison.Ordinal);
-        Assert.Contains("ctrl+o", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("ctrl+o", text, StringComparison.Ordinal);
         Assert.DoesNotContain("╭─", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("- old line", text, StringComparison.Ordinal);
-
-        renderer.ToggleExpand();
-        text = writer.ToString();
         Assert.Contains("- old line", text, StringComparison.Ordinal);
         Assert.Contains("+ new line", text, StringComparison.Ordinal);
+
+        renderer.ToggleExpand();
+        Assert.Contains("- old line", writer.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

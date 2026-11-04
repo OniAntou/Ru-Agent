@@ -27,6 +27,54 @@ public sealed class ChatSessionWorkflowTests
         Assert.True(snapshot.MatchesSelection(unchanged.RootElement));
     }
 
+    [Fact]
+    public void ResolveOpenWorkspace_AdoptsTheRecordedWorkspaceWhenItDiffers()
+    {
+        var foreign = Directory.CreateTempSubdirectory("ru-open-workspace").FullName;
+        try
+        {
+            var (path, label) = ChatSessionWorkflow.ResolveOpenWorkspace(
+                "C:\\current", "current", (foreign, "gallery"));
+
+            Assert.Equal(Path.TrimEndingDirectorySeparator(foreign), path);
+            Assert.Equal("gallery", label);
+        }
+        finally
+        {
+            Directory.Delete(foreign, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolveOpenWorkspace_KeepsTheTerminalWorkspaceWhenTheyMatch()
+    {
+        var current = Path.TrimEndingDirectorySeparator(Path.GetTempPath());
+        var (path, label) = ChatSessionWorkflow.ResolveOpenWorkspace(
+            current, "current-label", (current + Path.DirectorySeparatorChar, "recorded"));
+
+        Assert.Equal(current, path);
+        Assert.Equal("current-label", label);
+    }
+
+    [Fact]
+    public void ResolveOpenWorkspace_FailsClosedWhenTheRecordedWorkspaceIsGone()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "ru-missing-" + Guid.NewGuid().ToString("N"));
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            ChatSessionWorkflow.ResolveOpenWorkspace("C:\\current", "current", (missing, "gone")));
+
+        Assert.StartsWith("session_workspace_missing", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveOpenWorkspace_WithoutARecordedWorkspaceKeepsTheCurrentOne()
+    {
+        var (path, label) = ChatSessionWorkflow.ResolveOpenWorkspace("C:\\current", "current", null);
+
+        Assert.Equal("C:\\current", path);
+        Assert.Equal("current", label);
+    }
+
     private static PublicHostSession Session()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();

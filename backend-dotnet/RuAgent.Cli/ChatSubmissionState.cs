@@ -4,45 +4,118 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli;
 
+/// <summary>
+/// The draft's pending image/text attachments. Attachment loads finish on the
+/// thread pool while the UI thread may submit at any moment, so every mutation
+/// and snapshot takes the same gate; the exposed lists are copies, never live
+/// views the caller could enumerate while another thread adds.
+/// </summary>
 internal sealed class ChatSubmissionState : IDisposable
 {
     public const int MaxComposedPromptChars = AgentRunLimits.MaxPromptChars;
+    private readonly object _gate = new();
     private readonly List<CliImageAttachment> _images = [];
     private readonly List<CliTextAttachment> _texts = [];
+    private ChatSubmissionSnapshot? _retryable;
 
-    public ChatSubmissionState()
+    public IReadOnlyList<CliImageAttachment> Images
     {
-        Images = _images.AsReadOnly();
-        Texts = _texts.AsReadOnly();
+        get { lock (_gate) return _images.ToArray(); }
     }
 
-    public IReadOnlyList<CliImageAttachment> Images { get; }
-    public IReadOnlyList<CliTextAttachment> Texts { get; }
-    public ChatSubmissionSnapshot? Retryable { get; private set; }
-    public int Count => _images.Count + _texts.Count;
-    public long SourceBytes => checked(_images.Sum(image => image.ByteSize) + _texts.Sum(text => text.ByteSize));
+    public IReadOnlyList<CliTextAttachment> Texts
+    {
+        get { lock (_gate) return _texts.ToArray(); }
+    }
 
-    public void Add(CliImageAttachment image) => _images.Add(image);
-    public void Add(CliTextAttachment text) => _texts.Add(text);
+    public ChatSubmissionSnapshot? Retryable
+    {
+        get { lock (_gate) return _retryable; }
+        private set { lock (_gate) _retryable = value; }
+    }
+
+    public int Count
+    {
+        get { lock (_gate) return _images.Count + _texts.Count; }
+    }
+
+    public int ImageCount
+    {
+        get { lock (_gate) return _images.Count; }
+    }
+
+    public long ImageBytes
+    {
+        get { lock (_gate) return _images.Sum(image => image.ByteSize); }
+    }
+
+    public long TextCharacters
+    {
+        get { lock (_gate) return _texts.Sum(text => (long)text.TextContent.Length); }
+    }
+
+    public long SourceBytes
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _images.Sum(image => image.ByteSize) + _texts.Sum(text => text.ByteSize);
+            }
+        }
+    }
+
+    public void Add(CliImageAttachment image)
+    {
+        lock (_gate) _images.Add(image);
+    }
+
+    /// <summary>
+    /// Adds an image only when it keeps the count and total-byte caps, checked and
+    /// applied under one lock so two concurrent loads cannot both pass the check.
+    /// </summary>
+    public bool TryAddImage(CliImageAttachment image, int maxCount, long maxTotalBytes, out long totalBytes)
+    {
+        lock (_gate)
+        {
+            totalBytes = _images.Sum(item => item.ByteSize) + image.ByteSize;
+            if (_images.Count >= maxCount || totalBytes > maxTotalBytes)
+            {
+                return false;
+            }
+
+            _images.Add(image);
+            return true;
+        }
+    }
+
+    public void Add(CliTextAttachment text)
+    {
+        lock (_gate) _texts.Add(text);
+    }
 
     public ChatSubmissionSnapshot? CreateSnapshot(
         string line, string sessionId, string workspace, string preset,
         string backend, string model, bool isParked)
     {
-        var isCommand = line.TrimStart().StartsWith('/');
-        var isPresetCommand = line.TrimStart().Split(' ', 2)[0].Equals("/preset", StringComparison.OrdinalIgnoreCase);
-        var isParkedContinue = isParked && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase);
-        if (Count > 0 && isCommand && !ChatSubmissionSnapshot.IsPausedControlCommand(line) && !isPresetCommand)
+        lock (_gate)
         {
-            return null;
-        }
+            var isCommand = line.TrimStart().StartsWith('/');
+            var isPresetCommand = line.TrimStart().Split(' ', 2)[0].Equals("/preset", StringComparison.OrdinalIgnoreCase);
+            var isParkedContinue = isParked && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase);
+            if (_images.Count + _texts.Count > 0 && isCommand
+                && !ChatSubmissionSnapshot.IsPausedControlCommand(line) && !isPresetCommand)
+            {
+                return null;
+            }
 
-        var snapshot = ChatSubmissionSnapshot.Create(
-            line, sessionId, workspace, preset, backend, model,
-            isCommand || isParkedContinue ? [] : _images,
-            isCommand || isParkedContinue ? [] : _texts);
-        return AttachedPrompt.Compose(snapshot.Prompt, snapshot.Texts).Length > MaxComposedPromptChars
-            ? null : snapshot;
+            var snapshot = ChatSubmissionSnapshot.Create(
+                line, sessionId, workspace, preset, backend, model,
+                isCommand || isParkedContinue ? [] : _images,
+                isCommand || isParkedContinue ? [] : _texts);
+            return AttachedPrompt.Compose(snapshot.Prompt, snapshot.Texts).Length > MaxComposedPromptChars
+                ? null : snapshot;
+        }
     }
 
     public void Admit(ChatSubmissionSnapshot snapshot) => RemovePending(snapshot.Images, snapshot.Texts);
@@ -92,21 +165,24 @@ internal sealed class ChatSubmissionState : IDisposable
 
     public void RemovePending(IEnumerable<CliImageAttachment> images, IEnumerable<CliTextAttachment> texts)
     {
-        foreach (var image in images.ToArray())
+        var imageList = images.ToArray();
+        var textList = texts.ToArray();
+        lock (_gate)
         {
-            _images.Remove(image);
-        }
-
-        foreach (var text in texts.ToArray())
-        {
-            _texts.Remove(text);
+            foreach (var image in imageList) _images.Remove(image);
+            foreach (var text in textList) _texts.Remove(text);
         }
     }
 
     public void Restore(IEnumerable<CliImageAttachment> images, IEnumerable<CliTextAttachment> texts)
     {
-        _images.AddRange(images);
-        _texts.AddRange(texts);
+        var imageList = images.ToArray();
+        var textList = texts.ToArray();
+        lock (_gate)
+        {
+            _images.AddRange(imageList);
+            _texts.AddRange(textList);
+        }
     }
 
     public void HoldForRetry(ChatSubmissionSnapshot? snapshot)
@@ -116,38 +192,59 @@ internal sealed class ChatSubmissionState : IDisposable
             return;
         }
 
-        Retryable ??= snapshot;
+        lock (_gate) _retryable ??= snapshot;
         Release(snapshot.Images);
     }
 
-    public void Accept() => Retryable = null;
+    public void Accept()
+    {
+        lock (_gate) _retryable = null;
+    }
 
     public string? Detach(int oneBasedIndex)
     {
-        if (oneBasedIndex < 1 || oneBasedIndex > Count)
+        CliImageAttachment? detachedImage = null;
+        string? name = null;
+        lock (_gate)
         {
-            return null;
+            if (oneBasedIndex < 1 || oneBasedIndex > _images.Count + _texts.Count)
+            {
+                return null;
+            }
+
+            if (oneBasedIndex <= _images.Count)
+            {
+                detachedImage = _images[oneBasedIndex - 1];
+                _images.RemoveAt(oneBasedIndex - 1);
+                name = detachedImage.FileName;
+            }
+            else
+            {
+                var index = oneBasedIndex - _images.Count - 1;
+                name = _texts[index].FileName;
+                _texts.RemoveAt(index);
+            }
         }
 
-        if (oneBasedIndex <= _images.Count)
+        if (detachedImage is not null)
         {
-            var image = _images[oneBasedIndex - 1];
-            _images.RemoveAt(oneBasedIndex - 1);
-            Release([image]);
-            return image.FileName;
+            Release([detachedImage]);
         }
 
-        var index = oneBasedIndex - _images.Count - 1;
-        var text = _texts[index];
-        _texts.RemoveAt(index);
-        return text.FileName;
+        return name;
     }
 
     public void ClearPending()
     {
-        Release(_images);
-        _images.Clear();
-        _texts.Clear();
+        CliImageAttachment[] images;
+        lock (_gate)
+        {
+            images = _images.ToArray();
+            _images.Clear();
+            _texts.Clear();
+        }
+
+        Release(images);
     }
 
     public static void Release(IEnumerable<CliImageAttachment> images)
@@ -172,10 +269,16 @@ internal sealed class ChatSubmissionState : IDisposable
     public void Dispose()
     {
         ClearPending();
-        if (Retryable is { } retry)
+        ChatSubmissionSnapshot? retry;
+        lock (_gate)
         {
-            Release(retry.Images);
-            Retryable = null;
+            retry = _retryable;
+            _retryable = null;
+        }
+
+        if (retry is { } held)
+        {
+            Release(held.Images);
         }
     }
 }

@@ -35,7 +35,7 @@ public sealed partial class AgentCommands
                     preparedContext = null;
                 usage.ApplyBilling(envelope.InputTokens, envelope.OutputTokens);
                 lastTotalTokens = envelope.TotalTokens ?? ((envelope.InputTokens ?? 0) + (envelope.OutputTokens ?? 0));
-                sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+                sessionRenderer.Status.SetTokens(lastTotalTokens);
             }
             if (tgMode && envelope.EventType == "model.usage_recorded")
             {

@@ -24,19 +24,9 @@ public sealed partial class AgentCommands
             activeModel = bootstrap.ActiveModel;
             activeReasoningEffort = bootstrap.ReasoningEffort;
             modelWarning = bootstrap.ModelWarning;
-            pendingImages = submissions.Images;
-            pendingTexts = submissions.Texts;
             // The shared controller is configured once the run handlers exist;
             // attachment mutations below refresh its hint row through this seam.
             sessionRenderer = CreateSessionRenderer(ResolveRenderWriter());
-            if (tgWriter is not null)
-            {
-                // Ctrl+O parity: a classic row that advertises expansion (`· ctrl+o`) carries
-                // its hidden diff/thinking rows in the renderer, not on the wire. The provider
-                // lets the bridge hand them to the TG transcript so expansion works end to end.
-                tgWriter.RetainedLinesProvider = () => sessionRenderer.Transcript.RetainedLines;
-            }
-
 
             // Header state for the Terminal.Gui header. The title is read from the
             // session document (bounded probes) and the tally repaints as usage frames arrive.
@@ -123,7 +113,7 @@ public sealed partial class AgentCommands
                 }
             }
 
-            if (pendingImages.Count > 0
+            if (submissions.ImageCount > 0
                 && activeModel.Length > 0
                 && !Images.CliVisionModels.IsVisionModel(activeModel))
             {

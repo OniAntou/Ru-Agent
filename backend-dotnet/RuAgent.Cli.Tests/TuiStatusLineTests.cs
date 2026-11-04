@@ -11,6 +11,22 @@ public sealed class TuiStatusLineTests
         return new TuiStatusLine(new TuiSurface(new StringWriter()));
     }
 
+    [Fact]
+    public void SetTokensKeepsTheAccumulatedToolCount()
+    {
+        // Usage frames arrive between tool calls; they used to reset the live row's
+        // tool counter to zero via SetCounters(tokens, 0).
+        var status = Create();
+        status.SetState(TuiRunState.Tool);
+        status.AddTool();
+
+        status.SetTokens(1234);
+
+        var row = status.Compose(120);
+        Assert.Contains("1 tool", row, StringComparison.Ordinal);
+        Assert.Contains(TuiStatusLine.FormatTokens(1234), row, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(20)]
     [InlineData(40)]

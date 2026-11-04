@@ -48,8 +48,6 @@ public sealed partial class AgentCommands
         private string activeModel = default!;
         private string activeReasoningEffort = string.Empty;
         private string? modelWarning = default!;
-        private IReadOnlyList<Images.CliImageAttachment> pendingImages = default!;
-        private IReadOnlyList<CliTextAttachment> pendingTexts = default!;
         private TgChatLoop? tgLoop = null;
         private Tui.TuiSessionRenderer sessionRenderer = default!;
         private Chat.ChatSessionEngine? chatEngine;

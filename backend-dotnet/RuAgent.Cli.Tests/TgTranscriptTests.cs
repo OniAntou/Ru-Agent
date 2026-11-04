@@ -301,7 +301,7 @@ public sealed class TgTranscriptTests
     }
 
     [Fact]
-    public void Retention_BoundsRowsCharactersAndCollapsedContentWithVisibleNotice()
+    public void Retention_BoundsRowsCharactersAndCollapsedReasoningWithVisibleNotice()
     {
         var transcript = new TgTranscriptView();
         for (var i = 0; i < TgTranscriptView.MaxRetainedRows + 2; i++)
@@ -319,7 +319,7 @@ public sealed class TgTranscriptTests
         Assert.Contains(transcript.Lines, row => row.Text.Contains("earlier transcript rows truncated", StringComparison.OrdinalIgnoreCase));
 
         var collapsed = new TgTranscriptView();
-        collapsed.AppendCollapsed("collapsed summary", hiddenRows, TranscriptStyle.Tool);
+        collapsed.SetCollapsedDetails(hiddenRows, TranscriptStyle.Meta);
         collapsed.ToggleExpanded();
         Assert.True(collapsed.IsHistoryTruncated);
         Assert.True(collapsed.CollapsedRows.Count > 0);

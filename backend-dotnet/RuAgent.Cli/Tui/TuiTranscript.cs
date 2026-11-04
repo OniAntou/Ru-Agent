@@ -39,6 +39,13 @@ public sealed partial class TuiTranscript
     /// </summary>
     private const int MaxRetainedAssistantCharacters = 1_000_000;
 
+    /// <summary>
+    /// True only when the last settled turn reached a completed terminal event. A
+    /// turn interrupted by Escape or ended by a failure keeps this false, so the
+    /// session tab strip does not advertise it as completed.
+    /// </summary>
+    public bool LastTurnCompleted { get; private set; }
+
     private readonly TuiSurface _surface;
     private readonly TuiStatusLine _status;
     private readonly TuiMarkdown _markdown = new();
@@ -168,6 +175,7 @@ public sealed partial class TuiTranscript
 
     public void BeginTurn()
     {
+        LastTurnCompleted = false;
         _toolsSettled = 0;
         _pendingPlanProgress = null;
         _lastPlanProgress = null;
@@ -212,6 +220,7 @@ public sealed partial class TuiTranscript
     /// </summary>
     public void ClearView()
     {
+        LastTurnCompleted = false;
         _retained.Clear();
         _retainedIsThinking = false;
         _pendingTools.Clear();
@@ -425,16 +434,9 @@ public sealed partial class TuiTranscript
 
         if (diffLines.Count > MaxDiffLines)
         {
-            _retained.Clear();
-            _retainedIsThinking = false;
-            foreach (var line in diffLines)
-            {
-                _retained.Add("    " + RetainedPaint("│ ", TuiToken.Line)
-                    + (_surface.Presentation is not null ? line : FormatDiffLine(line)));
-            }
-
-            TrimRetained();
-            var more = $"    │ · {diffLines.Count - MaxDiffLines} more lines · ctrl+o";
+            // The diff stays bounded; the remaining lines are summarized instead of
+            // hidden behind Ctrl+O, which now belongs to reasoning only.
+            var more = $"    │ · {diffLines.Count - MaxDiffLines} more lines";
             if (_surface.Presentation is not null)
                 _surface.AppendPresentation(TranscriptLine.Plain(more, TranscriptRole.Meta, TuiToken.Line));
             else WriteLines(TuiPalette.Paint(more, TuiToken.Line));
@@ -568,10 +570,12 @@ public sealed partial class TuiTranscript
         _turnWatch.Reset();
         _status.Reset();
         _status.SetState(TuiRunState.Idle);
+        LastTurnCompleted = false;
     }
 
     public void EndTurn(TuiTurnOutcome outcome, string? errorCode)
     {
+        LastTurnCompleted = outcome == TuiTurnOutcome.Completed;
         CloseToolGroup();
         Flush();
         var streamedText = _hasStreamedDelta;

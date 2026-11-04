@@ -36,10 +36,10 @@ public sealed partial class AgentCommands
             var isParkedContinuation = runSession.ParkedRunId is not null
                 && string.Equals(promptLine, "continue", StringComparison.OrdinalIgnoreCase);
             IReadOnlyList<Images.CliImageAttachment> submissionImages = submission is null
-                ? pendingImages
+                ? submissions.Images
                 : submission.Images;
             IReadOnlyList<Attachments.CliTextAttachment> submissionTexts = submission is null
-                ? pendingTexts
+                ? submissions.Texts
                 : submission.Texts;
             if (submission is not null
                 && !submission.MatchesContext(sessionId, canonicalWorkspace, cmd.Preset, backendName ?? string.Empty, activeModel))
@@ -231,7 +231,7 @@ public sealed partial class AgentCommands
                 // Parked state is per-turn: a new prompt starts clean, so the T1 cancel
                 // guard can never POST a cancel against a park left over from a prior turn.
                 sessionRenderer.Width = ChatRenderWidth();
-                sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+                sessionRenderer.Status.SetTokens(lastTotalTokens);
                 if (!cmd.Json && !tgMode)
                 {
                     sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.Format(

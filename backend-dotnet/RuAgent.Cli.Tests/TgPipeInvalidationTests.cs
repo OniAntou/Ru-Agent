@@ -118,11 +118,11 @@ public sealed class TgPipeInvalidationTests
     }
 
     [Fact]
-    public void Resize_detached_scroll_and_expanded_details_remain_correct()
+    public void Resize_detached_scroll_and_expanded_reasoning_remain_correct()
     {
         using var view = CreateView();
         for (var i = 0; i < 100; i++) view.Append("history | " + i, TranscriptStyle.Prose);
-        view.AppendCollapsed("tool summary", ["detail | one", "detail two"], TranscriptStyle.Tool);
+        view.SetCollapsedDetails(["detail | one", "detail two"], TranscriptStyle.Meta);
         view.ToggleExpanded(); _ = view.CanScroll; view.ScrollToTop();
         view.Append("later | line", TranscriptStyle.Prose); _ = view.CanScroll;
         Assert.Equal(0, view.ScrollPosition); Assert.False(view.IsFollowingTail);

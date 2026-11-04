@@ -140,4 +140,64 @@ public sealed class ChatSubmissionStateTests
         Assert.Null(state.Detach(0));
         Assert.Null(state.Detach(1));
     }
+
+    [Fact]
+    public void ExposedListsAreSnapshotsRatherThanLiveViews()
+    {
+        // Attachment loads mutate the state from the thread pool while the UI reads
+        // it; a live view would enumerate a list another thread is appending to.
+        using var state = new ChatSubmissionState();
+        state.Add(new CliTextAttachment("first.txt", "first", 5));
+        var images = state.Images;
+        var texts = state.Texts;
+
+        state.Add(new CliTextAttachment("second.txt", "second", 6));
+
+        Assert.Empty(images);
+        Assert.Equal("first.txt", Assert.Single(texts).FileName);
+        Assert.Equal(2, state.Count);
+    }
+
+    [Fact]
+    public async Task ConcurrentAttachmentAddsAndSnapshotsDoNotCorruptTheDraft()
+    {
+        using var state = new ChatSubmissionState();
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        var adders = Enumerable.Range(0, 4).Select(worker => Task.Run(() =>
+        {
+            var index = 0;
+            while (!stop.IsCancellationRequested)
+            {
+                state.Add(new CliTextAttachment($"w{worker}-{index++}.txt", "x", 1));
+            }
+        })).ToArray();
+
+        var snapshots = 0;
+        while (!stop.IsCancellationRequested)
+        {
+            state.CreateSnapshot("hello", "session", "C:\\project", "standard", "OpenAI", "model", false);
+            snapshots++;
+        }
+
+        await Task.WhenAll(adders);
+        Assert.True(snapshots > 0);
+    }
+
+    [Fact]
+    public void ConcurrentImageAddsNeverExceedTheCountCap()
+    {
+        using var state = new ChatSubmissionState();
+        var accepted = 0;
+        Parallel.For(0, 64, index =>
+        {
+            var image = new CliImageAttachment($"image{index}.png", "image/png", "aW1hZ2U=", 1, 1, 1);
+            if (state.TryAddImage(image, 4, CliImagePolicy.MaxTotalImageBytes, out _))
+            {
+                Interlocked.Increment(ref accepted);
+            }
+        });
+
+        Assert.Equal(4, accepted);
+        Assert.Equal(4, state.ImageCount);
+    }
 }

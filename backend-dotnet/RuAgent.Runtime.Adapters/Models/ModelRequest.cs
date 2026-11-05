@@ -35,7 +35,6 @@ public sealed record ModelRequest
         int? maximumOutputTokens = null,
         IReadOnlyList<ModelImage>? images = null,
         IReadOnlyList<JsonObject>? responsesInputItems = null,
-        bool nativeToolCalling = false,
         IReadOnlyList<JsonObject>? anthropicMessages = null,
         bool useMaxCompletionTokens = false,
         string? preparedBodyJson = null,
@@ -71,8 +70,8 @@ public sealed record ModelRequest
         }
 
         ArgumentNullException.ThrowIfNull(turns);
-        if (promptInHistory && (!nativeToolCalling || images is { Count: > 0 }))
-            throw new ArgumentException("History-owned prompts require native text requests.", nameof(promptInHistory));
+        if (promptInHistory && images is { Count: > 0 })
+            throw new ArgumentException("History-owned prompts require text-only requests.", nameof(promptInHistory));
         if (runtimeContext is not null && (runtimeContext.Length > ModelInputLimits.MaxSystemPromptChars
             || runtimeContext.Contains('\0')))
             throw new ArgumentException("Runtime context exceeds the adapter cap.", nameof(runtimeContext));
@@ -175,7 +174,6 @@ public sealed record ModelRequest
         PreparedBodyJson = preparedBodyJson;
         Images = Array.AsReadOnly(images is null ? Array.Empty<ModelImage>() : images.ToArray());
         ResponsesInputItems = Array.AsReadOnly(responsesInputItems?.Select(item => (JsonObject)item.DeepClone()).ToArray() ?? Array.Empty<JsonObject>());
-        NativeToolCalling = nativeToolCalling;
         AnthropicMessages = Array.AsReadOnly(anthropicMessages?.Select(item => (JsonObject)item.DeepClone()).ToArray() ?? Array.Empty<JsonObject>());
     }
 
@@ -214,7 +212,7 @@ public sealed record ModelRequest
 
     public ModelRequest WithPreparedBodyJson(string body) => new(
         Model, SystemPrompt, Prompt, Turns, Settings, Endpoint, Credential, MaximumOutputTokens,
-        Images, ResponsesInputItems, NativeToolCalling, AnthropicMessages, UseMaxCompletionTokens,
+        Images, ResponsesInputItems, AnthropicMessages, UseMaxCompletionTokens,
         body, RuntimeContext, PromptInHistory, ReplayChatReasoning, AcceptsImageInput, ProviderHeaders);
 
     public IReadOnlyList<ModelImage> Images { get; }
@@ -224,11 +222,8 @@ public sealed record ModelRequest
 
     public IReadOnlyList<JsonObject> ResponsesInputItems { get; }
 
-    public bool NativeToolCalling { get; }
-
     /// <summary>Whether this request declares the provider's hosted web search tool.</summary>
-    public bool ProviderWebSearch => NativeToolCalling
-        && Settings[ProviderWebSearchSetting] is JsonValue value && value.TryGetValue<bool>(out var enabled) && enabled;
+    public bool ProviderWebSearch => Settings[ProviderWebSearchSetting] is JsonValue value && value.TryGetValue<bool>(out var enabled) && enabled;
 
     public IReadOnlyList<JsonObject> AnthropicMessages { get; }
 

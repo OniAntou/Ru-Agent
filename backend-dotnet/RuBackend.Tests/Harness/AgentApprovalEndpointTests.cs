@@ -1270,7 +1270,7 @@ public sealed partial class AgentApprovalEndpointTests
             return Task.FromResult(new ModelStepResult(
                 step,
                 RuAgent.Harness.Core.Prompting.SystemPromptComposer
-                    .Compose(request.PromptContext, nativeToolCalling: true)
+                    .Compose(request.PromptContext)
                     .Receipt));
         }
     }

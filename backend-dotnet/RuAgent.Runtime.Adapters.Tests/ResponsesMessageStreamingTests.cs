@@ -92,8 +92,7 @@ public sealed class ResponsesMessageStreamingTests
         ["type"] = "function_call", ["id"] = "fc_1", ["call_id"] = "call_1", ["name"] = "read_file", ["arguments"] = "{}",
     };
     private static ModelRequest Request(IReadOnlyList<ModelTurn>? turns = null) => new("test-model", "system", "prompt", turns ?? [],
-        new JsonObject { ["model_tools"] = new JsonArray() }, new Uri("http://127.0.0.1:1"), "synthetic",
-        nativeToolCalling: true);
+        new JsonObject { ["model_tools"] = new JsonArray() }, new Uri("http://127.0.0.1:1"), "synthetic");
     private static async Task<List<ModelDelta>> Generate(JsonArray output, string prefix)
     {
         var sse = prefix.Length == 0 ? "" : Event("response.output_text.delta", new JsonObject { ["delta"] = prefix });

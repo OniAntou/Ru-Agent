@@ -220,6 +220,8 @@ public static class AgentRecoveryNotes
                 "Re-issue the call with complete JSON arguments that match the tool's schema.",
             "model_tool_call_unavailable" or "capability_unavailable" =>
                 "Choose a tool id and version from the advertised tool list, then re-issue the call with complete JSON arguments.",
+            "invalid_selection" =>
+                "Tool calls written out as text are not executed. Call the tool through the native tool-calling interface, or answer in plain text.",
             _ =>
                 "Re-issue a valid advertised tool call with complete JSON arguments, or answer in plain text.",
         };

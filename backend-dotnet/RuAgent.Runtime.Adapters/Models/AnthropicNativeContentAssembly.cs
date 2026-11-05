@@ -39,13 +39,12 @@ internal sealed class AnthropicNativeContentAssembly
     public JsonArray ContentForResend() => new(_blocks.Select(block => (JsonNode)block.DeepClone()).ToArray());
 
     /// <summary>Records a citation on the current text block; the block keeps it unchanged.</summary>
-    public void AppendCitation(JsonObject citation, bool isNative)
+    public void AppendCitation(JsonObject citation)
     {
         if (ReadString(CurrentBlock!["type"]) != "text") throw new ModelProviderException("malformed_payload", false);
         if (!ProviderSearchContent.IsValidCitations(new JsonArray(citation.DeepClone())))
             throw new ModelProviderException("malformed_payload", false);
         if (_citations.Count < ProviderSearchContent.MaximumCitations * 4) _citations.Add((JsonObject)citation.DeepClone());
-        if (!isNative) return;
         if (CurrentBlock["citations"] is not JsonArray list)
         {
             list = new JsonArray();
@@ -55,11 +54,11 @@ internal sealed class AnthropicNativeContentAssembly
         list.Add(citation.DeepClone());
     }
 
-    public void BeginBlock(JsonObject source, string type, bool isNative)
+    public void BeginBlock(JsonObject source, string type)
     {
         if (_blocks.Count >= MaximumBlocks) throw new ModelProviderException("response_too_large", false);
-        CurrentBlock = CreateBlock(source, type, isNative);
-        if (isNative) _blocks.Add(CurrentBlock);
+        CurrentBlock = CreateBlock(source, type);
+        _blocks.Add(CurrentBlock);
         _text.Clear();
         _signature.Clear();
         _signatureStarted = false;
@@ -69,24 +68,23 @@ internal sealed class AnthropicNativeContentAssembly
         if (type == "thinking") _text.Append(ReadString(CurrentBlock["thinking"]));
     }
 
-    public string AppendText(string text, bool isNative)
+    public string AppendText(string text)
     {
         AppendBounded(_text, text);
-        if (isNative) CurrentBlock!["text"] = _text.ToString();
+        CurrentBlock!["text"] = _text.ToString();
         return text;
     }
 
-    public string AppendThinking(string text, bool isNative)
+    public string AppendThinking(string text)
     {
-        if (isNative && _signatureStarted) throw new ModelProviderException("malformed_payload", false);
+        if (_signatureStarted) throw new ModelProviderException("malformed_payload", false);
         AppendBounded(_text, text);
-        if (isNative) CurrentBlock!["thinking"] = _text.ToString();
+        CurrentBlock!["thinking"] = _text.ToString();
         return text;
     }
 
-    public void AppendSignature(string signature, bool isNative)
+    public void AppendSignature(string signature)
     {
-        if (!isNative) return;
         _signatureStarted = true;
         _signature.Append(signature);
         if (_signature.Length > MaximumSignatureChars) throw new ModelProviderException("response_too_large", false);
@@ -101,9 +99,8 @@ internal sealed class AnthropicNativeContentAssembly
             throw new ModelProviderException("response_too_large", false);
     }
 
-    public void CompleteBlock(bool isNative)
+    public void CompleteBlock()
     {
-        if (!isNative) return;
         var type = ReadString(CurrentBlock!["type"]);
         if (type == "thinking" && _signature.Length == 0)
             throw new ModelProviderException("malformed_payload", false);
@@ -182,9 +179,8 @@ internal sealed class AnthropicNativeContentAssembly
         }
     }
 
-    private JsonObject CreateBlock(JsonObject source, string type, bool isNative)
+    private JsonObject CreateBlock(JsonObject source, string type)
     {
-        if (!isNative) return new JsonObject { ["type"] = type };
         return type switch
         {
             "text" => CreateText(source),

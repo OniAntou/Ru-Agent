@@ -164,13 +164,10 @@ public sealed class AgentProviderSnapshotFactory(
         var contextWindowVersion = contextWindowTokens is null
             ? "unknown-v1"
             : models.LastSuccessUtc?.ToString("O") ?? "catalog-v1";
-        // New runs always use native tool calling: every supported protocol defines it
+        // Runs always use native tool calling: every supported protocol defines it
         // (chat completions through function calls, Responses through function-call items,
-        // Messages through tool-use blocks). The capability registry used to gate the two
-        // block protocols to an exact declared model, which left every other model on a
-        // weaker one-object selection protocol; a model that cannot call tools now fails
-        // at the provider with a bounded, named error instead of being quietly downgraded.
-        var toolCallingMode = ProviderToolCallingMode.Native;
+        // Messages through tool-use blocks). A model that cannot call tools fails at the
+        // provider with a bounded, named error instead of being downgraded to another protocol.
         // Every protocol lifts the reserve from the published model limit; reasoning models on
         // chat completions were truncated mid-call at the old fixed 8,192 just like Messages.
         var outputTokenReserve = maximumOutput
@@ -196,7 +193,7 @@ public sealed class AgentProviderSnapshotFactory(
             options.ToJsonString(),
             maximumOutput,
             selected.Model,
-            AgentRunCallingModeCodec.ToStoredValue(toolCallingMode),
+            AgentRunCallingModeCodec.Native,
             contextWindowTokens,
             contextWindowSource,
             contextWindowVersion,
@@ -223,10 +220,7 @@ public sealed class AgentProviderSnapshotFactory(
             throw new ProviderCatalogException("provider_selection_invalid");
         }
 
-        if (!AgentRunCallingModeCodec.TryParseStoredValue(pin.CallingMode, out var toolCallingMode))
-        {
-            throw new ProviderCatalogException("provider_selection_invalid");
-        }
+        AgentRunCallingModeCodec.RequireNative(pin.CallingMode);
         var replayChatReasoning = ChatReasoningReplayPolicy.TakePinnedCapability(options, selected);
         var acceptsImageInput = ImageInputPolicy.TakePinnedCapability(options);
         _ = ComputerUsePolicy.TakePinnedCapability(options);
@@ -236,9 +230,7 @@ public sealed class AgentProviderSnapshotFactory(
         var models = await catalog.GetAsync(selected, current, false, ct).ConfigureAwait(false);
         ValidateCredentialRevision(key, models);
         _ = ProviderReasoningPreferences.Resolve(models, selected.Model, "default");
-        return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens ?? pin.OutputTokenReserve, toolCallingMode,
-            allowNativeResponses: true,
-            allowNativeAnthropic: true,
+        return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens ?? pin.OutputTokenReserve,
             useMaxCompletionTokens: selected.Alias == "openai"
                 && selected.Protocol == ProviderProtocols.ChatCompletions,
             contextWindowTokens: pin.ContextWindowTokens,
@@ -373,9 +365,6 @@ public sealed class AgentProviderSnapshotFactory(
         string key,
         JsonObject options,
         int? maximumOutput,
-        ProviderToolCallingMode toolCallingMode,
-        bool allowNativeResponses = false,
-        bool allowNativeAnthropic = false,
         bool useMaxCompletionTokens = false,
         long? contextWindowTokens = null,
         int? outputTokenReserve = null,
@@ -394,16 +383,13 @@ public sealed class AgentProviderSnapshotFactory(
                 key,
                 options,
                 maximumOutput,
-                toolCallingMode,
-                allowNativeResponses,
-                allowNativeAnthropic,
-                useMaxCompletionTokens,
-                contextWindowTokens,
-                outputTokenReserve,
-                reducedEffortRequestOptions,
-                replayChatReasoning,
-                acceptsImageInput,
-                sessionHeaderName);
+                useMaxCompletionTokens: useMaxCompletionTokens,
+                contextWindowTokens: contextWindowTokens,
+                outputTokenReserve: outputTokenReserve,
+                reducedEffortRequestOptions: reducedEffortRequestOptions,
+                replayChatReasoning: replayChatReasoning,
+                acceptsImageInput: acceptsImageInput,
+                sessionHeaderName: sessionHeaderName);
         }
         catch (ArgumentException)
         {

@@ -140,7 +140,7 @@ public sealed partial class SubagentNativeControlTests
             // Call 4 is the final reply that the unverified-source-edit nudge holds once; call 5 re-finishes and completes.
             return Task.FromResult(new ModelStepResult(new AssistantStep(Calls >= 4 ? "Coding and review completed." : "Delegating tasks",
                 tools, tools.Length == 0 ? AssistantFinishReason.Stop : AssistantFinishReason.ToolCalls, 32),
-                SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt));
+                SystemPromptComposer.Compose(request.PromptContext).Receipt));
         }
     }
 }

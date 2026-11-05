@@ -353,7 +353,7 @@ public sealed partial class RememberedApprovalIdentityTests
 
             return Task.FromResult(new ModelStepResult(
                 step,
-                SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt));
+                SystemPromptComposer.Compose(request.PromptContext).Receipt));
         }
     }
 

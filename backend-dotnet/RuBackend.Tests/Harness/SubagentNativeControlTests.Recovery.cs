@@ -162,7 +162,7 @@ public sealed partial class SubagentNativeControlTests
                 _ => JsonSerializer.SerializeToElement(new { agent_id = agentId, result_version = 1 }),
             };
             var step = new AssistantStep("recovering", [new("provider_recovery_" + call, tool, "1.0.0", args)], AssistantFinishReason.ToolCalls, 16);
-            return Task.FromResult(new ModelStepResult(step, SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt));
+            return Task.FromResult(new ModelStepResult(step, SystemPromptComposer.Compose(request.PromptContext).Receipt));
         }
     }
 }

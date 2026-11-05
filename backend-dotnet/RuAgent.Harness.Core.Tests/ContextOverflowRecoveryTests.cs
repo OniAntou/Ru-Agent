@@ -74,7 +74,7 @@ public sealed partial class ContextCompactionCoordinatorTests
             await publish(new AssistantDelta(request.ModelStepId, 1, "partial rejected answer"));
             if (Calls <= failures) throw new OverflowError();
             return new(new AssistantStep("done", [], AssistantFinishReason.Stop, 1),
-                SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt);
+                SystemPromptComposer.Compose(request.PromptContext).Receipt);
         }
     }
 

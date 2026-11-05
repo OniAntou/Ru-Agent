@@ -57,7 +57,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
                 if (ModelContextOverflowError.IsError(error))
                     throw new ModelProviderException(ModelContextOverflowError.Code, false);
                 // Tools are part of every run; there is no tool-free retry to fall back to.
-                if (request.NativeToolCalling && ModelContextOverflowError.IsToolCallingUnsupported(error))
+                if (ModelContextOverflowError.IsToolCallingUnsupported(error))
                     throw new ModelProviderException(ModelContextOverflowError.ToolCallingUnsupportedCode, false);
                 throw MapStatus(response.StatusCode, ModelRateLimitError.GetRetryAfter(response));
             }
@@ -314,10 +314,10 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
             }
         }
 
-        // The Host/model-step selection contract becomes the provider's native
-        // function-calling surface: the model calls capabilities directly and
-        // the Host still owns policy, approval, and execution.
-        var tools = request.NativeToolCalling ? BuildToolDeclarations(request.Settings) : new JsonArray();
+        // Advertised capabilities become the provider's native function-calling
+        // surface: the model calls them directly and the Host still owns policy,
+        // approval, and execution.
+        var tools = BuildToolDeclarations(request.Settings);
         if (tools.Count > 0)
         {
             body["tools"] = tools;

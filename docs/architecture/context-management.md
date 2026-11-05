@@ -150,8 +150,8 @@ seed an anchor. Estimates never fall below the full current heuristic.
 Anchors are isolated by run and require matching protocol/endpoint, exact
 non-history request envelope and an unchanged wire-message prefix. A rewrite,
 compaction, instruction/schema/model change or expired anchor invalidates it.
-Only native text requests with history-owned prompts participate; images and
-text-selection use the existing estimator. The in-memory cache is bounded to
+Only text requests with history-owned prompts participate; image requests use
+the existing estimator. The in-memory cache is bounded to
 256 scopes and a 30-minute access validity window; it stores digests and counts,
 not prompts or credentials. It is an estimate, not exact tokenization or a
 billing ledger, and does not survive Host restart.
@@ -191,9 +191,8 @@ receipt metadata; marker-like tool, workflow and instruction text is escaped.
 The SQLite context source derives up to 128 recent directory hints from paired
 successful file receipts before applying compactions. These private hints travel
 outside canonical model history and are reconstructed from encrypted originals
-after restart, including subagent continuation. They preserve discovery for image,
-text-selection and oversized-runtime requests that do not admit native text cache
-snapshots. The prompt provider selects its latest 16 in-root hints and rechecks
+after restart, including subagent continuation. They preserve discovery for image
+and oversized-runtime requests that do not admit native text cache snapshots. The prompt provider selects its latest 16 in-root hints and rechecks
 instruction files on each build. This metadata grants no authority and undergoes
 the same containment and protected-path checks as newly observed scopes.
 Sibling file reads reuse one directory hint; root-only file reads add no nested
@@ -213,10 +212,9 @@ An optional [project memory index](../operations/project-memory.md) supplies
 bounded workspace continuity across conversations. It is refreshed runtime data,
 separate from run-local checkpoints, instruction authority and verification.
 
-`RuAgent.Protocol/AgentToolPromptGuidance.cs` owns capability-specific workflow
-hints next to tool definitions. The Core composer emits only hints for advertised
-tools; advertisement never authorizes execution. Native schemas remain separate
-from the short purpose list, and text selection retains full declarations.
+Capability-specific workflow guidance lives in the Protocol tool descriptions and
+reaches the model through native declarations; the Core composer lists only each
+advertised tool's purpose. Advertisement never authorizes execution.
 
 Behavioral regressions cover checkpoint validation/admission/usage, protocol
 projection, cancellation, budget exhaustion, scope refresh/removal/containment,

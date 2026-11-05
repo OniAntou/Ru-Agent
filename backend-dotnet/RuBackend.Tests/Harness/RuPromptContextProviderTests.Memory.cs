@@ -20,7 +20,7 @@ public sealed partial class RuPromptContextProviderTests
         var note = Assert.Single(first.RuntimeContext.References, x => x.Kind == "project_memory");
         Assert.Contains("build-notes.md", note.Content, StringComparison.Ordinal);
         Assert.DoesNotContain(first.InstructionBlocks, x => x.Content.Contains("build-notes.md", StringComparison.Ordinal));
-        var prompt = SystemPromptComposer.Compose(first, nativeToolCalling: true, deferRuntimeContext: true);
+        var prompt = SystemPromptComposer.Compose(first, deferRuntimeContext: true);
         Assert.DoesNotContain("build-notes.md", prompt.Text, StringComparison.Ordinal);
         Assert.Contains(SystemPromptComposer.UntrustedDataWarning, prompt.RuntimeContext, StringComparison.Ordinal);
         await File.WriteAllTextAsync(path, "A correction supersedes the old note.");

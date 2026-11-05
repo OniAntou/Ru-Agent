@@ -51,11 +51,11 @@ public sealed class AnthropicMessagesModelProviderTests
         var provider = new AnthropicMessagesModelProvider(new HttpClient());
         var settings = new JsonObject { ["model_tools"] = tools };
         var body = JsonNode.Parse(provider.ProjectRequestBody(
-            Request(settings, 8192, nativeToolCalling: true)))!.AsObject();
+            Request(settings, 8192)))!.AsObject();
         Assert.Equal(tools.Count, body["tools"]!.AsArray().Count);
         tools.Add(tools[0]!.DeepClone());
         var error = Assert.Throws<ModelProviderException>(() => provider.ProjectRequestBody(
-            Request(settings, 8192, nativeToolCalling: true)));
+            Request(settings, 8192)));
         Assert.Equal("malformed_payload", error.Code);
     }
 
@@ -127,7 +127,7 @@ public sealed class AnthropicMessagesModelProviderTests
         var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
         var settings = NativeToolSettings();
 
-        var deltas = await CollectAsync(provider.GenerateAsync(Request(settings, 8192, nativeToolCalling: true), CancellationToken.None));
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(settings, 8192), CancellationToken.None));
 
         var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
         Assert.Equal("read", body["tools"]![0]!["name"]!.GetValue<string>());
@@ -175,8 +175,7 @@ public sealed class AnthropicMessagesModelProviderTests
             },
         };
         var request = new ModelRequest("test-model", "system prompt", "continue", Array.Empty<ModelTurn>(),
-            NativeToolSettings(), new Uri("https://provider.invalid/v1/messages"), "synthetic-anthropic", 8192,
-            nativeToolCalling: true, anthropicMessages: messages);
+            NativeToolSettings(), new Uri("https://provider.invalid/v1/messages"), "synthetic-anthropic", 8192, anthropicMessages: messages);
 
         _ = await CollectAsync(provider.GenerateAsync(request, CancellationToken.None));
 
@@ -201,7 +200,7 @@ public sealed class AnthropicMessagesModelProviderTests
         var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
 
         var failure = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(
-            provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None)));
+            provider.GenerateAsync(Request(NativeToolSettings(), 8192), CancellationToken.None)));
 
         Assert.Equal("malformed_payload", failure.Code);
     }
@@ -226,7 +225,7 @@ public sealed class AnthropicMessagesModelProviderTests
 
         var failure = await Assert.ThrowsAsync<ModelProviderException>(async () =>
         {
-            await foreach (var delta in provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None))
+            await foreach (var delta in provider.GenerateAsync(Request(NativeToolSettings(), 8192), CancellationToken.None))
                 deltas.Add(delta);
         });
 
@@ -254,7 +253,7 @@ public sealed class AnthropicMessagesModelProviderTests
             { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") })));
 
         var failure = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(
-            provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None)));
+            provider.GenerateAsync(Request(NativeToolSettings(), 8192), CancellationToken.None)));
 
         Assert.Equal("malformed_payload", failure.Code);
     }
@@ -272,7 +271,7 @@ public sealed class AnthropicMessagesModelProviderTests
 
         await Assert.ThrowsAsync<ModelProviderException>(async () =>
         {
-            await foreach (var delta in provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None))
+            await foreach (var delta in provider.GenerateAsync(Request(NativeToolSettings(), 8192), CancellationToken.None))
                 deltas.Add(delta);
         });
 
@@ -308,7 +307,7 @@ public sealed class AnthropicMessagesModelProviderTests
         var provider = new AnthropicMessagesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
             { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") })));
 
-        var deltas = await CollectAsync(provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None));
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(NativeToolSettings(), 8192), CancellationToken.None));
 
         Assert.Equal("starting narration", Assert.Single(deltas, delta => delta.Text is not null).Text);
         Assert.Equal("starting narration", deltas[^1].ProviderContinuation!.OutputItems[0]["text"]!.GetValue<string>());
@@ -333,7 +332,7 @@ public sealed class AnthropicMessagesModelProviderTests
             { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") })));
 
         var failure = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(
-            provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None)));
+            provider.GenerateAsync(Request(NativeToolSettings(), 8192), CancellationToken.None)));
 
         Assert.Equal("response_too_large", failure.Code);
     }
@@ -462,20 +461,6 @@ public sealed class AnthropicMessagesModelProviderTests
         var deltas = await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None));
         Assert.Contains(deltas, d => d.Text == "hi");
         Assert.True(deltas[^1].Completed);
-    }
-
-    [Fact]
-    public async Task GenerateAsync_surfaces_thinking_delta_as_reasoning()
-    {
-        var sse = MessageStart() + ContentBlockStart(0, "thinking") + ContentBlockDeltaThinking(0, "reasoning...") + ContentBlockStop(0) + ContentBlockStart(1, "text") + ContentBlockDeltaText(1, "answer") + ContentBlockStop(1) + MessageDelta() + MessageStop();
-        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
-        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
-        var deltas = await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None));
-        Assert.Single(deltas, d => d.Text is not null);
-        Assert.Equal("answer", deltas.First(d => d.Text is not null).Text);
-        // Thinking rides the reasoning channel for the activity feed, never as chat text.
-        Assert.Contains(deltas, d => d.Reasoning == "reasoning...");
-        Assert.DoesNotContain(deltas, d => (d.Text ?? string.Empty).Contains("reasoning", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -679,32 +664,6 @@ public sealed class AnthropicMessagesModelProviderTests
         Assert.Equal("malformed_payload", ex.Code);
     }
 
-    [Theory]
-    [InlineData("system")]
-    [InlineData("tool")]
-    public async Task GenerateAsync_rejects_turn_roles_not_supported_by_messages(string role)
-    {
-        var handler = new RecordingHandler(_ => throw new InvalidOperationException("HTTP must not run"));
-        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
-
-        IReadOnlyList<ModelTurn> turns = role == "tool"
-            ? new[]
-            {
-                new ModelTurn(
-                    "assistant",
-                    string.Empty,
-                    [new ModelFunctionCall("call_1", "read", System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone())]),
-                new ModelTurn("tool", "hidden", toolCallId: "call_1", toolResultCode: "ok"),
-            }
-            : new[] { new ModelTurn(role, "hidden") };
-        var ex = await Assert.ThrowsAsync<ModelProviderException>(async () =>
-            await CollectAsync(provider.GenerateAsync(
-                Request(null, 8192, turns),
-                CancellationToken.None)));
-
-        Assert.Equal("malformed_payload", ex.Code);
-    }
-
     [Fact]
     public async Task AnthropicMessages_with_image_includes_image_block()
     {
@@ -760,7 +719,7 @@ public sealed class AnthropicMessagesModelProviderTests
     {
         var provider = new AnthropicMessagesModelProvider(new HttpClient());
         var body = JsonNode.Parse(provider.ProjectRequestBody(
-            Request(new JsonObject { ["model_tools"] = new JsonArray() }, 8192, nativeToolCalling: true)))!.AsObject();
+            Request(new JsonObject { ["model_tools"] = new JsonArray() }, 8192)))!.AsObject();
 
         Assert.False(body.ContainsKey("tools"));
     }
@@ -804,7 +763,6 @@ public sealed class AnthropicMessagesModelProviderTests
         JsonObject? settings,
         int? maxTokens,
         IReadOnlyList<ModelTurn>? turns = null,
-        bool nativeToolCalling = false,
         Uri? endpoint = null) => new(
         "test-model",
         "system prompt",
@@ -813,8 +771,7 @@ public sealed class AnthropicMessagesModelProviderTests
         settings ?? new JsonObject(),
         endpoint ?? new Uri("https://provider.invalid/v1/messages"),
         "synthetic-anthropic",
-        maxTokens,
-        nativeToolCalling: nativeToolCalling);
+        maxTokens);
 
     private sealed class RecordingHandler : HttpMessageHandler
     {

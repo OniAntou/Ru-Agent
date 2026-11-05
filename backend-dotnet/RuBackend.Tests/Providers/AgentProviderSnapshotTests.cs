@@ -127,7 +127,6 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         Assert.Equal("a", first.Model);
         Assert.Equal("a", firstMetadata.ModelLabel);
         Assert.Equal("chat_completions", firstMetadata.Protocol);
-        Assert.Equal(ProviderToolCallingMode.Native, firstMetadata.ToolCallingMode);
         Assert.Equal(222_222, firstMetadata.ContextWindowTokens);
         Assert.Equal("provider_catalog", firstMetadata.ContextWindowSource);
         Assert.Equal(8_192, firstMetadata.OutputTokenReserve);
@@ -191,7 +190,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
     }
 
     [Fact]
-    public async Task Recreated_openai_pin_preserves_legacy_calling_mode_and_rejects_unknown_mode()
+    public async Task Recreated_pin_with_a_retired_or_unknown_calling_mode_fails_closed()
     {
         var settings = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
         await settings.SaveAsync((await settings.ReadAsync(default)) with
@@ -221,12 +220,16 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
                 new HttpClient(new TrackingCatalogHandler()), credentials, TimeProvider.System),
             selections,
             (_, _) => Task.FromResult(false));
-        var resumed = await restartedFactory.GetAsync(runId, default);
-        var metadata = await new AgentRunModelMetadataResolver(restartedFactory, selections)
-            .ResolveAsync(runId, default);
-
-        Assert.Equal(ProviderToolCallingMode.TextSelection, resumed.ToolCallingMode);
-        Assert.Equal(ProviderToolCallingMode.TextSelection, metadata.ToolCallingMode);
+        // A run stored before the text-selection mode retired is never resumed on native
+        // tool calling in its place: it fails with a named code. Its stored label stays
+        // readable as history.
+        var retiredSnapshot = await Assert.ThrowsAsync<ProviderCatalogException>(
+            () => restartedFactory.GetAsync(runId, default));
+        Assert.Equal("provider_selection_invalid", retiredSnapshot.Code);
+        var retiredMetadata = await Assert.ThrowsAsync<ProviderCatalogException>(
+            () => new AgentRunModelMetadataResolver(restartedFactory, selections).ResolveAsync(runId, default));
+        Assert.Equal("provider_selection_invalid", retiredMetadata.Code);
+        Assert.Equal("text_selection", (await selections.GetAsync(runId, default))!.Selection!.CallingMode);
 
         await SetCallingModeAsync(harness.Options.DatabasePath, runId, "unknown_mode");
         await using var invalidFactory = new AgentProviderSnapshotFactory(
@@ -440,7 +443,6 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
             Assert.Equal("https://provider-a.invalid/v1/chat/completions", resumed.Endpoint.AbsoluteUri);
             Assert.Equal("deepseek-v4-flash-free", resumed.Model);
             Assert.Equal("deepseek-v4-flash-free", resumedMetadata.ModelLabel);
-            Assert.Equal(ProviderToolCallingMode.Native, resumedMetadata.ToolCallingMode);
             Assert.Null(resumedMetadata.ContextWindowTokens);
             await using (var connection = new SqliteConnection($"Data Source={paths.AgentHarnessDatabase};Pooling=False"))
             {

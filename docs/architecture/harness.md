@@ -129,10 +129,9 @@ blocks are the neutral Ru Agent runtime contract, Agent execution contract,
 environment, profile plus canonical effective policy, root-selected Ru/skill
 instruction blocks, host-derived capabilities, and runtime context. The neutral
 coding contract covers reuse, preserving unrelated edits, root-cause repair,
-honest error reporting and focused behavioral verification. Native requests use
-Protocol tool descriptions/schemas without repeating the field-specific text
-selection hints; batching, ordering and approval barriers remain in the system
-contract. Text selection retains those supplemental hints.
+honest error reporting and focused behavioral verification. Requests use
+Protocol tool descriptions/schemas as native declarations; batching, ordering and
+approval barriers remain in the system contract.
 
 A small prompt recipe may specialize the execution block only for native
 `openai_responses` with the pinned exact model `gpt-5.3-codex` at HTTPS
@@ -733,7 +732,7 @@ share proposal-batch classification, pause and abort cleanup in the Harness;
 initial proposal persistence stays interleaved with evaluation, and refresh
 cannot execute the batch. Read-only calls may execute concurrently in model order with at
 most eight active, while mutations and terminal calls retain sequential
-barriers. A text-selection provider path still emits exactly one JSON selection.
+barriers. A tool call written out as text is rejected, never executed.
 _Avoid_: one-call-per-step rule, reissuing approved calls
 
 ## Completion policy

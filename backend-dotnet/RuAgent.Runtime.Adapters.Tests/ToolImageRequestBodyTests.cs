@@ -193,7 +193,6 @@ public sealed class ToolImageRequestBodyTests
         "provider-secret",
         maximumOutputTokens,
         responsesInputItems: responsesInputItems,
-        nativeToolCalling: true,
         anthropicMessages: anthropicMessages);
 
     private static ModelImage NearMaximumImage(string mediaType, byte fill)

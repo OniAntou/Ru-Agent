@@ -22,7 +22,7 @@ public sealed class TruncatedModelStepTests
     }
 
     [Fact]
-    public async Task Length_finish_does_not_promote_text_selection_into_a_tool_call()
+    public async Task Length_finish_does_not_promote_written_call_markup_into_a_tool_call()
     {
         var result = await RunAsync(new ModelDelta(
             "<tool_call>{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}</tool_call>",

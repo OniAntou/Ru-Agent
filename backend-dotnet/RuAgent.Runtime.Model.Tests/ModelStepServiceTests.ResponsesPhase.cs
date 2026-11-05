@@ -19,7 +19,7 @@ public sealed partial class ModelStepServiceTests
     {
         var provider = new FakeModelProvider(new ModelDelta("Done.", [], true, "stop"));
         var bootstrap = new ProviderBootstrapData("fixture", ProviderProtocols.OpenAiResponses, new Uri(endpoint), model,
-            "synthetic", toolCallingMode: ProviderToolCallingMode.Native, allowNativeResponses: true);
+            "synthetic");
         await new ModelStepService(provider).RunAsync(Request(bootstrap: bootstrap), default);
         Assert.Equal(expected, provider.Requests.Single().SystemPrompt.Contains("For this coding workflow, keep narration concise", StringComparison.Ordinal));
     }

@@ -124,20 +124,13 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                             if (blockIndex is not null) throw new ModelProviderException("malformed_payload", false);
                             var block = data["content_block"] as JsonObject ?? throw new ModelProviderException("malformed_payload", false);
                             var t = ReadString(block["type"]) ?? throw new ModelProviderException("malformed_payload", false);
-                            if (t == "fallback" || (!request.NativeToolCalling && t is "tool_use" or "redacted_thinking")) throw new ModelProviderException("malformed_payload", false);
+                            if (t == "fallback") throw new ModelProviderException("malformed_payload", false);
                             var searchBlock = t is "server_tool_use" or "web_search_tool_result";
                             if (searchBlock && !request.ProviderWebSearch) throw new ModelProviderException("malformed_payload", false);
                             if (!searchBlock && t is not ("text" or "thinking" or "redacted_thinking" or "tool_use")) throw new ModelProviderException("malformed_payload", false);
-                            nativeContent.BeginBlock(block, t, request.NativeToolCalling);
-                            if (t == "text")
-                            {
-                                if (nativeContent.Text.Length > 0) yield return new ModelDelta(nativeContent.Text, [], false, null);
-                            }
-                            else if (t == "thinking")
-                            {
-                                if (!request.NativeToolCalling && nativeContent.Text.Length > 0)
-                                    yield return new ModelDelta(null, [], false, null, null, nativeContent.Text);
-                            }
+                            nativeContent.BeginBlock(block, t);
+                            if (t == "text" && nativeContent.Text.Length > 0)
+                                yield return new ModelDelta(nativeContent.Text, [], false, null);
                             blockIndex = idx;
                             nextBlockIndex++;
                             blockType = t;
@@ -156,7 +149,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                                 if (blockType != "text") throw new ModelProviderException("malformed_payload", false);
                                 var text = ReadString(delta["text"]) ?? throw new ModelProviderException("malformed_payload", false);
                                 if (text.Length == 0) throw new ModelProviderException("malformed_payload", false);
-                                nativeContent.AppendText(text, request.NativeToolCalling);
+                                nativeContent.AppendText(text);
                                 yield return new ModelDelta(text, [], false, null);
                             }
                             else if (deltaType == "thinking_delta")
@@ -164,30 +157,23 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                                 if (blockType != "thinking") throw new ModelProviderException("malformed_payload", false);
                                 var thinking = ReadString(delta["thinking"])
                                     ?? throw new ModelProviderException("malformed_payload", false);
-                                nativeContent.AppendThinking(thinking, request.NativeToolCalling);
-                                if (!request.NativeToolCalling && thinking.Length > 0)
-                                {
-                                    yield return new ModelDelta(null, [], false, null, null, thinking);
-                                }
+                                nativeContent.AppendThinking(thinking);
                             }
                             else if (deltaType == "signature_delta")
                             {
                                 if (blockType != "thinking") throw new ModelProviderException("malformed_payload", false);
                                 var signature = ReadString(delta["signature"]) ?? throw new ModelProviderException("malformed_payload", false);
-                                if (request.NativeToolCalling)
-                                {
-                                    nativeContent.AppendSignature(signature, isNative: true);
-                                }
+                                nativeContent.AppendSignature(signature);
                             }
                             else if (deltaType == "citations_delta")
                             {
                                 if (blockType != "text" || !request.ProviderWebSearch) throw new ModelProviderException("malformed_payload", false);
                                 var citation = delta["citation"] as JsonObject ?? throw new ModelProviderException("malformed_payload", false);
-                                nativeContent.AppendCitation(citation, request.NativeToolCalling);
+                                nativeContent.AppendCitation(citation);
                             }
                             else if (deltaType == "input_json_delta")
                             {
-                                if (blockType is not ("tool_use" or "server_tool_use") || !request.NativeToolCalling) throw new ModelProviderException("malformed_payload", false);
+                                if (blockType is not ("tool_use" or "server_tool_use")) throw new ModelProviderException("malformed_payload", false);
                                 var partial = ReadString(delta["partial_json"]) ?? throw new ModelProviderException("malformed_payload", false);
                                 nativeContent.AppendInputJson(partial);
                             }
@@ -199,12 +185,9 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                             if (phase != Phase.InBlock || blockIndex is null) throw new ModelProviderException("malformed_payload", false);
                             var idx = ReadInt(data["index"]);
                             if (idx != blockIndex) throw new ModelProviderException("malformed_payload", false);
-                            if (request.NativeToolCalling && blockType == "tool_use")
-                            {
-                                nativeContent.CompleteBlock(isNative: true);
+                            nativeContent.CompleteBlock();
+                            if (blockType == "tool_use")
                                 yield return new ModelDelta(null, [nativeContent.ToolFragments[^1]], false, null);
-                            }
-                            else nativeContent.CompleteBlock(request.NativeToolCalling);
                             blockIndex = null;
                             blockType = string.Empty;
                             phase = Phase.InMessage;
@@ -217,7 +200,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                                 ?? throw new ModelProviderException("malformed_payload", false);
                             var reason = ReadString(delta["stop_reason"]);
                             if (reason is null) throw new ModelProviderException("malformed_payload", false);
-                            if (reason == "tool_use" && (!request.NativeToolCalling || !nativeContent.HasTools)) throw new ModelProviderException("malformed_payload", false);
+                            if (reason == "tool_use" && !nativeContent.HasTools) throw new ModelProviderException("malformed_payload", false);
                             paused = reason == "pause_turn" && request.ProviderWebSearch && !nativeContent.HasTools;
                             if (!paused && reason is not ("end_turn" or "stop_sequence" or "max_tokens" or "tool_use")) throw new ModelProviderException("malformed_payload", false);
                             if (nativeContent.HasTools && reason != "tool_use") throw new ModelProviderException("malformed_payload", false);
@@ -234,7 +217,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                                 phase = Phase.Paused;
                                 break;
                             }
-                            var continuation = request.NativeToolCalling ? nativeContent.CreateContinuation(request.Model) : null;
+                            var continuation = nativeContent.CreateContinuation(request.Model);
                             // Answers that cite web results show their sources (ADR 0033); the
                             // provider requires it, and the list survives into later history.
                             var sources = nativeContent.HasTools ? string.Empty
@@ -373,20 +356,8 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
             throw new ModelProviderException("vision_unsupported", false);
 
         var messages = new JsonArray();
-        if (request.NativeToolCalling)
-        {
-            foreach (var item in request.AnthropicMessages)
-                messages.Add(item.DeepClone());
-        }
-        else
-        {
-            foreach (var turn in request.Turns)
-            {
-                if (turn.Role is not ("user" or "assistant"))
-                    throw new ModelProviderException("malformed_payload", false);
-                messages.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
-            }
-        }
+        foreach (var item in request.AnthropicMessages)
+            messages.Add(item.DeepClone());
 
         if (!string.IsNullOrEmpty(request.RuntimeContext))
             messages.Add(new JsonObject { ["role"] = "user", ["content"] = request.RuntimeContext });
@@ -427,25 +398,22 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
             body["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
         if (request.Settings["thinking"] is JsonObject thinking) body["thinking"] = (JsonObject)thinking.DeepClone();
         if (request.Settings["output_config"] is JsonObject oc) body["output_config"] = (JsonObject)oc.DeepClone();
-        if (request.NativeToolCalling)
+        var tools = BuildTools(request.Settings["model_tools"] as JsonArray);
+        if (request.ProviderWebSearch)
         {
-            var tools = BuildTools(request.Settings["model_tools"] as JsonArray);
-            if (request.ProviderWebSearch)
+            // The provider's hosted search replaces Ru's web_search for this run (ADR 0033).
+            if (tools.OfType<JsonObject>().Any(tool => tool["name"]?.GetValue<string>() == ProviderSearchContent.AnthropicToolName))
+                throw new ModelProviderException("malformed_payload", false);
+            tools.Add(new JsonObject
             {
-                // The provider's hosted search replaces Ru's web_search for this run (ADR 0033).
-                if (tools.OfType<JsonObject>().Any(tool => tool["name"]?.GetValue<string>() == ProviderSearchContent.AnthropicToolName))
-                    throw new ModelProviderException("malformed_payload", false);
-                tools.Add(new JsonObject
-                {
-                    ["type"] = WebSearchToolType,
-                    ["name"] = ProviderSearchContent.AnthropicToolName,
-                    ["max_uses"] = WebSearchMaxUses,
-                });
-            }
-            if (tools.Count > 0)
-            {
-                body["tools"] = tools;
-            }
+                ["type"] = WebSearchToolType,
+                ["name"] = ProviderSearchContent.AnthropicToolName,
+                ["max_uses"] = WebSearchMaxUses,
+            });
+        }
+        if (tools.Count > 0)
+        {
+            body["tools"] = tools;
         }
 
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });

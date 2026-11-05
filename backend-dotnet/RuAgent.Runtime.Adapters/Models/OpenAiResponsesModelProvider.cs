@@ -81,12 +81,9 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
                     {
                         var t = ReadString(data["delta"]);
                         if (t is null) throw new ModelProviderException("malformed_payload", false);
-                        if (request.NativeToolCalling)
-                        {
-                            if (streamedText.Length + (long)t.Length > RuAgent.Harness.Core.Prompting.ResponsesAssistantMessages.MaximumTextCharacters)
-                                throw new ModelProviderException("malformed_payload", false);
-                            streamedText.Append(t);
-                        }
+                        if (streamedText.Length + (long)t.Length > RuAgent.Harness.Core.Prompting.ResponsesAssistantMessages.MaximumTextCharacters)
+                            throw new ModelProviderException("malformed_payload", false);
+                        streamedText.Append(t);
                         yield return new ModelDelta(t, [], false, null);
                         continue;
                     }
@@ -265,7 +262,7 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
         };
         if (request.MaximumOutputTokens is { } outputCap)
             body["max_output_tokens"] = outputCap;
-        if (request.NativeToolCalling && request.Settings["model_tools"] is JsonArray modelTools)
+        if (request.Settings["model_tools"] is JsonArray modelTools)
         {
             var tools = new JsonArray();
             foreach (var toolNode in modelTools)

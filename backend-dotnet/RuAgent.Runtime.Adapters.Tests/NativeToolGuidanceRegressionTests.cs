@@ -8,13 +8,10 @@ namespace RuAgent.Runtime.Adapters.Tests;
 public sealed class NativeToolGuidanceRegressionTests
 {
     [Theory]
-    [InlineData("chat", true)]
-    [InlineData("responses", true)]
-    [InlineData("anthropic", true)]
-    [InlineData("chat", false)]
-    [InlineData("responses", false)]
-    [InlineData("anthropic", false)]
-    public void Projection_preserves_guidance_only_in_native_mode(string protocol, bool native)
+    [InlineData("chat")]
+    [InlineData("responses")]
+    [InlineData("anthropic")]
+    public void Projection_preserves_guidance_in_native_declarations(string protocol)
     {
         var definition = AgentToolDefinitionCatalog.Get().Single(d => d.ToolId == "read");
         var settings = new JsonObject { ["model_tools"] = new JsonArray(new JsonObject
@@ -31,13 +28,8 @@ public sealed class NativeToolGuidanceRegressionTests
             _ => new AnthropicMessagesModelProvider(http),
         };
         var request = new ModelRequest("test-model", "system", "hello", [], settings,
-            new Uri("https://provider.invalid/v1"), "synthetic", 1024, nativeToolCalling: native);
+            new Uri("https://provider.invalid/v1"), "synthetic", 1024);
         var body = JsonNode.Parse(projector.ProjectRequestBody(request))!;
-        if (!native)
-        {
-            Assert.Null(body["tools"]);
-            return;
-        }
         var declaration = Assert.Single(body["tools"]!.AsArray())!;
         Assert.Equal(definition.Description, (declaration["function"] ?? declaration)["description"]!.GetValue<string>());
     }

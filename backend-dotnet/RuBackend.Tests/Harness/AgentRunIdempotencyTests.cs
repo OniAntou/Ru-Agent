@@ -68,7 +68,7 @@ public sealed partial class AgentRunIdempotencyTests
         var selections = factory.Services.GetRequiredService<SqliteAgentRunProviderSelectionStore>();
         await selections.PinAsync(new RunId(runId), new AgentRunProviderSelection(
             "Custom OpenAI", "custom", "chat_completions", "https://provider-a.invalid/v1",
-            "model-a", null, "{}", null, "Model A", "text_selection", 32_000,
+            "model-a", null, "{}", null, "Model A", "native", 32_000,
             "provider_catalog", "catalog-test-v1", 4096), default);
         var settings = factory.Services.GetRequiredService<ISettingsStore>();
         var current = await settings.ReadAsync(default);
@@ -86,11 +86,29 @@ public sealed partial class AgentRunIdempotencyTests
         Assert.Equal("model-a", body.GetProperty("provider_model").GetString());
         Assert.Equal("chat_completions", body.GetProperty("provider_protocol").GetString());
         Assert.Equal("Model A", body.GetProperty("provider_model_label").GetString());
-        Assert.Equal("text_selection", body.GetProperty("provider_calling_mode").GetString());
+        Assert.Equal("native", body.GetProperty("provider_calling_mode").GetString());
         Assert.Equal(32_000, body.GetProperty("context_window_tokens").GetInt64());
         Assert.Equal("provider_catalog", body.GetProperty("context_window_source").GetString());
         Assert.Equal("catalog-test-v1", body.GetProperty("context_window_version").GetString());
         Assert.Equal(4096, body.GetProperty("output_token_reserve").GetInt32());
+
+        // A run stored before the text-selection mode retired is reported as stored (a
+        // bounded 200, not a host error); resuming it fails closed in the provider
+        // snapshot, and the strict client rejects the retired label as invalid_response.
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            $"Data Source={tmp.DataPaths.AgentHarnessDatabase};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            await using var update = connection.CreateCommand();
+            update.CommandText = "UPDATE agent_run_provider_selections SET calling_mode = 'text_selection' WHERE run_id = $run_id";
+            update.Parameters.AddWithValue("$run_id", runId);
+            Assert.Equal(1, await update.ExecuteNonQueryAsync());
+        }
+
+        using var legacy = await client.GetAsync($"/agent/v1/runs/{runId}");
+        Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
+        var legacyBody = await legacy.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("text_selection", legacyBody.GetProperty("provider_calling_mode").GetString());
     }
 
     [Fact]

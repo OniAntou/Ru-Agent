@@ -40,7 +40,7 @@ public sealed class SqliteProviderContinuationReaderTests
     {
         var bootstrap = new ProviderBootstrapData(
             "OpenAI", "openai_responses", new Uri("https://provider.invalid/v1/responses"),
-            "gpt-5.6-luna", "synthetic", toolCallingMode: ProviderToolCallingMode.Native, allowNativeResponses: true);
+            "gpt-5.6-luna", "synthetic");
         var parse = typeof(SqliteProviderContinuationReader).GetMethod("Parse", BindingFlags.NonPublic | BindingFlags.Static)!;
 
         var thrown = Assert.Throws<TargetInvocationException>(() => parse.Invoke(null,
@@ -99,8 +99,7 @@ public sealed class SqliteProviderContinuationReaderTests
         }
 
         var bootstrap = new ProviderBootstrapData("OpenAI", "openai_responses",
-            new Uri("https://provider.invalid/v1/responses"), "gpt-5.6-luna", "synthetic",
-            toolCallingMode: ProviderToolCallingMode.Native, allowNativeResponses: true);
+            new Uri("https://provider.invalid/v1/responses"), "gpt-5.6-luna", "synthetic");
         var reader = new SqliteProviderContinuationReader(fixture.Options, fixture.PayloadStore);
         var continuations = await reader.ReadAsync(run.RunId, bootstrap, [keptAssistantEvent.Value], CancellationToken.None);
 

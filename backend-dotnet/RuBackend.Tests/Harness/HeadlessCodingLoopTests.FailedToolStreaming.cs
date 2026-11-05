@@ -77,7 +77,7 @@ public sealed partial class HeadlessCodingLoopTests
             };
             if (!string.IsNullOrEmpty(step.Text))
                 await publishDelta(new AssistantDelta(request.ModelStepId, 1, step.Text));
-            return new ModelStepResult(step, SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt);
+            return new ModelStepResult(step, SystemPromptComposer.Compose(request.PromptContext).Receipt);
         }
     }
 }

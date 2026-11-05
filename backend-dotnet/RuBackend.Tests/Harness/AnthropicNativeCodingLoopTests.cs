@@ -47,7 +47,6 @@ public sealed partial class HeadlessCodingLoopTests
                 .ResolveAsync(new RunId(runId), CancellationToken.None);
             Assert.Equal("anthropic_messages", pinned.Protocol);
             Assert.Equal("claude-fable-5", pinned.ModelLabel);
-            Assert.Equal(ProviderToolCallingMode.Native, pinned.ToolCallingMode);
             Assert.True(await WaitForStatusAsync(client, runId,
                     new HashSet<string>(StringComparer.Ordinal) { "waiting_approval", "completed", "failed" }, TimeSpan.FromSeconds(30)),
                 "Anthropic native run did not reach a durable state");

@@ -81,6 +81,10 @@ exactly one JSON selection for compatibility.
 > Amended: superseded in part by [ADR-0012](0012-in-process-model-runner.md)
 > (the worker process was merged into the host on 2026-09-30).
 
+> Amended 2026-11-05: the text-selection compatibility path was retired; native
+> tool calling is the only protocol, and a call written out as text is rejected
+> as `invalid_selection` instead of executing.
+
 The scheduler may run at most eight read-only executions concurrently while
 preserving model-order receipts. Mutation and terminal calls remain sequential
 barriers. The shared budget remains 256 model-initiated tool calls per window;

@@ -88,26 +88,15 @@ public sealed class RuntimePromptPrefixTests
             two.PromptReceipt.BlockDigests.Single(block => block.BlockId == "runtime").Sha256);
     }
 
-    [Fact]
-    public void Text_selection_keeps_its_inline_runtime_context()
-    {
-        using var http = new HttpClient();
-        var capture = new CaptureProvider(new AnthropicMessagesModelProvider(http));
-        new ModelStepService(capture).PrepareRequest(Request("anthropic_messages", "legacy runtime sentinel", native: false));
-        var body = JsonNode.Parse(Assert.Single(capture.Bodies))!;
-        Assert.Contains("legacy runtime sentinel", body["system"]!.GetValue<string>());
-        Assert.Equal("CURRENT USER REQUEST", body["messages"]!.AsArray()[^1]!["content"]!.GetValue<string>());
-    }
 
-    private static ModelGenerationRequest Request(string protocol, string runtime, bool native = true)
+    private static ModelGenerationRequest Request(string protocol, string runtime)
     {
         var context = new SystemPromptContext(SystemPromptContext.PromptContextSchemaVersion, "ru-agent", "standard",
             new PromptEnvironment("fixture-model", "windows", "vi-VN", "Asia/Bangkok", "2026-10-21", "fixture"), [], [],
             new PromptRuntimeContext([new PromptReference("tool_result_omitted", "untrusted omitted results", runtime)]));
         var bootstrap = new ProviderBootstrapData("fixture", protocol, new Uri("https://provider.invalid/v1"),
             "fixture-model", "synthetic", maximumOutputTokens: 8192,
-            toolCallingMode: native ? ProviderToolCallingMode.Native : ProviderToolCallingMode.TextSelection,
-            allowNativeResponses: true, allowNativeAnthropic: true, contextWindowTokens: 128_000);
+            contextWindowTokens: 128_000);
         JsonObject[] history = [new() { ["role"] = "user", ["content"] = "earlier user message" },
             new() { ["role"] = "assistant", ["content"] = "earlier assistant response" }];
         JsonObject[] anthropicHistory = [new() { ["role"] = "user", ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = "earlier user message" }) },

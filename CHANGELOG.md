@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(providers)!**: Bỏ hẳn chế độ gọi tool cũ "text selection" (model viết
+  một JSON chọn tool dưới dạng text). Native tool calling giờ là chế độ duy nhất cho
+  Chat Completions, Responses và Anthropic Messages: bỏ `ProviderToolCallingMode`, các
+  nhánh text trong ba adapter, phép chiếu lịch sử sang text, hợp đồng "TOOL SELECTION
+  CONTRACT" cùng schema/ví dụ inline trong system prompt, và `AgentToolPromptGuidance`
+  (hướng dẫn đó đã nằm trong mô tả tool native). **Breaking:** run đã lưu với
+  `calling_mode = text_selection` không được chạy tiếp bằng native mà thất bại với
+  `provider_selection_invalid`; pin mới chỉ ghi `native`, client chỉ nhận `native`.
+  **Đổi hành vi native:** tool call model tự viết thành text (JSON envelope hoặc khối
+  `<tool_call>`) trước đây được thực thi trên Chat Completions; giờ không bao giờ thực
+  thi và không hiện ra chat, bước đó thất bại retry được với `invalid_selection` kèm
+  ghi chú yêu cầu gọi tool native. Mặc định cột `calling_mode` trong baseline v18 đã
+  phát hành giữ nguyên vì mọi lần ghi đều truyền giá trị.
+
 - **fix(harness)**: Hint sửa lỗi gửi cho model không còn bị cắt giữa chữ. Hint
   `malformed_call` của `run_process` thiếu `executable` dài 291 ký tự, bị cắt cứng ở 200 thành
   "... Send the exact schema valu". Trường bắt buộc bị thiếu giờ có hint ngắn

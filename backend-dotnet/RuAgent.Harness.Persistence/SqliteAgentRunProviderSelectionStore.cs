@@ -29,6 +29,8 @@ public sealed record AgentRunProviderSelectionState(
 
 public sealed partial class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions options)
 {
+    private const string NativeCallingMode = "native";
+
     public async Task<AgentRunProviderSelectionState?> GetAsync(
         RunId runId,
         CancellationToken cancellationToken)
@@ -55,6 +57,11 @@ public sealed partial class SqliteAgentRunProviderSelectionStore(HarnessSqliteOp
         _ = runId.Value;
         selection = Normalize(selection);
         Validate(selection);
+        // New pins only ever use native tool calling (the legacy text-selection mode is retired).
+        if (selection.CallingMode != NativeCallingMode)
+        {
+            throw new HarnessStoreException("provider_selection_invalid");
+        }
         await using var connection = await options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = connection.BeginTransaction(deferred: false);
         var current = await ReadAsync(connection, transaction, runId, cancellationToken).ConfigureAwait(false);
@@ -190,7 +197,9 @@ public sealed partial class SqliteAgentRunProviderSelectionStore(HarnessSqliteOp
             || selection.BaseUri.Length > 2048
             || !IsBounded(selection.Model, 256)
             || !IsBounded(selection.ModelLabel!, 256)
-            || selection.CallingMode is not ("native" or "text_selection")
+            // Reads keep a stored legacy label as history; resuming such a run fails closed
+            // where the pin is turned into a provider snapshot.
+            || !IsBounded(selection.CallingMode!, 32)
             || (selection.ContextWindowTokens is < 1 or > 100_000_000)
             || !IsBounded(selection.ContextWindowSource, 64)
             || !IsBounded(selection.ContextWindowVersion, 64)
@@ -218,11 +227,10 @@ public sealed partial class SqliteAgentRunProviderSelectionStore(HarnessSqliteOp
     private static AgentRunProviderSelection Normalize(AgentRunProviderSelection selection)
     {
         ArgumentNullException.ThrowIfNull(selection);
-        var callingMode = selection.CallingMode ?? (selection.Protocol == "chat_completions" ? "native" : "text_selection");
         return selection with
         {
             ModelLabel = selection.ModelLabel ?? selection.Model,
-            CallingMode = callingMode,
+            CallingMode = selection.CallingMode ?? NativeCallingMode,
         };
     }
 

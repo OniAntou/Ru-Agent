@@ -462,38 +462,31 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
 
     private static SystemPromptReceipt ComposeReceipt(SystemPromptContext context)
     {
-        string? firstFailure = null;
-        foreach (bool nativeToolCalling in new[] { true, false })
+        var receipt = SystemPromptComposer.Compose(context).Receipt;
+        try
         {
-            var candidate = SystemPromptComposer.Compose(context, nativeToolCalling).Receipt;
-            try
-            {
-                candidate.ValidateAgainst(context);
-                return candidate;
-            }
-            catch (ArgumentException error)
-            {
-                // The other rendering may be the one the run was started with.
-                firstFailure ??= $"{nativeToolCalling}: {error.Message}";
-            }
+            receipt.ValidateAgainst(context);
+            return receipt;
         }
-
-        // Neither matched, so the run is going to fail its contract check either way.
-        // Returning the text-mode receipt keeps the failure at the coordinator, where it
-        // belongs, instead of throwing a different error from inside the model.
-        //
+        catch (ArgumentException error)
+        {
+            // The run is going to fail its contract check either way. Returning the
+            // receipt keeps the failure at the coordinator, where it belongs, instead of
+            // throwing a different error from inside the model.
+            //
         // The reason is recorded because the coordinator reports only
         // prompt_contract_invalid: that says a receipt was rejected but not which rule it
         // broke, and diagnosing a fixture without it means bisecting the prompt by hand.
-        TryRecordFailure(context, firstFailure);
-        return SystemPromptComposer.Compose(context).Receipt;
+            TryRecordFailure(context, error.Message);
+            return receipt;
+        }
     }
 
     private static void TryRecordFailure(SystemPromptContext context, string? reason)
     {
         try
         {
-            var snapshot = SystemPromptComposer.Compose(context, nativeToolCalling: true);
+            var snapshot = SystemPromptComposer.Compose(context);
             var receipt = snapshot.Receipt;
             string sizes = string.Join(
                 ",",

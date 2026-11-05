@@ -92,7 +92,7 @@ public sealed partial class ContextCompactionCoordinatorTests
         {
             TaskCalls++;
             return Task.FromResult(new ModelStepResult(new AssistantStep("done", [], AssistantFinishReason.Stop, 1),
-                SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt));
+                SystemPromptComposer.Compose(request.PromptContext).Receipt));
         }
     }
 }

@@ -3,12 +3,11 @@ using RuAgent.Runtime.Adapters.Models;
 
 namespace RuAgent.Runtime.Adapters.Bootstrap;
 
-public enum ProviderToolCallingMode
-{
-    Native,
-    TextSelection,
-}
-
+/// <summary>
+/// The provider identity pinned for one run. Every protocol uses its native tool-calling
+/// contract (chat function calls, Responses function-call items, Messages tool-use blocks);
+/// there is no other calling mode to pin.
+/// </summary>
 public sealed record ProviderBootstrapData
 {
     public ProviderBootstrapData(
@@ -19,9 +18,6 @@ public sealed record ProviderBootstrapData
         string credential,
         JsonObject? requestOptions = null,
         int? maximumOutputTokens = null,
-        ProviderToolCallingMode? toolCallingMode = null,
-        bool allowNativeResponses = false,
-        bool allowNativeAnthropic = false,
         bool useMaxCompletionTokens = false,
         long? contextWindowTokens = null,
         int? outputTokenReserve = null,
@@ -63,15 +59,6 @@ public sealed record ProviderBootstrapData
         if (OutputTokenReserve is < 1 or > 128_000
             || maximumOutputTokens is not null && maximumOutputTokens != OutputTokenReserve)
             throw new ArgumentException("Output cap must match the pinned reserve.", nameof(outputTokenReserve));
-        var protocolMode = ModeForProtocol(Protocol);
-        var isSupportedNativeMode = toolCallingMode == ProviderToolCallingMode.Native
-            && ((allowNativeResponses && Protocol == ProviderProtocols.OpenAiResponses)
-                || (allowNativeAnthropic && Protocol == ProviderProtocols.AnthropicMessages));
-        if (toolCallingMode is { } selectedMode && selectedMode != protocolMode && !isSupportedNativeMode)
-        {
-            throw new ArgumentException("Tool calling mode does not match the provider protocol.", nameof(toolCallingMode));
-        }
-        ToolCallingMode = toolCallingMode ?? protocolMode;
     }
 
     public string Backend { get; }
@@ -123,15 +110,6 @@ public sealed record ProviderBootstrapData
     public long? ContextWindowTokens { get; }
 
     public int OutputTokenReserve { get; }
-
-    public ProviderToolCallingMode ToolCallingMode { get; }
-
-    public static ProviderToolCallingMode ModeForProtocol(string protocol) => protocol switch
-    {
-        ProviderProtocols.ChatCompletions => ProviderToolCallingMode.Native,
-        ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages => ProviderToolCallingMode.TextSelection,
-        _ => throw new ArgumentException("Provider protocol is unsupported.", nameof(protocol)),
-    };
 
     private static int? ValidateOutputCap(string protocol, int? value)
     {

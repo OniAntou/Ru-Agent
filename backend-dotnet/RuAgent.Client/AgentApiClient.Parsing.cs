@@ -220,10 +220,11 @@ public sealed partial class AgentApiClient
         ValidateOptionalString(root, "context_window_version", 128);
         ValidateOptionalInteger(root, "context_window_tokens", 1, 10_000_000);
         ValidateOptionalInteger(root, "output_token_reserve", 1, 128_000);
+        // Native tool calling is the only calling mode; the retired "text_selection"
+        // label is rejected like any other unknown mode.
         if (root.TryGetProperty("provider_calling_mode", out var mode)
             && mode.ValueKind is not JsonValueKind.Null
-            && (mode.ValueKind != JsonValueKind.String
-                || mode.GetString() is not ("native" or "text_selection")))
+            && (mode.ValueKind != JsonValueKind.String || mode.GetString() != "native"))
             throw new AgentApiException("invalid_response", "Invalid provider_calling_mode");
     }
 

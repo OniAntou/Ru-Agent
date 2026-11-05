@@ -105,9 +105,8 @@ report does not repeatedly consume recovery turns or masquerade as verified
 success. Ordinary unsupported success claims after failed tools still receive
 bounded recovery feedback. Approvals and protected paths are unchanged.
 
-Native requests carry full tool descriptions, schemas and argument examples.
-Legacy text selection receives these in the system prompt and has no native
-function declarations. Native history holds up to 1,024 messages / 8 MiB, with
+Native declarations carry full tool descriptions, schemas and argument examples;
+the system prompt lists only each tool's purpose. Native history holds up to 1,024 messages / 8 MiB, with
 128 Ki-character result pages; encoded prompt context has an 8 MiB cap and
 128 KiB references fitted collectively. Broker tool output now has a 4 MiB ceiling; adapter-specific result, time and network bounds still apply. These are memory ceilings; exact
 provider-token preflight and compaction decide how much fits the selected model.
@@ -459,11 +458,11 @@ adapter names do not create additional public model capabilities.
 ## Model-first selection and native batches
 
 The Host advertises the same canonical tool definitions to the prompt and the model step.
-On a provider-native path, one model generation may emit optional narration and
-one or more ordered tool calls. On the compatibility text-selection path, the
-model emits exactly one JSON object with `tool_id`, `tool_version`, and
-`arguments`, without selection prose. The text path also accepts the existing
-strict wrapper forms; malformed markup remains ordinary text and never executes.
+One model generation may emit optional narration and one or more ordered native
+tool calls. Native tool calling is the only protocol: a call the model writes out
+as text (a JSON envelope or a `<tool_call>` block, leading, trailing or glued to
+prose) never executes and never reaches the transcript. The step fails retryably
+as `invalid_selection`, and the repair note asks for a native call.
 
 The runtime evaluates a complete batch before executing any call. If any
 non-denied call asks, prepared authorization is discarded and the whole retained
@@ -478,7 +477,7 @@ then `repeated_tool_call` parks the run for explicit Continue. Suppressed calls
 remain audit-only and do not create unmatched native-history tool calls. The
 failed receipt remains visible behind advice, so prose alone cannot clear it. An empty or whitespace-only
 final step is answered up to three times with a bounded `[HARNESS RECOVERY]` note before the run fails as
-`empty_model_reply`. A runner-rejected tool call or selection
+`empty_model_reply`. A runner-rejected tool call or written-out call
 (`model_tool_call_invalid`, `model_tool_call_unavailable`, `capability_unavailable`,
 `invalid_selection`) is
 likewise answered up to four times before failing with the original runner code.

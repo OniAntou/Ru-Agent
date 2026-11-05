@@ -135,12 +135,7 @@ public sealed partial class ModelStepService
     {
         if (fragments.Count == 0)
         {
-            var (promptSelection, visibleText) = ParsePromptToolSelection(text.ToString(), settings, modelStepId);
-            if (promptSelection is not null)
-            {
-                return ([promptSelection], visibleText);
-            }
-
+            var visibleText = RejectHandWrittenToolCall(text.ToString(), settings);
             if (finishReason == "tool_calls")
             {
                 // The provider announced a tool call and streamed none. Nothing
@@ -159,8 +154,6 @@ public sealed partial class ModelStepService
                 throw new ModelStepException("protocol_failure", retryable: true, trace: trace);
             }
 
-            // VisibleText already carries the stripped prose when a trailing
-            // block was removed; otherwise it is the full text (or empty).
             return (new List<ModelToolCall>(), string.IsNullOrEmpty(visibleText) ? null : visibleText);
         }
 
@@ -300,9 +293,8 @@ public sealed partial class ModelStepService
     /// Whether step text is the tool call written out by hand rather than prose.
     /// </summary>
     /// <remarks>
-    /// Prompt-based selections already strip their call block before it can be seen; a native
-    /// call whose text side is markup gets the same treatment, because raw call markup must
-    /// never reach the chat whichever way the model chose to write it.
+    /// Raw call markup must never reach the chat: beside a native call it is dropped as
+    /// narration, and a step that has only markup is rejected (see <see cref="RejectHandWrittenToolCall"/>).
     /// </remarks>
     private static bool IsToolCallMarkup(string text)
     {
@@ -310,159 +302,32 @@ public sealed partial class ModelStepService
         return candidate.Length != 0 && candidate[0] is '{' or '[';
     }
 
-    private static (ModelToolCall? Call, string? VisibleText) ParsePromptToolSelection(
-        string text,
-        JsonObject settings,
-        string modelStepId)
+    /// <summary>
+    /// Text of a step without native tool calls, or a retryable <c>invalid_selection</c>
+    /// when the model wrote a tool call out by hand instead of calling it natively.
+    /// </summary>
+    /// <remarks>
+    /// Native tool calling is the only protocol: hand-written markup (a JSON envelope,
+    /// a <c>&lt;tool_call&gt;</c> block leading, trailing or glued to prose, or an invented
+    /// tag dialect) is never executed, and it is never shown as an answer either. The
+    /// Host's bounded repair hands the code back so the model re-issues a native call.
+    /// A JSON answer without tool fields stays visible when no tools are advertised.
+    /// Mid-text discussion of the syntax stays visible.
+    /// </remarks>
+    private static string RejectHandWrittenToolCall(string text, JsonObject settings)
     {
-        var modelTools = settings["model_tools"] as JsonArray;
-        var hasTools = modelTools is { Count: > 0 };
-        var advertised = AdvertisedToolIds(modelTools);
-
+        var hasTools = settings["model_tools"] is JsonArray { Count: > 0 };
         var candidate = ModelToolSelectionParser.NormalizeCandidate(text);
-        if (candidate.Length != 0 && candidate[0] is '{' or '[')
-        {
-            if (!hasTools && IsJsonObjectWithoutToolFields(candidate))
-            {
-                return (null, text);
-            }
-
-            return (BuildSelectionCall(modelTools, candidate, advertised, modelStepId), null);
-        }
-
-        // Trailing wrapper: prose first, tool call last. A complete trailing
-        // block either executes (valid selection) or is stripped from visible
-        // text (invalid selection) so raw tool-call markup never reaches chat.
-        if (ModelToolSelectionParser.TrySplitTrailingBlock(text, out var prose, out var block))
-        {
-            try
-            {
-                var trailing = ModelToolSelectionParser.Parse(
-                    ModelToolSelectionParser.NormalizeCandidate(block), advertised);
-                return (BuildSelectionCall(modelTools, trailing, modelStepId), string.IsNullOrWhiteSpace(prose) ? null : prose);
-            }
-            catch (ModelToolSelectionException error) when (
-                error.Code is "unknown_tool" or "invalid_tool_version")
-            {
-                throw new ModelStepException("capability_unavailable", retryable: false, error);
-            }
-            catch (ModelToolSelectionException error)
-            {
-                if (string.IsNullOrWhiteSpace(prose))
-                {
-                    throw new ModelStepException("invalid_selection", retryable: true, error);
-                }
-
-                return (null, prose);
-            }
-        }
-
-        // Opener-led attempt anywhere (prose glued to an envelope, possibly with
-        // mangled delimiters). A tool-keyed payload executes with the prose
-        // kept visible; a broken tool-keyed payload fails loudly instead of
-        // leaking machine syntax as a chat answer. Anything without a
-        // tool-keyed payload falls through (discussion/trailing paths below).
-        if (ModelToolSelectionParser.TryExtractCallCandidate(text, out var callProse, out var callJson))
-        {
-            try
-            {
-                var selected = ModelToolSelectionParser.Parse(
-                    ModelToolSelectionParser.NormalizeCandidate(callJson), advertised);
-                return (BuildSelectionCall(modelTools, selected, modelStepId),
-                    string.IsNullOrWhiteSpace(callProse) ? null : callProse);
-            }
-            catch (ModelToolSelectionException error) when (
-                error.Code is "unknown_tool" or "invalid_tool_version")
-            {
-                throw new ModelStepException("capability_unavailable", retryable: false, error);
-            }
-            catch (ModelToolSelectionException error)
-            {
-                throw new ModelStepException("invalid_selection", retryable: true, error);
-            }
-        }
-
-        if (!hasTools && IsJsonObjectWithoutToolFields(candidate))
-        {
-            return (null, text);
-        }
-
-        // A lone tool-call attempt in a non-JSON dialect (e.g. XML-ish tags the
-        // model invented instead of the JSON envelope) must fail loudly instead
-        // of being presented as a chat answer: the model tried to act, so
-        // silent prose would mislead the user into thinking it answered.
-        // Mid-text syntax discussion (tag not leading) stays visible.
-        if (text.TrimStart().StartsWith("<tool_call>", StringComparison.OrdinalIgnoreCase))
+        var isLeadingJson = candidate.Length != 0 && candidate[0] is '{' or '['
+            && (hasTools || !IsJsonObjectWithoutToolFields(candidate));
+        if (isLeadingJson
+            || ModelToolSelectionParser.LooksLikeToolSelection(text)
+            || ModelToolSelectionParser.TrySplitTrailingBlock(text, out _, out _))
         {
             throw new ModelStepException("invalid_selection", retryable: true);
         }
 
-        return (null, text);
-    }
-
-    private static HashSet<string> AdvertisedToolIds(JsonArray? modelTools) =>
-        modelTools?
-            .OfType<JsonObject>()
-            .Select(tool => tool["tool_id"] is JsonValue value
-                && value.TryGetValue<string>(out var id)
-                    ? id
-                    : string.Empty)
-            .Where(id => id.Length > 0)
-            .ToHashSet(StringComparer.Ordinal)
-        ?? new HashSet<string>(StringComparer.Ordinal);
-
-    private static ModelToolCall BuildSelectionCall(
-        JsonArray? modelTools,
-        string candidate,
-        HashSet<string> advertised,
-        string modelStepId)
-    {
-        ModelToolSelection selection;
-        try
-        {
-            selection = ModelToolSelectionParser.Parse(candidate, advertised);
-        }
-        catch (ModelToolSelectionException error) when (
-            error.Code is "unknown_tool" or "invalid_tool_version")
-        {
-            throw new ModelStepException("capability_unavailable", retryable: false, error);
-        }
-        catch (ModelToolSelectionException error)
-        {
-            throw new ModelStepException("invalid_selection", retryable: true, error);
-        }
-
-        return BuildSelectionCall(modelTools, selection, modelStepId);
-    }
-
-    private static ModelToolCall BuildSelectionCall(
-        JsonArray? modelTools,
-        ModelToolSelection selection,
-        string modelStepId)
-    {
-        var configuredTool = modelTools?
-            .OfType<JsonObject>()
-            .FirstOrDefault(tool => tool["tool_id"] is JsonValue value
-                && value.TryGetValue<string>(out var id)
-                && string.Equals(id, selection.ToolId, StringComparison.Ordinal));
-        var configuredVersion = configuredTool?["tool_version"] is JsonValue version
-            && version.TryGetValue<string>(out var versionText)
-                ? versionText
-                : null;
-        if (!string.Equals(configuredVersion, selection.ToolVersion, StringComparison.Ordinal))
-        {
-            throw new ModelStepException("capability_unavailable", retryable: false);
-        }
-
-        try
-        {
-            var providerCallId = $"ru_call_{modelStepId}_1";
-            return new ModelToolCall(providerCallId, selection.ToolId, selection.ToolVersion, selection.Arguments);
-        }
-        catch (ArgumentException error)
-        {
-            throw new ModelStepException("invalid_selection", retryable: true, error);
-        }
+        return text;
     }
 
     private static bool IsJsonObjectWithoutToolFields(string candidate)

@@ -92,7 +92,7 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public async Task Recognized_read_only_commands_execute_without_an_approval_token()
+    public async Task Authorized_read_only_commands_execute_in_the_workspace()
     {
         var root = CreateTemporaryRoot("ru-terminal-recognized-");
         try
@@ -175,81 +175,43 @@ public sealed class TerminalAdapterTests
         }
     }
 
+    /// <summary>
+    /// The adapter executes only Broker-authorized intents. Recognized safe
+    /// classes no longer run on their own: allow/ask is decided by the run's
+    /// policy snapshot before dispatch, so an unauthorized request is refused
+    /// whatever its operation class.
+    /// </summary>
     [Fact]
-    public async Task Unrecognized_commands_require_an_intent_bound_one_time_token()
+    public async Task Unauthorized_commands_are_refused_whatever_their_class()
     {
-        var root = CreateTemporaryRoot("ru-terminal-token-");
+        var root = CreateTemporaryRoot("ru-terminal-unauthorized-");
         try
         {
-            var approvals = new ApprovalTokenService();
-            var adapter = new TerminalAdapter(
-                new WorkspacePathGuard(root),
-                approvals,
-                intentResolver: new CommandIntentResolver(
-                    root));
+            var adapter = CreateAdapter(root);
+            Assert.Equal(TerminalOperationClass.ReadOnly, adapter.CanonicalizeRun(Request("rg", ["--files"])).OperationClass);
 
-            var unauthorized = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            var readOnly = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute),
-                    Request("python", ["-c", "print(1)"]),
+                    Request("rg", ["--files"], approved: false),
                     confineWorkspace: true,
                     CancellationToken.None));
-            Assert.Equal("terminal_command_not_allowed", unauthorized.Message);
+            Assert.Equal("terminal_command_not_allowed", readOnly.Message);
 
-            // A token bound to a different intent hash never authorizes the call.
-            var wrongBindingToken = approvals.Issue(
-                "request-1",
-                "session-1",
-                "run_process",
-                "1.0.0",
-                "not-the-intent-hash",
-                TimeSpan.FromSeconds(60));
-            var stale = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            var unrecognized = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute),
-                    Request(
-                        "python",
-                        ["-c", "print(1)"],
-                        approvalToken: wrongBindingToken,
-                        requestId: "request-1",
-                        sessionId: "session-1"),
+                    Request("python", ["-c", "print(1)"], approved: false),
                     confineWorkspace: true,
                     CancellationToken.None));
-            Assert.Equal("terminal_approval_invalid", stale.Message);
+            Assert.Equal("terminal_command_not_allowed", unrecognized.Message);
 
-            // A token bound to the exact canonical intent authorizes exactly one call.
-            var intent = adapter.CanonicalizeRun(Request("python", ["-c", "print(1)"]));
-            var token = approvals.Issue(
-                "request-2",
-                "session-1",
-                "run_process",
-                "1.0.0",
-                intent.IntentHash,
-                TimeSpan.FromSeconds(60));
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
-                Request(
-                    "python",
-                    ["-c", "print(1)"],
-                    approvalToken: token,
-                    requestId: "request-2",
-                    sessionId: "session-1"),
+                Request("python", ["-c", "print(1)"]),
                 confineWorkspace: true,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
-
-            var replayed = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-                adapter.RunAsync(
-                    MakeGrantWithScopes(ToolScope.TerminalExecute),
-                    Request(
-                        "python",
-                        ["-c", "print(1)"],
-                        approvalToken: token,
-                        requestId: "request-2",
-                        sessionId: "session-1"),
-                    confineWorkspace: true,
-                    CancellationToken.None));
-            Assert.Equal("terminal_approval_invalid", replayed.Message);
         }
         finally
         {
@@ -304,31 +266,15 @@ public sealed class TerminalAdapterTests
         Directory.CreateDirectory(workspaceRoot);
         try
         {
-            var approvals = new ApprovalTokenService();
-            var adapter = new TerminalAdapter(
-                new WorkspacePathGuard(workspaceRoot),
-                approvals);
-            var request = Request("git", ["status"], workingDirectory: ".");
-            var intent = adapter.CanonicalizeRun(request);
-            var token = approvals.Issue(
-                "request-reresolve",
-                "session-1",
-                "run_process",
-                "1.0.0",
-                intent.IntentHash,
-                TimeSpan.FromSeconds(60));
+            var adapter = new TerminalAdapter(new WorkspacePathGuard(workspaceRoot));
+            _ = adapter.CanonicalizeRun(Request("git", ["status"], workingDirectory: "."));
 
             Directory.Delete(workspaceRoot, recursive: true);
 
             var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute),
-                    Request(
-                        "git",
-                        ["status"],
-                        approvalToken: token,
-                        requestId: "request-reresolve",
-                        sessionId: "session-1"),
+                    Request("git", ["status"]),
                     confineWorkspace: true,
                     CancellationToken.None));
             Assert.Equal("working_directory_invalid", error.Message);
@@ -340,26 +286,15 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public async Task NetworkCommandRequiresApprovalTokenWithoutNetworkScope()
+    public async Task Authorized_network_command_runs_without_network_scope()
     {
         var root = CreateTemporaryRoot("ru-terminal-network-granted-");
         try
         {
-            var approvals = new ApprovalTokenService();
-            var adapter = new TerminalAdapter(
-                new WorkspacePathGuard(root),
-                approvals);
-            var intent = adapter.CanonicalizeRun(Request("dotnet", ["--version"], network: true));
-            var token = approvals.Issue(
-                "request-network-1",
-                "session-network-1",
-                "run_process",
-                "1.0.0",
-                intent.IntentHash,
-                TimeSpan.FromSeconds(60));
+            var adapter = CreateAdapter(root);
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
-                Request("dotnet", ["--version"], network: true, approvalToken: token, requestId: "request-network-1", sessionId: "session-network-1"),
+                Request("dotnet", ["--version"], network: true),
                 confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
@@ -380,7 +315,7 @@ public sealed class TerminalAdapterTests
             var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute),
-                    Request("dotnet", ["--version"], network: true),
+                    Request("dotnet", ["--version"], network: true, approved: false),
                     confineWorkspace: true,
                     CancellationToken.None));
             Assert.Equal("terminal_network_requires_approval", error.Message);
@@ -435,9 +370,6 @@ public sealed class TerminalAdapterTests
                     "powershell",
                     ["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 10"],
                     100,
-                    ApprovalToken: string.Empty,
-                    RequestId: "timeout-request",
-                    SessionId: "timeout-session",
                     Approved: true),
                 confineWorkspace: false,
                 CancellationToken.None);
@@ -467,9 +399,6 @@ public sealed class TerminalAdapterTests
                     "powershell",
                     ["-NoProfile", "-NonInteractive", "-Command", "Write-Output ([string]::new('x', 5000))"],
                     30_000,
-                    ApprovalToken: string.Empty,
-                    RequestId: "output-request",
-                    SessionId: "output-session",
                     Approved: true),
                 confineWorkspace: false,
                 CancellationToken.None);
@@ -499,9 +428,6 @@ public sealed class TerminalAdapterTests
                     "powershell",
                     ["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 30"],
                     120_000,
-                    ApprovalToken: string.Empty,
-                    RequestId: "cancel-request",
-                    SessionId: "cancel-session",
                     Approved: true),
                 confineWorkspace: false,
                 cancellation.Token);
@@ -543,9 +469,6 @@ public sealed class TerminalAdapterTests
                     "powershell",
                     ["-NoProfile", "-NonInteractive", "-Command", parentScript],
                     120_000,
-                    ApprovalToken: string.Empty,
-                    RequestId: "process-tree-request",
-                    SessionId: "process-tree-session",
                     Approved: true),
                 confineWorkspace: false,
                 cancellation.Token);
@@ -708,70 +631,25 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public async Task Raw_shell_requires_a_bound_one_time_approval_token()
+    public async Task Raw_shell_runs_only_when_authorized()
     {
         var root = CreateTemporaryRoot("ru-terminal-shell-");
         try
         {
-            var approvals = new ApprovalTokenService();
-            var adapter = new TerminalAdapter(
-                new WorkspacePathGuard(root),
-                approvals);
-            var scriptIntent = adapter.CanonicalizeShell(new TerminalShellRequest(
-                "powershell",
-                ".",
-                "Get-Date",
-                10_000,
-                string.Empty));
-            var staleIntent = adapter.CanonicalizeShell(new TerminalShellRequest(
-                "powershell",
-                ".",
-                "Get-Location",
-                10_000,
-                string.Empty));
-            var token = approvals.Issue(
-                "request-1",
-                "session-1",
-                "powershell",
-                "1.0.0",
-                scriptIntent.IntentHash,
-                TimeSpan.FromSeconds(30));
+            var adapter = CreateAdapter(root);
 
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            var unauthorized = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunApprovedShellAsync(
-                    new TerminalShellRequest(
-                        "powershell",
-                        ".",
-                        "Get-Location",
-                        10_000,
-                        token,
-                        "request-1",                        "session-1"),
+                    new TerminalShellRequest("powershell", ".", "Get-Date", 10_000),
                     confineWorkspace: true,
                     CancellationToken.None));
+            Assert.Equal("terminal_shell_approval_invalid", unauthorized.Message);
 
             var result = await adapter.RunApprovedShellAsync(
-                new TerminalShellRequest(
-                    "powershell",
-                    ".",
-                    "Get-Date",
-                    10_000,
-                    token,
-                    "request-1",                    "session-1"),
+                new TerminalShellRequest("powershell", ".", "Get-Date", 10_000, Approved: true),
                 confineWorkspace: true,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
-
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-                adapter.RunApprovedShellAsync(
-                    new TerminalShellRequest(
-                        "powershell",
-                        ".",
-                        "Get-Date",
-                        10_000,
-                        token,
-                        "request-1",                        "session-1"),
-                    confineWorkspace: true,
-                    CancellationToken.None));
         }
         finally
         {
@@ -790,7 +668,7 @@ public sealed class TerminalAdapterTests
             foreach (var shell in new[] { "git-bash", "wsl", "cmd" })
             {
                 var error = Assert.Throws<UnauthorizedAccessException>(() =>
-                    adapter.CanonicalizeShell(new TerminalShellRequest(shell, ".", "Get-Date", 1_000, string.Empty)));
+                    adapter.CanonicalizeShell(new TerminalShellRequest(shell, ".", "Get-Date", 1_000)));
                 Assert.Equal("unsupported_shell_runtime", error.Message);
             }
         }
@@ -800,8 +678,12 @@ public sealed class TerminalAdapterTests
         }
     }
 
+    /// <summary>
+    /// The shell runtime is part of the canonical intent, so an approval bound
+    /// to one runtime's intent hash never matches another runtime's call.
+    /// </summary>
     [Fact]
-    public async Task Shell_approval_bound_to_one_runtime_does_not_authorize_another()
+    public void Shell_runtime_is_part_of_the_intent_identity()
     {
         var root = CreateTemporaryRoot("ru-terminal-shell-runtime-bind-");
         try
@@ -810,29 +692,13 @@ public sealed class TerminalAdapterTests
             Directory.CreateDirectory(bin);
             File.WriteAllText(Path.Combine(bin, "powershell.exe"), "stub");
             File.WriteAllText(Path.Combine(bin, "pwsh.exe"), "stub");
-            var approvals = new ApprovalTokenService();
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
-                approvals,
                 intentResolver: new CommandIntentResolver(root, [bin]));
 
-            var powershellIntent = adapter.CanonicalizeShell(new TerminalShellRequest("powershell", ".", "Get-Date", 1_000, string.Empty));
-            var pwshIntent = adapter.CanonicalizeShell(new TerminalShellRequest("pwsh", ".", "Get-Date", 1_000, string.Empty));
+            var powershellIntent = adapter.CanonicalizeShell(new TerminalShellRequest("powershell", ".", "Get-Date", 1_000));
+            var pwshIntent = adapter.CanonicalizeShell(new TerminalShellRequest("pwsh", ".", "Get-Date", 1_000));
             Assert.NotEqual(powershellIntent.IntentHash, pwshIntent.IntentHash);
-
-            var token = approvals.Issue(
-                "request-1",
-                "session-1",
-                "powershell",
-                "1.0.0",
-                powershellIntent.IntentHash,
-                TimeSpan.FromSeconds(30));
-
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-                adapter.RunApprovedShellAsync(
-                    new TerminalShellRequest("pwsh", ".", "Get-Date", 1_000, token, "request-1", "session-1"),
-                    confineWorkspace: true,
-                    CancellationToken.None));
         }
         finally
         {
@@ -841,7 +707,7 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public async Task Unconfined_shell_still_requires_a_token_and_honors_cwd_denylist()
+    public async Task Unconfined_authorized_shell_runs_in_an_outside_working_directory()
     {
         var parent = CreateTemporaryRoot("ru-terminal-shell-unconfined-");
         var workspaceRoot = Path.Combine(parent, "workspace");
@@ -850,48 +716,9 @@ public sealed class TerminalAdapterTests
         Directory.CreateDirectory(outsideDirectory);
         try
         {
-            var approvals = new ApprovalTokenService();
-            var adapter = new TerminalAdapter(
-                new WorkspacePathGuard(workspaceRoot),
-                approvals);
-            var request = new Func<string, string, string, TerminalShellRequest>(
-                (workingDirectory, token, requestId) => new(
-                    "powershell",
-                    workingDirectory,
-                    "Get-Date",
-                    30_000,
-                    token,
-                    requestId,
-                    "session-shell-unconfined"));
-
-            var outsideIntent = adapter.CanonicalizeShell(new TerminalShellRequest(
-                "powershell",
-                Path.Combine("..", "outside"),
-                "Get-Date",
-                30_000,
-                string.Empty));
-            var outsideToken = approvals.Issue(
-                "request-outside-1",
-                "session-shell-unconfined",
-                "powershell",
-                "1.0.0",
-                outsideIntent.IntentHash,
-                TimeSpan.FromSeconds(60));
-
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-                adapter.RunApprovedShellAsync(
-                    request(
-                        Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                        outsideToken,
-                        "request-outside-1"),
-                    confineWorkspace: false,
-                    CancellationToken.None));
-
+            var adapter = CreateAdapter(workspaceRoot);
             var result = await adapter.RunApprovedShellAsync(
-                request(
-                    Path.Combine("..", "outside"),
-                    outsideToken,
-                    "request-outside-1"),
+                new TerminalShellRequest("powershell", Path.Combine("..", "outside"), "Get-Date", 30_000, Approved: true),
                 confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
@@ -902,7 +729,6 @@ public sealed class TerminalAdapterTests
             Directory.Delete(parent, recursive: true);
         }
     }
-
 
     private static TerminalAdapter CreateAdapter(string root) => new(
         new WorkspacePathGuard(root),
@@ -920,18 +746,14 @@ public sealed class TerminalAdapterTests
         bool network = false,
         string workingDirectory = ".",
         int timeoutMs = 30_000,
-        string approvalToken = "",
-        string requestId = "",
-        string sessionId = "") => new(
+        bool approved = true) => new(
         "powershell",
         workingDirectory,
         executable,
         arguments,
         timeoutMs,
         network,
-        approvalToken,
-        requestId,
-        sessionId);
+        Approved: approved);
 
     private static string CreateTemporaryRoot(string prefix)
     {

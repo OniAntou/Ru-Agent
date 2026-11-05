@@ -25,7 +25,7 @@ public sealed class AdapterConformanceTests
                 guard);
             StreamingProcessResult result = await terminal.RunAsync(
                 MakeGrant(),
-                new TerminalRunRequest("dotnet", ".", "dotnet", ["--version"], 10_000),
+                new TerminalRunRequest("dotnet", ".", "dotnet", ["--version"], 10_000, Approved: true),
                 confineWorkspace: true,
                 CancellationToken.None);
 

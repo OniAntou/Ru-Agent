@@ -203,8 +203,12 @@ reconciliation surfaces from Phase 3:
   carries a credential.
   Glob traversal also checks its elapsed request budget directly, so delayed
   cancellation timers cannot turn an expired scan into a successful receipt.
-  Legacy adapter-only callers retain
-  their older approval contract; production v2 calls use Broker authorization.
+  Tool execution has one entry point, `ExecuteAuthenticatedV2Async`, reached
+  only after `BrokerExecutionRuntime` consumes the authorization token; any
+  other envelope is refused as `tool_execute_v2_required` before an adapter
+  runs. The terminal adapter likewise refuses a launch without Broker
+  authorization, whatever its analyzer class (`terminal_command_not_allowed`,
+  `terminal_shell_approval_invalid`).
   `RU_MAX_CONCURRENT_MODEL_STEPS` still bounds concurrent provider generation.
 - Managed Web: `web_search` resolves the configured engine against a fixed set
   of public HTML engines and returns the first usable result after an

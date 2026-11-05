@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(broker)!**: Gỡ đường thực thi và duyệt v1 (legacy) khỏi Broker; mọi tool chỉ
+  chạy qua `ExecuteAuthenticatedV2Async` sau khi `BrokerExecutionRuntime` đã đánh giá policy
+  và tiêu thụ authorization token. **Breaking** cho caller nhúng Broker: bỏ
+  `ToolExecutionService.ExecuteAsync(...)` (cả hai overload), `RespondToApprovalAsync`,
+  `ClearPendingApprovals`, tham số `approvalTokens` của `ToolExecutionService`/`TerminalAdapter`,
+  `TerminalAutoPolicy`, các trường `ApprovalToken`/`RequestId`/`SessionId` của
+  `TerminalRunRequest`/`TerminalShellRequest`, `Approved`/`ApprovalToken`/`ConfinementRequired`/
+  `IsAuthenticatedV2Execution` của `ToolExecutionContext`, và nửa v1 của `PendingApprovalStore`
+  (`Issue`/`TryConsume`/`RemoveSession`/`PendingApproval`). Envelope không phải v2 `tool.execute`
+  bị từ chối `tool_execute_v2_required` trước adapter; `TerminalAdapter` từ chối mọi lệnh chưa
+  được Broker cho phép, kể cả lớp read-only. Không thay đổi hành vi của Host (đã chỉ dùng v2).
+
 - **fix(harness)**: Hint sửa lỗi gửi cho model không còn bị cắt giữa chữ. Hint
   `malformed_call` của `run_process` thiếu `executable` dài 291 ký tự, bị cắt cứng ở 200 thành
   "... Send the exact schema valu". Trường bắt buộc bị thiếu giờ có hint ngắn

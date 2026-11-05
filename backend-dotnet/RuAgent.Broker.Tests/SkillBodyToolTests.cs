@@ -22,7 +22,7 @@ public sealed class SkillBodyToolTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"name":"pdf.analyzer"}"""),
             CancellationToken.None);
 
@@ -38,7 +38,7 @@ public sealed class SkillBodyToolTests
     {
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
-        var result = await service.ExecuteAsync(Envelope("""{"query":"pdf.analyzer"}"""), CancellationToken.None);
+        var result = await service.ExecuteAuthenticatedV2Async(Envelope("""{"query":"pdf.analyzer"}"""), CancellationToken.None);
         Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
         var item = Assert.Single(result.Output["items"]!.AsArray())!.AsObject();
         Assert.Equal("pdf.analyzer", item["id"]!.GetValue<string>());
@@ -91,7 +91,7 @@ public sealed class SkillBodyToolTests
     public async Task Skill_tool_rejects_neither_or_both_name_and_query(string arguments)
     {
         using var fixture = Fixture.Create();
-        var result = await fixture.CreateService().ExecuteAsync(Envelope(arguments), CancellationToken.None);
+        var result = await fixture.CreateService().ExecuteAuthenticatedV2Async(Envelope(arguments), CancellationToken.None);
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
     }
 
@@ -100,7 +100,7 @@ public sealed class SkillBodyToolTests
     {
         using var fixture = Fixture.Create();
         fixture.AddSkill("manual", "---\nname: Manual\ndescription: Explicit workflow\ndisable-model-invocation: true\n---\nBody");
-        var result = await fixture.CreateService().ExecuteAsync(Envelope("""{"query":"manual"}"""), CancellationToken.None);
+        var result = await fixture.CreateService().ExecuteAuthenticatedV2Async(Envelope("""{"query":"manual"}"""), CancellationToken.None);
         Assert.DoesNotContain(result.Output["items"]!.AsArray(), item => item!["id"]!.GetValue<string>() == "manual");
     }
 
@@ -111,7 +111,7 @@ public sealed class SkillBodyToolTests
         fixture.AddSkill("zzq-widget", "---\nname: Widget\ndescription: Tool for zzq\n---\nWidget body.");
 
         // "widget zzq" is not a substring of any single field; only token matching finds it.
-        var result = await fixture.CreateService().ExecuteAsync(
+        var result = await fixture.CreateService().ExecuteAuthenticatedV2Async(
             Envelope("""{"query":"widget zzq"}"""), CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
@@ -125,7 +125,7 @@ public sealed class SkillBodyToolTests
         using var fixture = Fixture.Create();
         fixture.AddSkill("zzq-widget", "---\nname: Widget\ndescription: Tool for zzq\n---\nWidget body.");
 
-        var result = await fixture.CreateService().ExecuteAsync(
+        var result = await fixture.CreateService().ExecuteAuthenticatedV2Async(
             Envelope("""{"query":"zzq missing"}"""), CancellationToken.None);
 
         Assert.Empty(result.Output["items"]!.AsArray());
@@ -140,7 +140,7 @@ public sealed class SkillBodyToolTests
         fixture.AddSkill("zzq-widget", "---\nname: Widget\ndescription: First zzq tool\n---\nBody.");
         fixture.AddSkill("zzq-gadget", "---\nname: Gadget\ndescription: Second zzq tool\n---\nBody.");
 
-        var result = await fixture.CreateService().ExecuteAsync(
+        var result = await fixture.CreateService().ExecuteAuthenticatedV2Async(
             Envelope("""{"query":"zzq"}"""), CancellationToken.None);
 
         Assert.Equal(2, result.Output["total"]!.GetValue<int>());
@@ -156,7 +156,7 @@ public sealed class SkillBodyToolTests
         fixture.AddSkill("zzq-manual",
             "---\nname: Manual\ndescription: zzq explicit workflow\ndisable-model-invocation: true\n---\nBody");
 
-        var result = await fixture.CreateService().ExecuteAsync(
+        var result = await fixture.CreateService().ExecuteAuthenticatedV2Async(
             Envelope("""{"query":"zzq"}"""), CancellationToken.None);
 
         Assert.Empty(result.Output["items"]!.AsArray());
@@ -171,7 +171,7 @@ public sealed class SkillBodyToolTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"name":"no.such.skill"}"""),
             CancellationToken.None);
 
@@ -185,7 +185,7 @@ public sealed class SkillBodyToolTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"name":"pdf.analyzer"}"""),
             CancellationToken.None);
 
@@ -200,7 +200,7 @@ public sealed class SkillBodyToolTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{}"""),
             CancellationToken.None);
 
@@ -214,7 +214,7 @@ public sealed class SkillBodyToolTests
         fixture.AddSkill("py.required", "---\nname: py.required\ndescription: Needs Python\nrequires: python\n---\n\nRun the script.");
         var service = fixture.CreateService(pythonAvailable: () => false);
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"name":"py.required"}"""),
             CancellationToken.None);
 
@@ -231,7 +231,7 @@ public sealed class SkillBodyToolTests
         fixture.AddSkill("py.required", "---\nname: py.required\ndescription: Needs Python\nrequires: python\n---\n\nRun the script.");
         var service = fixture.CreateService(pythonAvailable: () => true);
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"name":"py.required"}"""),
             CancellationToken.None);
 
@@ -450,7 +450,7 @@ public sealed class SkillBodyToolTests
         fixture.AddSkill("unobtainium.required", "---\nname: unobtainium.required\ndescription: Needs unknown capability\nrequires: unobtainium\n---\n\nRun the script.");
         var service = fixture.CreateService(pythonAvailable: () => true);
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"name":"unobtainium.required"}"""),
             CancellationToken.None);
 
@@ -465,8 +465,8 @@ public sealed class SkillBodyToolTests
     {
         using var fixture = Fixture.Create();
         fixture.AddSkill("node.required", "---\nname: node.required\ndescription: Needs Node\nrequires:\n  - node\n---\n\nRun the script.");
-        var unavailable = await fixture.CreateService(skillCapabilityAvailable: _ => false).ExecuteAsync(Envelope("""{"name":"node.required"}"""), CancellationToken.None);
-        var available = await fixture.CreateService(skillCapabilityAvailable: capability => capability == "node").ExecuteAsync(Envelope("""{"name":"node.required"}"""), CancellationToken.None);
+        var unavailable = await fixture.CreateService(skillCapabilityAvailable: _ => false).ExecuteAuthenticatedV2Async(Envelope("""{"name":"node.required"}"""), CancellationToken.None);
+        var available = await fixture.CreateService(skillCapabilityAvailable: capability => capability == "node").ExecuteAuthenticatedV2Async(Envelope("""{"name":"node.required"}"""), CancellationToken.None);
         Assert.Equal("node_unavailable", unavailable.ErrorCode);
         Assert.Equal(ToolResultStatuses.Succeeded, available.Status);
     }
@@ -477,7 +477,7 @@ public sealed class SkillBodyToolTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService(pythonAvailable: () => throw new InvalidOperationException("probe_called"));
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"name":"pdf.analyzer"}"""),
             CancellationToken.None);
 
@@ -523,7 +523,7 @@ public sealed class SkillBodyToolTests
             }
 
             var service = fixture.CreateService();
-            var result = await service.ExecuteAsync(
+            var result = await service.ExecuteAuthenticatedV2Async(
                 Envelope("""{"name":"evil"}"""),
                 CancellationToken.None);
 
@@ -605,9 +605,9 @@ public sealed class SkillBodyToolTests
 
     private static AgentEnvelope Envelope(string arguments, string sessionId = Session) =>
         new(
-            1,
+            AgentEnvelopeCodec.ProtocolVersionV2,
             $"req_{Guid.NewGuid():N}",
-            AgentMessageTypes.ToolRequest,
+            AgentMessageTypes.ToolExecute,
             sessionId,
             null,
             30_000,

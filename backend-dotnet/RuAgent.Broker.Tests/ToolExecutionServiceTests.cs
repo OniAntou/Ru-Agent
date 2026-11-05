@@ -30,11 +30,11 @@ public sealed partial class ToolExecutionServiceTests
         try
         {
             using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(30));
-            var result = await new ToolExecutionService(session, workspace).ExecuteAsync(
+            var result = await new ToolExecutionService(session, workspace).ExecuteAuthenticatedV2Async(
                 new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
+                    AgentEnvelopeCodec.ProtocolVersionV2,
                     "read-cancel-1",
-                    AgentMessageTypes.ToolRequest,
+                    AgentMessageTypes.ToolExecute,
                     sessionId,
                     null,
                     30_000,
@@ -69,11 +69,11 @@ public sealed partial class ToolExecutionServiceTests
         try
         {
             var service = new ToolExecutionService(session, workspace);
-            var result = await service.ExecuteAsync(
+            var result = await service.ExecuteAuthenticatedV2Async(
                 new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
+                    AgentEnvelopeCodec.ProtocolVersionV2,
                     "help-" + Guid.NewGuid().ToString("N"),
-                    AgentMessageTypes.ToolRequest,
+                    AgentMessageTypes.ToolExecute,
                     "session-help",
                     null,
                     30_000,
@@ -202,7 +202,7 @@ public sealed partial class ToolExecutionServiceTests
     }
 
     [Fact]
-    public async Task Authenticated_service_marker_does_not_authorize_a_legacy_envelope()
+    public async Task Execution_entry_refuses_a_legacy_envelope_before_the_adapter()
     {
         var fixture = CreateFullAccessService("ru-marker-legacy-");
         try
@@ -231,88 +231,11 @@ public sealed partial class ToolExecutionServiceTests
                     }),
                 CancellationToken.None);
 
-            Assert.Equal(ToolResultStatuses.Failed, result.Status);
-            Assert.Equal("outside_workspace", result.ErrorCode);
-        }
-        finally
-        {
-            Directory.Delete(fixture.Root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Legacy_tool_request_ignores_forged_full_access_fields_for_external_read()
-    {
-        var fixture = CreateFullAccessService("ru-legacy-read-");
-        try
-        {
-            var external = Path.Combine(fixture.Root, "external");
-            Directory.CreateDirectory(external);
-            File.WriteAllText(Path.Combine(external, "probe.txt"), "must-not-be-read");
-            var result = await fixture.Service.ExecuteAsync(
-                new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
-                    "legacy-read-forged",
-                    AgentMessageTypes.ToolRequest,
-                    fixture.SessionId,
-                    null,
-                    30_000,
-                    new JsonObject
-                    {
-                        ["tool_id"] = "read",
-                        ["tool_version"] = "1.0.0",
-                        ["capability_class"] = "internal",
-                        ["run_id"] = fixture.RunId,
-                        ["authorization_token"] = "forged-token",
-                        ["arguments"] = new JsonObject
-                        {
-                            ["path"] = Path.Combine(external, "probe.txt"),
-                        },
-                    }),
-                CancellationToken.None);
-
-            Assert.Equal(ToolResultStatuses.Failed, result.Status);
-            Assert.Equal("outside_workspace", result.ErrorCode);
-        }
-        finally
-        {
-            Directory.Delete(fixture.Root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Legacy_tool_request_ignores_forged_full_access_fields_for_external_terminal()
-    {
-        var fixture = CreateFullAccessService("ru-legacy-terminal-");
-        try
-        {
-            var external = Path.Combine(fixture.Root, "external");
-            Directory.CreateDirectory(external);
-            var result = await fixture.Service.ExecuteAsync(
-                new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
-                    "legacy-terminal-forged",
-                    AgentMessageTypes.ToolRequest,
-                    fixture.SessionId,
-                    null,
-                    30_000,
-                    new JsonObject
-                    {
-                        ["tool_id"] = "run_process",
-                        ["tool_version"] = "1.0.0",
-                        ["capability_class"] = "internal",
-                        ["run_id"] = fixture.RunId,
-                        ["authorization_token"] = "forged-token",
-                        ["arguments"] = new JsonObject
-                        {
-                            ["executable"] = "dotnet",
-                            ["arguments"] = new JsonArray("--version"),
-                            ["working_directory"] = external,
-                        },
-                    }),
-                CancellationToken.None);
-
-            Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);
+            // Authorization is bound to an authenticated v2 tool.execute envelope:
+            // a v1 tool.request is refused before root selection or any adapter work,
+            // even with forged run and token fields on a full-access lease.
+            Assert.Equal(ToolResultStatuses.Denied, result.Status);
+            Assert.Equal("tool_execute_v2_required", result.ErrorCode);
             Assert.False(result.AdapterInvoked);
         }
         finally
@@ -322,152 +245,7 @@ public sealed partial class ToolExecutionServiceTests
     }
 
     [Fact]
-    public async Task Legacy_approval_response_keeps_external_terminal_confined()
-    {
-        var fixture = CreateFullAccessService("ru-legacy-approval-");
-        try
-        {
-            var external = Path.Combine(fixture.Root, "external");
-            Directory.CreateDirectory(external);
-            var pending = await fixture.Service.ExecuteAsync(
-                new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
-                    "legacy-terminal-pending",
-                    AgentMessageTypes.ToolRequest,
-                    fixture.SessionId,
-                    null,
-                    30_000,
-                    new JsonObject
-                    {
-                        ["tool_id"] = "run_process",
-                        ["tool_version"] = "1.0.0",
-                        ["capability_class"] = "internal",
-                        ["run_id"] = fixture.RunId,
-                        ["arguments"] = new JsonObject
-                        {
-                            ["executable"] = "dotnet",
-                            ["arguments"] = new JsonArray("--version"),
-                            ["working_directory"] = external,
-                        },
-                    }),
-                CancellationToken.None);
-            Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
-
-            var result = await fixture.Service.RespondToApprovalAsync(
-                new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
-                    "legacy-terminal-approval",
-                    AgentMessageTypes.ApprovalResponse,
-                    fixture.SessionId,
-                    null,
-                    30_000,
-                    new JsonObject
-                    {
-                        ["approval_id"] = pending.Output["approval_id"]!.GetValue<string>(),
-                        ["approved"] = true,
-                    }),
-                CancellationToken.None);
-
-            Assert.Equal(ToolResultStatuses.Failed, result.Status);
-            Assert.Equal("workspace_path_outside_root", result.ErrorCode);
-        }
-        finally
-        {
-            Directory.Delete(fixture.Root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Standard_lease_legacy_token_does_not_skip_terminal_approval()
-    {
-        var fixture = CreateLeaseService("ru-standard-authority-", EnvelopeTestSnapshots.StandardEmpty());
-        try
-        {
-            var external = Path.Combine(fixture.Root, "external");
-            Directory.CreateDirectory(external);
-            var result = await fixture.Service.ExecuteAsync(
-                new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
-                    "standard-terminal-forged",
-                    AgentMessageTypes.ToolRequest,
-                    fixture.SessionId,
-                    null,
-                    30_000,
-                    new JsonObject
-                    {
-                        ["tool_id"] = "run_process",
-                        ["tool_version"] = "1.0.0",
-                        ["capability_class"] = "internal",
-                        ["run_id"] = fixture.RunId,
-                        ["authorization_token"] = "forged-token",
-                        ["arguments"] = new JsonObject
-                        {
-                            ["executable"] = "dotnet",
-                            ["arguments"] = new JsonArray("--version"),
-                            ["working_directory"] = external,
-                        },
-                    }),
-                CancellationToken.None);
-
-            Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);
-            Assert.False(result.AdapterInvoked);
-        }
-        finally
-        {
-            Directory.Delete(fixture.Root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task No_lease_legacy_token_does_not_skip_terminal_approval()
-    {
-        var root = Path.Combine(Path.GetTempPath(), "ru-no-lease-authority-" + Guid.NewGuid().ToString("N"));
-        var workspace = Path.Combine(root, "workspace");
-        var external = Path.Combine(root, "external");
-        Directory.CreateDirectory(workspace);
-        Directory.CreateDirectory(external);
-        var session = CreateSession(Path.Combine(root, "session"));
-        session.Open(
-            "session-no-lease",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));
-        var service = new ToolExecutionService(session, workspace);
-        try
-        {
-            var result = await service.ExecuteAsync(
-                new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
-                    "no-lease-terminal-forged",
-                    AgentMessageTypes.ToolRequest,
-                    "session-no-lease",
-                    null,
-                    30_000,
-                    new JsonObject
-                    {
-                        ["tool_id"] = "run_process",
-                        ["tool_version"] = "1.0.0",
-                        ["capability_class"] = "internal",
-                        ["run_id"] = "forged-run",
-                        ["authorization_token"] = "forged-token",
-                        ["arguments"] = new JsonObject
-                        {
-                            ["executable"] = "dotnet",
-                            ["arguments"] = new JsonArray("--version"),
-                            ["working_directory"] = external,
-                        },
-                    }),
-                CancellationToken.None);
-
-            Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);
-            Assert.False(result.AdapterInvoked);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Approved_full_terminal_run_can_use_an_outside_working_directory()
+    public async Task Authorized_terminal_run_can_use_an_outside_working_directory()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-terminal-service-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -481,17 +259,15 @@ public sealed partial class ToolExecutionServiceTests
             "session-terminal-unrestricted",
             new HashSet<string>(
                 [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
-                StringComparer.Ordinal));        session.DirectoryGrants.Add(
-            "session-terminal-unrestricted",
-            RuAgent.Broker.Policy.CanonicalDirectoryIdentity.CreateExisting(outsideDirectory));
+                StringComparer.Ordinal));
         var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
-            var malformed = await service.ExecuteAsync(
+            var malformed = await service.ExecuteAuthenticatedV2Async(
                 new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
+                    AgentEnvelopeCodec.ProtocolVersionV2,
                     "malformed-" + Guid.NewGuid().ToString("N"),
-                    AgentMessageTypes.ToolRequest,
+                    AgentMessageTypes.ToolExecute,
                     "session-terminal-unrestricted",
                     null,
                     30_000,
@@ -508,10 +284,13 @@ public sealed partial class ToolExecutionServiceTests
             Assert.False(malformed.AdapterInvoked);
             Assert.False(malformed.Output.ContainsKey("approval_id"));
 
+            // The external working directory and network intent were decided by
+            // BrokerExecutionRuntime policy before dispatch; the authorized
+            // execution itself is not workspace-confined.
             var envelope = new AgentEnvelope(
-                AgentEnvelopeCodec.ProtocolVersion,
+                AgentEnvelopeCodec.ProtocolVersionV2,
                 "req-" + Guid.NewGuid().ToString("N"),
-                AgentMessageTypes.ToolRequest,
+                AgentMessageTypes.ToolExecute,
                 "session-terminal-unrestricted",
                 null,
                 30_000,
@@ -529,25 +308,7 @@ public sealed partial class ToolExecutionServiceTests
                     },
                 });
 
-            var pending = await service.ExecuteAsync(envelope, CancellationToken.None);
-
-            Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
-            Assert.False(pending.AdapterInvoked);
-            var approvalId = pending.Output["approval_id"]!.GetValue<string>();
-            var result = await service.RespondToApprovalAsync(
-                new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
-                    "approval-" + Guid.NewGuid().ToString("N"),
-                    AgentMessageTypes.ApprovalResponse,
-                    "session-terminal-unrestricted",
-                    null,
-                    30_000,
-                    new JsonObject
-                    {
-                        ["approval_id"] = approvalId,
-                        ["approved"] = true,
-                    }),
-                CancellationToken.None);
+            var result = await service.ExecuteAuthenticatedV2Async(envelope, CancellationToken.None);
 
             Assert.True(result.Status == ToolResultStatuses.Succeeded, result.ErrorCode + ": " + result.SafeSummary);
             Assert.True(result.AdapterInvoked);
@@ -561,273 +322,6 @@ public sealed partial class ToolExecutionServiceTests
         finally
         {
             Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Session_with_terminal_network_still_enforces_confinement_without_grant()
-    {
-        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-confine-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        var outsideDirectory = Path.Combine(root, "outside");
-        Directory.CreateDirectory(outsideDirectory);
-        var workspaceRoot = Path.Combine(root, "workspace");
-        Directory.CreateDirectory(workspaceRoot);
-        var now = DateTimeOffset.UtcNow;
-        var session = CreateSession(Path.Combine(root, "session"), now);
-        session.Open(
-            "session-terminal-network-confined",
-            new HashSet<string>(
-                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
-                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
-        try
-        {
-            var envelope = new AgentEnvelope(
-                AgentEnvelopeCodec.ProtocolVersion,
-                "req-" + Guid.NewGuid().ToString("N"),
-                AgentMessageTypes.ToolRequest,
-                "session-terminal-network-confined",
-                null,
-                30_000,
-                new JsonObject
-                {
-                    ["tool_id"] = "run_process",
-                    ["tool_version"] = "1.0.0",
-                    ["capability_class"] = "internal",
-                    ["arguments"] = new JsonObject
-                    {
-                        ["executable"] = "dotnet",
-                        ["arguments"] = new JsonArray("--version"),
-                        ["working_directory"] = outsideDirectory,
-                    },
-                });
-
-            var pending = await service.ExecuteAsync(envelope, CancellationToken.None);
-            Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
-            var approvalId = pending.Output["approval_id"]!.GetValue<string>();
-            var result = await service.RespondToApprovalAsync(
-                new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
-                    "approval-" + Guid.NewGuid().ToString("N"),
-                    AgentMessageTypes.ApprovalResponse,
-                    "session-terminal-network-confined",
-                    null,
-                    30_000,
-                    new JsonObject
-                    {
-                        ["approval_id"] = approvalId,
-                        ["approved"] = true,
-                    }),
-                CancellationToken.None);
-
-            Assert.Equal(ToolResultStatuses.Failed, result.Status);
-            Assert.Equal("workspace_path_outside_root", result.ErrorCode);
-            Assert.True(result.AdapterInvoked);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Full_access_shell_requires_approval_before_execution()
-    {
-        var root = Path.Combine(Path.GetTempPath(), "ru-shell-full-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        var outsideDirectory = Path.Combine(root, "outside");
-        Directory.CreateDirectory(outsideDirectory);
-        var workspaceRoot = Path.Combine(root, "workspace");
-        Directory.CreateDirectory(workspaceRoot);
-        var session = CreateSession(Path.Combine(root, "session"));
-        session.Open(
-            "session-shell-full",
-            new HashSet<string>(
-                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
-                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
-        try
-        {
-            var envelope = new AgentEnvelope(
-                AgentEnvelopeCodec.ProtocolVersion,
-                "req-" + Guid.NewGuid().ToString("N"),
-                AgentMessageTypes.ToolRequest,
-                "session-shell-full",
-                null,
-                30_000,
-                new JsonObject
-                {
-                    ["tool_id"] = "powershell",
-                    ["tool_version"] = "1.0.0",
-                    ["capability_class"] = "internal",
-                    ["arguments"] = new JsonObject
-                    {
-                        ["script"] = "Get-Date",
-                        ["working_directory"] = outsideDirectory,
-                    },
-                });
-
-            var result = await service.ExecuteAsync(envelope, CancellationToken.None);
-
-            Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);
-            Assert.False(result.AdapterInvoked);
-            Assert.NotNull(result.Output["approval_id"]);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Agent_grant_shell_still_requires_approval_without_token()
-    {
-        var root = Path.Combine(Path.GetTempPath(), "ru-shell-agent-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        var workspaceRoot = Path.Combine(root, "workspace");
-        Directory.CreateDirectory(workspaceRoot);
-        var session = CreateSession(Path.Combine(root, "session"));
-        session.Open(
-            "session-shell-agent",
-            new HashSet<string>(
-                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
-                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
-        try
-        {
-            var envelope = new AgentEnvelope(
-                AgentEnvelopeCodec.ProtocolVersion,
-                "req-" + Guid.NewGuid().ToString("N"),
-                AgentMessageTypes.ToolRequest,
-                "session-shell-agent",
-                null,
-                30_000,
-                new JsonObject
-                {
-                    ["tool_id"] = "powershell",
-                    ["tool_version"] = "1.0.0",
-                    ["capability_class"] = "internal",
-                    ["arguments"] = new JsonObject
-                    {
-                        ["script"] = "Get-Date",
-                        ["working_directory"] = ".",
-                    },
-                });
-
-            var result = await service.ExecuteAsync(envelope, CancellationToken.None);
-
-            Assert.Equal("approval_required", result.Status);
-            Assert.NotNull(result.Output["approval_id"]);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Files_edit_approval_advertises_its_safe_action()
-    {
-        var root = Path.Combine(Path.GetTempPath(), "ru-edit-safe-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        var workspaceRoot = Path.Combine(root, "workspace");
-        Directory.CreateDirectory(workspaceRoot);
-        var session = CreateSession(Path.Combine(root, "session"));
-        session.Open(
-            "session-edit-safe",
-            new HashSet<string>(
-                [RuAgent.Broker.Policy.ToolScope.WorkspaceWrite],
-                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
-        try
-        {
-            File.WriteAllText(Path.Combine(workspaceRoot, "a.txt"), "hello world");
-            var envelope = new AgentEnvelope(
-                AgentEnvelopeCodec.ProtocolVersion,
-                "req-" + Guid.NewGuid().ToString("N"),
-                AgentMessageTypes.ToolRequest,
-                "session-edit-safe",
-                null,
-                30_000,
-                new JsonObject
-                {
-                    ["tool_id"] = "edit_file",
-                    ["tool_version"] = "1.0.0",
-                    ["capability_class"] = "tool",
-                    ["arguments"] = new JsonObject
-                    {
-                        ["path"] = "a.txt",
-                        ["edits"] = new JsonArray(new JsonObject { ["old_string"] = "world", ["new_string"] = "Ru" }),
-                    },
-                });
-
-            var result = await service.ExecuteAsync(envelope, CancellationToken.None);
-
-            Assert.Equal("approval_required", result.Status);
-            Assert.Equal(
-                "Chỉnh sửa file.",
-                result.Output["safe_action"]!.GetValue<string>());
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Edit_approval_preview_does_not_read_hard_linked_content()
-    {
-        var root = Path.Combine(Path.GetTempPath(), "ru-edit-preview-hardlink-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        var workspaceRoot = Path.Combine(root, "workspace");
-        Directory.CreateDirectory(workspaceRoot);
-        var session = CreateSession(Path.Combine(root, "session"));
-        session.Open(
-            "session-edit-preview-hardlink",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceWrite], StringComparer.Ordinal));
-        var service = new ToolExecutionService(session, workspaceRoot);
-        var outside = Path.Combine(Path.GetTempPath(), "ru-edit-preview-outside-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(outside);
-        const string content = "hard-link-preview-marker old";
-        var target = Path.Combine(outside, "secret.txt");
-        File.WriteAllText(target, content);
-        var link = Path.Combine(workspaceRoot, "leak.txt");
-        if (!FileReadAdapterTests.TryCreateHardLink(link, target))
-        {
-            Directory.Delete(outside, recursive: true);
-            Directory.Delete(root, recursive: true);
-            return;
-        }
-
-        try
-        {
-            var envelope = new AgentEnvelope(
-                AgentEnvelopeCodec.ProtocolVersion,
-                "req-" + Guid.NewGuid().ToString("N"),
-                AgentMessageTypes.ToolRequest,
-                "session-edit-preview-hardlink",
-                null,
-                30_000,
-                new JsonObject
-                {
-                    ["tool_id"] = "edit_file",
-                    ["tool_version"] = "1.0.0",
-                    ["capability_class"] = "tool",
-                    ["arguments"] = new JsonObject
-                    {
-                        ["path"] = "leak.txt",
-                        ["edits"] = new JsonArray(new JsonObject { ["old_string"] = "old", ["new_string"] = "new" }),
-                    },
-                });
-
-            var result = await service.ExecuteAsync(envelope, CancellationToken.None);
-
-            Assert.Equal("approval_required", result.Status);
-            var preview = result.Output[ApprovalPreviewFields.Field]!.GetValue<string>();
-            Assert.DoesNotContain("hard-link-preview-marker", preview);
-        }
-        finally
-        {
-            try { File.Delete(link); } catch { }
-            try { Directory.Delete(outside, recursive: true); } catch { }
-            try { Directory.Delete(root, recursive: true); } catch { }
         }
     }
 
@@ -911,38 +405,7 @@ public sealed partial class ToolExecutionServiceTests
     }
 
     [Fact]
-    public async Task Approval_respond_with_stale_id_never_invokes_adapter()
-    {
-        var root = Path.Combine(Path.GetTempPath(), "ru-stale-approval-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        var workspaceRoot = Path.Combine(root, "workspace");
-        Directory.CreateDirectory(workspaceRoot);
-        var session = CreateSession(Path.Combine(root, "session"));
-        session.Open("session-stale", new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));
-        var service = new ToolExecutionService(session, workspaceRoot);
-        try
-        {
-            var result = await service.RespondToApprovalAsync(
-                new AgentEnvelope(
-                    AgentEnvelopeCodec.ProtocolVersion,
-                    "req-stale",
-                    AgentMessageTypes.ApprovalResponse,
-                    "session-stale",
-                    null,
-                    30_000,
-                    new System.Text.Json.Nodes.JsonObject { ["approval_id"] = "nonexistent", ["approved"] = true }),
-                CancellationToken.None);
-            Assert.Equal("approval_stale", result.ErrorCode);
-            Assert.False(result.AdapterInvoked);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Approved_recognized_terminal_run_executes_with_streaming_receipt_fields()
+    public async Task Authorized_recognized_terminal_run_executes_with_streaming_receipt_fields()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-terminal-recognized-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -957,18 +420,12 @@ public sealed partial class ToolExecutionServiceTests
                 StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
-            var pending = await service.ExecuteAsync(
-                TerminalRequest("session-terminal-recognized", new JsonObject
+            var result = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request("session-terminal-recognized", "req-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
                     ["executable"] = "rg",
                     ["arguments"] = new JsonArray("--files"),
                 }),
-                CancellationToken.None);
-            Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
-            Assert.False(pending.AdapterInvoked);
-
-            var result = await service.RespondToApprovalAsync(
-                ApprovalResponse("session-terminal-recognized", pending),
                 CancellationToken.None);
 
             Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
@@ -1069,10 +526,10 @@ public sealed partial class ToolExecutionServiceTests
             new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
-            // The v1 contract schema caps timeout_ms at the 30-minute hard maximum, so an
+            // The contract schema caps timeout_ms at the 30-minute hard maximum, so an
             // over-the-cap request is rejected during validation, before any adapter work.
-            var result = await service.ExecuteAsync(
-                TerminalRequest("session-terminal-max", new JsonObject
+            var result = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request("session-terminal-max", "req-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {
                     ["executable"] = "rg",
                     ["arguments"] = new JsonArray("--files"),
@@ -1499,24 +956,9 @@ public sealed partial class ToolExecutionServiceTests
             $"Background task never reached state '{expectedState}' (last={last?.Status}/{last?.ErrorCode}/{last?.Output["state"]?.GetValue<string>()}).");
     }
 
-    private static AgentEnvelope TerminalRequest(string sessionId, JsonObject arguments, string? requestId = null) => new(
-        AgentEnvelopeCodec.ProtocolVersion,
-        requestId ?? "req-" + Guid.NewGuid().ToString("N"),
-        AgentMessageTypes.ToolRequest,
-        sessionId,
-        null,
-        30_000,
-        new JsonObject
-        {
-            ["tool_id"] = "run_process",
-            ["tool_version"] = "1.0.0",
-            ["capability_class"] = "internal",
-            ["arguments"] = arguments,
-        });
-
     /// <summary>
-    /// The product path: V2 lease-authorized calls skip the manifest approval
-    /// gate because the connection leg already evaluated policy.
+    /// The product path: the runtime already evaluated policy and consumed the
+    /// authorization token, so the service executes without a manifest approval gate.
     /// </summary>
     private static AgentEnvelope TerminalV2Request(string sessionId, string requestId, JsonObject arguments, string toolId = "run_process") => new(
         AgentEnvelopeCodec.ProtocolVersionV2,
@@ -1532,19 +974,6 @@ public sealed partial class ToolExecutionServiceTests
             ["capability_class"] = "internal",
             ["run_id"] = "run_" + Guid.NewGuid().ToString("N"),
             ["arguments"] = arguments,
-        });
-
-    private static AgentEnvelope ApprovalResponse(string sessionId, ToolResult pending) => new(
-        AgentEnvelopeCodec.ProtocolVersion,
-        "approval-" + Guid.NewGuid().ToString("N"),
-        AgentMessageTypes.ApprovalResponse,
-        sessionId,
-        null,
-        30_000,
-        new JsonObject
-        {
-            ["approval_id"] = pending.Output["approval_id"]!.GetValue<string>(),
-            ["approved"] = true,
         });
 
     /// <summary>

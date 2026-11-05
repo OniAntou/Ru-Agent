@@ -19,52 +19,23 @@ namespace RuAgent.Broker.Tools;
 
 public sealed partial class ToolExecutionService
 {
-    public Task<ToolResult> ExecuteAsync(
-        string sessionId,
-        ToolManifest manifest,
-        JsonObject arguments,
-        int deadlineMs,
-        CancellationToken cancellationToken)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
-        ArgumentNullException.ThrowIfNull(manifest);
-        ArgumentNullException.ThrowIfNull(arguments);
-        return ExecuteAsync(
-            new AgentEnvelope(
-                AgentEnvelopeCodec.ProtocolVersion,
-                $"skill-tool-{Guid.NewGuid():N}",
-                AgentMessageTypes.ToolRequest,
-                sessionId,
-                null,
-                deadlineMs,
-                new JsonObject
-                {
-                    ["tool_id"] = manifest.Id,
-                    ["tool_version"] = manifest.Version,
-                    ["arguments"] = arguments.DeepClone(),
-                    ["capability_class"] = "internal",
-                }),
-            cancellationToken);
-    }
-
-    public Task<ToolResult> ExecuteAsync(
-        AgentEnvelope request,
-        CancellationToken cancellationToken) =>
-        ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: false);
-
+    /// <summary>
+    /// The only execution entry point. <see cref="BrokerExecutionRuntime"/> calls it
+    /// after it has evaluated the run's policy snapshot and consumed the single-use
+    /// authorization token, so every call here is already authorized.
+    /// </summary>
     internal Task<ToolResult> ExecuteAuthenticatedV2Async(
         AgentEnvelope request,
         CancellationToken cancellationToken) =>
-        ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: true);
+        ExecuteAsync(request, cancellationToken);
 
     internal Task<ToolResult> ExecuteAuthenticatedV2Async(
         AgentEnvelope request, CanonicalCommandIntent intent, CancellationToken cancellationToken, TerminalOutputDeltaHandler? output = null) =>
-        ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: true, intent, output);
+        ExecuteAsync(request, cancellationToken, intent, output);
 
     private async Task<ToolResult> ExecuteAsync(
         AgentEnvelope request,
         CancellationToken cancellationToken,
-        bool isAuthenticatedV2Execution,
         CanonicalCommandIntent? authorizedTerminalIntent = null,
         TerminalOutputDeltaHandler? output = null)
     {
@@ -82,7 +53,7 @@ public sealed partial class ToolExecutionService
         }
 
         var result = await ExecuteCoreAsync(
-            request, cancellationToken, isAuthenticatedV2Execution, authorizedTerminalIntent, output).ConfigureAwait(false);
+            request, cancellationToken, authorizedTerminalIntent, output).ConfigureAwait(false);
         BrokerTelemetry.RecordToolCall(toolId, result);
         return result;
     }
@@ -90,11 +61,26 @@ public sealed partial class ToolExecutionService
     private async Task<ToolResult> ExecuteCoreAsync(
         AgentEnvelope request,
         CancellationToken cancellationToken,
-        bool isAuthenticatedV2Execution,
         CanonicalCommandIntent? authorizedTerminalIntent = null,
         TerminalOutputDeltaHandler? output = null)
     {
         var started = Stopwatch.StartNew();
+        // Fail closed: authorization is bound to an authenticated v2 tool.execute
+        // envelope. Any other envelope shape never reaches an adapter.
+        if (request.ProtocolVersion != AgentEnvelopeCodec.ProtocolVersionV2
+            || request.MessageType != AgentMessageTypes.ToolExecute)
+        {
+            return Result(
+                request,
+                ToolResultStatuses.Denied,
+                new JsonObject(),
+                "tool_execute_v2_required",
+                "Tool execution requires an authorized v2 tool.execute request.",
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: false);
+        }
+
         try
         {
             var toolId = ReadString(request.Payload, "tool_id");
@@ -135,62 +121,13 @@ public sealed partial class ToolExecutionService
                     adapterInvoked: false);
             }
 
-            var isAuthenticatedV2 = isAuthenticatedV2Execution
-                && request.ProtocolVersion == AgentEnvelopeCodec.ProtocolVersionV2
-                && request.MessageType == AgentMessageTypes.ToolExecute;
-            var isV2Authorized = isAuthenticatedV2;
-            if (decision.RequiresApproval && !isV2Authorized)
-            {
-                var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
-                var argumentsHash = PendingApprovalStore.ComputeArgumentsHash(toolId, toolVersion, arguments);
-                var terminalApprovalToken = toolId is "powershell" or "run_process"
-                    ? _approvalTokens.Issue(
-                        request.RequestId,
-                        request.SessionId,
-                        toolId,
-                        toolVersion,
-                        TryComputeTerminalIntentHash(_defaultTools, toolId, arguments) ?? argumentsHash,
-                        TimeSpan.FromSeconds(60))
-                    : null;
-                var approvalId = _approvals.Issue(
-                    request,
-                    binding.Manifest,
-                    arguments,
-                    SafeAction(binding.Manifest),
-                    expiresAt,
-                    terminalApprovalToken);
-                return Result(
-                    request,
-                    ToolResultStatuses.ApprovalRequired,
-                    new JsonObject
-                    {
-                        ["approval_id"] = approvalId,
-                        ["tool_id"] = binding.Manifest.Id,
-                        ["tool_version"] = binding.Manifest.Version,
-                        ["scope"] = string.Join(", ", binding.Manifest.Scopes.OrderBy(value => value, StringComparer.Ordinal)),
-                        ["safe_action"] = SafeAction(binding.Manifest),
-                        ["expires_at"] = expiresAt.ToString("O"),
-                        [ApprovalPreviewFields.Field] = BuildPreview(
-                            toolId,
-                            arguments,
-                            ReadTargetFileText(arguments)),
-                    },
-                    "approval_required",
-                    "Approval is required.",
-                    started,
-                    ToolVerificationStates.Pending,
-                    adapterInvoked: false);
-            }
-
+            // An approval-requiring grant is not re-asked here: the runtime already
+            // resolved ask/allow against the run's policy snapshot before dispatch.
             return await ExecuteBindingAsync(
-                receiptRequest: request,
-                contextRequest: request,
+                request,
                 binding,
                 arguments,
-                approved: isV2Authorized,
-                approvalToken: null,
                 ReadOptionalString(request.Payload, "run_id") ?? request.SessionId,
-                isAuthenticatedV2,
                 cancellationToken, authorizedTerminalIntent, output).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -244,128 +181,10 @@ public sealed partial class ToolExecutionService
         }
     }
 
-    public async Task<ToolResult> RespondToApprovalAsync(
-        AgentEnvelope request,
-        CancellationToken cancellationToken)
-    {
-        var started = Stopwatch.StartNew();
-        try
-        {
-            var approvalId = ReadString(request.Payload, "approval_id");
-            var approved = ReadBool(request.Payload, "approved");
-            if (!_approvals.TryConsume(
-                    approvalId,
-                    request.SessionId,
-                    approved,
-                    DateTimeOffset.UtcNow,
-                    out var pending))
-            {
-                return Result(
-                    request,
-                    ToolResultStatuses.Denied,
-                    new JsonObject(),
-                    "approval_stale",
-                    "Approval is missing, expired, or already used.",
-                    started,
-                    ToolVerificationStates.NotRequired,
-                    adapterInvoked: false);
-            }
-
-            if (!pending!.Approved)
-            {
-                return Result(
-                    request,
-                    ToolResultStatuses.Denied,
-                    new JsonObject(),
-                    "approval_rejected",
-                    "Approval was rejected.",
-                    started,
-                    ToolVerificationStates.NotRequired,
-                    adapterInvoked: false);
-            }
-
-            var binding = _catalog.Registry.Get(pending.Manifest.Id, pending.Manifest.Version);
-            var decision = EvaluateSessionGrant(pending.Request.SessionId, binding.Manifest);
-            if (!decision.Allowed)
-            {
-                return Result(
-                    request,
-                    ToolResultStatuses.Denied,
-                    new JsonObject(),
-                    decision.Code,
-                    "Tool scope is no longer granted.",
-                    started,
-                    ToolVerificationStates.NotRequired,
-                    adapterInvoked: false);
-            }
-
-            return await ExecuteBindingAsync(
-                receiptRequest: request,
-                contextRequest: pending.Request,
-                binding,
-                pending.Arguments,
-                approved: pending.TerminalApprovalToken is null,
-                pending.TerminalApprovalToken,
-                ReadOptionalString(pending.Request.Payload, "run_id") ?? pending.Request.SessionId,
-                isAuthenticatedV2Execution: false,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return Result(
-                request,
-                ToolResultStatuses.Cancelled,
-                new JsonObject(),
-                "cancelled",
-                "Approved action cancelled.",
-                started,
-                ToolVerificationStates.NotRequired,
-                adapterInvoked: false);
-        }
-        catch (ToolExecutionException error)
-        {
-            return Result(
-                request,
-                ToolResultStatuses.Failed,
-                new JsonObject(),
-                error.Code,
-                "Approved action was rejected.",
-                started,
-                ToolVerificationStates.NotRequired,
-                adapterInvoked: false);
-        }
-        catch (Exception)
-        {
-            return Result(
-                request,
-                ToolResultStatuses.Failed,
-                new JsonObject(),
-                "tool_failed",
-                "Approved action failed. See the broker diagnostic log for the adapter error.",
-                started,
-                ToolVerificationStates.NotRequired,
-                adapterInvoked: false);
-        }
-    }
-
     private ToolPolicyDecision EvaluateSessionGrant(string sessionId, ToolManifest manifest)
     {
         var grant = new PolicyGrant(sessionId, _session.ScopesFor(sessionId), _session.ExpiresAt);
         return _policy.Evaluate(grant, manifest);
-    }
-
-    private bool IsWindowsCurrentUserAuthority(
-        string runId,
-        string sessionId,
-        bool isAuthenticatedV2Execution)
-    {
-        if (!isAuthenticatedV2Execution || ActiveLease(runId, sessionId) is not { } lease)
-        {
-            return false;
-        }
-
-        return AgentPolicyProfileCatalog.Get(lease.Preset).TerminalAuthority
-            == PresetTerminalAuthority.WindowsCurrentUser;
     }
 
     /// <summary>
@@ -403,14 +222,10 @@ public sealed partial class ToolExecutionService
     private static bool IsTerminalLaunch(string toolId) => toolId is "powershell" or "run_process";
 
     private async Task<ToolResult> ExecuteBindingAsync(
-        AgentEnvelope receiptRequest,
-        AgentEnvelope contextRequest,
+        AgentEnvelope request,
         ToolBinding binding,
         JsonObject arguments,
-        bool approved,
-        string? approvalToken,
         string runId,
-        bool isAuthenticatedV2Execution,
         CancellationToken cancellationToken,
         CanonicalCommandIntent? authorizedTerminalIntent = null,
         TerminalOutputDeltaHandler? output = null)
@@ -419,12 +234,12 @@ public sealed partial class ToolExecutionService
         try
         {
             ToolSchemaValidator.Validate(binding.Manifest.InputSchema, arguments);
-            ValidateTerminalLaunchArguments(ReadString(contextRequest.Payload, "tool_id"), arguments);
+            ValidateTerminalLaunchArguments(ReadString(request.Payload, "tool_id"), arguments);
         }
         catch (ToolSchemaException error)
         {
             return Result(
-                receiptRequest,
+                request,
                 ToolResultStatuses.Failed,
                 new JsonObject(),
                 error.Code,
@@ -437,7 +252,7 @@ public sealed partial class ToolExecutionService
         if (cancellationToken.IsCancellationRequested)
         {
             return Result(
-                receiptRequest,
+                request,
                 ToolResultStatuses.Cancelled,
                 new JsonObject(),
                 "cancelled",
@@ -447,30 +262,23 @@ public sealed partial class ToolExecutionService
                 adapterInvoked: false);
         }
 
-        var sessionScopes = _session.ScopesFor(contextRequest.SessionId);
+        var sessionScopes = _session.ScopesFor(request.SessionId);
         var context = new ToolExecutionContext(
-            contextRequest.RequestId,
-            contextRequest.SessionId,
-            contextRequest.CorrelationId,
-            ReadCapabilityClass(contextRequest.Payload),
-            contextRequest.DeadlineMs,
-            approved,
-            approvalToken,
-            ConfinementRequired: !IsWindowsCurrentUserAuthority(
-                runId,
-                contextRequest.SessionId,
-                isAuthenticatedV2Execution),
+            request.RequestId,
+            request.SessionId,
+            request.CorrelationId,
+            ReadCapabilityClass(request.Payload),
+            request.DeadlineMs,
             sessionScopes,
             runId,
-            IsAuthenticatedV2Execution: isAuthenticatedV2Execution,
-            ImageInputAccepted: ReadImageInputAccepted(contextRequest.Payload))
+            ImageInputAccepted: ReadImageInputAccepted(request.Payload))
         {
-            AuthorizedTerminalIntent = isAuthenticatedV2Execution ? authorizedTerminalIntent : null,
-            TerminalOutput = isAuthenticatedV2Execution ? output : null,
+            AuthorizedTerminalIntent = authorizedTerminalIntent,
+            TerminalOutput = output,
         };
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (!IsTerminalLaunch(ReadString(contextRequest.Payload, "tool_id")))
+        if (!IsTerminalLaunch(ReadString(request.Payload, "tool_id")))
         {
             deadline.CancelAfter(Math.Clamp(context.DeadlineMs, 1, 300_000));
         }
@@ -571,7 +379,7 @@ public sealed partial class ToolExecutionService
         }
         catch (Exception error)
         {
-            LogAdapterFailure(receiptRequest, error);
+            LogAdapterFailure(request, error);
             outcome = ToolExecutionOutcome.Failed(
             "adapter_error",
             "Tool adapter failed. The broker diagnostic log carries the adapter error.",
@@ -584,13 +392,10 @@ public sealed partial class ToolExecutionService
         {
             DurationMs = checked((int)Math.Min(int.MaxValue, started.ElapsedMilliseconds)),
         };
-        return Receipt(receiptRequest, outcome, adapterInvoked: true);
+        return Receipt(request, outcome, adapterInvoked: true);
     }
 
-    private ToolExecutionOutcome ProcessOutcome(
-        StreamingProcessResult result,
-        bool confineWorkspace,
-        string canonicalRoot)
+    private static ToolExecutionOutcome ProcessOutcome(StreamingProcessResult result)
     {
         var output = new JsonObject
         {
@@ -606,9 +411,7 @@ public sealed partial class ToolExecutionService
             ["stderr_dropped_bytes"] = result.StderrDroppedBytes,
             ["frames_emitted"] = result.FramesEmitted,
             ["frames_dropped"] = result.FramesDropped,
-            ["working_directory"] = confineWorkspace
-                ? new WorkspacePathGuard(canonicalRoot).ToRelative(result.WorkingDirectory)
-                : BoundWorkingDirectory(result.WorkingDirectory),
+            ["working_directory"] = BoundWorkingDirectory(result.WorkingDirectory),
         };
         return result.Status switch
         {
@@ -695,14 +498,6 @@ public sealed partial class ToolExecutionService
 
         return outcome;
     }
-
-    private static string SafeAction(ToolManifest manifest) => manifest.Id switch
-    {
-        "powershell" or "run_process" => "Run a terminal action in the workspace.",
-        "mcp" => "Start or call one of your MCP servers.",
-        "edit_file" => "Chỉnh sửa file.",
-        _ => "Run an external or destructive Agent action.",
-    };
 
     internal static string BuildPreview(string toolId, JsonObject arguments, string? fileText = null)
     {

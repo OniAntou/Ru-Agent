@@ -1,22 +1,9 @@
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Tools;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Policy;
-
-public sealed record PendingApproval(
-    string ApprovalId,
-    AgentEnvelope Request,
-    ToolManifest Manifest,
-    JsonObject Arguments,
-    string ArgumentsHash,
-    string SafeAction,
-    DateTimeOffset ExpiresAt,
-    string? TerminalApprovalToken,
-    bool Approved);
 
 public enum ApprovalCommandV2
 {
@@ -137,110 +124,14 @@ public sealed record V2PendingApproval(
 
 public sealed class PendingApprovalStore
 {
-    private readonly ConcurrentDictionary<string, PendingApproval> _pending = new(StringComparer.Ordinal);
-
-    public string Issue(
-        AgentEnvelope request,
-        ToolManifest manifest,
-        JsonObject arguments,
-        string safeAction,
-        DateTimeOffset expiresAt,
-        string? terminalApprovalToken)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(manifest);
-        ArgumentNullException.ThrowIfNull(arguments);
-        ArgumentException.ThrowIfNullOrWhiteSpace(safeAction);
-        if (expiresAt <= DateTimeOffset.UtcNow)
-        {
-            throw new ArgumentOutOfRangeException(nameof(expiresAt));
-        }
-
-        var approvalId = $"approval-{Guid.NewGuid():N}";
-        var requestCopy = request with { Payload = request.Payload.DeepClone().AsObject() };
-        var argumentsCopy = arguments.DeepClone().AsObject();
-        var pending = new PendingApproval(
-            approvalId,
-            requestCopy,
-            manifest,
-            argumentsCopy,
-            ComputeArgumentsHash(manifest.Id, manifest.Version, argumentsCopy),
-            safeAction.Length <= 256 ? safeAction : safeAction[..256],
-            expiresAt,
-            terminalApprovalToken,
-            false);
-        DropExpiredApprovals();
-        _pending[approvalId] = pending;
-        return approvalId;
-    }
-
-    public bool TryConsume(
-        string approvalId,
-        string sessionId,
-        bool approved,
-        DateTimeOffset now,
-        out PendingApproval? pending)
-    {
-        pending = null;
-        if (string.IsNullOrWhiteSpace(approvalId)
-            || string.IsNullOrWhiteSpace(sessionId)
-            || !_pending.TryGetValue(approvalId, out var candidate)
-            || candidate.ExpiresAt <= now
-            || !string.Equals(candidate.Request.SessionId, sessionId, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (!string.Equals(
-                candidate.ArgumentsHash,
-                ComputeArgumentsHash(candidate.Manifest.Id, candidate.Manifest.Version, candidate.Arguments),
-                StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (!_pending.TryRemove(new KeyValuePair<string, PendingApproval>(approvalId, candidate)))
-        {
-            return false;
-        }
-
-        pending = candidate with { Approved = approved };
-        return true;
-    }
-
-    public void RemoveSession(string sessionId)
-    {
-        if (string.IsNullOrWhiteSpace(sessionId))
-        {
-            return;
-        }
-
-        foreach (var pair in _pending)
-        {
-            if (string.Equals(pair.Value.Request.SessionId, sessionId, StringComparison.Ordinal))
-            {
-                _pending.TryRemove(pair.Key, out _);
-            }
-        }
-    }
-
     /// <summary>
-    /// Forgets approvals whose 30-minute window elapsed without a response.
-    /// Expiry was only ever checked at consumption, so an abandoned approval
-    /// kept its pending arguments (potentially whole file bodies) and its
-    /// terminal token binding in memory for the life of the session.
+    /// Forgets approvals whose 30-minute window elapsed without a response, so
+    /// an abandoned approval does not keep its binding in memory for the life
+    /// of the session.
     /// </summary>
     private void DropExpiredApprovals()
     {
         var now = DateTimeOffset.UtcNow;
-        foreach (var pair in _pending)
-        {
-            if (pair.Value.ExpiresAt <= now)
-            {
-                _pending.TryRemove(new KeyValuePair<string, PendingApproval>(pair.Key, pair.Value));
-            }
-        }
-
         foreach (var pair in _v2)
         {
             if (pair.Value.ExpiresAt <= now)
@@ -347,17 +238,6 @@ public sealed class PendingApprovalStore
         }
     }
 
-    public void ClearV2() => _v2.Clear();
-
-    public void ClearAll()
-    {
-        _pending.Clear();
-        _v2.Clear();
-    }
-
-    // Keep Clear() for v1 compat but also clear v2 for test isolation (broker restart).
-    public void ClearWithV2() => ClearAll();
-
     private static bool SameBindingV2(V2ApprovalBinding left, V2ApprovalBinding right)
     {
         return string.Equals(left.RunId, right.RunId, StringComparison.Ordinal)
@@ -393,55 +273,5 @@ public sealed class PendingApprovalStore
         };
     }
 
-    public void Clear()
-    {
-        _pending.Clear();
-        _v2.Clear();
-    }
-
-    public static string ComputeArgumentsHash(
-        string toolId,
-        string toolVersion,
-        JsonObject arguments)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(toolVersion);
-        ArgumentNullException.ThrowIfNull(arguments);
-        var canonical = new JsonObject
-        {
-            ["tool_id"] = toolId,
-            ["tool_version"] = toolVersion,
-            ["arguments"] = Canonicalize(arguments),
-        };
-        return Convert.ToHexString(
-                SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToJsonString())))
-            .ToLowerInvariant();
-    }
-
-    private static JsonNode? Canonicalize(JsonNode? node)
-    {
-        if (node is JsonObject objectNode)
-        {
-            var result = new JsonObject();
-            foreach (var pair in objectNode.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-            {
-                result[pair.Key] = Canonicalize(pair.Value);
-            }
-
-            return result;
-        }
-
-        if (node is JsonArray array)
-        {
-            var result = new JsonArray();
-            foreach (var item in array)
-            {
-                result.Add(Canonicalize(item));
-            }
-
-            return result;
-        }
-
-        return node?.DeepClone();
-    }
+    public void Clear() => _v2.Clear();
 }

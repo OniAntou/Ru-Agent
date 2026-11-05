@@ -281,7 +281,6 @@ public sealed partial class ToolExecutionService
         Task<StreamingProcessResult> pump,
         int waitMs,
         int lifetimeMs,
-        string canonicalRoot,
         CancellationToken cancellationToken)
     {
         using var wait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -291,7 +290,7 @@ public sealed partial class ToolExecutionService
         {
             wait.Cancel();
             var result = await pump.ConfigureAwait(false);
-            return WithSpoolId(ProcessOutcome(result, context.ConfinementRequired && !context.IsAuthenticatedV2Execution, canonicalRoot), context);
+            return WithSpoolId(ProcessOutcome(result), context);
         }
 
         if (cancellationToken.IsCancellationRequested)
@@ -419,7 +418,7 @@ public sealed partial class ToolExecutionService
         CancellationToken cancellationToken)
     {
         var workingDirectory = ReadOptionalString(arguments, "working_directory") ?? ".";
-        var tools = ResolveRootToolSet(context, workingDirectory);
+        var tools = ToolsFor(context);
         var grant = new PolicyGrant(
             context.SessionId,
             context.SessionScopes ?? _session.ScopesFor(context.SessionId),
@@ -439,12 +438,10 @@ public sealed partial class ToolExecutionService
             ReadArguments(arguments["arguments"]),
             requestedMs,
             IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"),
-            context.ApprovalToken ?? string.Empty,
-            context.RequestId,
-            context.SessionId,
             IsTrue(arguments, "read_only"),
             ReadWriteSet(arguments),
-            Approved: context.Approved)
+            // Every call reaching an executor was authorized by BrokerExecutionRuntime.
+            Approved: true)
         {
             AuthorizedIntent = context.AuthorizedTerminalIntent,
         };
@@ -462,7 +459,7 @@ public sealed partial class ToolExecutionService
             (token, retain) => tools.Terminal.RunAsync(
                 grant,
                 request,
-                context.ConfinementRequired && !context.IsAuthenticatedV2Execution,
+                confineWorkspace: false,
                 token,
                 retain,
                 killTimeoutMs: lifetimeMs, output: isBackground ? null : context.TerminalOutput));
@@ -477,7 +474,6 @@ public sealed partial class ToolExecutionService
             pump,
             requestedMs,
             lifetimeMs,
-            tools.CanonicalRoot,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -486,15 +482,8 @@ public sealed partial class ToolExecutionService
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
-        // Approved is authority-derived for authenticated v2 calls, including
-        // automatic workspace policy. Legacy callers need a shell token.
-        if (!context.Approved && context.ApprovalToken is null)
-        {
-            throw new UnauthorizedAccessException("terminal_shell_approval_invalid");
-        }
-
         var workingDirectory = ReadOptionalString(arguments, "working_directory") ?? ".";
-        var tools = ResolveRootToolSet(context, workingDirectory);
+        var tools = ToolsFor(context);
         var optionalMs = ReadOptionalInt(arguments, "timeout_ms");
         var requestedMs = optionalMs ?? TerminalLimits.DefaultTimeoutMs;
         var isBackground = IsTrue(arguments, "background");
@@ -506,12 +495,10 @@ public sealed partial class ToolExecutionService
             workingDirectory,
             ReadString(arguments, "script"),
             requestedMs,
-            context.ApprovalToken ?? string.Empty,
-            context.RequestId,
-            context.SessionId,
             IsTrue(arguments, "read_only"),
             ReadWriteSet(arguments),
-            Approved: context.Approved,
+            // Every call reaching an executor was authorized by BrokerExecutionRuntime.
+            Approved: true,
             Network: IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"))
         {
             AuthorizedIntent = context.AuthorizedTerminalIntent,
@@ -530,7 +517,7 @@ public sealed partial class ToolExecutionService
             cancellationToken,
             (token, retain) => tools.Terminal.RunApprovedShellAsync(
                 shellRequest,
-                context.ConfinementRequired && !context.IsAuthenticatedV2Execution,
+                confineWorkspace: false,
                 token,
                 retain,
                 killTimeoutMs: lifetimeMs,
@@ -546,7 +533,6 @@ public sealed partial class ToolExecutionService
             pump,
             requestedMs,
             lifetimeMs,
-            tools.CanonicalRoot,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -569,47 +555,6 @@ public sealed partial class ToolExecutionService
         }
 
         return outcome;
-    }
-
-    /// <summary>
-    /// Resolves the canonical intent hash for a terminal call without executing it.
-    /// Approval tokens bind to this hash so any change to the resolved executable,
-    /// argv, working directory, operation class, network intent, or timeout between
-    /// approval and execution invalidates the authorization.
-    /// </summary>
-    private string? TryComputeTerminalIntentHash(string toolId, JsonObject arguments) =>
-        TryComputeTerminalIntentHash(_defaultTools, toolId, arguments);
-
-    private string? TryComputeTerminalIntentHash(RootToolSet tools, string toolId, JsonObject arguments)
-    {
-        try
-        {
-            if (toolId == "powershell")
-            {
-                return tools.Terminal.CanonicalizeShell(new TerminalShellRequest(
-                    "powershell",
-                    ReadOptionalString(arguments, "working_directory") ?? ".",
-                    ReadString(arguments, "script"),
-                    ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
-                    string.Empty)).IntentHash;
-            }
-
-            return toolId == "run_process"
-                ? tools.Terminal.CanonicalizeRun(new TerminalRunRequest(
-                    "powershell",
-                    ReadOptionalString(arguments, "working_directory") ?? ".",
-                    ReadString(arguments, "executable"),
-                    ReadArguments(arguments["arguments"]),
-                    ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
-                    IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"))).IntentHash
-                : null;
-        }
-        catch (Exception error) when (
-            error is ArgumentException or UnauthorizedAccessException or KeyNotFoundException
-                or ToolExecutionException)
-        {
-            return null;
-        }
     }
 
     private static string TerminalRunPreview(JsonObject arguments)
@@ -647,7 +592,7 @@ public sealed partial class ToolExecutionService
     {
         if (_computer is not { } computer)
             return ValueTask.FromResult(ToolExecutionOutcome.Failed("computer_unavailable", "Computer use is not available in this host."));
-        if (!context.IsAuthenticatedV2Execution || string.IsNullOrEmpty(context.RunId)
+        if (string.IsNullOrEmpty(context.RunId)
             || !_session.TryGetRunLease(context.RunId, out var lease) || lease is null)
             return ValueTask.FromResult(ToolExecutionOutcome.Failed("computer_run_required", "Computer use needs an authorized run."));
         // A run that ended no longer holds the desktop, even before its idle timeout.

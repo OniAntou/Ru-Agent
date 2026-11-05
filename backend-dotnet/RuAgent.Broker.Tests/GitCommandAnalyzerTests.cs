@@ -87,12 +87,18 @@ public sealed class GitCommandAnalyzerTests
     {
         // git grep -O spawns the named program, --ext-diff and --textconv run
         // repository-configured helpers, and --paginate forces the pager. None of
-        // them may keep the auto-executable ReadOnly verdict, or a model could run
-        // an arbitrary program with no approval.
+        // them may keep the ReadOnly verdict (which also selects the hardened
+        // automatic git-read argv), or any other recognized safe class.
         var analysis = _analyzer.Analyze(@"C:\tools\git.exe", [verb, option, "secret"]);
 
         Assert.NotEqual(TerminalOperationClass.ReadOnly, analysis.OperationClass);
-        Assert.False(TerminalAutoPolicy.IsAutoExecutable(analysis.OperationClass));
+        Assert.DoesNotContain(analysis.OperationClass, new[]
+        {
+            TerminalOperationClass.Test,
+            TerminalOperationClass.Build,
+            TerminalOperationClass.Lint,
+            TerminalOperationClass.GitMutation,
+        });
     }
 
     [Fact]
@@ -246,7 +252,6 @@ public sealed class GitCommandAnalyzerTests
             var analysis = _analyzer.Analyze(@"C:\tools\git.exe", form);
             Assert.Equal(TerminalOperationClass.Unknown, analysis.OperationClass);
             Assert.Equal("git_config_mutation_requires_approval", analysis.ReasonCode);
-            Assert.False(TerminalAutoPolicy.IsAutoExecutable(analysis.OperationClass));
         }
     }
 

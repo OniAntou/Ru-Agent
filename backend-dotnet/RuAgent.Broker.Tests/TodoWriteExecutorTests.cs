@@ -24,7 +24,7 @@ public sealed class TodoWriteExecutorTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"one","status":"completed"},{"content":"two","status":"in_progress"}]}"""),
             CancellationToken.None);
 
@@ -43,10 +43,10 @@ public sealed class TodoWriteExecutorTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
 
-        await service.ExecuteAsync(
+        await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"one","status":"pending"},{"content":"two","status":"pending"}]}"""),
             CancellationToken.None);
-        await service.ExecuteAsync(
+        await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"three","status":"pending"}]}"""),
             CancellationToken.None);
 
@@ -76,7 +76,7 @@ public sealed class TodoWriteExecutorTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
 
-        var result = await service.ExecuteAsync(Envelope(arguments), CancellationToken.None);
+        var result = await service.ExecuteAuthenticatedV2Async(Envelope(arguments), CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
         Assert.Equal(expectedCode, result.ErrorCode);
@@ -91,7 +91,7 @@ public sealed class TodoWriteExecutorTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
 
-        var result = await service.ExecuteAsync(Envelope(arguments), CancellationToken.None);
+        var result = await service.ExecuteAuthenticatedV2Async(Envelope(arguments), CancellationToken.None);
 
         Assert.NotEqual(ToolResultStatuses.Succeeded, result.Status);
         Assert.Equal("invalid_arguments", result.ErrorCode);
@@ -106,11 +106,11 @@ public sealed class TodoWriteExecutorTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
 
-        await service.ExecuteAsync(
+        await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"keep me","status":"pending"}]}"""),
             CancellationToken.None);
 
-        var rejected = await service.ExecuteAsync(
+        var rejected = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"","status":"pending"}]}"""),
             CancellationToken.None);
 
@@ -125,11 +125,11 @@ public sealed class TodoWriteExecutorTests
     {
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
-        await service.ExecuteAsync(
+        await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"one","status":"pending"}]}"""),
             CancellationToken.None);
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[]}"""),
             CancellationToken.None);
 
@@ -146,10 +146,10 @@ public sealed class TodoWriteExecutorTests
         // lease is what grants that session its scopes.
         fixture.OpenSessionLease("other-session");
 
-        await service.ExecuteAsync(
+        await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"session one task","status":"pending"}]}""", "todo-session"),
             CancellationToken.None);
-        await service.ExecuteAsync(
+        await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"session two task","status":"pending"}]}""", "other-session"),
             CancellationToken.None);
 
@@ -163,7 +163,7 @@ public sealed class TodoWriteExecutorTests
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
 
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"stolen","status":"pending"}]}""", "unopened-session"),
             CancellationToken.None);
 
@@ -177,7 +177,7 @@ public sealed class TodoWriteExecutorTests
     {
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
-        await service.ExecuteAsync(
+        await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"one","status":"pending"}]}"""),
             CancellationToken.None);
 
@@ -199,7 +199,7 @@ public sealed class TodoWriteExecutorTests
 
     private static async Task AssertRejectedAsync(ToolExecutionService service)
     {
-        var result = await service.ExecuteAsync(
+        var result = await service.ExecuteAuthenticatedV2Async(
             Envelope("""{"todos":[{"content":"x","status":"pending","priority":1}]}"""),
             CancellationToken.None);
 
@@ -209,9 +209,9 @@ public sealed class TodoWriteExecutorTests
 
     private static AgentEnvelope Envelope(string arguments, string sessionId = Session) =>
         new(
-            1,
+            AgentEnvelopeCodec.ProtocolVersionV2,
             $"req_{Guid.NewGuid():N}",
-            AgentMessageTypes.ToolRequest,
+            AgentMessageTypes.ToolExecute,
             sessionId,
             null,
             30_000,

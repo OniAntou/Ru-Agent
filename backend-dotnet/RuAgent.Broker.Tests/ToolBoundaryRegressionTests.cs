@@ -134,7 +134,7 @@ public sealed class ToolBoundaryRegressionTests : IDisposable
             : Task.CompletedTask;
         try
         {
-            var result = await service.ExecuteAsync(new AgentEnvelope(1, "glob-boundary", AgentMessageTypes.ToolRequest,
+            var result = await service.ExecuteAuthenticatedV2Async(new AgentEnvelope(AgentEnvelopeCodec.ProtocolVersionV2, "glob-boundary", AgentMessageTypes.ToolExecute,
                 "boundary", null, callerCancelled ? 30000 : 1, new JsonObject
                 {
                     ["tool_id"] = "glob", ["tool_version"] = "1.0.0",

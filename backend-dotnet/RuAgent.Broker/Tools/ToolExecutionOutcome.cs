@@ -9,12 +9,8 @@ public sealed record ToolExecutionContext(
     string? CorrelationId,
     string CapabilityClass,
     int DeadlineMs,
-    bool Approved,
-    string? ApprovalToken = null,
-    bool ConfinementRequired = true,
     IReadOnlySet<string>? SessionScopes = null,
     string RunId = "",
-    bool IsAuthenticatedV2Execution = false,
     bool ImageInputAccepted = false)
 {
     internal Terminal.TerminalOutputDeltaHandler? TerminalOutput { get; init; }

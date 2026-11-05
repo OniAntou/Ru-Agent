@@ -170,8 +170,7 @@ public sealed partial class ToolExecutionService
  }
 
     private AgentPolicyProfile? ActivePolicyProfile(ToolExecutionContext context) =>
-        context.IsAuthenticatedV2Execution
-        && ActiveLease(context.RunId, context.SessionId) is { } lease
+        ActiveLease(context.RunId, context.SessionId) is { } lease
             ? AgentPolicyProfileCatalog.Get(lease.Preset)
             : null;
 
@@ -190,8 +189,7 @@ public sealed partial class ToolExecutionService
 
     private RootToolSet ToolsFor(ToolExecutionContext context)
     {
-        if (!context.IsAuthenticatedV2Execution
-            || ActiveLease(context.RunId, context.SessionId) is not { } lease)
+        if (ActiveLease(context.RunId, context.SessionId) is not { } lease)
         {
             return _defaultTools;
         }
@@ -208,7 +206,6 @@ public sealed partial class ToolExecutionService
         {
             return RootToolSet.Create(
                 root,
-                _approvalTokens,
                 _recoveryStore,
                 _commandEnvironment,
                 allowProtectedPaths);
@@ -223,7 +220,6 @@ public sealed partial class ToolExecutionService
             cacheKey,
             _ => RootToolSet.Create(
                 root,
-                _approvalTokens,
                 _recoveryStore,
                 _commandEnvironment,
                 allowProtectedPaths));
@@ -252,7 +248,6 @@ public sealed partial class ToolExecutionService
 
         public static RootToolSet Create(
             string canonicalRoot,
-            ApprovalTokenService approvalTokens,
             InMemoryRecoveryStore recoveryStore,
             AgentCommandEnvironment commandEnvironment,
             bool allowProtectedPaths = false)
@@ -270,7 +265,6 @@ public sealed partial class ToolExecutionService
                 MutationResolver = new CanonicalPathResolver(canonicalRoot, allowProtectedPaths),
                 Terminal = new TerminalAdapter(
                     new WorkspacePathGuard(canonicalRoot),
-                    approvalTokens,
                     commandEnvironment,
                     intentResolver: new CommandIntentResolver(
                         canonicalRoot)),
@@ -299,77 +293,6 @@ public sealed partial class ToolExecutionService
         }
 
         return ResolveTools(context, canonicalPath!);
-    }
-
-    private RootToolSet ResolveRootToolSet(ToolExecutionContext context, string? pathInput)
-    {
-        if (context.IsAuthenticatedV2Execution)
-        {
-            return ToolsFor(context);
-        }
-
-        var grants = _session.DirectoryGrants.GetGrantedDirectories(context.SessionId);
-        var baseTools = ToolsFor(context);
-        if (string.IsNullOrWhiteSpace(pathInput) || grants.Count == 0)
-        {
-            return baseTools;
-        }
-
-        try
-        {
-            // Resolve against the same root the policy/approval leg used: the run
-            // lease root on v2 executions (never the broker's configured root,
-            // which may differ from the lease the user actually approved).
-            var selected = FileToolRootSelector.SelectRoot(
-                baseTools.MutationResolver,
-                baseTools.CanonicalRoot,
-                grants,
-                pathInput!);
-            if (string.Equals(selected, baseTools.MutationResolver.CanonicalRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                return baseTools;
-            }
-
-            return ToolsForRoot(selected);
-        }
-        catch (ArgumentException)
-        {
-            return baseTools;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return baseTools;
-        }
-    }
-
-    private string? ReadTargetFileText(JsonObject arguments)
-    {
-        try
-        {
-            var relativePath = ReadOptionalString(arguments, "path");
-            if (relativePath is null)
-            {
-                return null;
-            }
-
-            var fullPath = _workspace.Resolve(relativePath, allowMissing: true);
-            if (!File.Exists(fullPath))
-            {
-                return null;
-            }
-
-            var info = new FileInfo(fullPath);
-            if (info.Length > 4 * 1024 * 1024)
-            {
-                return null;
-            }
-
-            return StrictUtf8.GetString(ReadBoundedBytes(fullPath, FileWriteAdapter.MaxInputBytes));
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static byte[] ReadBoundedBytes(string path, int maxBytes)

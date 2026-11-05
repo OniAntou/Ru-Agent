@@ -22,17 +22,14 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     // Dispatch coordination: V2 tool.execute is gated in BrokerExecutionRuntime before dispatch:
     //  - tool.evaluate (allow) → authorization_token (60s) → tool.execute
     //  - tool.evaluate (ask) → approval_id (30m) → approval.respond → authorization_token (60s) → tool.execute
-    // This service's ExecuteAsync is the v1 terminal/file path (scope grant + optional approval). It never bypasses
-    // the V2 authorization check; the runtime consumes the authorization_token BEFORE invoking the tool handler.
-    // V2 approvals never invoke adapters via approval.respond; only tool.execute after token consumption invokes adapters.
+    // The runtime consumes the authorization_token BEFORE calling ExecuteAuthenticatedV2Async, the
+    // only execution entry point here; approval.respond never invokes adapters.
     private static readonly Regex StableCodePattern = new("^[a-z][a-z0-9_]{0,63}$", RegexOptions.Compiled);
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private readonly BrokerSession _session;
     private readonly ToolCatalog _catalog;
     private readonly ToolPolicyEngine _policy = new();
-    private readonly ApprovalTokenService _approvalTokens;
-    private readonly PendingApprovalStore _approvals = new();
     private readonly WorkspacePathGuard _workspace;
     private readonly FileListAdapter _fileList;
     private readonly FileGlobAdapter _fileGlob;
@@ -67,7 +64,6 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         string workspaceRoot,
         WebOptions? webOptions = null,
         HttpClient? webHttpClient = null,
-        ApprovalTokenService? approvalTokens = null,
         Func<bool>? pythonAvailable = null,
         string? terminalSpoolRoot = null,
         TerminalConcurrencyOptions? terminalConcurrencyOptions = null,
@@ -91,11 +87,9 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         _mutationResolver = new CanonicalPathResolver(_workspace.Root);
         _spools = new TerminalOutputSpool(terminalSpoolRoot);
         _helpDocs = HelpDocsTool.CreateDefault();
-        _approvalTokens = approvalTokens ?? new ApprovalTokenService();
         _commandEnvironment = commandEnvironment ?? new AgentCommandEnvironment();
         _terminal = new TerminalAdapter(
             _workspace,
-            _approvalTokens,
             _commandEnvironment,
             intentResolver: new CommandIntentResolver(
                 _workspace.Root));
@@ -154,7 +148,6 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private void RemoveSessionState(string sessionId)
     {
         _backgroundTasks.RemoveSession(sessionId);
-        _approvals.RemoveSession(sessionId);
         // A deleted session must not leave its plan behind: the store is keyed by
         // session and nothing else would ever clear it.
         _todos.Remove(sessionId);
@@ -172,8 +165,6 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     /// every older file unreachable; a second runtime's root must stay intact.
     /// </summary>
     public void CleanStaleSpoolFiles() => _spools.CleanStaleRoot();
-
-    public void ClearPendingApprovals() => _approvals.Clear();
 
     public IReadOnlyList<AgentToolCapability> ListCapabilities() =>
         _catalog.Registry.ListCapabilities();

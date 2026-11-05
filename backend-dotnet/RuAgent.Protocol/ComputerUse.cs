@@ -13,14 +13,19 @@ public static class ComputerActions
     public const string Type = "type";
     public const string Key = "key";
     public const string Focus = "focus";
+    public const string Inspect = "inspect";
+    public const string Wait = "wait";
 
     public static IReadOnlyList<string> All { get; } =
-        [List, RequestAccess, Focus, Screenshot, Click, Move, Drag, Scroll, Type, Key];
+        [List, RequestAccess, Focus, Screenshot, Inspect, Click, Move, Drag, Scroll, Type, Key, Wait];
 
     /// <summary>Actions that only observe; they never send input.</summary>
-    public static bool IsObservation(string? action) => action is List or Screenshot;
+    public static bool IsObservation(string? action) => action is List or Screenshot or Inspect or Wait;
 
-    /// <summary>Actions whose x and y name a point in a monitor's latest screenshot.</summary>
+    /// <summary>Actions whose optional or required <c>app</c> names the window they act on.</summary>
+    public static bool NamesApp(string? action) => action is Focus or Inspect or Type or Key;
+
+    /// <summary>Actions whose x and y name a point in a monitor's latest screenshot or inspect frame.</summary>
     public static bool IsPointer(string? action) => action is Click or Move or Drag or Scroll;
 }
 
@@ -34,6 +39,10 @@ public static class ComputerLimits
     public const int MaxKeyChordChars = 64;
     public const int MaxRequestedApps = 8;
     public const int MaxAppNameChars = 64;
+    public const int MinWaitMilliseconds = 100;
+    public const int MaxWaitMilliseconds = 10_000;
+    public const int MaxInspectElements = 150;
+    public const int MaxElementNameChars = 100;
 }
 
 /// <summary>

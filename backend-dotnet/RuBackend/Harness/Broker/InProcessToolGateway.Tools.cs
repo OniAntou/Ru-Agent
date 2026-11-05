@@ -219,7 +219,7 @@ public sealed partial class InProcessToolGateway
 
         // Envelope field, never an argument: the model cannot set it, and approval
         // tokens stay bound to the canonical arguments alone (ADR 0026).
-        var imageInput = pending.ToolId == "read"
+        var imageInput = ReturnsImages(pending.ToolId)
             && _imageInputAccepted is not null
             && await _imageInputAccepted(_runId, cancellationToken).ConfigureAwait(false);
         // A foreground command can detach at its wait limit. Its pump keeps
@@ -345,4 +345,10 @@ public sealed partial class InProcessToolGateway
 
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Tools whose results can carry an image (ADRs 0026 and 0031): a workspace image
+    /// read and a computer screenshot. Only these learn the run's image-input pin.
+    /// </summary>
+    internal static bool ReturnsImages(string toolId) => toolId is "read" or "computer";
 }

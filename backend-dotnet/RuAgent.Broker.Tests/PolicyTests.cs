@@ -1118,13 +1118,17 @@ public sealed partial class PolicyEvaluationTests
     [InlineData("plan", "focus", "deny", "plan_preset_read_only")]
     [InlineData("standard", "focus", "allow", "computer_action_grant_checked")]
     [InlineData("full_access", "request_access", "allow", "full_access_allow")]
+    [InlineData("plan", "inspect", "deny", "plan_preset_read_only")]
+    [InlineData("standard", "inspect", "allow", "computer_action_grant_checked")]
+    [InlineData("plan", "wait", "deny", "plan_preset_read_only")]
+    [InlineData("standard", "wait", "allow", "computer_action_grant_checked")]
     public void Computer_actions_follow_the_preset(string preset, string action, string decision, string reason)
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
         var arguments = new JsonObject { ["action"] = action };
         if (action == "request_access") arguments["apps"] = new JsonArray("notepad.exe");
         if (action == "click") { arguments["x"] = 1; arguments["y"] = 1; }
-        if (action == "focus") arguments["app"] = "notepad.exe";
+        if (action is "focus" or "inspect") arguments["app"] = "notepad.exe";
 
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot, factory.Create("computer", "1.0.0", arguments), PolicyRequestInvariants.Valid, Now);
@@ -1180,6 +1184,25 @@ public sealed partial class PolicyEvaluationTests
     }
 
     [Theory]
+    [InlineData("inspect")]
+    [InlineData("type")]
+    [InlineData("key")]
+    public void Naming_a_protected_app_with_inspect_or_keyboard_input_is_denied_by_policy(string action)
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty("full_access"));
+        var arguments = new JsonObject { ["action"] = action, ["app"] = "RuApp" };
+        if (action == "type") arguments["text"] = "hi";
+        if (action == "key") arguments["keys"] = "enter";
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot,
+            factory.Create("computer", "1.0.0", arguments), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("computer_app_protected", evaluation.ReasonCode);
+    }
+
+    [Theory]
+    [InlineData("{\"action\":\"inspect\"}")]
+    [InlineData("{\"action\":\"click\",\"x\":1,\"y\":1,\"app\":\"notepad.exe\"}")]
+    [InlineData("{\"action\":\"type\",\"text\":\"a\",\"app\":\"bad/name?\"}")]
     [InlineData("{\"action\":\"focus\"}")]
     [InlineData("{\"action\":\"fly\"}")]
     [InlineData("{\"action\":\"request_access\"}")]

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(computer)**: Screenshot của computer use không còn luôn lỗi
+  `image_unsupported_by_model`. Gateway trước đây chỉ gửi quyết định image-input đã pin của
+  run cho tool `read`, nên model có vision cũng không bao giờ nhận được ảnh màn hình.
+
+- **feat(computer)**: Thêm action `inspect` (đọc các phần tử UI Automation đang hiển thị của
+  một app đã cấp quyền, kèm toạ độ click được mà không cần chụp màn hình; không đọc nhánh con
+  dưới phần tử offscreen như tab nền của trình duyệt; tool vẫn chỉ advertise cho model nhận ảnh) và `wait` (chờ tối đa 10 giây,
+  hotkey dừng cắt ngang được). `type`/`key` nhận `app` tuỳ chọn để focus app đó trong cùng
+  action. Lỗi khi cửa sổ Ru đang giữ focus giờ chỉ cách xử lý. Mô tả tool dặn model không
+  điều khiển desktop qua script terminal, vì cách đó bỏ qua grant, che ảnh và hotkey dừng
+  (ADR 0031, bản sửa đổi 2026-11-05).
+
 ## [0.1.3-preview.1] - 2026-11-05
 
 - **fix(diagnostics)**: Bớt nhiễu và làm log chẩn đoán đọc được:

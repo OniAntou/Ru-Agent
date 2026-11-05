@@ -497,6 +497,13 @@ public sealed partial class RememberedApprovalIdentityTests
         {
         }
 
+        public IReadOnlyList<Broker::RuAgent.Broker.Tools.Computer.DesktopElement> Elements(
+
+            nint window, CancellationToken cancellationToken) =>
+
+            Array.Empty<Broker::RuAgent.Broker.Tools.Computer.DesktopElement>();
+
+
         public IReadOnlySet<int> RuHostProcessIds() => new HashSet<int>();
     }
 

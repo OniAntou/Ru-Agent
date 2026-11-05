@@ -275,7 +275,7 @@ they do not make a retired public identity executable.
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | `ask_user` | always advertised (`user.input`) | Host-intercepted: the Broker never receives the call. Parks the run in `WaitingUser` with a durable `input.requested` event; the client answers through `POST /agent/v1/runs/{runId}/inputs/{inputId}`, a replayed or foreign id fails as `input_stale`, and the answer completes the parked call durably before the run resumes |
 | `mcp` (`op=list_servers`, `list_tools`, `call`) | advertised while `~/.ru/mcp.json` declares an enabled server; never to subagents | `list_servers` reads the user's file and is automatic; `list_tools` and `call` start or call a server and take the `ExternalTerminal` decision: `plan` deny, `standard` ask (`mcp_call_requires_approval`), `full_access` automatic; "Always allow" remembers one server and op/tool (`call` with its tool name, or `list_tools`), never a whole server or another op; the card names the server and tool. See [MCP servers](#mcp-servers) |
-| `computer` (`action=list`, `request_access`, `focus`, `screenshot`, `click`, `move`, `drag`, `scroll`, `type`, `key`) | advertised only to a root run that pinned the computer-use opt-in with image input; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `request_access` takes the `ExternalTerminal` decision: `standard` ask (`computer_access_requires_approval`), `full_access` automatic; other actions are allowed by policy and checked against the session's app grants when they run. Protected apps are refused in every preset (`computer_app_protected`). See [Computer use](#computer-use) |
+| `computer` (`action=list`, `request_access`, `focus`, `screenshot`, `inspect`, `click`, `move`, `drag`, `scroll`, `type`, `key`, `wait`) | advertised only to a root run that pinned the computer-use opt-in with image input; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `request_access` takes the `ExternalTerminal` decision: `standard` ask (`computer_access_requires_approval`), `full_access` automatic; other actions are allowed by policy and checked against the session's app grants when they run. Protected apps are refused in every preset (`computer_app_protected`). See [Computer use](#computer-use) |
 | connector libraries | not advertised | experimental/unwired |
 
 Large structured tool results are projected into bounded prompt references while
@@ -1047,10 +1047,27 @@ accepts images gets the tool, so a run never changes mid-way.
   [image read](#image-reads) path, so only a model that accepts images receives it and only
   the newest four images reach a request. In `standard` every pixel outside a granted app's
   visible windows is black; the window list is read before and after the capture and a pixel
-  stays only when both allow it.
+  stays only when both allow it. The Host passes the run's pinned image-input decision to
+  both `read` and `computer`; before 2026-11-05 only `read` received it, so every screenshot
+  failed with `image_unsupported_by_model`.
+- `inspect` takes one granted `app` and lists the UI Automation elements of its top window
+  (`role`, `name`, `x`, `y`, `w`, `h`, and `enabled: false` when disabled), at most 150, with
+  `truncated_from` when more were visible. It does not need image input itself, but the tool is
+  still advertised only to runs whose model accepts images. The Broker reads the tree one level
+  at a time and never reads below an offscreen element, so a background browser tab's subtree
+  is not read; an element is then listed only when its centre lies in the window's own visible
+  region before and after the read, so covered parts and other windows do not appear, in any
+  preset. Coordinates use the frame of a screenshot of that monitor (`width`,
+  `height` in the result): the latest screenshot's frame when one exists, otherwise `inspect`
+  establishes it, so pointer actions work after `inspect` alone. A target that does not answer
+  UI Automation within eight seconds fails with `computer_inspect_timeout`.
 - `click`, `move`, `drag` and `scroll` take `x` and `y` in pixels of that monitor's latest
-  screenshot. `type` sends up to 2,000 characters and `key` a chord such as `ctrl+s` to the
-  foreground window. Before each input event the Broker resolves the target window again.
+  screenshot or `inspect` frame. `type` sends up to 2,000 characters and `key` a chord such as
+  `ctrl+s` to the foreground window; with `app` they first bring that granted app to the front
+  and fail with `computer_focus_refused` if it does not keep the focus. Before each input event
+  the Broker resolves the target window again.
+- `wait` pauses for `ms` (100 to 10,000, default 1,000) and reports the focused app, with its
+  title only when the app has access. The stop hotkey ends a wait at once.
 
 UWP apps such as Calculator are named by their own executable, not by
 `ApplicationFrameHost.exe`, which can never be granted. The Windows 11 Start menu belongs to
@@ -1066,8 +1083,16 @@ under the pointer or in front changed during a click or while typing),
 (focus found no window, or Windows kept another window in front), `computer_busy` (another run holds the desktop until it
 ends or is idle for two minutes), `computer_desktop_unavailable` (locked or secure desktop),
 `computer_stop_unavailable` (the stop hotkey could not be registered),
-`computer_stopped_by_user`, `computer_root_run_required` (a subagent or program) and
-`image_unsupported_by_model`.
+`computer_stopped_by_user`, `computer_root_run_required` (a subagent or program),
+`computer_window_not_visible` (inspect found the app minimized, covered or off every monitor),
+`computer_inspect_timeout`, `computer_inspect_failed` and `image_unsupported_by_model` (its
+detail points a text-only model at `inspect`).
+
+The tool is the only path through which these checks apply. A `powershell` or `run_code`
+script runs as the user and can drive UI Automation or synthetic input itself, which bypasses
+app grants, masking, the protected-app list and the stop hotkey; the tool description tells the
+model never to do that, but this is guidance, not confinement (see ADR 0031, amendment
+2026-11-05).
 
 **Ctrl+Alt+Backspace** (or **Ctrl+Alt+Pause** on keyboards that have it) stops computer use at any time: it cancels the action in flight and
 cancels the controlling run. Observation actions report no side effects and may repeat;

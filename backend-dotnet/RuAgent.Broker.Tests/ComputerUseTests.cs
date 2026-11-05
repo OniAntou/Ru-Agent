@@ -480,6 +480,152 @@ public sealed class ComputerUseTests
         Assert.Equal("computer_desktop_unavailable", (await locked.ExecuteAsync(Run, Session, true, true, Args("list"), CancellationToken.None)).ErrorCode);
     }
 
+    [Fact]
+    public async Task Without_image_input_the_screenshot_error_points_at_inspect()
+    {
+        var result = await Service(new FakeDesktop()).ExecuteAsync(Run, Session, false, false, Args("screenshot"), CancellationToken.None);
+        Assert.Equal("image_unsupported_by_model", result.ErrorCode);
+        Assert.Contains("action=inspect", result.SafeSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Type_with_app_focuses_that_granted_app_before_typing()
+    {
+        var notepad = Window("notepad.exe", Primary);
+        var desktop = new FakeDesktop(notepad) { Foreground = Window("ruapp.exe", Primary) };
+        var service = Service(desktop);
+        var typeIntoNotepad = Args("type", new JsonObject { ["text"] = "hi", ["app"] = "notepad.exe" });
+
+        Assert.Equal("computer_app_not_granted", (await service.ExecuteAsync(Run, Session, false, true, typeIntoNotepad, CancellationToken.None)).ErrorCode);
+        await Grant(service, "notepad.exe");
+        var typed = await service.ExecuteAsync(Run, Session, false, true,
+            Args("type", new JsonObject { ["text"] = "hi", ["app"] = "notepad.exe" }), CancellationToken.None);
+
+        Assert.Null(typed.ErrorCode);
+        Assert.Equal("hi", desktop.Typed);
+        Assert.Equal("notepad.exe", desktop.Foreground!.AppName);
+    }
+
+    [Fact]
+    public async Task Keyboard_without_app_names_the_protected_window_that_holds_focus()
+    {
+        var desktop = new FakeDesktop { Foreground = Window("ruapp.exe", Primary) };
+        var service = Service(desktop);
+        await Grant(service, "notepad.exe");
+
+        var result = await service.ExecuteAsync(Run, Session, false, true, Args("key", new JsonObject { ["keys"] = "ctrl+l" }), CancellationToken.None);
+
+        Assert.Equal("computer_app_protected", result.ErrorCode);
+        Assert.Contains("pass app", result.SafeSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Keyboard_with_an_app_that_loses_focus_fails_by_name()
+    {
+        var desktop = new FakeDesktop(Window("notepad.exe", Primary)) { FocusSucceeds = true };
+        var service = Service(desktop);
+        await Grant(service, "notepad.exe");
+        desktop.AfterFocus = () => desktop.Foreground = Window("discord.exe", Primary);
+
+        var result = await service.ExecuteAsync(Run, Session, false, true,
+            Args("key", new JsonObject { ["keys"] = "ctrl+l", ["app"] = "notepad.exe" }), CancellationToken.None);
+
+        Assert.Equal("computer_focus_refused", result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Wait_reports_the_focused_app_and_shows_its_title_only_with_access()
+    {
+        var desktop = new FakeDesktop { Foreground = Window("firefox.exe", Primary, "Private page") };
+        var service = Service(desktop);
+        var wait = Args("wait", new JsonObject { ["ms"] = 100 });
+
+        var hidden = await service.ExecuteAsync(Run, Session, false, true, wait, CancellationToken.None);
+        Assert.Equal("firefox.exe", hidden.Output["focused_app"]!.GetValue<string>());
+        Assert.Null(hidden.Output["focused_title"]);
+
+        await Grant(service, "firefox.exe");
+        var shown = await service.ExecuteAsync(Run, Session, false, true, Args("wait", new JsonObject { ["ms"] = 100 }), CancellationToken.None);
+        Assert.Equal("Private page", shown.Output["focused_title"]!.GetValue<string>());
+        Assert.Equal("computer_arguments_invalid",
+            (await service.ExecuteAsync(Run, Session, false, true, Args("wait", new JsonObject { ["ms"] = 20_000 }), CancellationToken.None)).ErrorCode);
+    }
+
+    [Fact]
+    public async Task The_stop_hotkey_ends_a_wait()
+    {
+        var hotkey = new FakeHotkey();
+        var service = Service(new FakeDesktop(), hotkey);
+        var waiting = service.ExecuteAsync(Run, Session, true, true, Args("wait", new JsonObject { ["ms"] = 10_000 }), CancellationToken.None);
+        await Task.Delay(100);
+        hotkey.Press();
+
+        var result = await waiting.AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("computer_stopped_by_user", result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Inspect_lists_only_visible_elements_of_the_granted_window_in_screenshot_coordinates()
+    {
+        var firefox = Window("firefox.exe", new PixelRect(0, 0, 1280, 1440), "Shop");
+        var cover = Window("discord.exe", new PixelRect(1000, 0, 2560, 1440));
+        var desktop = new FakeDesktop(cover, firefox);
+        desktop.UiElements.AddRange(
+        [
+            new DesktopElement("Hyperlink", "Visible product", new PixelRect(100, 100, 300, 200), false, true),
+            new DesktopElement("Hyperlink", "Visible product", new PixelRect(100, 100, 300, 200), false, true),
+            new DesktopElement("Document", "Hidden tab", new PixelRect(0, 0, 1280, 1440), true, true),
+            new DesktopElement("Button", "Under another window", new PixelRect(1100, 100, 1200, 200), false, true),
+            new DesktopElement("Group", "", new PixelRect(10, 10, 20, 20), false, true),
+            new DesktopElement("Button", "Disabled", new PixelRect(400, 400, 500, 440), false, false),
+        ]);
+        var service = Service(desktop);
+        var inspect = Args("inspect", new JsonObject { ["app"] = "firefox.exe" });
+
+        Assert.Equal("computer_app_not_granted", (await service.ExecuteAsync(Run, Session, false, true, inspect, CancellationToken.None)).ErrorCode);
+        await Grant(service, "firefox.exe");
+        var result = await service.ExecuteAsync(Run, Session, false, false, Args("inspect", new JsonObject { ["app"] = "firefox.exe" }), CancellationToken.None);
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(1280, result.Output["width"]!.GetValue<int>());
+        Assert.Equal(720, result.Output["height"]!.GetValue<int>());
+        var elements = result.Output["elements"]!.AsArray();
+        Assert.Equal(["Visible product", "Disabled"], elements.Select(element => element!["name"]!.GetValue<string>()));
+        Assert.Equal(100, elements[0]!["x"]!.GetValue<int>());
+        Assert.Equal(75, elements[0]!["y"]!.GetValue<int>());
+        Assert.False(elements[1]!["enabled"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Inspect_sets_the_coordinate_frame_so_a_model_without_images_can_click()
+    {
+        var firefox = Window("firefox.exe", Primary, "Shop");
+        var desktop = new FakeDesktop(firefox) { WindowAtPoint = firefox };
+        desktop.UiElements.Add(new DesktopElement("Hyperlink", "Product", new PixelRect(200, 200, 400, 300), false, true));
+        var service = Service(desktop);
+        await Grant(service, "firefox.exe");
+
+        var inspected = await service.ExecuteAsync(Run, Session, false, false, Args("inspect", new JsonObject { ["app"] = "firefox.exe" }), CancellationToken.None);
+        var product = inspected.Output["elements"]!.AsArray()[0]!;
+        var click = await service.ExecuteAsync(Run, Session, false, false,
+            Args("click", new JsonObject { ["x"] = product["x"]!.GetValue<int>(), ["y"] = product["y"]!.GetValue<int>() }), CancellationToken.None);
+
+        Assert.Null(click.ErrorCode);
+        var (x, y, _, _) = desktop.LastClick!.Value;
+        Assert.InRange(x, 200, 399);
+        Assert.InRange(y, 200, 299);
+    }
+
+    [Theory]
+    [InlineData("ruapp.exe", "computer_app_protected")]
+    [InlineData("paint.exe", "computer_app_not_running")]
+    public async Task Inspect_fails_by_name(string app, string code)
+    {
+        var result = await Service(new FakeDesktop(Window("notepad.exe", Primary))).ExecuteAsync(Run, Session, true, true,
+            Args("inspect", new JsonObject { ["app"] = app }), CancellationToken.None);
+        Assert.Equal(code, result.ErrorCode);
+    }
+
     [Theory]
     [InlineData("notepad", "notepad.exe")]
     [InlineData(@"C:\Windows\System32\Notepad.EXE", "notepad.exe")]
@@ -533,6 +679,7 @@ public sealed class ComputerUseTests
 
         public List<DesktopWindow> Minimized { get; } = [];
         public bool FocusSucceeds { get; set; } = true;
+        public Action? AfterFocus { get; set; }
 
         public DesktopWindow? TopWindowOf(string appName) =>
             windows.Concat(Minimized).FirstOrDefault(window => window.AppName == appName);
@@ -541,6 +688,7 @@ public sealed class ComputerUseTests
         {
             if (!FocusSucceeds) return false;
             Foreground = windows.Concat(Minimized).First(window => window.Handle == handle);
+            AfterFocus?.Invoke();
             return true;
         }
         public bool IsShieldedFromInput(int processId) => Shielded;
@@ -586,6 +734,10 @@ public sealed class ComputerUseTests
         }
 
         public void PressChord(KeyChord chord, nint expectedRoot) { }
+
+        public List<DesktopElement> UiElements { get; } = [];
+
+        public IReadOnlyList<DesktopElement> Elements(nint window, CancellationToken cancellationToken) => UiElements;
 
         public HashSet<int> RuHosts { get; } = [];
 

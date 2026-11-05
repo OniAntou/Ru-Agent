@@ -110,6 +110,14 @@ public static class ComputerGeometry
         return (Math.Max(1, (int)Math.Round(monitor.Width * scale)), Math.Max(1, (int)Math.Round(monitor.Height * scale)));
     }
 
+    /// <summary>Maps a physical pixel on a monitor to the screenshot pixel that shows it.</summary>
+    public static (int X, int Y) ToShot(PixelRect monitor, int shotWidth, int shotHeight, int x, int y)
+    {
+        var sx = (int)Math.Floor((double)(x - monitor.Left) * shotWidth / monitor.Width);
+        var sy = (int)Math.Floor((double)(y - monitor.Top) * shotHeight / monitor.Height);
+        return (Math.Clamp(sx, 0, shotWidth - 1), Math.Clamp(sy, 0, shotHeight - 1));
+    }
+
     /// <summary>Maps a point in a monitor's screenshot to the physical pixel it shows.</summary>
     public static (int X, int Y) ToPhysical(PixelRect monitor, int shotWidth, int shotHeight, int x, int y)
     {

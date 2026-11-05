@@ -7,6 +7,9 @@ public enum PointerButton
     Middle,
 }
 
+/// <summary>One UI Automation element as the controller read it (ADR 0031, amended 2026-11-05).</summary>
+public sealed record DesktopElement(string Role, string Name, PixelRect Bounds, bool Offscreen, bool Enabled);
+
 /// <summary>
 /// The operating-system seam for computer use. Coordinates are physical
 /// virtual-desktop pixels. Implementations are called on one thread per action.
@@ -58,6 +61,12 @@ public interface IDesktopController
 
     /// <summary>Presses a chord when the foreground root window is still <paramref name="expectedRoot"/>.</summary>
     void PressChord(KeyChord chord, nint expectedRoot);
+
+    /// <summary>
+    /// The UI Automation elements of one top-level window in its control view, unfiltered:
+    /// the caller decides which are visible and allowed. Bounds are physical pixels.
+    /// </summary>
+    IReadOnlyList<DesktopElement> Elements(nint window, CancellationToken cancellationToken);
 
     /// <summary>
     /// Processes whose windows host Ru's terminal UI: every ancestor of a running Ru CLI,

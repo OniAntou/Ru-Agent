@@ -182,6 +182,8 @@ public sealed class ComputerUseService
             ComputerActions.RequestAccess => RequestAccess(sessionId, arguments),
             ComputerActions.Focus => Focus(sessionId, fullAccess, arguments),
             ComputerActions.Screenshot => Screenshot(sessionId, fullAccess, imageInputAccepted, arguments),
+            ComputerActions.Inspect => Inspect(sessionId, fullAccess, arguments, cancellationToken),
+            ComputerActions.Wait => Wait(sessionId, fullAccess, arguments, cancellationToken),
             ComputerActions.Click or ComputerActions.Move or ComputerActions.Scroll or ComputerActions.Drag =>
                 Pointer(action, sessionId, fullAccess, arguments, cancellationToken),
             ComputerActions.Type or ComputerActions.Key => Keyboard(action, sessionId, fullAccess, arguments, cancellationToken),
@@ -261,17 +263,8 @@ public sealed class ComputerUseService
 
     private ToolExecutionOutcome Focus(string sessionId, bool fullAccess, JsonObject arguments)
     {
-        var app = ComputerProtectedApps.Normalize(Text(arguments, "app"))
-            ?? throw new ComputerUseException("computer_arguments_invalid", "focus needs app, an executable name such as notepad.exe.");
-        if (ComputerProtectedApps.IsProtected(app))
-            throw new ComputerUseException("computer_app_protected", $"{app} can never be controlled.");
-        if (!fullAccess && !Grants(sessionId).Contains(app))
-            throw new ComputerUseException("computer_app_not_granted", $"{app} has no access in this session; call request_access with it first.");
-        var window = _desktop.TopWindowOf(app)
-            ?? throw new ComputerUseException("computer_app_not_running", $"{app} has no window to bring to the front.");
-        var target = RequireTarget(window, Grants(sessionId), fullAccess);
-        if (!_desktop.BringToForeground(target.Handle))
-            throw new ComputerUseException("computer_focus_refused", $"Windows did not bring {app} to the front; ask the user to switch to it.");
+        var app = RequiredApp(arguments, ComputerActions.Focus);
+        var target = BringAppToFront(sessionId, fullAccess, app);
         Thread.Sleep(SettleDelay);
         return ToolExecutionOutcome.Succeeded(
             new JsonObject { ["action"] = ComputerActions.Focus, ["app"] = app, ["title"] = Bound(target.Title, 120) },
@@ -279,10 +272,35 @@ public sealed class ComputerUseService
             $"Brought {app} to the front.");
     }
 
+    /// <summary>A granted, unprotected app's top window: the only window an <c>app</c> argument may name.</summary>
+    private DesktopWindow GrantedTopWindow(string sessionId, bool fullAccess, string app)
+    {
+        if (ComputerProtectedApps.IsProtected(app))
+            throw new ComputerUseException("computer_app_protected", $"{app} can never be controlled.");
+        if (!fullAccess && !Grants(sessionId).Contains(app))
+            throw new ComputerUseException("computer_app_not_granted", $"{app} has no access in this session; call request_access with it first.");
+        var window = _desktop.TopWindowOf(app)
+            ?? throw new ComputerUseException("computer_app_not_running", $"{app} has no window.");
+        return RequireTarget(window, Grants(sessionId), fullAccess);
+    }
+
+    private DesktopWindow BringAppToFront(string sessionId, bool fullAccess, string app)
+    {
+        var target = GrantedTopWindow(sessionId, fullAccess, app);
+        if (!_desktop.BringToForeground(target.Handle))
+            throw new ComputerUseException("computer_focus_refused", $"Windows did not bring {app} to the front; ask the user to switch to it.");
+        return target;
+    }
+
+    private static string RequiredApp(JsonObject arguments, string action) =>
+        ComputerProtectedApps.Normalize(Text(arguments, "app"))
+        ?? throw new ComputerUseException("computer_arguments_invalid", $"{action} needs app, an executable name such as notepad.exe.");
+
     private ToolExecutionOutcome Screenshot(string sessionId, bool fullAccess, bool imageInputAccepted, JsonObject arguments)
     {
         if (!imageInputAccepted)
-            throw new ComputerUseException("image_unsupported_by_model", "The pinned model does not accept images.");
+            throw new ComputerUseException("image_unsupported_by_model",
+                "The pinned model does not accept images. Use action=inspect with a granted app to read its visible UI elements and clickable coordinates; list, focus, type, key and wait also work without images.");
         var monitor = FindMonitor(arguments);
         // A window that moves, opens or closes during the capture must not show through:
         // keep only pixels the window lists before and after the capture both allow.
@@ -377,7 +395,20 @@ public sealed class ComputerUseService
         string action, string sessionId, bool fullAccess, JsonObject arguments, CancellationToken cancellationToken)
     {
         var grants = Grants(sessionId);
-        var target = RequireTarget(_desktop.ForegroundWindow(), grants, fullAccess);
+        var app = Text(arguments, "app") is null ? null : RequiredApp(arguments, action);
+        if (app is not null)
+        {
+            BringAppToFront(sessionId, fullAccess, app);
+            Thread.Sleep(SettleDelay);
+        }
+
+        var foreground = _desktop.ForegroundWindow();
+        if (foreground is not null && IsProtectedWindow(foreground))
+            throw new ComputerUseException("computer_app_protected",
+                $"{foreground.AppName} has the keyboard focus and can never be controlled; pass app with {action}, or call focus first.");
+        if (app is not null && foreground?.AppName != app)
+            throw new ComputerUseException("computer_focus_refused", $"{app} did not keep the keyboard focus; ask the user to switch to it.");
+        var target = RequireTarget(foreground, grants, fullAccess);
         if (action == ComputerActions.Type)
         {
             var text = Text(arguments, "text");
@@ -401,7 +432,7 @@ public sealed class ComputerUseService
     {
         if (window is null)
             throw new ComputerUseException("computer_target_unknown", "No window is at that point or in the foreground.");
-        if (ComputerProtectedApps.IsProtected(window.AppName) || _desktop.RuHostProcessIds().Contains(window.ProcessId))
+        if (IsProtectedWindow(window))
             throw new ComputerUseException("computer_app_protected", $"{window.AppName} can never be controlled.");
         if (!fullAccess && !grants.Contains(window.AppName))
             throw new ComputerUseException("computer_app_not_granted",
@@ -410,6 +441,113 @@ public sealed class ComputerUseService
             throw new ComputerUseException("computer_target_elevated",
                 $"{window.AppName} runs with higher rights than Ru, so Windows would ignore the input.");
         return window;
+    }
+
+    /// <summary>
+    /// Reads the visible UI Automation elements of a granted app's window (ADR 0031,
+    /// amended 2026-11-05). Only elements whose centre lies in the window's own visible
+    /// region before and after the read are returned, so hidden tabs, covered parts and
+    /// other windows never leak, matching what a masked screenshot shows. Coordinates
+    /// use the monitor's screenshot frame, which this action establishes for pointer input.
+    /// </summary>
+    private ToolExecutionOutcome Inspect(string sessionId, bool fullAccess, JsonObject arguments, CancellationToken cancellationToken)
+    {
+        var window = GrantedTopWindow(sessionId, fullAccess, RequiredApp(arguments, ComputerActions.Inspect));
+        var centreX = window.Bounds.Left + window.Bounds.Width / 2;
+        var centreY = window.Bounds.Top + window.Bounds.Height / 2;
+        var monitor = _desktop.Monitors().FirstOrDefault(candidate => candidate.Bounds.Contains(centreX, centreY))
+            ?? throw new ComputerUseException("computer_window_not_visible",
+                $"{window.AppName} has no window on a monitor; call focus with it first.");
+        bool OwnWindow(DesktopWindow candidate) => candidate.Handle == window.Handle;
+        var before = ComputerGeometry.VisibleAllowedRegions(_desktop.Windows(), OwnWindow, monitor.Bounds);
+        if (before.Count == 0)
+            throw new ComputerUseException("computer_window_not_visible",
+                $"{window.AppName} is covered or minimized; call focus with it first.");
+        var elements = _desktop.Elements(window.Handle, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        var after = ComputerGeometry.VisibleAllowedRegions(_desktop.Windows(), OwnWindow, monitor.Bounds);
+
+        Shot shot;
+        lock (_gate)
+        {
+            // Reuse the latest screenshot's frame so its coordinates stay valid.
+            if (!_shots.TryGetValue(monitor.Index, out shot!) || shot.Monitor != monitor.Bounds)
+            {
+                var (width, height) = ComputerGeometry.ScreenshotSize(monitor.Bounds, ComputerLimits.MaxScreenshotEdge);
+                shot = new Shot(monitor.Bounds, width, height);
+                _shots[monitor.Index] = shot;
+            }
+        }
+
+        var listed = new JsonArray();
+        var seen = new HashSet<(string, PixelRect)>();
+        var visibleCount = 0;
+        foreach (var element in elements)
+        {
+            if (element.Offscreen || element.Bounds.IsEmpty || !IsWorthListing(element)) continue;
+            var x = element.Bounds.Left + element.Bounds.Width / 2;
+            var y = element.Bounds.Top + element.Bounds.Height / 2;
+            if (!before.Any(region => region.Contains(x, y)) || !after.Any(region => region.Contains(x, y))) continue;
+            var name = Bound(element.Name.Trim(), ComputerLimits.MaxElementNameChars);
+            if (!seen.Add((name, element.Bounds))) continue;
+            visibleCount++;
+            if (listed.Count >= ComputerLimits.MaxInspectElements) continue;
+            var (shotX, shotY) = ComputerGeometry.ToShot(shot.Monitor, shot.Width, shot.Height, x, y);
+            var entry = new JsonObject
+            {
+                ["role"] = element.Role,
+                ["name"] = name,
+                ["x"] = shotX,
+                ["y"] = shotY,
+                ["w"] = Math.Max(1, (int)Math.Round((double)element.Bounds.Width * shot.Width / shot.Monitor.Width)),
+                ["h"] = Math.Max(1, (int)Math.Round((double)element.Bounds.Height * shot.Height / shot.Monitor.Height)),
+            };
+            if (!element.Enabled) entry["enabled"] = false;
+            listed.Add(entry);
+        }
+
+        var output = new JsonObject
+        {
+            ["action"] = ComputerActions.Inspect,
+            ["app"] = window.AppName,
+            ["title"] = Bound(window.Title, 120),
+            ["monitor"] = monitor.Index,
+            ["width"] = shot.Width,
+            ["height"] = shot.Height,
+            ["elements"] = listed,
+        };
+        if (visibleCount > listed.Count) output["truncated_from"] = visibleCount;
+        return ToolExecutionOutcome.Succeeded(output, ToolVerificationStates.NotRequired,
+            $"Listed {listed.Count} visible elements of {window.AppName}.");
+    }
+
+    // Named elements carry meaning; unnamed ones matter only when they take input.
+    private static bool IsWorthListing(DesktopElement element) =>
+        !string.IsNullOrWhiteSpace(element.Name)
+        || element.Role is "Edit" or "ComboBox" or "Button" or "CheckBox" or "RadioButton" or "Hyperlink" or "Document";
+
+    private bool IsProtectedWindow(DesktopWindow window) =>
+        ComputerProtectedApps.IsProtected(window.AppName) || _desktop.RuHostProcessIds().Contains(window.ProcessId);
+
+    private ToolExecutionOutcome Wait(string sessionId, bool fullAccess, JsonObject arguments, CancellationToken cancellationToken)
+    {
+        var milliseconds = OptionalInt(arguments, "ms") ?? 1000;
+        if (milliseconds is < ComputerLimits.MinWaitMilliseconds or > ComputerLimits.MaxWaitMilliseconds)
+            throw new ComputerUseException("computer_arguments_invalid",
+                $"ms must be between {ComputerLimits.MinWaitMilliseconds} and {ComputerLimits.MaxWaitMilliseconds}.");
+        // The stop hotkey cancels this token, so a wait never outlives the user's stop.
+        cancellationToken.WaitHandle.WaitOne(milliseconds);
+        cancellationToken.ThrowIfCancellationRequested();
+        var output = new JsonObject { ["action"] = ComputerActions.Wait, ["waited_ms"] = milliseconds };
+        if (_desktop.ForegroundWindow() is { } foreground)
+        {
+            output["focused_app"] = foreground.AppName;
+            // Titles carry content, so they appear only where the user granted access.
+            if (!IsProtectedWindow(foreground) && (fullAccess || Grants(sessionId).Contains(foreground.AppName)))
+                output["focused_title"] = Bound(foreground.Title, 120);
+        }
+
+        return ToolExecutionOutcome.Succeeded(output, ToolVerificationStates.NotRequired, $"Waited {milliseconds} ms.");
     }
 
     private static ToolExecutionOutcome Done(string action, DesktopWindow target)

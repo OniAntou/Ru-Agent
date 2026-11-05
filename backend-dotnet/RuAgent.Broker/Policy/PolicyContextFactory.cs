@@ -384,11 +384,19 @@ public sealed partial class PolicyContextFactory
                     {
                         throw new PolicyContextException("malformed_call", hint: "apps is only valid with action=request_access.");
                     }
-                    else if (op == ComputerActions.Focus)
+                    else if (op is ComputerActions.Focus or ComputerActions.Inspect)
                     {
                         // The app travels as argv so the protected-app invariant denies it before execution.
                         argv = [ComputerProtectedApps.Normalize(OptionalText(arguments, "app"))
-                            ?? throw new PolicyContextException("malformed_call", hint: "focus needs app, an executable name such as notepad.exe.")];
+                            ?? throw new PolicyContextException("malformed_call", hint: op + " needs app, an executable name such as notepad.exe.")];
+                    }
+                    else if (arguments.ContainsKey("app"))
+                    {
+                        // type and key may name the app to focus first; other actions never take one.
+                        if (!ComputerActions.NamesApp(op))
+                            throw new PolicyContextException("malformed_call", hint: "app is only valid with focus, inspect, type and key.");
+                        argv = [ComputerProtectedApps.Normalize(OptionalText(arguments, "app"))
+                            ?? throw new PolicyContextException("malformed_call", hint: "app must be an executable name such as notepad.exe.")];
                     }
 
                     break;

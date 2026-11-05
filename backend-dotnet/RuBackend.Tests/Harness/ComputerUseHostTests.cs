@@ -55,7 +55,10 @@ public sealed class ComputerUseHostTests
     [Theory]
     [InlineData("list", ToolAccessKind.ReadOnly)]
     [InlineData("screenshot", ToolAccessKind.ReadOnly)]
+    [InlineData("inspect", ToolAccessKind.ReadOnly)]
+    [InlineData("wait", ToolAccessKind.ReadOnly)]
     [InlineData("click", ToolAccessKind.Terminal)]
+    [InlineData("type", ToolAccessKind.Terminal)]
     [InlineData("request_access", ToolAccessKind.Terminal)]
     public void Observation_actions_have_no_side_effects(string action, ToolAccessKind expected) =>
         Assert.Equal(expected, BrokerGatewayContracts.AccessKindForTool("computer", new JsonObject { ["action"] = action }));

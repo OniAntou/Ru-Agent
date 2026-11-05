@@ -180,7 +180,7 @@ Implementation: [agent tools](docs/operations/agent-tools.md#mcp-servers), [ADR 
 _Avoid_: workspace-declared servers, a per-server tool definition, or a second execution authority
 
 **Computer Use**:
-The opt-in `computer` tool through which a run that pinned `_ru_computer_use_v1` sees monitors and sends pointer and keyboard input as the current Windows user. One run controls the desktop at a time; Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) stops it. `plan` denies it, and Ru's own windows, terminal hosts and credential UI are never targets in any preset.
+The opt-in `computer` tool through which a run that pinned `_ru_computer_use_v1` sees monitors, reads the visible UI elements of granted apps and sends pointer and keyboard input as the current Windows user. Terminal scripts that drive the desktop bypass its checks, so it is the only supported path. One run controls the desktop at a time; Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) stops it. `plan` denies it, and Ru's own windows, terminal hosts and credential UI are never targets in any preset.
 Implementation: [agent tools](docs/operations/agent-tools.md#computer-use), [ADR 0031](docs/adr/0031-computer-use-through-the-broker.md).
 _Avoid_: unmasked screenshots in `standard`, input to Ru's own windows, or treating a grant as confinement
 

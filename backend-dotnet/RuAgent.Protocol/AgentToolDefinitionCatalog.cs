@@ -211,7 +211,8 @@ public static partial class AgentToolDefinitionCatalog
         ("text", StringSchema(maxLength: ComputerLimits.MaxTypeChars, minLength: 1)),
         ("keys", StringSchema(maxLength: ComputerLimits.MaxKeyChordChars, minLength: 1)),
         ("apps", ArraySchema(maxItems: ComputerLimits.MaxRequestedApps, itemMaxLength: ComputerLimits.MaxAppNameChars)),
-        ("app", StringSchema(maxLength: ComputerLimits.MaxAppNameChars, minLength: 1)));
+        ("app", StringSchema(maxLength: ComputerLimits.MaxAppNameChars, minLength: 1)),
+        ("ms", IntegerSchema(ComputerLimits.MinWaitMilliseconds, ComputerLimits.MaxWaitMilliseconds)));
     internal static JsonObject SkillSchema() => ObjectSchema(
         [],
         ("name", StringSchema(minLength: 1, maxLength: 96)),

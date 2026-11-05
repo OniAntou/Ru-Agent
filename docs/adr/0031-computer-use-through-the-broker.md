@@ -106,6 +106,36 @@ invariants:
    cannot be registered, every action fails with `computer_stop_unavailable`. A locked or
    secure desktop fails with `computer_desktop_unavailable`.
 
+Amendment 2026-11-05 (requested by the owner after reviewing a computer-use session; awaiting
+the owner's acceptance):
+
+- The Host now passes the run's pinned image-input decision to `computer` as well as `read`.
+  Before this, only `read` received it, so every screenshot failed with
+  `image_unsupported_by_model` even for vision models.
+- `inspect` (decision 2) lists the UI Automation elements of one granted app's top window. It
+  is an observation action like `screenshot`. Privacy follows decision 6: the tree is read one
+  level at a time and never below an offscreen element, because a browser's background tabs
+  keep documents with the same bounds as the visible one; an element is then listed only when
+  its centre lies in that window's own visible region before and after the read, so covered
+  parts and other windows do not appear. Decision 1 is unchanged: the tool is still advertised
+  only to runs whose model accepts images.
+  Protected apps are refused by policy and at execution. A read that does not finish in eight
+  seconds fails with `computer_inspect_timeout`; the blocked COM call may keep its background
+  thread until the target answers.
+- Coordinates (decision 7) are pixels of a monitor's latest screenshot **or inspect** frame. An
+  `inspect` reuses the latest screenshot's frame for that monitor and otherwise establishes one
+  of the same size a screenshot would have, so pointer input works after `inspect` alone.
+- `type` and `key` accept an optional granted `app`, which is brought to the front in the same
+  action and must still hold the focus before input (`computer_focus_refused`). The app travels
+  as argv, so protected apps are denied by policy as with `focus`.
+- `wait` pauses up to ten seconds, is cancelled by the stop hotkey, and reports the focused app,
+  with its title only where access is granted.
+- Boundary note: a terminal or `run_code` script runs as the user and can drive UI Automation or
+  synthetic input itself, bypassing grants, masking, the protected-app list and the stop hotkey.
+  The reviewed session did exactly that when screenshots failed. The tool description now tells
+  the model to operate the desktop only through `computer`; this is guidance, not confinement,
+  and terminal launch policy is unchanged.
+
 ## Alternatives and consequences
 
 - Asking on every click is safe but unusable for multi-step tasks; the owner
@@ -115,7 +145,9 @@ invariants:
   grant and must request access to see more.
 - UI Automation trees would give exact element names, but they are a second,
   much larger surface. Pixels and synthetic input match the providers'
-  computer-use training and keep one bounded adapter.
+  computer-use training and keep one bounded adapter. (Amended 2026-11-05: a read-only,
+  visibility-filtered `inspect` was added because models reached UI Automation through
+  terminal scripts anyway; input still goes only through pixels and synthetic events.)
 
 Synthetic input runs with the user's rights. A granted application can do
 anything that application can do, and Ru does not confine it. The grant, the

@@ -203,8 +203,12 @@ reconciliation surfaces from Phase 3:
   carries a credential.
   Glob traversal also checks its elapsed request budget directly, so delayed
   cancellation timers cannot turn an expired scan into a successful receipt.
-  Legacy adapter-only callers retain
-  their older approval contract; production v2 calls use Broker authorization.
+  Tool execution has one entry point, `ExecuteAuthenticatedV2Async`, reached
+  only after `BrokerExecutionRuntime` consumes the authorization token; any
+  other envelope is refused as `tool_execute_v2_required` before an adapter
+  runs. The terminal adapter likewise refuses a launch without Broker
+  authorization, whatever its analyzer class (`terminal_command_not_allowed`,
+  `terminal_shell_approval_invalid`).
   `RU_MAX_CONCURRENT_MODEL_STEPS` still bounds concurrent provider generation.
 - Managed Web: `web_search` resolves the configured engine against a fixed set
   of public HTML engines and returns the first usable result after an
@@ -465,13 +469,6 @@ Patch approval is one-time; outside-workspace patches and renames are rejected.
 a 4 MiB snapshot scan cap and 32 KiB serialized output cap. `read` retains byte
 paging and image input. A line too large for the output budget returns
 `read_line_too_long` rather than an advancing cursor that skips unseen text.
-
-Multi-edit approval previews name the total edit count and show up to four
-numbered excerpts within the shared 512-character preview bound. Omitted edits
-are counted explicitly; approval still binds every original edit argument.
-Excerpts retain both replacement sides and avoid splitting UTF-16 surrogate
-pairs. Context slicing allocates only the bounded excerpt, not copies of the
-whole file for each edit.
 
 ## Skill guidance
 

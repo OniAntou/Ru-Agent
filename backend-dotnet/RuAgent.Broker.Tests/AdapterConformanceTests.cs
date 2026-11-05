@@ -25,8 +25,7 @@ public sealed class AdapterConformanceTests
                 guard);
             StreamingProcessResult result = await terminal.RunAsync(
                 MakeGrant(),
-                new TerminalRunRequest("dotnet", ".", "dotnet", ["--version"], 10_000),
-                confineWorkspace: true,
+                new TerminalRunRequest("dotnet", ".", "dotnet", ["--version"], 10_000, Approved: true),
                 CancellationToken.None);
 
             Assert.Equal("bounded", read["content"]!.GetValue<string>());

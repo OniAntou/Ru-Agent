@@ -36,7 +36,7 @@ public sealed class ModelToolHeadroomRegressionTests
             await using var service = new ToolExecutionService(session, root);
             var arguments = new JsonObject { ["path"] = "large.txt" };
             if (!useDefault) arguments["limit"] = 4 * 1024 * 1024;
-            var result = await service.ExecuteAsync(new AgentEnvelope(1, "read-headroom", AgentMessageTypes.ToolRequest,
+            var result = await service.ExecuteAuthenticatedV2Async(new AgentEnvelope(AgentEnvelopeCodec.ProtocolVersionV2, "read-headroom", AgentMessageTypes.ToolExecute,
                 "headroom", null, 30000, new JsonObject
                 {
                     ["tool_id"] = "read", ["tool_version"] = "1.0.0",

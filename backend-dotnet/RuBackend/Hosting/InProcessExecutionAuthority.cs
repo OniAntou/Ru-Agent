@@ -102,14 +102,13 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
                 // The wire session expired after one hour because the Broker child
                 // exited at expiry and the managed host stopped with it. In-process
                 // the authority is bounded by the Host process, not a timestamp: the
-                // session expiry gates v1/v2 policy grants, so a finite window would
+                // session expiry gates policy grants, so a finite window would
                 // deny every tool call once it elapsed.
                 DateTimeOffset.MaxValue);
             var tools = new ToolExecutionService(
                 session,
                 WorkspaceRoot,
                 WebOptions,
-                approvalTokens: approvalTokens,
                 terminalSpoolRoot: SpoolRoot,
                 terminalConcurrencyOptions: TerminalConcurrency);
             // The child cleaned its spool root once at startup; the in-process

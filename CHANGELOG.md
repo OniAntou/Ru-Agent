@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(broker)!**: Gỡ đường thực thi và duyệt v1 (legacy) khỏi Broker; mọi tool chỉ
+  chạy qua `ExecuteAuthenticatedV2Async` sau khi `BrokerExecutionRuntime` đã đánh giá policy
+  và tiêu thụ authorization token. **Breaking** cho caller nhúng Broker: bỏ
+  `ToolExecutionService.ExecuteAsync(...)` (cả hai overload), `RespondToApprovalAsync`,
+  `ClearPendingApprovals`, tham số `approvalTokens` của `ToolExecutionService`/`TerminalAdapter`,
+  `TerminalAutoPolicy`, các trường `ApprovalToken`/`RequestId`/`SessionId` của
+  `TerminalRunRequest`/`TerminalShellRequest`, `Approved`/`ApprovalToken`/`ConfinementRequired`/
+  `IsAuthenticatedV2Execution` của `ToolExecutionContext`, và nửa v1 của `PendingApprovalStore`
+  (`Issue`/`TryConsume`/`RemoveSession`/`PendingApproval`). Envelope không phải v2 `tool.execute`
+  bị từ chối `tool_execute_v2_required` trước adapter; `TerminalAdapter` từ chối mọi lệnh chưa
+  được Broker cho phép, kể cả lớp read-only. Cũng bỏ tham số `confineWorkspace` của
+  `TerminalAdapter.RunAsync`/`RunApprovedShellAsync` (production luôn truyền `false`; thư mục
+  ngoài workspace do policy v2 quyết định) và preview duyệt v1 (`BuildPreview`,
+  `ApprovalPreviewFields`) vốn không có producer/consumer nào trên đường v2; preview sửa file
+  trên GUI vẫn đến từ `AgentEditPreviewCodec`. Không thay đổi hành vi của Host (đã chỉ dùng v2).
+
 - **refactor(tools)!**: Gỡ tham số `supersedes` khỏi schema `powershell` và `run_process`.
   Từ ADR 0039 nó đã bị bỏ qua nhưng vẫn nằm trong mỗi request gửi model. **Breaking:**
   lệnh còn gửi `supersedes` giờ bị từ chối ở bước kiểm schema trước khi chạy; receipt cũ

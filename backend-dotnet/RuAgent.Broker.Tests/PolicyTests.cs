@@ -650,9 +650,9 @@ public sealed partial class PolicyEvaluationTests
     }
 
     /// <remarks>
-    /// Documents current behavior, deliberately unchanged here. The web manifests require approval and
-    /// the v1 engine honours that flag, but the v2 snapshot evaluator allows both web tools under the
-    /// standard preset (standard_web_allow) with no approval. The manifest flag is not consulted on that path.
+    /// Documents current behavior. The web manifests still carry the approval flag, but the v2 snapshot
+    /// evaluator allows both web tools under the standard preset (standard_web_allow) with no approval.
+    /// The manifest flag is not consulted on that path (the v1 engine that honoured it was removed).
     /// </remarks>
     [Theory]
     [InlineData("web_search")]

@@ -144,7 +144,6 @@ public sealed class TerminalAuthorizationIdentityTests
                 new PolicyGrant("session", new HashSet<string>([ToolScope.TerminalExecute], StringComparer.Ordinal),
                     DateTimeOffset.UtcNow.AddMinutes(5)),
                 request with { AuthorizedIntent = authorizedIntent },
-                confineWorkspace: true,
                 CancellationToken.None);
 
             Assert.Equal("succeeded", result.Status);

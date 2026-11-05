@@ -20,10 +20,8 @@ public sealed partial class WebExecutorTests
         using var http = new HttpClient(new StatusHandler(status));
         using var service = new ToolExecutionService(fixture.Session, fixture.Root,
             webOptions: new WebOptions(true), webHttpClient: http);
-        var pending = await service.ExecuteAsync(Envelope("failed-page", "web_fetch",
+        var result = await service.ExecuteAuthenticatedV2Async(Envelope("failed-page", "web_fetch",
             new JsonObject { ["url"] = "https://93.184.216.34/page" }), default);
-        var result = await service.RespondToApprovalAsync(new AgentEnvelope(1, "approval", AgentMessageTypes.ApprovalResponse,
-            "web-session", null, 30_000, new JsonObject { ["approval_id"] = pending.Output["approval_id"]!.GetValue<string>(), ["approved"] = true }), default);
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
         Assert.Equal("web_http_" + status, result.ErrorCode);
         Assert.Contains(hint, result.SafeSummary);
@@ -39,11 +37,8 @@ public sealed partial class WebExecutorTests
         using var service = new ToolExecutionService(fixture.Session, fixture.Root,
             webOptions: new WebOptions(true, new Uri("https://93.184.216.34/search"), searchMode: WebSearchMode.ConfiguredJson),
             webHttpClient: http);
-        var pending = await service.ExecuteAsync(Envelope("search", "web_search",
+        var result = await service.ExecuteAuthenticatedV2Async(Envelope("search", "web_search",
             new JsonObject { ["query"] = "gold price" }), default);
-        var result = pending.Status == ToolResultStatuses.Failed ? pending
-            : await service.RespondToApprovalAsync(new AgentEnvelope(1, "approval", AgentMessageTypes.ApprovalResponse,
-                "web-session", null, 30_000, new JsonObject { ["approval_id"] = pending.Output["approval_id"]!.GetValue<string>(), ["approved"] = true }), default);
         Assert.Equal("web_search_parse_failed", result.ErrorCode);
         Assert.Contains("shorter keyword query", result.SafeSummary);
     }

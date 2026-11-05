@@ -43,8 +43,8 @@ public sealed class ToolTelemetryTests : IDisposable
         session.Open("telemetry", new HashSet<string>([ToolScope.SystemRead, ToolScope.WorkspaceRead]));
         await using var service = new ToolExecutionService(session, _root);
 
-        await service.ExecuteAsync(ReadEnvelope("r1", "a.txt"), CancellationToken.None);
-        await service.ExecuteAsync(ReadEnvelope("r2", "a.txt"), CancellationToken.None);
+        await service.ExecuteAuthenticatedV2Async(ReadEnvelope("r1", "a.txt"), CancellationToken.None);
+        await service.ExecuteAuthenticatedV2Async(ReadEnvelope("r2", "a.txt"), CancellationToken.None);
 
         var pages = captured.For("ru.tool.read_pages");
         Assert.Equal(["false", "true"], pages.Select(tags => tags["repeated"]));
@@ -60,7 +60,7 @@ public sealed class ToolTelemetryTests : IDisposable
         session.Open("telemetry", new HashSet<string>([ToolScope.SystemRead, ToolScope.WorkspaceRead]));
         await using var service = new ToolExecutionService(session, _root);
 
-        await service.ExecuteAsync(ReadEnvelope("r1", "missing.txt"), CancellationToken.None);
+        await service.ExecuteAuthenticatedV2Async(ReadEnvelope("r1", "missing.txt"), CancellationToken.None);
 
         var call = Assert.Single(captured.For("ru.tool.calls"));
         Assert.Equal("read", call["tool.id"]);
@@ -69,7 +69,7 @@ public sealed class ToolTelemetryTests : IDisposable
     }
 
     private static AgentEnvelope ReadEnvelope(string id, string path) =>
-        new(1, id, AgentMessageTypes.ToolRequest, "telemetry", null, 30000, new JsonObject
+        new(AgentEnvelopeCodec.ProtocolVersionV2, id, AgentMessageTypes.ToolExecute, "telemetry", null, 30000, new JsonObject
         {
             ["tool_id"] = "read",
             ["tool_version"] = "1.0.0",

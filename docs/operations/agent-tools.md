@@ -1115,8 +1115,8 @@ holds final replies, but it never grants or denies execution:
   deletes and restores are not source edits.
 - Commands do not invalidate earlier checks. A background check that is still running is pending:
   read its terminal output until it exits, and do not start a duplicate.
-- `supersedes` is accepted and ignored. It is not checked for `purpose=verification`, and it retires
-  nothing. Its schema bounds (1 to 16 entries) still apply.
+- `supersedes` has been removed from `powershell` and `run_process`; a call that sends it fails
+  schema validation before launch. In old receipts it is ignored and retires nothing.
 - A declared check rejected before launch (a malformed call, a policy denial or an unresolvable
   executable) observed nothing and creates no obligation. Its failed receipt still counts as a tool
   failure.
@@ -1129,7 +1129,7 @@ permission. See [receipt-backed verification](../architecture/harness.md#receipt
 
 The model-facing text describes this behavior. The `purpose` description says that a command is not a
 declared check and that a failed or pending required check stays outstanding until the same check
-passes. The `supersedes` description says that it is deprecated, ignored and retires nothing.
+passes.
 Verification emits no repair families or repair hints, and it never emits `verification_repair_identity`
 or `verification_invocation_invalid`. Receipts that still carry those fields parse, and the fields are
 ignored.

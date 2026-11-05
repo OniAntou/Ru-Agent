@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(tools)!**: Gỡ tham số `supersedes` khỏi schema `powershell` và `run_process`.
+  Từ ADR 0039 nó đã bị bỏ qua nhưng vẫn nằm trong mỗi request gửi model. **Breaking:**
+  lệnh còn gửi `supersedes` giờ bị từ chối ở bước kiểm schema trước khi chạy; receipt cũ
+  có trường này vẫn đọc được.
+
+- **fix(broker)**: Gán process con vào Job Object bằng `PROCESS_SET_QUOTA |
+  PROCESS_TERMINATE` thay vì `PROCESS_ALL_ACCESS` (quyền tối thiểu mà API cần).
+
 - **fix(harness)**: Hint sửa lỗi gửi cho model không còn bị cắt giữa chữ. Hint
   `malformed_call` của `run_process` thiếu `executable` dài 291 ký tự, bị cắt cứng ở 200 thành
   "... Send the exact schema valu". Trường bắt buộc bị thiếu giờ có hint ngắn

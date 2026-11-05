@@ -103,7 +103,7 @@ mutation. This observes results after Broker execution; it adds no execution
 adapter or permission decision to the Host and does not rescan the entire
 workspace on every step.
 
-Repair-family metadata and `supersedes` retirement are no longer part of verification (ADR 0039). A `supersedes` argument is accepted and ignored. A failed or pending check stays outstanding until the same identity passes. Original receipts remain in durable history, and the projection keeps the latest result for each identity.
+Repair-family metadata and `supersedes` retirement are no longer part of verification (ADR 0039). The `supersedes` argument has been removed from the launch schemas; old receipts that carry it are ignored. A failed or pending check stays outstanding until the same identity passes. Original receipts remain in durable history, and the projection keeps the latest result for each identity.
 
 The cache admits at most eight runs, 32 MiB estimated weight per run and 64 MiB
 total, with two-minute access validity. Native Responses public-message metadata

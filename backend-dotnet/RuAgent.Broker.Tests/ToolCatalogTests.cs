@@ -221,21 +221,10 @@ public sealed class ToolCatalogTests
 
     [Theory]
     [InlineData("run_process", "{\"executable\":\"python\",\"purpose\":\"command\",\"supersedes\":[\"probe\"]}")]
-    [InlineData("powershell", "{\"script\":\"dotnet test\",\"purpose\":\"verification\",\"supersedes\":[\"probe\",\"probe\"]}")]
-    public void Supersedes_is_accepted_and_ignored_by_the_launch_schema_for_any_purpose(string toolId, string json)
+    [InlineData("powershell", "{\"script\":\"dotnet test\",\"purpose\":\"verification\",\"supersedes\":[\"probe\"]}")]
+    public void Retired_supersedes_field_is_rejected_by_the_launch_schema(string toolId, string json)
     {
         var schema = AgentToolDefinitionCatalog.Find(toolId, "1.0.0")!.InputSchema;
-        ToolSchemaValidator.Validate(schema, JsonNode.Parse(json));
-    }
-
-    [Theory]
-    [InlineData("[]")]
-    [InlineData("[\"\"]")]
-    [InlineData("[3]")]
-    public void Supersedes_shape_is_still_schema_checked(string supersedes)
-    {
-        var schema = AgentToolDefinitionCatalog.Find("run_process", "1.0.0")!.InputSchema;
-        var arguments = JsonNode.Parse("{\"executable\":\"python\",\"supersedes\":" + supersedes + "}");
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(schema, arguments));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(schema, JsonNode.Parse(json)));
     }
 }

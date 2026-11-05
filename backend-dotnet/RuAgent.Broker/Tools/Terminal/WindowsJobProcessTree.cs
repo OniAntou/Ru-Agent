@@ -63,7 +63,8 @@ public sealed class WindowsJobProcessTree : IProcessTreeController
     public void Assign(int processId)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var processHandle = OpenProcess(0x001F_0FFF /* PROCESS_ALL_ACCESS (legacy) */, false, processId);
+        // AssignProcessToJobObject needs exactly these rights; the handle is closed right after.
+        var processHandle = OpenProcess(ProcessSetQuota | ProcessTerminate, false, processId);
         if (processHandle == IntPtr.Zero)
         {
             throw new Win32Exception(Marshal.GetLastWin32Error(), "process_open_failed");
@@ -166,6 +167,9 @@ public sealed class WindowsJobProcessTree : IProcessTreeController
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+    private const uint ProcessTerminate = 0x0001;
+    private const uint ProcessSetQuota = 0x0100;
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

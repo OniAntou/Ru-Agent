@@ -710,6 +710,6 @@ unchanged because those statements must come first. Programs launched with
 Declared terminal checks (`purpose=verification` and `purpose=expected_failure`) are advisory evidence
 that never grants or denies execution ([ADR 0039](../adr/0039-advisory-verification.md)). The Broker
 emits no verification repair families or repair hints and does not emit `verification_repair_identity`
-or `verification_invocation_invalid`. A terminal call carrying `supersedes` without
-`purpose=verification` is accepted, and the argument is ignored. Receipts that still carry the removed
-fields parse, and the fields are ignored.
+or `verification_invocation_invalid`. The retired `supersedes` argument is no longer in the
+launch schemas, so a call that still sends it fails schema validation before any process starts.
+Receipts that still carry removed fields parse, and the fields are ignored.

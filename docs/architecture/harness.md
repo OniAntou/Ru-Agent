@@ -897,8 +897,8 @@ edit ran (sticky), and the latest successful `todo_write` list. A failed or unpa
   the run as awaiting verification until a declared check launches. Terminal commands, computer-use
   input, file deletion and file restoration never mark a source edit. No command or computer input
   invalidates an earlier check.
-- **`supersedes`.** The Broker checks only its schema bounds (1 to 16 nonempty entries) and does not
-  require `purpose=verification`. Verification ignores it, so it retires nothing.
+- **`supersedes`.** Removed from the launch schemas; a call that still sends it fails schema
+  validation. Verification ignores it in old receipts, so it retires nothing.
 - **Rejected before launch.** A declared check rejected before any process started (a malformed
   call, a policy denial or an unresolvable executable) observed nothing and creates no obligation.
   Its failed receipt still counts as a tool failure for the tool-failure guard.

@@ -766,7 +766,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         "model_tool_call_unavailable" =>
             "Your previous tool call was rejected: that tool is not advertised. Re-issue the call for an advertised tool.",
         "invalid_selection" =>
-            "Your previous reply was rejected: it wrote a tool call out as text. Call the tool through the native tool-calling interface, or answer in plain text.",
+            "Your previous reply was rejected: it wrote a tool call out as text that could not be read. Call the tool through the native tool-calling interface, or answer in plain text.",
         _ => null,
     };
 

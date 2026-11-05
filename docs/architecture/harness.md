@@ -732,7 +732,8 @@ share proposal-batch classification, pause and abort cleanup in the Harness;
 initial proposal persistence stays interleaved with evaluation, and refresh
 cannot execute the batch. Read-only calls may execute concurrently in model order with at
 most eight active, while mutations and terminal calls retain sequential
-barriers. A tool call written out as text is rejected, never executed.
+barriers. A complete call written out as text to an advertised tool is salvaged
+into the same path.
 _Avoid_: one-call-per-step rule, reissuing approved calls
 
 ## Completion policy

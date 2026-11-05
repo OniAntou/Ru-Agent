@@ -259,10 +259,10 @@ the legacy text-selection mode, where the model wrote one JSON selection as text
 is retired. A stored pin naming any other calling mode, including a run pinned to
 `text_selection` before that mode retired, fails with `provider_selection_invalid`
 when its snapshot is rebuilt instead of being resumed on native calling. New pins
-record only `native`. A tool call the model writes out as text instead of calling
-the tool natively is never executed: it fails the step retryably as
-`invalid_selection` and is never shown as an answer (see
-[runtime behavior](../operations/runtime-behavior.md)). A provider/model that cannot
+record only `native`. Native runs still salvage a call the model writes out as
+text instead of issuing it (models behind OpenAI-compatible gateways do this): a
+complete call to an advertised tool executes through the normal Broker path; see
+[agent tools](../operations/agent-tools.md#model-first-selection-and-native-batches). A provider/model that cannot
 support its selected protocol fails by name rather than gaining support
 from a family name. Responses requests remain stateless (`store:false`). The
 Host translates Protocol tool definitions into provider declarations, validates

@@ -186,7 +186,7 @@ calls. The Host persists the assistant batch and matching durable tool results;
 it does not flatten native calls into prose. Responses assistant message phases survive native replay: `commentary` is
 progress rather than a completed answer. A commentary-only response continues
 with bounded recovery, and `final_answer` can finish normally. A call written out
-as text is rejected as `invalid_selection`, never executed. The model makes no success claim before durable
+as text is salvaged into a native call when it names an advertised tool. The model makes no success claim before durable
 results. If a batch asks, no call executes; after approval the runtime
 re-evaluates the retained durable proposals without a new model proposal.
 Read-only calls may overlap up to eight at a time while mutation/terminal
@@ -505,8 +505,8 @@ as execution markup, mood state, or public diagnostics.
 A dead-end model step does not end the run by default. Ordinary prose after a
 failed or unverified tool receipt is suppressed and answered with a durable
 `[HARNESS RECOVERY]` note (up to 3 notes, shared with verification holds); empty final text gets up to 3 notes,
-and a runner-rejected malformed or unavailable tool call, or a call written out as
-text (`invalid_selection`), gets up to 4.
+and a runner-rejected malformed or unavailable tool call, or an unreadable call
+written out as text (`invalid_selection`), gets up to 4.
 Incomplete `Length` finishes get up to 3 truncation notes in a row (a later truncation after progress starts a new count). These kinds share a
 cumulative cap of 24 notes per run. System recovery notes remain visible through
 compaction. Feedback keeps the same model/provider; spent bounds fail with the

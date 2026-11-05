@@ -459,10 +459,14 @@ adapter names do not create additional public model capabilities.
 
 The Host advertises the same canonical tool definitions to the prompt and the model step.
 One model generation may emit optional narration and one or more ordered native
-tool calls. Native tool calling is the only protocol: a call the model writes out
-as text (a JSON envelope or a `<tool_call>` block, leading, trailing or glued to
-prose) never executes and never reaches the transcript. The step fails retryably
-as `invalid_selection`, and the repair note asks for a native call.
+tool calls. Native tool calling is the only protocol. When a step issues no native
+call but writes one out as text (a JSON envelope or a `<tool_call>` block: leading,
+trailing, glued to prose, fenced or with mangled delimiters), the model step
+salvages it: a complete call to an advertised tool and version becomes an ordinary
+call and takes the same scheduler and Broker policy path. An unadvertised tool or
+version fails retryably as `model_tool_call_unavailable`, like a native call;
+markup that cannot be read as a call fails retryably as `invalid_selection`, or is
+stripped when prose remains. Raw call markup never reaches the transcript.
 
 The runtime evaluates a complete batch before executing any call. If any
 non-denied call asks, prepared authorization is discarded and the whole retained
@@ -477,9 +481,8 @@ then `repeated_tool_call` parks the run for explicit Continue. Suppressed calls
 remain audit-only and do not create unmatched native-history tool calls. The
 failed receipt remains visible behind advice, so prose alone cannot clear it. An empty or whitespace-only
 final step is answered up to three times with a bounded `[HARNESS RECOVERY]` note before the run fails as
-`empty_model_reply`. A runner-rejected tool call or written-out call
-(`model_tool_call_invalid`, `model_tool_call_unavailable`, `capability_unavailable`,
-`invalid_selection`) is
+`empty_model_reply`. A runner-rejected tool call or unreadable written-out call
+(`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is
 likewise answered up to four times before failing with the original runner code.
 A `Length` finish is not a completed turn: the entire step, including partial
 tool calls, is suppressed before any execution and gets up to three recovery notes

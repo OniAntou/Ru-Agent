@@ -15,10 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (hướng dẫn đó đã nằm trong mô tả tool native). **Breaking:** run đã lưu với
   `calling_mode = text_selection` không được chạy tiếp bằng native mà thất bại với
   `provider_selection_invalid`; pin mới chỉ ghi `native`, client chỉ nhận `native`.
-  **Đổi hành vi native:** tool call model tự viết thành text (JSON envelope hoặc khối
-  `<tool_call>`) trước đây được thực thi trên Chat Completions; giờ không bao giờ thực
-  thi và không hiện ra chat, bước đó thất bại retry được với `invalid_selection` kèm
-  ghi chú yêu cầu gọi tool native. Mặc định cột `calling_mode` trong baseline v18 đã
+  Run native vẫn cứu tool call model tự viết thành text (JSON envelope hoặc khối
+  `<tool_call>`): call đầy đủ tới tool/version được advertise vẫn chạy qua Broker như
+  trước. Tool hoặc version không được advertise giờ thất bại retry được với
+  `model_tool_call_unavailable` như call native (trước là `capability_unavailable`, mã
+  này bị bỏ khỏi nhóm sửa được của recovery note). Mặc định cột `calling_mode` trong baseline v18 đã
   phát hành giữ nguyên vì mọi lần ghi đều truyền giá trị.
 
 - **fix(harness)**: Hint sửa lỗi gửi cho model không còn bị cắt giữa chữ. Hint

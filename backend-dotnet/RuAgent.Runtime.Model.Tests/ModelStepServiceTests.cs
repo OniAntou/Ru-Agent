@@ -535,53 +535,250 @@ public sealed partial class ModelStepServiceTests
         Assert.True(error.Retryable);
     }
 
-    // Native tool calling is the only protocol: a tool call the model writes out as text is
-    // never executed and never shown as an answer. It fails retryably so the Host's bounded
-    // repair asks for a native call instead. (These shapes used to execute as text-selected
-    // calls; that calling mode is retired.)
-    private const string HandWrittenRead = "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}";
-
-    public static TheoryData<string, string[]> HandWrittenToolCalls => new()
+    // Native salvage: a native run whose step issued no native call but wrote one out as
+    // text still executes it when it is a complete call to an advertised tool. It takes the
+    // normal Broker path, and the markup never reaches the chat.
+    [Fact]
+    public async Task Step_service_converts_prompt_tool_selection_without_leaking_json_as_text()
     {
-        { "json envelope", [HandWrittenRead] },
-        { "split json envelope", ["{\"tool_id\":\"files.", "read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}"] },
-        { "split wrapper", ["<tool_", "call> " + HandWrittenRead + " </tool_call>"] },
-        { "fenced json", ["```json\n" + HandWrittenRead + "\n```"] },
-        { "split fence prefix", ["``", "`json\n" + HandWrittenRead + "\n```"] },
-        { "split unclosed wrapper", ["<tool_", "call> {\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"a\"}}"] },
-        { "trailing tag dialect after prose", ["I'll look at the workspace structure first.",
-            "<tool_call>read<arg_key>op</arg_key><arg_value>list</arg_value>",
-            "<arg_key>path</arg_key><arg_value>/D/Test Agent</arg_value></tool_call>"] },
-        { "trailing json wrapper after prose", ["I'll check the workspace structure first. ", "<tool_call>" + HandWrittenRead + "</tool_call>"] },
-        { "mangled call glued to prose", ["Xin chào! Tôi sẽ thử truy cập vào folder.<tool_call>\n<(\n\"tool_id\":\"files.read\",\n\"tool_version\":\"1.0.0\",\n\"arguments\":{\"path\":\"D:\\\\Test Agent\"}\n}\n}>"] },
-        { "incomplete json envelope", ["{\"tool_id\":\"files.read\"}"] },
-    };
-
-    [Theory]
-    [MemberData(nameof(HandWrittenToolCalls))]
-    public async Task Step_service_rejects_a_hand_written_tool_call_without_executing_or_leaking_it(string shape, string[] parts)
-    {
-        Assert.NotEmpty(shape);
-        var provider = new FakeModelProvider(parts.Select((part, index) => index == parts.Length - 1
-            ? new ModelDelta(part, Array.Empty<ModelToolFragment>(), true, "stop")
-            : new ModelDelta(part, Array.Empty<ModelToolFragment>(), false, null)).ToArray());
+        var provider = new FakeModelProvider(
+            new ModelDelta(
+                "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}",
+                Array.Empty<ModelToolFragment>(),
+                true,
+                "stop"));
         var deltas = new List<string>();
 
-        var error = await Assert.ThrowsAsync<ModelStepException>(() => new ModelStepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             text =>
             {
                 deltas.Add(text);
                 return ValueTask.CompletedTask;
             },
+            CancellationToken.None,
+            "step_text_selected");
+
+        Assert.Null(result.Text);
+        Assert.Empty(deltas);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Single(result.ToolCalls);
+        Assert.Equal("ru_call_step_text_selected_1", result.ToolCalls[0].ProviderCallId);
+        Assert.Equal("files.read", result.ToolCalls[0].ToolId);
+        Assert.Equal("README.md", result.ToolCalls[0].Arguments.GetProperty("path").GetString());
+    }
+
+    [Fact]
+    public async Task Step_service_normalizes_text_selected_call_without_an_explicit_step_id()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(
+                "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}",
+                Array.Empty<ModelToolFragment>(),
+                true,
+                "stop"));
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            CancellationToken.None);
+
+        var call = Assert.Single(result.ToolCalls);
+        Assert.Equal("ru_call_worker_1", call.ProviderCallId);
+    }
+
+    [Fact]
+    public async Task Step_service_holds_split_prompt_tool_selection_until_it_is_validated()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("{\"tool_id\":\"files.", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Null(result.Text);
+        Assert.Empty(deltas);
+        Assert.Equal("files.read", result.ToolCalls.Single().ToolId);
+    }
+
+    [Fact]
+    public async Task Step_service_converts_split_tool_call_wrapper_without_leaking_markup()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("<tool_", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("call> {\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}} </tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Null(result.Text);
+        Assert.Empty(deltas);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+    }
+
+    [Fact]
+    public async Task Step_service_holds_fenced_tool_selection_until_it_is_validated()
+    {
+        const string fenced = "```json\n{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}\n```";
+        var provider = new FakeModelProvider(
+            new ModelDelta(fenced, Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Null(result.Text);
+        Assert.Empty(deltas);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+    }
+
+    [Fact]
+    public async Task Step_service_holds_split_fence_prefix_until_it_is_validated()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("``", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("`json\n{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}\n```", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Null(result.Text);
+        Assert.Empty(deltas);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+    }
+
+    [Fact]
+    public async Task Step_service_converts_split_unclosed_tool_call_wrapper_without_leaking_markup()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("<tool_", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("call> {\"tool_id\":\"terminal.run\",\"tool_version\":\"1.0.0\",\"arguments\":{\"executable\":\"python\"}}", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(includeTool: true, toolId: "terminal.run"),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Null(result.Text);
+        Assert.Empty(deltas);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("terminal.run", Assert.Single(result.ToolCalls).ToolId);
+    }
+
+    [Fact]
+    public async Task Step_service_strips_trailing_unparseable_wrapper_and_keeps_prose()
+    {
+        const string prose = "I'll check if I can access the \"Test Agent\" folder. Let me look at the workspace structure first.";
+        var provider = new FakeModelProvider(
+            new ModelDelta(prose, Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("<tool_call>read<arg_key>op</arg_key><arg_value>list</arg_value>", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("<arg_key>path</arg_key><arg_value>/D/Test Agent</arg_value></tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(prose, result.Text);
+        Assert.Empty(result.ToolCalls);
+        Assert.Equal("stop", result.FinishReason);
+        Assert.DoesNotContain("<tool_call>", string.Concat(deltas), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Step_service_executes_trailing_valid_wrapper_and_keeps_prose()
+    {
+        const string prose = "I'll check the workspace structure first.";
+        const string payload = "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"D:/Test Agent\"}}";
+        var provider = new FakeModelProvider(
+            new ModelDelta(prose + " ", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("<tool_call>" + payload + "</tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(prose, result.Text);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+        Assert.DoesNotContain("<tool_call>", string.Concat(deltas), StringComparison.Ordinal);
+    }
+
+    public static TheoryData<string, string> UnadvertisedHandWrittenCalls => new()
+    {
+        { "unknown tool", "{\"tool_id\":\"files.teleport\",\"tool_version\":\"1.0.0\",\"arguments\":{}}" },
+        { "wrong version", "<tool_call>{\"tool_id\":\"files.read\",\"tool_version\":\"9.9.9\",\"arguments\":{\"path\":\"a\"}}</tool_call>" },
+        { "unknown tool after prose", "Let me look. <tool_call>{\"tool_id\":\"files.teleport\",\"tool_version\":\"1.0.0\",\"arguments\":{}}</tool_call>" },
+    };
+
+    [Theory]
+    [MemberData(nameof(UnadvertisedHandWrittenCalls))]
+    public async Task Step_service_never_executes_an_unadvertised_hand_written_call(string shape, string text)
+    {
+        Assert.NotEmpty(shape);
+        var provider = new FakeModelProvider(new ModelDelta(text, Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var error = await Assert.ThrowsAsync<ModelStepException>(() => new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            delta =>
+            {
+                deltas.Add(delta);
+                return ValueTask.CompletedTask;
+            },
             CancellationToken.None));
 
-        Assert.Equal("invalid_selection", error.Code);
+        // The same repairable code an unadvertised native call gets.
+        Assert.Equal("model_tool_call_unavailable", error.Code);
         Assert.True(error.Retryable);
-        var streamed = string.Concat(deltas);
-        Assert.DoesNotContain("tool_id", streamed, StringComparison.Ordinal);
-        Assert.DoesNotContain("<tool_call>", streamed, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("arg_key", streamed, StringComparison.Ordinal);
+        Assert.DoesNotContain("tool_id", string.Concat(deltas), StringComparison.Ordinal);
+        Assert.DoesNotContain("<tool_call>", string.Concat(deltas), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -607,6 +804,31 @@ public sealed partial class ModelStepServiceTests
 
         Assert.Equal("invalid_selection", error.Code);
         Assert.True(error.Retryable);
+    }
+
+    [Fact]
+    public async Task Step_service_executes_mangled_embedded_call_and_keeps_prose()
+    {
+        const string prose = "Xin chào! Tôi sẽ thử truy cập vào folder.";
+        const string mangled =
+            "<tool_call>\n<(\n\"tool_id\":\"files.read\",\n\"tool_version\":\"1.0.0\",\n\"arguments\":{\"path\":\"D:\\\\Test Agent\"}\n}\n}>";
+        var provider = new FakeModelProvider(
+            new ModelDelta(prose + mangled, Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(prose, result.Text);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+        Assert.DoesNotContain("tool_id", string.Concat(deltas), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -679,6 +901,19 @@ public sealed partial class ModelStepServiceTests
         Assert.Equal("Đang kiểm tra cho anh.", result.Text);
         Assert.Empty(result.ToolCalls);
         Assert.Equal("stop", result.FinishReason);
+    }
+
+    [Fact]
+    public async Task Step_service_rejects_a_malformed_prompt_tool_selection()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("{\"tool_id\":\"files.read\"}", Array.Empty<ModelToolFragment>(), true, "stop"));
+
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
+
+        Assert.Equal("invalid_selection", error.Code);
+        Assert.True(error.Retryable);
     }
 
     [Fact]

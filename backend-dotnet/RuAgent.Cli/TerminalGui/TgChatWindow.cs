@@ -129,6 +129,18 @@ public sealed partial class TgChatWindow : Window
     internal SemaphoreSlim ModalRequestGate { get; } = new(1, 1);
     public string CommandPaletteQuery => _commandPalette.Query;
 
+    internal event Action? ClipboardPasteRequested;
+
+    internal void RequestClipboardPaste()
+    {
+        if (HasBlockingOverlay || MostFocused != Composer.Input)
+        {
+            return;
+        }
+
+        ClipboardPasteRequested?.Invoke();
+    }
+
     /// <summary>Routes terminal text to the active input without changing a hidden draft.</summary>
     internal bool TryPasteText(string text)
     {

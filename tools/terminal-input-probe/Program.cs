@@ -28,6 +28,8 @@ if (args.Length > 0 && args[0] == "child")
     var target = File.ReadAllText(Path.Combine(root, "expected.txt"));
     var submissions = 0;
     var pastes = 0;
+    var clipboardPastes = 0;
+    var imagePaste = File.Exists(Path.Combine(root, "image-paste.txt"));
     string? rawPaste = null;
     using IApplication app = Application.Create();
     TgTerminalInput.Initialize(app);
@@ -36,6 +38,12 @@ if (args.Length > 0 && args[0] == "child")
     presentation.Transcript.FullScreenCards = true;
     var loop = new TgChatLoop(window);
     loop.SetPromptHandler((_, _, _) => { submissions++; return Task.CompletedTask; });
+    if (imagePaste) loop.SetPasteHandler(() =>
+    {
+        clipboardPastes++;
+        window.Composer.SetImages(1);
+        return Task.CompletedTask;
+    });
     app.Paste += (_, e) => rawPaste = e.Text;
     TgTerminalPaste.Attach(app);
     app.Paste += (_, _) => pastes++;
@@ -51,14 +59,15 @@ if (args.Length > 0 && args[0] == "child")
     app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
     {
         var text = window.Composer.Input.Text;
-        if (text != target) return true;
+        if (text != target || imagePaste && clipboardPastes == 0) return true;
         File.WriteAllText(Path.Combine(root, "result.tmp"), JsonSerializer.Serialize(new
         {
-            text, expected = target, submissions, pastes, rawPaste,
+            text, expected = target, submissions, pastes, rawPaste, clipboardPastes,
             cursor = window.Composer.Input.InsertionPoint,
             loadedCli = typeof(TgTerminalPaste).Assembly.Location,
             structuredTranscriptRows = window.Transcript.RetainedRowCount,
-            passed = submissions == 0 && pastes == 1 && window.Transcript.RetainedRowCount >= 4,
+            passed = submissions == 0 && pastes == 1 && window.Transcript.RetainedRowCount >= 4
+                && (!imagePaste || clipboardPastes == 1 && rawPaste == ""),
         }, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(Path.Combine(root, "result.tmp"), Path.Combine(root, "result.json"));
         app.RequestStop();
@@ -66,7 +75,7 @@ if (args.Length > 0 && args[0] == "child")
     });
     app.AddTimeout(TimeSpan.FromSeconds(15), () =>
     {
-        File.WriteAllText(Path.Combine(root, "timeout.json"), JsonSerializer.Serialize(new { text = window.Composer.Input.Text, submissions, pastes, rawPaste, codeUnits = rawPaste?.Select(c => ((int)c).ToString("X4")).ToArray() }));
+        File.WriteAllText(Path.Combine(root, "timeout.json"), JsonSerializer.Serialize(new { text = window.Composer.Input.Text, submissions, pastes, rawPaste, clipboardPastes, codeUnits = rawPaste?.Select(c => ((int)c).ToString("X4")).ToArray() }));
         app.RequestStop();
         return false;
     });
@@ -83,7 +92,9 @@ var bmp = args.Length > 1 && args[1] == "bmp";
 var fragmented = args.Length > 1 && args[1] == "fragmented";
 var navigation = args.Length > 1 && args[1] == "navigation";
 var typing = args.Length > 1 && args[1] == "typing";
-var payload = control ? "Tiếng Việt 😀 中文" : bmp ? "Tiếng Việt 中文\r\n  if (ready)\r\n\trun();" : "Tiếng Việt 😀\r\n  if (ready)\r\n\trun();";
+var image = args.Length > 1 && args[1] == "image";
+if (image) File.WriteAllText(Path.Combine(probeRoot, "image-paste.txt"), "empty bracketed paste");
+var payload = image ? "" : control ? "Tiếng Việt 😀 中文" : bmp ? "Tiếng Việt 中文\r\n  if (ready)\r\n\trun();" : "Tiếng Việt 😀\r\n  if (ready)\r\n\trun();";
 var normalized = payload.Replace("\r\n", "\n").Normalize();
 var expected = control ? payload : navigation ? "type" + normalized + "d " : (typing ? "typed 😀 " : "typed ") + normalized;
 File.WriteAllText(Path.Combine(probeRoot, "expected.txt"), expected);

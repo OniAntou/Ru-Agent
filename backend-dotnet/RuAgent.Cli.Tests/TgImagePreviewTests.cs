@@ -1,6 +1,7 @@
 using RuAgent.Cli.Attachments;
 using RuAgent.Cli.Images;
 using RuAgent.Cli.TerminalGui;
+using RuAgent.Cli.Tui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
@@ -13,6 +14,82 @@ public sealed class TgImagePreviewTests
 {
     private static readonly byte[] ImageBytes = CreatePng();
     private static readonly string ImageDataUrl = "data:image/png;base64," + Convert.ToBase64String(ImageBytes);
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public void Empty_terminal_paste_attaches_image_once_without_editing_or_submitting(bool home, bool busy)
+    {
+        using var state = new ChatSubmissionState();
+        var pasteCalls = 0;
+        Render(home, 80,
+            (app, window, loop) =>
+            {
+                Wire(state, loop);
+                TgTerminalPaste.Attach(app);
+                TgTerminalPaste.Attach(app);
+                if (busy)
+                {
+                    loop.SetPromptHandler(async (_, _, ct) => await Task.Delay(System.Threading.Timeout.Infinite, ct));
+                    window.Composer.Input.Text = "running turn";
+                    loop.Submit();
+                }
+                window.Composer.Input.Text = "describe this";
+                window.Composer.Input.InsertionPoint = 4;
+                loop.SetPasteHandler(() =>
+                {
+                    pasteCalls++;
+                    state.Add(Image("clipboard.png"));
+                    loop.RefreshAttachmentLabel();
+                    return Task.CompletedTask;
+                });
+
+                Assert.True(app.RaisePasteEvent(""));
+            },
+            (app, window, loop) =>
+            {
+                Assert.Equal(1, pasteCalls);
+                Assert.Contains("[image 1]", PreviewRow(app, window));
+                Assert.Equal("describe this", window.Composer.Input.Text);
+                Assert.Equal(4, window.Composer.Input.InsertionPoint);
+                Assert.Equal(busy, loop.IsBusy);
+                Assert.Equal(home, window.Landing.Visible);
+                var snapshot = state.CreateSnapshot("describe this", "session", "C:\\project", "standard", "provider", "vision-model", false)!;
+                Assert.Equal(ImageDataUrl, Assert.Single(snapshot.Images).ToDataUrl());
+            });
+    }
+
+    [Theory]
+    [InlineData("palette")]
+    [InlineData("picker")]
+    [InlineData("document")]
+    [InlineData("question")]
+    [InlineData("secret")]
+    [InlineData("handled")]
+    public void Empty_terminal_paste_does_not_attach_outside_the_active_composer(string target)
+    {
+        var pasteCalls = 0;
+        Render(false, 80,
+            (app, window, loop) =>
+            {
+                if (target == "handled") app.Paste += (_, e) => e.Handled = true;
+                TgTerminalPaste.Attach(app);
+                loop.SetPasteHandler(() => { pasteCalls++; return Task.CompletedTask; });
+                window.Composer.Input.Text = "saved draft";
+                if (target == "palette") window.OpenCommandPalette();
+                if (target == "picker") window.ShowPicker("models", [new ChoiceItem("model", "", "model")], 0, "esc close");
+                if (target == "document") window.ShowDocument("status", ["status details"]);
+                if (target == "question") window.ShowQuestion(ChatInputWorkflowTests.Question);
+                if (target == "secret") window.ShowSecret("provider");
+                Assert.True(app.RaisePasteEvent(""));
+            },
+            (_, window, _) =>
+            {
+                Assert.Equal(0, pasteCalls);
+                Assert.Equal("saved draft", window.Composer.Input.Text);
+            });
+    }
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, false)]

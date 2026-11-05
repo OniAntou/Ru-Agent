@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Handle image-only Ctrl+V from Windows Terminal by routing its empty
+  bracketed paste to the existing clipboard attachment handler. Preserve draft
+  text and image payloads; prevent image paste from leaking through open panels.
+
 - **fix(broker)**: Output của lệnh PowerShell giữ đúng tiếng Việt và ký tự có dấu.
   Windows PowerShell ghi output redirect theo code page hệ thống trong khi Ru giải mã
   UTF-8, nên model đọc `Tiếng Việt café` thành `Ti?ng Vi?t caf�`. Ru giờ đặt

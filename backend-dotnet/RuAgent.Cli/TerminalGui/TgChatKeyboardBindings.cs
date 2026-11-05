@@ -40,6 +40,7 @@ internal sealed class TgChatKeyboardBindings
         _completeCommand = completeCommand;
         _paste = paste;
         _copy = copy;
+        window.ClipboardPasteRequested += _paste;
         window.Composer.Input.KeyDown += OnComposerKey;
         window.Composer.Input.DraftInsertionRejected += () =>
             window.Hints.ShowFeedback("paste too large · draft unchanged · limit 16000 characters", true);

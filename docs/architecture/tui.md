@@ -261,7 +261,12 @@ including while another turn streams. The labels are presentation only; submissi
 snapshots retain the original image data URLs. Queued/admitted images leave the draft;
 images held after a pre-acceptance failure are marked `held:` until accepted.
 Clipboard decode and image-limit failures also appear in the live status row. The
-resizer reads the PNG/JPEG/BMP/WebP container header and rejects a source canvas over
+terminal paste route treats an empty bracketed paste as a request to read the
+local image clipboard, matching Windows Terminal's image-only Ctrl+V signal.
+Only the focused composer may attach an image; pickers, documents, the command
+palette, questions and secret fields consume the signal without changing the
+hidden draft. Non-empty paste payloads remain text and do not read the clipboard.
+The resizer reads the PNG/JPEG/BMP/WebP container header and rejects a source canvas over
 64 MP before GDI+ allocates the decoded surface; the longest side is then capped at 2048
 and the encoded result at 4 MB.
 

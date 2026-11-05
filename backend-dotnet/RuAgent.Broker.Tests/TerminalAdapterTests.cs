@@ -42,7 +42,6 @@ public sealed class TerminalAdapterTests
             var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() => adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
                 Request("rg", ["--files"]) with { ReadOnly = true, WriteSet = ["src/app.cs"] },
-                confineWorkspace: true,
                 CancellationToken.None));
             Assert.Equal("invalid_terminal_write_set", error.Message);
         }
@@ -64,7 +63,6 @@ public sealed class TerminalAdapterTests
                 _ = adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute),
                     new TerminalRunRequest("powershell", ".", "notepad.exe", [], 1_000),
-                    confineWorkspace: true,
                     CancellationToken.None);
             });
             Assert.Equal("terminal_command_not_allowed", allowlistError.Message);
@@ -80,7 +78,6 @@ public sealed class TerminalAdapterTests
                         ["status"],
                         1_000,
                         Network: true),
-                    confineWorkspace: true,
                     CancellationToken.None);
             });
             Assert.Equal("terminal_network_requires_approval", error.Message);
@@ -102,7 +99,6 @@ public sealed class TerminalAdapterTests
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
                 Request("rg", ["--files"]),
-                confineWorkspace: true,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
             Assert.Equal(0, result.ExitCode);
@@ -132,7 +128,6 @@ public sealed class TerminalAdapterTests
             var result = await CreateAdapter(root).RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
                 Request("git", ["diff"]),
-                confineWorkspace: true,
                 CancellationToken.None);
 
             Assert.True(
@@ -161,7 +156,6 @@ public sealed class TerminalAdapterTests
             var result = await CreateAdapter(root).RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
                 Request("git", ["status", "--short"]),
-                confineWorkspace: true,
                 CancellationToken.None);
 
             Assert.True(
@@ -194,7 +188,6 @@ public sealed class TerminalAdapterTests
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute),
                     Request("rg", ["--files"], approved: false),
-                    confineWorkspace: true,
                     CancellationToken.None));
             Assert.Equal("terminal_command_not_allowed", readOnly.Message);
 
@@ -202,14 +195,12 @@ public sealed class TerminalAdapterTests
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute),
                     Request("python", ["-c", "print(1)"], approved: false),
-                    confineWorkspace: true,
                     CancellationToken.None));
             Assert.Equal("terminal_command_not_allowed", unrecognized.Message);
 
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
                 Request("python", ["-c", "print(1)"]),
-                confineWorkspace: true,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
         }
@@ -275,7 +266,6 @@ public sealed class TerminalAdapterTests
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute),
                     Request("git", ["status"]),
-                    confineWorkspace: true,
                     CancellationToken.None));
             Assert.Equal("working_directory_invalid", error.Message);
         }
@@ -295,7 +285,6 @@ public sealed class TerminalAdapterTests
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
                 Request("dotnet", ["--version"], network: true),
-                confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
         }
@@ -316,7 +305,6 @@ public sealed class TerminalAdapterTests
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute),
                     Request("dotnet", ["--version"], network: true, approved: false),
-                    confineWorkspace: true,
                     CancellationToken.None));
             Assert.Equal("terminal_network_requires_approval", error.Message);
         }
@@ -344,7 +332,6 @@ public sealed class TerminalAdapterTests
                     "rg",
                     ["--files"],
                     workingDirectory: Path.Combine("..", "outside")),
-                confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
             Assert.Equal(Path.GetFullPath(outsideDirectory), result.WorkingDirectory);
@@ -371,7 +358,6 @@ public sealed class TerminalAdapterTests
                     ["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 10"],
                     100,
                     Approved: true),
-                confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("timed_out", result.Status);
             Assert.True(result.DurationMs < 5_000, result.DurationMs.ToString());
@@ -400,7 +386,6 @@ public sealed class TerminalAdapterTests
                     ["-NoProfile", "-NonInteractive", "-Command", "Write-Output ([string]::new('x', 5000))"],
                     30_000,
                     Approved: true),
-                confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
             Assert.InRange(result.StdoutBytes, 1, 32);
@@ -429,7 +414,6 @@ public sealed class TerminalAdapterTests
                     ["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 30"],
                     120_000,
                     Approved: true),
-                confineWorkspace: false,
                 cancellation.Token);
             Assert.Equal("cancelled", result.Status);
             Assert.True(result.DurationMs < 5_000, result.DurationMs.ToString());
@@ -470,7 +454,6 @@ public sealed class TerminalAdapterTests
                     ["-NoProfile", "-NonInteractive", "-Command", parentScript],
                     120_000,
                     Approved: true),
-                confineWorkspace: false,
                 cancellation.Token);
             // This is startup of two real PowerShell processes, not cancellation latency.
             childProcessId = await WaitForProcessIdAsync(marker, TimeSpan.FromSeconds(20));
@@ -540,7 +523,6 @@ public sealed class TerminalAdapterTests
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
                 Request("dotnet", ["--version"], workingDirectory: windowsDirectory),
-                confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
             Assert.True(
@@ -569,7 +551,6 @@ public sealed class TerminalAdapterTests
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
                 Request("dotnet", ["--version"], workingDirectory: "windows-link"),
-                confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
         }
@@ -595,34 +576,8 @@ public sealed class TerminalAdapterTests
                     "dotnet",
                     ["--version"],
                     workingDirectory: $@"\\?\{windowsDirectory}"),
-                confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Confinement_flag_remains_independent_of_network_scope()
-    {
-        var root = CreateTemporaryRoot("ru-terminal-independence-");
-        try
-        {
-            var adapter = CreateAdapter(root);
-            var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-                adapter.RunAsync(
-                    MakeGrantWithScopes(ToolScope.TerminalExecute),
-                    Request(
-                        "rg",
-                        ["--files"],
-                        network: true,
-                        workingDirectory: ".."),
-                    confineWorkspace: true,
-                    CancellationToken.None));
-            Assert.Equal("workspace_path_outside_root", error.Message);
         }
         finally
         {
@@ -641,13 +596,11 @@ public sealed class TerminalAdapterTests
             var unauthorized = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunApprovedShellAsync(
                     new TerminalShellRequest("powershell", ".", "Get-Date", 10_000),
-                    confineWorkspace: true,
                     CancellationToken.None));
             Assert.Equal("terminal_shell_approval_invalid", unauthorized.Message);
 
             var result = await adapter.RunApprovedShellAsync(
                 new TerminalShellRequest("powershell", ".", "Get-Date", 10_000, Approved: true),
-                confineWorkspace: true,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
         }
@@ -719,7 +672,6 @@ public sealed class TerminalAdapterTests
             var adapter = CreateAdapter(workspaceRoot);
             var result = await adapter.RunApprovedShellAsync(
                 new TerminalShellRequest("powershell", Path.Combine("..", "outside"), "Get-Date", 30_000, Approved: true),
-                confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
             Assert.Equal(Path.GetFullPath(outsideDirectory), result.WorkingDirectory);
@@ -881,9 +833,9 @@ public sealed class TerminalAdapterTests
             var adapter = CreateAdapter(root);
             var grant = MakeGrantWithScopes(ToolScope.TerminalExecute);
             var commit = await adapter.RunAsync(
-                grant, Request("git", ["commit", "-m", "agent commit"]), confineWorkspace: true, CancellationToken.None);
+                grant, Request("git", ["commit", "-m", "agent commit"]), CancellationToken.None);
             var show = await adapter.RunAsync(
-                grant, Request("git", ["show", "--name-only", "--format=", "HEAD"]), confineWorkspace: true, CancellationToken.None);
+                grant, Request("git", ["show", "--name-only", "--format=", "HEAD"]), CancellationToken.None);
 
             Assert.Equal("succeeded", commit.Status);
             Assert.DoesNotContain("managed commit", commit.StdoutHead, StringComparison.Ordinal);

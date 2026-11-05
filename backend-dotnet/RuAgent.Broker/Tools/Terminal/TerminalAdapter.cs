@@ -95,7 +95,6 @@ public sealed class TerminalAdapter
     public Task<StreamingProcessResult> RunAsync(
         PolicyGrant grant,
         TerminalRunRequest request,
-        bool confineWorkspace,
         CancellationToken cancellationToken,
         Action<string>? retainOutput = null,
         int? killTimeoutMs = null,
@@ -105,7 +104,6 @@ public sealed class TerminalAdapter
         ArgumentNullException.ThrowIfNull(request);
         ValidateWriteSet(request.ReadOnly, request.WriteSet);
         var intent = request.AuthorizedIntent ?? CanonicalizeRun(request);
-        EnforceWorkingDirectoryPolicy(intent, confineWorkspace);
 
         if (request.Network && !IsNetworkAuthorized(grant, request.Network, request.Approved))
         {
@@ -140,7 +138,6 @@ public sealed class TerminalAdapter
 
     public async Task<StreamingProcessResult> RunApprovedShellAsync(
         TerminalShellRequest request,
-        bool confineWorkspace,
         CancellationToken cancellationToken,
         Action<string>? retainOutput = null,
         int? killTimeoutMs = null,
@@ -155,7 +152,6 @@ public sealed class TerminalAdapter
         }
 
         var intent = request.AuthorizedIntent ?? CanonicalizeShell(request);
-        EnforceWorkingDirectoryPolicy(intent, confineWorkspace);
 
         // V2 authorization (automatic or approved) has already been consumed by
         // the Broker; an unauthorized shell request never launches.
@@ -255,14 +251,6 @@ public sealed class TerminalAdapter
             retainOutput(text);
             return output?.Invoke(stream, sequence, text, redacted, token) ?? ValueTask.CompletedTask;
         };
-
-    private void EnforceWorkingDirectoryPolicy(CanonicalCommandIntent intent, bool confineWorkspace)
-    {
-        if (confineWorkspace && !intent.IsInsideWorkspace)
-        {
-            throw new UnauthorizedAccessException("workspace_path_outside_root");
-        }
-    }
 
     private static void ValidateWriteSet(bool readOnly, IReadOnlyList<string>? writeSet)
     {

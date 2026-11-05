@@ -459,7 +459,6 @@ public sealed partial class ToolExecutionService
             (token, retain) => tools.Terminal.RunAsync(
                 grant,
                 request,
-                confineWorkspace: false,
                 token,
                 retain,
                 killTimeoutMs: lifetimeMs, output: isBackground ? null : context.TerminalOutput));
@@ -517,7 +516,6 @@ public sealed partial class ToolExecutionService
             cancellationToken,
             (token, retain) => tools.Terminal.RunApprovedShellAsync(
                 shellRequest,
-                confineWorkspace: false,
                 token,
                 retain,
                 killTimeoutMs: lifetimeMs,

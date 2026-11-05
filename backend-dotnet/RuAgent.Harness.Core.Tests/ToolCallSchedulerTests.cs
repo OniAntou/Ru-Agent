@@ -74,6 +74,34 @@ public sealed class ToolCallSchedulerTests
     }
 
     [Fact]
+    public void Deny_hint_over_the_bound_is_cut_at_a_word_and_marked()
+    {
+        // Regression: a 291-character malformed_call hint reached the model as
+        // "... Send the exact schema valu".
+        var hint = "run_process requires executable (and optional arguments); use powershell with script for pipelines. "
+            + "Invalid argument purpose: expected an enum; received a string. Send the exact schema value without added quotes or whitespace.";
+
+        var bounded = ToolProposalDecision.Deny(ToolAccessKind.ReadOnly, "malformed_call", hint).DenyHint!;
+
+        Assert.True(bounded.Length <= ToolProposalDecision.MaximumDenyHintLength);
+        Assert.EndsWith("…", bounded, StringComparison.Ordinal);
+        Assert.StartsWith(bounded[..^1], hint, StringComparison.Ordinal);
+        Assert.True(hint[bounded.Length - 1] == ' ' || char.IsPunctuation(hint[bounded.Length - 2]));
+    }
+
+    [Theory]
+    [InlineData("short hint", 20, "short hint")]
+    [InlineData("alpha beta gamma delta", 12, "alpha beta…")]
+    [InlineData("averyveryverylongtokenwithoutspaces", 10, "averyvery…")]
+    public void Clip_at_word_keeps_whole_words_within_the_bound(string text, int maximum, string expected)
+    {
+        var clipped = BoundedText.ClipAtWord(text, maximum);
+
+        Assert.Equal(expected, clipped);
+        Assert.True(clipped.Length <= maximum);
+    }
+
+    [Fact]
     public async Task Consecutive_read_only_calls_overlap_and_receipts_return_in_model_order()
     {
         var scheduler = new ToolCallScheduler();

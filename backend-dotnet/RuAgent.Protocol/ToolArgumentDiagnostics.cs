@@ -6,8 +6,13 @@ namespace RuAgent.Protocol;
 /// <summary>Schema-based repair feedback only; never authorizes or rewrites a call.</summary>
 public sealed record ToolArgumentIssue(string Field, string Expected, string Received, string Signature)
 {
-    public string Hint => $"Invalid argument {Field}: expected {Expected}; received {Received}. "
-        + "Send the exact schema value without added quotes or whitespace; changing the path/content does not repair this field.";
+    // A missing field needs only its name; the quoting advice is for a present value of the
+    // wrong shape. Callers prepend their own repair text and bound the result, so the
+    // missing-field case stays short enough to survive intact.
+    public string Hint => Received == "missing"
+        ? $"Missing required argument {Field}."
+        : $"Invalid argument {Field}: expected {Expected}; received {Received}. "
+            + "Send the exact schema value without added quotes or whitespace; changing the path/content does not repair this field.";
 }
 
 public static class ToolArgumentDiagnostics

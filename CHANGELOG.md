@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: Hint sửa lỗi gửi cho model không còn bị cắt giữa chữ. Hint
+  `malformed_call` của `run_process` thiếu `executable` dài 291 ký tự, bị cắt cứng ở 200 thành
+  "... Send the exact schema valu". Trường bắt buộc bị thiếu giờ có hint ngắn
+  (`Missing required argument executable.`), lời dặn về dấu ngoặc chỉ dành cho giá trị sai
+  kiểu; hint vượt giới hạn được cắt ở ranh giới từ kèm `…`. Nội dung `tool_denied` gửi model
+  cũng dùng escape JSON gọn.
+
 - **fix(broker)**: Output của lệnh PowerShell giữ đúng tiếng Việt và ký tự có dấu.
   Windows PowerShell ghi output redirect theo code page hệ thống trong khi Ru giải mã
   UTF-8, nên model đọc `Tiếng Việt café` thành `Ti?ng Vi?t caf�`. Ru giờ đặt

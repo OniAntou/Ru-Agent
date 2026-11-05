@@ -191,9 +191,7 @@ public sealed record ToolProposalDecision
             return null;
         }
 
-        return cleaned.Length <= MaximumDenyHintLength
-            ? cleaned
-            : cleaned[..MaximumDenyHintLength];
+        return BoundedText.ClipAtWord(cleaned, MaximumDenyHintLength);
     }
 
     private static void ValidateAccessKind(ToolAccessKind accessKind)

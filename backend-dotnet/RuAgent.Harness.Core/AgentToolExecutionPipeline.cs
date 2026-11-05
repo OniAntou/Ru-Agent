@@ -16,6 +16,11 @@ internal sealed partial class AgentToolExecutionPipeline
     private const int AskUserMaxOptions = 8;
     private const int AskUserMaxOptionLength = 512;
 
+    private static readonly JsonSerializerOptions ModelContentJson = new()
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
     private readonly IToolGateway _gateway;
     private readonly IHarnessEventStore _store;
     private readonly IIdGenerator _ids;
@@ -612,7 +617,8 @@ internal sealed partial class AgentToolExecutionPipeline
             fields["hint"] = hint;
         }
 
-        var modelContent = JsonSerializer.SerializeToUtf8Bytes(fields);
+        // Model content, never HTML: relaxed escaping keeps quotes and non-ASCII readable.
+        var modelContent = JsonSerializer.SerializeToUtf8Bytes(fields, ModelContentJson);
         var resultPayloadId = _ids.NewPayloadId();
         var resultPayload = new HarnessPayloadIntent(
             resultPayloadId,

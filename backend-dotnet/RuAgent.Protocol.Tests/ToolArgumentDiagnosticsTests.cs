@@ -25,4 +25,13 @@ public sealed class ToolArgumentDiagnosticsTests
         using var json = JsonDocument.Parse("""{"purpose":"\u0076erification","script":"dotnet test"}""");
         Assert.Null(ToolArgumentDiagnostics.Find("powershell", "1.0.0", json.RootElement));
     }
+
+    [Fact]
+    public void A_missing_required_field_gets_a_short_hint_without_quoting_advice()
+    {
+        using var json = JsonDocument.Parse("""{"arguments":["-c","print(1)"],"purpose":"inspection"}""");
+        var issue = Assert.IsType<ToolArgumentIssue>(ToolArgumentDiagnostics.Find("run_process", "1.0.0", json.RootElement));
+
+        Assert.Equal("Missing required argument executable.", issue.Hint);
+    }
 }

@@ -194,10 +194,7 @@ internal static class BrokerGatewayContracts
             return null;
         }
 
-        if (cleaned.Length > MaximumRepairHintLength)
-        {
-            cleaned = cleaned[..MaximumRepairHintLength];
-        }
+        cleaned = BoundedText.ClipAtWord(cleaned, MaximumRepairHintLength);
 
         var serialized = new JsonObject { ["hint"] = cleaned }.ToJsonString();
         var normalized = serialized

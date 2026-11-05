@@ -76,7 +76,6 @@ public sealed class TgTaskControlTests
 
     [Theory]
     [InlineData("/tasks")]
-    [InlineData("/changes")]
     public async Task Escape_during_inspection_fetch_cancels_only_inspection_and_stop_drains_its_lifetime(string command)
     {
         using IApplication app = Application.Create(); app.Init(DriverRegistry.Names.ANSI);
@@ -87,8 +86,6 @@ public sealed class TgTaskControlTests
         loop.SetPromptHandler(async (_, _, ct) =>
         { try { await release.Task.WaitAsync(ct); } catch (OperationCanceledException) { turnCancelled = true; } });
         loop.SetTaskCommandHandler(async (_, ct) =>
-        { try { await Task.Delay(System.Threading.Timeout.Infinite, ct); } catch (OperationCanceledException) { taskCancelled = true; } });
-        loop.SetChangesCommandHandler(async (_, ct) =>
         { try { await Task.Delay(System.Threading.Timeout.Infinite, ct); } catch (OperationCanceledException) { taskCancelled = true; } });
         var checkedState = false;
         app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>

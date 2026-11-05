@@ -1,5 +1,34 @@
 # MEMORY — Ru-Agent (máy của anh steal)
 
+## 2026-11-05 — Bàn giao phần streaming và gỡ lệnh chat
+
+- Anh yêu cầu commit lên branch. Gom phần streaming và các sửa gỡ `/changes`, `/history`, alias `/rewind` đã hoàn tất vào branch hiện tại `casluminous/tui-multi-session`; đích remote `OniAntou/Ru-Agent`. Trước bàn giao, remote cùng tên vẫn ở `58669b39`, trùng HEAD local; không cần merge hoặc force-push.
+- Kiểm chứng trên source cuối: 2.178 test CLI Release và 7 test tài liệu đã qua; không thay đổi product code sau lần kiểm chứng. Chỉ thêm ghi chép bàn giao. Bản publish của lệnh Ru chưa cập nhật. Không đưa `TONG-KET-CONG-VIEC.md` hoặc `docs/presentation/` vào commit.
+
+## 2026-11-05 — Giảm dispatch streaming trong chat TUI
+
+- Anh yêu cầu sửa streaming trước; không chỉnh welcome/thiên hà. Xác nhận một chunk 1.024 dòng code tạo 1.026 lần commit/UI Invoke. `StreamingMarkdownProjector` nay giữ commit đầu tiên, gom các dòng tiếp theo trong cùng Append theo giới hạn 64 dòng/16 Ki ký tự, flush trước preview/empty commit và trước return; cấp mảng riêng cho UI, không giữ batch qua event, không thêm timer. Dòng đơn quá dài vẫn nguyên vẹn. Không đổi parser Markdown, provider/model, Host, policy, tool/approval/question hoặc GUI.
+- Test mới có native UI queue thật sau khi welcome ẩn, kiểm đủ nội dung/thứ tự/styles; pure tests kiểm preview, đóng fence rỗng, sở hữu batch, giới hạn ký tự và reset. Baseline cố ý fail ngân sách callback (1.026 >32), sau sửa còn18: giảm98,25% dispatch cho ca burst. Log đầu có lỗi fixture dùng enum không tồn tại, rồi2 lỗi fixture do bật highlighting khác reference; sửa fixture đúng representation, không nới assert hoặc logic product để che lỗi.
+- Focused 73 test pass (`streaming-batch-regressions.log/.trx`); full CLI Release 2.178 pass/0fail/0skip trong5m1s (`scripts/test_dotnet.ps1 -Configuration Release -ProjectFilter RuAgent.Cli.Tests`, `streaming-full-cli.log`);7 test tài liệu pass. Probe riêng cuối1pass (`streaming-batch-isolated.log/.trx`): median18calls/4,906,672bytes producer/38.508ms gồm UI apply, so baseline1.026calls/5.261.096bytes/42,179ms. Timing giữa các đợt còn dao động; chưa chứng minh độ trễ end-to-end giảm hoặc model sinh token nhanh hơn. Allocation là tổng cấp phát trên producer thread, không phải RAM giữ lại. Không thay đổi cadence với chunk nhỏ/đơn dòng.
+- Bằng chứng, mẫu đo và giới hạn tại task workspace `work/tui-navigation/streaming-verification.md`, `streaming-comparison.json`; giữ các log thất bại đầu. Không chạy lại matrix Host/GUI vì phạm vi chỉ CLI; không gọi model thật hay kiểm paint/input latency thủ công. Đã cập nhật CHANGELOG, README CLI và tài liệu TUI. Chưa commit/push hoặc publish/cài vào lệnh Ru; giữ nguyên các sửa gỡ /changes, /history cùng hai đường dẫn untracked riêng của anh.
+
+## 2026-11-05 — Gỡ /changes và /history khỏi chat
+
+- Anh yêu cầu xóa cả hai mục sau khi được giải thích chức năng. Gỡ catalog, completion, help, dispatcher và alias `/rewind`; các lệnh bị bỏ bị chặn trước snapshot/attachment và không gửi thành prompt cho model.
+- Xóa workflow inspector file, turn browser, stage/commit history branch, history reload/guard và nhánh inspection tương ứng khỏi CLI; giữ lane `/tasks`, queue/cancel/attachment, mở lại session đã lưu và Up/Down. API Host/Client, GUI, headless session history/fork/rewind và RPC không đổi.
+- Xóa các test chỉ mô tả hai tính năng đã gỡ; giữ coverage headless/RPC/session và tách public synthetic session dùng chung khỏi fixture rewind đã xóa sang `ChatTestSession`. Thêm test lệnh bị bỏ (hoa/thường/tham số, queue paused, attachment draft) và giữ chặn prompt trong lúc `/tasks` đang fetch để không thay đổi hành vi ngoài phạm vi.
+- Nhóm kiểm tra đầu qua 185 test (`remove-changes-history-first.log/.trx`). Full CLI Release qua đủ 2.175 test trong 5m4s (`scripts/test_dotnet.ps1 -Configuration Release -ProjectFilter RuAgent.Cli.Tests`, log `remove-changes-history-full-cli.log`); 7 test tài liệu qua. Số test giảm do xóa các ca chỉ dành cho tính năng đã gỡ, bổ sung kiểm tra lệnh bị bỏ và guard `/tasks`. Không lỗi `git diff --check`; source chưa commit/push, bản publish của lệnh Ru vẫn là bản build trước lượt gỡ này. Giữ nguyên ghi chép build cũ cùng hai đường dẫn untracked của anh.
+
+
+## 2026-11-05 — Build đầy đủ sau commit 58669b39
+
+- Anh yêu cầu build dự án. Chạy trọn `build.bat` 11 bước, Release win-x64 self-contained cho CLI, Backend và GUI, giữ mutex `Global\ru-test-matrix-run`. Không có Ru/Host/GUI đang chạy trước build. Kiểm tra đường dẫn publish nằm trong repository và chuyển cả ba bản publish cũ vào backup bên ngoài trước khi build; không xóa bản cũ.
+- Build thành công, không ghi nhận warning/error. GUI có XAML, assets, font và Windows App Runtime; bước flatten xác nhận identity DLL Microsoft.Extensions. CLI và Host trong gói GUI có SHA256 trùng đúng hai bản standalone.
+- `Get-Command Ru` trỏ đúng `C:\Users\steal\Ru-Agent\bin\ru.cmd`; launcher `--version` trả `0.1.2-preview.1`. Bản lệnh Ru sử dụng nay đã được cập nhật. Smoke published Host dùng profile tạm riêng: khởi động, xác thực `/status`, tắt qua idle maintenance đều PASS; không khởi động Host trên profile thật hoặc gọi model.
+- SHA256 CLI `17B0DE5EAAF1EC681088EA8E6B8286F4B64E9DEA6ADFAFF7610532A1D060B024`; Backend `DAB664C0339D59F9B37D926380AC807203E5716C5BB8B1D928CF8E5260AADE3F`; GUI `87BD208E691C02EA64F34C15CDA9B36C314AF49FF1897F2D2C63BD36FBBF2287`. Log, manifest, script và backup ở task workspace `work/full-build-20261105-58669b39/` (backup/cli, backup/host, backup/gui).
+- Không sửa product code trong lượt build, không chạy lại toàn bộ matrix. Bộ test gần nhất trên code này là 2.242 CLI và 7 test tài liệu qua; lần này thêm kiểm tra đóng gói/launcher/Host nêu trên. Chưa mở GUI để kiểm thử trực quan. Chỉ cập nhật MEMORY, không tự commit/push ghi chép build.
+
+
 ## 2026-11-05 — Gỡ lệnh /follow
 
 - Anh yêu cầu xóa mục `/follow`. Gỡ catalog/help/dispatch và đưa vào danh sách lệnh đã bỏ để chặn cả kiểu viết hoa hoặc kèm run-id trước khi lấy snapshot/attachment. Bỏ mục run rỗng trong help; sửa mô tả `/sessions` còn sót `close` sau lần gỡ tab.

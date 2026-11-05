@@ -30,7 +30,7 @@ baseline. Missing usage keeps an available estimate instead of inventing zero.
 
 `ChatSessionEngine` is the only conversation controller in `agent chat`. It owns
 submission guards/snapshots, admission, the bounded queue, prompt history,
-turn cancellation, pause/resume and the independent task/change/history inspection
+turn cancellation, pause/resume and the independent task inspection
 lane. `ChatSession.Engine.cs` wires the same command and run handlers, attachment
 ownership and shutdown settlement for every presentation. A parked `Continue`
 revalidates the retained run's owner/state and preserves its provider pin; it does
@@ -117,7 +117,7 @@ for run/attachment settlement after the bounded UI drain. Runs adopted from
 another client are detached on exit; explicit Escape still cancels the adopted
 run. Saved conversations remain available through `/sessions`.
 
-Escape can cancel pending task/change/history inspection before its panel opens.
+Escape can cancel pending task inspection before its panel opens.
 Inspection cancellation keeps priority over model cancellation.
 
 The composer metadata can display the selected effort alone (for example `max` or `high`) between model and provider.
@@ -157,7 +157,7 @@ draft's materialized session. Provider/model/workspace/preset, attachments and
 idempotency key stay unchanged, and existing-session or other-session snapshots
 cannot be rebound. A lost/failed create acknowledgement does not automatically
 retry or start a run; choose a session or reopen chat. Before materialization,
-session-dependent task/change/rewind/subagent controls report no session
+session-dependent task/subagent controls report no session
 without issuing blank-id API requests. Status labels the session `not started`.
 
 Stopping the UI keeps its two-second bound for ordinary turn handlers. The chat
@@ -220,7 +220,14 @@ suppression and durable turn replacement operate on all segments. The existing
 does not change the model's durable context.
 
 `StreamingMarkdownProjector` owns native line/paragraph accumulation and preview
-cadence; tool activity and run lifecycle remain in `TuiTranscript`. Its
+cadence; tool activity and run lifecycle remain in `TuiTranscript`. Completed
+rows within one incoming chunk use bounded commit batches (64 rows or
+16 Ki characters, with a single oversized source row kept intact). The first
+commit remains eager; queued rows flush before previews, empty commits and return
+from `Append`, so subsequent tool/lifecycle output cannot overtake them. Each
+dispatch owns its row array. There is no timer or cross-event buffering, and the
+unfinished-line preview cadence is unchanged.
+Its
 `StreamingParagraphParser` checkpoints settled top-level inline content at whitespace
 boundaries, using Markdig source spans rather than pairing Markdown delimiters itself.
 Only the unresolved suffix is reparsed on later deltas. Open delimiters, ambiguous
@@ -410,71 +417,18 @@ traffic: refresh is an explicit picker action. Modal request serialization is sh
 with native questions and approval/trust prompts, preventing one panel's response
 from resolving another panel's waiter. Line and JSON I/O remain nonmodal adapters.
 
-`ChatChangesWorkflow` adds read-only `/changes [run-id]` using the existing
-`GetRunAsync`/`ListRunActivitiesAsync` client API. Run/session membership is checked
-before reading history. The latest activity for each ID wins before filtering for
-completed edits; known durable sequence orders reject older replay duplicates.
-Filename grouping is case-insensitive. Counts sum edit operations and preserve
-unknown values; they are not a net Git diff. The Host currently returns safe
-basenames only and limits activity replay to 200 rows, so filename groups may
-combine different physical paths and history may be incomplete. UI/JSON explicitly
-label both limits instead of inventing full paths or complete-run coverage.
-
-Changes inspection shares the bounded task-control lane, preserving attachment
-ownership, model cancellation and queued prompts while streaming. A native picker
-offers explicit refresh and read-only preview documents through the modal gate
-also used by questions and approvals. Previews decode `AgentEditPreviewCodec`
-metadata, retain each edit's before/after excerpt, sanitize controls and label
-missing/truncated evidence. No current-file read, shell command, restore, write or
-model call is made. Display limits are 100 filename groups and 2000 preview rows
-plus an omission notice; projection rejects more than 4096 input activities.
-
-`ChatHistoryWorkflow` replaces destructive TUI rewind with turn-based browsing
-through `/history` (`/rewind` remains a hidden alias). A user row starts a turn;
-all following rows through the next user belong to it. The latest 100 targets are
-shown, with the existing 10,000-row envelope guard. View renders bounded saved
-text and up to ten linked runs' available activity; inherited run evidence from
-another session is not misrepresented as belonging to the child. No filesystem
-inspection or model request occurs while browsing.
-
-Edit stages a prefix before the selected turn and restores its prompt into the
-native composer (16k limit; control sequences refused). Continue stages a prefix
-through that turn. Escape does not stage a new plan; `/history cancel` discards a
-pending plan while retaining input. Only a subsequent ordinary send creates the
-child. Current settings and pending attachments remain the submission source.
-The branch plan is cleared on session switching/reload. Native history operations
-use the auxiliary control lifetime, reject busy/paused/queued work and block
-other submissions before snapshots; text typed during the picker is not replaced.
-
-Session activation exposes a SHA256 `history_revision` over its bounded message
-window, absolute offset, total count and rewind epoch. The CLI translates visible
-turn boundaries into absolute message indices. `SessionStore.ForkAsync` checks
-the same window revision and a whole-turn boundary within that window in one
-immediate SQLite transaction, then creates a new conversation
-identity with parent metadata and only the retained source ledger. Source rows
-are untouched. No schema migration, run/approval/grant/work-state copy, policy
-change, or file restoration occurs. New runs still pass the existing preset and
-Broker authority paths. This is a conversation branch, not a workspace snapshot.
-
-Client acknowledgement must contain a different valid identity and the exact
-selected prefix. A definite stale/invalid request starts no run. A failed branch
-send requires explicit session reload before selecting a new target; an ambiguous
-POST outcome is never retried. Native recovery admits the exact same-session
-`/sessions id:<id>` command while paused, restores the held prompt/attachments
-without replacing typed text and unpauses only an empty queue. Queued drafts
-never replay as a side effect of reload. Type-ahead is refused during branch
-creation so snapshots cannot accidentally bind to the old session. A committed but
-unacknowledged child can remain in the session list. The old headless rewind
-endpoint remains independent and does not gain these fork guarantees.
-
+The TUI has no recorded-change inspector or turn-branching controls.
+`/changes`, `/history` and the legacy `/rewind` alias are removed from the catalog,
+help and dispatch, including the auxiliary control lane. Ordinary sends do not
+stage or commit conversation branches. Saved-session replay and input recall
+remain in their existing owners. Host/GUI and headless session APIs are independent.
 
 The terminal no longer handles `/delete`, `/resume`, `/retry`, `/release` or
 `/clear`. They are absent from help, palettes and completion, and an explicit
 removed-command guard refuses them before snapshot/admission, paused-queue control
 or custom prompt-command lookup. Transcript reset remains an internal lifecycle
 operation. The sessions browser retains its existing operations; `/sessions id:<id>`
-provides explicit switching/reloading without changing title-query behavior. History-branch
-uncertainty recovery uses that route and still validates identity before unblocking.
+provides explicit switching without changing title-query behavior.
 Rejected submissions retain the paused queue and held attachment labels, with no
 automatic replay; diagnostics direct users to close/reopen chat. Parked-run text
 points to external CLI cancellation. Public session/run APIs and GUI behavior remain

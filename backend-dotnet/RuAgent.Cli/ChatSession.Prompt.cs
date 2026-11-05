@@ -24,11 +24,6 @@ public sealed partial class AgentCommands
             CancellationToken ct,
             ChatSubmissionSnapshot? submission = null)
         {
-            if (historyReloadRequired)
-            {
-                await WriteDiagnosticLineAsync(_err, $"history_reload_required: use /sessions id:{sessionId} before sending.");
-                return;
-            }
             submission = submission?.BindInitialDraft(sessionId, initialDraftSessionId);
             var submissionSessionId = submission?.SessionId ?? sessionId;
             var submissionWorkspace = submission?.WorkspacePath ?? canonicalWorkspace;
@@ -73,8 +68,7 @@ public sealed partial class AgentCommands
             }
 
             // Continue recovers only the current session's known run. Without one,
-            // the same word remains an ordinary prompt. Recovery must not commit
-            // a staged history branch or send its draft as new work.
+            // the same word remains an ordinary prompt.
             if (isRetainedContinuation)
             {
                 if (!cmd.Json && !tgMode)
@@ -97,36 +91,6 @@ public sealed partial class AgentCommands
                     return;
                 }
                 return;
-            }
-
-            if (pendingHistoryBranch is { } branch)
-            {
-                if (branch.SourceId != sessionId)
-                {
-                    pendingHistoryBranch = null;
-                    HoldSubmissionForRetry(submission);
-                    await WriteDiagnosticLineAsync(_err, "history_context_changed: select history again.");
-                    return;
-                }
-                try
-                {
-                    var root = await new ChatHistoryWorkflow(_sessionClient, _agentClient).CommitAsync(branch, ct);
-                    sessionId = root.GetProperty("session").GetProperty("id").GetString()!;
-                    submission = submission is null ? null : submission with { SessionId = sessionId };
-                    submissionSessionId = sessionId;
-                    ApplyRewoundHistory(root);
-                    if (!cmd.Json) await WriteDiagnosticLineAsync(humanOut, "new chat branch · original: " + branch.SourceId + " · current files unchanged");
-                    if (tgMode) sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.Format(promptLine));
-                }
-                catch (Exception ex)
-                {
-                    pendingHistoryBranch = null;
-                    historyReloadRequired = true;
-                    HoldSubmissionForRetry(submission);
-                    var message = ex is AgentApiException api ? CliErrorText.Format(api) : CliErrorText.ShortMessage(ex.Message);
-                    await WriteDiagnosticLineAsync(_err, "history_branch_error: " + ChatDisplayText.Sanitize(message, 256) + $" · reload /sessions id:{sessionId} before selecting history again");
-                    return;
-                }
             }
 
             if (sessionId.Length == 0)
@@ -485,25 +449,10 @@ public sealed partial class AgentCommands
                 return true;
             }
             if (slashCmd is "/subagents" && !await RequireSavedSessionAsync().ConfigureAwait(false)) return true;
-            if (RewindSubmissionGuard(slashLine) is { } guardMessage)
-            {
-                await WriteDiagnosticLineAsync(_err, guardMessage).ConfigureAwait(false);
-                return true;
-            }
 
             if (slashCmd == "/tasks")
             {
                 await ShowTasksAsync(arg, cancellationToken).ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd == "/changes")
-            {
-                await ShowChangesAsync(arg, cancellationToken).ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/rewind" or "/history")
-            {
-                await RewindHistoryAsync(arg, cancellationToken).ConfigureAwait(false);
                 return true;
             }
 

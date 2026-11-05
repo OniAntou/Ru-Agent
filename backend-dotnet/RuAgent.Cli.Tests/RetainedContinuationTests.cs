@@ -73,8 +73,12 @@ public sealed partial class RetainedContinuationTests
 
     [Theory]
     [InlineData("/follow")]
+    [InlineData("/changes")]
+    [InlineData("/history")]
+    [InlineData("/history 1 continue")]
+    [InlineData("/rewind")]
     [InlineData("/FOLLOW run_example")]
-    public async Task Removed_follow_is_rejected_before_line_adapter_submission(string command)
+    public async Task Removed_chat_commands_are_rejected_before_line_adapter_submission(string command)
     {
         using var errors = new StringWriter();
         var view = new PlainChatView(errors, "workspace"); var engine = new ChatSessionEngine(view);

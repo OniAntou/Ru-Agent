@@ -119,6 +119,10 @@ source line and wraps to the viewport instead of permanently clipping its tail.
 Native streaming retains settled Markdown chunks and reparses the changing tail;
 late closers can still restyle unresolved emphasis, code or links. Settled chunks
 reuse native rows instead of being sanitized, styled and wrapped again for each delta.
+Multiline native chunks batch completed rows into bounded UI updates while sending
+the first commit immediately. Batches flush before previews and before the chunk
+returns, preserving order with tool output and turn completion. This reduces UI
+dispatch work for bursty output; it does not change provider generation speed.
 Plain line output waits for newline or Flush before committing Markdown.
 Markdown tables are grouped from retained raw header/separator/body rows, align
 their columns (numeric columns right-align even without a `:` marker, `:---:`
@@ -166,7 +170,7 @@ command; Escape closes an overlay or interrupts an active turn and never exits
 the chat. An idle Escape preserves the draft.
 
 The interactive vocabulary omits `/delete`, `/resume`, `/retry`, `/release`, `/clear`, `/activity`, `/todos`, `/files`,
-`/tree`, `/export`, `/stats`, `/tokens`, `/history`, `/attach`,
+`/tree`, `/export`, `/stats`, `/tokens`, `/changes`, `/history`, `/rewind`, `/attach`,
 `/attachments`, `/paste`, `/detach`, `/continue`, `/follow` and `/quit`. Headless CLI
 and RPC commands, including native session fork and rewind, remain available separately.
 
@@ -292,59 +296,10 @@ Line/JSON chat lists tasks as text/JSON; an explicit `kill` argument sends the
 stop without reading stdin. All operations use the existing Host command endpoint
 and Broker session registry; the CLI never kills local process IDs itself.
 
-`/changes [run-id]` summarizes available completed edit activities for the current
-run, or the newest session run when no target is retained. An explicit run must
-belong to the current session. Select a filename group to inspect its recorded
-before/after previews, then Escape returns to the list. Refresh reloads on demand;
-there is no polling, filesystem read, Git diff, restore or model request. It shares
-the task inspection lane and works during streaming without consuming attachments
-or changing the model turn/queue. Preview and question/approval panels are serialized.
-Line/JSON chat prints a text/structured summary without opening a panel.
-
-Counts describe completed edit operations, not net changes on disk. A missing
-count stays unknown (`+?`/`−?`, JSON null); duplicate activity IDs use their newest
-state before filtering failures. The existing Host activity API returns filenames
-only and currently caps replay at 200 activities. Groups can combine different
-paths with the same filename; they are not a unique physical-file count. This
-scope is explicit in the UI/JSON. Terminal/external mutations may be absent, and
-previews can be truncated or unavailable. Ru never substitutes current disk data
-for missing historical evidence. The picker shows up to 100 filename groups;
-preview display is bounded to 2000 rows plus an omission notice.
-
-`/history` browses saved **user turns**, newest first (up to 100). Select a turn:
-
-- **View turn** shows saved prompt/reply text and available linked tool/change
-  activity. Evidence is bounded and historical, never a claim about current files.
-- **Edit and try again** restores the saved prompt into the composer and stages
-  a branch **before** that turn. Edit it, then send to create the branch.
-- **Continue from here** stages a branch **after** the selected turn; write your
-  next request and send to create it.
-
-The original session stays intact. Opening, viewing, or cancelling the picker
-creates no session. `/history cancel` discards the staged branch, keeping your
-current input. `/history <turn> view|edit|continue` supports explicit selection
-in sequential/JSON chat; a staged edit prints/returns the saved draft for the
-caller to edit and send. Bare sequential/JSON `/history` only lists turns.
-Numbers refer to available saved user turns, not hidden tool/message rows.
-
-**Branches use current files and current selected model/provider/preset.** They
-copy conversation text only: no old images, runs, approvals, grants, background
-processes or work state. Reattach images when needed. Oversized/control-bearing
-saved prompts cannot be restored into the editor; Continue remains available.
-Finish pending runs/queues first. The hidden `/rewind` TUI alias opens the same
-history workflow; its former numeric `--yes` truncation syntax is refused.
-The separate headless `ru agent session rewind` API remains unchanged.
-
-An authenticated `POST /sessions/{sessionId}/fork` compares `history_revision`
-from session activation and writes the new prefix in one SQLite transaction.
-A changed history is rejected; select again. A lost/invalid acknowledgement is
-never automatically retried and starts no model run. Choose/reload a session via
-`/sessions id:<id>` before sending again; an unacknowledged child may be visible
-in `/sessions`. Current attachments survive recovery and are not copied from old
-turns. A failed branch send requires a validated reload before choosing again.
-The same-session id reload works while paused and returns the failed draft and
-attachments for manual resubmission; it never replays queued prompts. Native
-inspection and branch creation block overlapping sends before attachment admission.
+The chat surface omits `/changes`, `/history` and the legacy `/rewind` alias.
+They are rejected before attachment admission or command dispatch. Saved-session
+browsing and replay remain under `/sessions`; Up/Down still recalls typed prompts.
+The separate headless session history/fork/rewind operations remain available.
 
 - `policy list` wraps `GET /agent/v1/policies` (scope filter). `policy import --global FILE` validates versioned JSON (rejects unknown version/fields, normalizes and displays matchers/decision before confirmation) and posts each rule with `X-Interactive-Confirmed: true`; sensitive matcher values are encrypted at rest via Host API. `--json` cannot bypass confirmation. `policy remove` wraps `DELETE /agent/v1/policies/{ruleId}` and requires interactive confirmation for global rules.
 - `cancel`/`continue`/`status` are thin HTTP wrappers.

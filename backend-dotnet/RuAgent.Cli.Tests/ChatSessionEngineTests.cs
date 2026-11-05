@@ -7,6 +7,38 @@ namespace RuAgent.Cli.Tests;
 public sealed class ChatSessionEngineTests
 {
     [Fact]
+    public async Task Pending_task_inspection_blocks_prompt_admission_until_cancelled()
+    {
+        using var errors = new StringWriter();
+        var view = new PlainChatView(errors, "workspace"); var engine = new ChatSessionEngine(view);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = false; var snapshots = 0;
+        engine.SetTaskCommandHandler(async (_, ct) =>
+        {
+            entered.SetResult();
+            try { await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { cancelled = true; }
+        });
+        engine.SetSubmissionSnapshotFactory(line =>
+        {
+            snapshots++;
+            return ChatSubmissionSnapshot.Create(line, "s", "w", "standard", "b", "m", [], []);
+        });
+        view.InputText = "/tasks"; engine.Submit();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        view.InputText = "unsent prompt"; engine.Submit();
+        Assert.Equal("unsent prompt", view.InputText); Assert.Equal(0, snapshots);
+        Assert.Contains("finish the current inspection", errors.ToString());
+        engine.Cancel();
+        await engine.WaitForIdleAsync(default).WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.True(cancelled);
+        engine.Submit();
+        await engine.WaitForIdleAsync(default).WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal(1, snapshots);
+        engine.Stop(); await engine.Completion;
+    }
+
+    [Fact]
     public void NativeBindingUsesTheSameControllerAsLineInput() =>
         Assert.Equal(typeof(ChatSessionEngine), typeof(TgChatLoop).BaseType);
 

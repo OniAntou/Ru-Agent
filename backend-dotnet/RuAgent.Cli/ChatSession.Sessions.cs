@@ -251,14 +251,9 @@ public sealed partial class AgentCommands
             }
 
             var sameSession = string.Equals(targetSessionId, sessionId, StringComparison.Ordinal);
-            if (sameSession && !historyReloadRequired)
+            if (sameSession)
             {
                 await WriteDiagnosticLineAsync(humanOut, $"already in session {sessionId}").ConfigureAwait(false);
-                return;
-            }
-            if (sameSession && historyReloadRequired)
-            {
-                await ReloadUncertainHistoryAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -287,9 +282,6 @@ public sealed partial class AgentCommands
                 catch (AgentApiException error) when (error.StatusCode == 404) { }
             }
 
-            historyReloadRequired = false;
-
-            pendingHistoryBranch = null;
             sessionId = targetSessionId;
             canonicalWorkspace = nextWorkspace.Path;
             workspaceLabel = nextWorkspace.Label;

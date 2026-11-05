@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(tui)**: Gom các dòng Markdown hoàn chỉnh trong cùng một chunk streaming
+  thành batch UI có giới hạn; giữ cập nhật đầu tiên và thứ tự preview/tool/kết thúc
+  lượt. Giảm số lượt dispatch khi nhận nhiều dòng cùng lúc, không thêm thời gian
+  chờ giữa các chunk và không thay đổi tốc độ sinh token của provider.
+
+- **refactor(tui)**: Gỡ `/changes`, `/history` và alias `/rewind` khỏi menu, help và
+  xử lý lệnh; bỏ inspector thay đổi file và luồng tạo nhánh chat trong TUI.
+  Giữ mở lại session đã lưu, lịch sử nhập bằng phím lên/xuống và các API độc lập.
+
 - **refactor(tui)**: Bỏ `/follow` khỏi menu, help và xử lý lệnh. Dùng `Continue`
   cho run đang dở đã được session ghi nhận; giữ khôi phục câu hỏi/quyền đang chờ,
   model đã ghim và attachment còn trong ô nhập. Không có run đang dở thì

@@ -23,7 +23,7 @@ public sealed class TuiContextWindowWorkflowTests
         using var page = TgChatWindow.Build();
         using var host = new ContextHost(protocol, includesCache);
         using var http = new HttpClient(host);
-        using var commands = new AgentCommands(ChatRewindWorkflowTests.Host.Session, http, TextWriter.Null, TextWriter.Null);
+        using var commands = new AgentCommands(ChatTestSession.Value, http, TextWriter.Null, TextWriter.Null);
         var writer = new TgTranscriptWriter(app, page.Transcript);
         var path = Path.GetTempPath();
         var bootstrap = new AgentCommands.ChatBootstrapContext(new ChatSubmissionState(), writer, path, path, "session_1",

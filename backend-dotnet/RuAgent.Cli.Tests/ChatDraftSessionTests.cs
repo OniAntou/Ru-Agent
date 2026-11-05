@@ -52,7 +52,7 @@ public sealed class ChatDraftSessionTests
     {
         using var host = new Host(); using var http = new HttpClient(host);
         var output = new StringWriter(); var errors = new StringWriter();
-        using var commands = new AgentCommands(ChatRewindWorkflowTests.Host.Session, http, output, errors, new StringReader(input));
+        using var commands = new AgentCommands(ChatTestSession.Value, http, output, errors, new StringReader(input));
         Assert.Equal(0, await commands.ChatAsync(new ChatCommand(Path.GetTempPath(), null, "standard", false), default));
         Assert.DoesNotContain(host.Requests, request => request.Contains("/sessions/") || request.Contains("/agent/v1/"));
         if (input.Contains("/status")) Assert.Contains("not started", output.ToString());
@@ -62,7 +62,7 @@ public sealed class ChatDraftSessionTests
     public async Task First_real_prompt_materializes_once_before_preset_and_reuses_that_session()
     {
         using var host = new Host(); using var http = new HttpClient(host);
-        using var commands = new AgentCommands(ChatRewindWorkflowTests.Host.Session, http, new StringWriter(), new StringWriter(),
+        using var commands = new AgentCommands(ChatTestSession.Value, http, new StringWriter(), new StringWriter(),
             new StringReader("/model\nfirst task\nsecond task\n/exit\n"));
         Assert.Equal(0, await commands.ChatAsync(new ChatCommand(Path.GetTempPath(), null, "standard", false), default));
         Assert.Single(host.Requests, request => request == "POST /sessions/new");
@@ -76,7 +76,7 @@ public sealed class ChatDraftSessionTests
     public async Task Failed_first_create_does_not_retry_or_start_a_run_on_the_next_input()
     {
         using var host = new Host { FailCreate = true }; using var http = new HttpClient(host); var errors = new StringWriter();
-        using var commands = new AgentCommands(ChatRewindWorkflowTests.Host.Session, http, new StringWriter(), errors,
+        using var commands = new AgentCommands(ChatTestSession.Value, http, new StringWriter(), errors,
             new StringReader("first task\nsecond task\n/exit\n"));
         Assert.Equal(0, await commands.ChatAsync(new ChatCommand(Path.GetTempPath(), null, "standard", false), default));
         Assert.Single(host.Requests, request => request == "POST /sessions/new");
@@ -87,7 +87,7 @@ public sealed class ChatDraftSessionTests
     public async Task Explicit_new_still_creates_exactly_one_session()
     {
         using var host = new Host(); using var http = new HttpClient(host);
-        using var commands = new AgentCommands(ChatRewindWorkflowTests.Host.Session, http, new StringWriter(), new StringWriter(), new StringReader("/new\n/exit\n"));
+        using var commands = new AgentCommands(ChatTestSession.Value, http, new StringWriter(), new StringWriter(), new StringReader("/new\n/exit\n"));
         Assert.Equal(0, await commands.ChatAsync(new ChatCommand(Path.GetTempPath(), null, "standard", false), default));
         Assert.Single(host.Requests, request => request == "POST /sessions/new");
     }

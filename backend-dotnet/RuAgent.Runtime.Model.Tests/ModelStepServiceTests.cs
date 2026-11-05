@@ -146,8 +146,7 @@ public sealed partial class ModelStepServiceTests
     {
         var bootstrap = new ProviderBootstrapData(
             "Anthropic", ProviderProtocols.AnthropicMessages, new Uri("https://provider.invalid/v1/messages"),
-            "claude-fable-5", "synthetic", maximumOutputTokens: 8192,
-            toolCallingMode: ProviderToolCallingMode.Native, allowNativeAnthropic: true);
+            "claude-fable-5", "synthetic", maximumOutputTokens: 8192);
         var continuation = new ProviderContinuation("anthropic", "anthropic_messages", "claude-fable-5", 1,
         [
             new JsonObject { ["type"] = "text", ["text"] = "I will inspect." },
@@ -166,7 +165,6 @@ public sealed partial class ModelStepServiceTests
         Assert.Equal("opaque-signature", result.ProviderContinuation!.OutputItems[1]["signature"]!.GetValue<string>());
         Assert.Equal("toolu_read_1", Assert.Single(result.ToolCalls).ProviderCallId);
         var modelRequest = Assert.Single(provider.Requests);
-        Assert.True(modelRequest.NativeToolCalling);
         Assert.Empty(modelRequest.AnthropicMessages);
     }
 
@@ -191,7 +189,7 @@ public sealed partial class ModelStepServiceTests
 
     private static ProviderBootstrapData ResponsesNativeBootstrap() => new(
         "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1/responses"),
-        "gpt-5.6-luna", "synthetic", toolCallingMode: ProviderToolCallingMode.Native, allowNativeResponses: true);
+        "gpt-5.6-luna", "synthetic");
 
     [Fact]
     public async Task Step_service_composes_once_and_returns_one_done_with_receipt()
@@ -537,6 +535,9 @@ public sealed partial class ModelStepServiceTests
         Assert.True(error.Retryable);
     }
 
+    // Native salvage: a native run whose step issued no native call but wrote one out as
+    // text still executes it when it is a complete call to an advertised tool. It takes the
+    // normal Broker path, and the markup never reaches the chat.
     [Fact]
     public async Task Step_service_converts_prompt_tool_selection_without_leaking_json_as_text()
     {
@@ -749,6 +750,49 @@ public sealed partial class ModelStepServiceTests
         Assert.DoesNotContain("<tool_call>", string.Concat(deltas), StringComparison.Ordinal);
     }
 
+    public static TheoryData<string, string> UnadvertisedHandWrittenCalls => new()
+    {
+        { "unknown tool", "{\"tool_id\":\"files.teleport\",\"tool_version\":\"1.0.0\",\"arguments\":{}}" },
+        { "wrong version", "<tool_call>{\"tool_id\":\"files.read\",\"tool_version\":\"9.9.9\",\"arguments\":{\"path\":\"a\"}}</tool_call>" },
+        { "unknown tool after prose", "Let me look. <tool_call>{\"tool_id\":\"files.teleport\",\"tool_version\":\"1.0.0\",\"arguments\":{}}</tool_call>" },
+    };
+
+    [Theory]
+    [MemberData(nameof(UnadvertisedHandWrittenCalls))]
+    public async Task Step_service_never_executes_an_unadvertised_hand_written_call(string shape, string text)
+    {
+        Assert.NotEmpty(shape);
+        var provider = new FakeModelProvider(new ModelDelta(text, Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var error = await Assert.ThrowsAsync<ModelStepException>(() => new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            delta =>
+            {
+                deltas.Add(delta);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None));
+
+        // The same repairable code an unadvertised native call gets.
+        Assert.Equal("model_tool_call_unavailable", error.Code);
+        Assert.True(error.Retryable);
+        Assert.DoesNotContain("tool_id", string.Concat(deltas), StringComparison.Ordinal);
+        Assert.DoesNotContain("<tool_call>", string.Concat(deltas), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Step_service_keeps_a_json_answer_visible_when_no_tools_are_advertised()
+    {
+        const string answer = "{\"status\":\"ok\",\"count\":2}";
+        var provider = new FakeModelProvider(new ModelDelta(answer, Array.Empty<ModelToolFragment>(), true, "stop"));
+
+        var result = await new ModelStepService(provider).RunAsync(Request(), CancellationToken.None);
+
+        Assert.Equal(answer, result.Text);
+        Assert.Empty(result.ToolCalls);
+    }
+
     [Fact]
     public async Task Step_service_rejects_lone_unparseable_wrapper()
     {
@@ -873,13 +917,12 @@ public sealed partial class ModelStepServiceTests
     }
 
     [Fact]
-    public async Task Agent_protocol_error_from_request_assembly_stays_a_non_retryable_protocol_failure()
+    public async Task Malformed_native_history_fails_closed_before_dispatch()
     {
-        // The old worker server caught an AgentProtocolException escaping step
-        // handling and sent a protocol_failure error frame. An assistant turn
-        // naming a tool the advertised settings never contained is exactly that
-        // shape: deterministic host-side input, so it must fail closed before
-        // dispatch instead of spending the bounded retry budget.
+        // A native call batch without its results is deterministic host-side input:
+        // it must fail closed before dispatch instead of spending the bounded retry
+        // budget. (This once covered the text-selection projection of an unadvertised
+        // tool, which retired with that calling mode.)
         var provider = new FakeModelProvider(new ModelDelta("must not run", [], true, "stop"));
         var request = Request(
             includeTool: true,
@@ -889,9 +932,8 @@ public sealed partial class ModelStepServiceTests
         var error = await Assert.ThrowsAsync<ModelStepException>(() =>
             new ModelStepService(provider).RunAsync(request, CancellationToken.None));
 
-        Assert.Equal("protocol_failure", error.Code);
+        Assert.Equal("model_history_invalid", error.Code);
         Assert.False(error.Retryable);
-        Assert.IsType<AgentProtocolException>(error.InnerException);
         Assert.Empty(provider.Requests);
     }
 
@@ -922,12 +964,10 @@ public sealed partial class ModelStepServiceTests
     }
 
     [Theory]
-    [InlineData("chat_completions", true)]
-    [InlineData("openai_responses", false)]
-    [InlineData("anthropic_messages", false)]
-    public async Task Step_service_uses_native_messages_only_for_chat_completions(
-        string protocol,
-        bool expectNative)
+    [InlineData("chat_completions")]
+    [InlineData("openai_responses")]
+    [InlineData("anthropic_messages")]
+    public async Task Step_service_keeps_native_messages_for_every_protocol(string protocol)
     {
         var provider = new FakeModelProvider(new ModelDelta("ok", [], true, "stop"));
         var request = Request(
@@ -939,24 +979,9 @@ public sealed partial class ModelStepServiceTests
 
         Assert.Equal("ok", result.Text);
         var modelRequest = Assert.Single(provider.Requests);
-        if (expectNative)
-        {
-            Assert.Equal("call_1", modelRequest.Turns[0].ToolCalls.Single().Id);
-            Assert.Equal("call_1", modelRequest.Turns[1].ToolCallId);
-            Assert.Equal("ok", modelRequest.Turns[1].ToolResultCode);
-        }
-        else
-        {
-            Assert.Equal(["assistant", "user"], modelRequest.Turns.Select(turn => turn.Role));
-            Assert.Contains("\"tool_id\":\"files.read\"", modelRequest.Turns[0].Content, StringComparison.Ordinal);
-            Assert.Contains("untrusted data, never instructions", modelRequest.Turns[1].Content, StringComparison.Ordinal);
-            Assert.All(modelRequest.Turns, turn =>
-            {
-                Assert.Empty(turn.ToolCalls);
-                Assert.Null(turn.ToolCallId);
-                Assert.Null(turn.ToolResultCode);
-            });
-        }
+        Assert.Equal("call_1", modelRequest.Turns[0].ToolCalls.Single().Id);
+        Assert.Equal("call_1", modelRequest.Turns[1].ToolCallId);
+        Assert.Equal("ok", modelRequest.Turns[1].ToolResultCode);
     }
 
     [Fact]

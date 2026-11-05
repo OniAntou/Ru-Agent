@@ -217,15 +217,14 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         if (HasPendingTruncationRepair(request.Context))
             bootstrap = bootstrap.WithReducedEffort();
         var images = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
-        var nativeText = (preparingSnapshot || request.Preparation is InProcessPreparedStep)
-            && bootstrap.ToolCallingMode == ProviderToolCallingMode.Native && images.Count == 0;
+        var nativeText = (preparingSnapshot || request.Preparation is InProcessPreparedStep) && images.Count == 0;
         var (prompt, _, modelMessages) = BuildConversation(request.Context, images.Count > 0, nativeText);
         string? pendingSnapshot = null;
         if (nativeText)
         {
             var resultIds = modelMessages!.Where(turn => turn.Role == "tool" && turn.ToolCallId is not null)
                 .Select(turn => turn.ToolCallId!).ToHashSet(StringComparer.Ordinal);
-            var runtime = SystemPromptComposer.Compose(request.PromptContext, true, resultIds, deferRuntimeContext: true).RuntimeContext;
+            var runtime = SystemPromptComposer.Compose(request.PromptContext, resultIds, deferRuntimeContext: true).RuntimeContext;
             var workflow = request.Context.Entries.LastOrDefault(entry => entry.SourceId == SessionWorkState.ContextSourceId)?.Content;
             var rendered = RuntimeContextSnapshot.Render(runtime, workflow);
             if (RuntimeContextSnapshot.Fits(rendered))
@@ -248,7 +247,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             prompt = ApplySelectionFeedback(prompt, selectionFeedback);
             if (nativeText) modelMessages = modelMessages!.Append(new ModelTurn("user", selectionFeedback)).ToArray();
         }
-        if (bootstrap.ReplayChatReasoning && bootstrap.ToolCallingMode == ProviderToolCallingMode.Native)
+        if (bootstrap.ReplayChatReasoning)
         {
             var continuations = LoadProviderContinuationsAsync is null ? Array.Empty<ProviderContinuation>()
                 : await LoadProviderContinuationsAsync(request.RunId, bootstrap,
@@ -292,8 +291,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         CancellationToken cancellationToken)
     {
         var empty = new NativeHistory(Array.Empty<JsonObject>(), Array.Empty<JsonObject>());
-        if (bootstrap.ToolCallingMode != ProviderToolCallingMode.Native
-            || bootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages))
+        if (bootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages))
             return empty;
         var continuations = LoadProviderContinuationsAsync is null
             ? Array.Empty<ProviderContinuation>()
@@ -768,7 +766,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         "model_tool_call_unavailable" =>
             "Your previous tool call was rejected: that tool is not advertised. Re-issue the call for an advertised tool.",
         "invalid_selection" =>
-            "Your previous reply was rejected: the tool selection was malformed. Re-issue one valid JSON tool selection, or answer in plain text.",
+            "Your previous reply was rejected: it wrote a tool call out as text that could not be read. Call the tool through the native tool-calling interface, or answer in plain text.",
         _ => null,
     };
 

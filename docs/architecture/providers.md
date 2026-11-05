@@ -179,8 +179,8 @@ same image allowance, without altering admission, calibration or provider billin
 Old records have no breakdown; malformed optional metadata is unavailable rather
 than inferred from usage totals. No prompt text or tool schema enters telemetry.
 
-Native requests keep mutable runtime references out of the system instruction
-prefix. Text-selection requests keep inline references. The prompt receipt hashes
+Requests keep mutable runtime references out of the system instruction
+prefix. The prompt receipt hashes
 the exact system text and binds current normalized runtime references with its
 `runtime` block digest, including when the current snapshot is already retained.
 Exact serialized-request preflight accounts for every dispatched context message.
@@ -253,9 +253,17 @@ workflow state and runtime references follow retained history, before the final
 prompt/images. This does not truncate data or relax request/history limits merely
 to enable caching. No provider-specific system/tool-update extension is inferred.
 
-New pins use native tool calling for each supported selected protocol. Existing
-pins keep their fixed calling mode. A provider/model that cannot support its
-selected protocol fails by name rather than gaining support
+Every run uses native tool calling: Chat Completions function calls, Responses
+function-call items and Messages `tool_use` blocks. It is the only calling mode;
+the legacy text-selection mode, where the model wrote one JSON selection as text,
+is retired. A stored pin naming any other calling mode, including a run pinned to
+`text_selection` before that mode retired, fails with `provider_selection_invalid`
+when its snapshot is rebuilt instead of being resumed on native calling. New pins
+record only `native`. Native runs still salvage a call the model writes out as
+text instead of issuing it (models behind OpenAI-compatible gateways do this): a
+complete call to an advertised tool executes through the normal Broker path; see
+[agent tools](../operations/agent-tools.md#model-first-selection-and-native-batches). A provider/model that cannot
+support its selected protocol fails by name rather than gaining support
 from a family name. Responses requests remain stateless (`store:false`). The
 Host translates Protocol tool definitions into provider declarations, validates
 completed streamed calls, and returns them through the normal scheduler and

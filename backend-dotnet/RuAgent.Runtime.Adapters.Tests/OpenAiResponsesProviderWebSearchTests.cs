@@ -101,7 +101,7 @@ public sealed class OpenAiResponsesProviderWebSearchTests
         };
         if (search) settings[ModelRequest.ProviderWebSearchSetting] = true;
         return new ModelRequest(Model, "system", "hello", Array.Empty<ModelTurn>(), settings,
-            new Uri("https://api.openai.com/v1/responses"), "synthetic-openai", 1024, nativeToolCalling: true);
+            new Uri("https://api.openai.com/v1/responses"), "synthetic-openai", 1024);
     }
 
     private static async Task<List<ModelDelta>> Collect(string stream, ModelRequest request)

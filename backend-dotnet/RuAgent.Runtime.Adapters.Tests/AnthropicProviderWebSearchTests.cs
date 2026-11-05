@@ -165,7 +165,7 @@ public sealed class AnthropicProviderWebSearchTests
         };
         if (search) settings[ModelRequest.ProviderWebSearchSetting] = true;
         return new ModelRequest(Model, "system", "hello", Array.Empty<ModelTurn>(), settings,
-            new Uri("https://api.anthropic.com/v1/messages"), "synthetic-anthropic", 1024, nativeToolCalling: true);
+            new Uri("https://api.anthropic.com/v1/messages"), "synthetic-anthropic", 1024);
     }
 
     private static async Task<List<ModelDelta>> Collect(HttpMessageHandler handler, ModelRequest request)

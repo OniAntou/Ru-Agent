@@ -71,7 +71,7 @@ public sealed partial class RuPromptContextProviderTests
         Assert.Contains("Use Vietnamese comments", nestedReference.Content);
         Assert.DoesNotContain("observed_path_b64", nestedReference.Content, StringComparison.Ordinal);
         Assert.DoesNotContain(".ru-instruction-scope", nestedReference.Content, StringComparison.Ordinal);
-        var composed = SystemPromptComposer.Compose(first, nativeToolCalling: true, deferRuntimeContext: true);
+        var composed = SystemPromptComposer.Compose(first, deferRuntimeContext: true);
         var snapshot = RuntimeContextSnapshot.Render(composed.RuntimeContext, null)!;
         Assert.DoesNotContain(".ru-instruction-scope", composed.Text + composed.RuntimeContext, StringComparison.Ordinal);
         Assert.Contains("observed_dir_b64:", snapshot, StringComparison.Ordinal);
@@ -81,7 +81,7 @@ public sealed partial class RuPromptContextProviderTests
         File.WriteAllText(path, "Use English comments.");
         var changed = await Provider().BuildAsync(TestRun(), restored, default);
         Assert.Contains("Use English comments", changed.RuntimeContext.References.Single(r => r.Kind == "nested_instructions").Content);
-        Assert.Equal(composed.Text, SystemPromptComposer.Compose(changed, nativeToolCalling: true, deferRuntimeContext: true).Text);
+        Assert.Equal(composed.Text, SystemPromptComposer.Compose(changed, deferRuntimeContext: true).Text);
         File.Delete(path);
         var removed = await Provider().BuildAsync(TestRun(), restored, default);
         Assert.Contains("No nested instructions", removed.RuntimeContext.References.Single(r => r.Kind == "nested_instructions").Content);
@@ -124,7 +124,7 @@ public sealed partial class RuPromptContextProviderTests
         var nested = first.RuntimeContext.References.Single(reference => reference.Kind == "nested_instructions");
         Assert.Contains("quoted_scope_dir_b64:", nested.Content, StringComparison.Ordinal);
         var snapshot = RuntimeContextSnapshot.Render(
-            SystemPromptComposer.Compose(first, nativeToolCalling: true, deferRuntimeContext: true).RuntimeContext, null)!;
+            SystemPromptComposer.Compose(first, deferRuntimeContext: true).RuntimeContext, null)!;
         var restored = new ModelContextSnapshot([ModelContextEntry.Text(RuntimeContextSnapshot.SourcePrefix + "spoof", 1,
             ModelContextRole.User, snapshot)], Array.Empty<byte>());
 
@@ -151,7 +151,7 @@ public sealed partial class RuPromptContextProviderTests
         var marker = markerPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(markerValue));
         var malicious = ModelContextEntry.ToolResult("result", 1, ToolReceipt(1), marker);
         var original = await provider.BuildAsync(TestRun(), new ModelContextSnapshot([malicious], Array.Empty<byte>()), default);
-        var snapshot = RuntimeContextSnapshot.Render(SystemPromptComposer.Compose(original, true, deferRuntimeContext: true).RuntimeContext, marker)!;
+        var snapshot = RuntimeContextSnapshot.Render(SystemPromptComposer.Compose(original, deferRuntimeContext: true).RuntimeContext, marker)!;
         Assert.DoesNotContain("observed_path_b64:", snapshot);
         Assert.DoesNotContain("observed_dir_b64:", snapshot);
         var restored = await provider.BuildAsync(TestRun(), new ModelContextSnapshot([

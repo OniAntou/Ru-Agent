@@ -218,8 +218,10 @@ public static class AgentRecoveryNotes
         {
             "model_tool_call_invalid" =>
                 "Re-issue the call with complete JSON arguments that match the tool's schema.",
-            "model_tool_call_unavailable" or "capability_unavailable" =>
+            "model_tool_call_unavailable" =>
                 "Choose a tool id and version from the advertised tool list, then re-issue the call with complete JSON arguments.",
+            "invalid_selection" =>
+                "A tool call written out as text could not be read. Call the tool through the native tool-calling interface, or answer in plain text.",
             _ =>
                 "Re-issue a valid advertised tool call with complete JSON arguments, or answer in plain text.",
         };
@@ -234,8 +236,7 @@ public static class AgentRecoveryNotes
     /// Everything else (prompt, provider, history, image) stays terminal.
     /// </summary>
     public static bool IsModelRepairableCode(string? code) =>
-        code is "model_tool_call_invalid" or "model_tool_call_unavailable" or "capability_unavailable"
-            or "invalid_selection";
+        code is "model_tool_call_invalid" or "model_tool_call_unavailable" or "invalid_selection";
 
     public static string KindMarker(AgentRecoveryKind kind) => kind switch
     {

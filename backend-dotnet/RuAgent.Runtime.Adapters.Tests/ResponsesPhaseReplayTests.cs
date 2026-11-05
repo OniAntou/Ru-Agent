@@ -13,7 +13,7 @@ public sealed class ResponsesPhaseReplayTests
     public void Tool_continuation_keeps_assistant_message_phase_in_output_order()
     {
         var request = new ModelRequest("test-model", "system", "user", [],
-            new JsonObject { ["model_tools"] = new JsonArray() }, new Uri("http://127.0.0.1:1"), "synthetic-key", nativeToolCalling: true);
+            new JsonObject { ["model_tools"] = new JsonArray() }, new Uri("http://127.0.0.1:1"), "synthetic-key");
         var output = JsonNode.Parse("""[{"type":"message","id":"msg_probe","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"Inspecting."}]},{"type":"function_call","id":"fc_probe","call_id":"call_probe","name":"read_file","arguments":"{\"path\":\"example.txt\"}"}]""")!.AsArray();
         var build = typeof(OpenAiResponsesModelProvider).GetMethod("BuildContinuation", BindingFlags.NonPublic | BindingFlags.Static)!;
 
@@ -26,7 +26,7 @@ public sealed class ResponsesPhaseReplayTests
     public void Public_message_metadata_accepts_its_byte_bound_and_rejects_one_extra_byte_without_retry()
     {
         var request = new ModelRequest("test-model", "system", "user", [], new JsonObject(),
-            new Uri("http://127.0.0.1:1"), "synthetic", nativeToolCalling: true);
+            new Uri("http://127.0.0.1:1"), "synthetic");
         var message = JsonNode.Parse("""{"type":"message","id":"msg_1","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":""}]}""")!.AsObject();
         var output = new JsonArray(message);
         var overhead = Encoding.UTF8.GetByteCount(output.ToJsonString());

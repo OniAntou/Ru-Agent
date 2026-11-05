@@ -17,6 +17,12 @@ public sealed class ModelToolSelectionException : Exception
     public string Code { get; }
 }
 
+/// <summary>
+/// Reads a tool call a model wrote out as text (a JSON envelope or a
+/// <c>&lt;tool_call&gt;</c> block) on a native tool-calling run. Native calling is the
+/// only calling mode; this is salvage for models that occasionally write the call
+/// instead of issuing it, and the salvaged call still takes the normal Broker path.
+/// </summary>
 public static class ModelToolSelectionParser
 {
     private const string ToolCallOpenTag = "<tool_call>";

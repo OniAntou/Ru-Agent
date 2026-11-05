@@ -7,7 +7,7 @@ public sealed partial class OpenAiResponsesModelProvider
 {
     private static ResponsesAssistantMessages? ReadAssistantMessages(ModelRequest request, JsonArray? output)
     {
-        if (!request.NativeToolCalling || output is null) return null;
+        if (output is null) return null;
         var messages = output.OfType<JsonObject>().Where(item => ReadString(item["type"]) == "message").ToArray();
         if (!messages.Any(message => message.ContainsKey("phase"))) return null;
         if (messages.Length > ResponsesAssistantMessages.MaximumMessages

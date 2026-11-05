@@ -126,9 +126,7 @@ public sealed partial class ModelStepService
         ArgumentNullException.ThrowIfNull(request);
 
         var providerBootstrap = request.ProviderBootstrap;
-        // The pinned bootstrap mode is the declared provider capability; each
-        // protocol adapter projects its own native tool-call contract.
-        var nativeToolCalling = providerBootstrap.ToolCallingMode == ProviderToolCallingMode.Native;
+        // Each protocol adapter projects its own native tool-call contract.
         // The receipt returned with this step must bind the text it was actually
         // composed from, not just the context shape. The text exists only here,
         // so the rendered-prompt hash is verified before the step is dispatched.
@@ -143,13 +141,10 @@ public sealed partial class ModelStepService
         {
             var nativeResultIds = request.ModelMessages.Where(turn => turn.Role == "tool" && turn.ToolCallId is not null)
                 .Select(turn => turn.ToolCallId!).ToHashSet(StringComparer.Ordinal);
-            snapshot = SystemPromptComposer.Compose(request.SystemPromptContext, nativeToolCalling, nativeResultIds,
-                deferRuntimeContext: nativeToolCalling, recipe: SelectPromptRecipe(providerBootstrap, nativeToolCalling));
+            snapshot = SystemPromptComposer.Compose(request.SystemPromptContext, nativeResultIds,
+                deferRuntimeContext: true, recipe: SelectPromptRecipe(providerBootstrap));
             snapshot.Receipt.ValidateAgainst(request.SystemPromptContext, snapshot.Text);
             settings = BuildWireSettings(request.Settings);
-            var requestTurns = nativeToolCalling
-                ? request.ModelMessages
-                : ProjectTextTurns(request.ModelMessages, settings);
             var userImages = UserImageInputProjection.Project(
                 request.Prompt, request.Images, providerBootstrap.AcceptsImageInput);
             var providerHeaders = BuildProviderHeaders(providerBootstrap, request.SessionId);
@@ -157,20 +152,19 @@ public sealed partial class ModelStepService
                 providerBootstrap.Model,
                 snapshot.Text,
                 userImages.Prompt,
-                requestTurns,
+                request.ModelMessages,
                 BuildRequestSettings(settings, providerBootstrap.RequestOptions),
                 providerBootstrap.Endpoint,
                 providerBootstrap.Credential,
                 providerBootstrap.MaximumOutputTokens,
                 userImages.Images,
                 request.ResponsesInputItems,
-                nativeToolCalling,
                 request.AnthropicMessages,
                 providerBootstrap.UseMaxCompletionTokens,
                 runtimeContext: request.PromptInHistory ? null : snapshot.RuntimeContext,
                 promptInHistory: request.PromptInHistory
                     && (request.Images.Count == 0 || providerBootstrap.AcceptsImageInput),
-                replayChatReasoning: nativeToolCalling && providerBootstrap.ReplayChatReasoning,
+                replayChatReasoning: providerBootstrap.ReplayChatReasoning,
                 acceptsImageInput: providerBootstrap.AcceptsImageInput,
                 providerHeaders: providerHeaders);
         }
@@ -182,8 +176,7 @@ public sealed partial class ModelStepService
         {
             // The retired worker server translated an AgentProtocolException from
             // step assembly into a protocol_failure error frame, and the input is
-            // still deterministic (an assistant turn naming a tool the settings
-            // never advertised, or an unprojectable policy decision), so it keeps
+            // still deterministic (an unprojectable policy decision), so it keeps
             // that code here instead of escaping to the generic mapping.
             throw new ModelStepException("protocol_failure", retryable: false, error);
         }
@@ -321,8 +314,7 @@ public sealed partial class ModelStepService
                     if (delta.ResponsesMessages is { } messages)
                     {
                         if (responsesMessages is not null || !delta.Completed
-                            || providerBootstrap.Protocol != ProviderProtocols.OpenAiResponses
-                            || providerBootstrap.ToolCallingMode != ProviderToolCallingMode.Native)
+                            || providerBootstrap.Protocol != ProviderProtocols.OpenAiResponses)
                             throw new ModelStepException("protocol_failure", false);
                         responsesMessages = messages;
                     }
@@ -330,7 +322,6 @@ public sealed partial class ModelStepService
                     if (delta.ProviderContinuation is { } continuation)
                     {
                         if (providerContinuation is not null
-                            || providerBootstrap.ToolCallingMode != ProviderToolCallingMode.Native
                             || providerBootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages)
                             || continuation.Model != providerBootstrap.Model)
                             throw new ModelStepException("protocol_failure", retryable: false);
@@ -420,8 +411,7 @@ public sealed partial class ModelStepService
             await holdback.ReleaseAsync().ConfigureAwait(false);
         }
 
-        if (providerBootstrap.ToolCallingMode == ProviderToolCallingMode.Native
-            && providerBootstrap.Protocol is ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages
+        if (providerBootstrap.Protocol is ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages
             && calls.Count > 0 && providerContinuation is null)
             throw new ModelStepException("provider_continuation_missing", retryable: false);
         if (prepared.ContextScope is { } scope && prepared.Request.PreparedBodyJson is { } body
@@ -474,8 +464,8 @@ public sealed partial class ModelStepService
         return (inputTokens, maxPromptTokens);
     }
 
-    private static PromptRecipe SelectPromptRecipe(ProviderBootstrapData bootstrap, bool nativeToolCalling) =>
-        nativeToolCalling && bootstrap.Protocol == ProviderProtocols.OpenAiResponses
+    private static PromptRecipe SelectPromptRecipe(ProviderBootstrapData bootstrap) =>
+        bootstrap.Protocol == ProviderProtocols.OpenAiResponses
         && bootstrap.Endpoint.Scheme == "https" && bootstrap.Endpoint.Port == 443
         && string.Equals(bootstrap.Endpoint.Host, "api.openai.com", StringComparison.OrdinalIgnoreCase)
         && bootstrap.Model == "gpt-5.3-codex"
@@ -494,8 +484,7 @@ public sealed partial class ModelStepService
                 throw new ModelStepException("provider_continuation_missing", false);
             return; // The bounded private message is formed from this step's validated calls above.
         }
-        if (bootstrap.ToolCallingMode != ProviderToolCallingMode.Native
-            || bootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages))
+        if (bootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages))
         {
             if (continuation is not null) throw new ModelStepException("protocol_failure", false);
             return;

@@ -1,13 +1,11 @@
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
-using RuAgent.Runtime.Adapters.Bootstrap;
 
 namespace RuBackend.Providers;
 
 public sealed record AgentRunModelMetadata(
     string ModelLabel,
     string Protocol,
-    ProviderToolCallingMode ToolCallingMode,
     long? ContextWindowTokens,
     string ContextWindowSource,
     string ContextWindowVersion,
@@ -36,14 +34,10 @@ public sealed class AgentRunModelMetadataResolver(
                 ?? throw new ProviderCatalogException("provider_selection_missing");
             var modelLabel = selection.ModelLabel
                 ?? throw new ProviderCatalogException("provider_selection_invalid");
-            if (!AgentRunCallingModeCodec.TryParseStoredValue(selection.CallingMode, out var callingMode))
-            {
-                throw new ProviderCatalogException("provider_selection_invalid");
-            }
+            AgentRunCallingModeCodec.RequireNative(selection.CallingMode);
             return new AgentRunModelMetadata(
                 modelLabel,
                 selection.Protocol,
-                callingMode,
                 selection.ContextWindowTokens,
                 selection.ContextWindowSource,
                 selection.ContextWindowVersion,

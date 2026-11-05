@@ -75,7 +75,7 @@ public sealed class AgentActivityLifecycleTests
         var model = new FakeModelStepRunner();
         model.Enqueue(new ModelStepResult(
             ToolStep(),
-            SystemPromptComposer.Compose(SystemPromptContext.Empty, nativeToolCalling: true).Receipt,
+            SystemPromptComposer.Compose(SystemPromptContext.Empty).Receipt,
             usage: null,
             reasoningText: "considering folder scope"));
         var store = new InMemoryHarnessEventStore();

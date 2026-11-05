@@ -333,7 +333,7 @@ public sealed partial class ContextCompactionCoordinatorTests
             DispatchedPreparation = request.Preparation;
             OnDispatch?.Invoke();
             DispatchedPreparationContext = request.Context;
-            var receipt = SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt;
+            var receipt = SystemPromptComposer.Compose(request.PromptContext).Receipt;
             return Task.FromResult(new ModelStepResult(
                 new AssistantStep("done", Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 0), receipt));
         }

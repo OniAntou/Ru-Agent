@@ -49,7 +49,7 @@ public sealed class FakeModelStepRunner : IModelStepRunner
     {
         // A real receipt bound to a rendered prompt: the coordinator now rejects
         // the all-zero fixture shape, so the fake composes exactly like the model step.
-        return SystemPromptComposer.Compose(context, nativeToolCalling: true).Receipt;
+        return SystemPromptComposer.Compose(context).Receipt;
     }
 
     private sealed record QueuedStep(

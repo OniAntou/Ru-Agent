@@ -185,8 +185,8 @@ paths, one generation may return optional narration and one or more ordered
 calls. The Host persists the assistant batch and matching durable tool results;
 it does not flatten native calls into prose. Responses assistant message phases survive native replay: `commentary` is
 progress rather than a completed answer. A commentary-only response continues
-with bounded recovery, and `final_answer` can finish normally. Compatibility
-text selection emits exactly one JSON object. The model makes no success claim before durable
+with bounded recovery, and `final_answer` can finish normally. A call written out
+as text is salvaged into a native call when it names an advertised tool. The model makes no success claim before durable
 results. If a batch asks, no call executes; after approval the runtime
 re-evaluates the retained durable proposals without a new model proposal.
 Read-only calls may overlap up to eight at a time while mutation/terminal
@@ -228,8 +228,8 @@ automatically read or executed. Context values remain bounded (128 KiB per
 reference and 8 MiB serialized context). Successful structured file operations
 also discover bounded nested `AGENTS.md` guidance, refreshed in runtime context
 with an explicit scope and precedence. Receipt-derived private scope hints survive
-compaction and restart independently of native text caching, including image and
-text-selection requests. Existing files nearest to touched paths receive priority
+compaction and restart independently of native text caching, including image
+requests. Existing files nearest to touched paths receive priority
 under the instruction-count bound. Root-selected
 instructions and skills are followed only as guidance; they cannot
 grant tools, permissions, approvals, paths, network access, or preset changes.
@@ -499,14 +499,14 @@ runs never take an automatic window: their own limits fail them. When a park
 happens, the TUI shows a `▲ run paused` row plus `resume with Continue (or 'ru
 agent continue <run-id>')`; typing `Continue` while a parked run is known POSTs
 the resume and follows that tracked run from its durable cursor. Native calls,
-text-selected JSON, arguments, and outputs never enter the visible transcript
+calls written out as text, arguments, and outputs never enter the visible transcript
 as execution markup, mood state, or public diagnostics.
 
 A dead-end model step does not end the run by default. Ordinary prose after a
 failed or unverified tool receipt is suppressed and answered with a durable
 `[HARNESS RECOVERY]` note (up to 3 notes, shared with verification holds); empty final text gets up to 3 notes,
-and a runner-rejected malformed, unavailable or invalid selection (including an
-unknown tool id or version, `capability_unavailable`) gets up to 4.
+and a runner-rejected malformed or unavailable tool call, or an unreadable call
+written out as text (`invalid_selection`), gets up to 4.
 Incomplete `Length` finishes get up to 3 truncation notes in a row (a later truncation after progress starts a new count). These kinds share a
 cumulative cap of 24 notes per run. System recovery notes remain visible through
 compaction. Feedback keeps the same model/provider; spent bounds fail with the

@@ -87,7 +87,7 @@ public sealed class StructuredCheckpointDurabilityTests
             var fact = Calls > 1 ? "Vietnamese responses; preserve schema v18." : "Vietnamese responses.";
             var text = string.Join("\n", ContextCheckpoint.Sections.Select(section => section + "\n- " + fact));
             return Task.FromResult(new ContextCheckpointResult(text, new ModelUsage(100, 50, 150, null, null),
-                PromptReceipt: SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt));
+                PromptReceipt: SystemPromptComposer.Compose(request.PromptContext).Receipt));
         }
         public Task<ModelStepResult> RunStepAsync(ModelStepRequest request, Func<AssistantDelta, ValueTask> publish, CancellationToken ct) => throw new NotSupportedException();
     }

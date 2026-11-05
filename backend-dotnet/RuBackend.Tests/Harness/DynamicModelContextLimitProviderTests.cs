@@ -16,7 +16,6 @@ public sealed class DynamicModelContextLimitProviderTests
         var resolver = new FixedMetadataResolver(new AgentRunModelMetadata(
             "model-a",
             "chat_completions",
-            ProviderToolCallingMode.Native,
             131_072,
             "provider_catalog",
             "catalog-v1",
@@ -37,7 +36,6 @@ public sealed class DynamicModelContextLimitProviderTests
         var provider = new DynamicModelContextLimitProvider(new FixedMetadataResolver(new AgentRunModelMetadata(
             "custom-model",
             "chat_completions",
-            ProviderToolCallingMode.Native,
             null,
             "unknown",
             "unknown-v1",

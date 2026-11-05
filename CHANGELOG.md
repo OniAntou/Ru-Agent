@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(providers)!**: Bỏ hẳn chế độ gọi tool cũ "text selection" (model viết
+  một JSON chọn tool dưới dạng text). Native tool calling giờ là chế độ duy nhất cho
+  Chat Completions, Responses và Anthropic Messages: bỏ `ProviderToolCallingMode`, các
+  nhánh text trong ba adapter, phép chiếu lịch sử sang text, hợp đồng "TOOL SELECTION
+  CONTRACT" cùng schema/ví dụ inline trong system prompt, và `AgentToolPromptGuidance`
+  (hướng dẫn đó đã nằm trong mô tả tool native). **Breaking:** run đã lưu với
+  `calling_mode = text_selection` không được chạy tiếp bằng native mà thất bại với
+  `provider_selection_invalid`; pin mới chỉ ghi `native`, client chỉ nhận `native`.
+  Run native vẫn cứu tool call model tự viết thành text (JSON envelope hoặc khối
+  `<tool_call>`): call đầy đủ tới tool/version được advertise vẫn chạy qua Broker như
+  trước. Tool hoặc version không được advertise giờ thất bại retry được với
+  `model_tool_call_unavailable` như call native (trước là `capability_unavailable`, mã
+  này bị bỏ khỏi nhóm sửa được của recovery note). Mặc định cột `calling_mode` trong baseline v18 đã
+  phát hành giữ nguyên vì mọi lần ghi đều truyền giá trị.
+
 - **refactor(broker)!**: Gỡ đường thực thi và duyệt v1 (legacy) khỏi Broker; mọi tool chỉ
   chạy qua `ExecuteAuthenticatedV2Async` sau khi `BrokerExecutionRuntime` đã đánh giá policy
   và tiêu thụ authorization token. **Breaking** cho caller nhúng Broker: bỏ

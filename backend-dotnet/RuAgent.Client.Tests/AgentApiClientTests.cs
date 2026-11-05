@@ -128,6 +128,7 @@ public sealed partial class AgentApiClientTests
         foreach (var metadata in new object[]
         {
             new { provider_calling_mode = "fallback" },
+            new { provider_calling_mode = "text_selection" },
             new { context_window_tokens = 0 },
             new { output_token_reserve = 128001 },
         })

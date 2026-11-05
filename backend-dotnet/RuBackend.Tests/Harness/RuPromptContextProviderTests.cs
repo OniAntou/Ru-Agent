@@ -112,7 +112,6 @@ public sealed partial class RuPromptContextProviderTests
         var resolver = new FixedMetadataResolver(new AgentRunModelMetadata(
             "model-a",
             "openai_responses",
-            ProviderToolCallingMode.TextSelection,
             200_000,
             "models.dev",
             "catalog-v1",

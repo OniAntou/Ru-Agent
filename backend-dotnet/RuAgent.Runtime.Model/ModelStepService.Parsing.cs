@@ -135,10 +135,10 @@ public sealed partial class ModelStepService
     {
         if (fragments.Count == 0)
         {
-            var (promptSelection, visibleText) = ParsePromptToolSelection(text.ToString(), settings, modelStepId);
-            if (promptSelection is not null)
+            var (salvagedCall, visibleText) = SalvageHandWrittenToolCall(text.ToString(), settings, modelStepId);
+            if (salvagedCall is not null)
             {
-                return ([promptSelection], visibleText);
+                return ([salvagedCall], visibleText);
             }
 
             if (finishReason == "tool_calls")
@@ -300,9 +300,9 @@ public sealed partial class ModelStepService
     /// Whether step text is the tool call written out by hand rather than prose.
     /// </summary>
     /// <remarks>
-    /// Prompt-based selections already strip their call block before it can be seen; a native
-    /// call whose text side is markup gets the same treatment, because raw call markup must
-    /// never reach the chat whichever way the model chose to write it.
+    /// Raw call markup must never reach the chat: beside a native call it is dropped as
+    /// narration, and a step that has only markup is salvaged or rejected (see
+    /// <see cref="SalvageHandWrittenToolCall"/>).
     /// </remarks>
     private static bool IsToolCallMarkup(string text)
     {
@@ -310,7 +310,21 @@ public sealed partial class ModelStepService
         return candidate.Length != 0 && candidate[0] is '{' or '[';
     }
 
-    private static (ModelToolCall? Call, string? VisibleText) ParsePromptToolSelection(
+    /// <summary>
+    /// Native salvage for a step that issued no native call but wrote one out as text
+    /// (a JSON envelope or a <c>&lt;tool_call&gt;</c> block: leading, trailing, glued to
+    /// prose, fenced or with mangled delimiters).
+    /// </summary>
+    /// <remarks>
+    /// Native tool calling is the only calling mode, but models behind OpenAI-compatible
+    /// gateways sometimes write the call instead of issuing it. A complete call to an
+    /// advertised tool and version becomes an ordinary <see cref="ModelToolCall"/> and still
+    /// takes the normal scheduler and Broker policy path. An unadvertised tool or version
+    /// fails like an unadvertised native call (<c>model_tool_call_unavailable</c>); markup that
+    /// cannot be read as a call fails retryably as <c>invalid_selection</c>, or is stripped when
+    /// prose remains. Raw call markup never reaches the chat.
+    /// </remarks>
+    private static (ModelToolCall? Call, string? VisibleText) SalvageHandWrittenToolCall(
         string text,
         JsonObject settings,
         string modelStepId)
@@ -344,7 +358,7 @@ public sealed partial class ModelStepService
             catch (ModelToolSelectionException error) when (
                 error.Code is "unknown_tool" or "invalid_tool_version")
             {
-                throw new ModelStepException("capability_unavailable", retryable: false, error);
+                throw new ModelStepException("model_tool_call_unavailable", retryable: true, error);
             }
             catch (ModelToolSelectionException error)
             {
@@ -374,7 +388,7 @@ public sealed partial class ModelStepService
             catch (ModelToolSelectionException error) when (
                 error.Code is "unknown_tool" or "invalid_tool_version")
             {
-                throw new ModelStepException("capability_unavailable", retryable: false, error);
+                throw new ModelStepException("model_tool_call_unavailable", retryable: true, error);
             }
             catch (ModelToolSelectionException error)
             {
@@ -425,7 +439,7 @@ public sealed partial class ModelStepService
         catch (ModelToolSelectionException error) when (
             error.Code is "unknown_tool" or "invalid_tool_version")
         {
-            throw new ModelStepException("capability_unavailable", retryable: false, error);
+            throw new ModelStepException("model_tool_call_unavailable", retryable: true, error);
         }
         catch (ModelToolSelectionException error)
         {
@@ -451,7 +465,7 @@ public sealed partial class ModelStepService
                 : null;
         if (!string.Equals(configuredVersion, selection.ToolVersion, StringComparison.Ordinal))
         {
-            throw new ModelStepException("capability_unavailable", retryable: false);
+            throw new ModelStepException("model_tool_call_unavailable", retryable: true);
         }
 
         try

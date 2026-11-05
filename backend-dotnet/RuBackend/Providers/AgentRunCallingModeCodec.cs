@@ -1,31 +1,20 @@
-using RuAgent.Runtime.Adapters.Bootstrap;
-
 namespace RuBackend.Providers;
 
+/// <summary>
+/// The stored tool-calling mode of a run's provider pin. Native tool calling is the only
+/// mode; a pin that names anything else (for example a run stored before the legacy
+/// "text_selection" protocol was retired) cannot be resumed and fails closed with
+/// <c>provider_selection_invalid</c> instead of being switched to native silently.
+/// </summary>
 internal static class AgentRunCallingModeCodec
 {
-    public static string ToStoredValue(ProviderToolCallingMode mode) => mode switch
-    {
-        ProviderToolCallingMode.Native => "native",
-        ProviderToolCallingMode.TextSelection => "text_selection",
-        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
-    };
+    public const string Native = "native";
 
-    public static bool TryParseStoredValue(
-        string? value,
-        out ProviderToolCallingMode mode)
+    public static void RequireNative(string? storedValue)
     {
-        switch (value)
+        if (storedValue != Native)
         {
-            case "native":
-                mode = ProviderToolCallingMode.Native;
-                return true;
-            case "text_selection":
-                mode = ProviderToolCallingMode.TextSelection;
-                return true;
-            default:
-                mode = default;
-                return false;
+            throw new ProviderCatalogException("provider_selection_invalid");
         }
     }
 }

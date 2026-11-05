@@ -183,8 +183,8 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
   entries declare reasoning options and the documented output cap. The adapter
   streams `tool_use` inputs, pairs ordered
   `tool_result` blocks by provider ID, and stores exact signed/redacted thinking
-  blocks only in encrypted internal continuation payloads. Existing text-selection
-  pins retain that fixed legacy mode.
+  blocks only in encrypted internal continuation payloads. A run pinned to the
+  retired text-selection mode fails with `provider_selection_invalid`.
 - An explicit `reasoning_efforts` enum plus a declared `reasoning_effort`
   supported parameter enables that Chat Completions mapping.
 - A provider's own `/models` frequently publishes no reasoning metadata at all

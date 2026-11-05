@@ -409,7 +409,7 @@ public sealed class AgentInputEndpointTests
             return Task.FromResult(new ModelStepResult(
                 step,
                 SystemPromptComposer
-                    .Compose(request.PromptContext, nativeToolCalling: true)
+                    .Compose(request.PromptContext)
                     .Receipt));
         }
     }

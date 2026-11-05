@@ -7,29 +7,30 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 
 public sealed class SystemPromptComposerTests
 {
-    [Theory]
-    [InlineData("read", "Use read for text inspection.", "Search args: grep")]
-    [InlineData("grep", "Search args: grep", "Use write for new files")]
-    [InlineData("skill", "Load the full SKILL.md", "Delegate with agent_spawn")]
-    [InlineData("agent_spawn", "Delegate with agent_spawn", "Use agent_wait")]
-    public void Tool_guidance_matches_only_the_advertised_capabilities(string id, string included, string excluded)
+    [Fact]
+    public void Capability_listing_keeps_only_the_purpose_sentence_and_no_inline_schema()
     {
-        var capability = new PromptCapability(id, "1.0.0", "Fixture tool.", "workspace.read",
-            "{\"type\":\"object\",\"properties\":{}}", new string('a', 64), null, "enabled");
+        // Schemas, examples, full descriptions and per-tool workflow guidance travel through
+        // the provider's native tool declarations; the prompt lists each tool's purpose.
+        const string description = "Read src/App.cs. Continue paging with the returned cursor.";
+        var capability = new PromptCapability("read", "1.0.0", description, "workspace.read",
+            "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}}}", new string('a', 64),
+            "{\"path\":\"x\"}", "enabled");
         var context = PromptFixtures.ValidContext(capabilities: [capability]);
         var prompt = SystemPromptComposer.Compose(context);
-        Assert.Contains(included, prompt.Text);
-        Assert.DoesNotContain(excluded, prompt.Text);
-        prompt.Receipt.ValidateAgainst(context, prompt.Text);
 
-        var native = SystemPromptComposer.Compose(context, nativeToolCalling: true);
-        Assert.DoesNotContain(included, native.Text);
-        Assert.Contains(capability.Description, native.Text);
-        native.Receipt.ValidateAgainst(context, native.Text);
+        Assert.Contains("read@1.0.0: Read src/App.cs.", prompt.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Continue paging with the returned cursor.", prompt.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("input_schema:", prompt.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("example_arguments:", prompt.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain(capability.InputSchemaJson, prompt.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Use read for text inspection.", prompt.Text, StringComparison.Ordinal);
+        Assert.Equal(description, context.Capabilities.Single().Description);
+        prompt.Receipt.ValidateAgainst(context, prompt.Text);
     }
 
     [Fact]
-    public void Native_history_deduplicates_tool_data_but_text_mode_retains_it_and_its_schema()
+    public void Runtime_block_deduplicates_tool_data_already_in_native_history()
     {
         var capability = new PromptCapability("read", "1.0.0", "Read.", "workspace.read",
             "{\"type\":\"object\",\"properties\":{}}", new string('a', 64), "{\"path\":\"x\"}", "enabled");
@@ -37,31 +38,11 @@ public sealed class SystemPromptComposerTests
         var context = new SystemPromptContext(original.SchemaVersion, original.AgentProfile, original.Preset,
             original.Environment, original.InstructionBlocks, original.Capabilities,
             new PromptRuntimeContext([new PromptReference("tool_result", "untrusted tool result:provider_read", "UNIQUE_TOOL_DATA")]));
-        Assert.DoesNotContain("UNIQUE_TOOL_DATA", SystemPromptComposer.Compose(context, nativeToolCalling: true,
+        Assert.DoesNotContain("UNIQUE_TOOL_DATA", SystemPromptComposer.Compose(context,
             nativeToolResultIds: new HashSet<string>(["provider_read"])).Text);
-        Assert.Contains("UNIQUE_TOOL_DATA", SystemPromptComposer.Compose(context, nativeToolCalling: true,
+        Assert.Contains("UNIQUE_TOOL_DATA", SystemPromptComposer.Compose(context,
             nativeToolResultIds: new HashSet<string>()).Text);
-        var text = SystemPromptComposer.Compose(context).Text;
-        Assert.Contains("UNIQUE_TOOL_DATA", text);
-        Assert.Contains(capability.InputSchemaJson, text);
-        Assert.Contains(capability.ExampleArgumentsJson!, text);
-    }
-
-    [Fact]
-    public void Native_listing_is_brief_while_text_selection_keeps_full_tool_guidance()
-    {
-        const string description = "Read src/App.cs. Continue paging with the returned cursor.";
-        var capability = new PromptCapability("read", "1.0.0", description, "workspace.read",
-            "{\"type\":\"object\",\"properties\":{}}", new string('a', 64), null, "enabled");
-        var context = PromptFixtures.ValidContext(capabilities: [capability]);
-        var native = SystemPromptComposer.Compose(context, nativeToolCalling: true);
-        var text = SystemPromptComposer.Compose(context);
-
-        Assert.Contains("read@1.0.0: Read src/App.cs.", native.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("Continue paging with the returned cursor.", native.Text, StringComparison.Ordinal);
-        Assert.Contains(description, text.Text, StringComparison.Ordinal);
-        Assert.Equal(description, context.Capabilities.Single().Description);
-        native.Receipt.ValidateAgainst(context, native.Text);
+        Assert.Contains("UNIQUE_TOOL_DATA", SystemPromptComposer.Compose(context).Text);
     }
 
     [Fact]
@@ -171,8 +152,7 @@ public sealed class SystemPromptComposerTests
     {
         var context = PromptFixtures.ValidContext();
 
-        var native = SystemPromptComposer.Compose(context, nativeToolCalling: true);
-        var textSelection = SystemPromptComposer.Compose(context);
+        var native = SystemPromptComposer.Compose(context);
 
         Assert.Contains("TOOL CALLING:", native.Text, StringComparison.Ordinal);
         Assert.Contains("one or more calls in a step", native.Text, StringComparison.Ordinal);
@@ -188,14 +168,10 @@ public sealed class SystemPromptComposerTests
         Assert.DoesNotContain("re-issue the identical call", native.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("after the user approves, re-issue", native.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("TOOL SELECTION CONTRACT:", native.Text, StringComparison.Ordinal);
-        Assert.Contains("TOOL SELECTION CONTRACT:", textSelection.Text, StringComparison.Ordinal);
-        Assert.Contains("emit exactly one JSON object", textSelection.Text, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("may overlap", textSelection.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("emit exactly one JSON object", native.Text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("do not create a todo or call a tool just to answer a greeting", native.Text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("explore, then edit, then verify", native.Text, StringComparison.Ordinal);
         Assert.Contains("what the host contract allows", native.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("re-issue the identical call", textSelection.Text, StringComparison.Ordinal);
-        Assert.NotEqual(textSelection.Receipt.PromptSha256, native.Receipt.PromptSha256);
         native.Receipt.ValidateAgainst(context, native.Text);
     }
 
@@ -262,20 +238,6 @@ public sealed class SystemPromptComposerTests
         Assert.Contains("é", snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("\r", snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("## runtime\n\n", snapshot.Text, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Compose_renders_exact_schema_example_and_selection_envelope()
-    {
-        var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext());
-
-        Assert.Contains("read@1.0.0", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("input_schema:", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("example_arguments:", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("\"tool_id\": \"read\"", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("emit exactly one JSON object", snapshot.Text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Do not claim success", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Ordinary answers stay text-only", snapshot.Text, StringComparison.Ordinal);
     }
 
     [Fact]

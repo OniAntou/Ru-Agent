@@ -57,33 +57,6 @@ public sealed class ScriptedModelReceiptTests
         receipt.ValidateAgainst(context);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void Either_capabilities_rendering_is_accepted(bool nativeToolCalling)
-    {
-        // The Worker picks this from the provider's protocol, which a scripted model does
-        // not have. Both renderings must therefore be usable, or a script is only valid for
-        // one provider dialect.
-        var context = Context();
-        var receipt = SystemPromptComposer.Compose(context, nativeToolCalling).Receipt;
-
-        receipt.ValidateAgainst(context);
-    }
-
-    [Fact]
-    public void The_two_renderings_actually_differ()
-    {
-        // If they were identical this whole concern would be moot, and the test above would
-        // pass without proving anything about the choice.
-        var context = Context();
-
-        var native = SystemPromptComposer.Compose(context, nativeToolCalling: true).Receipt;
-        var text = SystemPromptComposer.Compose(context, nativeToolCalling: false).Receipt;
-
-        Assert.NotEqual(native.PromptSha256, text.PromptSha256);
-    }
-
     [Fact]
     public async Task Scripted_projection_cursor_placeholder_uses_the_exact_preceding_call_reference()
     {

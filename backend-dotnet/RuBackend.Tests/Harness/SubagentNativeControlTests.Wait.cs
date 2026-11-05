@@ -70,7 +70,7 @@ public sealed partial class SubagentNativeControlTests
             Calls++;
             var args = JsonSerializer.SerializeToElement(new { agent_ids = new[] { agentId }, timeout_ms = 0 });
             var step = new AssistantStep("waiting", [new("provider_wait", "agent_wait", "1.0.0", args)], AssistantFinishReason.ToolCalls, 16);
-            return Task.FromResult(new ModelStepResult(step, SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt));
+            return Task.FromResult(new ModelStepResult(step, SystemPromptComposer.Compose(request.PromptContext).Receipt));
         }
     }
 

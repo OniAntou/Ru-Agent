@@ -92,7 +92,8 @@ executable ([ADR 0012](../adr/0012-in-process-model-runner.md)); one model step 
 now a typed in-process call that returns `AssistantStep(text, tool_calls,
 finish_reason)` with bounded payloads, ordering, cancellation, and stable
 error codes. One generation may contain optional narration and one or more
-ordered native calls; text-selected calls remain exactly one JSON object.
+ordered native calls; a call written out as text is salvaged when it names an
+advertised tool.
 
 Text turns are authenticated Agent runs consumed through the durable Agent SSE
 stream. There is no public WebSocket and no second text-generation transport.

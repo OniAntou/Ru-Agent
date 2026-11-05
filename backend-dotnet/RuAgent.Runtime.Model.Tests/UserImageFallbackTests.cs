@@ -114,8 +114,7 @@ public sealed class UserImageFallbackTests
 
     private static ProviderBootstrapData Bootstrap(string protocol, string model, bool? accepts = null) => new(
         "fixture", protocol, new Uri("https://provider.invalid/v1/endpoint"), model, "synthetic",
-        maximumOutputTokens: 1024, toolCallingMode: ProviderToolCallingMode.Native,
-        allowNativeResponses: true, allowNativeAnthropic: true, contextWindowTokens: 32_768,
+        maximumOutputTokens: 1024, contextWindowTokens: 32_768,
         acceptsImageInput: accepts);
 
     private sealed class CapturingProvider(string protocol, HttpClient http) : IModelProvider, IModelRequestBodyProjector

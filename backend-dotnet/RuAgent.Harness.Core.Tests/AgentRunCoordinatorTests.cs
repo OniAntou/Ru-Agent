@@ -2337,7 +2337,7 @@ public sealed partial class AgentRunCoordinatorTests
             await Task.Yield();
             return new ModelStepResult(
                 step,
-                SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt);
+                SystemPromptComposer.Compose(request.PromptContext).Receipt);
         }
     }
 

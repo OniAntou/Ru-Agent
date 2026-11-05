@@ -26,8 +26,7 @@ public sealed class ResponsesPhaseHistoryTests
         InProcessModelStepRunner Runner() => new(new ModelStepService(new OpenAiResponsesModelProvider(http)))
         {
             CreateProviderBootstrapAsync = (_, _) => Task.FromResult(new ProviderBootstrapData("fixture", "openai_responses",
-                new Uri("https://provider.invalid/v1/responses"), "fixture", "synthetic",
-                toolCallingMode: ProviderToolCallingMode.Native, allowNativeResponses: true)),
+                new Uri("https://provider.invalid/v1/responses"), "fixture", "synthetic")),
         };
         ModelStepRequest Request(params ModelContextEntry[] entries) => new(new RunId("run_" + new string('a', 32)),
             new ModelStepId("step_" + new string('b', 32)), new ModelContextSnapshot(entries, ReadOnlyMemory<byte>.Empty),

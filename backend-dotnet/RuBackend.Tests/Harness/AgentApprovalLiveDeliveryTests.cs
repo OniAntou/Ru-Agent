@@ -194,7 +194,7 @@ public sealed class AgentApprovalLiveDeliveryTests
             return new ModelStepResult(
                 step,
                 RuAgent.Harness.Core.Prompting.SystemPromptComposer
-                    .Compose(request.PromptContext, nativeToolCalling: true)
+                    .Compose(request.PromptContext)
                     .Receipt);
         }
     }

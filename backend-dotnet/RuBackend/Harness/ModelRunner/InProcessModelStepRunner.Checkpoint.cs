@@ -24,8 +24,8 @@ public sealed partial class InProcessModelStepRunner
             var cap = Math.Min(4096, bootstrap.MaximumOutputTokens ?? 4096);
             var summaryBootstrap = new ProviderBootstrapData(bootstrap.Backend, bootstrap.Protocol,
                 bootstrap.Endpoint, bootstrap.Model, bootstrap.Credential, bootstrap.RequestOptions, cap,
-                bootstrap.ToolCallingMode, allowNativeResponses: true, allowNativeAnthropic: true,
-                bootstrap.UseMaxCompletionTokens, bootstrap.ContextWindowTokens, cap,
+                useMaxCompletionTokens: bootstrap.UseMaxCompletionTokens,
+                contextWindowTokens: bootstrap.ContextWindowTokens, outputTokenReserve: cap,
                 replayChatReasoning: bootstrap.ReplayChatReasoning,
                 acceptsImageInput: bootstrap.AcceptsImageInput,
                 sessionHeaderName: bootstrap.SessionHeaderName);

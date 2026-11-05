@@ -11,17 +11,10 @@ public sealed partial class AgentCommands
         {
             chatEngine = loop;
             loop.SetTaskCommandHandler((argument, token) => RunCommandControlAsync("tasks", () => ShowTasksAsync(argument, token), token));
-            loop.SetChangesCommandHandler((argument, token) => RunCommandControlAsync("changes", () => ShowChangesAsync(argument, token), token));
-            loop.SetRewindCommandHandler((argument, token) => RunCommandControlAsync("history", () => RewindHistoryAsync(argument, token), token));
-            loop.SetSubmissionGuard(RewindSubmissionGuard);
             loop.SetRetainedContinuationClassifier(IsRetainedContinuation);
-            loop.SetHistoryStateProviders(() => pendingHistoryBranch is not null,
-                line => historyReloadRequired && line.Trim().Equals("/sessions id:" + sessionId, StringComparison.OrdinalIgnoreCase));
             loop.SetShutdownSettlement(() => Task.WhenAll(
                 runSession.WaitForRunSettlementAsync(), attachmentTasks.StopAsync()));
-            loop.SetSubmissionSnapshotFactory(line => historyReloadRequired && line.TrimStart().Split(' ', 2)[0].Equals("/sessions", StringComparison.OrdinalIgnoreCase)
-                ? ChatSubmissionSnapshot.Create(line, sessionId, canonicalWorkspace, cmd.Preset, backendName ?? string.Empty, activeModel, [], [])
-                : submissions.CreateSnapshot(
+            loop.SetSubmissionSnapshotFactory(line => submissions.CreateSnapshot(
                 line, sessionId, canonicalWorkspace, cmd.Preset,
                 backendName ?? string.Empty, activeModel, runSession.ParkedRunId is not null || runSession.FollowableRunId is not null));
             loop.SetSubmissionOwnershipHandlers(

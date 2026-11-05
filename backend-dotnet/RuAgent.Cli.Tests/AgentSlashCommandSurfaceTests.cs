@@ -145,22 +145,14 @@ public sealed partial class AgentSlashCommandSurfaceTests
         Assert.DoesNotContain(command, string.Join('\n', TuiSurfaces.Help(120)), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Changes_is_available_in_help_and_completion_with_an_optional_run_target()
+    [Theory]
+    [InlineData("/changes")]
+    [InlineData("/history")]
+    [InlineData("/rewind")]
+    public void Removed_inspection_commands_are_absent_from_help_and_completion(string command)
     {
-        var command = Assert.Single(ChatCommandCatalog.FindMatches("/changes"));
-        Assert.Equal("/changes [run-id]", command.Syntax);
-        Assert.Contains("/changes", string.Join('\n', TuiSurfaces.Help(120)), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void History_has_turn_actions_and_replaces_destructive_rewind_in_help()
-    {
-        var command = Assert.Single(ChatCommandCatalog.FindMatches("/history"));
-        Assert.Contains("edit|continue", command.Syntax);
-        Assert.Contains("branch", command.Description);
-        Assert.Contains("/history", string.Join('\n', TuiSurfaces.Help(120)), StringComparison.Ordinal);
-        Assert.Empty(ChatCommandCatalog.FindMatches("/rewind"));
+        Assert.Empty(ChatCommandCatalog.FindMatches(command));
+        Assert.DoesNotContain(command, string.Join('\n', TuiSurfaces.Help(120)), StringComparison.Ordinal);
     }
 
     [Fact]

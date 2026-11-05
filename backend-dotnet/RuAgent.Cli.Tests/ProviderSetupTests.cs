@@ -32,7 +32,7 @@ public sealed class ProviderSetupTests
             };
         }
         internal AgentSlashCommands Commands(HttpClient http, StringWriter output, StringWriter errors) =>
-            new(new SettingsApiClient(ChatRewindWorkflowTests.Host.Session, http), output, errors) { PanelWidth = 100 };
+            new(new SettingsApiClient(ChatTestSession.Value, http), output, errors) { PanelWidth = 100 };
     }
 
     [Fact]

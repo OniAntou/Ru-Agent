@@ -11,8 +11,6 @@ public sealed class TgInspectionCancellationAuditTests
 {
     [Theory]
     [InlineData("/tasks", false)]
-    [InlineData("/changes", false)]
-    [InlineData("/history", false)]
     [InlineData("/tasks", true)]
     public async Task Escape_cancels_pending_inspection_before_its_panel_opens_without_cancelling_the_model(string command, bool runningModel)
     {
@@ -35,8 +33,6 @@ public sealed class TgInspectionCancellationAuditTests
             await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct);
         }
         loop.SetTaskCommandHandler(Inspect);
-        loop.SetChangesCommandHandler(Inspect);
-        loop.SetRewindCommandHandler(Inspect);
         var stage = 0;
         var observedEscapes = 0;
         app.Keyboard.KeyDown += (_, key) => { if (key == Key.Esc) observedEscapes++; };

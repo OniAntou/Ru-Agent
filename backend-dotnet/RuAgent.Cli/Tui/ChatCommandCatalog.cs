@@ -17,15 +17,13 @@ public static class ChatCommandCatalog
         new("/sessions", "Browse saved sessions and reopen by id", "/sessions [query|id:<session-id>]"),
         new("/subagents", "View child tasks and results", "/subagents [run-id] [agent result [version]]"),
         new("/tasks", "View and stop background terminal tasks", "/tasks [run-id] | /tasks kill <execution-id>"),
-        new("/changes", "Summarize recorded file edits and previews", "/changes [run-id]"),
-        new("/history", "Browse turns; edit or continue in a new chat branch", "/history [turn [view|edit|continue]] | /history cancel"),
         new("/help", "Show every command", "/help"),
         new("/update", "Check or install a Ru update", "/update [--yes] [--channel stable|preview]"),
         new("/exit", "Quit", "/exit"),
     ];
 
     private static readonly HashSet<string> RemovedCommands = new(StringComparer.OrdinalIgnoreCase)
-        { "/delete", "/resume", "/retry", "/release", "/clear", "/skills", "/skill", "/follow" };
+        { "/delete", "/resume", "/retry", "/release", "/clear", "/skills", "/skill", "/follow", "/changes", "/history", "/rewind" };
 
     internal static bool IsRemovedCommand(string line) => RemovedCommands.Contains(
         line.TrimStart().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "");

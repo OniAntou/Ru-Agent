@@ -192,7 +192,7 @@ public sealed class TuiSingleSessionTests
     {
         using IApplication app = Application.Create(); app.Init(DriverRegistry.Names.ANSI);
         using var page = TgChatWindow.Build(); using var http = new HttpClient(host);
-        using var commands = new AgentCommands(ChatRewindWorkflowTests.Host.Session, http, TextWriter.Null, TextWriter.Null);
+        using var commands = new AgentCommands(ChatTestSession.Value, http, TextWriter.Null, TextWriter.Null);
         using var submissions = new ChatSubmissionState();
         var writer = new TgTranscriptWriter(app, page.Transcript); var path = Path.GetTempPath();
         var bootstrap = new AgentCommands.ChatBootstrapContext(submissions, writer, path, path, session,

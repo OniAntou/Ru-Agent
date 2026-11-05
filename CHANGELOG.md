@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nhớ vẫn khớp script gốc của model như trước, nên rule cũ không bị mất. Script mở đầu
   bằng `using`/`param`/`#Requires` giữ nguyên.
 
+- **perf(tui)**: Gom các dòng Markdown hoàn chỉnh trong cùng một chunk streaming
+  thành batch UI có giới hạn; giữ cập nhật đầu tiên và thứ tự preview/tool/kết thúc
+  lượt. Giảm số lượt dispatch khi nhận nhiều dòng cùng lúc, không thêm thời gian
+  chờ giữa các chunk và không thay đổi tốc độ sinh token của provider.
+
+- **refactor(tui)**: Gỡ `/changes`, `/history` và alias `/rewind` khỏi menu, help và
+  xử lý lệnh; bỏ inspector thay đổi file và luồng tạo nhánh chat trong TUI.
+  Giữ mở lại session đã lưu, lịch sử nhập bằng phím lên/xuống và các API độc lập.
+
 - **fix(harness)**: Core contract chỉ cho xoá file nháp do run tạo trước khi kiểm tra cuối;
   cache và output build tự sinh lại (`__pycache__`, `bin`, `obj`, `node_modules`...) được giữ.
   Trước đây model xoá `__pycache__` bằng `Remove-Item -Recurse -Force`, chạy lại test (sinh

@@ -10,14 +10,35 @@ internal sealed class StreamingMarkdownProjector(
     Action<IReadOnlyList<TranscriptLine>> commit)
 {
     private const int PreviewIntervalMilliseconds = 33;
+    private const int CommitBatchRows = 64;
+    private const int CommitBatchCharacters = 16 * 1024;
     private readonly StringBuilder _line = new();
     private readonly StreamingParagraphParser _paragraph = new();
     private int _fed;
     private bool _completedLine;
     private bool _confirmedParagraph;
     private long _lastPreview;
+    private List<TranscriptLine>? _commitBatch;
+    private int _commitCharacters;
+    private bool _batching;
+    private bool _sentCommit;
 
     internal void Append(string text, int width)
+    {
+        _batching = true;
+        _sentCommit = false;
+        try
+        {
+            AppendCore(text, width);
+        }
+        finally
+        {
+            _batching = false;
+            FlushCommitBatch();
+        }
+    }
+
+    private void AppendCore(string text, int width)
     {
         var start = 0;
         while (start < text.Length)
@@ -64,13 +85,13 @@ internal sealed class StreamingMarkdownProjector(
         if (IsConfirmedParagraph())
         {
             FeedLine();
-            preview(_paragraph.Preview());
+            PublishPreview(_paragraph.Preview());
             return;
         }
         var partial = _line.ToString();
         if (_completedLine || markdown.Classify(partial) == TuiMarkdown.TuiLineKind.Paragraph)
-            preview(_paragraph.PreviewExtra((_completedLine ? " " : "") + partial));
-        else preview(markdown.PreviewPresentation(partial, width));
+            PublishPreview(_paragraph.PreviewExtra((_completedLine ? " " : "") + partial));
+        else PublishPreview(markdown.PreviewPresentation(partial, width));
     }
 
     private void CompleteLine(int width)
@@ -84,7 +105,7 @@ internal sealed class StreamingMarkdownProjector(
         else
         {
             FlushParagraph();
-            commit(markdown.RenderPresentation(line, width));
+            CommitRows(markdown.RenderPresentation(line, width));
         }
         _line.Clear();
         _fed = 0;
@@ -100,18 +121,60 @@ internal sealed class StreamingMarkdownProjector(
     internal void FlushParagraph()
     {
         if (!_paragraph.HasContent) return;
-        commit(_paragraph.Preview());
+        CommitRows(_paragraph.Preview());
         _paragraph.Reset();
         _completedLine = false;
     }
 
     internal void Reset()
     {
+        _commitBatch?.Clear();
+        _commitCharacters = 0;
         _line.Clear();
         _paragraph.Reset();
         _fed = 0;
         _completedLine = false;
         _confirmedParagraph = false;
         _lastPreview = 0;
+    }
+
+    private void PublishPreview(IReadOnlyList<TranscriptLine> rows)
+    {
+        FlushCommitBatch();
+        preview(rows);
+    }
+
+    private void CommitRows(IReadOnlyList<TranscriptLine> rows)
+    {
+        // Keep the first visible update eager. Empty commits also clear a provisional
+        // preview (for example at a closing fence), so they must remain ordered barriers.
+        if (!_batching || !_sentCommit || rows.Count == 0)
+        {
+            FlushCommitBatch();
+            _sentCommit = true;
+            commit(rows);
+            return;
+        }
+
+        foreach (var row in rows)
+        {
+            var characters = 0;
+            foreach (var run in row.Runs) characters += run.Text.Length;
+            if (_commitBatch is { Count: > 0 }
+                && (_commitBatch.Count >= CommitBatchRows || _commitCharacters + characters > CommitBatchCharacters))
+                FlushCommitBatch();
+            (_commitBatch ??= new List<TranscriptLine>(CommitBatchRows)).Add(row);
+            _commitCharacters += characters;
+        }
+    }
+
+    private void FlushCommitBatch()
+    {
+        if (_commitBatch is not { Count: > 0 }) return;
+        // The UI consumes rows asynchronously; never pass the reusable mutable buffer.
+        var rows = _commitBatch.ToArray();
+        _commitBatch.Clear();
+        _commitCharacters = 0;
+        commit(rows);
     }
 }

@@ -73,8 +73,6 @@ public partial class ChatSessionEngine
     /// Escape cannot be lost, and it is cleared whenever the loop goes idle.
     /// </summary>
     private bool _cancelRequested;
-    private Func<string, string?>? _submissionGuard;
-    internal void SetSubmissionGuard(Func<string, string?> guard) => _submissionGuard = guard;
 
     internal ChatSessionEngine(IChatSessionView view, CancellationToken cancellationToken = default)
     {
@@ -234,25 +232,7 @@ public partial class ChatSessionEngine
             _view.ShowFeedback($"unknown_command: {command}. Type /help for assistance.", true);
             return;
         }
-        if (_submissionGuard?.Invoke(line) is { } guardMessage)
-        {
-            _view.ShowFeedback(guardMessage, true);
-            return;
-        }
         if (TrySubmitTaskControl(line)) return;
-        lock (_queueGate)
-        {
-            if (_historyControlActive)
-            {
-                _view.ShowFeedback("finish choosing history before sending · esc closes the panel", true);
-                return;
-            }
-            if (_busy && _historyBranchPending?.Invoke() is true)
-            {
-                _view.ShowFeedback("wait for chat branch creation before sending another request", true);
-                return;
-            }
-        }
         if (_dropHandler is not null)
         {
             var candidate = line.Trim();
@@ -279,13 +259,7 @@ public partial class ChatSessionEngine
                 _view.ShowFeedback("run recovery is already active · wait or cancel it", true);
                 return;
             }
-            var historyRecovery = _historyRecoveryCommand?.Invoke(line) is true;
-            if (historyRecovery && _queued.Count > 0)
-            {
-                _view.ShowFeedback("queued drafts are held · use /exit and reopen the session", true);
-                return;
-            }
-            isRepairCommandWhilePaused = _queuePaused && !_busy && (ChatSubmissionSnapshot.IsPausedControlCommand(line) || retainedContinuation || historyRecovery);
+            isRepairCommandWhilePaused = _queuePaused && !_busy && (ChatSubmissionSnapshot.IsPausedControlCommand(line) || retainedContinuation);
             if ((_busy || _queued.Count > 0 || _queuePaused)
                 && !isRepairCommandWhilePaused
                 && _stateChangingCommandClassifier?.Invoke(line) is true)

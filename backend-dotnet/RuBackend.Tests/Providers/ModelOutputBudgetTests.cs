@@ -3,7 +3,7 @@ using Xunit;
 
 namespace RuBackend.Tests.Providers;
 
-public sealed class AnthropicOutputBudgetTests
+public sealed class ModelOutputBudgetTests
 {
     [Theory]
     [InlineData(null, 200_000, 8_192)]
@@ -14,7 +14,14 @@ public sealed class AnthropicOutputBudgetTests
     [InlineData(4_096, 200_000, 4_096)]
     public void A_published_limit_lifts_the_reserve_up_to_the_default(int? modelLimit, int? contextWindow, int expected)
     {
-        Assert.Equal(expected, AnthropicOutputBudget.For(modelLimit, contextWindow));
+        Assert.Equal(expected, ModelOutputBudget.For(modelLimit, contextWindow));
+    }
+
+    [Fact]
+    public void A_large_published_limit_on_a_million_token_window_reserves_the_default()
+    {
+        // e.g. a Models.dev chat-completions reasoning model: limit.output 384,000, context 1,048,576.
+        Assert.Equal(ModelOutputBudget.Default, ModelOutputBudget.For(384_000, 1_048_576));
     }
 
     [Theory]
@@ -24,6 +31,6 @@ public sealed class AnthropicOutputBudgetTests
     public void A_small_context_window_holds_the_reserve_to_a_quarter_but_never_below_the_old_cap(
         int modelLimit, int contextWindow, int expected)
     {
-        Assert.Equal(expected, AnthropicOutputBudget.For(modelLimit, contextWindow));
+        Assert.Equal(expected, ModelOutputBudget.For(modelLimit, contextWindow));
     }
 }

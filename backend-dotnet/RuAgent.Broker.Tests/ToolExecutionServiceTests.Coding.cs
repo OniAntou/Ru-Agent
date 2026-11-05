@@ -87,9 +87,16 @@ public sealed partial class ToolExecutionServiceTests
                 new JsonObject { ["old_string"] = "two", ["new_string"] = "three" }) });
             Assert.Equal(ToolResultStatuses.Succeeded, edited.Status);
             Assert.Equal("two three", File.ReadAllText(Path.Combine(fixture.Root, "workspace", "new.txt")));
-            var failed = await Call("write_file", new JsonObject { ["path"] = "new.txt", ["content"] = "overwrite" });
+            // The file is the session's own unchanged output, so the rewrite needs no overwrite flag.
+            // Create-only denials for other files are covered in ToolExecutionServiceTests.AuthoredRewrite.
+            var rewritten = await Call("write_file", new JsonObject { ["path"] = "new.txt", ["content"] = "overwrite" });
+            Assert.Equal(ToolResultStatuses.Succeeded, rewritten.Status);
+            Assert.Equal("overwrite", File.ReadAllText(Path.Combine(fixture.Root, "workspace", "new.txt")));
+            File.WriteAllText(Path.Combine(fixture.Root, "workspace", "new.txt"), "user change");
+            var failed = await Call("write_file", new JsonObject { ["path"] = "new.txt", ["content"] = "again" });
             Assert.Equal(ToolResultStatuses.Failed, failed.Status);
-            Assert.Equal("two three", File.ReadAllText(Path.Combine(fixture.Root, "workspace", "new.txt")));
+            Assert.Equal("file_exists", failed.ErrorCode);
+            Assert.Equal("user change", File.ReadAllText(Path.Combine(fixture.Root, "workspace", "new.txt")));
         }
         finally { await fixture.Service.DisposeAsync(); Directory.Delete(fixture.Root, recursive: true); }
 

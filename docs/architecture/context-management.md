@@ -122,7 +122,10 @@ During context assembly, unstructured text results over 8,192 characters receive
 a stable model-only excerpt: the first 4,096 and last 1,024 characters, with a
 visible middle-omission notice and Unicode-safe boundaries. Original receipt
 bytes and call/result identities remain intact. Valid JSON objects/arrays are left to the
-existing structured output projector, preserving paging and cursor semantics.
+existing structured output projector, preserving paging and cursor semantics; the only
+change to them is that top-level 64-hex `sha256`, `before_sha256` and `after_sha256`
+values are dropped (the model never passes them back, and session work state reads
+them from the stored receipt).
 This stable projection happens before request budgeting or checkpoint generation;
 it does not rewrite previously admitted history merely because a result aged.
 

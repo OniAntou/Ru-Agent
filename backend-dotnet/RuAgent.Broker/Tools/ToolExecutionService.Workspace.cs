@@ -25,13 +25,45 @@ public sealed partial class ToolExecutionService
     private JsonObject ExecuteFileWrite(ToolExecutionContext context, JsonObject arguments)
     {
         var tools = ResolveTools(context, TargetPathOf(arguments));
-        return tools.Write.Execute(WithInternalExpectedHash(tools.MutationResolver, arguments));
+        var prepared = WithInternalExpectedHash(tools.MutationResolver, arguments);
+        var canonicalPath = TryCanonicalPath(tools.MutationResolver, arguments);
+        // Create-only stays the default. The one exception replaces nothing but this
+        // session's own unchanged output (see SessionAuthoredFiles).
+        if (canonicalPath is not null
+            && !(prepared["overwrite"] is JsonValue flag && flag.TryGetValue<bool>(out var requested) && requested)
+            && prepared["expected_sha256"] is JsonValue expected && expected.TryGetValue<string>(out var currentHash)
+            && _authoredFiles.IsUnchangedSinceOwnWrite(context.SessionId, canonicalPath, currentHash))
+        {
+            prepared["overwrite"] = true;
+        }
+
+        var output = tools.Write.Execute(prepared);
+        RecordAuthoredMutation(context.SessionId, canonicalPath, output);
+        return output;
     }
 
     private JsonObject ExecuteDelete(ToolExecutionContext context, JsonObject arguments)
     {
         var tools = ResolveTools(context, TargetPathOf(arguments));
-        return tools.Delete.Execute(WithInternalExpectedHash(tools.MutationResolver, arguments));
+        var output = tools.Delete.Execute(WithInternalExpectedHash(tools.MutationResolver, arguments));
+        if (TryCanonicalPath(tools.MutationResolver, arguments) is { } canonicalPath)
+            _authoredFiles.Forget(context.SessionId, canonicalPath);
+        return output;
+    }
+
+    private void RecordAuthoredMutation(string sessionId, string? canonicalPath, JsonObject output)
+    {
+        if (canonicalPath is null) return;
+        _authoredFiles.RecordMutation(sessionId, canonicalPath,
+            output["before_sha256"] is JsonValue before && before.TryGetValue<string>(out var beforeHash) ? beforeHash : null,
+            output["after_sha256"] is JsonValue after && after.TryGetValue<string>(out var afterHash) ? afterHash : null);
+    }
+
+    private static string? TryCanonicalPath(CanonicalPathResolver resolver, JsonObject arguments)
+    {
+        if (TargetPathOf(arguments) is not { } pathInput) return null;
+        try { return resolver.Resolve(pathInput).CanonicalPath; }
+        catch (ArgumentException) { return null; }
     }
 
     private static string? TargetPathOf(JsonObject arguments)
@@ -419,7 +451,10 @@ public sealed partial class ToolExecutionService
     {
         ct.ThrowIfCancellationRequested();
         var tools = ResolveTools(context, TargetPathOf(arguments));
-        return Succeeded(tools.Edit.ExecuteMany(WithInternalExpectedHash(tools.MutationResolver, arguments)), "Workspace file edited atomically.");
+        var output = tools.Edit.ExecuteMany(WithInternalExpectedHash(tools.MutationResolver, arguments));
+        // Keeps a session-created file's record current, so a later full rewrite still qualifies.
+        RecordAuthoredMutation(context.SessionId, TryCanonicalPath(tools.MutationResolver, arguments), output);
+        return Succeeded(output, "Workspace file edited atomically.");
     }
 
     private readonly TodoStore _todos = new();

@@ -171,10 +171,10 @@ public sealed class AgentProviderSnapshotFactory(
         // weaker one-object selection protocol; a model that cannot call tools now fails
         // at the provider with a bounded, named error instead of being quietly downgraded.
         var toolCallingMode = ProviderToolCallingMode.Native;
+        // Every protocol lifts the reserve from the published model limit; reasoning models on
+        // chat completions were truncated mid-call at the old fixed 8,192 just like Messages.
         var outputTokenReserve = maximumOutput
-            ?? (selected.Protocol == ProviderProtocols.AnthropicMessages
-                ? AnthropicOutputBudget.For(DocumentedOutputLimit(selected) ?? modelMetadata?.MaxOutputTokens, contextWindowTokens)
-                : AgentRunProviderSelection.DefaultOutputTokenReserve);
+            ?? ModelOutputBudget.For(DocumentedOutputLimit(selected) ?? modelMetadata?.MaxOutputTokens, contextWindowTokens);
         if (ChatReasoningReplayPolicy.Supports(selected)) options[ChatReasoningReplayPolicy.PinField] = true;
         options[RuAgent.Protocol.AgentToolProfiles.PinField] = AgentToolProfilePin.SelectNew();
         if (await ImageInputPolicy.AcceptsAsync(catalog, selected, ct).ConfigureAwait(false))

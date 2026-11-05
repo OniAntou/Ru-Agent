@@ -99,6 +99,7 @@ internal sealed partial class AgentRunStepHandlers
             events.Add(reasoningEvent);
             commitPayloads.Add(reasoningPayload);
         }
+        AddStepUsage(events, commitPayloads, modelStepId, step);
         if (droppedCount > 0)
         {
             events.Add(new HarnessEventIntent(
@@ -224,6 +225,7 @@ internal sealed partial class AgentRunStepHandlers
             events.Add(reasoningEvent);
             commitPayloads.Add(reasoningPayload);
         }
+        AddStepUsage(events, commitPayloads, modelStepId, step);
         if (droppedCount > 0)
         {
             events.Add(new HarnessEventIntent(
@@ -436,6 +438,7 @@ internal sealed partial class AgentRunStepHandlers
             events.Add(reasoningEvent);
             commitPayloads.Add(reasoningPayload);
         }
+        AddStepUsage(events, commitPayloads, modelStepId, step);
         if (droppedCount > 0)
         {
             events.Add(new HarnessEventIntent(
@@ -538,6 +541,7 @@ internal sealed partial class AgentRunStepHandlers
             events.Insert(2, reasoningEvent);
             commitPayloads.Add(reasoningPayload);
         }
+        AddStepUsage(events, commitPayloads, modelStepId, step);
         var next = run.Advance(
             transition.Next,
             run.BudgetWindow,
@@ -800,6 +804,37 @@ internal sealed partial class AgentRunStepHandlers
                     safeCode: "reply_effect_failed"));
         }
         return new AgentRunStepResult(run, Array.Empty<ToolExecutionReceipt>());
+    }
+
+    /// <summary>
+    /// Records the provider-reported usage of a step that does not reach the tool or final
+    /// branch (a held, truncated, failed or repetition-guarded reply). The provider billed
+    /// those tokens too; without this the run's usage, cost and context meters skipped them.
+    /// </summary>
+    /// <remarks>The usage event goes right after <c>model.step_completed</c>, as on the tool branch.</remarks>
+    private void AddStepUsage(
+        List<HarnessEventIntent> events,
+        List<HarnessPayloadIntent> payloads,
+        ModelStepId modelStepId,
+        AssistantStep step)
+    {
+        if (step.Usage is null) return;
+        var usageBytes = SerializeUsage(step.Usage);
+        var usagePayloadId = _ids.NewPayloadId();
+        payloads.Add(new HarnessPayloadIntent(
+            usagePayloadId,
+            HarnessPayloadKind.ModelUsage,
+            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Json,
+            Math.Max(usageBytes.Length, 1),
+            usageBytes));
+        var completed = events.FindIndex(item => item.Kind == HarnessEventKind.ModelStepCompleted);
+        events.Insert(completed < 0 ? events.Count : completed + 1, new HarnessEventIntent(
+            _ids.NewEventId(),
+            HarnessEventKind.ModelUsageRecorded,
+            modelStepId: modelStepId,
+            payloadId: usagePayloadId,
+            safeCode: "reported"));
     }
 
     private static byte[] SerializeUsage(ModelUsage usage)

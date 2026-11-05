@@ -299,6 +299,17 @@ array whose replacements are exact, non-overlapping and resolved against the
 original file. Missing-target errors direct the caller to `write_file`;
 permissions and overwrite checks remain in force.
 
+`write_file` is create-only: an existing target needs `overwrite=true`, or it fails
+with `file_exists`. One exception: a file the same session created with
+`write_file` may be written again without the flag while it still holds that
+session's last `write_file`/`edit_file` result (same SHA-256). Any other change to the
+file, a file the session did not create, or a Host restart falls back to create-only.
+The Broker keeps this record in memory, bounded and per session; policy and approvals
+are evaluated exactly as before.
+
+Model context omits the 64-hex `sha256`, `before_sha256` and `after_sha256` fields of
+file-tool results; the stored receipt keeps them for durable evidence.
+
 ### File discovery output
 
 Both

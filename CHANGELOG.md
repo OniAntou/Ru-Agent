@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(harness)**: Giảm số bước và token của coding run. Core contract chỉ dùng
+  `todo_write` cho việc dài nhiều file/giai đoạn (task gọn không lập todo), yêu cầu gom
+  đọc/sửa/kiểm tra độc lập vào một bước, sửa có mục tiêu thay vì viết lại cả file, và chỉ
+  viết test mới khi test có sẵn hoặc được yêu cầu chưa bao phủ thay đổi. Bước review yêu
+  cầu cuối run vẫn giữ nguyên.
+
+- **perf(harness)**: Nội dung tool gửi cho model không còn escape kiểu web (`"`,
+  `'`, `<`, ký tự không phải ASCII...); JSON vẫn hợp lệ và vẫn escape ký tự
+  điều khiển. Kết quả tool nhỏ hơn khoảng 3–7% trên benchmark nội bộ, nhiều hơn với văn
+  bản tiếng Việt.
+
+- **fix(harness)**: Bước bị hold (output bị cắt, completion review...), bị fail hoặc bị
+  chặn vì lặp tool giờ cũng ghi `model.usage_recorded`. Trước đây provider vẫn tính tiền
+  các bước đó nhưng tổng usage, cost và đồng hồ context của run bỏ sót chúng.
+
+- **perf(broker)**: `write_file` ghi lại được file do chính session tạo mà không cần
+  `overwrite=true`, miễn file vẫn đúng nội dung session ghi lần cuối (so SHA-256). File
+  khác, file bị người khác sửa, hoặc sau khi Host restart vẫn create-only như cũ.
+  Trước đây trường hợp này tốn một lỗi `file_exists`, một lần đọc và một lần thử lại.
+
+- **perf(harness)**: Context của model bỏ các trường `sha256`/`before_sha256`/`after_sha256`
+  (64 hex) trong kết quả file tool; receipt lưu trữ vẫn giữ nguyên.
+
+- **fix(providers)**: Pin mới trên chat-completions/Responses dùng cùng ngân sách output
+  với Anthropic (`ModelOutputBudget`: min(giới hạn model, 32.000, 1/4 context) khi catalog
+  công bố cả hai, ngược lại 8.192). Trước đây mọi protocol khác cố định 8.192 nên model
+  reasoning bị cắt giữa tool call (`model_output_truncated`) và phải chạy lại một bước.
+  Pin cũ giữ nguyên `output_token_reserve`.
+
 - **refactor(tui)**: Bỏ `/follow` khỏi menu, help và xử lý lệnh. Dùng `Continue`
   cho run đang dở đã được session ghi nhận; giữ khôi phục câu hỏi/quyền đang chờ,
   model đã ghim và attachment còn trong ô nhập. Không có run đang dở thì

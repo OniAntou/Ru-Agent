@@ -37,6 +37,41 @@ public sealed class BrokerGatewayContractsTests
     }
 
     [Fact]
+    public void Succeeded_receipt_keeps_source_text_readable_for_the_model()
+    {
+        var execution = new PreparedToolExecution(new ExecutionId("exec_" + new string('6', 32)),
+            new ToolCallId("call_" + new string('6', 32)), 1, ToolAccessKind.ReadOnly, "token", []);
+        const string source = "def f(a: int) -> str:\n    return f\"<{a}> & 'x' + `y`\"  # Tiếng Việt\n";
+
+        var receipt = global::RuBackend.Harness.Broker.BrokerGatewayContracts.SucceededReceipt(
+            execution, new JsonObject { ["content"] = source }, ToolAccessKind.ReadOnly);
+        var text = System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span);
+
+        // Web-safe \uXXXX escapes made every quote, '<', '>', '&', '+', backtick and
+        // non-ASCII character six characters long in model context.
+        Assert.DoesNotContain("\\u00", text, StringComparison.Ordinal);
+        Assert.Contains("-> str", text, StringComparison.Ordinal);
+        Assert.Contains("Tiếng Việt", text, StringComparison.Ordinal);
+        Assert.Contains("\\\"<{a}> & 'x' + `y`\\\"", text, StringComparison.Ordinal);
+        Assert.Equal(source, JsonNode.Parse(text)!["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Succeeded_receipt_still_escapes_control_characters()
+    {
+        var execution = new PreparedToolExecution(new ExecutionId("exec_" + new string('7', 32)),
+            new ToolCallId("call_" + new string('7', 32)), 1, ToolAccessKind.ReadOnly, "token", []);
+
+        var receipt = global::RuBackend.Harness.Broker.BrokerGatewayContracts.SucceededReceipt(
+            execution, new JsonObject { ["content"] = "a\u0000b\u001bc\\d" }, ToolAccessKind.ReadOnly);
+        var text = System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span);
+
+        Assert.DoesNotContain('\u0000', text);
+        Assert.DoesNotContain('\u001b', text);
+        Assert.Equal("a\u0000b\u001bc\\d", JsonNode.Parse(text)!["content"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void ApprovalArgsKey_canonicalizes_null_properties_without_throwing()
     {
         using var document = System.Text.Json.JsonDocument.Parse("{\"path\":null,\"nested\":{\"z\":null,\"a\":1}}");

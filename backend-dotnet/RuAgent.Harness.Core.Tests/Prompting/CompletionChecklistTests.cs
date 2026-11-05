@@ -225,13 +225,16 @@ public sealed class CompletionChecklistTests
     }
 
     [Fact]
-    public void Core_contract_asks_for_one_todo_per_explicit_requirement_and_a_final_requirement_check()
+    public void Core_contract_keeps_todos_for_long_work_and_always_asks_for_a_final_requirement_check()
     {
         var contract = RuAgentPromptBlocks.CoreContractBlock("test-model");
 
-        Assert.Contains("When a coding request states several requirements, record each explicit requirement "
-            + "(behavior, edge and error cases, ordering, return values, allowed files, cleanup) as its own todo item "
-            + "before editing; mark an item completed only after a check that exercises it passes.", contract, StringComparison.Ordinal);
+        Assert.Contains("Use todo_write only for long work that spans several files or phases, not for a focused task "
+            + "you can finish in a few steps.", contract, StringComparison.Ordinal);
+        Assert.Contains("When you keep a todo list for such work, record each explicit requirement "
+            + "(behavior, edge and error cases, ordering, return values, allowed files, cleanup) as its own item; "
+            + "mark an item completed only after a check that exercises it passes.", contract, StringComparison.Ordinal);
+        Assert.DoesNotContain("as its own todo item before editing", contract, StringComparison.Ordinal);
         Assert.Contains("Before the final reply, re-read the request and your changes and confirm each requirement is met; "
             + "then report the result and any remaining limits.", contract, StringComparison.Ordinal);
         Assert.DoesNotContain("Once the requested change and relevant verification are complete", contract, StringComparison.Ordinal);

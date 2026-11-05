@@ -62,6 +62,7 @@ internal sealed partial class AgentRunStepHandlers
             events.Insert(2, reasoningEvent);
             commitPayloads.Add(reasoningPayload);
         }
+        AddStepUsage(events, commitPayloads, modelStepId, step);
         if (droppedCount > 0)
         {
             events.Insert(events.Count - 1, new HarnessEventIntent(

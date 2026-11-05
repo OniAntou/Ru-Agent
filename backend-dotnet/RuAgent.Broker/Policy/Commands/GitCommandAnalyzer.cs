@@ -28,8 +28,8 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
 
     // Options that make git hand control to another program: `grep -O` spawns the
     // named command, --paginate forces the pager, and diff/textconv/filter options
-    // run helpers named by repository configuration. A ReadOnly verdict is
-    // auto-executable, so any of these fails closed to an approval ask.
+    // run helpers named by repository configuration. A ReadOnly verdict selects
+    // the hardened automatic git-read path, so any of these leaves ReadOnly.
     private static readonly string[] ProgramSelectingOptionPrefixes =
     [
         "--open-files-in-pager",
@@ -197,7 +197,7 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
         return false;
     }
 
-    // Repository-local writes are never auto-executable: `git config` can set
+    // Repository-local writes are never classed ReadOnly: `git config` can set
     // keys that make later automatic git commands hand control to another
     // program (core.fsmonitor, core.hooksPath, diff.external, aliases, ...).
     // Only read forms of repository-local config keep the automatic path.

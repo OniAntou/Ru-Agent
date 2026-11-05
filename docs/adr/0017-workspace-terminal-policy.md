@@ -42,9 +42,11 @@ Sanitized absolute PATH search remains; executable identity and canonical intent
 are re-resolved and bound to a one-use Broker token before execution. The
 `RU_TRUSTED_EXECUTABLE_DIRS` setting and its dependency plumbing are retired.
 The public tool IDs and schemas remain unchanged. Analyzer classes remain only
-metadata; production v2 policy does not defer authority back to an analyzer.
-(Update, 2026-11: the legacy adapter-caller path that still auto-ran recognized
-classes was removed; every launch now requires Broker authorization.) Historical approval reason
+metadata and compatibility behavior for legacy adapter callers (the retired
+Python-file exception no longer auto-authorizes legacy calls); production v2
+policy does not defer authority back to an analyzer.
+(Update, 2026-11: the legacy adapter-caller path was removed; analyzer classes
+are now metadata only and every launch requires Broker authorization.) Historical approval reason
 codes stay readable. Policy profiles are generated for new runs; historical
 prompt receipts do not need a database schema migration. Matching saved version-1
 selections upgrade transactionally when starting a new run, preserving the chosen

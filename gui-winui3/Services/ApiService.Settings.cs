@@ -45,6 +45,8 @@ namespace RuApp.Services
                 using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", settings);
                 bool ok = await HasOkEnvelopeAsync(response);
                 if (ok) SettingsSaved?.Invoke(this, EventArgs.Empty);
+                // Name why the Host refused, so a rejected autosave is diagnosable from the log.
+                else GuiDiagnosticWriter.WriteGuiError("settings_save", await RejectionCodeAsync(response));
                 return ok;
             }
             catch (Exception ex)

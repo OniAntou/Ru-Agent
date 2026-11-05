@@ -112,6 +112,27 @@ namespace RuApp.Services
         private static bool IsCancellation(Exception ex) =>
             ex is OperationCanceledException || ex is TaskCanceledException;
 
+        /// <summary>
+        /// The Host's bounded rejection code (a lowercase slug), or a fixed fallback. Never the
+        /// free-text message, which the diagnostic log must not carry.
+        /// </summary>
+        internal static async Task<string> RejectionCodeAsync(HttpResponseMessage response)
+        {
+            if (!response.IsSuccessStatusCode) return "http_" + (int)response.StatusCode;
+            try
+            {
+                using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                if (document.RootElement.ValueKind == JsonValueKind.Object
+                    && document.RootElement.TryGetProperty("code", out var code)
+                    && code.ValueKind == JsonValueKind.String
+                    && code.GetString() is { Length: > 0 and <= 64 } value
+                    && value.All(ch => ch is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '_'))
+                    return value;
+            }
+            catch (JsonException) { }
+            return "rejected_without_code";
+        }
+
         private static async Task<bool> HasOkEnvelopeAsync(HttpResponseMessage response)
         {
             if (!response.IsSuccessStatusCode) return false;

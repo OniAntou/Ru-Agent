@@ -93,7 +93,7 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
             }
             catch (Exception error) when (error is SettingsPayloadException or ProviderCatalogException or ArgumentException)
             {
-                return new SettingsTransitionResult(false, "Invalid settings payload.");
+                return new SettingsTransitionResult(false, "Invalid settings payload.", "settings_invalid");
             }
 
             var snapshots = new List<CredentialSnapshot>();
@@ -135,7 +135,8 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
                 await RestoreCredentialsAsync(snapshots).ConfigureAwait(false);
                 return new SettingsTransitionResult(
                     false,
-                    "Runtime settings could not be applied.");
+                    "Runtime settings could not be applied.",
+                    "settings_apply_failed");
             }
         }
         finally

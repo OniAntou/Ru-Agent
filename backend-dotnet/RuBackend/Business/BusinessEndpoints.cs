@@ -114,6 +114,7 @@ public static partial class BusinessEndpoints
             {
                 status = "error",
                 message = "Runtime settings could not be applied.",
+                code = "settings_apply_failed",
             });
         }
     }

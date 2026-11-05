@@ -40,6 +40,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", LogLevel.Warning);
+// "Executing JsonResult/OkObjectResult" info records carried no field the diagnostic
+// writer keeps, so each one landed as diagnostic_unclassified: about 59% of the Host log.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Http.Result", LogLevel.Warning);
 builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 
 // Managed runtime bootstrap BEFORE DI: resolve paths, check any fixed-port

@@ -68,6 +68,44 @@ public sealed class GuiReviewRegressionTests
     }
 
     [Fact]
+    public void Reopened_user_turn_shows_typed_text_and_file_chip_instead_of_the_prompt_envelope()
+    {
+        // The composer inlines text attachments into the prompt; history only stores that
+        // prompt, so reopening a session used to show the raw "[Attached file: ...]" block.
+        var prompt = ComposerPrompt();
+
+        var user = Assert.Single(SessionTranscriptBuilder.Build(
+            [new("user", prompt, null, MessageIndex: 0)], [], "session-a"));
+
+        Assert.Equal("em đọc được file này không?", user.Content);
+        var chip = Assert.Single(user.Attachments);
+        Assert.Equal("Untitled1.cpp", chip.FileName);
+        Assert.False(chip.IsImage);
+        Assert.Contains("int main()", chip.TextContent, StringComparison.Ordinal);
+    }
+
+    private static string ComposerPrompt()
+    {
+        var document = new RuApp.Models.ImageAttachmentItem
+        {
+            FileName = "Untitled1.cpp", IsImage = false, MimeType = "text/plain",
+            TextContent = "#include <iostream>"+"\r\n"+"int main() { return 0; }",
+        };
+        document.ByteSize = System.Text.Encoding.UTF8.GetByteCount(document.TextContent);
+        return RuApp.ViewModels.ChatComposerViewModel.BuildEffectivePrompt("em đọc được file này không?", [document]);
+    }
+
+    [Fact]
+    public void Plain_user_turn_that_mentions_an_attachment_is_left_alone()
+    {
+        var user = Assert.Single(SessionTranscriptBuilder.Build(
+            [new("user", "what does [Attached file: x.cs (1 B)] mean?", null, MessageIndex: 0)], [], "session-a"));
+
+        Assert.Equal("what does [Attached file: x.cs (1 B)] mean?", user.Content);
+        Assert.Empty(user.Attachments ?? []);
+    }
+
+    [Fact]
     public void Transcript_rows_keep_raw_server_indices()
     {
         var rows = SessionTranscriptBuilder.Build(

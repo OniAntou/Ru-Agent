@@ -40,6 +40,19 @@ public sealed class SessionStoreTests
         Assert.Empty(session.Messages);
     }
 
+    [Theory]
+    [InlineData("[Attached file: Untitled1.cpp (632 B)]\r\n```cpp\r\n#include <iostream>\r\n```\r\n\r\nem đọc được file này không?", "em đọc được file này không?")]
+    [InlineData("[Attached file: Untitled1.cpp (19 B)]\n```cpp\n#include <iostream>\n```", "Untitled1.cpp")]
+    public async Task Title_of_an_attachment_prompt_uses_the_typed_text_or_file_name(string prompt, string title)
+    {
+        var (store, _) = CreateStore();
+        var sessionId = (await store.CreateAsync(CancellationToken.None))!;
+
+        Assert.True(await store.AppendAsync(sessionId, [new("user", prompt)], CancellationToken.None));
+
+        Assert.Equal(title, (await store.GetAsync(sessionId, CancellationToken.None))!.Title);
+    }
+
     [Fact]
     public async Task Get_returns_a_200_message_window_while_history_remains_durable()
     {

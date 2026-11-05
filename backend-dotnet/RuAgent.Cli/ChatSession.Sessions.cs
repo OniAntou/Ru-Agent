@@ -48,7 +48,7 @@ public sealed partial class AgentCommands
             foreach (var turn in loaded)
             {
                 foreach (var prompt in turn.Prompts)
-                    sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.Format(prompt));
+                    sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.FormatStored(prompt));
                 if (turn.Run is { TerminalAt: not null } run)
                 {
                     sessionRenderer.BeginTurn();
@@ -84,7 +84,7 @@ public sealed partial class AgentCommands
                 if (string.Equals(message.Role, "user", StringComparison.Ordinal))
                 {
                     sessionRenderer.Surface.WriteLine(
-                        Tui.ChatPromptEcho.Format(message.Text));
+                        Tui.ChatPromptEcho.FormatStored(message.Text));
                 }
                 else
                 {

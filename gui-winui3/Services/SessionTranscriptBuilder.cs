@@ -170,6 +170,7 @@ internal static class SessionTranscriptBuilder
                 Role = row.Role, Content = projected[i].Content, SourceRunId = row.SourceRunId,
                 SourceMessageIndex = row.MessageIndex ?? i, SessionId = sessionId,
             };
+            if (row.Role == "user") AttachedPromptDisplay.Apply(item);
             if (row.Role == "assistant")
             {
                 SessionRunReplay? replay = null;

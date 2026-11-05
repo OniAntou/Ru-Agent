@@ -381,9 +381,12 @@ public sealed partial class SessionStore : ISessionStore
                 continue;
             }
 
+            // A prompt with inlined attachments is titled by what the user typed (or the
+            // first file name), not by the "[Attached file: …]" envelope and file text.
             var normalized = string.Join(
                 " ",
-                message.Content.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+                RuAgent.Protocol.AttachedPromptText.SummaryText(message.Content)
+                    .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
             if (normalized.Length > 0)
             {
                 return normalized[..Math.Min(normalized.Length, MaximumTitleCharacters)];

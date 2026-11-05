@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(diagnostics)**: Bớt nhiễu và làm log chẩn đoán đọc được:
+  - Host lọc log info `Microsoft.AspNetCore.Http.Result.*` ("Executing JsonResult…"),
+    vốn chiếm khoảng 59% số dòng log Host dưới dạng `diagnostic_unclassified`.
+  - Test GUI ghi log vào thư mục tạm riêng (`RU_LOG_ROOT`) thay vì
+    `%LOCALAPPDATA%\Ru\logs`; trước đây các test giả lập lỗi 500 hoặc payload usage hỏng
+    ghi hàng trăm dòng lỗi giả vào `gui-trace.jsonl` thật.
+  - `POST /settings` trả mã lỗi (`settings_invalid`, `settings_apply_failed`) và GUI ghi
+    mã đó vào `settings_save` thay vì chỉ `save_failed`, để autosave bị từ chối có thể
+    chẩn đoán được.
+
+- **fix(gui)**: Mở lại session có file đính kèm giờ hiện đúng như lúc gửi: chữ đã gõ cùng
+  chip file, thay vì nguyên khối `[Attached file: …]` và nội dung file. Composer chèn file vào
+  prompt (run không có trường đính kèm), nên lịch sử chỉ lưu prompt đó; `AttachedPromptText`
+  (Protocol) tách ngược phần bao file theo đúng định dạng GUI/CLI ghi. TUI dùng cùng bộ tách
+  để in `[file n: tên]` khi phát lại; tiêu đề session mới dùng chữ đã gõ (hoặc tên file đầu
+  tiên) thay vì `[Attached file: …]`. Session cũ giữ tiêu đề đã lưu.
+
 - **refactor(providers)!**: Bỏ hẳn chế độ gọi tool cũ "text selection" (model viết
   một JSON chọn tool dưới dạng text). Native tool calling giờ là chế độ duy nhất cho
   Chat Completions, Responses và Anthropic Messages: bỏ `ProviderToolCallingMode`, các

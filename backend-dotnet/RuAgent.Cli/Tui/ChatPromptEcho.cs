@@ -12,4 +12,17 @@ public static class ChatPromptEcho
                 attachmentLabels.Select(label => "  " + ChatDisplayText.Sanitize(label, 512)));
         return result;
     }
+
+    /// <summary>
+    /// Echoes a prompt read back from history. A prompt whose text attachments were
+    /// inlined by the composer is shown as it was sent: the typed text and one
+    /// <c>[file n: name]</c> label per document, not the inlined envelope and file text.
+    /// </summary>
+    public static string FormatStored(string prompt)
+    {
+        ArgumentNullException.ThrowIfNull(prompt);
+        if (RuAgent.Protocol.AttachedPromptText.TrySplit(prompt) is not { } parts) return Format(prompt);
+        var labels = parts.Documents.Select((document, index) => $"[file {index + 1}: {document.FileName}]").ToList();
+        return Format(parts.Text, labels);
+    }
 }

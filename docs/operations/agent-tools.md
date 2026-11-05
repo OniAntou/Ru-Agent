@@ -1121,7 +1121,8 @@ holds final replies, but it never grants or denies execution:
   executable) observed nothing and creates no obligation. Its failed receipt still counts as a tool
   failure.
 
-Clean up temporary scripts before final checks. Canonical identity is the resolved executable, the
+Delete only the scratch files a run created before final checks; caches and build output that tools
+regenerate stay. Canonical identity is the resolved executable, the
 exact argv and the canonical working directory, so cwd aliases resolve the same check. Authenticated
 receipts identify the actual resolved invocation. Authority-derived metadata grants no execution
 permission. See [receipt-backed verification](../architecture/harness.md#receipt-backed-verification).

@@ -78,6 +78,24 @@ public sealed class TerminalIntentClassifierTests
         Assert.Equal("powershell", Path.GetFileNameWithoutExtension(defaultShell), ignoreCase: true);
     }
 
+    [Fact]
+    public void Shell_policy_argv_keeps_the_model_script_while_the_executed_intent_carries_the_utf8_prelude()
+    {
+        using var workspace = new TemporaryWorkspace();
+        const string script = "Write-Output 'Tiếng Việt'";
+        var context = CreateFactory(workspace.Root).Create("powershell", "1.0.0", new JsonObject { ["script"] = script });
+        var executed = new RuAgent.Broker.Tools.Terminal.CommandIntentResolver(workspace.Root)
+            .ResolveShell(new RuAgent.Broker.Tools.Terminal.CanonicalShellRequest(script, context.CanonicalCwd));
+
+        Assert.Equal(["-NoProfile", "-NonInteractive", "-Command", script], context.Argv);
+        Assert.Equal(RuAgent.Broker.Tools.Terminal.CommandIntentResolver.Utf8OutputPrelude + script, executed.Arguments[^1]);
+        // Approval and remembered rules bind the same argv as before the prelude existed;
+        // the executed intent (and its own hash) carries the Host-fixed prelude.
+        Assert.Equal(executed.ResolvedExecutable, context.ResolvedExecutable);
+        Assert.NotEqual(executed.IntentHash, new RuAgent.Broker.Tools.Terminal.CommandIntentResolver(workspace.Root)
+            .ResolveShell(new RuAgent.Broker.Tools.Terminal.CanonicalShellRequest(script + " ", context.CanonicalCwd)).IntentHash);
+    }
+
     [Theory]
     [InlineData("Write-Output 'a*b'", "Write-Output 'axb'")]
     [InlineData("Write-Output 'A'", "Write-Output 'a'")]

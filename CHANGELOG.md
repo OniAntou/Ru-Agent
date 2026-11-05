@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(broker)**: Output của lệnh PowerShell giữ đúng tiếng Việt và ký tự có dấu.
+  Windows PowerShell ghi output redirect theo code page hệ thống trong khi Ru giải mã
+  UTF-8, nên model đọc `Tiếng Việt café` thành `Ti?ng Vi?t caf�`. Ru giờ đặt
+  `[Console]::OutputEncoding` UTF-8 ở đầu script khi chạy. Approval, preview và rule đã
+  nhớ vẫn khớp script gốc của model như trước, nên rule cũ không bị mất. Script mở đầu
+  bằng `using`/`param`/`#Requires` giữ nguyên.
+
+- **fix(harness)**: Core contract chỉ cho xoá file nháp do run tạo trước khi kiểm tra cuối;
+  cache và output build tự sinh lại (`__pycache__`, `bin`, `obj`, `node_modules`...) được giữ.
+  Trước đây model xoá `__pycache__` bằng `Remove-Item -Recurse -Force`, chạy lại test (sinh
+  lại cache) rồi xoá tiếp.
+
 - **perf(harness)**: Giảm số bước và token của coding run. Core contract chỉ dùng
   `todo_write` cho việc dài nhiều file/giai đoạn (task gọn không lập todo), yêu cầu gom
   đọc/sửa/kiểm tra độc lập vào một bước, sửa có mục tiêu thay vì viết lại cả file, và chỉ

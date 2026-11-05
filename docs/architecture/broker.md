@@ -696,6 +696,17 @@ a decision. An ambiguous mutation outcome pauses for inspection until explicit
 Continue. API keys remain in credential storage and are redacted from
 diagnostics.
 
+Shell launches run `powershell.exe -NoProfile -NonInteractive -Command <script>`.
+`CommandIntentResolver` prepends one statement to the script that sets
+`[Console]::OutputEncoding` to UTF-8 without BOM (inside `try`/`catch`). Windows
+PowerShell otherwise writes redirected output in the system code page while the
+runner decodes UTF-8, so accented text such as Vietnamese reached the model as `?` or
+U+FFFD. The prelude is part of the executed intent's argv and hash. Policy context,
+approval bindings, previews and remembered rules keep the model's own script exactly as
+before; the prelude is a fixed Host transform of it. Scripts that start with `using`, `param` or `#Requires` are left
+unchanged because those statements must come first. Programs launched with
+`run_process` keep their own output encoding.
+
 Declared terminal checks (`purpose=verification` and `purpose=expected_failure`) are advisory evidence
 that never grants or denies execution ([ADR 0039](../adr/0039-advisory-verification.md)). The Broker
 emits no verification repair families or repair hints and does not emit `verification_repair_identity`

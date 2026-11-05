@@ -102,10 +102,37 @@ public sealed class CommandIntentResolver
         var resolvedExecutable = ResolvePowerShellExecutable(runtime);
         return BuildIntent(
             resolvedExecutable,
-            [.. ShellPrefixArguments, request.Script],
+            [.. ShellPrefixArguments, WithUtf8Output(request.Script)],
             workingDirectory,
             request.NetworkIntent,
             timeoutMs);
+    }
+
+    /// <summary>
+    /// The statement prepended to a shell script so its redirected output is UTF-8.
+    /// </summary>
+    /// <remarks>
+    /// Windows PowerShell writes redirected output in the system code page while the
+    /// runner decodes UTF-8, so "Tiếng Việt" reached the model as "Ti?ng Vi?t" unless the
+    /// model remembered to set the encoding itself. The prelude is part of the executed
+    /// intent's argv and hash, so that identity names the exact command line. Policy
+    /// context, approval bindings and remembered rules keep the model's own script as
+    /// before: the prelude is a fixed Host transform of it. A failure to set the encoding
+    /// is ignored and the script runs as before.
+    /// </remarks>
+    internal const string Utf8OutputPrelude =
+        "try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }\n";
+
+    // using statements and a param block must be the first statements of a script, so a
+    // prelude in front of them would turn a valid script into a parse error.
+    internal static string WithUtf8Output(string script)
+    {
+        var start = script.AsSpan().TrimStart();
+        return start.StartsWith("using ", StringComparison.OrdinalIgnoreCase)
+            || start.StartsWith("param", StringComparison.OrdinalIgnoreCase)
+            || start.StartsWith("#requires", StringComparison.OrdinalIgnoreCase)
+            ? script
+            : Utf8OutputPrelude + script;
     }
 
     private CanonicalCommandIntent BuildIntent(

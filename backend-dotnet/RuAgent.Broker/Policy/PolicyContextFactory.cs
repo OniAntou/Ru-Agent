@@ -228,7 +228,11 @@ public sealed partial class PolicyContextFactory
                     terminalIntent = terminalIntent.Classified(terminalAnalysis.OperationClass);
                 }
                 resolvedExecutable = terminalIntent.ResolvedExecutable;
-                argv = terminalIntent.Arguments;
+                // A shell intent's argv also carries the Host's UTF-8 output prelude. Rules,
+                // approval previews and remembered grants keep matching the model's own
+                // script, as they did before the prelude existed; the intent hash still
+                // binds the exact command line that runs.
+                if (mode == "run") argv = terminalIntent.Arguments;
             }
             catch (CommandIntentException error)
             {

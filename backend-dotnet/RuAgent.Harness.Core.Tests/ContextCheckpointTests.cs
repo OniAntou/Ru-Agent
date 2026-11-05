@@ -70,4 +70,28 @@ public sealed class ContextCheckpointTests
         Assert.Equal(json, ToolResultExcerpt.Project(json));
         Assert.Equal("small", ToolResultExcerpt.Project("small"));
     }
+
+    [Fact]
+    public void Excerpts_drop_receipt_only_content_hashes_and_keep_everything_else()
+    {
+        var hash = new string('a', 32) + new string('0', 32);
+        var read = "{\"path\":\"a.py\",\"start_line\":1,\"content\":\"x = 'y'\\n\",\"has_more\":false,"
+            + "\"next_line\":null,\"sha256\":\"" + hash + "\"}";
+        var write = "{\"path\":\"a.py\",\"before_sha256\":\"missing\",\"after_sha256\":\"" + hash + "\",\"bytes\":8}";
+
+        var projectedRead = ToolResultExcerpt.Project(read);
+        var projectedWrite = ToolResultExcerpt.Project(write);
+
+        Assert.Equal("{\"path\":\"a.py\",\"start_line\":1,\"content\":\"x = 'y'\\n\",\"has_more\":false,\"next_line\":null}", projectedRead);
+        // "missing" is not a hash: it still tells the model the write created the file.
+        Assert.Equal("{\"path\":\"a.py\",\"before_sha256\":\"missing\",\"bytes\":8}", projectedWrite);
+        Assert.Equal(projectedRead, ToolResultExcerpt.Project(read));
+    }
+
+    [Fact]
+    public void Excerpts_keep_hash_like_fields_that_are_not_content_hashes()
+    {
+        var json = "{\"sha256\":\"not-a-hash\",\"nested\":{\"sha256\":\"" + new string('b', 64) + "\"},\"body_sha256\":\"" + new string('c', 64) + "\"}";
+        Assert.Same(json, ToolResultExcerpt.Project(json));
+    }
 }

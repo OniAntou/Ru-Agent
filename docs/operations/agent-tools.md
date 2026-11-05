@@ -299,6 +299,17 @@ array whose replacements are exact, non-overlapping and resolved against the
 original file. Missing-target errors direct the caller to `write_file`;
 permissions and overwrite checks remain in force.
 
+`write_file` is create-only: an existing target needs `overwrite=true`, or it fails
+with `file_exists`. One exception: a file the same session created with
+`write_file` may be written again without the flag while it still holds that
+session's last `write_file`/`edit_file` result (same SHA-256). Any other change to the
+file, a file the session did not create, or a Host restart falls back to create-only.
+The Broker keeps this record in memory, bounded and per session; policy and approvals
+are evaluated exactly as before.
+
+Model context omits the 64-hex `sha256`, `before_sha256` and `after_sha256` fields of
+file-tool results; the stored receipt keeps them for durable evidence.
+
 ### File discovery output
 
 Both
@@ -1110,7 +1121,8 @@ holds final replies, but it never grants or denies execution:
   executable) observed nothing and creates no obligation. Its failed receipt still counts as a tool
   failure.
 
-Clean up temporary scripts before final checks. Canonical identity is the resolved executable, the
+Delete only the scratch files a run created before final checks; caches and build output that tools
+regenerate stay. Canonical identity is the resolved executable, the
 exact argv and the canonical working directory, so cwd aliases resolve the same check. Authenticated
 receipts identify the actual resolved invocation. Authority-derived metadata grants no execution
 permission. See [receipt-backed verification](../architecture/harness.md#receipt-backed-verification).

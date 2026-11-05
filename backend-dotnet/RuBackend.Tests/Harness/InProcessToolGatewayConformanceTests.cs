@@ -122,6 +122,40 @@ public sealed class InProcessToolGatewayConformanceTests : ToolGatewayConformanc
         Assert.False(string.IsNullOrWhiteSpace(content["spool_id"]!.GetValue<string>()));
     }
 
+    [Fact]
+    public async Task Failed_terminal_diagnostics_reach_the_model_without_web_escaping()
+    {
+        var gateway = await CreatePresetGatewayAsync(FullAccessPreset);
+        var receipt = await ExecuteOnAsync(gateway, "powershell", new JsonObject
+        {
+            ["script"] = "[Console]::Error.WriteLine('File \"<frozen>\" `x` & caf' + [char]0xE9); exit 1",
+            ["working_directory"] = ".",
+        });
+
+        var text = System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span);
+        Assert.DoesNotContain("\\u00", text, StringComparison.Ordinal);
+        Assert.Contains("\\\"<frozen>\\\" `x` & caf", text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("[Console]::Out.WriteLine('Tiếng Việt café')", "stdout_head")]
+    [InlineData("Write-Output 'Tiếng Việt café'", "stdout_head")]
+    [InlineData("[Console]::Error.WriteLine('Tiếng Việt café'); exit 1", "stderr_head")]
+    public async Task Shell_output_keeps_non_ascii_text(string script, string field)
+    {
+        // Windows PowerShell wrote redirected output in the system code page, so the model
+        // read "Ti?ng Vi?t caf�" for every accented character.
+        var gateway = await CreatePresetGatewayAsync(FullAccessPreset);
+        var receipt = await ExecuteOnAsync(gateway, "powershell", new JsonObject
+        {
+            ["script"] = script,
+            ["working_directory"] = ".",
+        });
+
+        var content = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span))!;
+        Assert.Equal("Tiếng Việt café", content[field]!.GetValue<string>().TrimEnd());
+    }
+
     [Theory]
     [InlineData("web_search", ToolAccessKind.ReadOnly)]
     [InlineData("web_fetch", ToolAccessKind.ReadOnly)]

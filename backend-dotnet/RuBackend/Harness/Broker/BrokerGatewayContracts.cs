@@ -23,6 +23,19 @@ internal static class BrokerGatewayContracts
     internal const int MaximumRepairHintLength = 512;
     private const int MaximumFailureDiagnosticLength = 2048;
 
+    // Model content is parsed back as JSON and never rendered as HTML, so the default
+    // web-safe encoder only inflates it: every quote, apostrophe, '<', '>', '&', '+',
+    // backtick and non-ASCII character became a six-character \uXXXX escape, which
+    // roughly doubled the tokens of a source file read. Relaxed escaping still escapes
+    // quotes, backslashes and control characters, so the content stays valid JSON.
+    private static readonly JsonSerializerOptions ModelContentJson = new()
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    /// <summary>UTF-8 model content for a tool output, without web-safe escaping.</summary>
+    internal static byte[] ModelContentBytes(JsonNode content) =>
+        Encoding.UTF8.GetBytes(content.ToJsonString(ModelContentJson));
 
 
     /// <summary>The run lease lifetime every gateway-issued lease carries.</summary>
@@ -99,7 +112,7 @@ internal static class BrokerGatewayContracts
             "ok",
             null,
             sideEffectsPossible: accessKind != ToolAccessKind.ReadOnly,
-            modelContent: Encoding.UTF8.GetBytes(output.ToJsonString()),
+            modelContent: ModelContentBytes(output),
             contentEncoding: HarnessPayloadEncoding.Json,
             image: image);
     }
@@ -157,7 +170,7 @@ internal static class BrokerGatewayContracts
             code,
             null,
             sideEffectsPossible: false,
-            modelContent: Encoding.UTF8.GetBytes(content.ToJsonString()),
+            modelContent: ModelContentBytes(content),
             contentEncoding: HarnessPayloadEncoding.Json);
     }
 

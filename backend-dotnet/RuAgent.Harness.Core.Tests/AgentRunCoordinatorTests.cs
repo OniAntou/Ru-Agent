@@ -136,6 +136,38 @@ public sealed partial class AgentRunCoordinatorTests
         Assert.Equal(3, document.RootElement.GetProperty("cache_read_input_tokens").GetInt32());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Held_truncated_step_records_its_provider_usage(bool exhaustNotes)
+    {
+        // Regression: a held (or failed) reply was billed by the provider but never reported,
+        // so run totals, cost and the context meter skipped those steps.
+        var source = exhaustNotes
+            ? new FixedContextSource(Enumerable.Range(0, AgentRecoveryNotes.MaximumNotesPerRun)
+                .Select(i => ModelContextEntry.Text($"note-{i}", i + 1, ModelContextRole.System,
+                    $"{AgentRecoveryNotes.NotePrefix} existing-{i}")).ToArray())
+            : null;
+        var model = new FakeModelStepRunner();
+        model.Enqueue(new AssistantStep("unfinished", [], AssistantFinishReason.Length, 16,
+            new ModelUsage(9_000, 8_192, 17_192, 8_960, null, inputTokensIncludeCache: true)));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+
+        var result = await Coordinator(model, new FakeToolGateway(), store, contextSource: source)
+            .RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(exhaustNotes ? HarnessRunState.Failed : HarnessRunState.Running, result.Run.State);
+        var commit = Assert.Single(store.Commits, item => item.Events.Any(evt => evt.Kind == HarnessEventKind.ModelStepCompleted));
+        var kinds = commit.Events.Select(evt => evt.Kind).ToList();
+        var usageIndex = kinds.IndexOf(HarnessEventKind.ModelUsageRecorded);
+        Assert.Equal(kinds.IndexOf(HarnessEventKind.ModelStepCompleted) + 1, usageIndex);
+        var payload = Assert.Single(commit.Payloads, item => item.Kind == HarnessPayloadKind.ModelUsage);
+        Assert.Equal(payload.PayloadId, commit.Events[usageIndex].PayloadId);
+        using var document = JsonDocument.Parse(payload.Plaintext);
+        Assert.Equal(8_192, document.RootElement.GetProperty("output_tokens").GetInt32());
+    }
+
     [Fact]
     public async Task Tool_calling_step_records_its_provider_usage_too()
     {

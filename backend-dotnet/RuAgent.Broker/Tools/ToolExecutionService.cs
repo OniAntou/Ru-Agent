@@ -46,6 +46,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private readonly InMemoryRecoveryStore _recoveryStore = new();
     // Counting only: tells the read counter whether this session already read the path.
     private readonly ReadRepeatTracker _readRepeats = new();
+    // Lets write_file replace a file this session created while it still holds the session's own output.
+    private readonly SessionAuthoredFiles _authoredFiles = new();
     private readonly CanonicalPathResolver _mutationResolver;
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);

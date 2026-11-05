@@ -99,11 +99,15 @@ by retained evidence and model-facing guidance. `RunVerificationEvidence` keeps
 receipt projection; separate guidance renders bounded per-check scope and actions.
 This is an internal responsibility split, without a new store or schema migration.
 
-The core contract asks a coding run to record each explicit requirement of a
-multi-requirement request (behavior, edge and error cases, ordering, return values,
-allowed files, cleanup) as its own `todo_write` item before editing, to mark an item
-`completed` only after a check that exercises it passes, and to re-read the request
-and its changes before the final reply. The checklist holds under
+The core contract keeps `todo_write` for long work that spans several files or
+phases; a focused task skips the list. When a run keeps one, each explicit requirement
+(behavior, edge and error cases, ordering, return values, allowed files, cleanup) is
+its own item, marked `completed` only after a check that exercises it passes. Every
+coding run re-reads the request and its changes before the final reply. Because each
+step is a full model round trip, the contract asks for independent reads, edits to
+different files and the check that exercises them in one step (effectful calls run in
+model order, so the check sees the edits and counts as verification after them), targeted edits over whole-file rewrites, and new tests only where
+existing or requested checks do not already exercise the change. The checklist holds under
 [Recovery Note](#recovery-note) check that the list is closed; they are advice, not gates.
 
 Long-session checkpoint generation, tool excerpts, usage-anchored estimates and

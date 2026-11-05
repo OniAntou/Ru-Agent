@@ -222,7 +222,7 @@ public sealed class CommandIntentResolverTests
             var resolver = CreateResolver(workspace, ["C:\\Windows\\System32"]);
             var powershellIntent = resolver.ResolveShell(new CanonicalShellRequest("Get-Date"));
             Assert.Contains("powershell", Path.GetFileName(powershellIntent.ResolvedExecutable), StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(["-NoProfile", "-NonInteractive", "-Command", "Get-Date"], powershellIntent.Arguments.ToArray());
+            Assert.Equal(["-NoProfile", "-NonInteractive", "-Command", CommandIntentResolver.Utf8OutputPrelude + "Get-Date"], powershellIntent.Arguments.ToArray());
 
             Assert.Equal("unsupported_shell_runtime", Assert.Throws<CommandIntentException>(
                 () => resolver.ResolveShell(new CanonicalShellRequest("dir", ShellRuntime: "cmd"))).Code);
@@ -509,6 +509,18 @@ public sealed class CommandIntentResolverTests
         })!;
         Assert.True(process.WaitForExit(15_000));
         Assert.Equal(0, process.ExitCode);
+    }
+
+    [Theory]
+    [InlineData("Get-ChildItem", true)]
+    [InlineData("  using namespace System.Text\nGet-Date", false)]
+    [InlineData("param($x)\n$x", false)]
+    [InlineData("#Requires -Version 5\nGet-Date", false)]
+    public void Shell_scripts_get_the_utf8_prelude_unless_a_leading_statement_forbids_it(string script, bool prefixed)
+    {
+        var resolved = CommandIntentResolver.WithUtf8Output(script);
+
+        Assert.Equal(prefixed ? CommandIntentResolver.Utf8OutputPrelude + script : script, resolved);
     }
 
     private static CommandIntentResolver CreateTemporaryRootResolver(string workspace) =>

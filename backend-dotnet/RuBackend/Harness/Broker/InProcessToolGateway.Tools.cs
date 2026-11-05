@@ -283,7 +283,7 @@ public sealed partial class InProcessToolGateway
                 result.Output["effects_unknown"]?.GetValue<bool>() == true ? ToolExecutionOutcome.OutcomeUnknown
                     : result.Status == ToolResultStatuses.Succeeded ? ToolExecutionOutcome.Succeeded : ToolExecutionOutcome.Failed,
                 result.ErrorCode ?? "ok", null, sideEffectsPossible: true,
-                modelContent: System.Text.Encoding.UTF8.GetBytes(result.Output.ToJsonString()), contentEncoding: RuAgent.Harness.Core.Persistence.HarnessPayloadEncoding.Json);
+                modelContent: BrokerGatewayContracts.ModelContentBytes(result.Output), contentEncoding: RuAgent.Harness.Core.Persistence.HarnessPayloadEncoding.Json);
         switch (result.Status)
         {
             case ToolResultStatuses.Succeeded:

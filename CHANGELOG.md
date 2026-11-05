@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3-preview.1] - 2026-11-05
+
 - **fix(diagnostics)**: Bớt nhiễu và làm log chẩn đoán đọc được:
   - Host lọc log info `Microsoft.AspNetCore.Http.Result.*` ("Executing JsonResult…"),
     vốn chiếm khoảng 59% số dòng log Host dưới dạng `diagnostic_unclassified`.

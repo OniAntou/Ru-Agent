@@ -85,6 +85,8 @@
                               Style="{StaticResource CustomizeTabStyle}" AutomationProperties.AutomationId="CustomizeSkillsTab" />
                 <ToggleButton x:Name="PluginsTab" Content="Plugins" Click="OnTabClick" Tag="plugins"
                               Style="{StaticResource CustomizeTabStyle}" AutomationProperties.AutomationId="CustomizePluginsTab" />
+                <ToggleButton x:Name="InstructionsTab" Content="Instructions" Click="OnTabClick" Tag="instructions"
+                              Style="{StaticResource CustomizeTabStyle}" AutomationProperties.AutomationId="CustomizeInstructionsTab" />
             </StackPanel>
             <TextBox x:Name="SearchBox" Grid.Column="2" Width="260" PlaceholderText="Search skills"
                      TextChanged="OnSearchChanged" AutomationProperties.Name="Search skills" />
@@ -147,6 +149,122 @@
                                       Toggled="OnComputerUseToggled"
                                       AutomationProperties.Name="Computer use" />
                     </Grid>
+                </StackPanel>
+            </ScrollViewer>
+            <!-- The user's own instruction files: one card per scope. Guidance only:
+                 they shape style and workflow and never grant permission. -->
+            <ScrollViewer x:Name="InstructionsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="16" Padding="4,4,12,24" MaxWidth="760" HorizontalAlignment="Left">
+                    <StackPanel Spacing="8">
+                        <TextBlock FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" TextWrapping="Wrap"
+                                   Foreground="{StaticResource RuInkBrush}"
+                                   Text="Tell Ru how you like to work: language, tools, conventions, things to avoid. Changes apply from your next message." />
+                        <StackPanel Orientation="Horizontal" Spacing="6"
+                                    ToolTipService.ToolTip="Instructions shape how Ru works. What it may run is still decided by your permission preset and approvals.">
+                            <FontIcon Glyph="&#xE72E;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"
+                                      AutomationProperties.AccessibilityView="Raw" />
+                            <TextBlock FontFamily="{StaticResource RuUiFontFamily}" FontSize="12" Foreground="{StaticResource RuMutedBrush}"
+                                       Text="Guidance, never permission." />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Border Style="{StaticResource FluentCardStyle}" Padding="20,16,20,16">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                <Border Width="32" Height="32" CornerRadius="{StaticResource AppControlCornerRadius}"
+                                        Background="{StaticResource RuSurfaceBrush}" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{StaticResource RuMutedBrush}"
+                                              AutomationProperties.AccessibilityView="Raw" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="All projects" FontFamily="{StaticResource RuUiFontFamily}" FontSize="14"
+                                               FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" />
+                                    <TextBlock x:Name="GlobalInstructionsPath" FontFamily="{StaticResource RuUiFontFamily}" FontSize="12"
+                                               Foreground="{StaticResource RuMutedBrush}" TextTrimming="CharacterEllipsis"
+                                               IsTextSelectionEnabled="True" />
+                                </StackPanel>
+                                <Border x:Name="GlobalInstructionsBadge" Grid.Column="2" VerticalAlignment="Center" Padding="8,2"
+                                        CornerRadius="{StaticResource AppControlCornerRadius}" Background="{StaticResource RuSurfaceBrush}">
+                                    <TextBlock x:Name="GlobalInstructionsBadgeText" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11.5"
+                                               Foreground="{StaticResource RuMutedBrush}" />
+                                </Border>
+                            </Grid>
+                            <TextBox x:Name="GlobalInstructionsBox" AcceptsReturn="True" TextWrapping="Wrap"
+                                     MinHeight="120" MaxHeight="360"
+                                     FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     PlaceholderText="e.g. Reply in Vietnamese. Prefer pytest for Python tests. Never commit unless I ask."
+                                     TextChanged="OnInstructionsTextChanged" KeyDown="OnInstructionsKeyDown" Tag="global"
+                                     AutomationProperties.Name="Instructions for all projects" />
+                            <Grid x:Name="GlobalInstructionsBoxFooter" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                <TextBlock x:Name="GlobalInstructionsStatus" VerticalAlignment="Center" FontFamily="{StaticResource RuUiFontFamily}"
+                                           FontSize="12" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" />
+                                <Button x:Name="GlobalInstructionsRevert" Grid.Column="1" Content="Discard" Tag="global" IsEnabled="False"
+                                        Click="OnInstructionsRevertClick" Style="{StaticResource RuToolbarButtonStyle}" Padding="12,6"
+                                        ToolTipService.ToolTip="Go back to the saved file"
+                                        AutomationProperties.Name="Discard changes to all projects instructions" />
+                                <Button x:Name="GlobalInstructionsSave" Grid.Column="2" Content="Save" Tag="global" IsEnabled="False"
+                                        Click="OnInstructionsSaveClick" Style="{StaticResource RuPrimaryButtonStyle}" Padding="16,6"
+                                        ToolTipService.ToolTip="Save (Ctrl+S)"
+                                        AutomationProperties.Name="Save all projects instructions" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource FluentCardStyle}" Padding="20,16,20,16">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                <Border Width="32" Height="32" CornerRadius="{StaticResource AppControlCornerRadius}"
+                                        Background="{StaticResource RuSurfaceBrush}" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE8B7;" FontSize="14" Foreground="{StaticResource RuMutedBrush}"
+                                              AutomationProperties.AccessibilityView="Raw" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="This workspace" FontFamily="{StaticResource RuUiFontFamily}" FontSize="14"
+                                               FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" />
+                                    <TextBlock x:Name="WorkspaceInstructionsPath" FontFamily="{StaticResource RuUiFontFamily}" FontSize="12"
+                                               Foreground="{StaticResource RuMutedBrush}" TextTrimming="CharacterEllipsis"
+                                               IsTextSelectionEnabled="True" />
+                                </StackPanel>
+                                <Border x:Name="WorkspaceInstructionsBadge" Grid.Column="2" VerticalAlignment="Center" Padding="8,2"
+                                        CornerRadius="{StaticResource AppControlCornerRadius}" Background="{StaticResource RuSurfaceBrush}">
+                                    <TextBlock x:Name="WorkspaceInstructionsBadgeText" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11.5"
+                                               Foreground="{StaticResource RuMutedBrush}" />
+                                </Border>
+                            </Grid>
+                            <!-- Without a workspace there is nothing to edit: a short note
+                                 replaces the editor instead of a dead text box. -->
+                            <TextBlock x:Name="WorkspaceInstructionsEmpty" Visibility="Collapsed" Margin="44,0,0,0"
+                                       FontFamily="{StaticResource RuUiFontFamily}" FontSize="12.5" TextWrapping="Wrap"
+                                       Foreground="{StaticResource RuMutedBrush}"
+                                       Text="Open a session in a project folder to add rules that apply to that project only." />
+                            <TextBox x:Name="WorkspaceInstructionsBox" AcceptsReturn="True" TextWrapping="Wrap"
+                                     MinHeight="120" MaxHeight="360"
+                                     FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     PlaceholderText="Rules for this project only. Read after the ones above, so they win where both disagree."
+                                     TextChanged="OnInstructionsTextChanged" KeyDown="OnInstructionsKeyDown" Tag="workspace"
+                                     AutomationProperties.Name="Instructions for this workspace" />
+                            <Grid x:Name="WorkspaceInstructionsBoxFooter" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                <TextBlock x:Name="WorkspaceInstructionsStatus" VerticalAlignment="Center" FontFamily="{StaticResource RuUiFontFamily}"
+                                           FontSize="12" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" />
+                                <Button x:Name="WorkspaceInstructionsRevert" Grid.Column="1" Content="Discard" Tag="workspace" IsEnabled="False"
+                                        Click="OnInstructionsRevertClick" Style="{StaticResource RuToolbarButtonStyle}" Padding="12,6"
+                                        ToolTipService.ToolTip="Go back to the saved file"
+                                        AutomationProperties.Name="Discard changes to this workspace instructions" />
+                                <Button x:Name="WorkspaceInstructionsSave" Grid.Column="2" Content="Save" Tag="workspace" IsEnabled="False"
+                                        Click="OnInstructionsSaveClick" Style="{StaticResource RuPrimaryButtonStyle}" Padding="16,6"
+                                        ToolTipService.ToolTip="Save (Ctrl+S)"
+                                        AutomationProperties.Name="Save this workspace instructions" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- The project's shared files, read too but edited in the project itself. -->
+                    <StackPanel x:Name="WorkspaceOtherSourcesPanel" Spacing="8" Visibility="Collapsed">
+                        <TextBlock Text="Also read from this project" FontFamily="{StaticResource RuUiFontFamily}" FontSize="12.5"
+                                   FontWeight="SemiBold" Foreground="{StaticResource RuMutedBrush}" />
+                        <StackPanel x:Name="WorkspaceOtherSources" Orientation="Horizontal" Spacing="8" />
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
         </Grid>

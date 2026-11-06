@@ -355,6 +355,63 @@
                         </Grid>
                     </Border>
 
+                    <!-- Notifications: only while Ru is in the background. Windows
+                         notifications are opt-in because they register Ru with Windows. -->
+                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
+                        <StackPanel Spacing="12">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Notifications" Style="{StaticResource SettingLabelStyle}" />
+                                <TextBlock Text="Only while Ru is minimized or another window is in front. Notifications show the session title, never your prompts or Ru's questions."
+                                           Style="{StaticResource SettingDescStyle}" />
+                            </StackPanel>
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="40">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="When a run finishes" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Including when it stops on an error. Stopping it yourself never notifies." Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="NotifyFinishedToggle" Grid.Column="1" VerticalAlignment="Center"
+                                              OnContent="" OffContent="" MinWidth="0" Toggled="OnNotificationToggled"
+                                              AutomationProperties.Name="Notify when a run finishes" />
+                            </Grid>
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="40">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="When Ru needs you" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="An approval to give or a question to answer." Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="NotifyAttentionToggle" Grid.Column="1" VerticalAlignment="Center"
+                                              OnContent="" OffContent="" MinWidth="0" Toggled="OnNotificationToggled"
+                                              AutomationProperties.Name="Notify when Ru needs approval or an answer" />
+                            </Grid>
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="40">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Flash the taskbar button" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Ru's taskbar button flashes until you switch to it." Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="NotifyFlashToggle" Grid.Column="1" VerticalAlignment="Center"
+                                              OnContent="" OffContent="" MinWidth="0" Toggled="OnNotificationToggled"
+                                              AutomationProperties.Name="Flash the taskbar button" />
+                            </Grid>
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="40">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Play a sound" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="The Windows notification sound." Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="NotifySoundToggle" Grid.Column="1" VerticalAlignment="Center"
+                                              OnContent="" OffContent="" MinWidth="0" Toggled="OnNotificationToggled"
+                                              AutomationProperties.Name="Play a sound" />
+                            </Grid>
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="40">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Windows notifications" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="A banner in the corner; click it to open the session. Turning this on registers Ru with Windows notifications for your account." Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="NotifyToastToggle" Grid.Column="1" VerticalAlignment="Center"
+                                              OnContent="" OffContent="" MinWidth="0" Toggled="OnNotificationToggled"
+                                              AutomationProperties.Name="Show Windows notifications" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Agent Capabilities Card -->
                     <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
                         <StackPanel Spacing="16">

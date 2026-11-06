@@ -18,6 +18,14 @@ from the project takes precedence over your user-wide file where they disagree:
 Say what is not obvious from the code: how to build and test, naming and style rules, things to avoid.
 Each file can be up to 64 KiB (256 KiB in total).
 
+In the desktop app, **Customize → Instructions** edits your own two files without leaving Ru:
+**All projects** is `~/.ru/AGENTS.md`, and **This workspace** is `.ru/AGENTS.md` in the open
+session's workspace. The project's shared `AGENTS.md` and `CONTEXT.md` are listed there but
+edited in the project itself. Saving writes UTF-8 and refuses a file that changed outside Ru
+since you opened it unless you confirm the overwrite, a file over 64 KiB, and a file or folder
+that is a link. Changes apply from your next message. Instructions guide Ru; they never grant
+permission, which stays with your permission preset and approvals.
+
 For a monorepo, place an additional `AGENTS.md` inside a component directory.
 After a successful structured file read/write/edit in that directory, Ru loads
 its applicable nested instruction chain. More specific guidance applies within

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Tuỳ biến cho user:
+  - **Customize → Instructions**: sửa trực tiếp `~/.ru/AGENTS.md` (mọi project) và
+    `.ru/AGENTS.md` của workspace đang mở. Lưu dạng UTF-8 không BOM, chuẩn hoá xuống dòng, không
+    ghi đè file đã bị sửa ngoài Ru nếu chưa xác nhận, từ chối file quá 64 KB hoặc đi qua link.
+    Áp dụng từ tin nhắn kế tiếp; instructions chỉ hướng dẫn, không cấp quyền.
+  - **Settings → Notifications**: khi Ru chạy nền, báo lúc run xong (hoặc dừng vì lỗi) và lúc
+    cần approval hay câu trả lời, bằng nháy nút taskbar, âm thanh, và tuỳ chọn Windows
+    notification (bật mới đăng ký với Windows, tắt thì gỡ). Tự bấm Stop không báo; replay khi mở
+    session không báo lại. Thông báo chỉ ghi tên session.
+
 - **feat(gui)**: Code có màu cú pháp ở mọi nơi. Preview file code giờ là khung kiểu editor có
   cột số dòng cố định, dòng không xuống hàng mà cuộn ngang, và header ghi ngôn ngữ cùng số
   dòng. Diff của edit tô màu theo ngôn ngữ của file, có dấu +/−, và edit chỉ thêm dòng (file

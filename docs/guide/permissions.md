@@ -64,6 +64,18 @@ any app without asking. Ru's own windows, terminals, and sign-in or elevation pr
 never reachable. Press **Ctrl+Alt+Backspace** (or **Ctrl+Alt+Pause** on keyboards that have it) to stop it at once. See
 [Computer use](../operations/agent-tools.md#computer-use).
 
+## Notifications
+
+**Settings → Notifications** tells you when a run finishes (or stops on an error) and when Ru
+needs an approval or an answer, but only while Ru is minimized or another window is in front.
+By default Ru flashes its taskbar button and plays the Windows notification sound. **Windows
+notifications** add a banner you can click to open the session; they are off until you turn them
+on, because turning them on registers Ru with Windows notifications for your account, and
+turning them off unregisters it. Stopping a run yourself never notifies. Notifications show the
+session title only, never your prompt or Ru's question, since banners can appear on the lock
+screen. The open session is reported as it happens; other sessions report a finish when Ru's
+session list next refreshes.
+
 ## What guides Ru and what grants permission
 
 Instructions, skills, custom commands and hooks shape how Ru works. None of them can grant a tool, a

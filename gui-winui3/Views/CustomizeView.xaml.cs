@@ -6,9 +6,12 @@ using RuApp.Services;
 namespace RuApp.Views;
 
 /// <summary>
-/// The Customize page: the workspace's skills and Ru's plugins, opened from the
-/// sidebar in place of the chat. The Host owns every setting shown here; the page
-/// reads it on activation and writes each change back through the API.
+/// The Customize page: the workspace's skills, Ru's plugins and the user's own
+/// instruction files, opened from the sidebar in place of the chat. The Host owns
+/// the skill and plugin settings; the page reads them on activation and writes each
+/// change back through the API. Instruction files are the user's own Markdown files,
+/// which the page edits directly (<see cref="InstructionFileStore"/>) and the Host
+/// reads as guidance when it prepares each turn.
 /// </summary>
 public sealed partial class CustomizeView : UserControl, IDisposable
 {
@@ -84,18 +87,23 @@ public sealed partial class CustomizeView : UserControl, IDisposable
 
     private void OnTabClick(object sender, RoutedEventArgs e)
     {
-        var showPlugins = sender is ToggleButton { Tag: "plugins" };
-        SkillsTab.IsChecked = !showPlugins;
-        PluginsTab.IsChecked = showPlugins;
-        SkillsPanel.Visibility = showPlugins ? Visibility.Collapsed : Visibility.Visible;
-        PluginsPanel.Visibility = showPlugins ? Visibility.Visible : Visibility.Collapsed;
+        var tab = sender is ToggleButton { Tag: string tag } ? tag : "skills";
+        SkillsTab.IsChecked = tab == "skills";
+        PluginsTab.IsChecked = tab == "plugins";
+        InstructionsTab.IsChecked = tab == "instructions";
+        SkillsPanel.Visibility = tab == "skills" ? Visibility.Visible : Visibility.Collapsed;
+        PluginsPanel.Visibility = tab == "plugins" ? Visibility.Visible : Visibility.Collapsed;
+        InstructionsPanel.Visibility = tab == "instructions" ? Visibility.Visible : Visibility.Collapsed;
         // Search and Add act on skills only.
-        var skillTools = showPlugins ? Visibility.Collapsed : Visibility.Visible;
+        var skillTools = tab == "skills" ? Visibility.Visible : Visibility.Collapsed;
         SearchBox.Visibility = skillTools;
         RefreshButton.Visibility = skillTools;
         AddButton.Visibility = skillTools;
-        if (showPlugins) ShowStatus(null);
-        else ApplySkillsState(_skillsLoader.State);
+        if (tab == "skills") ApplySkillsState(_skillsLoader.State);
+        else ShowStatus(null);
+        if (tab == "plugins") WorkspaceText.Text = "Optional abilities you can turn on for new turns.";
+        if (tab == "instructions") WorkspaceText.Text = "Your guidance for Ru, read before every turn.";
+        if (tab == "instructions") LoadInstructions();
     }
 
     private void ShowStatus(string? text, string? details = null)

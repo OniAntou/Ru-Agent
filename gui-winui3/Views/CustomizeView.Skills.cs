@@ -52,8 +52,10 @@ public sealed partial class CustomizeView
     {
         if (!_active) return;
         var hasWorkspace = !string.IsNullOrWhiteSpace(state.Workspace);
-        WorkspaceText.Text = hasWorkspace ? $"Skills for {state.Workspace}"
-            : "User skills · open a workspace to change availability or add folders.";
+        // The subtitle describes the Skills tab; the other tabs set their own.
+        if (SkillsTab.IsChecked == true)
+            WorkspaceText.Text = hasWorkspace ? $"Skills for {state.Workspace}"
+                : "User skills · open a workspace to change availability or add folders.";
         AddButton.IsEnabled = hasWorkspace;
         var showSkeleton = state.IsLoading && state.Items.Count == 0;
         SkillsSkeleton.Visibility = showSkeleton ? Visibility.Visible : Visibility.Collapsed;

@@ -119,6 +119,7 @@ namespace RuApp
                 ApplyTheme(Shell.Theme);
                 InitializeSidebarHoverEffects();
                 InitializeSidePanelToggle();
+                InitializeNotifications();
 
                 this.Closed += OnWindowClosed;
 
@@ -295,6 +296,7 @@ namespace RuApp
                     () => _backendProvider.Session != null);
 
                 _agentController = _composition.CreateAgentRunController(this.DispatcherQueue);
+                AttachNotifications(_agentController);
 
                 _chatView = new ChatView();
                 _chatView.Initialize(
@@ -688,6 +690,7 @@ namespace RuApp
                 _agentController.Dispose();
             }
             _agentController = _composition.CreateAgentRunController(this.DispatcherQueue);
+            AttachNotifications(_agentController);
 
             _chatView?.ReinitializeBackend(_apiService, _agentController, _providerCatalogController, _groupedCatalogs);
             _settingsView?.Initialize(_apiService, _providerCatalogController);
@@ -702,6 +705,7 @@ namespace RuApp
         {
             if (_closed) return;
             _closed = true;
+            ShutdownNotifications();
             _navContentSwap.Cancel();
             DisposeCustomizeView();
             StopSessionTitleWaves();

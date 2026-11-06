@@ -258,7 +258,7 @@ fall back to detailed mode.
 **Customize**, directly under New Chat in the sidebar, opens a page in place of the
 chat (`ShellDestination.Customize`); selecting a session or New Chat returns to the
 chat, and `/skills` typed in the composer opens it. The composer carries no skills
-button. The page has two tabs:
+button. The page has three tabs:
 
 - **Skills** lists the active workspace's catalog through `SkillsApiClient`, with
   search, reload, an enable switch per skill, automatic-selection in each row's
@@ -271,6 +271,16 @@ button. The page has two tabs:
 - **Plugins** holds computer use ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)),
   moved out of Settings. The switch saves the Host setting and reverts when the
   save fails; it applies to new runs.
+- **Instructions** edits the user's own instruction files directly, not through the
+  Host: `%USERPROFILE%\.ru\AGENTS.md` (all projects) and `<workspace>\.ru\AGENTS.md`
+  (the open chat's workspace; disabled without one). The project's shared root
+  `AGENTS.md`, `CONTEXT.md` and `.ru/CONTEXT.md` are listed read-only with their
+  presence. `InstructionFileStore` normalizes the text box's line breaks to `\n`,
+  writes UTF-8 without a BOM through a temporary file and a replace, and refuses
+  text over the Host's 64 KiB per-file limit (`RuInstructionLoader`), a file or
+  folder that is a link, and a file whose stamp changed since it was read unless the
+  user confirms the overwrite. The Host reads these files when it composes each
+  prompt, so a save applies from the next message.
 
 The page reloads both tabs each time it is shown. `CustomizeSkillsLoader` owns the
 visible skill snapshot, loading/error feedback and cancellation. It also reloads
@@ -288,6 +298,25 @@ the placeholders are noninteractive, excluded from accessibility content, and ad
 no animation or minimum loading delay.
 Plugin settings reads likewise check the current activation and backend before
 applying; a failed read preserves the last toggle state rather than treating it as off.
+
+## Notifications
+
+`MainWindow.Notifications` tells the user about runs while Ru is in the background
+(minimized, or another window in front): a taskbar flash (`FlashWindowEx`), the
+Windows notification sound, and optionally a Windows App SDK app notification whose
+click opens the session after checking it is listed. `AgentNotificationPolicy` is the
+pure rule set: a finish is a live non-terminal-to-terminal transition of one run
+(`completed`, or `failed`/`interrupted` as "stopped"; a user `cancelled` is silent);
+approvals and questions notify once per id, and waits replayed within three seconds of
+a run appearing are marked seen instead. The open session is observed through its
+`AgentRunController`; other sessions only report a finish when the polled session list
+sees `IsAgentRunning` go from true to false. Text is the session title only, never
+the prompt or `ask_user` question, since banners can reach the lock screen.
+`NotificationPreferenceStore` keeps the choices in `%LOCALAPPDATA%\Ru\notifications.json`
+(defaults: both events, flash and sound on; Windows notifications off). Turning Windows
+notifications on calls `AppNotificationManager.Register()`, which registers the
+unpackaged app for the current user; turning them off calls `Unregister()`. The
+installer does not unregister on uninstall.
 
 ## Custom model API editor
 

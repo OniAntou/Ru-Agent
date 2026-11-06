@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Chuyển session không còn để lại dòng `switched to session …` nằm dưới lượt vừa
+  rồi; xác nhận chuyển sang đâu nằm ở hint dưới ô nhập. Đồng hồ context cũng không còn trống
+  sau khi chuyển: TUI đọc usage report mới nhất của run gần nhất trong session đích (event
+  `model.usage_recorded` cộng payload) và dựng lại meter ngay, thay vì đợi lượt chạy kế tiếp
+  mới có số.
+
 - **fix(tui)**: `read`, `read_file`, `list` và `help` hiện đúng tên tool trên activity feed thay
   vì `status: in progress` rồi `Tool … outcome unavailable`. Bốn tool này không mang tham số `op`
   sau khi catalog tách thành từng tool riêng, nên bộ chiếu activity không khớp cặp `(tool, op)`

@@ -347,6 +347,26 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
         }
     }
 
+    /// <summary>
+    /// The run's durable event log as raw replay lines (SSE <c>data:</c> or plain JSON),
+    /// in stored order. A session that is opened rather than watched has no live frames,
+    /// so restoring its last context reading means replaying this log instead of guessing.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ListRunEventLinesAsync(string runId, CancellationToken ct = default)
+    {
+        ValidateRunId(runId);
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/events?live=0&after_sequence=0");
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        EnsureAuth(req);
+        using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
+        if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
+        if (!resp.IsSuccessStatusCode)
+            throw new AgentApiException(ExtractErrorCode(body) ?? "run_events_failed", body, (int)resp.StatusCode);
+        return body.Split('\n');
+    }
+
     public async Task<string> GetPayloadAsync(string runId, string payloadId, CancellationToken ct = default)
     {
         var payload = await FetchPayloadEnvelopeAsync(runId, payloadId, ct).ConfigureAwait(false);

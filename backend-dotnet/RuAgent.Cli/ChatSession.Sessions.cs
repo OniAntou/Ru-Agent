@@ -319,6 +319,11 @@ public sealed partial class AgentCommands
                 });
             }
 
+            // The header was just blanked, and the session payload carries no usage, so
+            // the meter is restored from the target's newest run rather than left empty
+            // until that session's next turn reports one.
+            await RestoreSessionUsageAsync(targetSessionId, cancellationToken).ConfigureAwait(false);
+
             if (replay.Messages.Length > 0 && !cmd.Json)
             {
                 await RenderSessionHistoryAsync(targetSessionId, replay, cancellationToken).ConfigureAwait(false);
@@ -345,7 +350,18 @@ public sealed partial class AgentCommands
                 }
             }
 
-            await WriteDiagnosticLineAsync(humanOut, $"switched to session {targetSessionId}").ConfigureAwait(false);
+            // A switch is a local command result, not transcript content: the header title
+            // already changed, so the confirmation belongs in the footer hint. Writing it
+            // to the transcript left a stray "switched to session ..." line under the turn.
+            if (tgMode)
+            {
+                var switchedTo = string.IsNullOrWhiteSpace(sessionTitle) ? targetSessionId : sessionTitle!;
+                RunOnTgUi(() => tgWindow!.Hints.ShowCommandFeedback($"switched to {switchedTo}"));
+            }
+            else
+            {
+                await WriteDiagnosticLineAsync(humanOut, $"switched to session {targetSessionId}").ConfigureAwait(false);
+            }
         }
     }
 }

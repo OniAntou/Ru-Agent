@@ -171,5 +171,54 @@ public sealed partial class AgentCommands
             var estimated = usage.ContextIsEstimated;
             RunOnTgUi(() => tgWindow!.Header.UpdateUsage(tokens, percent, cost, estimated));
         }
+
+        /// <summary>Runs read back when a session is opened; the newest report wins.</summary>
+        private const int SessionUsageRunScan = 3;
+
+        /// <summary>
+        /// Restores the context meter after a session switch.
+        /// </summary>
+        /// <remarks>
+        /// Opening a session has no live frames, and the session payload carries no usage,
+        /// so the newest run's last usage report is the only real reading available. Without
+        /// this the meter blanked on every switch and stayed blank until the next run.
+        /// Best effort: a failure leaves the meter to the next run's frames rather than
+        /// inventing a number.
+        /// </remarks>
+        private async Task RestoreSessionUsageAsync(string targetSessionId, CancellationToken ct)
+        {
+            if (!tgMode) return;
+            try
+            {
+                var runIds = await _agentClient.ListSessionRunIdsAsync(targetSessionId, ct).ConfigureAwait(false);
+                var scanned = 0;
+                for (var index = runIds.Count - 1; index >= 0 && scanned < SessionUsageRunScan; index--, scanned++)
+                {
+                    var runId = runIds[index];
+                    var lines = await _agentClient.ListRunEventLinesAsync(runId, ct).ConfigureAwait(false);
+                    if (SessionUsageReplayPolicy.FindLatestUsageReport(lines) is not { } report) continue;
+                    var payload = await _agentClient.GetPayloadContentAsync(runId, report.PayloadRef, ct).ConfigureAwait(false);
+                    if (payload.Kind != "modelusage" || payload.Encoding != "json") continue;
+                    var run = await _agentClient.GetRunAsync(runId, ct).ConfigureAwait(false);
+                    if (run.SessionId != targetSessionId) continue;
+                    ProviderPromptTokens.TryRead(payload.Content, run.ProviderProtocol, out var prompt, out var breakdown);
+                    usage.ProviderProtocol = run.ProviderProtocol;
+                    usage.ContextLimit = run.ProviderProtocol is "chat_completions" or "openai_responses" or "anthropic_messages"
+                        ? run.ContextWindowTokens : null;
+                    usage.BindRun(runId);
+                    usage.ObserveUsage(report.Sequence, report.ModelStepId, prompt, breakdown);
+                    PaintContextUsage();
+                    return;
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // The session was closed or another switch superseded this read.
+            }
+            catch (Exception ex)
+            {
+                TuiDebug.Log("usage", $"session usage restore unavailable: {ex.GetType().Name}");
+            }
+        }
     }
 }

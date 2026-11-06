@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Drag to select text in the transcript and copy the selection
+  with Ctrl+C or Ctrl+Shift+C. Copy whole Unicode graphemes across displayed lines.
+
 - **fix(tui)**: Handle image-only Ctrl+V from Windows Terminal by routing its empty
   bracketed paste to the existing clipboard attachment handler. Preserve draft
   text and image payloads; prevent image paste from leaking through open panels.

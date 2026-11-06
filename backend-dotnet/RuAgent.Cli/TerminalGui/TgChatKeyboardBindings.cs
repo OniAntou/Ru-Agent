@@ -141,11 +141,6 @@ internal sealed class TgChatKeyboardBindings
             _window.Transcript.ToggleExpanded();
             key.Handled = true;
         }
-        else if (key == Key.C.WithCtrl.WithShift)
-        {
-            _copy();
-            key.Handled = true;
-        }
     }
 
     private void OnWindowIsRunningChanged(object? sender, EventArgs<bool> args)
@@ -184,6 +179,15 @@ internal sealed class TgChatKeyboardBindings
         if (key == Key.Esc)
         {
             HandleEscape();
+            key.Handled = true;
+            return;
+        }
+
+        // The Windows input driver can report Ctrl+Shift+C as Ctrl+C. A visible
+        // transcript selection makes that key a copy action before interruption.
+        if (key == Key.C.WithCtrl.WithShift || (key == Key.C.WithCtrl && _window.Transcript.HasTextSelection))
+        {
+            _copy();
             key.Handled = true;
             return;
         }

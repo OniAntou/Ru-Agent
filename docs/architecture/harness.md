@@ -384,7 +384,7 @@ roles, deferred parent wait and coding file integration through the real gateway
 the production inventory exposes all five controls to the parent. Public/client/UI
 workflows expose read-only snapshots and results. Unproven artifact recovery retains
 evidence and fails by name. LSP,
-extension/plugin discovery, workspace-declared MCP servers, arbitrary system overrides,
+project-level plugin discovery, workspace-declared MCP servers, arbitrary system overrides,
 Chat compatibility, UI redesign, and OS filesystem/network confinement are
 outside this implementation. Terminal children run as the current Windows
 user; structured file tools stay in-process under canonical path containment,

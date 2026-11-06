@@ -338,8 +338,9 @@ is not model-usable. Managed
 Web results are bounded and marked untrusted. Workspace SKILL.md bodies are
 prompt guidance only and grant nothing; a `requires: python` frontmatter entry
 fails the model's `skill` load closed with `python_unavailable` when Python is
-not on PATH. LSP, extensions, plugins,
-and MCP are not part of this CLI surface. All commands ensure the Public Host
+not on PATH. LSP, extensions, plugin management
+and MCP are not part of this CLI surface; plugins enabled in the desktop app still
+apply to CLI runs through the Host. All commands ensure the Public Host
 is running through `PublicHostStarter.GetOrStartAsync` and authenticated
 `PublicHostSession`.
 

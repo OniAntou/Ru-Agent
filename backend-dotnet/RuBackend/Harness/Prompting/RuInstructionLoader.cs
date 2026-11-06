@@ -92,6 +92,13 @@ public sealed partial class RuInstructionLoader
             entries.Add(("user:AGENTS.md", _userProfileRoot, UserInstructionRelativePath, "~/.ru/AGENTS.md", PromptInstructionOrigin.User));
         }
 
+        // Enabled plugins follow the user's own file and precede the workspace (ADR 0044).
+        // Each is contained in its own plugin folder.
+        foreach (var plugin in EnabledInstructionPlugins())
+        {
+            entries.Add(($"plugin:{plugin.Id}", plugin.Directory, "AGENTS.md", $"plugin {plugin.Manifest.Name}", PromptInstructionOrigin.Plugin));
+        }
+
         entries.AddRange(Candidates.Select(item =>
             (item.SourceId, canonicalRoot, item.RelativePath, item.DisplayName, PromptInstructionOrigin.Workspace)));
         entries.AddRange(NestedCandidates(canonicalRoot, observedPaths, skips).Select(item =>
@@ -112,7 +119,7 @@ public sealed partial class RuInstructionLoader
             {
                 // The user-wide file is optional on every machine: only the fixed workspace
                 // files report "missing", as they always have.
-                if (candidate.Origin != PromptInstructionOrigin.User)
+                if (candidate.Origin == PromptInstructionOrigin.Workspace)
                 {
                     skips.Add(new RuInstructionSkip(candidate.SourceId, "missing"));
                 }
@@ -174,10 +181,11 @@ public sealed partial class RuInstructionLoader
         }
 
         var markdownRoots = RuAgent.Protocol.SkillRoots.For(canonicalRoot, _localApplicationDataRoot, _userProfileRoot);
+        var pluginSkillRoots = RuAgent.Protocol.UserPlugins.EnabledSkillRoots(_localApplicationDataRoot, _userProfileRoot);
         var preferencesPath = Path.Combine(_localApplicationDataRoot, "Ru", "skill-preferences.json");
         var markdownResult = _markdownSkillLoader is null
-            ? new SkillCatalog(canonicalRoot, preferencesPath, markdownRoots).Discover()
-            : LoadInjectedSkills(_markdownSkillLoader, markdownRoots);
+            ? new SkillCatalog(canonicalRoot, preferencesPath, markdownRoots, pluginSkillRoots).Discover()
+            : LoadInjectedSkills(_markdownSkillLoader, markdownRoots.Concat(pluginSkillRoots).ToArray());
         var optionalRootPaths = markdownRoots
             .Select(Path.GetFullPath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -299,6 +307,21 @@ Reference content SHA-256: {sourceDigest}
                 .ToArray(),
             loaded.Skips.Any(skip => skip.Reason is "scan_limit" or "catalog_budget"),
             loaded.Skills.Count + loaded.Skips.Count);
+    }
+
+    private IEnumerable<RuAgent.Protocol.UserPlugin> EnabledInstructionPlugins()
+    {
+        try
+        {
+            return RuAgent.Protocol.UserPlugins.Discover(_localApplicationDataRoot, _userProfileRoot)
+                .Where(plugin => plugin.Enabled && plugin.HasInstructions)
+                .ToArray();
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            // An unreadable plugin folder contributes nothing; it never blocks the user's own guidance.
+            return Array.Empty<RuAgent.Protocol.UserPlugin>();
+        }
     }
 
     private static (string? Content, string? Reason) ReadCandidate(string path)

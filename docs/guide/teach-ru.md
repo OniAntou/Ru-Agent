@@ -74,6 +74,26 @@ You can register existing local roots, enable or disable skills, restrict automa
 selection and refresh the catalog. See [skill operations](../operations/skills.md)
 for invocation flags, resource paths, diagnostics and run-local snapshots.
 
+## Plugins: bundle your setup
+
+A plugin is a folder that bundles skills and instructions so you can turn them on and off
+together, or share them. Open **Customize → Plugins → New plugin** to create one in
+`~\.ru\plugins\<id>`, or create the folder yourself:
+
+```text
+~\.ru\plugins\team-rules\
+  ru-plugin.json      {"id": "team-rules", "name": "Team rules", "description": "...", "version": "0.1.0"}
+  AGENTS.md           guidance, read after your own ~/.ru/AGENTS.md and before the project's
+  skills\            skills, found after every other skill folder
+```
+
+The id is 1 to 24 lowercase letters, digits or dashes and must match the folder name;
+`ru-plugin.json` accepts only `id`, `name`, `description` and `version`. A plugin does nothing
+until you switch it on in **Customize → Plugins**, and changes apply from your next message.
+Plugins are yours only: Ru never loads one from a project folder. A project or user skill with the
+same id wins over a plugin's skill, and at most eight enabled plugins add skills. Hooks and MCP
+servers in a plugin are listed but not loaded yet; see [ADR 0044](../adr/0044-user-plugins.md).
+
 ## Custom commands
 
 Save a prompt you reuse as a Markdown file and run it as a slash command. A file at

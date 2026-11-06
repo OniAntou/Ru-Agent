@@ -206,6 +206,12 @@ Implementation: [harness](docs/architecture/harness.md#markdown-skill).
 _Avoid_: treating `SKILL.md` as a permission manifest or executable plugin
 
 
+**User Plugin**:
+A folder with a strict `ru-plugin.json` in `~/.ru/plugins` or `%LOCALAPPDATA%\Ru\plugins` that bundles skills and an `AGENTS.md` (and, behind a consent digest, hooks and MCP servers). It is off until the user enables it; enabled plugins have the lowest precedence after the user's own files and apply to new runs. Plugins are user-level only and never grant permission.
+Implementation: [ADR 0044](docs/adr/0044-user-plugins.md).
+_Avoid_: project plugins, a plugin enabling itself, plugin content as execution authority
+
+
 **Session Grant**:
 A Broker-checked set of scopes and skill identities bound to one Agent Session, without arbitrary filesystem, network or credential authority.
 Implementation: [broker](docs/architecture/broker.md#session-grant).

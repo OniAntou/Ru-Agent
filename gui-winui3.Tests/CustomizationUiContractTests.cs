@@ -29,6 +29,36 @@ public sealed class CustomizationUiContractTests
     }
 
     [Fact]
+    public void The_plugins_tab_lists_user_plugins_above_the_built_in_ones()
+    {
+        var document = GuiSource.Xml("Views", "CustomizeView.xaml");
+        var panel = GuiSource.Require(document, "PluginsPanel");
+        var list = GuiSource.Require(document, "PluginsList");
+        var computerUse = GuiSource.Require(document, "ComputerUseToggle");
+        var order = panel.Descendants().ToList();
+        Assert.True(order.IndexOf(list) < order.IndexOf(computerUse));
+        Assert.Equal("OnNewPluginClick", GuiSource.AttributeValue(GuiSource.Require(document, "NewPluginButton"), "Click"));
+        GuiSource.Require(document, "PluginsEmpty");
+
+        var code = GuiSource.Text("Views", "CustomizeView.UserPlugins.cs");
+        Assert.Contains("ContentDialogGate.ShowAsync", GuiSource.MethodBody(code, "OnNewPluginClick"), StringComparison.Ordinal);
+        Assert.Contains("\"set_enabled\"", GuiSource.MethodBody(code, "OnPluginToggled"), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("My team rules", "my-team-rules")]
+    [InlineData("Quy tắc Đội", "quy-tac-doi")]
+    [InlineData("  2024 Release_Notes ", "release-notes")]
+    [InlineData("A very long plugin name that keeps going", "a-very-long-plugin-name")]
+    [InlineData("!!!", "")]
+    public void New_plugin_suggests_a_valid_id_from_the_name(string name, string expected)
+    {
+        var id = RuApp.Views.CustomizeView.SuggestPluginId(name);
+        Assert.Equal(expected, id);
+        if (id.Length > 0) Assert.True(RuAgent.Protocol.UserPlugins.IsValidId(id));
+    }
+
+    [Fact]
     public void Settings_offers_each_notification_choice()
     {
         var document = GuiSource.Xml("Views", "SettingsView.xaml");

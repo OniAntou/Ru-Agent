@@ -21,6 +21,7 @@ public static partial class AgentV1Endpoints
     {
         MapSubagents(app);
         MapSkills(app);
+        MapPlugins(app);
         app.MapPost("/agent/v1/runs", CreateRunAsync);
         app.MapPost("/agent/v1/runs/selected", CreateSelectedRunAsync);
         app.MapGet("/agent/v1/runs/{runId}", GetRunAsync);

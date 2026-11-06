@@ -60,6 +60,11 @@ namespace RuApp.Services
             return new SkillsApiClient(RuAppComposition.ToPublicHostSession(_session), _httpClient);
         }
 
+        public PluginsApiClient CreatePluginsApiClient()
+        {
+            return new PluginsApiClient(RuAppComposition.ToPublicHostSession(_session), _httpClient);
+        }
+
         private void LogApiError(string method, Exception ex)
         {
             if (IsCancellation(ex))

@@ -87,6 +87,8 @@ public sealed partial class SkillCatalog
         var preferences = ReadPreferences();
         var desired = _baseRoots.ToList();
         desired.AddRange(preferences.Roots.Where(root => !desired.Contains(root, StringComparer.OrdinalIgnoreCase)).Take(Math.Max(0, MaxRoots - desired.Count)));
+        // Plugins come after the user's registered roots too: the lowest precedence (ADR 0044).
+        desired.AddRange(_pluginRoots.Where(root => !desired.Contains(root, StringComparer.OrdinalIgnoreCase)).Take(Math.Max(0, MaxRoots - desired.Count)));
         lock (_rootsGate)
         {
             if (_roots.SequenceEqual(desired, StringComparer.OrdinalIgnoreCase)) return;

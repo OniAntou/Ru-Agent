@@ -361,6 +361,32 @@ public sealed class SkillBodyToolTests
     }
 
     [Fact]
+    public void Plugin_skill_roots_come_after_registered_roots_so_any_other_skill_wins()
+    {
+        using var fixture = Fixture.Create();
+        var preferences = Path.Combine(fixture.Root, "plugin-prefs.json");
+        var plugin = Path.Combine(fixture.Root, "plugin-skills");
+        File.WriteAllText(Path.Combine(Directory.CreateDirectory(Path.Combine(plugin, "shared")).FullName, "SKILL.md"),
+            "---\nname: shared\ndescription: From the plugin\n---\nPlugin body");
+        File.WriteAllText(Path.Combine(Directory.CreateDirectory(Path.Combine(plugin, "only-plugin")).FullName, "SKILL.md"),
+            "---\nname: only-plugin\ndescription: Only here\n---\nBody");
+        var registered = Path.Combine(fixture.Root, "registered-skills");
+        File.WriteAllText(Path.Combine(Directory.CreateDirectory(Path.Combine(registered, "shared")).FullName, "SKILL.md"),
+            "---\nname: shared\ndescription: From the registered root\n---\nRegistered body");
+
+        var catalog = new SkillCatalog(fixture.Root, preferences, [Path.Combine(fixture.Root, "skills")], [plugin]);
+        Assert.True(catalog.AddRoot(registered).Success);
+        var items = catalog.Discover(refresh: true).Items;
+
+        Assert.Equal("From the registered root", items.Single(item => item.Id == "shared").Description);
+        Assert.Contains(items, item => item.Id == "only-plugin");
+        Assert.Contains(items, item => item.Id == "pdf.analyzer");
+        // A caller that passes its own roots gets no machine plugins unless it passes them.
+        Assert.DoesNotContain(new SkillCatalog(fixture.Root, preferences, [Path.Combine(fixture.Root, "skills")]).Discover(refresh: true).Items,
+            item => item.Id == "only-plugin");
+    }
+
+    [Fact]
     public void Existing_catalog_refreshes_registered_roots_from_shared_preferences()
     {
         using var fixture = Fixture.Create();

@@ -45,9 +45,14 @@ public sealed partial class CustomizeView : UserControl, IDisposable
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
         // A reconnected Host is a new session: the old skills client is bound to the last one.
         _skills?.Dispose();
+        ResetPluginsClient();
         var skills = _skills = _api.CreateSkillsApiClient();
         _skillsLoader.Attach(skills.ListAsync, _workspace);
-        if (_active) _ = LoadComputerUseAsync();
+        if (_active)
+        {
+            _ = LoadComputerUseAsync();
+            _ = LoadPluginsAsync();
+        }
     }
 
     /// <summary>Loads fresh state each time the page is shown; hidden, it cancels its work.</summary>
@@ -63,6 +68,7 @@ public sealed partial class CustomizeView : UserControl, IDisposable
         }
 
         _ = LoadComputerUseAsync();
+        _ = LoadPluginsAsync();
     }
 
     public void RefreshWorkspace() => _skillsLoader.RefreshWorkspace();
@@ -82,6 +88,7 @@ public sealed partial class CustomizeView : UserControl, IDisposable
         CancelSkillWork();
         _skillsLoader.Dispose();
         _skills?.Dispose();
+        ResetPluginsClient();
         Loaded -= OnCustomizeLoaded;
     }
 

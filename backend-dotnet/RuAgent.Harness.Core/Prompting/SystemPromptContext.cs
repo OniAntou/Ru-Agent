@@ -72,6 +72,8 @@ public enum PromptInstructionOrigin
     Workspace,
     ExternalSkill,
     User,
+    /// <summary>An enabled user plugin's AGENTS.md (ADR 0044).</summary>
+    Plugin,
 }
 
 public sealed record PromptInstructionBlock

@@ -29,18 +29,27 @@ public sealed partial class SkillCatalog
     private readonly string _workspaceRoot;
     private readonly string _preferencesPath;
     private readonly List<string> _baseRoots;
+    private readonly List<string> _pluginRoots;
     private readonly List<string> _roots;
     private readonly object _rootsGate = new();
     private string _cacheKey;
 
-    public SkillCatalog(string workspaceRoot, string? preferencesPath = null, IReadOnlyList<string>? roots = null)
-        : this(workspaceRoot, preferencesPath, roots, userOnly: false) { }
+    /// <param name="pluginRoots">
+    /// Enabled plugins' skill folders (ADR 0044), searched after every other root. When
+    /// <paramref name="roots"/> is null they default to the user's enabled plugins; a caller
+    /// that passes its own roots passes its own plugin roots too.
+    /// </param>
+    public SkillCatalog(string workspaceRoot, string? preferencesPath = null, IReadOnlyList<string>? roots = null,
+        IReadOnlyList<string>? pluginRoots = null)
+        : this(workspaceRoot, preferencesPath, roots, userOnly: false, pluginRoots) { }
 
     /// <summary>Metadata for the library before a workspace is selected; no project roots or preferences are inherited.</summary>
-    public static SkillCatalog ForUser(string? preferencesPath = null, IReadOnlyList<string>? roots = null) =>
-        new(null, preferencesPath, roots, userOnly: true);
+    public static SkillCatalog ForUser(string? preferencesPath = null, IReadOnlyList<string>? roots = null,
+        IReadOnlyList<string>? pluginRoots = null) =>
+        new(null, preferencesPath, roots, userOnly: true, pluginRoots);
 
-    private SkillCatalog(string? workspaceRoot, string? preferencesPath, IReadOnlyList<string>? roots, bool userOnly)
+    private SkillCatalog(string? workspaceRoot, string? preferencesPath, IReadOnlyList<string>? roots, bool userOnly,
+        IReadOnlyList<string>? pluginRoots = null)
     {
         if (!userOnly) ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _workspaceRoot = userOnly ? string.Empty : new CanonicalPathResolver(Path.GetFullPath(workspaceRoot!)).CanonicalRoot;
@@ -50,6 +59,8 @@ public sealed partial class SkillCatalog
         _preferencesPath = Path.GetFullPath(preferencesPath ?? Path.Combine(appDataRoot, "Ru", "skill-preferences.json"));
         _baseRoots = (roots ?? (userOnly ? SkillRoots.ForUser() : SkillRoots.For(_workspaceRoot)))
             .Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxRoots).ToList();
+        _pluginRoots = (pluginRoots ?? (roots is null ? UserPlugins.EnabledSkillRoots() : Array.Empty<string>()))
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         _roots = new(_baseRoots);
         _cacheKey = BuildCacheKey(_roots);
         RefreshRoots();

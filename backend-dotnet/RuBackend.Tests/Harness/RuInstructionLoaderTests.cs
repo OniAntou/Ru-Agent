@@ -296,6 +296,42 @@ public sealed class RuInstructionLoaderTests
         Assert.DoesNotContain(new string('f', 100), first.Content, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void An_enabled_plugin_adds_its_instructions_and_skills_after_the_user_and_before_the_workspace()
+    {
+        using var fixture = TempRoot.Create();
+        var profile = Directory.CreateDirectory(Path.Combine(fixture.Parent, "profile")).FullName;
+        Directory.CreateDirectory(Path.Combine(profile, ".ru"));
+        File.WriteAllText(Path.Combine(profile, ".ru", "AGENTS.md"), "user guidance", new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(fixture.Root, "AGENTS.md"), "workspace guidance", new UTF8Encoding(false));
+        var plugin = RuAgent.Protocol.UserPlugins.Create("team-rules", "Team rules", null,
+            withInstructions: true, withSkill: true, fixture.UserDataRoot, profile);
+        var loader = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot, userProfileRoot: profile);
+
+        // Off until the user enables it.
+        Assert.DoesNotContain(loader.Load(fixture.Root).Blocks, block => block.SourceId.StartsWith("plugin:", StringComparison.Ordinal));
+
+        RuAgent.Protocol.UserPlugins.SetEnabled(plugin.Id, true, fixture.UserDataRoot);
+        var result = loader.Load(fixture.Root);
+
+        Assert.Equal(new[] { "user:AGENTS.md", "plugin:team-rules", "root:AGENTS.md", "skill:catalog" },
+            result.Blocks.Select(block => block.SourceId));
+        Assert.Equal(PromptInstructionOrigin.Plugin, result.Blocks[1].Origin);
+        Assert.Contains("team-rules-example", result.Blocks[^1].Content, StringComparison.Ordinal);
+
+        var context = new SystemPromptContext(
+            SystemPromptContext.PromptContextSchemaVersion,
+            SystemPromptContext.RequiredAgentProfile,
+            "standard",
+            new PromptEnvironment("model", "windows", "en-US", "UTC", "2026-11-06", "workspace"),
+            result.Blocks,
+            Array.Empty<PromptCapability>(),
+            new PromptRuntimeContext(Array.Empty<PromptReference>()));
+        var prompt = SystemPromptComposer.Compose(context);
+        prompt.Receipt.ValidateAgainst(context, prompt.Text);
+        Assert.Contains(SystemPromptComposer.PluginInstructionBoundary, prompt.Text, StringComparison.Ordinal);
+    }
+
     private static void WriteSkill(string root, string directoryName, string content)
     {
         var package = Directory.CreateDirectory(Path.Combine(root, directoryName)).FullName;

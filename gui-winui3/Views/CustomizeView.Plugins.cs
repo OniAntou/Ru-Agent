@@ -4,9 +4,10 @@ using RuApp.Services;
 namespace RuApp.Views;
 
 /// <summary>
-/// The Plugins tab. Computer use (ADR 0031) is its one plugin: the Host owns the
+/// The Plugins tab's built-in section. Computer use (ADR 0031): the Host owns the
 /// opt-in and pins it into new runs; this tab shows and saves it, and puts the switch
-/// back where the Host has it when a save fails.
+/// back where the Host has it when a save fails. User plugins (ADR 0044) live in
+/// <c>CustomizeView.UserPlugins.cs</c>.
 /// </summary>
 public sealed partial class CustomizeView
 {

@@ -257,7 +257,7 @@ exposure.
 Prompt composition is not a security boundary: execution-authority policy,
 workspace trust, approvals, protected paths, external-directory grants, and
 cancellation remain authoritative. Subagent orchestration, LSP,
-extension/plugin discovery, workspace-declared MCP servers, arbitrary system overrides, Chat compatibility,
+project-level plugin discovery, workspace-declared MCP servers, arbitrary system overrides, Chat compatibility,
 UI redesign, and OS filesystem/network confinement are outside this
 implementation (ADR-0015).
 
@@ -628,9 +628,11 @@ are rejected as well. Fetched text is wrapped with
 `[untrusted_web_reference]`. Web policy applies to each request separately
 from terminal execution; neither path uses OS network confinement.
 
-Workspace `SKILL.md` bodies are untrusted prompt guidance. LSP, extensions and
-plugins are not loaded or discoverable; MCP servers come only from the user's own
-`~/.ru/mcp.json`, never from the workspace.
+Workspace `SKILL.md` bodies are untrusted prompt guidance. LSP and extensions are
+not loaded or discoverable. User plugins ([ADR 0044](../adr/0044-user-plugins.md)) load
+only from `~/.ru/plugins` and `%LOCALAPPDATA%\Ru\plugins`, only once the user enables
+them, and today contribute skills and instructions only; a repository cannot supply one.
+MCP servers come only from the user's own `~/.ru/mcp.json`, never from the workspace.
 
 Selecting a preset while idle does not add a composer status row, so the empty
 conversation welcome content keeps its position. The Agent inline status appears only

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(plugins)**: User plugin, phase 1 ([ADR 0044](docs/adr/0044-user-plugins.md)). Một plugin
+  là thư mục trong `~/.ru/plugins` (hoặc `%LOCALAPPDATA%\Ru\plugins`) có `ru-plugin.json`
+  chặt chẽ, gom `skills/` và `AGENTS.md`. Plugin tắt cho đến khi user bật trong **Customize →
+  Plugins**; khi bật, skills của nó đứng sau mọi thư mục skill khác (kể cả root đã đăng ký) và
+  instructions đọc sau `~/.ru/AGENTS.md`, trước file của workspace, với boundary riêng. Nút
+  **New plugin** tạo sẵn manifest, `AGENTS.md` và một skill mẫu. Route mới
+  `GET /agent/v1/plugins` và `POST /agent/v1/plugins/settings`. Hooks và MCP trong plugin được
+  liệt kê nhưng chưa nạp (phase 2).
+
 - **feat(gui)**: Tuỳ biến cho user:
   - **Customize → Instructions**: sửa trực tiếp `~/.ru/AGENTS.md` (mọi project) và
     `.ru/AGENTS.md` của workspace đang mở. Lưu dạng UTF-8 không BOM, chuẩn hoá xuống dòng, không

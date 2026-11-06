@@ -29,6 +29,32 @@ public sealed partial class AgentCommands
         /// narration, thoughts, tool rows and the footer. Falls back to the text replay
         /// when the turn record cannot be read.
         /// </summary>
+        /// <summary>
+        /// Writes one prompt read back from history.
+        /// </summary>
+        /// <remarks>
+        /// A reopened prompt is the same user block the composer echoed live. Writing it as
+        /// plain text left it unboxed, so history read as prose where the live turn read as
+        /// something the operator had typed.
+        /// </remarks>
+        void WriteReplayPrompt(string prompt)
+        {
+            var (typed, labels) = Tui.ChatPromptEcho.SplitStored(prompt);
+            if (tgMode)
+            {
+                chatEngine?.EchoPrompt(typed);
+                foreach (var label in labels)
+                {
+                    sessionRenderer.Surface.WriteLine("  " + label);
+                }
+            }
+            else
+            {
+                sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.Format(
+                    typed, labels.Count == 0 ? null : labels));
+            }
+        }
+
         async Task RenderSessionHistoryAsync(
             string targetSessionId,
             ChatSessionReplayResult fallback,
@@ -48,7 +74,9 @@ public sealed partial class AgentCommands
             foreach (var turn in loaded)
             {
                 foreach (var prompt in turn.Prompts)
-                    sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.FormatStored(prompt));
+                {
+                    WriteReplayPrompt(prompt);
+                }
                 if (turn.Run is { TerminalAt: not null } run)
                 {
                     sessionRenderer.BeginTurn();
@@ -83,8 +111,7 @@ public sealed partial class AgentCommands
             {
                 if (string.Equals(message.Role, "user", StringComparison.Ordinal))
                 {
-                    sessionRenderer.Surface.WriteLine(
-                        Tui.ChatPromptEcho.FormatStored(message.Text));
+                    WriteReplayPrompt(message.Text);
                 }
                 else
                 {

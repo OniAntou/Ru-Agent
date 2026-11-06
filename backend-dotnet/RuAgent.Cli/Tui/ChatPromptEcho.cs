@@ -14,15 +14,27 @@ public static class ChatPromptEcho
     }
 
     /// <summary>
+    /// The prompt as it was typed, plus one <c>[file n: name]</c> label per document the
+    /// composer inlined. A prompt with no inlined document comes back unchanged.
+    /// </summary>
+    public static (string Text, IReadOnlyList<string> Labels) SplitStored(string prompt)
+    {
+        ArgumentNullException.ThrowIfNull(prompt);
+        if (RuAgent.Protocol.AttachedPromptText.TrySplit(prompt) is not { } parts) return (prompt, []);
+        var labels = parts.Documents
+            .Select((document, index) => $"[file {index + 1}: {document.FileName}]")
+            .ToArray();
+        return (parts.Text, labels);
+    }
+
+    /// <summary>
     /// Echoes a prompt read back from history. A prompt whose text attachments were
     /// inlined by the composer is shown as it was sent: the typed text and one
     /// <c>[file n: name]</c> label per document, not the inlined envelope and file text.
     /// </summary>
     public static string FormatStored(string prompt)
     {
-        ArgumentNullException.ThrowIfNull(prompt);
-        if (RuAgent.Protocol.AttachedPromptText.TrySplit(prompt) is not { } parts) return Format(prompt);
-        var labels = parts.Documents.Select((document, index) => $"[file {index + 1}: {document.FileName}]").ToList();
-        return Format(parts.Text, labels);
+        var (text, labels) = SplitStored(prompt);
+        return Format(text, labels.Count == 0 ? null : labels);
     }
 }

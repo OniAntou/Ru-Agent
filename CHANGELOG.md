@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Mở lại session vẽ prompt của người dùng bằng đúng khối `❯` có nền như lúc gõ,
+  thay vì một dòng text trơn. Trước đây replay ghi `> …` qua đường text nên prompt trông như prose
+  và lẫn vào nội dung trả lời.
+
 - **fix(tui)**: Dòng `◦ Thought` mở ngay khi model bắt đầu suy nghĩ và được điền thời gian tại
   chỗ, nên nó nằm **trên** câu trả lời mà lượt đó sinh ra. Trước đây row chỉ được phát khi step
   kết thúc — mà Host đóng step sau khi câu trả lời đã stream xong — nên `Thought` rơi xuống dưới

@@ -499,6 +499,13 @@ public partial class ChatSessionEngine
         _ = RunTurnAsync(submission, turnToken, turnDone);
     }
 
+    /// <summary>
+    /// Echoes a prompt on the transcript exactly as the composer would. History replay
+    /// draws the same user block a live submission produced.
+    /// </summary>
+    internal void EchoPrompt(string prompt, bool localCommand = false) =>
+        Dispatch(() => _view.EchoPrompt(prompt, localCommand));
+
     private async Task RunTurnAsync(
         ChatSubmissionSnapshot submission,
         CancellationToken ct,

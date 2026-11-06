@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Dòng `◦ Thought` mở ngay khi model bắt đầu suy nghĩ và được điền thời gian tại
+  chỗ, nên nó nằm **trên** câu trả lời mà lượt đó sinh ra. Trước đây row chỉ được phát khi step
+  kết thúc — mà Host đóng step sau khi câu trả lời đã stream xong — nên `Thought` rơi xuống dưới
+  chính câu trả lời nó mở đầu. Thought dưới 1 giây ghi `Thought briefly`, thought bị dừng ghi
+  `Thought stopped`.
+
 - **fix(tui)**: Chuyển session không còn để lại dòng `switched to session …` nằm dưới lượt vừa
   rồi; xác nhận chuyển sang đâu nằm ở hint dưới ô nhập. Đồng hồ context cũng không còn trống
   sau khi chuyển: TUI đọc usage report mới nhất của run gần nhất trong session đích (event

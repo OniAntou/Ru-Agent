@@ -299,6 +299,41 @@ public sealed class TuiActivityFlowTests
     }
 
     [Fact]
+    public void A_thought_row_opens_before_the_answer_its_step_streams()
+    {
+        // The Host closes a step only after the answer text is already out, so a row
+        // announced on completion lands under the reply it introduced. Opening it when
+        // the step starts keeps the feed in the order the work happened.
+        var (renderer, view) = Create();
+        renderer.Transcript.ApplyActivity(
+            Activity("think", AgentActivityKind.Thinking, null, AgentActivityState.Started));
+        renderer.Transcript.AppendAssistant("Here is the answer.\n\n");
+        renderer.Transcript.ApplyActivity(
+            Activity("think", AgentActivityKind.Thinking, null) with { DurationMs = 6_100 });
+        renderer.Transcript.Flush();
+
+        var opened = view.Rows.FindIndex(row => row.Text.Contains("Thinking", StringComparison.Ordinal));
+        var answer = view.Rows.FindIndex(row => row.Text.Contains("Here is the answer", StringComparison.Ordinal));
+        Assert.True(opened >= 0, "the live thinking row is missing");
+        Assert.True(answer >= 0, "the answer row is missing");
+        Assert.True(opened < answer, $"the thinking row at {opened} should precede the answer at {answer}");
+        Assert.Contains("Thought 6.1s", view.Activities["think"].Text);
+    }
+
+    [Fact]
+    public void A_short_thought_settles_its_open_row_without_adding_a_second_one()
+    {
+        var (renderer, view) = Create();
+        renderer.Transcript.ApplyActivity(
+            Activity("brief", AgentActivityKind.Thinking, null, AgentActivityState.Started));
+        renderer.Transcript.ApplyActivity(
+            Activity("brief", AgentActivityKind.Thinking, null) with { DurationMs = 400 });
+
+        Assert.Single(view.Rows, row => row.Text.Contains("Thinking") || row.Text.Contains("Thought"));
+        Assert.Contains("Thought briefly", view.Activities["brief"].Text);
+    }
+
+    [Fact]
     public void An_attached_turn_counts_from_the_run_start()
     {
         var (renderer, _) = Create();

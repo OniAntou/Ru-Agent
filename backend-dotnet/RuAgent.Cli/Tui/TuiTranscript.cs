@@ -52,6 +52,8 @@ public sealed partial class TuiTranscript
     private readonly List<ToolDetail> _pendingTools = [];
     private readonly Queue<string> _settledActivityIds = new();
     private readonly BoundedInsertionMap<string, ToolDetail> _settledToolRows = new(64, StringComparer.Ordinal);
+    /// <summary>Steps whose live thinking row is open and still waiting for its duration.</summary>
+    private readonly HashSet<string> _thinkingRows = new(StringComparer.Ordinal);
     private readonly List<string> _retained = [];
     private bool _retainedIsThinking;
     private readonly StringBuilder _streamedAssistant = new();
@@ -209,6 +211,7 @@ public sealed partial class TuiTranscript
         _pendingTools.Clear();
         _settledActivityIds.Clear();
         _settledToolRows.Clear();
+        _thinkingRows.Clear();
         _retained.Clear();
         _retainedIsThinking = false;
         _markdown.Reset();
@@ -237,6 +240,7 @@ public sealed partial class TuiTranscript
         _pendingTools.Clear();
         _settledActivityIds.Clear();
         _settledToolRows.Clear();
+        _thinkingRows.Clear();
         _streamedAssistant.Clear();
         _lineBuffer = string.Empty;
         _proseLine.Clear();

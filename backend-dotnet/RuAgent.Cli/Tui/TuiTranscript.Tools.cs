@@ -15,23 +15,11 @@ public sealed partial class TuiTranscript
                 if (activity.State == AgentActivityState.Started)
                 {
                     _status.SetState(TuiRunState.Thinking);
+                    OpenThinkingRow(activity);
                 }
                 else
                 {
-                    // The Desktop feed keeps one "Thought 31s" row where the model paused;
-                    // without it a long think left no trace between two tool rows.
-                    // Sub-second thoughts would only add rows to a long run.
-                    var announced = activity.State == AgentActivityState.Completed && activity.DurationMs is >= 1000;
-                    if (announced)
-                    {
-                        Flush();
-                        // Where the screen cannot keep the reasoning for the footer's hint,
-                        // the row itself says how to open it.
-                        var hint = !string.IsNullOrWhiteSpace(activity.Detail)
-                            && !(_fullScreenCards && _surface.Writer is ITranscriptLineWriter) ? " · ctrl+o" : string.Empty;
-                        MetaRow("◦ ", "Thought " + TuiStatusLine.FormatElapsed(activity.DurationMs!.Value / 1000d) + hint, TuiToken.Meta);
-                    }
-                    if (!string.IsNullOrWhiteSpace(activity.Detail)) RetainThinking(activity.Detail, announced);
+                    SettleThinkingRow(activity);
                 }
 
                 return;
@@ -116,6 +104,68 @@ public sealed partial class TuiTranscript
 
             default:
                 return;
+        }
+    }
+
+    /// <summary>
+    /// Opens the step's thinking row before the answer it precedes streams.
+    /// </summary>
+    /// <remarks>
+    /// The Host closes a model step only after the assistant text has already reached the
+    /// transcript, so announcing the thought on completion put "Thought 6.1s" under the
+    /// reply it introduced. The row opens live and settles in place, the way the Desktop
+    /// feed does it. A plain output surface cannot rewrite a row, so it keeps the
+    /// completion-only path below.
+    /// </remarks>
+    private void OpenThinkingRow(AgentActivityModel activity)
+    {
+        if (_surface.Presentation is null || !_thinkingRows.Add(activity.ActivityId)) return;
+        var row = new TranscriptRunBuilder()
+            .Append("  ◦ ", TuiToken.Line)
+            .Append("Thinking", TuiToken.Meta)
+            .Line(TranscriptRole.Meta);
+        _surface.AppendActivityPresentation(activity.ActivityId, row, null);
+    }
+
+    /// <summary>
+    /// Settles the thinking row opened for this step, or announces it here when the
+    /// surface never opened one (a plain writer, or a replayed turn that keeps only the
+    /// final state).
+    /// </summary>
+    private void SettleThinkingRow(AgentActivityModel activity)
+    {
+        var failed = activity.State == AgentActivityState.Failed;
+        // Where the screen cannot keep the reasoning for the footer's hint, the row itself
+        // says how to open it.
+        var hint = !string.IsNullOrWhiteSpace(activity.Detail)
+            && !(_fullScreenCards && _surface.Writer is ITranscriptLineWriter) ? " · ctrl+o" : string.Empty;
+        var text = failed
+            ? "Thought stopped"
+            : activity.DurationMs switch
+            {
+                null => "Thought",
+                < 1000 => "Thought briefly",
+                var duration => "Thought " + TuiStatusLine.FormatElapsed(duration.Value / 1000d) + hint,
+            };
+
+        var opened = _thinkingRows.Remove(activity.ActivityId);
+        if (opened)
+        {
+            var row = new TranscriptRunBuilder()
+                .Append("  ◦ ", TuiToken.Line)
+                .Append(text, failed ? TuiToken.Err : TuiToken.Meta)
+                .Line(TranscriptRole.Meta);
+            _surface.Presentation?.UpdateActivityPresentation(activity.ActivityId, row, null);
+        }
+        else if (!failed && activity.DurationMs is >= 1000)
+        {
+            Flush();
+            MetaRow("◦ ", text, TuiToken.Meta);
+        }
+
+        if (!string.IsNullOrWhiteSpace(activity.Detail))
+        {
+            RetainThinking(activity.Detail, announced: opened || (!failed && activity.DurationMs is >= 1000));
         }
     }
 

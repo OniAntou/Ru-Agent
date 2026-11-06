@@ -17,7 +17,7 @@ try {
     if ($LASTEXITCODE -ne 0) { Get-Content (Join-Path $resultsRoot 'build.log') -Tail 30; exit $LASTEXITCODE }
     $exe = Join-Path $repo 'tools\terminal-input-probe\bin\Release\net10.0-windows\TerminalInputProbe.exe'
     $results = @()
-    foreach ($scenario in @('control','bmp','emoji','fragmented','navigation','typing')) {
+    foreach ($scenario in @('control','bmp','emoji','fragmented','navigation','typing','image','copy')) {
         $evidence = Join-Path $resultsRoot $scenario
         & $exe $evidence $scenario *> (Join-Path $resultsRoot ($scenario + '.log'))
         $code = $LASTEXITCODE

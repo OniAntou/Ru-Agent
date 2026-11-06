@@ -4,6 +4,7 @@ using RuAgent.Cli.Images;
 using RuAgent.Cli.Tui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -87,6 +88,7 @@ public sealed partial class TgChatWindow : Window
         // channel so the two can never disagree.
         Composer.Input.ContentsChanged += (_, _) =>
         {
+            Transcript.ClearTextSelection();
             Hints.ClearCommandFeedback();
             RefreshSlashDropdown();
         };
@@ -125,9 +127,21 @@ public sealed partial class TgChatWindow : Window
     public bool IsSlashDropdownOpen => _slashDropdown?.SuperView is not null;
     public bool IsCommandPaletteOpen => _commandPaletteView?.SuperView is not null;
     public bool IsModalPanelOpen => _panel?.SuperView is not null || _questionPanel?.SuperView is not null;
-    private bool HasBlockingOverlay => IsModalPanelOpen || IsDocumentPanelOpen || IsCommandPaletteOpen;
+    internal bool HasBlockingOverlay => IsModalPanelOpen || IsDocumentPanelOpen || IsCommandPaletteOpen;
     internal SemaphoreSlim ModalRequestGate { get; } = new(1, 1);
     public string CommandPaletteQuery => _commandPalette.Query;
+
+    internal event Action? ClipboardPasteRequested;
+
+    internal void RequestClipboardPaste()
+    {
+        if (HasBlockingOverlay || MostFocused != Composer.Input)
+        {
+            return;
+        }
+
+        ClipboardPasteRequested?.Invoke();
+    }
 
     /// <summary>Routes terminal text to the active input without changing a hidden draft.</summary>
     internal bool TryPasteText(string text)
@@ -173,6 +187,7 @@ public sealed partial class TgChatWindow : Window
     public void ShowDocument(string title, IReadOnlyList<string> body)
     {
         ArgumentNullException.ThrowIfNull(body);
+        Transcript.ClearTextSelection();
         // The window takes the keyboard, so the suggestion list must not linger behind it.
         HideSlashDropdown();
         HidePanel();
@@ -310,6 +325,7 @@ public sealed partial class TgChatWindow : Window
             return;
         }
 
+        Transcript.ClearTextSelection();
         HideSlashDropdown();
         _commandPaletteDraft = Composer.Input.Text?.ToString() ?? string.Empty;
         _commandPaletteDraftCursor = Composer.Input.InsertionPoint;
@@ -561,6 +577,7 @@ public sealed partial class TgChatWindow : Window
     /// </summary>
     protected override void OnIsRunningChanged(bool args)
     {
+        if (!args) Transcript.ClearTextSelection();
         base.OnIsRunningChanged(args);
         SetHostedApplication(args ? App : null);
     }
@@ -568,9 +585,28 @@ public sealed partial class TgChatWindow : Window
     internal void SetHostedApplication(IApplication? app)
     {
         if (ReferenceEquals(_resizeApp, app)) return;
-        if (_resizeApp is not null) _resizeApp.ScreenChanged -= OnScreenChanged;
+        if (_resizeApp is not null)
+        {
+            _resizeApp.ScreenChanged -= OnScreenChanged;
+            _resizeApp.Mouse.MouseEvent -= OnApplicationMouse;
+        }
         _resizeApp = app;
-        if (app is not null) { app.ScreenChanged += OnScreenChanged; Relayout(); }
+        if (app is not null)
+        {
+            app.ScreenChanged += OnScreenChanged;
+            app.Mouse.MouseEvent += OnApplicationMouse;
+            Relayout();
+        }
+    }
+
+    private void OnApplicationMouse(object? sender, Mouse mouse)
+    {
+        if (mouse.Flags.HasFlag(MouseFlags.LeftButtonPressed)
+            && !mouse.Flags.HasFlag(MouseFlags.PositionReport)
+            && !Transcript.ViewportToScreen().Contains(mouse.ScreenPosition))
+        {
+            Transcript.ClearTextSelection();
+        }
     }
 
     internal void FocusSessionInput()
@@ -618,6 +654,7 @@ public sealed partial class TgChatWindow : Window
 
     private void ShowPanel(Func<int, int, IReadOnlyList<CardLine>> card)
     {
+        Transcript.ClearTextSelection();
         // A modal panel takes the keyboard; the suggestion list must not linger behind it.
         HideSlashDropdown();
         _modalInputState ??= new ModalInputState(

@@ -27,7 +27,9 @@ terminal smaller than 80 by 24.
 | `Esc`, `Ctrl+C` | Interrupt the running turn |
 | `Ctrl+O` | Expand or collapse the model's reasoning block |
 | `Ctrl+Alt+Up` / `Ctrl+Alt+Down` | Select an earlier or later reasoning block |
-| `Ctrl+Shift+C` | Copy the selected reasoning block, or the latest assistant text |
+| Drag across the transcript | Select visible text from one or more lines |
+| `Ctrl+C` with text selected | Copy the highlighted transcript text |
+| `Ctrl+Shift+C` | Copy highlighted transcript text, the selected reasoning block, or the latest assistant text |
 | `PageUp` / `PageDown` | Scroll the transcript |
 | `Ctrl+Home` / `Ctrl+End` | Jump to the oldest output, or back to following new output |
 | `Up` / `Down` | Move through a multi-line draft, then through earlier prompts |

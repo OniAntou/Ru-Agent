@@ -7,6 +7,7 @@ public sealed partial class TgChatWindow
 
     internal void ShowQuestion(ChatInputQuestion question)
     {
+        Transcript.ClearTextSelection();
         HideDocument();
         HidePanel();
         HideSlashDropdown();

@@ -18,7 +18,7 @@ public static class TgTerminalPaste
         ArgumentNullException.ThrowIfNull(app);
         app.Paste += (_, e) =>
         {
-            if (e.Handled || string.IsNullOrEmpty(e.Text))
+            if (e.Handled)
             {
                 return;
             }
@@ -26,9 +26,19 @@ public static class TgTerminalPaste
             var window = app.TopRunnableView as TgChatWindow;
             if (window is not null)
             {
-                e.Handled = window.TryPasteText(e.Text);
+                // Image-only clipboards arrive as an empty bracketed paste. The terminal
+                // cannot serialize their bytes; the session must read the local clipboard.
+                if (string.IsNullOrEmpty(e.Text))
+                {
+                    window.RequestClipboardPaste();
+                    e.Handled = true;
+                }
+                else
+                {
+                    e.Handled = window.TryPasteText(e.Text);
+                }
             }
-            else if (app.TopRunnableView?.MostFocused is TgPromptEditor editor)
+            else if (!string.IsNullOrEmpty(e.Text) && app.TopRunnableView?.MostFocused is TgPromptEditor editor)
             {
                 editor.TryInsertDraft(e.Text);
                 e.Handled = true;

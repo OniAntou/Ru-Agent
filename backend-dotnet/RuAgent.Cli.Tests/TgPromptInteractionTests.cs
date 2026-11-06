@@ -1,3 +1,4 @@
+using System.Drawing;
 using RuAgent.Cli.TerminalGui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drivers;
@@ -180,6 +181,70 @@ public sealed class TgPromptInteractionTests
             Assert.Equal(TgHintsState.Idle, window.Hints.ActiveState);
         });
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Drag_selects_and_copies_only_the_highlighted_transcript_text(bool backwards)
+    {
+        string? copied = null;
+        Render((app, window, loop) =>
+        {
+            window.Transcript.Append("a Vie\u0323̂t 😀", TranscriptStyle.Prose);
+            window.Transcript.Append("中文 end", TranscriptStyle.Prose);
+            window.Composer.Input.Text = "saved draft";
+            loop.SetCopyHandler(text => { copied = text; return Task.FromResult(true); });
+            var first = new Point(2, 1);
+            var last = new Point(3, 2);
+            if (backwards) (first, last) = (last, first);
+            SendMouse(app, window, first, MouseFlags.LeftButtonPressed);
+            SendMouse(app, window, last, MouseFlags.LeftButtonPressed | MouseFlags.PositionReport);
+            SendMouse(app, window, last, MouseFlags.LeftButtonReleased);
+            app.InjectKey(backwards ? Key.C.WithCtrl : Key.C.WithCtrl.WithShift);
+        }, (app, window, _) =>
+        {
+            Assert.Equal("Vie\u0323̂t 😀" + Environment.NewLine + "中文", copied);
+            Assert.Equal("saved draft", window.Composer.Input.Text);
+            var selected = window.Transcript.ViewportToScreen(new Point(2, 1));
+            Assert.Equal(TgPalette.Attr(TgPalette.CardOnSelectionRgb(), TgPalette.CardSelectionRgb()),
+                TgSnapshot.CellAttribute(app, selected.Y, selected.X));
+        });
+    }
+
+    [Fact]
+    public void Opening_a_document_during_a_drag_releases_the_mouse_and_clears_the_selection()
+    {
+        Render((app, window, _) =>
+        {
+            SendMouse(app, window, new Point(0, 0), MouseFlags.LeftButtonPressed);
+            SendMouse(app, window, new Point(2, 0), MouseFlags.LeftButtonPressed | MouseFlags.PositionReport);
+            Assert.True(app.Mouse.IsGrabbed(window.Transcript));
+            Assert.True(window.Transcript.HasTextSelection);
+            window.ShowDocument("status", ["modal content"]);
+        }, (app, window, _) =>
+        {
+            Assert.False(app.Mouse.IsGrabbed(window.Transcript));
+            Assert.False(window.Transcript.HasTextSelection);
+            Assert.Equal("Existing conversation", window.Transcript.CopyText());
+        });
+    }
+
+    [Fact]
+    public void Clicking_the_draft_clears_transcript_copy_ownership()
+    {
+        Render((app, window, _) =>
+        {
+            SendMouse(app, window, new Point(0, 0), MouseFlags.LeftButtonPressed);
+            SendMouse(app, window, new Point(2, 0), MouseFlags.LeftButtonReleased);
+            Assert.True(window.Transcript.HasTextSelection);
+            var draft = window.Composer.Input.ViewportToScreen(new Point(0, 0));
+            app.Mouse.RaiseMouseEvent(new Mouse { Flags = MouseFlags.LeftButtonPressed, ScreenPosition = draft });
+            app.Mouse.RaiseMouseEvent(new Mouse { Flags = MouseFlags.LeftButtonReleased, ScreenPosition = draft });
+        }, (_, window, _) => Assert.False(window.Transcript.HasTextSelection));
+    }
+
+    private static void SendMouse(IApplication app, TgChatWindow window, Point position, MouseFlags flags) =>
+        app.Mouse.RaiseMouseEvent(new Mouse { Flags = flags, ScreenPosition = window.Transcript.ViewportToScreen(position) });
 
     [Fact]
     public void Command_palette_restores_the_draft_cursor_and_accepts_with_cursor_after_the_command()

@@ -245,6 +245,7 @@ public sealed partial class TgTranscriptView : View
     /// </summary>
     public void Clear()
     {
+        ClearTextSelection();
         RetentionVersion++;
         _lines.Clear();
         _wrapped.Clear();
@@ -424,6 +425,11 @@ public sealed partial class TgTranscriptView : View
 
     protected override bool OnMouseEvent(Mouse mouseEvent)
     {
+        if (HandleTextSelection(mouseEvent))
+        {
+            mouseEvent.Handled = true;
+            return true;
+        }
         if (!mouseEvent.IsWheel || !CanScroll) return false;
         if (mouseEvent.Flags.HasFlag(MouseFlags.WheeledUp)) ScrollRows(-3);
         else if (mouseEvent.Flags.HasFlag(MouseFlags.WheeledDown)) ScrollRows(3);
@@ -468,6 +474,7 @@ public sealed partial class TgTranscriptView : View
         for (var i = 0; i < height && offset + i < _wrapped.Count; i++)
         {
             DrawRow(i, _wrapped[offset + i], width);
+            DrawTextSelection(offset + i, i);
         }
 
         // The live activity row is pinned after the last committed row: while the tail is
@@ -565,6 +572,7 @@ public sealed partial class TgTranscriptView : View
 
     private void RebuildWrapped(int width)
     {
+        ClearTextSelection();
         FullWrapRebuildCount++;
         _lastTableStart = _lastTableEnd = -1;
         _lastTableColumns = 0;

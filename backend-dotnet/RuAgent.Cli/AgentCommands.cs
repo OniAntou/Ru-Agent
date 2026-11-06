@@ -12,6 +12,7 @@ public sealed partial class AgentCommands : IDisposable
 {
     private readonly PublicHostSession _session;
     private readonly HttpClient _httpClient;
+    private readonly HttpClient _sseHttpClient;
     private readonly TextWriter _out;
     private readonly TextWriter _err;
     private readonly TextReader _in;
@@ -24,6 +25,8 @@ public sealed partial class AgentCommands : IDisposable
     private readonly RunStartCore _runStartCore;
     private Rpc.RpcBridgeServer? _rpcServer;
 
+    internal Func<CancellationToken, Task<PublicHostSession>>? ReconnectHost { get; init; }
+
     public AgentCommands(
         PublicHostSession session,
         HttpClient httpClient,
@@ -34,6 +37,7 @@ public sealed partial class AgentCommands : IDisposable
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _sseHttpClient = sseHttpClient ?? httpClient;
         _out = outWriter ?? throw new ArgumentNullException(nameof(outWriter));
         _err = errWriter ?? throw new ArgumentNullException(nameof(errWriter));
         _in = inReader ?? Console.In;
@@ -42,7 +46,7 @@ public sealed partial class AgentCommands : IDisposable
         _settingsClient = new SettingsApiClient(session, httpClient);
         _runStarter = new RunStarter(_sessionClient, _agentClient, _out, _err, _settingsClient);
         _runStartCore = _runStarter.Core;
-        _sseClient = new AgentSseClient(session, sseHttpClient ?? httpClient);
+        _sseClient = new AgentSseClient(session, _sseHttpClient);
         _slashCommands = new AgentSlashCommands(_settingsClient, _sessionClient, outWriter, errWriter);
     }
 

@@ -256,12 +256,30 @@ Resize, retention and multi-row removal still invalidate the layout and rediscov
 table ranges; expanded-block handling is unchanged. This optimization changes no
 history cap, parser/source text, model input, copy content or execution authority.
 
+An open chat can reconnect to the managed Host after idle shutdown. When the
+pre-submission settings read loses its connection, the CLI uses the normal Host
+starter and validates settings on the replacement connection. The session,
+provider/model snapshot, and draft attachments stay with the same submission.
+Session creation and run writes remain outside the reconnect attempt.
+
+Mouse drag selects the transcript's displayed rows without moving composer focus.
+Copy keeps whole graphemes and uses the displayed line breaks. Selection coordinates
+belong to the current wrap layout, so a rebuild clears them. Copy checks that the
+selected endpoints still refer to the same rows if streamed output updates the tail.
+While a text selection is active, both Ctrl+C and Ctrl+Shift+C copy it because the
+Windows input driver can report the shifted chord as Ctrl+C.
+
 Pending images appear as `[image 1] [image 2]` in the composer's spacer row,
 including while another turn streams. The labels are presentation only; submission
 snapshots retain the original image data URLs. Queued/admitted images leave the draft;
 images held after a pre-acceptance failure are marked `held:` until accepted.
 Clipboard decode and image-limit failures also appear in the live status row. The
-resizer reads the PNG/JPEG/BMP/WebP container header and rejects a source canvas over
+terminal paste route treats an empty bracketed paste as a request to read the
+local image clipboard, matching Windows Terminal's image-only Ctrl+V signal.
+Only the focused composer may attach an image; pickers, documents, the command
+palette, questions and secret fields consume the signal without changing the
+hidden draft. Non-empty paste payloads remain text and do not read the clipboard.
+The resizer reads the PNG/JPEG/BMP/WebP container header and rejects a source canvas over
 64 MP before GDI+ allocates the decoded surface; the longest side is then capped at 2048
 and the encoded result at 4 MB.
 

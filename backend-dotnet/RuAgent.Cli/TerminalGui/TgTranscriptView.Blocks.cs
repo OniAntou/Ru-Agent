@@ -104,6 +104,7 @@ public sealed partial class TgTranscriptView
     /// <summary>Selects and reveals a retained thinking block while parking the viewport on it.</summary>
     public void MoveBlockSelection(int delta)
     {
+        ClearTextSelection();
         var blocks = _collapsedBlocks.Where(block => !block.HasSummary).ToArray();
         if (blocks.Length == 0)
         {
@@ -136,11 +137,12 @@ public sealed partial class TgTranscriptView
     }
 
     /// <summary>
-    /// Returns the selected block's retained detail rows, or the latest contiguous
-    /// assistant prose/code rows when no block is explicitly selected.
+    /// Returns the selected visible text, selected reasoning block, or latest contiguous
+    /// assistant prose/code rows, in that order.
     /// </summary>
     public string CopyText()
     {
+        if (CopyTextSelection() is { } textSelection) return textSelection;
         if (_selectedBlock is { } selected)
         {
             return string.Join(Environment.NewLine, selected.Hidden.Select(row => row.Text));

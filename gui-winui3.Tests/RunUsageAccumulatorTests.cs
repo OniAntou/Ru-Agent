@@ -1,3 +1,4 @@
+using RuAgent.Client;
 using RuApp.Models;
 using RuApp.Services;
 using Xunit;

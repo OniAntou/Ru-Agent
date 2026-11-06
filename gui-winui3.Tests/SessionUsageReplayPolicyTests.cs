@@ -1,4 +1,4 @@
-using RuApp.Services;
+using RuAgent.Client;
 using Xunit;
 
 namespace RuApp.Tests;

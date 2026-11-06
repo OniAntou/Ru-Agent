@@ -1,59 +1,75 @@
 using System.ComponentModel;
+using RuApp.Services;
 
 namespace RuApp.Models;
 
+/// <summary>One completed edit of a file in the Changes tab, newest first within its row.</summary>
+public sealed record ChangesTabEdit(
+    string ActivityId,
+    string BeforeText,
+    string AfterText,
+    int? StartLine,
+    int? Added,
+    int? Removed)
+{
+    public bool HasPreview => BeforeText.Length > 0 || AfterText.Length > 0;
+    public bool HasNoPreview => !HasPreview;
+    public string LocationText => StartLine is > 0 ? $"Line {StartLine}" : "Edit";
+    public string AddedText => TurnChangesProjection.FormatCount(Added, "+");
+    public string RemovedText => TurnChangesProjection.FormatCount(Removed, "−");
+}
+
 /// <summary>
-/// One row of the side panel's Changes tab: a projection of one edit activity,
-/// with its own expand state so opening a diff in the panel never folds the
-/// transcript's copy of the same edit.
+/// One row of the side panel's Changes tab: every completed edit of one file name
+/// in the session, with its own expand state so opening a diff in the panel never
+/// folds the transcript's copy of the same edit.
 /// </summary>
+/// <remarks>
+/// Activities carry safe basenames, not paths, so two files with the same name in
+/// different folders share a row; the edit count and per-edit lines keep that visible.
+/// </remarks>
 public sealed class ChangesTabRow : INotifyPropertyChanged
 {
-    public ChangesTabRow(
-        string fileName,
-        int added,
-        int removed,
-        string beforeText,
-        string afterText,
-        int? startLine,
-        string safeCode,
-        string activityId = "")
+    public ChangesTabRow(string fileName, int? added, int? removed, IReadOnlyList<ChangesTabEdit> edits,
+        string? firstActivityId = null)
     {
         FileName = fileName;
         Added = added;
         Removed = removed;
-        BeforeText = beforeText;
-        AfterText = afterText;
-        StartLine = startLine;
-        SafeCode = safeCode;
-        ActivityId = activityId;
+        Edits = edits;
+        FirstActivityId = firstActivityId ?? (edits.Count > 0 ? edits[^1].ActivityId : string.Empty);
     }
-
-    public string ActivityId { get; }
-
-    public bool HasSameContent(ChangesTabRow other) =>
-        ActivityId == other.ActivityId && FileName == other.FileName
-        && Added == other.Added && Removed == other.Removed
-        && BeforeText == other.BeforeText && AfterText == other.AfterText
-        && StartLine == other.StartLine && SafeCode == other.SafeCode;
 
     public string FileName { get; }
 
-    public int Added { get; }
+    public int? Added { get; }
 
-    public int Removed { get; }
+    public int? Removed { get; }
 
-    public string BeforeText { get; }
+    /// <summary>Newest first.</summary>
+    public IReadOnlyList<ChangesTabEdit> Edits { get; }
 
-    public string AfterText { get; }
+    /// <summary>The file's first edit in the session: with the name, it identifies the row across refreshes.</summary>
+    public string FirstActivityId { get; }
 
-    public int? StartLine { get; }
+    public string Key => FileName.ToUpperInvariant() + "|" + FirstActivityId;
 
-    public string SafeCode { get; }
+    public bool Contains(string? activityId) =>
+        activityId is not null && Edits.Any(edit => edit.ActivityId == activityId);
 
-    public string AddedDeltaText => "+" + Added;
+    public bool HasSameContent(ChangesTabRow other) =>
+        Key == other.Key && FileName == other.FileName && Added == other.Added && Removed == other.Removed
+        && Edits.SequenceEqual(other.Edits);
 
-    public string RemovedDeltaText => "−" + Removed;
+    public string AddedDeltaText => TurnChangesProjection.FormatCount(Added, "+");
+
+    public string RemovedDeltaText => TurnChangesProjection.FormatCount(Removed, "−");
+
+    public string EditCountText => Edits.Count > 1 ? $"{Edits.Count} edits" : string.Empty;
+
+    public string ToolTipText => Edits.Count == 1 ? $"{FileName}, 1 edit" : $"{FileName}, {Edits.Count} edits";
+
+    public string AccessibleName => $"{ToolTipText}, added {AddedDeltaText}, removed {RemovedDeltaText}. Toggle changes";
 
     private bool _isExpanded;
 
@@ -73,7 +89,7 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
         }
     }
 
-    public string ExpansionGlyph => _isExpanded ? "\uE70D" : "\uE76C";
+    public string ExpansionGlyph => _isExpanded ? "" : "";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 }

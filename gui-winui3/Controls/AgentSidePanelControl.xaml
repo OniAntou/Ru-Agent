@@ -648,7 +648,7 @@
                 <Grid Grid.Row="1" Margin="14,10,12,0">
                     <views:SubagentTreeView x:Name="SubagentBrowser" Visibility="Collapsed" />
                     <Grid x:Name="ChangesBody" Visibility="Collapsed" RowDefinitions="Auto,*">
-                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,0,0,8">
                             <TextBlock Text="Changes"
                                        FontFamily="{StaticResource RuUiFontFamily}"
                                        FontSize="13"
@@ -684,7 +684,9 @@
                             <ItemsControl x:Name="ChangesList" ItemsSource="{x:Bind Changes, Mode=OneWay}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="models:ChangesTabRow">
-                                        <StackPanel Margin="0,0,0,6">
+                                        <!-- One row per file; expanding it lists that file's
+                                             edits newest first, each with its own diff. -->
+                                        <StackPanel Margin="0,0,0,4">
                                             <Button Click="OnChangeRowToggleClick"
                                                     Tag="{x:Bind}"
                                                     Style="{StaticResource RuToolbarButtonStyle}"
@@ -692,9 +694,9 @@
                                                     HorizontalContentAlignment="Stretch"
                                                     CornerRadius="{StaticResource AppControlCornerRadius}"
                                                     Padding="6,3"
-                                                    ToolTipService.ToolTip="{x:Bind FileName}"
-                                                    AutomationProperties.Name="Toggle change diff">
-                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
+                                                    ToolTipService.ToolTip="{x:Bind ToolTipText}"
+                                                    AutomationProperties.Name="{x:Bind AccessibleName}">
+                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="6">
                                                     <FontIcon Glyph="{x:Bind ExpansionGlyph, Mode=OneWay}"
                                                               FontSize="10"
                                                               Foreground="{StaticResource RuMutedBrush}"
@@ -707,12 +709,18 @@
                                                                TextTrimming="CharacterEllipsis"
                                                                VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="2"
+                                                               Text="{x:Bind EditCountText}"
+                                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                                               FontSize="11"
+                                                               Foreground="{StaticResource RuMutedBrush}"
+                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="3"
                                                                Text="{x:Bind AddedDeltaText}"
                                                                FontFamily="{StaticResource RuMonoFontFamily}"
                                                                FontSize="11.5"
                                                                Foreground="{StaticResource RuSuccessBrush}"
                                                                VerticalAlignment="Center" />
-                                                    <TextBlock Grid.Column="3"
+                                                    <TextBlock Grid.Column="4"
                                                                Text="{x:Bind RemovedDeltaText}"
                                                                FontFamily="{StaticResource RuMonoFontFamily}"
                                                                FontSize="11.5"
@@ -720,12 +728,41 @@
                                                                VerticalAlignment="Center" />
                                                 </Grid>
                                             </Button>
-                                            <controls:FileEditPreviewControl
-                                                Margin="0,4,0,2"
-                                                Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                BeforeText="{x:Bind BeforeText}"
-                                                AfterText="{x:Bind AfterText}"
-                                                StartLine="{x:Bind StartLine}" />
+                                            <ItemsControl
+                                                          Margin="16,4,0,4"
+                                                          ItemsSource="{x:Bind Edits}"
+                                                          Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="models:ChangesTabEdit">
+                                                        <StackPanel Margin="0,0,0,8" Spacing="3">
+                                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                <TextBlock Text="{x:Bind LocationText}"
+                                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                                           FontSize="11"
+                                                                           Foreground="{StaticResource RuMutedBrush}" />
+                                                                <TextBlock Text="{x:Bind AddedText}"
+                                                                           FontFamily="{StaticResource RuMonoFontFamily}"
+                                                                           FontSize="11"
+                                                                           Foreground="{StaticResource RuSuccessBrush}" />
+                                                                <TextBlock Text="{x:Bind RemovedText}"
+                                                                           FontFamily="{StaticResource RuMonoFontFamily}"
+                                                                           FontSize="11"
+                                                                           Foreground="{StaticResource RuDangerBrush}" />
+                                                            </StackPanel>
+                                                            <controls:FileEditPreviewControl
+                                                                Visibility="{x:Bind HasPreview, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                                BeforeText="{x:Bind BeforeText}"
+                                                                AfterText="{x:Bind AfterText}"
+                                                                StartLine="{x:Bind StartLine}" />
+                                                            <TextBlock Text="No preview was recorded for this edit."
+                                                                       Visibility="{x:Bind HasNoPreview, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                                       FontSize="11"
+                                                                       Foreground="{StaticResource RuMutedBrush}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

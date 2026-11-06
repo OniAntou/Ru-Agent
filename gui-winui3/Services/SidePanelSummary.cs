@@ -12,10 +12,10 @@ internal static class SidePanelSummary
 
     internal static string ChangesLabel(IReadOnlyList<ChangesTabRow> rows)
     {
-        // Activities carry safe basenames, not canonical paths; two Program.cs
-        // entries may be different files. Report recorded edits without guessing.
+        // One row per file name. Activities carry safe basenames, not canonical
+        // paths, so same-named files in different folders count once.
         int count = rows.Count;
-        return count == 0 ? "No file changes" : count == 1 ? "1 file edit"
-            : count >= ChangesTabProjection.MaxRows ? $"{count} recent file edits" : $"{count} file edits";
+        return count == 0 ? "No file changes" : count == 1 ? "1 file changed"
+            : count >= ChangesTabProjection.MaxRows ? $"{count} recent files changed" : $"{count} files changed";
     }
 }

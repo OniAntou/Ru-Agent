@@ -806,14 +806,23 @@ beside the wrapping title, with a 28px icon, a subdued outline and 32px file row
 It observes message/collection changes
 while loaded and item updates only once settled; unloading releases subscriptions.
 The existing run-owned transcript replay restores old turns without adopting the
-next run's edits. The session-wide Changes tab keeps its independent projection.
+next run's edits. The session-wide Changes tab keeps its independent projection:
+`ChangesTabProjection` lists completed edits only (failed, denied, waiting and
+running edits changed nothing and are not listed or counted), one row per file
+name, most recently edited file first. A row sums its edits' known line counts
+(`—` when none reported one), shows "N edits" when there are several, and expands
+to that file's edits newest first, each with its line, counts and diff, at most
+25 per row. Activities carry safe basenames, so same-named files in different
+folders share a row. Edit and write line counts count lines, not line breaks, so a
+one-line edit reads `+1 −1` instead of `+0 −0`.
 
 File clicks and View changes raise a navigation request to the owning chat view.
 The view validates the current session/message and opens the existing right-panel
 Changes tab. There is no separate turn reader, file picker or back navigation.
-Clicking a file expands and scrolls to its latest recorded edit in the normal
-session list. An older selected edit can replace the oldest visible row within the
-100-row cap; session totals still cover every edit. Live refreshes retain expanded
+Clicking a file expands and scrolls to the row holding its latest recorded edit in
+the normal session list. An older selected edit's file can replace the oldest
+visible row within the 100-row cap, and the edit itself stays within its row's
+25-edit cap; session totals still cover every edit. Live refreshes retain expanded
 diffs. Explicit turn navigation opens an overlay on narrow windows instead of
 suppressing the panel. Session reset or tab closure clears the navigation target.
 It uses recorded data only, with no file writes, new endpoint or permission changes.

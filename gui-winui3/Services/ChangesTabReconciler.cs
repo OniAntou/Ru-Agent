@@ -3,7 +3,7 @@ using RuApp.Models;
 
 namespace RuApp.Services;
 
-/// <summary>Keeps unchanged diff rows alive while the live feed advances.</summary>
+/// <summary>Keeps unchanged file rows, and their open diffs, alive while the live feed advances.</summary>
 public static class ChangesTabReconciler
 {
     public static void Apply(ObservableCollection<ChangesTabRow> current, IReadOnlyList<ChangesTabRow> next)
@@ -14,7 +14,7 @@ public static class ChangesTabReconciler
             int existing = -1;
             for (int candidate = index; candidate < current.Count; candidate++)
             {
-                if (current[candidate].ActivityId == incoming.ActivityId)
+                if (current[candidate].Key == incoming.Key)
                 {
                     existing = candidate;
                     break;

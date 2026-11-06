@@ -664,9 +664,9 @@ public static class AgentActivityProjector
 
                 if (proposal.ToolId is "write" or "edit")
                 {
-                    added ??= ReadLineBreakCount(arguments, "new_string")
-                        ?? ReadLineBreakCount(arguments, "content");
-                    removed ??= ReadLineBreakCount(arguments, "old_string");
+                    added ??= ReadLineCount(arguments, "new_string")
+                        ?? ReadLineCount(arguments, "content");
+                    removed ??= ReadLineCount(arguments, "old_string");
                 }
 
                 if (proposal.ToolId is "read" or "edit" or "write")
@@ -774,14 +774,20 @@ public static class AgentActivityProjector
             && end is >= 1 and <= MaximumLine
             && end >= start;
 
-        private static int? ReadLineBreakCount(JsonElement arguments, string propertyName)
+        /// <summary>
+        /// Lines the text spans: a one-line replacement is one line, not zero, and a
+        /// trailing newline does not start another line. Counting line breaks alone
+        /// reported every single-line edit as +0 −0.
+        /// </summary>
+        private static int? ReadLineCount(JsonElement arguments, string propertyName)
         {
             if (!TryGetString(arguments, propertyName, out var value))
             {
                 return null;
             }
 
-            var count = value.Count(character => character == '\n');
+            if (value.Length == 0) return 0;
+            var count = value.Count(character => character == '\n') + (value.EndsWith('\n') ? 0 : 1);
             return count <= MaximumCount ? count : null;
         }
 

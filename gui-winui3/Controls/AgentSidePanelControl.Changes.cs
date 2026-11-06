@@ -10,7 +10,7 @@ public sealed partial class AgentSidePanelControl
     public void RevealChange(string? activityId)
     {
         int generation = ++_changeRevealGeneration;
-        var row = Changes.FirstOrDefault(change => change.ActivityId == activityId);
+        var row = Changes.FirstOrDefault(change => change.Contains(activityId));
         if (row is null) return;
         row.IsExpanded = true;
         DispatcherQueue.TryEnqueue(() =>

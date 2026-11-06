@@ -155,9 +155,21 @@ public sealed partial class AgentActivityProjectorTests
         Assert.Equal("ChatView.xaml", activity.FileName);
         Assert.Equal(10, activity.LineStart);
         Assert.Equal(12, activity.LineEnd);
-        Assert.Equal(2, activity.Added);
-        Assert.Equal(1, activity.Removed);
+        Assert.Equal(3, activity.Added);
+        Assert.Equal(2, activity.Removed);
         AssertPreview(activity.Detail, "old\ntext", "new\ntext\nextra");
+    }
+
+    [Theory]
+    [InlineData("edit", "{\"path\":\"a.py\",\"old_string\":\"x = 1\",\"new_string\":\"x = 2\"}", 1, 1)]
+    [InlineData("edit", "{\"path\":\"a.py\",\"old_string\":\"x = 1\\n\",\"new_string\":\"\"}", 0, 1)]
+    [InlineData("write", "{\"path\":\"a.py\",\"content\":\"one\\ntwo\\n\"}", 2, null)]
+    public void Edit_projection_counts_lines_not_line_breaks(string tool, string arguments, int added, int? removed)
+    {
+        var activity = AgentActivityProjector.ProjectTool(Proposal(tool, arguments), AgentActivityState.Started);
+
+        Assert.Equal(added, activity.Added);
+        Assert.Equal(removed, activity.Removed);
     }
 
     [Theory]

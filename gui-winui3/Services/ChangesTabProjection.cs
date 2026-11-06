@@ -7,22 +7,29 @@ namespace RuApp.Services;
 /// The Changes tab's projection of the transcript's edit activities, plus the
 /// session totals the card and the tab header share.
 /// </summary>
-/// <param name="Rows">Newest first, capped at <see cref="ChangesTabProjection.MaxRows"/>.</param>
-/// <param name="Added">Added lines summed over the uncapped set.</param>
-/// <param name="Removed">Removed lines summed over the uncapped set.</param>
+/// <param name="Rows">One row per file, most recently edited first, capped at <see cref="ChangesTabProjection.MaxRows"/>.</param>
+/// <param name="Added">Added lines summed over every completed edit.</param>
+/// <param name="Removed">Removed lines summed over every completed edit.</param>
 public sealed record ChangesTabProjectionResult(
     IReadOnlyList<ChangesTabRow> Rows,
     int Added,
     int Removed);
 
 /// <summary>
-/// Builds the Changes tab from the feed's edit activities: newest first, capped
-/// so a long session cannot grow the panel without bound. Pure and view-free so
-/// the ordering, the cap, and the totals are testable.
+/// Builds the Changes tab from the feed's edit activities: completed edits only,
+/// one row per file, most recently edited file first, capped so a long session
+/// cannot grow the panel without bound. Pure and view-free so the grouping, the
+/// ordering, the caps and the totals are testable.
 /// </summary>
 public static class ChangesTabProjection
 {
     public const int MaxRows = 100;
+
+    /// <summary>Edits kept per file row; the row's totals still cover all of them.</summary>
+    public const int MaxEditsPerRow = 25;
+
+    /// <summary>Shown for an edit whose activity named no file (an apply_patch call).</summary>
+    public const string UnnamedFile = "Patch";
 
     public static ChangesTabProjectionResult ProjectSession(
         IEnumerable<ChatMessageItem> messages,
@@ -38,8 +45,6 @@ public static class ChangesTabProjection
         ArgumentNullException.ThrowIfNull(activities);
         var edits = new List<AgentActivityItem>();
         var positions = new Dictionary<string, int>(StringComparer.Ordinal);
-        int added = 0;
-        int removed = 0;
         foreach (var activity in activities)
         {
             if (activity.Kind != AgentActivityKind.Edit)
@@ -60,36 +65,59 @@ public static class ChangesTabProjection
             }
         }
 
-        foreach (var activity in edits)
-        {
-            added += activity.Added ?? 0;
-            removed += activity.Removed ?? 0;
-        }
+        // A failed, denied or still running edit changed nothing (yet): listing it
+        // showed every retry of a stale edit as another +0 −0 row.
+        var completed = edits.Where(edit => edit.State == AgentActivityState.Completed).ToList();
+        int added = completed.Sum(edit => edit.Added ?? 0);
+        int removed = completed.Sum(edit => edit.Removed ?? 0);
 
-        var visible = edits.TakeLast(MaxRows).ToList();
+        var groups = completed
+            .Select((edit, order) => (Edit: edit, Order: order))
+            .GroupBy(item => FileKey(item.Edit), StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(group => group.Max(item => item.Order))
+            .ToList();
+        var visible = groups.Take(MaxRows).ToList();
         // A click on an older turn must still reveal its edit without lifting
         // the session panel's row bound or changing its session-wide totals.
-        if (focusedActivityId is not null && positions.TryGetValue(focusedActivityId, out int focusedIndex)
-            && focusedIndex < edits.Count - MaxRows)
+        if (focusedActivityId is not null && groups.Count > MaxRows
+            && !visible.Any(group => group.Any(item => item.Edit.ActivityId == focusedActivityId))
+            && groups.FirstOrDefault(group => group.Any(item => item.Edit.ActivityId == focusedActivityId)) is { } focused)
         {
-            visible.RemoveAt(0);
-            visible.Insert(0, edits[focusedIndex]);
-        }
-        var rows = new List<ChangesTabRow>(visible.Count);
-        for (var index = visible.Count - 1; index >= 0; index--)
-        {
-            var activity = visible[index];
-            rows.Add(new ChangesTabRow(
-                activity.FileName ?? string.Empty,
-                activity.Added ?? 0,
-                activity.Removed ?? 0,
-                activity.EditBeforeText,
-                activity.EditAfterText,
-                activity.LineStart,
-                activity.SafeCode,
-                activity.ActivityId));
+            visible[^1] = focused;
         }
 
+        var rows = visible.Select(group => Row(group.Select(item => item.Edit).ToList(), focusedActivityId)).ToList();
         return new ChangesTabProjectionResult(rows, added, removed);
+    }
+
+    private static ChangesTabRow Row(List<AgentActivityItem> fileEdits, string? focusedActivityId)
+    {
+        var newestFirst = fileEdits.AsEnumerable().Reverse().Take(MaxEditsPerRow).ToList();
+        // The focused edit stays reachable even when it is older than the row's cap.
+        if (focusedActivityId is not null && newestFirst.All(edit => edit.ActivityId != focusedActivityId)
+            && fileEdits.FirstOrDefault(edit => edit.ActivityId == focusedActivityId) is { } focused)
+        {
+            newestFirst[^1] = focused;
+        }
+
+        return new ChangesTabRow(
+            fileEdits[^1].FileName is { Length: > 0 } name ? name.Replace('\\', '/') : UnnamedFile,
+            SumKnown(fileEdits.Select(edit => edit.Added)),
+            SumKnown(fileEdits.Select(edit => edit.Removed)),
+            newestFirst.Select(edit => new ChangesTabEdit(edit.ActivityId, edit.EditBeforeText, edit.EditAfterText,
+                edit.LineStart, edit.Added, edit.Removed)).ToArray(),
+            fileEdits[0].ActivityId);
+    }
+
+    private static string FileKey(AgentActivityItem edit) =>
+        edit.FileName is { Length: > 0 } name ? name.Replace('\\', '/') : UnnamedFile;
+
+    /// <summary>The sum of the known counts, or null when no edit of the file reported one.</summary>
+    private static int? SumKnown(IEnumerable<int?> counts)
+    {
+        int? total = null;
+        foreach (var count in counts)
+            if (count is { } value) total = (total ?? 0) + value;
+        return total;
     }
 }

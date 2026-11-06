@@ -17,12 +17,12 @@ public sealed class SidePanelSummaryTests
     }
 
     [Fact]
-    public void Summary_counts_recorded_edits_without_guessing_paths_from_basenames()
+    public void Summary_counts_changed_file_rows()
     {
-        ChangesTabRow Row(string path) => new(path, 1, 0, "", "x", 1, "ok");
+        ChangesTabRow Row(string path) => new(path, 1, 0, [new ChangesTabEdit("e-" + path, "", "x", 1, 1, 0)]);
         Assert.Equal("No file changes", SidePanelSummary.ChangesLabel([]));
-        Assert.Equal("1 file edit", SidePanelSummary.ChangesLabel([Row("a.cs")]));
-        Assert.Equal("2 file edits", SidePanelSummary.ChangesLabel([Row("a.cs"), Row("a.cs")]));
+        Assert.Equal("1 file changed", SidePanelSummary.ChangesLabel([Row("a.cs")]));
+        Assert.Equal("2 files changed", SidePanelSummary.ChangesLabel([Row("a.cs"), Row("b.cs")]));
     }
 
     [Fact]

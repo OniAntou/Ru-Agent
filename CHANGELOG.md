@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Tab Changes ở panel bên phải giờ gộp mỗi file thành một dòng (kèm "N edits"),
+  file vừa sửa gần nhất lên đầu; bấm vào để xem từng lần sửa với dòng, số dòng và diff riêng.
+  Edit thất bại, bị từ chối hoặc đang chạy không còn hiện thành các dòng `+0 −0`. Số dòng
+  của edit/write giờ đếm theo dòng thay vì theo ký tự xuống dòng (sửa một dòng là `+1 −1`),
+  số không rõ hiện `—`. Header của tab có thêm khoảng cách với danh sách.
+
 - **fix(gui)**: Thanh cuộn của danh sách session bên trái không còn che mũi tên thu gọn của
   RECENTS/CLI SESSIONS, nút "+" và giờ của từng dòng khi có nhiều session. WinUI vẽ thanh
   cuộn đè lên nội dung, nên danh sách giờ chừa sẵn một khoảng trống bên phải cho nó.

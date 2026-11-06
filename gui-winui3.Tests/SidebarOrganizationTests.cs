@@ -182,6 +182,17 @@ public sealed class SidebarOrganizationTests : IDisposable
     }
 
     [Fact]
+    public void Session_list_reserves_a_gutter_so_the_overlay_scrollbar_never_covers_rows()
+    {
+        // WinUI scrollbars overlay content; with many sessions the expanded bar hid the
+        // section chevrons, the "+" buttons and the row clocks at the right edge.
+        var list = GuiSource.Require(GuiSource.Xml("MainWindow.xaml"), "SidebarSessionList");
+        var padding = GuiSource.AttributeValue(list, "Padding")!.Split(',').Select(int.Parse).ToArray();
+        Assert.Equal(4, padding.Length);
+        Assert.True(padding[2] >= 12, "the right padding must leave room for the expanded scrollbar");
+    }
+
+    [Fact]
     public void Preserved_row_notifies_title_clock_and_working_directory_changes()
     {
         var row = new SessionInfo { Id = "draft", Title = "New Session" };

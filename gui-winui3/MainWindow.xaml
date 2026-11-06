@@ -497,12 +497,18 @@
 
                         <!-- Sessions List -->
                         <Grid x:Name="SidebarListOverlay" Grid.Row="1">
+                        <!-- WinUI scrollbars overlay the content instead of taking a
+                             column, and expand to full width under the pointer. The
+                             right padding is a fixed gutter for that bar, so with a long
+                             session list it never covers section chevrons, the "+"
+                             buttons or row timestamps, and rows never reflow when the
+                             bar appears. -->
                         <ListView x:Name="SidebarSessionList" SelectionMode="Single"
                                   CanDragItems="True" AllowDrop="True" CanReorderItems="False"
                                   DragItemsStarting="OnSidebarDragItemsStarting" DragItemsCompleted="OnSidebarDragItemsCompleted"
                                   DragOver="OnSidebarDragOver" DragLeave="OnSidebarDragLeave" Drop="OnSidebarDrop"
                                   AutomationProperties.AutomationId="SessionList"
-                                  SelectionChanged="OnSessionSelectionChanged" Margin="8,0" Padding="0,0,0,16"
+                                  SelectionChanged="OnSessionSelectionChanged" Margin="8,0,4,0" Padding="0,0,12,16"
                                   Background="Transparent" BorderThickness="0" ItemTemplateSelector="{StaticResource SidebarRowSelector}"
                                   ItemContainerStyleSelector="{StaticResource SidebarContainerSelector}">
 

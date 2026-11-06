@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Thanh cuộn của danh sách session bên trái không còn che mũi tên thu gọn của
+  RECENTS/CLI SESSIONS, nút "+" và giờ của từng dòng khi có nhiều session. WinUI vẽ thanh
+  cuộn đè lên nội dung, nên danh sách giờ chừa sẵn một khoảng trống bên phải cho nó.
+
 - **fix(computer)**: Screenshot của computer use không còn luôn lỗi
   `image_unsupported_by_model`. Gateway trước đây chỉ gửi quyết định image-input đã pin của
   run cho tool `read`, nên model có vision cũng không bao giờ nhận được ảnh màn hình.

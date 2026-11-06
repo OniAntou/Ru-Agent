@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: `read`, `read_file`, `list` và `help` hiện đúng tên tool trên activity feed thay
+  vì `status: in progress` rồi `Tool … outcome unavailable`. Bốn tool này không mang tham số `op`
+  sau khi catalog tách thành từng tool riêng, nên bộ chiếu activity không khớp cặp `(tool, op)`
+  và rơi vào nhánh Status.
+
 - **feat(plugins)**: User plugin, phase 4 ([ADR 0044](docs/adr/0044-user-plugins.md)): nhờ Ru tạo
   plugin qua chat. Skill có sẵn `create-plugin` (thư mục `skills-builtin` đi kèm Host, ưu tiên thấp
   nhất) viết bản nháp vào `ru-plugin-drafts\<id>` trong workspace. **Customize → Plugins → Add

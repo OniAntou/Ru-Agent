@@ -638,6 +638,30 @@ public sealed partial class AgentActivityProjectorTests
         Assert.Equal(AgentActivityKind.Status, activity.Kind);
     }
 
+    /// <summary>
+    /// The advertised read tools name themselves instead of degrading to a status line.
+    /// </summary>
+    /// <remarks>
+    /// read, read_file, list and help carry no <c>op</c> argument, so the op-keyed arms
+    /// never matched them and every ordinary file read fell to Status. The feed then
+    /// printed "status: in progress" for each read, and the settled row had no pending
+    /// tool to merge into, so it read "Tool ... outcome unavailable".
+    /// </remarks>
+    [Theory]
+    [InlineData("read", "{\"path\":\"src\\\\App.jsx\"}", AgentActivityKind.Analyze, "View")]
+    [InlineData("read_file", "{\"path\":\"src\\\\App.jsx\"}", AgentActivityKind.Analyze, "View")]
+    [InlineData("list", "{\"path\":\"src\"}", AgentActivityKind.Explore, "List")]
+    [InlineData("help", "{\"query\":\"approval reasons\"}", AgentActivityKind.Analyze, "Docs")]
+    public void ProjectTool_names_the_advertised_read_tools(
+        string toolId, string argumentsJson, AgentActivityKind kind, string display)
+    {
+        var activity = AgentActivityProjector.ProjectTool(
+            Proposal(toolId, argumentsJson), AgentActivityState.Started);
+
+        Assert.Equal(kind, activity.Kind);
+        Assert.Equal(display, activity.ToolDisplay);
+    }
+
     [Fact]
     public void ProjectTodos_carries_the_number_of_tasks()
     {

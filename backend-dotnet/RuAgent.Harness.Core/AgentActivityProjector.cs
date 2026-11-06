@@ -75,9 +75,14 @@ public static class AgentActivityProjector
         var metadata = ToolActivityMetadataExtractor.Extract(proposal, receipt);
         var kind = (proposal.ToolId, op) switch
         {
-            ("read", "list") or ("glob", _) => AgentActivityKind.Explore,
+            ("read", "list") or ("list", _) or ("glob", _) => AgentActivityKind.Explore,
             ("grep", _) => AgentActivityKind.Search,
-            ("read", "read") or ("read", "help") => AgentActivityKind.Analyze,
+            // The catalog advertises read, read_file, list and help as tools of their own,
+            // and none of them carries an `op`: the adapter maps read_file onto the `read`
+            // policy family but leaves its arguments untouched. Keying only on the op left
+            // every ordinary file read on the Status arm below, so the feed printed
+            // "status: in progress" and the settled row had no tool left to name.
+            ("read", _) or ("help", _) => AgentActivityKind.Analyze,
             // Each of these used to fall to Status, which strips the row to a bare code.
             ("web_search", _) or ("web_fetch", _) => AgentActivityKind.Web,
             ("mcp", _) => AgentActivityKind.Mcp,
@@ -552,6 +557,10 @@ public static class AgentActivityProjector
             },
             ("web_fetch", _) => "Fetch",
             ("read", "help") => "Docs",
+            // Same reason as the kind map: the advertised ids carry no `op`.
+            ("read", _) => "View",
+            ("list", _) => "List",
+            ("help", _) => "Docs",
             ("todo_write", _) => "Plan",
             ("mcp", _) => "MCP",
             ("computer", _) => "Computer",

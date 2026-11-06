@@ -72,6 +72,43 @@ public sealed partial class CustomizeView
         PluginsSkippedText.Visibility = list.Skipped.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    /// <summary>Opens chat with the built-in create-plugin skill in the composer.</summary>
+    private void OnAskRuForPluginClick(object sender, RoutedEventArgs e) =>
+        UseSkillRequested?.Invoke(this, "create-plugin");
+
+    private void OnPluginsPanelSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var width = e.NewSize.Width - 16;
+        FlowIntoColumns(PluginStartCards, width, minimumColumnWidth: 240);
+        FlowIntoColumns(PluginPartCards, width, minimumColumnWidth: 200);
+    }
+
+    /// <summary>
+    /// Lays a grid's children out in equal columns, as many as fit without leaving a short last
+    /// row, so the cards fill a wide window and stack on a narrow one.
+    /// </summary>
+    private static void FlowIntoColumns(Grid grid, double width, double minimumColumnWidth)
+    {
+        var count = grid.Children.Count;
+        if (count == 0 || width <= 0) return;
+        var columns = (int)Math.Clamp(Math.Floor((width + grid.ColumnSpacing) / (minimumColumnWidth + grid.ColumnSpacing)), 1, count);
+        // Prefer even rows (3 → 3 or 1, 4 → 4 or 2) over a lone card on the last row.
+        while (columns > 1 && count % columns != 0) columns--;
+        var rows = (count + columns - 1) / columns;
+        if (grid.ColumnDefinitions.Count == columns && grid.RowDefinitions.Count == rows) return;
+        grid.ColumnDefinitions.Clear();
+        grid.RowDefinitions.Clear();
+        for (var column = 0; column < columns; column++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        for (var row = 0; row < rows; row++)
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        for (var index = 0; index < count; index++)
+        {
+            Grid.SetColumn((FrameworkElement)grid.Children[index], index % columns);
+            Grid.SetRow((FrameworkElement)grid.Children[index], index / columns);
+        }
+    }
+
     private FrameworkElement PluginCard(PluginItem plugin)
     {
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };

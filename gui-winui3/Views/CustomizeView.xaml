@@ -16,6 +16,80 @@
             <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
         </Style>
 
+        <!-- Plugins empty state: a whole card is one button, lifted on hover. -->
+        <Style x:Key="PluginStartCardStyle" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AppCardBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{StaticResource AppCardCornerRadius}" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="RootBorder" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="{TemplateBinding CornerRadius}">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="RootBorder.BorderBrush" Value="{StaticResource RuAccentBrush}" />
+                                            <Setter Target="HoverLayer.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="RootBorder.BorderBrush" Value="{StaticResource RuAccentBrush}" />
+                                            <Setter Target="PressLayer.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="RootBorder.Opacity" Value="0.5" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <Grid>
+                                <Border x:Name="HoverLayer" Background="{StaticResource RuAccentSoftBrush}"
+                                        CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+                                <Border x:Name="PressLayer" Background="{StaticResource RuLineBrush}"
+                                        CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+                                <ContentPresenter Content="{TemplateBinding Content}" Padding="{TemplateBinding Padding}"
+                                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="PluginStartIconStyle" TargetType="Border">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+            <Setter Property="Background" Value="{StaticResource RuAccentSoftBrush}" />
+        </Style>
+        <Style x:Key="PluginStartTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
+        </Style>
+        <Style x:Key="PluginStartBodyStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
+        </Style>
+
         <DataTemplate x:Key="SkillRowTemplate" x:DataType="models:CustomizeSkillRow">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12" Padding="4,12"
                   BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,0,1">
@@ -128,86 +202,174 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <ScrollViewer x:Name="PluginsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="8" MaxWidth="760" HorizontalAlignment="Left" Padding="0,0,12,24">
+            <ScrollViewer x:Name="PluginsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"
+                          SizeChanged="OnPluginsPanelSizeChanged">
+                <StackPanel Spacing="32" Padding="4,4,12,32">
                     <!-- User plugins (ADR 0044): bundles of skills and instructions, off
                          until enabled, applied to new turns. -->
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="4,4,0,4">
-                        <StackPanel VerticalAlignment="Center" Spacing="2">
-                            <TextBlock Text="Your plugins" FontFamily="{StaticResource RuUiFontFamily}" FontSize="14"
-                                       FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" />
-                            <TextBlock FontFamily="{StaticResource RuUiFontFamily}" FontSize="12" TextWrapping="Wrap"
-                                       Foreground="{StaticResource RuMutedBrush}"
-                                       Text="Bundles of skills and instructions. Turn one on and Ru uses it from your next message." />
-                        </StackPanel>
-                        <Button x:Name="OpenPluginsFolderButton" Grid.Column="1" Click="OnOpenPluginsFolderClick"
-                                Style="{StaticResource RuToolbarButtonStyle}" Padding="8,6"
-                                ToolTipService.ToolTip="Open the plugins folder"
-                                AutomationProperties.Name="Open the plugins folder">
-                            <FontIcon Glyph="&#xE838;" FontSize="13" />
-                        </Button>
-                        <Button x:Name="NewPluginButton" Grid.Column="2"
-                                Style="{StaticResource RuSecondaryButtonStyle}" Padding="12,6"
-                                AutomationProperties.Name="Add a plugin">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <FontIcon Glyph="&#xE710;" FontSize="12" />
-                                <TextBlock Text="Add plugin" />
-                                <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Your plugins" FontFamily="{StaticResource RuUiFontFamily}" FontSize="16"
+                                           FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" />
+                                <TextBlock FontFamily="{StaticResource RuUiFontFamily}" FontSize="12.5" TextWrapping="Wrap"
+                                           Foreground="{StaticResource RuMutedBrush}"
+                                           Text="Bundles of skills, instructions and tools. Turn one on and Ru uses it from your next message." />
                             </StackPanel>
-                            <Button.Flyout>
-                                <MenuFlyout Placement="BottomEdgeAlignedRight">
-                                    <MenuFlyoutItem Text="New plugin…" Click="OnNewPluginClick" />
-                                    <MenuFlyoutItem Text="Add from folder…" Click="OnImportPluginClick" />
-                                    <MenuFlyoutSeparator />
-                                    <MenuFlyoutItem Text="Install from GitHub…" Tag="install" Click="OnInstallPluginPackageClick" />
-                                    <MenuFlyoutItem Text="Update from GitHub…" Tag="update" Click="OnInstallPluginPackageClick" />
-                                </MenuFlyout>
-                            </Button.Flyout>
-                        </Button>
-                    </Grid>
+                            <Button x:Name="OpenPluginsFolderButton" Grid.Column="1" Click="OnOpenPluginsFolderClick"
+                                    Style="{StaticResource RuToolbarButtonStyle}" Padding="8,6" VerticalAlignment="Center"
+                                    ToolTipService.ToolTip="Open the plugins folder"
+                                    AutomationProperties.Name="Open the plugins folder">
+                                <FontIcon Glyph="&#xE838;" FontSize="13" />
+                            </Button>
+                            <Button x:Name="NewPluginButton" Grid.Column="2" VerticalAlignment="Center"
+                                    Style="{StaticResource RuPrimaryButtonStyle}" Padding="12,6"
+                                    AutomationProperties.Name="Add a plugin">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE710;" FontSize="12" />
+                                    <TextBlock Text="Add plugin" />
+                                    <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                                </StackPanel>
+                                <Button.Flyout>
+                                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                        <MenuFlyoutItem Text="New plugin…" Click="OnNewPluginClick">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE710;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Text="Add from folder…" Click="OnImportPluginClick">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B7;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutSeparator />
+                                        <MenuFlyoutItem Text="Install from GitHub…" Tag="install" Click="OnInstallPluginPackageClick">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE896;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Text="Update from GitHub…" Tag="update" Click="OnInstallPluginPackageClick">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72C;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
+                        </Grid>
 
-                    <StackPanel x:Name="PluginsList" Spacing="8" AutomationProperties.Name="Your plugins" />
-                    <Border x:Name="PluginsEmpty" Visibility="Collapsed" Style="{StaticResource FluentCardStyle}" Padding="20,16">
-                        <StackPanel Spacing="6" HorizontalAlignment="Center">
-                            <FontIcon Glyph="&#xEA86;" FontSize="20" Foreground="{StaticResource RuMutedBrush}"
-                                      AutomationProperties.AccessibilityView="Raw" />
-                            <TextBlock Text="No plugins yet" HorizontalAlignment="Center" FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" />
-                            <TextBlock HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="420" TextWrapping="Wrap"
-                                       FontFamily="{StaticResource RuUiFontFamily}" FontSize="12" Foreground="{StaticResource RuMutedBrush}"
-                                       Text="Create one with New plugin, or put a folder with an ru-plugin.json in your plugins folder." />
+                        <StackPanel x:Name="PluginsList" Spacing="8" AutomationProperties.Name="Your plugins" />
+
+                        <!-- Empty state: three ways to start, then what a plugin can hold. -->
+                        <StackPanel x:Name="PluginsEmpty" Visibility="Collapsed" Spacing="24">
+                            <Grid x:Name="PluginStartCards" ColumnSpacing="12" RowSpacing="12">
+                                <Button Click="OnNewPluginClick" Style="{StaticResource PluginStartCardStyle}"
+                                        AutomationProperties.Name="Start a plugin from scratch">
+                                    <StackPanel Spacing="8">
+                                        <Border Style="{StaticResource PluginStartIconStyle}">
+                                            <FontIcon Glyph="&#xE710;" FontSize="16" Foreground="{StaticResource RuAccentBrush}" />
+                                        </Border>
+                                        <TextBlock Text="Start from scratch" Style="{StaticResource PluginStartTitleStyle}" />
+                                        <TextBlock Style="{StaticResource PluginStartBodyStyle}"
+                                                   Text="Make a plugin folder with an example skill and instructions, then edit it." />
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="OnAskRuForPluginClick" Style="{StaticResource PluginStartCardStyle}"
+                                        AutomationProperties.Name="Ask Ru to build a plugin">
+                                    <StackPanel Spacing="8">
+                                        <Border Style="{StaticResource PluginStartIconStyle}">
+                                            <FontIcon Glyph="&#xE8BD;" FontSize="16" Foreground="{StaticResource RuAccentBrush}" />
+                                        </Border>
+                                        <TextBlock Text="Ask Ru to build it" Style="{StaticResource PluginStartTitleStyle}" />
+                                        <TextBlock Style="{StaticResource PluginStartBodyStyle}"
+                                                   Text="Describe it in chat. Ru writes a draft in your project that you add from a folder." />
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="OnInstallPluginPackageClick" Tag="install" Style="{StaticResource PluginStartCardStyle}"
+                                        AutomationProperties.Name="Install a plugin from GitHub">
+                                    <StackPanel Spacing="8">
+                                        <Border Style="{StaticResource PluginStartIconStyle}">
+                                            <FontIcon Glyph="&#xE896;" FontSize="16" Foreground="{StaticResource RuAccentBrush}" />
+                                        </Border>
+                                        <TextBlock Text="Install from GitHub" Style="{StaticResource PluginStartTitleStyle}" />
+                                        <TextBlock Style="{StaticResource PluginStartBodyStyle}"
+                                                   Text="Paste a plugin folder URL pinned to a commit. Nothing runs while installing." />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="What a plugin can hold" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13"
+                                           FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" />
+                                <Grid x:Name="PluginPartCards" ColumnSpacing="12" RowSpacing="12">
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                        <FontIcon Glyph="&#xE8F1;" FontSize="14" VerticalAlignment="Top" Margin="0,2,0,0"
+                                                  Foreground="{StaticResource RuMutedBrush}" />
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="Skills" Style="{StaticResource PluginStartTitleStyle}" FontSize="13" />
+                                            <TextBlock Style="{StaticResource PluginStartBodyStyle}" Text="Workflows Ru loads when they help." />
+                                        </StackPanel>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                        <FontIcon Glyph="&#xE8A5;" FontSize="14" VerticalAlignment="Top" Margin="0,2,0,0"
+                                                  Foreground="{StaticResource RuMutedBrush}" />
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="Instructions" Style="{StaticResource PluginStartTitleStyle}" FontSize="13" />
+                                            <TextBlock Style="{StaticResource PluginStartBodyStyle}" Text="Rules Ru follows in every message." />
+                                        </StackPanel>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                        <FontIcon Glyph="&#xE945;" FontSize="14" VerticalAlignment="Top" Margin="0,2,0,0"
+                                                  Foreground="{StaticResource RuMutedBrush}" />
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="Hooks" Style="{StaticResource PluginStartTitleStyle}" FontSize="13" />
+                                            <TextBlock Style="{StaticResource PluginStartBodyStyle}" Text="Commands around tool calls. Ru asks before they run." />
+                                        </StackPanel>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                        <FontIcon Glyph="&#xE968;" FontSize="14" VerticalAlignment="Top" Margin="0,2,0,0"
+                                                  Foreground="{StaticResource RuMutedBrush}" />
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="MCP servers" Style="{StaticResource PluginStartTitleStyle}" FontSize="13" />
+                                            <TextBlock Style="{StaticResource PluginStartBodyStyle}" Text="Extra tools. Ru asks before they start." />
+                                        </StackPanel>
+                                    </Grid>
+                                </Grid>
+                                <HyperlinkButton Content="Already have a draft folder? Add it from a folder" Padding="0"
+                                                 Click="OnImportPluginClick" />
+                            </StackPanel>
                         </StackPanel>
-                    </Border>
-                    <TextBlock x:Name="PluginsSkippedText" Visibility="Collapsed" Margin="4,0" FontSize="12" TextWrapping="Wrap"
-                               Foreground="{StaticResource RuWarningBrush}" IsTextSelectionEnabled="True" />
 
-                    <TextBlock Text="Built in" Margin="4,16,0,0" FontFamily="{StaticResource RuUiFontFamily}" FontSize="14"
-                               FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" />
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Padding="4,12"
-                          BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,0,1">
-                        <Border Grid.Column="0" Width="32" Height="32" VerticalAlignment="Top"
-                                CornerRadius="{StaticResource AppControlCornerRadius}"
-                                Background="{StaticResource RuSurfaceBrush}">
-                            <FontIcon Glyph="&#xE7F4;" FontSize="14" Foreground="{StaticResource RuMutedBrush}"
-                                      AutomationProperties.AccessibilityView="Raw" />
-                        </Border>
-                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                            <TextBlock Text="Computer use" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5"
+                        <TextBlock x:Name="PluginsSkippedText" Visibility="Collapsed" FontSize="12" TextWrapping="Wrap"
+                                   Foreground="{StaticResource RuWarningBrush}" IsTextSelectionEnabled="True" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="12">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Built in" FontFamily="{StaticResource RuUiFontFamily}" FontSize="16"
                                        FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" />
-                            <TextBlock FontSize="12.5" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap"
-                                       Text="Lets Ru see your screen and use apps you approve, for new turns with an image-capable model. Press Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) to stop it." />
+                            <TextBlock FontFamily="{StaticResource RuUiFontFamily}" FontSize="12.5" TextWrapping="Wrap"
+                                       Foreground="{StaticResource RuMutedBrush}" Text="Abilities that ship with Ru." />
                         </StackPanel>
-                        <ToggleSwitch x:Name="ComputerUseToggle" Grid.Column="2" VerticalAlignment="Center"
-                                      OnContent="" OffContent="" MinWidth="0"
-                                      Toggled="OnComputerUseToggled"
-                                      AutomationProperties.Name="Computer use" />
-                    </Grid>
+                        <Border Style="{StaticResource FluentCardStyle}" Padding="16,12">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                <Border Grid.Column="0" Width="32" Height="32" VerticalAlignment="Top"
+                                        CornerRadius="{StaticResource AppControlCornerRadius}"
+                                        Background="{StaticResource RuSurfaceBrush}">
+                                    <FontIcon Glyph="&#xE7F4;" FontSize="14" Foreground="{StaticResource RuMutedBrush}"
+                                              AutomationProperties.AccessibilityView="Raw" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="Computer use" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5"
+                                               FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" />
+                                    <TextBlock FontSize="12.5" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap"
+                                               Text="Lets Ru see your screen and use apps you approve, for new turns with an image-capable model. Press Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) to stop it." />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="ComputerUseToggle" Grid.Column="2" VerticalAlignment="Center"
+                                              OnContent="" OffContent="" MinWidth="0"
+                                              Toggled="OnComputerUseToggled"
+                                              AutomationProperties.Name="Computer use" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
             <!-- The user's own instruction files: one card per scope. Guidance only:
                  they shape style and workflow and never grant permission. -->
             <ScrollViewer x:Name="InstructionsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="16" Padding="4,4,12,24" MaxWidth="760" HorizontalAlignment="Left">
+                <StackPanel Spacing="16" Padding="4,4,12,24">
                     <StackPanel Spacing="8">
                         <TextBlock FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" TextWrapping="Wrap"
                                    Foreground="{StaticResource RuInkBrush}"

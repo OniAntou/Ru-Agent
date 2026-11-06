@@ -41,6 +41,11 @@ public sealed class CustomizationUiContractTests
             .Select(element => GuiSource.AttributeValue(element, "Click")).ToList();
         Assert.Contains("OnNewPluginClick", clicks);
         Assert.Contains("OnImportPluginClick", clicks);
+        // The empty state offers the same three starts, and "ask Ru" opens chat with the built-in skill.
+        var starts = GuiSource.Require(document, "PluginStartCards").Elements()
+            .Select(element => GuiSource.AttributeValue(element, "Click")).ToList();
+        Assert.Equal(["OnNewPluginClick", "OnAskRuForPluginClick", "OnInstallPluginPackageClick"], starts);
+        Assert.Contains("\"create-plugin\"", GuiSource.MethodBody(GuiSource.Text("Views", "CustomizeView.UserPlugins.cs"), "OnAskRuForPluginClick"), StringComparison.Ordinal);
         Assert.Contains("client.ImportAsync", GuiSource.MethodBody(GuiSource.Text("Views", "CustomizeView.UserPlugins.cs"), "ImportPluginAsync"), StringComparison.Ordinal);
         Assert.Equal(2, clicks.Count(click => click == "OnInstallPluginPackageClick"));
         Assert.Contains("client.InstallPackageAsync", GuiSource.MethodBody(GuiSource.Text("Views", "CustomizeView.UserPlugins.cs"), "InstallPluginPackageAsync"), StringComparison.Ordinal);

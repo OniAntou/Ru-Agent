@@ -8,7 +8,7 @@
             <StackPanel Spacing="3">
                 <TextBlock x:Name="FileNameLabel" Text="File preview" FontSize="13" FontWeight="SemiBold"
                            TextTrimming="CharacterEllipsis" Foreground="{StaticResource RuInkBrush}" />
-                <TextBlock Text="Read-only preview" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                <TextBlock x:Name="PreviewDetailLabel" Text="Read-only preview" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
             </StackPanel>
             <Button x:Name="FocusPreviewButton" Grid.Column="1" Click="OnFocusPreview" Visibility="Collapsed"
                     Content="Focus preview" FontSize="11" Padding="6,0" Background="Transparent" BorderThickness="0"
@@ -34,8 +34,28 @@
                           SizeChanged="OnPreviewViewportSizeChanged">
                 <Grid x:Name="PreviewContent">
                     <Image x:Name="PageImage" Stretch="Uniform" VerticalAlignment="Top" AutomationProperties.Name="Rendered document page" />
-                    <TextBlock x:Name="TextContent" Visibility="Collapsed" FontFamily="{StaticResource RuMonoFontFamily}"
-                               FontSize="12" IsTextSelectionEnabled="True" TextWrapping="Wrap" Foreground="{StaticResource RuInkBrush}" />
+                    <!-- Code and plain text: an editor-like frame with a fixed line-number
+                         gutter and syntax colors. Lines do not wrap; the code scrolls
+                         sideways inside the frame while the gutter stays put. Both columns
+                         share one block line height so numbers stay level with their lines. -->
+                    <Border x:Name="CodeFrame" Visibility="Collapsed" VerticalAlignment="Top"
+                            Background="{StaticResource RuSidebarBrush}" BorderBrush="{StaticResource RuLineBrush}"
+                            BorderThickness="1" CornerRadius="{StaticResource AppCardCornerRadius}" Padding="0,8,0,10">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <TextBlock x:Name="LineNumbers" FontFamily="{StaticResource RuMonoFontFamily}" FontSize="12"
+                                       LineHeight="19" LineStackingStrategy="BlockLineHeight"
+                                       TextAlignment="Right" Padding="12,0,10,0" Opacity="0.6"
+                                       Foreground="{StaticResource RuMutedBrush}" IsTextSelectionEnabled="False"
+                                       AutomationProperties.AccessibilityView="Raw" />
+                            <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled"
+                                          VerticalScrollBarVisibility="Disabled" VerticalScrollMode="Disabled">
+                                <TextBlock x:Name="TextContent" FontFamily="{StaticResource RuMonoFontFamily}" FontSize="12"
+                                           LineHeight="19" LineStackingStrategy="BlockLineHeight"
+                                           IsTextSelectionEnabled="True" TextWrapping="NoWrap" Padding="4,0,16,0"
+                                           Foreground="{StaticResource RuInkBrush}" />
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
                     <controls:MarkdownBlock x:Name="MarkdownContent" Visibility="Collapsed" />
                 </Grid>
             </ScrollViewer>

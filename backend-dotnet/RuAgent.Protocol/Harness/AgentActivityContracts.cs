@@ -76,7 +76,8 @@ public sealed record AgentActivityWire(
     [property: JsonPropertyName("detail")] string? Detail = null,
     [property: JsonPropertyName("todos")] IReadOnlyList<AgentTodoWire>? Todos = null,
     [property: JsonPropertyName("durable_sequence")] long? DurableSequence = null,
-    [property: JsonPropertyName("exit_code")] int? ExitCode = null);
+    [property: JsonPropertyName("exit_code")] int? ExitCode = null,
+    [property: JsonPropertyName("relative_path")] string? RelativePath = null);
 
 public static class AgentActivityWireCodec
 {
@@ -131,6 +132,8 @@ public static class AgentActivityWireValidator
 {
     public const int MaximumActivityIdLength = 128;
     public const int MaximumFileNameLength = 128;
+    public const int MaximumRelativePathLength = 512;
+    public const int MaximumRelativePathSegments = 16;
     public const int MaximumSymbolLength = 128;
     public const int MaximumLine = 1_000_000;
     public const int MaximumCount = 1_000_000;
@@ -160,6 +163,7 @@ public static class AgentActivityWireValidator
         "todos",
         "durable_sequence",
         "exit_code",
+        "relative_path",
     };
 
     private static readonly HashSet<string> ReservedDeviceNames = new(StringComparer.OrdinalIgnoreCase)
@@ -325,6 +329,7 @@ public static class AgentActivityWireValidator
         }
 
         ValidateFileName(activity.FileName);
+        ValidateRelativePath(activity.RelativePath, activity.FileName);
         ValidateSymbol(activity.Symbol);
 
         if ((activity.LineStart is null) != (activity.LineEnd is null))
@@ -420,6 +425,34 @@ public static class AgentActivityWireValidator
         if (ReservedDeviceNames.Contains(deviceStem))
         {
             throw new JsonException("File name is reserved.");
+        }
+    }
+
+    /// <summary>A workspace-relative path: safe basenames joined by '/', ending with the file name.</summary>
+    private static void ValidateRelativePath(string? relativePath, string? fileName)
+    {
+        if (relativePath is null)
+        {
+            return;
+        }
+
+        if (fileName is null
+            || relativePath.Length is < 1 or > MaximumRelativePathLength
+            || relativePath.StartsWith('/'))
+        {
+            throw new JsonException("Relative path is invalid.");
+        }
+
+        var segments = relativePath.Split('/');
+        if (segments.Length > MaximumRelativePathSegments
+            || !string.Equals(segments[^1], fileName, StringComparison.Ordinal))
+        {
+            throw new JsonException("Relative path is invalid.");
+        }
+
+        foreach (var segment in segments)
+        {
+            ValidateFileName(segment);
         }
     }
 

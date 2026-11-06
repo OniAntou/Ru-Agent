@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Code có màu cú pháp ở mọi nơi. Preview file code giờ là khung kiểu editor có
+  cột số dòng cố định, dòng không xuống hàng mà cuộn ngang, và header ghi ngôn ngữ cùng số
+  dòng. Diff của edit tô màu theo ngôn ngữ của file, có dấu +/−, và edit chỉ thêm dòng (file
+  mới) không còn phủ xanh toàn bộ. Highlighter thêm màu cho lời gọi hàm, tên kiểu, và các
+  ngôn ngữ JS/TS, C/C++, Java/Kotlin, Go, Rust, TOML, CSS. Bỏ danh sách file gần đây trên card.
+
+- **feat(gui)**: Hoàn thiện panel bên phải:
+  - Activity của edit giờ mang `relative_path` (đường dẫn tương đối trong workspace, chỉ khi
+    model truyền đường dẫn tương đối an toàn). Tab Changes hiện thư mục dưới tên file và tách
+    riêng các file trùng tên ở thư mục khác nhau; session cũ cũng có vì lịch sử được dựng lại.
+  - Mỗi dòng có menu: mở preview, hiện trong File Explorer, copy path. Preview và reveal chỉ
+    mở file nằm trong workspace của session.
+  - File nháp của agent (`.tmp_*`, `tmp_*`, `.orig`, …) được ẩn sau nút "N scratch files".
+  - Header tab hiện số file thay vì lặp chữ "Changes"; empty state có icon và lời giải thích.
+  - Thanh tab: chip Preview cùng kiểu với các chip khác (trước đây gắn handler kéo hai lần),
+    nút đóng hiện khi hover, cuộn chuột trên thanh tab để cuộn ngang, nhãn "Background tasks"
+    rút thành "Tasks", icon Subagents thống nhất giữa card và tab.
+
 - **fix(gui)**: Tab Changes ở panel bên phải giờ gộp mỗi file thành một dòng (kèm "N edits"),
   file vừa sửa gần nhất lên đầu; bấm vào để xem từng lần sửa với dòng, số dòng và diff riêng.
   Edit thất bại, bị từ chối hoặc đang chạy không còn hiện thành các dòng `+0 −0`. Số dòng

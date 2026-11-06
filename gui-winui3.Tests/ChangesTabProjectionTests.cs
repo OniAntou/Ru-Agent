@@ -232,12 +232,83 @@ public sealed class ChangesTabProjectionTests
         Assert.Equal("", row.ExpansionGlyph);
     }
 
+    [Fact]
+    public void Same_named_files_in_different_folders_get_their_own_rows_with_folders()
+    {
+        var projection = ChangesTabProjection.Project(new[]
+        {
+            Edit("server.py", added: 1, relativePath: "api/server.py"),
+            Edit("server.py", added: 2, relativePath: "worker/server.py"),
+            Edit("README.md", added: 3, relativePath: "README.md"),
+        });
+
+        Assert.Equal(new[] { "README.md", "worker/server.py", "api/server.py" }, projection.Rows.Select(row => row.RelativePath));
+        Assert.Equal("worker", projection.Rows[1].Folder);
+        Assert.Null(projection.Rows[0].Folder);
+        Assert.True(projection.Rows[0].HasRelativePath);
+    }
+
+    [Fact]
+    public void A_basename_only_edit_joins_the_one_path_with_its_name()
+    {
+        var withPath = Edit("server.py", added: 1, relativePath: "api/server.py");
+        var absolute = Edit("server.py", added: 2);
+
+        var row = Assert.Single(ChangesTabProjection.Project(new[] { withPath, absolute }).Rows);
+
+        Assert.Equal("api/server.py", row.RelativePath);
+        Assert.Equal(3, row.Added);
+    }
+
+    [Fact]
+    public void A_basename_only_edit_stays_apart_when_its_name_is_ambiguous()
+    {
+        var projection = ChangesTabProjection.Project(new[]
+        {
+            Edit("server.py", relativePath: "api/server.py"),
+            Edit("server.py", relativePath: "worker/server.py"),
+            Edit("server.py"),
+        });
+
+        Assert.Equal(3, projection.Rows.Count);
+        Assert.Single(projection.Rows, row => row.RelativePath is null);
+    }
+
+    [Theory]
+    [InlineData(".tmp_probe.py", true)]
+    [InlineData("tmp_diag.ps1", true)]
+    [InlineData("server.py.orig", true)]
+    [InlineData("~$report.docx", true)]
+    [InlineData("server.py", false)]
+    [InlineData("template.html", false)]
+    public void Scratch_files_are_recognized_by_name(string fileName, bool scratch)
+    {
+        Assert.Equal(scratch, ChangesTabFiles.IsScratch(fileName));
+        Assert.Equal(scratch, ChangesTabProjection.Project(new[] { Edit(fileName) }).Rows[0].IsScratch);
+    }
+
+    [Theory]
+    [InlineData("src/app.py", true)]
+    [InlineData("../outside.py", false)]
+    [InlineData("src/../../outside.py", false)]
+    [InlineData(null, false)]
+    public void Paths_resolve_only_inside_the_workspace(string? relativePath, bool resolves)
+    {
+        var workspace = Path.Combine(Path.GetTempPath(), "ru-changes-root");
+        var resolved = ChangesTabFiles.Resolve(workspace, relativePath);
+
+        Assert.Equal(resolves, resolved is not null);
+        if (resolved is not null) Assert.StartsWith(workspace, resolved, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(ChangesTabFiles.Resolve(null, "src/app.py"));
+    }
+
     private static AgentActivityItem Edit(
         string fileName,
         int? added = null,
         int? removed = null,
         int? lineStart = null,
-        string? detail = null) =>
+        string? detail = null,
+        string? relativePath = null) =>
         new(Activity(
             AgentActivityState.Completed,
             AgentActivityKind.Edit,
@@ -245,7 +316,8 @@ public sealed class ChangesTabProjectionTests
             lineStart: lineStart,
             added: added,
             removed: removed,
-            detail: detail));
+            detail: detail,
+            relativePath: relativePath));
 
     private static AgentActivityModel Activity(
         AgentActivityState state,
@@ -255,7 +327,8 @@ public sealed class ChangesTabProjectionTests
         int? added = null,
         int? removed = null,
         string? symbol = null,
-        string? detail = null) =>
+        string? detail = null,
+        string? relativePath = null) =>
         new(
             "act_" + System.Guid.NewGuid().ToString("N"),
             kind,
@@ -273,5 +346,6 @@ public sealed class ChangesTabProjectionTests
             null,
             1,
             detail,
-            Todos: null);
+            Todos: null,
+            RelativePath: relativePath);
 }

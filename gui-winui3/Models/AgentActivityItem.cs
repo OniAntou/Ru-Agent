@@ -11,6 +11,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
     private IReadOnlyList<TodoItemModel>? _todos;
     private AgentActivityState _state;
     private string? _fileName;
+    private string? _relativePath;
     private int? _lineStart;
     private int? _lineEnd;
     private string? _symbol;
@@ -74,6 +75,13 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
                 OnPropertyChanged(nameof(HasFileName));
             }
         }
+    }
+
+    /// <summary>The edit's workspace-relative path when the activity carried a safe one.</summary>
+    public string? RelativePath
+    {
+        get => _relativePath;
+        private set => SetProperty(ref _relativePath, value);
     }
 
     public int? LineStart
@@ -675,6 +683,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         Kind = activity.Kind;
         State = activity.State;
         FileName = activity.FileName;
+        RelativePath = activity.RelativePath;
         LineStart = activity.LineStart;
         LineEnd = activity.LineEnd;
         Symbol = activity.Symbol;

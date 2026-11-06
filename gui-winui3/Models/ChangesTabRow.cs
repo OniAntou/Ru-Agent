@@ -10,7 +10,8 @@ public sealed record ChangesTabEdit(
     string AfterText,
     int? StartLine,
     int? Added,
-    int? Removed)
+    int? Removed,
+    string? FileName = null)
 {
     public bool HasPreview => BeforeText.Length > 0 || AfterText.Length > 0;
     public bool HasNoPreview => !HasPreview;
@@ -25,15 +26,20 @@ public sealed record ChangesTabEdit(
 /// folds the transcript's copy of the same edit.
 /// </summary>
 /// <remarks>
-/// Activities carry safe basenames, not paths, so two files with the same name in
-/// different folders share a row; the edit count and per-edit lines keep that visible.
+/// Rows group by the edit's workspace-relative path. An edit made through an absolute
+/// path carries only its basename; it joins the one relative path with that name when
+/// there is exactly one, and otherwise groups by name alone.
 /// </remarks>
 public sealed class ChangesTabRow : INotifyPropertyChanged
 {
     public ChangesTabRow(string fileName, int? added, int? removed, IReadOnlyList<ChangesTabEdit> edits,
-        string? firstActivityId = null)
+        string? firstActivityId = null, string? relativePath = null)
     {
         FileName = fileName;
+        RelativePath = relativePath;
+        int slash = relativePath?.LastIndexOf('/') ?? -1;
+        Folder = slash > 0 ? relativePath![..slash] : null;
+        IsScratch = ChangesTabFiles.IsScratch(fileName);
         Added = added;
         Removed = removed;
         Edits = edits;
@@ -41,6 +47,22 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
     }
 
     public string FileName { get; }
+
+    /// <summary>The workspace-relative path, when the edits carried one.</summary>
+    public string? RelativePath { get; }
+
+    public bool HasRelativePath => RelativePath is not null;
+
+    /// <summary>The folder part of <see cref="RelativePath"/>; null at the workspace root or when unknown.</summary>
+    public string? Folder { get; }
+
+    public bool HasFolder => Folder is not null;
+
+    /// <summary>An agent's throwaway file (probe script, patch draft, backup).</summary>
+    public bool IsScratch { get; }
+
+    /// <summary>Scratch files stay readable but step back from the real changes.</summary>
+    public double RowOpacity => IsScratch ? 0.6 : 1.0;
 
     public int? Added { get; }
 
@@ -52,13 +74,14 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
     /// <summary>The file's first edit in the session: with the name, it identifies the row across refreshes.</summary>
     public string FirstActivityId { get; }
 
-    public string Key => FileName.ToUpperInvariant() + "|" + FirstActivityId;
+    public string Key => (RelativePath ?? FileName).ToUpperInvariant() + "|" + FirstActivityId;
 
     public bool Contains(string? activityId) =>
         activityId is not null && Edits.Any(edit => edit.ActivityId == activityId);
 
     public bool HasSameContent(ChangesTabRow other) =>
-        Key == other.Key && FileName == other.FileName && Added == other.Added && Removed == other.Removed
+        Key == other.Key && FileName == other.FileName && RelativePath == other.RelativePath
+        && Added == other.Added && Removed == other.Removed
         && Edits.SequenceEqual(other.Edits);
 
     public string AddedDeltaText => TurnChangesProjection.FormatCount(Added, "+");
@@ -67,7 +90,9 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
 
     public string EditCountText => Edits.Count > 1 ? $"{Edits.Count} edits" : string.Empty;
 
-    public string ToolTipText => Edits.Count == 1 ? $"{FileName}, 1 edit" : $"{FileName}, {Edits.Count} edits";
+    public string ToolTipText => Edits.Count == 1
+        ? $"{RelativePath ?? FileName}, 1 edit"
+        : $"{RelativePath ?? FileName}, {Edits.Count} edits";
 
     public string AccessibleName => $"{ToolTipText}, added {AddedDeltaText}, removed {RemovedDeltaText}. Toggle changes";
 

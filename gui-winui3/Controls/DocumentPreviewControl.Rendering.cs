@@ -11,7 +11,7 @@ public sealed partial class DocumentPreviewControl
 {
     private async Task RenderAsync(FilePreviewKind kind, byte[] bytes, CancellationToken ct, long generation)
     {
-        PageImage.Visibility = TextContent.Visibility = MarkdownContent.Visibility = Visibility.Collapsed;
+        PageImage.Visibility = CodeFrame.Visibility = MarkdownContent.Visibility = Visibility.Collapsed;
         if (kind is FilePreviewKind.Text or FilePreviewKind.Markdown)
         {
             using var reader = new StreamReader(new MemoryStream(bytes), detectEncodingFromByteOrderMarks: true);
@@ -20,7 +20,7 @@ public sealed partial class DocumentPreviewControl
             if (generation != _generation) return;
             if (text.Contains('\0')) throw new NotSupportedException("preview_binary_text: This file does not contain readable text.");
             if (kind == FilePreviewKind.Markdown) { MarkdownContent.MarkdownText = text; MarkdownContent.Visibility = Visibility.Visible; }
-            else { TextContent.Text = text; TextContent.Visibility = Visibility.Visible; }
+            else ShowCode(text);
         }
         else if (kind == FilePreviewKind.Pdf)
         {
@@ -53,6 +53,22 @@ public sealed partial class DocumentPreviewControl
         ContentScroll.UpdateLayout();
         ContentScroll.ChangeView(0, 0, 1, true);
         StatusLabel.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>Fills the code frame: line numbers, then the highlighted lines.</summary>
+    private void ShowCode(string text)
+    {
+        var view = CodePreviewModel.Build(text, _path);
+        LineNumbers.Text = view.LineNumbers;
+        TextContent.Inlines.Clear();
+        for (int index = 0; index < view.Lines.Count; index++)
+        {
+            if (index > 0) TextContent.Inlines.Add(new Microsoft.UI.Xaml.Documents.LineBreak());
+            foreach (var span in view.Lines[index]) TextContent.Inlines.Add(CodeTheme.Run(span));
+        }
+
+        PreviewDetailLabel.Text = view.Description;
+        CodeFrame.Visibility = Visibility.Visible;
     }
 
     private async Task RenderPdfPageAsync(CancellationToken ct, long generation)

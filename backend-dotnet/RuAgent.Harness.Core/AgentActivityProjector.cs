@@ -13,6 +13,8 @@ public static class AgentActivityProjector
     private const int MaximumCount = 1_000_000;
     private const int MaximumDurationMilliseconds = 86_400_000;
     private const int MaximumLeafLength = 128;
+    private const int MaximumRelativePathLength = AgentActivityWireValidator.MaximumRelativePathLength;
+    private const int MaximumRelativePathSegments = AgentActivityWireValidator.MaximumRelativePathSegments;
     private const int MaximumSymbolLength = 128;
     public const int MaximumDetailLength = 4_000;
 
@@ -132,7 +134,10 @@ public static class AgentActivityProjector
                 ?? (proposal.ToolId == "agent_wait" && state == AgentActivityState.Started ? SubagentWaitingCode : null)),
             ToolDisplay: toolDisplay,
             Detail: detail,
-            ExitCode: kind == AgentActivityKind.Terminal ? ToolActivityMetadataExtractor.ReadExitCode(receipt) : null);
+            ExitCode: kind == AgentActivityKind.Terminal ? ToolActivityMetadataExtractor.ReadExitCode(receipt) : null,
+            RelativePath: kind == AgentActivityKind.Edit
+                ? ToolActivityMetadataExtractor.ReadSafeRelativePath(proposal.Arguments, "path", metadata.FileName)
+                : null);
     }
 
     /// <summary>
@@ -717,6 +722,46 @@ public static class AgentActivityProjector
             var normalized = path.Replace('\\', '/');
             var slash = normalized.LastIndexOf('/');
             var candidate = slash >= 0 ? normalized[(slash + 1)..] : normalized;
+            return IsSafeLeaf(candidate) ? candidate : null;
+        }
+
+        /// <summary>
+        /// The workspace-relative path of an edit, only when the model passed a relative
+        /// path whose every segment is a safe leaf and whose last segment is the file
+        /// name. Rooted, drive, UNC and parent-traversing paths give null: the projector
+        /// has no workspace root, so it never guesses where an absolute path lands.
+        /// </summary>
+        internal static string? ReadSafeRelativePath(JsonElement arguments, string propertyName, string? fileName)
+        {
+            if (fileName is null
+                || !TryGetString(arguments, propertyName, out var path)
+                || string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            var normalized = path.Replace('\\', '/');
+            while (normalized.StartsWith("./", StringComparison.Ordinal)) normalized = normalized[2..];
+            if (normalized.Length is < 1 or > MaximumRelativePathLength
+                || normalized.StartsWith('/')
+                || normalized.Contains(':', StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            var segments = normalized.Split('/');
+            if (segments.Length > MaximumRelativePathSegments
+                || !segments.All(IsSafeLeaf)
+                || !string.Equals(segments[^1], fileName, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            return string.Join('/', segments);
+        }
+
+        private static bool IsSafeLeaf(string candidate)
+        {
             if (candidate.Length is < 1 or > MaximumLeafLength
                 || candidate is "." or ".."
                 || candidate.EndsWith(".", StringComparison.Ordinal)
@@ -724,20 +769,16 @@ public static class AgentActivityProjector
                 || candidate.Any(char.IsControl)
                 || candidate.Contains(':', StringComparison.Ordinal))
             {
-                return null;
+                return false;
             }
 
-            var deviceStem = candidate.Split('.', 2, StringSplitOptions.None)[0];
-            if (deviceStem is "CON" or "PRN" or "AUX" or "NUL"
+            // Case-insensitive like the wire validator: Windows treats con.txt as CON.
+            var deviceStem = candidate.Split('.', 2, StringSplitOptions.None)[0].ToUpperInvariant();
+            return !(deviceStem is "CON" or "PRN" or "AUX" or "NUL"
                 || (deviceStem.Length == 4
-                    && (deviceStem.StartsWith("COM", StringComparison.OrdinalIgnoreCase)
-                        || deviceStem.StartsWith("LPT", StringComparison.OrdinalIgnoreCase))
-                    && deviceStem[3] is >= '1' and <= '9'))
-            {
-                return null;
-            }
-
-            return candidate;
+                    && (deviceStem.StartsWith("COM", StringComparison.Ordinal)
+                        || deviceStem.StartsWith("LPT", StringComparison.Ordinal))
+                    && deviceStem[3] is >= '1' and <= '9'));
         }
 
         private static string? ReadSafeSymbol(JsonElement arguments, string propertyName)

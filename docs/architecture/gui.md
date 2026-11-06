@@ -808,13 +808,24 @@ while loaded and item updates only once settled; unloading releases subscription
 The existing run-owned transcript replay restores old turns without adopting the
 next run's edits. The session-wide Changes tab keeps its independent projection:
 `ChangesTabProjection` lists completed edits only (failed, denied, waiting and
-running edits changed nothing and are not listed or counted), one row per file
-name, most recently edited file first. A row sums its edits' known line counts
+running edits changed nothing and are not listed or counted), one row per file,
+most recently edited file first. Rows group by the edit's `relative_path`; an edit
+made through an absolute path carries only its basename and joins the one relative
+path with that name when exactly one exists, otherwise it groups by name alone. A row sums its edits' known line counts
 (`—` when none reported one), shows "N edits" when there are several, and expands
 to that file's edits newest first, each with its line, counts and diff, at most
-25 per row. Activities carry safe basenames, so same-named files in different
-folders share a row. Edit and write line counts count lines, not line breaks, so a
-one-line edit reads `+1 −1` instead of `+0 −0`.
+25 per row. A row shows its folder under the name, and its menu opens a preview,
+reveals the file in File Explorer or copies its path; preview and reveal resolve the
+relative path against the session workspace and refuse anything outside it, so a
+bare basename never opens a file. Agent scratch files (`.tmp*`, `tmp_*`, `_tmp*`,
+`~$*`, `.bak`, `.orig`, `.rej`, `.swp`, `.tmp`) are hidden behind a header toggle
+and dimmed when shown; totals still count them. The header carries the file count
+instead of repeating the tab's name. Edit and write line counts
+count lines, not line breaks, so a one-line edit reads `+1 −1` instead of `+0 −0`.
+
+Every tab chip shares one shape. The active chip shows its label and close button,
+and a hovered chip shows its close button too. The mouse wheel over the strip
+scrolls it sideways, since the strip hides its scrollbar to stay one line tall.
 
 File clicks and View changes raise a navigation request to the owning chat view.
 The view validates the current session/message and opens the existing right-panel
@@ -890,8 +901,20 @@ formats are refused rather than opened as executable content.
 `DocumentPreviewControl` cancels superseded reads and owns the current result.
 Windows.Data.Pdf rasterizes one selected page at a time, at most 1600×2400
 pixels; page controls and scroll/zoom remain in the panel. Image decoding refuses
-inputs above 40 megapixels and limits decode width. Text and Markdown use the
-existing native presentation stack.
+inputs above 40 megapixels and limits decode width. Markdown uses the existing
+native presentation stack. Other text shows in a framed code view: a fixed
+line-number gutter beside unwrapped lines that scroll sideways, colored by
+`CodeHighlighter` from the file's extension (`CodePreviewModel`; above 400,000
+characters the text stays plain), and the header names the language and line count.
+
+`CodeTheme` is the one code palette for chat code blocks, edit diffs and the file
+preview: keywords, strings, comments (italic), numbers, calls and capitalized type
+names each take a theme color. `CodeHighlighter` covers C#, Python, PowerShell,
+JSON, XML/XAML/HTML, SQL, shell, YAML, diff, JavaScript/TypeScript, the C family,
+Java/Kotlin, Go, Rust, TOML/INI and CSS; other files stay plain. Edit diffs
+(`FileEditPreviewControl`) color each line from its own side of the edit, show a
++/− marker, and tint lines only when the edit removes something: an add-only edit
+(a new file) marks additions with the gutter bar alone.
 
 Office-like documents use the extension's registered Windows preview handler
 through `CLSCTX_LOCAL_SERVER`, never an in-process handler DLL or Office editing

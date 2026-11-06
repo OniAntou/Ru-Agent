@@ -62,14 +62,7 @@ namespace RuApp.Controls
                 };
                 foreach (var span in CodeHighlighter.Highlight(text, language))
                 {
-                    var run = new Run { Text = span.Text };
-                    var brush = SpanBrush(span.Kind);
-                    if (brush is not null)
-                    {
-                        run.Foreground = brush;
-                    }
-
-                    body.Inlines.Add(run);
+                    body.Inlines.Add(CodeTheme.Run(span));
                 }
 
                 var frame = new StackPanel();
@@ -112,18 +105,6 @@ namespace RuApp.Controls
                     }
                 }
             }
-
-            private Brush? SpanBrush(CodeHighlighter.SpanKind kind) => kind switch
-            {
-                CodeHighlighter.SpanKind.Keyword => ThemeBrush("RuVioletBrush", 126, 34, 206),
-                CodeHighlighter.SpanKind.String => ThemeBrush("RuSuccessBrush", 4, 120, 87),
-                CodeHighlighter.SpanKind.Added => ThemeBrush("RuSuccessBrush", 4, 120, 87),
-                CodeHighlighter.SpanKind.Comment => MutedOrDefault(),
-                CodeHighlighter.SpanKind.Number => ThemeBrush("RuInfoBrush", 7, 89, 133),
-                CodeHighlighter.SpanKind.HunkHeader => ThemeBrush("RuInfoBrush", 7, 89, 133),
-                CodeHighlighter.SpanKind.Removed => ThemeBrush("RuDangerBrush", 185, 28, 28),
-                _ => null,
-            };
 
             private static SolidColorBrush ThemeBrush(string key, byte r, byte g, byte b) =>
                 Application.Current?.Resources.TryGetValue(key, out object? value) == true && value is SolidColorBrush brush

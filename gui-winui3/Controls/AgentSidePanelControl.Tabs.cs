@@ -26,6 +26,19 @@ public sealed partial class AgentSidePanelControl
 
     private void OnTabStripSizeChanged(object sender, SizeChangedEventArgs e) => QueueActiveTabReveal();
 
+    /// <summary>
+    /// The strip hides its scrollbar to stay one line tall; a vertical wheel over it
+    /// scrolls sideways so tabs past the edge stay reachable without the menu.
+    /// </summary>
+    private void OnTabStripPointerWheelChanged(object sender, PointerRoutedEventArgs e)
+    {
+        if (TabStripScroll.ScrollableWidth <= 0) return;
+        int delta = e.GetCurrentPoint(TabStripScroll).Properties.MouseWheelDelta;
+        TabStripScroll.ChangeView(Math.Clamp(TabStripScroll.HorizontalOffset - delta, 0, TabStripScroll.ScrollableWidth),
+            null, null, disableAnimation: false);
+        e.Handled = true;
+    }
+
     private void QueueActiveTabReveal()
     {
         if (_tabRevealQueued) return;
@@ -80,7 +93,9 @@ public sealed partial class AgentSidePanelControl
             SidePanelTabKind.Preview => PreviewTabCloseButton,
             _ => TerminalTabCloseButton,
         };
-        close.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
+        // The active tab always offers close; an inactive one offers it on hover,
+        // so closing a background tab no longer means selecting it first.
+        close.Visibility = isActive || isHovered ? Visibility.Visible : Visibility.Collapsed;
         var tab = kind switch
         {
             SidePanelTabKind.Changes => ChangesTabButton,

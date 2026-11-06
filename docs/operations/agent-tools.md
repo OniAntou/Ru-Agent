@@ -827,8 +827,13 @@ The transcript activity feed is connection-local and transient. Runtime maps the
 Core projection to an `agent.activity` SSE frame whose inner JSON contains only
 the typed fields `activity_id`, `kind`, `state`, optional safe `file_name`
 (basename/line range only), `line_start`/`line_end`, `symbol`, `count`, `added`, `removed`,
-`duration_ms`, bounded `safe_code`, a bounded `tool_display` and `detail`, and for a
-terminal row the process `exit_code` its receipt reported. It does not advance the durable event
+`duration_ms`, bounded `safe_code`, a bounded `tool_display` and `detail`, for a
+terminal row the process `exit_code` its receipt reported, and for an edit row an
+optional `relative_path`. That path is present only when the model passed a
+workspace-relative path: at most 16 segments and 512 characters, every segment a safe
+basename, the last one equal to `file_name`. Rooted, drive, UNC and `..` paths give no
+`relative_path`, because the projector never guesses where an absolute path lands.
+History replay re-derives it from the recorded proposal, so older sessions show it too. It does not advance the durable event
 cursor, append to the Harness event store, or enter session history.
 
 The feed projects fourteen kinds: `thinking`, `explore`, `search`, `analyze`, `edit`,

@@ -71,6 +71,20 @@ public static class ChangesTabProjection
         int added = completed.Sum(edit => edit.Added ?? 0);
         int removed = completed.Sum(edit => edit.Removed ?? 0);
 
+        // A basename-only edit (made through an absolute path) joins the relative
+        // path with its name when exactly one exists; otherwise it groups by name.
+        var pathsByName = completed
+            .Where(edit => edit.RelativePath is not null)
+            .GroupBy(edit => edit.FileName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key,
+                group => group.Select(edit => edit.RelativePath!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+        string FileKey(AgentActivityItem edit) =>
+            edit.RelativePath
+            ?? (edit.FileName is { Length: > 0 } name
+                ? pathsByName.TryGetValue(name, out var paths) && paths.Length == 1 ? paths[0] : name
+                : UnnamedFile);
+
         var groups = completed
             .Select((edit, order) => (Edit: edit, Order: order))
             .GroupBy(item => FileKey(item.Edit), StringComparer.OrdinalIgnoreCase)
@@ -86,11 +100,12 @@ public static class ChangesTabProjection
             visible[^1] = focused;
         }
 
-        var rows = visible.Select(group => Row(group.Select(item => item.Edit).ToList(), focusedActivityId)).ToList();
+        var rows = visible.Select(group => Row(group.Select(item => item.Edit).ToList(), focusedActivityId,
+            group.Any(item => item.Edit.RelativePath is not null) ? group.Key : null)).ToList();
         return new ChangesTabProjectionResult(rows, added, removed);
     }
 
-    private static ChangesTabRow Row(List<AgentActivityItem> fileEdits, string? focusedActivityId)
+    private static ChangesTabRow Row(List<AgentActivityItem> fileEdits, string? focusedActivityId, string? relativePath)
     {
         var newestFirst = fileEdits.AsEnumerable().Reverse().Take(MaxEditsPerRow).ToList();
         // The focused edit stays reachable even when it is older than the row's cap.
@@ -105,12 +120,10 @@ public static class ChangesTabProjection
             SumKnown(fileEdits.Select(edit => edit.Added)),
             SumKnown(fileEdits.Select(edit => edit.Removed)),
             newestFirst.Select(edit => new ChangesTabEdit(edit.ActivityId, edit.EditBeforeText, edit.EditAfterText,
-                edit.LineStart, edit.Added, edit.Removed)).ToArray(),
-            fileEdits[0].ActivityId);
+                edit.LineStart, edit.Added, edit.Removed, edit.FileName)).ToArray(),
+            fileEdits[0].ActivityId,
+            relativePath);
     }
-
-    private static string FileKey(AgentActivityItem edit) =>
-        edit.FileName is { Length: > 0 } name ? name.Replace('\\', '/') : UnnamedFile;
 
     /// <summary>The sum of the known counts, or null when no edit of the file reported one.</summary>
     private static int? SumKnown(IEnumerable<int?> counts)

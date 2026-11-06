@@ -70,6 +70,69 @@ public sealed class CodeHighlighterTests
     }
 
     [Fact]
+    public void Calls_and_types_get_their_own_kinds()
+    {
+        const string code = "server = ThreadingHTTPServer(('', 0), Handler)\nprint(len(x))";
+        var spans = CodeHighlighter.Highlight(code, "python");
+
+        Assert.Equal(code, string.Concat(spans.Select(span => span.Text)));
+        Assert.Contains(spans, span => span.Kind == CodeHighlighter.SpanKind.Function && span.Text == "ThreadingHTTPServer");
+        Assert.Contains(spans, span => span.Kind == CodeHighlighter.SpanKind.Function && span.Text == "print");
+        Assert.Contains(spans, span => span.Kind == CodeHighlighter.SpanKind.Type && span.Text == "Handler");
+        Assert.Contains(spans, span => span.Kind == CodeHighlighter.SpanKind.Plain && span.Text == "server");
+    }
+
+    [Fact]
+    public void Dashes_join_identifiers_only_in_shell_like_languages()
+    {
+        Assert.Contains(CodeHighlighter.Highlight("Get-Item x", "powershell"), span => span.Text == "Get-Item");
+        Assert.DoesNotContain(CodeHighlighter.Highlight("a-b", "csharp"), span => span.Text == "a-b");
+    }
+
+    [Theory]
+    [InlineData("server.py", "python")]
+    [InlineData("src/App.CS", "csharp")]
+    [InlineData("index.tsx", "javascript")]
+    [InlineData("main.rs", "rust")]
+    [InlineData("App.xaml", "xml")]
+    [InlineData("notes.txt", null)]
+    [InlineData("Makefile", null)]
+    [InlineData(null, null)]
+    public void Files_map_to_languages_by_extension(string? fileName, string? language) =>
+        Assert.Equal(language, CodeHighlighter.LanguageForFile(fileName));
+
+    [Fact]
+    public void Lines_keep_a_comment_that_spans_them_and_drop_the_breaks()
+    {
+        var lines = CodeHighlighter.HighlightLines("int a; /* one\r\ntwo */ int b;", "csharp");
+
+        Assert.Equal(2, lines.Count);
+        Assert.Contains(lines[1], span => span.Kind == CodeHighlighter.SpanKind.Comment && span.Text == "two */");
+        Assert.DoesNotContain(lines.SelectMany(line => line), span => span.Text.Contains('\n') || span.Text.Contains('\r'));
+    }
+
+    [Fact]
+    public void The_code_preview_numbers_lines_and_names_the_language()
+    {
+        var view = CodePreviewModel.Build("import os\nprint(os.name)\n", @"C:\work\tool.py");
+
+        Assert.Equal("1\n2", view.LineNumbers);
+        Assert.Equal(2, view.Lines.Count);
+        Assert.Equal("Python · 2 lines", view.Description);
+        Assert.Contains(view.Lines[0], span => span.Kind == CodeHighlighter.SpanKind.Keyword && span.Text == "import");
+    }
+
+    [Fact]
+    public void A_huge_or_unknown_file_previews_as_plain_text()
+    {
+        var huge = CodePreviewModel.Build(new string('x', CodePreviewModel.MaxHighlightedChars + 1), "big.cs");
+        Assert.All(huge.Lines.SelectMany(line => line), span => Assert.Equal(CodeHighlighter.SpanKind.Plain, span.Kind));
+        Assert.EndsWith("colors off for large files", huge.Description, StringComparison.Ordinal);
+
+        Assert.Equal("Text · 1 line", CodePreviewModel.Build("hello", "notes.txt").Description);
+    }
+
+    [Fact]
     public void Empty_code_yields_no_spans()
     {
         Assert.Empty(CodeHighlighter.Highlight(string.Empty, "csharp"));

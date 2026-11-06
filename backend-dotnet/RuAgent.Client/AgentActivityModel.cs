@@ -25,7 +25,8 @@ public sealed record AgentActivityModel(
     long? TransientSequence,
     string? Detail = null,
     IReadOnlyList<AgentTodoWire>? Todos = null,
-    int? ExitCode = null)
+    int? ExitCode = null,
+    string? RelativePath = null)
 {
     public static bool TryParse(SseFrame frame, out AgentActivityModel? activity)
     {
@@ -91,7 +92,8 @@ public sealed record AgentActivityModel(
                 frame.TransientSequence,
                 wire.Detail,
                 wire.Todos,
-                wire.ExitCode);
+                wire.ExitCode,
+                wire.RelativePath);
             return true;
         }
         catch (JsonException)

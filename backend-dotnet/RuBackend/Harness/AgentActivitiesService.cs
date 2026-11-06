@@ -583,7 +583,8 @@ public sealed class AgentActivitiesService
             activity.Detail,
             activity.Todos?.Select(todo => new ProtocolTodoWire(todo.Content, todo.Status)).ToArray(),
             durableSequence,
-            activity.ExitCode);
+            activity.ExitCode,
+            activity.RelativePath);
 
     private sealed record StepTextReplayRow(PayloadId PayloadId, long Sequence);
 

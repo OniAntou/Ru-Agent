@@ -49,13 +49,14 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
         _office?.Dispose(); _office = null; _nativeReady = false;
         _pdf = null; _pdfStream?.Dispose(); _pdfStream = null;
         _path = _workspace = null;
-        PageImage.Source = null; TextContent.Text = ""; MarkdownContent.MarkdownText = "";
+        PageImage.Source = null; TextContent.Inlines.Clear(); LineNumbers.Text = ""; MarkdownContent.MarkdownText = "";
         PageToolbar.Visibility = ContentScroll.Visibility = Visibility.Collapsed;
         FocusPreviewButton.Visibility = Visibility.Collapsed;
         FitPreviewButton.Visibility = Visibility.Collapsed;
         StatusLabel.Text = "Select a file in Files to preview it here.";
         StatusLabel.Visibility = Visibility.Visible;
         FileNameLabel.Text = "File preview";
+        PreviewDetailLabel.Text = "Read-only preview";
     }
 
     public async Task OpenAsync(string workspace, string path)

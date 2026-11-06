@@ -89,20 +89,6 @@ namespace RuApp.Controls
             PanelTasksStatusText.Text = status;
         }
 
-        public void RenderChanges(IReadOnlyList<ChangesTabRow> rows, int added, int removed)
-        {
-            ChangesTabReconciler.Apply(Changes, rows);
-            CardChangesLabel.Text = SidePanelSummary.ChangesLabel(rows);
-            CardChangeDeltas.Visibility = rows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-
-            CardAddedText.Text = "+" + added;
-            CardRemovedText.Text = "−" + removed;
-            PanelAddedText.Text = "+" + added;
-            PanelRemovedText.Text = "−" + removed;
-            ChangesEmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            ChangesList.Visibility = rows.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        }
-
         public void RenderTasks(IReadOnlyList<AgentTaskRow> rows, string status)
         {
             SetTasksStatus(status);

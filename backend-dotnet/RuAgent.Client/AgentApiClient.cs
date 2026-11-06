@@ -321,7 +321,8 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
                     TransientSequence: null,
                     wire.Detail,
                     wire.Todos,
-                    wire.ExitCode));
+                    wire.ExitCode,
+                    wire.RelativePath));
             }
 
             var transcript = new List<AgentRunTranscriptEntry>();

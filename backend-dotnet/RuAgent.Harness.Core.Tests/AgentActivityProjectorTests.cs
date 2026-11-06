@@ -173,6 +173,33 @@ public sealed partial class AgentActivityProjectorTests
     }
 
     [Theory]
+    [InlineData("src\\\\App\\\\server.py", "src/App/server.py")]
+    [InlineData("./tests/test_server.py", "tests/test_server.py")]
+    [InlineData("README.md", "README.md")]
+    [InlineData("D:\\\\LLM\\\\server.py", null)]
+    [InlineData("/etc/server.py", null)]
+    [InlineData("\\\\\\\\host\\\\share\\\\server.py", null)]
+    [InlineData("../outside/server.py", null)]
+    [InlineData("src/con/server.py", null)]
+    [InlineData("src//server.py", null)]
+    public void Edit_projection_carries_only_a_safe_workspace_relative_path(string path, string? expected)
+    {
+        var activity = AgentActivityProjector.ProjectTool(
+            Proposal("edit", $"{{\"path\":\"{path}\",\"old_string\":\"a\",\"new_string\":\"b\"}}"),
+            AgentActivityState.Started);
+
+        Assert.Equal(expected, activity.RelativePath);
+        Assert.NotNull(activity.FileName);
+    }
+
+    [Fact]
+    public void Only_edits_carry_a_relative_path()
+    {
+        var read = AgentActivityProjector.ProjectTool(Proposal("read", "{\"path\":\"src/App.cs\"}"), AgentActivityState.Started);
+        Assert.Null(read.RelativePath);
+    }
+
+    [Theory]
     [InlineData("run")]
     [InlineData("shell")]
     public void Terminal_projection_keeps_the_path_out_of_metadata(string mode)

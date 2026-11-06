@@ -50,7 +50,8 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
             activity.ToolDisplay,
             detail,
             MapTodos(activity.Todos),
-            ExitCode: activity.ExitCode);
+            ExitCode: activity.ExitCode,
+            RelativePath: activity.RelativePath);
         AgentActivityWireValidator.Validate(wire);
         var json = AgentActivityWireCodec.Serialize(wire);
         _liveEvents.TryPublish(runId, "agent.activity", json);

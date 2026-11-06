@@ -16,7 +16,10 @@ public sealed record AgentTodoRow(string Content, string Status);
 
 /// <summary>
 /// Safe activity data created inside the Core boundary. It intentionally has no raw
-/// command, argument, path, patch, output or model-reasoning fields.
+/// command, argument, absolute path, patch, output or model-reasoning fields.
+/// RelativePath is the one path it carries: an edit's workspace-relative path, only
+/// when the model passed one whose every segment is a safe leaf (never rooted, never
+/// a drive or UNC path, never with "..").
 /// Detail carries short human-readable context (for example a model thinking
 /// excerpt); it is length-bounded display text, never tool input/output.
 /// </summary>
@@ -36,4 +39,5 @@ public sealed record AgentActivity(
     string? ToolDisplay = null,
     string? Detail = null,
     IReadOnlyList<AgentTodoRow>? Todos = null,
-    int? ExitCode = null);
+    int? ExitCode = null,
+    string? RelativePath = null);

@@ -276,4 +276,64 @@ public sealed class AgentSidePanelUiContractTests
         Assert.DoesNotContain("CardFilesButton", names);
         Assert.DoesNotContain("CardTerminalButton", names);
     }
+
+    [Fact]
+    public void Every_tab_chip_shares_one_shape_and_drag_wiring()
+    {
+        var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        foreach (var name in new[] { "ChangesChip", "TasksChip", "SubagentsChip", "FilesChip", "PreviewChip", "TerminalChip" })
+        {
+            var chip = GuiSource.Require(document, name);
+            Assert.Equal("{StaticResource AppControlCornerRadius}", GuiSource.AttributeValue(chip, "CornerRadius"));
+            Assert.Equal("Transparent", GuiSource.AttributeValue(chip, "BorderBrush"));
+            // Drag handlers are attached in code with handledEventsToo; a XAML copy runs them twice.
+            Assert.Null(GuiSource.AttributeValue(chip, "PointerPressed"));
+            Assert.Null(GuiSource.AttributeValue(chip, "PointerMoved"));
+        }
+
+        var code = GuiSource.Text("Controls", "AgentSidePanelControl.Tabs.cs");
+        Assert.Contains("isActive || isHovered", GuiSource.MethodBody(code, "RefreshChip"), StringComparison.Ordinal);
+        Assert.Equal("OnTabStripPointerWheelChanged",
+            GuiSource.AttributeValue(GuiSource.Require(document, "TabStripScroll"), "PointerWheelChanged"));
+    }
+
+    [Fact]
+    public void Code_previews_are_framed_numbered_and_colored_by_file_type()
+    {
+        var preview = GuiSource.Xml("Controls", "DocumentPreviewControl.xaml");
+        var frame = GuiSource.Require(preview, "CodeFrame");
+        Assert.Contains(GuiSource.Require(preview, "LineNumbers"), frame.Descendants());
+        var text = GuiSource.Require(preview, "TextContent");
+        Assert.Contains(text, frame.Descendants());
+        Assert.Equal("NoWrap", GuiSource.AttributeValue(text, "TextWrapping"));
+        Assert.Contains("CodePreviewModel.Build(text, _path)",
+            GuiSource.Text("Controls", "DocumentPreviewControl.Rendering.cs"), StringComparison.Ordinal);
+
+        // Both diff views name the file, so the edit is colored by its language.
+        foreach (var source in new[] { GuiSource.Xml("Views", "ChatView.xaml"), GuiSource.Xml("Controls", "AgentSidePanelControl.xaml") })
+        {
+            var diff = Assert.Single(source.Descendants(), element => element.Name.LocalName == "FileEditPreviewControl");
+            Assert.StartsWith("{x:Bind FileName", GuiSource.AttributeValue(diff, "SyntaxFile"), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Changes_rows_offer_file_actions_and_a_scratch_toggle()
+    {
+        var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        var clicks = document.Descendants().Select(element => GuiSource.AttributeValue(element, "Click")).ToHashSet();
+        Assert.Contains("OnChangeOpenPreviewClick", clicks);
+        Assert.Contains("OnChangeRevealClick", clicks);
+        Assert.Contains("OnChangeCopyPathClick", clicks);
+        Assert.Equal("OnShowScratchClick", GuiSource.AttributeValue(GuiSource.Require(document, "ShowScratchToggle"), "Click"));
+        GuiSource.Require(document, "ChangesSummaryText");
+        Assert.DoesNotContain("CardRecentFilesPanel", GuiSource.XamlNames(document));
+
+        var code = GuiSource.Text("Controls", "AgentSidePanelControl.Changes.cs");
+        // Actions resolve against the workspace root and never open a bare basename.
+        Assert.Contains("ChangesTabFiles.Resolve(_workspacePath, row.RelativePath)",
+            GuiSource.MethodBody(code, "OnChangeOpenPreviewClick"), StringComparison.Ordinal);
+        Assert.Contains("ChangesTabFiles.Resolve(_workspacePath, row.RelativePath)",
+            GuiSource.MethodBody(code, "OnChangeRevealClick"), StringComparison.Ordinal);
+    }
 }

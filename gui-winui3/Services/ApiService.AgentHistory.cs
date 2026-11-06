@@ -494,7 +494,8 @@ namespace RuApp.Services
                         TransientSequence: null,
                         wire.Detail,
                         wire.Todos,
-                        wire.ExitCode));
+                        wire.ExitCode,
+                        wire.RelativePath));
                 }
 
                 return new RunActivityReplay(rows, ReadTranscript(document.RootElement));

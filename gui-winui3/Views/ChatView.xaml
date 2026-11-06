@@ -301,6 +301,7 @@
                                                     BeforeText="{x:Bind EditBeforeText, Mode=OneWay}"
                                                     AfterText="{x:Bind EditAfterText, Mode=OneWay}"
                                                     StartLine="{x:Bind LineStart, Mode=OneWay}"
+                                                    SyntaxFile="{x:Bind FileName, Mode=OneWay}"
                                                     Margin="0,8,0,2"
                                                    AutomationProperties.Name="File edit preview" />
                   <controls:TerminalActivityCard Grid.Row="2"

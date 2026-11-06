@@ -357,6 +357,7 @@
                       VerticalAlignment="Center">
                     <ScrollViewer x:Name="TabStripScroll" Grid.Column="0"
                                   SizeChanged="OnTabStripSizeChanged"
+                                  PointerWheelChanged="OnTabStripPointerWheelChanged"
                                   Height="28"
                                   VerticalAlignment="Center"
                                   HorizontalScrollBarVisibility="Hidden"
@@ -426,7 +427,7 @@
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <FontIcon Glyph="&#xE7C4;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
                                     <TextBlock x:Name="TasksTabLabel"
-                                               Text="Background tasks"
+                                               Text="Tasks"
                                                FontFamily="{StaticResource RuUiFontFamily}"
                                                FontSize="12"
                                                Foreground="{StaticResource RuInkBrush}" />
@@ -461,7 +462,7 @@
                                     ToolTipService.ToolTip="Subagents"
                                     AutomationProperties.Name="Subagents tab">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <FontIcon Glyph="&#xE8D4;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                                    <FontIcon Glyph="&#xE716;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
                                     <TextBlock x:Name="SubagentsTabLabel"
                                                Text="Subagents"
                                                FontFamily="{StaticResource RuUiFontFamily}"
@@ -518,22 +519,31 @@
                         </StackPanel>
                     </Border>
 
-                    <Border x:Name="PreviewChip" Tag="Preview" VerticalAlignment="Center"
-                            PointerEntered="OnChipPointerEntered" PointerExited="OnChipPointerExited"
-                            PointerPressed="OnChipPointerPressed" PointerMoved="OnChipPointerMoved"
-                            PointerReleased="OnChipPointerReleased" PointerCanceled="OnChipPointerCaptureLost"
-                            PointerCaptureLost="OnChipPointerCaptureLost" CornerRadius="6" BorderThickness="1"
+                    <Border x:Name="PreviewChip"
+                            Tag="Preview"
+                            VerticalAlignment="Center"
+                            PointerEntered="OnChipPointerEntered"
+                            PointerExited="OnChipPointerExited"
+                            PointerCaptureLost="OnChipPointerCaptureLost"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
+                            BorderThickness="1"
+                            BorderBrush="Transparent"
                             Background="Transparent">
-                        <StackPanel Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
                             <Button x:Name="PreviewTabButton" Click="OnPreviewTabClick" Style="{StaticResource SidePanelChipButtonStyle}"
+                                    ToolTipService.ToolTip="Preview"
                                     AutomationProperties.Name="File preview tab">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <FontIcon Glyph="&#xE890;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
-                                    <TextBlock x:Name="PreviewTabLabel" Text="Preview" FontSize="12" Foreground="{StaticResource RuInkBrush}" />
+                                    <TextBlock x:Name="PreviewTabLabel" Text="Preview"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="12" Foreground="{StaticResource RuInkBrush}" />
                                 </StackPanel>
                             </Button>
                             <Button x:Name="PreviewTabCloseButton" Click="OnPreviewTabCloseClick" Width="24" Padding="0"
-                                    Style="{StaticResource SidePanelChipButtonStyle}" AutomationProperties.Name="Close Preview tab">
+                                    Style="{StaticResource SidePanelChipButtonStyle}"
+                                    ToolTipService.ToolTip="Close Preview"
+                                    AutomationProperties.Name="Close Preview tab">
                                 <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
                             </Button>
                         </StackPanel>
@@ -648,35 +658,66 @@
                 <Grid Grid.Row="1" Margin="14,10,12,0">
                     <views:SubagentTreeView x:Name="SubagentBrowser" Visibility="Collapsed" />
                     <Grid x:Name="ChangesBody" Visibility="Collapsed" RowDefinitions="Auto,*">
-                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,0,0,8">
-                            <TextBlock Text="Changes"
+                        <!-- The tab already says "Changes", so the header carries the
+                             summary instead: files, totals and the scratch-file toggle. -->
+                        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,0,0,8">
+                            <TextBlock x:Name="ChangesSummaryText"
+                                       Text="No file changes"
                                        FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="13"
+                                       FontSize="12"
                                        FontWeight="SemiBold"
                                        Foreground="{StaticResource RuInkBrush}"
+                                       TextTrimming="CharacterEllipsis"
                                        VerticalAlignment="Center" />
                             <TextBlock x:Name="PanelAddedText"
                                        Grid.Column="1"
                                        Text="+0"
                                        FontFamily="{StaticResource RuMonoFontFamily}"
                                        FontSize="12"
-                                       Foreground="{StaticResource RuSuccessBrush}" />
+                                       Foreground="{StaticResource RuSuccessBrush}"
+                                       VerticalAlignment="Center" />
                             <TextBlock x:Name="PanelRemovedText"
                                        Grid.Column="2"
                                        Text="−0"
                                        FontFamily="{StaticResource RuMonoFontFamily}"
                                        FontSize="12"
-                                       Foreground="{StaticResource RuDangerBrush}" />
+                                       Foreground="{StaticResource RuDangerBrush}"
+                                       VerticalAlignment="Center" />
+                            <ToggleButton x:Name="ShowScratchToggle"
+                                          Grid.Column="3"
+                                          Visibility="Collapsed"
+                                          Click="OnShowScratchClick"
+                                          Padding="6,2"
+                                          MinHeight="0"
+                                          FontFamily="{StaticResource RuUiFontFamily}"
+                                          FontSize="11"
+                                          CornerRadius="{StaticResource AppControlCornerRadius}"
+                                          ToolTipService.ToolTip="Show or hide the agent's scratch files: probe scripts, patch drafts and backups"
+                                          AutomationProperties.Name="Show scratch files" />
                         </Grid>
 
-                        <TextBlock x:Name="ChangesEmptyText"
-                                   Grid.Row="1"
-                                   Text="No changes yet."
-                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                   FontSize="12"
-                                   Foreground="{StaticResource RuMutedBrush}"
-                                   TextWrapping="Wrap"
-                                   Margin="0,6,0,0" />
+                        <StackPanel x:Name="ChangesEmptyText"
+                                    Grid.Row="1"
+                                    Margin="0,24,0,0"
+                                    Spacing="6"
+                                    HorizontalAlignment="Center">
+                            <FontIcon Glyph="&#xE70F;" FontSize="20" Foreground="{StaticResource RuMutedBrush}" Opacity="0.7" />
+                            <TextBlock Text="No changes yet"
+                                       HorizontalAlignment="Center"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuInkBrush}" />
+                            <TextBlock x:Name="ChangesEmptyDetail"
+                                       Text="Files the agent edits in this session appear here."
+                                       HorizontalAlignment="Center"
+                                       TextAlignment="Center"
+                                       MaxWidth="220"
+                                       TextWrapping="Wrap"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="11.5"
+                                       Foreground="{StaticResource RuMutedBrush}" />
+                        </StackPanel>
 
                         <ScrollViewer Grid.Row="1"
                                       HorizontalScrollBarVisibility="Disabled"
@@ -687,6 +728,7 @@
                                         <!-- One row per file; expanding it lists that file's
                                              edits newest first, each with its own diff. -->
                                         <StackPanel Margin="0,0,0,4">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="2">
                                             <Button Click="OnChangeRowToggleClick"
                                                     Tag="{x:Bind}"
                                                     Style="{StaticResource RuToolbarButtonStyle}"
@@ -694,6 +736,7 @@
                                                     HorizontalContentAlignment="Stretch"
                                                     CornerRadius="{StaticResource AppControlCornerRadius}"
                                                     Padding="6,3"
+                                                    Opacity="{x:Bind RowOpacity}"
                                                     ToolTipService.ToolTip="{x:Bind ToolTipText}"
                                                     AutomationProperties.Name="{x:Bind AccessibleName}">
                                                 <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="6">
@@ -701,13 +744,19 @@
                                                               FontSize="10"
                                                               Foreground="{StaticResource RuMutedBrush}"
                                                               VerticalAlignment="Center" />
-                                                    <TextBlock Grid.Column="1"
-                                                               Text="{x:Bind FileName}"
-                                                               FontFamily="{StaticResource RuMonoFontFamily}"
-                                                               FontSize="11.5"
-                                                               Foreground="{StaticResource RuInkBrush}"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               VerticalAlignment="Center" />
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{x:Bind FileName}"
+                                                                   FontFamily="{StaticResource RuMonoFontFamily}"
+                                                                   FontSize="11.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{x:Bind Folder}"
+                                                                   Visibility="{x:Bind HasFolder, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="10.5"
+                                                                   Foreground="{StaticResource RuMutedBrush}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
                                                     <TextBlock Grid.Column="2"
                                                                Text="{x:Bind EditCountText}"
                                                                FontFamily="{StaticResource RuUiFontFamily}"
@@ -728,6 +777,32 @@
                                                                VerticalAlignment="Center" />
                                                 </Grid>
                                             </Button>
+                                            <Button Grid.Column="1"
+                                                    Style="{StaticResource RuToolbarButtonStyle}"
+                                                    Width="24"
+                                                    Padding="0"
+                                                    VerticalAlignment="Stretch"
+                                                    CornerRadius="{StaticResource AppControlCornerRadius}"
+                                                    ToolTipService.ToolTip="File actions"
+                                                    AutomationProperties.Name="File actions">
+                                                <FontIcon Glyph="&#xE712;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                                                <Button.Flyout>
+                                                    <MenuFlyout>
+                                                        <MenuFlyoutItem Text="Open preview" Tag="{x:Bind}" Click="OnChangeOpenPreviewClick"
+                                                                        IsEnabled="{x:Bind HasRelativePath}">
+                                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE890;" /></MenuFlyoutItem.Icon>
+                                                        </MenuFlyoutItem>
+                                                        <MenuFlyoutItem Text="Reveal in File Explorer" Tag="{x:Bind}" Click="OnChangeRevealClick"
+                                                                        IsEnabled="{x:Bind HasRelativePath}">
+                                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE838;" /></MenuFlyoutItem.Icon>
+                                                        </MenuFlyoutItem>
+                                                        <MenuFlyoutItem Text="Copy path" Tag="{x:Bind}" Click="OnChangeCopyPathClick">
+                                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon>
+                                                        </MenuFlyoutItem>
+                                                    </MenuFlyout>
+                                                </Button.Flyout>
+                                            </Button>
+                                            </Grid>
                                             <ItemsControl
                                                           Margin="16,4,0,4"
                                                           ItemsSource="{x:Bind Edits}"
@@ -753,7 +828,8 @@
                                                                 Visibility="{x:Bind HasPreview, Converter={StaticResource BoolToVisibilityConverter}}"
                                                                 BeforeText="{x:Bind BeforeText}"
                                                                 AfterText="{x:Bind AfterText}"
-                                                                StartLine="{x:Bind StartLine}" />
+                                                                StartLine="{x:Bind StartLine}"
+                                                                SyntaxFile="{x:Bind FileName}" />
                                                             <TextBlock Text="No preview was recorded for this edit."
                                                                        Visibility="{x:Bind HasNoPreview, Converter={StaticResource BoolToVisibilityConverter}}"
                                                                        FontFamily="{StaticResource RuUiFontFamily}"

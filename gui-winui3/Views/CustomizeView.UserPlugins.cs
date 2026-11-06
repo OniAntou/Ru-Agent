@@ -355,6 +355,58 @@ public sealed partial class CustomizeView
         }
     }
 
+    private async void OnInstallPluginPackageClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            bool update = sender is FrameworkElement { Tag: "update" };
+            var url = new TextBox
+            {
+                Header = "GitHub folder URL, pinned to a commit",
+                PlaceholderText = "https://github.com/owner/repo/tree/<40-character commit>/plugins/my-plugin",
+                MinWidth = 460,
+            };
+            var form = new StackPanel { Spacing = 12 };
+            form.Children.Add(url);
+            form.Children.Add(Text(update
+                ? "Replaces a plugin Ru installed from the same repository and folder, if you have not changed its files. If its commands changed, they stay paused until you allow them again."
+                : "Ru downloads only that folder at that exact commit and runs nothing while installing. The plugin stays off until you turn it on, and any commands it has wait for your approval.",
+                12, "RuMutedBrush", wrap: true));
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = update ? "Update a plugin from GitHub" : "Install a plugin from GitHub",
+                Content = form,
+                PrimaryButtonText = update ? "Update" : "Install",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            if (await ContentDialogGate.ShowAsync(dialog) != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(url.Text)) return;
+            await InstallPluginPackageAsync(url.Text.Trim(), update);
+        }
+        catch (Exception error)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[Customize] Plugin install failed: {error.GetType().Name}");
+        }
+    }
+
+    private async Task InstallPluginPackageAsync(string sourceUrl, bool update)
+    {
+        if (CreatePluginsClient() is not { } client) return;
+        ShowStatus(update ? "Updating the plugin…" : "Installing the plugin…");
+        try
+        {
+            var result = await client.InstallPackageAsync(sourceUrl, update);
+            RenderPlugins(result);
+            var receipt = result.Receipt!;
+            ShowStatus($"{(receipt.Action == "updated" ? "Updated" : "Installed")} {receipt.Name} at commit {receipt.Commit[..7]}. Turn it on when you are ready.");
+        }
+        catch (Exception error) when (error is AgentApiException or HttpRequestException or TaskCanceledException)
+        {
+            ShowStatus(error is AgentApiException api ? api.Message : "Could not install the plugin.", error.Message);
+        }
+    }
+
     /// <summary>A valid plugin id from a display name: lowercase ASCII, dashes, at most 24 characters.</summary>
     internal static string SuggestPluginId(string name)
     {

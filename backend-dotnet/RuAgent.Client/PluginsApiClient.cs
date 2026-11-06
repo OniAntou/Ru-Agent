@@ -27,10 +27,20 @@ public sealed record PluginItem(
     public bool NeedsConsent => Consent is "needs_approval" or "changed";
 }
 
+public sealed record PluginPackageReceipt(
+    [property: JsonPropertyName("action")] string Action,
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("source")] string Source,
+    [property: JsonPropertyName("commit")] string Commit,
+    [property: JsonPropertyName("package_sha256")] string PackageSha256,
+    [property: JsonPropertyName("file_count")] int FileCount);
+
 public sealed record PluginListResponse(
     [property: JsonPropertyName("local_root")] string LocalRoot,
     [property: JsonPropertyName("plugins")] IReadOnlyList<PluginItem> Plugins,
-    [property: JsonPropertyName("skipped")] IReadOnlyList<string> Skipped);
+    [property: JsonPropertyName("skipped")] IReadOnlyList<string> Skipped,
+    [property: JsonPropertyName("receipt")] PluginPackageReceipt? Receipt = null);
 
 public sealed record PluginSettingsRequest(
     [property: JsonPropertyName("action")] string Action,
@@ -80,6 +90,25 @@ public sealed class PluginsApiClient : IDisposable
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
         return await SendAsync(request, "plugins_update_failed", cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Installs or updates a plugin from a GitHub tree URL pinned to a full commit.</summary>
+    public async Task<PluginListResponse> InstallPackageAsync(string sourceUrl, bool update, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceUrl);
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_session.BaseUri, "agent/v1/plugins/packages"))
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(new { source_url = sourceUrl, action = update ? "update" : "install" }),
+                Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        var result = await SendAsync(request, "plugins_install_failed", cancellationToken).ConfigureAwait(false);
+        if (result.Receipt is not { } receipt || !RuAgent.Protocol.UserPlugins.IsValidId(receipt.Id)
+            || receipt.Action is not ("installed" or "updated") || receipt.Commit is not { Length: 40 }
+            || receipt.PackageSha256 is not { Length: 64 } || receipt.FileCount is < 1 or > 256)
+            throw new AgentApiException("invalid_response", "Invalid plugin package receipt.");
+        return result;
     }
 
     private async Task<PluginListResponse> SendAsync(HttpRequestMessage request, string failureCode, CancellationToken cancellationToken)

@@ -104,6 +104,14 @@ change later, Ru pauses them and shows **changed, review again** until you allow
 own tools cannot edit your plugins or this approval in `plan` or `standard`. See
 [ADR 0044](../adr/0044-user-plugins.md).
 
+To install someone else's plugin, open **Add plugin → Install from GitHub…** and paste a folder URL
+pinned to a full commit, such as
+`https://github.com/owner/repo/tree/<40-character commit>/plugins/team-rules`. Ru downloads only that
+folder at that commit, runs nothing while installing, and keeps the plugin off until you turn it on.
+**Update from GitHub…** replaces a plugin Ru installed from the same repository and folder, unless
+you changed its files; if the update changes its commands, they stay paused until you allow them.
+A plugin you made yourself with the same id blocks the install.
+
 ## Custom commands
 
 Save a prompt you reuse as a Markdown file and run it as a slash command. A file at

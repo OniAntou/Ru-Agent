@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using RuAgent.Broker.Skills;
 using RuAgent.Protocol;
 using RuBackend.Harness.Plugins;
 
@@ -16,6 +17,67 @@ public static partial class AgentV1Endpoints
         // execution authority over tool calls, which policy still decides.
         app.MapGet("/agent/v1/plugins", GetPlugins);
         app.MapPost("/agent/v1/plugins/settings", PostPluginSettingsAsync);
+        app.MapPost("/agent/v1/plugins/packages", PostPluginPackageAsync);
+    }
+
+    /// <summary>The managed plugin installer: ADR 0036's pinned-package rules over the plugin root.</summary>
+    public sealed class PluginPackageInstaller(SkillPackageInstaller installer)
+    {
+        public SkillPackageInstaller Installer { get; } = installer;
+    }
+
+    private sealed record PluginPackageRequest(
+        [property: JsonPropertyName("source_url")] string SourceUrl,
+        [property: JsonPropertyName("action")] string Action);
+
+    /// <summary>
+    /// Installs or updates a plugin from a GitHub tree URL pinned to a commit (ADR 0044 phase 3).
+    /// Nothing runs during install, and an installed plugin stays off until the user enables
+    /// it; an update whose commands changed pauses them until the user approves again.
+    /// </summary>
+    private static async Task<IResult> PostPluginPackageAsync(HttpContext context, PluginPackageInstaller packages, CancellationToken ct)
+    {
+        PluginPackageRequest? request;
+        try
+        {
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct).ConfigureAwait(false);
+            request = text is null ? null : JsonSerializer.Deserialize<PluginPackageRequest>(text);
+        }
+        catch (RequestBodyTooLargeException) { return PluginError(413, "request_too_large", "Plugin request is too large."); }
+        catch (Exception error) when (error is JsonException or DecoderFallbackException)
+        { return PluginError(400, "invalid_request", "Invalid plugin request."); }
+        if (request is null || request.Action is not ("install" or "update") || string.IsNullOrWhiteSpace(request.SourceUrl))
+            return PluginError(400, "invalid_request", "Give a pinned GitHub tree URL and install or update.");
+
+        // A local plugin with the same id would hide the installed one; refuse rather than install a shadow.
+        var folder = request.SourceUrl.TrimEnd('/').Split('/')[^1].ToLowerInvariant();
+        if (UserPlugins.IsValidId(folder) && Directory.Exists(Path.Combine(UserPlugins.LocalRoot(), folder)))
+            return PluginError(409, "plugin_target_exists", $"You already have a local plugin named {folder}.");
+
+        try
+        {
+            var receipt = await packages.Installer.InstallAsync(request.SourceUrl,
+                request.Action == "update" ? SkillPackageInstallAction.Update : SkillPackageInstallAction.Install, ct).ConfigureAwait(false);
+            return PluginListResponse(new
+            {
+                action = receipt.Action, id = receipt.Id, name = receipt.Name, source = receipt.Source,
+                commit = receipt.Commit, package_sha256 = receipt.PackageSha256, file_count = receipt.FileCount,
+            });
+        }
+        catch (SkillPackageInstallException error)
+        {
+            var status = error.Code switch
+            {
+                "plugin_target_exists" or "plugin_target_unmanaged" or "plugin_target_modified"
+                    or "plugin_update_target_missing" or "plugin_install_busy" => 409,
+                "plugin_source_unavailable" or "plugin_source_redirect" => 502,
+                "plugin_source_timeout" => 504,
+                "plugin_archive_too_large" => 413,
+                "plugin_install_failed" or "plugin_install_root_unsafe" => 500,
+                _ => 400,
+            };
+            return PluginError(status, error.Code, error.Message);
+        }
     }
 
     private sealed record PluginSettingsRequest(
@@ -91,7 +153,7 @@ public static partial class AgentV1Endpoints
         return PluginListResponse();
     }
 
-    private static IResult PluginListResponse()
+    private static IResult PluginListResponse(object? receipt = null)
     {
         var skipped = new List<string>();
         IReadOnlyList<PluginExecutableSurface> plugins;
@@ -107,6 +169,7 @@ public static partial class AgentV1Endpoints
         return Results.Json(new
         {
             local_root = UserPlugins.LocalRoot(),
+            receipt,
             plugins = plugins.Select(surface => new
             {
                 id = surface.Plugin.Id,

@@ -69,7 +69,7 @@ Closing the GUI sends an authenticated `POST /host/shutdown` so the Host exits g
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../../backend-dotnet/public-route-contract.json):
-54 HTTP method/path pairs with no WebSocket route (31 `/agent/v1/*` and 23
+55 HTTP method/path pairs with no WebSocket route (32 `/agent/v1/*` and 23
 non-Agent routes); REST and SSE clients authenticate with the desktop secret
 (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE

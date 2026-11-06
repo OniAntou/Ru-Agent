@@ -247,6 +247,10 @@ internal static class PublicHostServiceRegistration
         });
         services.AddSingleton(_ => new RuAgent.Broker.Skills.SkillPackageInstaller(
             RuAgent.Protocol.SkillRoots.UserInstallationRoot()));
+        // User plugins from pinned GitHub sources (ADR 0044): the same installer rules, plugin root.
+        services.AddSingleton(_ => new RuBackend.Harness.AgentV1Endpoints.PluginPackageInstaller(
+            new RuAgent.Broker.Skills.SkillPackageInstaller(
+                RuAgent.Protocol.UserPlugins.ManagedRoot(), kind: RuAgent.Broker.Skills.PackageKind.Plugin)));
         // Computer use (ADR 0031): one desktop controller per Host. The stop hotkey is
         // registered on the first action, and pressing it cancels the controlling run.
         services.AddSingleton(_ => new RuAgent.Broker.Tools.Computer.ComputerStopHotkey());

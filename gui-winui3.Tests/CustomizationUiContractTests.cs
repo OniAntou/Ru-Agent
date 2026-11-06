@@ -37,7 +37,11 @@ public sealed class CustomizationUiContractTests
         var computerUse = GuiSource.Require(document, "ComputerUseToggle");
         var order = panel.Descendants().ToList();
         Assert.True(order.IndexOf(list) < order.IndexOf(computerUse));
-        Assert.Equal("OnNewPluginClick", GuiSource.AttributeValue(GuiSource.Require(document, "NewPluginButton"), "Click"));
+        var clicks = GuiSource.Require(document, "NewPluginButton").Descendants()
+            .Select(element => GuiSource.AttributeValue(element, "Click")).ToList();
+        Assert.Contains("OnNewPluginClick", clicks);
+        Assert.Equal(2, clicks.Count(click => click == "OnInstallPluginPackageClick"));
+        Assert.Contains("client.InstallPackageAsync", GuiSource.MethodBody(GuiSource.Text("Views", "CustomizeView.UserPlugins.cs"), "InstallPluginPackageAsync"), StringComparison.Ordinal);
         GuiSource.Require(document, "PluginsEmpty");
 
         var code = GuiSource.Text("Views", "CustomizeView.UserPlugins.cs");

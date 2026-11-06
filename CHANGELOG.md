@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(plugins)**: User plugin, phase 3 ([ADR 0044](docs/adr/0044-user-plugins.md)): cài plugin
+  từ GitHub. **Customize → Plugins → Add plugin → Install from GitHub…** nhận URL thư mục ghim vào
+  commit 40 ký tự; Ru chỉ tải đúng thư mục đó, không chạy gì khi cài, và plugin vẫn tắt cho tới
+  khi user bật. **Update from GitHub…** chỉ thay plugin do Ru cài từ cùng repo/thư mục khi file
+  chưa bị sửa; nếu bản mới đổi lệnh thì lệnh bị dừng chờ duyệt lại. Dùng lại toàn bộ cơ chế cài
+  skill (không redirect, giới hạn kích thước, lock, staging, rollback, hash từng file) với mã lỗi
+  `plugin_*`. Route mới `POST /agent/v1/plugins/packages` (contract: 55 route).
+
 - **feat(plugins)**: User plugin, phase 2 ([ADR 0044](docs/adr/0044-user-plugins.md)): plugin
   giờ chạy được `hooks.json` và `mcp.json`, nhưng chỉ sau khi user đồng ý. Bật plugin có lệnh sẽ
   hiện đúng danh sách lệnh nó chạy (tên biến môi trường, không hiện giá trị) để chọn **Allow and

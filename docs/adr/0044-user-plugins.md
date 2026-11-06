@@ -118,5 +118,9 @@ Each phase is built, tested and committed on its own.
    scaffolding. Done.
 2. Hooks and MCP with the consent digest and path protection (policy change: full
    matrix). Done.
-3. GitHub install and update (new routes: full matrix and route guards).
+3. GitHub install and update (new routes: full matrix and route guards). Done:
+   `SkillPackageInstaller` takes a package kind; a plugin package needs `ru-plugin.json`
+   (whose id must match the folder), writes `.ru-plugin-package.json`, reports `plugin_*`
+   codes, and installs under `%LOCALAPPDATA%\Ru\plugins`. A local plugin with the same id
+   refuses the install (`plugin_target_exists`).
 4. `create-plugin` skill and Add plugin from folder.

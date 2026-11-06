@@ -146,13 +146,22 @@
                                 AutomationProperties.Name="Open the plugins folder">
                             <FontIcon Glyph="&#xE838;" FontSize="13" />
                         </Button>
-                        <Button x:Name="NewPluginButton" Grid.Column="2" Click="OnNewPluginClick"
+                        <Button x:Name="NewPluginButton" Grid.Column="2"
                                 Style="{StaticResource RuSecondaryButtonStyle}" Padding="12,6"
-                                AutomationProperties.Name="New plugin">
+                                AutomationProperties.Name="Add a plugin">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon Glyph="&#xE710;" FontSize="12" />
-                                <TextBlock Text="New plugin" />
+                                <TextBlock Text="Add plugin" />
+                                <FontIcon Glyph="&#xE70D;" FontSize="10" />
                             </StackPanel>
+                            <Button.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                    <MenuFlyoutItem Text="New plugin…" Click="OnNewPluginClick" />
+                                    <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem Text="Install from GitHub…" Tag="install" Click="OnInstallPluginPackageClick" />
+                                    <MenuFlyoutItem Text="Update from GitHub…" Tag="update" Click="OnInstallPluginPackageClick" />
+                                </MenuFlyout>
+                            </Button.Flyout>
                         </Button>
                     </Grid>
 

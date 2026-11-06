@@ -158,6 +158,70 @@ public sealed class SkillPackageInstallerTests : IDisposable
         Assert.False(Directory.Exists(InstallPath("demo")));
     }
 
+    [Fact]
+    public async Task A_plugin_package_installs_with_its_own_manifest_and_is_found_by_the_plugin_catalog()
+    {
+        var plugin = ("ru-plugin.json", """{"id":"demo","name":"Demo plugin","description":"From GitHub"}""");
+        using var http = new HttpClient(new ArchiveHandler(Zip(plugin, ("AGENTS.md", "Use pytest."), ("hooks.json", "{}"))));
+        using var installer = new SkillPackageInstaller(_root, http, PackageKind.Plugin);
+
+        var receipt = await installer.InstallAsync(SourceUrl(), SkillPackageInstallAction.Install);
+
+        Assert.Equal("demo", receipt.Id);
+        Assert.Equal("Demo plugin", receipt.Name);
+        Assert.True(File.Exists(Path.Combine(InstallPath("demo"), SkillPackageInstaller.PluginManifestFileName)));
+        Assert.False(File.Exists(Path.Combine(InstallPath("demo"), SkillPackageInstaller.ManifestFileName)));
+        var manifest = RuAgent.Protocol.UserPlugins.ReadManifest(InstallPath("demo"), out var problem);
+        Assert.Equal("", problem);
+        Assert.Equal("From GitHub", manifest!.Description);
+    }
+
+    [Theory]
+    [InlineData("""{"id":"other","name":"Demo"}""", "plugin_manifest_invalid")]
+    [InlineData("""{"id":"demo","name":"Demo","run":"setup.cmd"}""", "plugin_manifest_invalid")]
+    public async Task A_plugin_package_with_an_invalid_manifest_is_refused_with_plugin_codes(string manifest, string code)
+    {
+        using var http = new HttpClient(new ArchiveHandler(Zip(("ru-plugin.json", manifest))));
+        using var installer = new SkillPackageInstaller(_root, http, PackageKind.Plugin);
+
+        var error = await Assert.ThrowsAsync<SkillPackageInstallException>(() =>
+            installer.InstallAsync(SourceUrl(), SkillPackageInstallAction.Install));
+
+        Assert.Equal(code, error.Code);
+        Assert.False(Directory.Exists(InstallPath("demo")));
+    }
+
+    [Fact]
+    public async Task A_plugin_package_needs_ru_plugin_json_and_a_skill_folder_is_not_one()
+    {
+        using var http = new HttpClient(new ArchiveHandler(Zip(("SKILL.md", "---\nname: Demo\n---\nBody."))));
+        using var installer = new SkillPackageInstaller(_root, http, PackageKind.Plugin);
+
+        var error = await Assert.ThrowsAsync<SkillPackageInstallException>(() =>
+            installer.InstallAsync(SourceUrl(), SkillPackageInstallAction.Install));
+
+        Assert.Equal("plugin_manifest_missing", error.Code);
+        Assert.Contains("ru-plugin.json", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_plugin_update_replaces_only_an_unchanged_managed_plugin()
+    {
+        var plugin = ("ru-plugin.json", """{"id":"demo","name":"Demo"}""");
+        using (var firstHttp = new HttpClient(new ArchiveHandler(Zip(plugin, ("hooks.json", "{}")))))
+        using (var first = new SkillPackageInstaller(_root, firstHttp, PackageKind.Plugin))
+            await first.InstallAsync(SourceUrl(), SkillPackageInstallAction.Install);
+        await File.WriteAllTextAsync(Path.Combine(InstallPath("demo"), "hooks.json"), "{\"hooks\":{}}");
+
+        using var nextHttp = new HttpClient(new ArchiveHandler(ZipForCommit(NextCommit, plugin)));
+        using var next = new SkillPackageInstaller(_root, nextHttp, PackageKind.Plugin);
+        var error = await Assert.ThrowsAsync<SkillPackageInstallException>(() =>
+            next.InstallAsync(SourceUrl(NextCommit), SkillPackageInstallAction.Update));
+
+        Assert.Equal("plugin_target_modified", error.Code);
+        Assert.Equal("{\"hooks\":{}}", await File.ReadAllTextAsync(Path.Combine(InstallPath("demo"), "hooks.json")));
+    }
+
     private const string NextCommit = "fedcba9876543210fedcba9876543210fedcba98";
     private string SourceUrl(string commit = Commit) => $"https://github.com/acme/repo/tree/{commit}/skills/demo";
     private string InstallPath(string id) => Path.Combine(_root, id);

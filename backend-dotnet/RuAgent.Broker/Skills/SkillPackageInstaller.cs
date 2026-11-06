@@ -9,6 +9,13 @@ namespace RuAgent.Broker.Skills;
 
 public enum SkillPackageInstallAction { Install, Update }
 
+/// <summary>
+/// What a pinned GitHub package holds: a skill (ADR 0036) or a user plugin (ADR 0044). The two
+/// share every download, size, staging, rollback and hash rule; only the root file, the id
+/// rule and the installer manifest name differ.
+/// </summary>
+public enum PackageKind { Skill, Plugin }
+
 public sealed record SkillPackageInstallReceipt(
     string Action,
     string Id,
@@ -32,6 +39,7 @@ public sealed class SkillPackageInstallException : Exception
 public sealed partial class SkillPackageInstaller : IDisposable
 {
     public const string ManifestFileName = ".ru-skill-package.json";
+    public const string PluginManifestFileName = ".ru-plugin-package.json";
     public const int MaxArchiveBytes = 16 * 1024 * 1024;
     public const long MaxExpandedBytes = 64 * 1024 * 1024;
     public const long MaxFileBytes = 8 * 1024 * 1024;
@@ -45,10 +53,18 @@ public sealed partial class SkillPackageInstaller : IDisposable
     private readonly string _installRoot;
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
+    private readonly PackageKind _kind;
 
-    public SkillPackageInstaller(string installRoot, HttpClient? httpClient = null)
+    /// <summary>The installer metadata file this kind writes and reserves.</summary>
+    private string InstallerManifest => _kind == PackageKind.Plugin ? PluginManifestFileName : ManifestFileName;
+
+    /// <summary>The file a package must hold at its root.</summary>
+    private string RootFile => _kind == PackageKind.Plugin ? UserPlugins.ManifestFileName : "SKILL.md";
+
+    public SkillPackageInstaller(string installRoot, HttpClient? httpClient = null, PackageKind kind = PackageKind.Skill)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(installRoot);
+        _kind = kind;
         _installRoot = Path.GetFullPath(installRoot);
         _ownsHttpClient = httpClient is null;
         _httpClient = httpClient ?? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
@@ -64,6 +80,23 @@ public sealed partial class SkillPackageInstaller : IDisposable
 
     public async Task<SkillPackageInstallReceipt> InstallAsync(
         string source, SkillPackageInstallAction action, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await InstallCoreAsync(source, action, cancellationToken).ConfigureAwait(false);
+        }
+        catch (SkillPackageInstallException error) when (_kind == PackageKind.Plugin)
+        {
+            // Plugin installs report plugin_* codes; the skill codes stay unchanged for their callers.
+            throw new SkillPackageInstallException(
+                error.Code.Replace("skill", "plugin", StringComparison.Ordinal),
+                error.Message.Replace("skill", "plugin", StringComparison.Ordinal).Replace("SKILL.md", RootFile, StringComparison.Ordinal),
+                error.InnerException ?? error);
+        }
+    }
+
+    private async Task<SkillPackageInstallReceipt> InstallCoreAsync(
+        string source, SkillPackageInstallAction action, CancellationToken cancellationToken)
     {
         if (action is not (SkillPackageInstallAction.Install or SkillPackageInstallAction.Update))
             throw Failure("invalid_skill_action", "Choose explicit install or update.");
@@ -88,7 +121,9 @@ public sealed partial class SkillPackageInstaller : IDisposable
             transactionRoot = CreateTransactionDirectory();
             var archiveBytes = await DownloadArchiveAsync(parsed, cancellationToken).ConfigureAwait(false);
             var files = ExtractSelectedPackage(archiveBytes, parsed, Path.Combine(transactionRoot, "payload", parsed.Id));
-            var skill = ParseSkillFile(parsed.Id, Path.Combine(transactionRoot, "payload", parsed.Id, "SKILL.md"));
+            var skill = _kind == PackageKind.Plugin
+                ? ParsePluginManifest(Path.Combine(transactionRoot, "payload", parsed.Id))
+                : ParseSkillFile(parsed.Id, Path.Combine(transactionRoot, "payload", parsed.Id, "SKILL.md"));
             var digest = PackageDigest(files);
             var manifest = new PackageManifest(
                 1, parsed.Id, parsed.Owner, parsed.Repository, parsed.Subdirectory, parsed.Commit,
@@ -147,7 +182,7 @@ public sealed partial class SkillPackageInstaller : IDisposable
             if ((File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0)
                 throw Failure("skill_target_unmanaged", "The existing package directory is linked.");
             EnsureNoReparsePoints(target);
-            var manifestPath = Path.Combine(target, ManifestFileName);
+            var manifestPath = Path.Combine(target, InstallerManifest);
             var info = new FileInfo(manifestPath);
             if (!info.Exists || info.Length > MaxManifestBytes) throw Failure("skill_target_unmanaged", "The existing folder is not a recognized Ru-managed package.");
             var manifest = JsonSerializer.Deserialize<PackageManifest>(await File.ReadAllBytesAsync(manifestPath, cancellationToken).ConfigureAwait(false));
@@ -161,12 +196,12 @@ public sealed partial class SkillPackageInstaller : IDisposable
                 || !IsSha256(manifest.PackageSha256))
                 throw Failure("skill_target_unmanaged", "The existing package manifest is invalid.");
 
-            var expected = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ManifestFileName };
+            var expected = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { InstallerManifest };
             long total = 0;
             foreach (var file in manifest.Files)
             {
                 ValidateRelativePath(file.Path);
-                if (string.Equals(file.Path, ManifestFileName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(file.Path, InstallerManifest, StringComparison.OrdinalIgnoreCase))
                     throw Failure("skill_target_unmanaged", "The existing package manifest is invalid.");
                 if (!expected.Add(file.Path) || file.Length < 0 || file.Length > MaxFileBytes || !IsSha256(file.Sha256))
                     throw Failure("skill_target_unmanaged", "The existing package manifest is invalid.");
@@ -204,9 +239,9 @@ public sealed partial class SkillPackageInstaller : IDisposable
         }
     }
 
-    private static async Task WriteManifestAsync(string packageDirectory, PackageManifest manifest, CancellationToken cancellationToken)
+    private async Task WriteManifestAsync(string packageDirectory, PackageManifest manifest, CancellationToken cancellationToken)
     {
-        var path = Path.Combine(packageDirectory, ManifestFileName);
+        var path = Path.Combine(packageDirectory, InstallerManifest);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest);
         if (bytes.Length > MaxManifestBytes) throw Failure("skill_archive_too_large", "The package manifest exceeds the storage limit.");
         await File.WriteAllBytesAsync(path, bytes, cancellationToken).ConfigureAwait(false);
@@ -237,7 +272,8 @@ public sealed partial class SkillPackageInstaller : IDisposable
             throw Failure("invalid_skill_source", "The package subdirectory contains an invalid path segment.");
         var subdirectory = string.Join('/', subdirectoryParts);
         var id = subdirectoryParts[^1].ToLowerInvariant();
-        if (!SkillIdentity.IsValid(id)) throw Failure("invalid_skill_source", "The package folder name must be a valid Ru skill ID.");
+        if (_kind == PackageKind.Plugin ? !UserPlugins.IsValidId(id) : !SkillIdentity.IsValid(id))
+            throw Failure("invalid_skill_source", "The package folder name must be a valid Ru skill ID.");
         return new(owner, repo, subdirectory, parts[3].ToLowerInvariant(), id,
             $"https://github.com/{owner}/{repo}/tree/{parts[3].ToLowerInvariant()}/{subdirectory}");
     }

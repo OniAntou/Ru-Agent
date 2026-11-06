@@ -71,7 +71,7 @@ public sealed partial class SkillPackageInstaller
             {
                 var relative = path[selectedPrefix.Length..];
                 if (relative.Length == 0) continue;
-                if (string.Equals(relative, ManifestFileName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(relative, InstallerManifest, StringComparison.OrdinalIgnoreCase))
                     throw Failure("skill_archive_invalid", "The package uses a reserved installer metadata filename.");
                 selectedEntries.Add((entry, relative));
             }
@@ -107,9 +107,17 @@ public sealed partial class SkillPackageInstaller
             if (length != entry.Length) throw Failure("skill_archive_invalid", "An archive entry length did not match its contents.");
             result.Add(new(relative, length, Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant()));
         }
-        if (!result.Any(file => string.Equals(file.RelativePath, "SKILL.md", StringComparison.Ordinal)))
+        if (!result.Any(file => string.Equals(file.RelativePath, RootFile, StringComparison.Ordinal)))
             throw Failure("skill_manifest_missing", "The selected package must contain SKILL.md at its root.");
         return result;
+    }
+
+    /// <summary>A plugin's strict ru-plugin.json, whose id must match the folder (ADR 0044).</summary>
+    private static SkillMetadata ParsePluginManifest(string packageDirectory)
+    {
+        var manifest = UserPlugins.ReadManifest(packageDirectory, out var problem)
+            ?? throw Failure("skill_manifest_invalid", "ru-plugin.json is not valid: " + problem);
+        return new SkillMetadata(manifest.Id, manifest.Name, manifest.Description ?? string.Empty, string.Empty, [], null, false, false, []);
     }
 
     private static SkillMetadata ParseSkillFile(string id, string path)

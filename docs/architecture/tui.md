@@ -256,6 +256,12 @@ Resize, retention and multi-row removal still invalidate the layout and rediscov
 table ranges; expanded-block handling is unchanged. This optimization changes no
 history cap, parser/source text, model input, copy content or execution authority.
 
+An open chat can reconnect to the managed Host after idle shutdown. When the
+pre-submission settings read loses its connection, the CLI uses the normal Host
+starter and validates settings on the replacement connection. The session,
+provider/model snapshot, and draft attachments stay with the same submission.
+Session creation and run writes remain outside the reconnect attempt.
+
 Mouse drag selects the transcript's displayed rows without moving composer focus.
 Copy keeps whole graphemes and uses the displayed line breaks. Selection coordinates
 belong to the current wrap layout, so a rebuild clears them. Copy checks that the

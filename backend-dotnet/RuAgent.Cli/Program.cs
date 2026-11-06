@@ -76,7 +76,10 @@ public static class Program
             // Use starter to get authenticated session; include cancellation for Ctrl+C
             using var starterCts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
             var session = await starter.GetOrStartAsync(projectRoot, starterCts.Token).ConfigureAwait(false);
-            commands = new AgentCommands(session, httpClient, Console.Out, Console.Error, sseHttpClient: sseHttpClient);
+            commands = new AgentCommands(session, httpClient, Console.Out, Console.Error, sseHttpClient: sseHttpClient)
+            {
+                ReconnectHost = token => starter.GetOrStartAsync(projectRoot, token),
+            };
         }
         catch (AgentApiException ex)
         {

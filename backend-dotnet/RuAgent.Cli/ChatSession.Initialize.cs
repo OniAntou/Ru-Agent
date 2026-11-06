@@ -37,49 +37,10 @@ public sealed partial class AgentCommands
             // session document (bounded probes) and the tally repaints as usage frames arrive.
             usage = new Tui.TuiUsageTracker();
             subagentTracker = new Subagents.SubagentLiveTracker();
-            modelUsage = new ChatModelUsage(_settingsClient.GetModelDetailsAsync);
+            modelUsage = new ChatModelUsage((backend, model, ct) => _settingsClient.GetModelDetailsAsync(backend, model, ct));
             runSession = new ChatRunSession();
 
-            // Slash-command surfaces use native panels or explicit line arguments.
-            // --json owns stdout, so every human-facing line a slash command prints goes
-            // to stderr and picker-only commands refuse instead of prompting.
-            _slashCommands.HumanOut = humanOut;
-            _slashCommands.Json = cmd.Json;
-            _slashCommands.PanelWidth = Tui.TuiViewport.Width();
-            _slashCommands.FramelessReports = tgMode;
-            // Only the native presentation has a floating picker. The line adapter
-            // leaves Picker null so the command handlers print their option
-            // panels (or a bounded interactive_required) instead of calling a no-op.
-            if (!cmd.Json && tgMode)
-            {
-                _slashCommands.Picker = (list, ct) => TgPanelRequests.RequestChoiceAsync(tgWindow!, list, ct);
-            }
-            else
-            {
-                _slashCommands.Picker = null;
-            }
-
-            _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json
-                ? Task.FromResult<string?>(null)
-                : tgMode
-                    ? TgPanelRequests.RequestSecretAsync(tgWindow!, null, ct)
-                    : Tui.ConsoleSecretInput.ReadAsync(_out, prompt, ct);
-            _slashCommands.SecretPanelPrompt = (providerDisplay, ct) => cmd.Json
-                ? Task.FromResult<string?>(null)
-                : tgMode
-                    ? TgPanelRequests.RequestSecretAsync(tgWindow!, providerDisplay, ct)
-                    : Tui.ConsoleSecretInput.ReadAsync(_out, $"API key for {ChatDisplayText.Sanitize(providerDisplay, 64)}: ", ct);
-
-            _slashCommands.SnapshotProvider = () => new Tui.TuiStatusSnapshot(
-                SessionId: string.IsNullOrEmpty(sessionId) ? "not started" : sessionId,
-                Preset: cmd.Preset,
-                Backend: backendName,
-                Model: activeModel,
-                Workspace: canonicalWorkspace,
-                Turn: turn,
-                TotalTokens: lastTotalTokens,
-                ToolsSettled: sessionRenderer.Transcript.ToolsSettled,
-                ApiKeyConfigured: null);
+            ConfigureSlashCommands();
             await RefreshModelSelectionAsync().ConfigureAwait(false);
 
             if (!cmd.Json && !string.IsNullOrWhiteSpace(cmd.SessionId))
@@ -151,6 +112,50 @@ public sealed partial class AgentCommands
             // and dispatcherExitCode carries the paths that used to return from ChatAsync.
             sessionCommands = CreateSessionCommands();
 
+        }
+
+        private void ConfigureSlashCommands()
+        {
+            // Slash-command surfaces use native panels or explicit line arguments.
+            // --json owns stdout, so every human-facing line a slash command prints goes
+            // to stderr and picker-only commands refuse instead of prompting.
+            _slashCommands.HumanOut = humanOut;
+            _slashCommands.Json = cmd.Json;
+            _slashCommands.PanelWidth = Tui.TuiViewport.Width();
+            _slashCommands.FramelessReports = tgMode;
+            // Only the native presentation has a floating picker. The line adapter
+            // leaves Picker null so the command handlers print their option
+            // panels (or a bounded interactive_required) instead of calling a no-op.
+            if (!cmd.Json && tgMode)
+            {
+                _slashCommands.Picker = (list, ct) => TgPanelRequests.RequestChoiceAsync(tgWindow!, list, ct);
+            }
+            else
+            {
+                _slashCommands.Picker = null;
+            }
+
+            _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json
+                ? Task.FromResult<string?>(null)
+                : tgMode
+                    ? TgPanelRequests.RequestSecretAsync(tgWindow!, null, ct)
+                    : Tui.ConsoleSecretInput.ReadAsync(_out, prompt, ct);
+            _slashCommands.SecretPanelPrompt = (providerDisplay, ct) => cmd.Json
+                ? Task.FromResult<string?>(null)
+                : tgMode
+                    ? TgPanelRequests.RequestSecretAsync(tgWindow!, providerDisplay, ct)
+                    : Tui.ConsoleSecretInput.ReadAsync(_out, $"API key for {ChatDisplayText.Sanitize(providerDisplay, 64)}: ", ct);
+
+            _slashCommands.SnapshotProvider = () => new Tui.TuiStatusSnapshot(
+                SessionId: string.IsNullOrEmpty(sessionId) ? "not started" : sessionId,
+                Preset: cmd.Preset,
+                Backend: backendName,
+                Model: activeModel,
+                Workspace: canonicalWorkspace,
+                Turn: turn,
+                TotalTokens: lastTotalTokens,
+                ToolsSettled: sessionRenderer.Transcript.ToolsSettled,
+                ApiKeyConfigured: null);
         }
     }
 }

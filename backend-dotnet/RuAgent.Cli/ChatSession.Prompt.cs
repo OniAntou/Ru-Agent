@@ -47,7 +47,7 @@ public sealed partial class AgentCommands
             {
                 try
                 {
-                    var liveSettings = await _settingsClient.GetAsync(ct).ConfigureAwait(false);
+                    var liveSettings = await ReadSubmissionSettingsAsync(ct).ConfigureAwait(false);
                     if (!submission.MatchesSelection(liveSettings))
                     {
                         HoldSubmissionForRetry(submission);

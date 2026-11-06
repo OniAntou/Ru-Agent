@@ -36,6 +36,50 @@ public sealed partial class AgentCommands
             ? sessionRunStartCore ??= new RunStartCore(_sessionClient, _agentClient, tgWriter!, tgWriter!)
             : _host._runStartCore;
 
+        private async Task<JsonElement> ReadSubmissionSettingsAsync(CancellationToken ct)
+        {
+            var reconnect = _host.ReconnectHost;
+            try
+            {
+                return await _settingsClient.GetAsync(ct).ConfigureAwait(false);
+            }
+            catch (HttpRequestException error) when (reconnect is not null && !ct.IsCancellationRequested
+                && error.HttpRequestError is HttpRequestError.ConnectionError or HttpRequestError.ResponseEnded)
+            {
+                // This is a read before any session, preset or run write. Do not
+                // apply transport recovery to requests that may have been accepted.
+            }
+
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(TimeSpan.FromSeconds(35));
+            var session = await reconnect!(deadline.Token).ConfigureAwait(false);
+            if (session == _host._session)
+                return await _settingsClient.GetAsync(deadline.Token).ConfigureAwait(false);
+
+            var replacement = new AgentCommands(session, _host._httpClient, _host._out, _host._err,
+                _host._in, _host._sseHttpClient) { ReconnectHost = reconnect };
+            JsonElement settings;
+            try
+            {
+                settings = await replacement._settingsClient.GetAsync(deadline.Token).ConfigureAwait(false);
+                deadline.Token.ThrowIfCancellationRequested();
+            }
+            catch
+            {
+                replacement.Dispose();
+                throw;
+            }
+
+            if (ownsReconnectedHost) _host.Dispose();
+            _host = replacement;
+            ownsReconnectedHost = true;
+            sessionSlashCommands = null;
+            sessionRunStartCore = null;
+            inputWorkflow = null;
+            ConfigureSlashCommands();
+            return settings;
+        }
+
         private Task<(string InputId, string Question, IReadOnlyList<string> Options)?> ReadInputRequestAsync(
             string runId, string? inputId, CancellationToken ct) =>
             _host.ReadInputRequestAsync(runId, inputId, ct);

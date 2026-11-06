@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Reconnect an open chat to the managed Host after idle shutdown.
+  Recheck the queued prompt's provider and model before starting its run.
+
 - **fix(tui)**: Drag to select text in the transcript and copy the selection
   with Ctrl+C or Ctrl+Shift+C. Copy whole Unicode graphemes across displayed lines.
 

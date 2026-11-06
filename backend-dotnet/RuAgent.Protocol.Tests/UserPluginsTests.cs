@@ -155,6 +155,72 @@ public sealed class UserPluginsTests : IDisposable
     public void Ids_leave_room_for_mcp_server_names(string? id, bool valid) =>
         Assert.Equal(valid, UserPlugins.IsValidId(id));
 
+    [Fact]
+    public void Import_copies_a_draft_into_the_local_root_and_leaves_it_off()
+    {
+        var draft = WritePlugin(Path.Combine(_root, "workspace", "ru-plugin-drafts"), "team-rules", "Team rules");
+        File.WriteAllText(Path.Combine(draft, "AGENTS.md"), "Use pytest.");
+        Directory.CreateDirectory(Path.Combine(draft, ".git"));
+        File.WriteAllText(Path.Combine(draft, ".git", "HEAD"), "ref");
+
+        var plugin = UserPlugins.Import(draft, AppData, Profile);
+
+        var installed = Path.Combine(UserPlugins.LocalRoot(Profile), "team-rules");
+        Assert.Equal(installed, plugin.Directory);
+        Assert.False(plugin.Enabled);
+        Assert.True(File.Exists(Path.Combine(installed, "AGENTS.md")));
+        Assert.False(Directory.Exists(Path.Combine(installed, ".git")));
+        Assert.True(File.Exists(Path.Combine(draft, "AGENTS.md")));
+        Assert.Empty(UserPlugins.ReadEnabled(AppData));
+        Assert.Single(Directory.GetDirectories(UserPlugins.LocalRoot(Profile)));
+    }
+
+    [Fact]
+    public void Import_clears_an_earlier_enable_and_approval_for_the_same_id()
+    {
+        UserPlugins.SetEnabled("team-rules", true, AppData);
+        UserPlugins.SetApproval("team-rules", new string('a', 64), AppData);
+        var draft = WritePlugin(Path.Combine(_root, "drafts"), "team-rules", "Team rules");
+
+        Assert.False(UserPlugins.Import(draft, AppData, Profile).Enabled);
+
+        Assert.Empty(UserPlugins.ReadEnabled(AppData));
+        Assert.False(UserPlugins.ReadApprovals(AppData).ContainsKey("team-rules"));
+        Assert.Empty(UserPlugins.EnabledSkillRoots(AppData, Profile));
+    }
+
+    [Fact]
+    public void Import_never_replaces_an_installed_plugin()
+    {
+        WritePlugin(UserPlugins.ManagedRoot(AppData), "team-rules", "Managed");
+        var draft = WritePlugin(Path.Combine(_root, "drafts"), "team-rules", "Draft");
+
+        Assert.Equal("plugin_exists", Assert.Throws<IOException>(() => UserPlugins.Import(draft, AppData, Profile)).Message);
+        Assert.False(Directory.Exists(Path.Combine(UserPlugins.LocalRoot(Profile), "team-rules")));
+
+        var local = WritePlugin(UserPlugins.LocalRoot(Profile), "other", "Other");
+        Assert.Equal("plugin_import_already_installed",
+            Assert.Throws<IOException>(() => UserPlugins.Import(local, AppData, Profile)).Message);
+    }
+
+    [Fact]
+    public void Import_refuses_invalid_relative_and_oversized_drafts_without_writing()
+    {
+        var invalid = Path.Combine(_root, "drafts", "tools");
+        Directory.CreateDirectory(invalid);
+        File.WriteAllText(Path.Combine(invalid, UserPlugins.ManifestFileName), """{"id":"other","name":"Tools"}""");
+        Assert.StartsWith("plugin_import_invalid", Assert.Throws<InvalidDataException>(() => UserPlugins.Import(invalid, AppData, Profile)).Message);
+        Assert.Throws<ArgumentException>(() => UserPlugins.Import(@"drafts\tools", AppData, Profile));
+        Assert.Throws<ArgumentException>(() => UserPlugins.Import(Path.Combine(_root, "missing"), AppData, Profile));
+
+        var large = WritePlugin(Path.Combine(_root, "drafts"), "large", "Large");
+        for (var index = 0; index < UserPlugins.MaxImportFiles; index++)
+            File.WriteAllText(Path.Combine(large, $"note-{index}.md"), "x");
+        Assert.Equal("plugin_import_too_large", Assert.Throws<IOException>(() => UserPlugins.Import(large, AppData, Profile)).Message);
+
+        Assert.False(Directory.Exists(UserPlugins.LocalRoot(Profile)) && Directory.EnumerateFileSystemEntries(UserPlugins.LocalRoot(Profile)).Any());
+    }
+
     private static string WritePlugin(string root, string id, string name)
     {
         var directory = Path.Combine(root, id);

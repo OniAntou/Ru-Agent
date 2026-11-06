@@ -77,8 +77,9 @@ for invocation flags, resource paths, diagnostics and run-local snapshots.
 ## Plugins: bundle your setup
 
 A plugin is a folder that bundles skills and instructions so you can turn them on and off
-together, or share them. Open **Customize → Plugins → New plugin** to create one in
-`~\.ru\plugins\<id>`, or create the folder yourself:
+together, or share them. Open **Customize → Plugins → Add plugin → New plugin…** to create one in
+`~\.ru\plugins\<id>`, ask Ru in chat (for example "make me a plugin with our review checklist"),
+or create the folder yourself:
 
 ```text
 ~\.ru\plugins\team-rules\
@@ -111,6 +112,12 @@ folder at that commit, runs nothing while installing, and keeps the plugin off u
 **Update from GitHub…** replaces a plugin Ru installed from the same repository and folder, unless
 you changed its files; if the update changes its commands, they stay paused until you allow them.
 A plugin you made yourself with the same id blocks the install.
+
+When you ask Ru for a plugin in chat, its built-in `create-plugin` skill writes a draft in your
+project under `ru-plugin-drafts\<id>`, because Ru cannot write `~\.ru\plugins` itself. Review the
+draft, then open **Add plugin → Add from folder…** and paste the draft folder's full path. Ru copies
+it into your plugins switched off; turning it on asks before any of its commands run. Your own skill
+with the id `create-plugin` replaces the built-in one.
 
 ## Custom commands
 

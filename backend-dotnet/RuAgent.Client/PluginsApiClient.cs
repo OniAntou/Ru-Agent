@@ -111,6 +111,18 @@ public sealed class PluginsApiClient : IDisposable
         return result;
     }
 
+    /// <summary>Copies a plugin draft folder into the user's plugins; it is added switched off.</summary>
+    public async Task<PluginListResponse> ImportAsync(string folder, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(folder);
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_session.BaseUri, "agent/v1/plugins/settings"))
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new { action = "import", path = folder }), Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        return await SendAsync(request, "plugins_import_failed", cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<PluginListResponse> SendAsync(HttpRequestMessage request, string failureCode, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);

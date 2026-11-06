@@ -390,6 +390,38 @@ public sealed partial class CustomizeView
         }
     }
 
+    /// <summary>
+    /// Copies a plugin draft (for example one Ru wrote with the create-plugin skill) into your
+    /// plugins. It is added switched off; turning it on asks before any of its commands run.
+    /// </summary>
+    private async void OnImportPluginClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var folder = await AskAsync("Add a plugin from a folder", "Full path of a folder with ru-plugin.json", "Add");
+            if (folder is not null) await ImportPluginAsync(folder);
+        }
+        catch (Exception error)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[Customize] Plugin import failed: {error.GetType().Name}");
+        }
+    }
+
+    private async Task ImportPluginAsync(string folder)
+    {
+        if (CreatePluginsClient() is not { } client) return;
+        ShowStatus("Adding the plugin…");
+        try
+        {
+            RenderPlugins(await client.ImportAsync(folder));
+            ShowStatus("Added the plugin. Turn it on when you are ready.");
+        }
+        catch (Exception error) when (error is AgentApiException or HttpRequestException or TaskCanceledException)
+        {
+            ShowStatus(error is AgentApiException api ? api.Message : "Could not add the plugin.", error.Message);
+        }
+    }
+
     private async Task InstallPluginPackageAsync(string sourceUrl, bool update)
     {
         if (CreatePluginsClient() is not { } client) return;

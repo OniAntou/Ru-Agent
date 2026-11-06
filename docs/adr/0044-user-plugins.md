@@ -123,4 +123,12 @@ Each phase is built, tested and committed on its own.
    (whose id must match the folder), writes `.ru-plugin-package.json`, reports `plugin_*`
    codes, and installs under `%LOCALAPPDATA%\Ru\plugins`. A local plugin with the same id
    refuses the install (`plugin_target_exists`).
-4. `create-plugin` skill and Add plugin from folder.
+4. `create-plugin` skill and Add plugin from folder. Done: Ru ships built-in skills in
+   `skills-builtin` next to the Host (`BuiltInSkills.Root`), searched after plugin skills so
+   any other skill with the same id wins. `create-plugin` writes a draft under
+   `ru-plugin-drafts\<id>` in the workspace. The `import` action on
+   `POST /agent/v1/plugins/settings` (no new route) copies a draft into `~/.ru/plugins/<id>`
+   after checking the manifest, refusing links, more than 256 files or 64 MiB, and any id
+   already installed locally or managed; it skips `.git` and installer metadata, copies through
+   a staging folder, and never enables the plugin: importing (or freshly installing from GitHub)
+   an id clears any enable flag and approval left from an earlier plugin with that id.

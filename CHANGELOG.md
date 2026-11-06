@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(plugins)**: User plugin, phase 4 ([ADR 0044](docs/adr/0044-user-plugins.md)): nhờ Ru tạo
+  plugin qua chat. Skill có sẵn `create-plugin` (thư mục `skills-builtin` đi kèm Host, ưu tiên thấp
+  nhất) viết bản nháp vào `ru-plugin-drafts\<id>` trong workspace. **Customize → Plugins → Add
+  plugin → Add from folder…** chép bản nháp vào `~\.ru\plugins` qua thư mục staging: kiểm tra
+  manifest, từ chối link/junction, quá 256 file hoặc 64 MiB, và id đã cài; bỏ qua `.git`. Plugin
+  thêm vào luôn tắt, bật lên vẫn phải duyệt lệnh. Action mới `import` trên
+  `POST /agent/v1/plugins/settings` (không thêm route).
+
 - **feat(plugins)**: User plugin, phase 3 ([ADR 0044](docs/adr/0044-user-plugins.md)): cài plugin
   từ GitHub. **Customize → Plugins → Add plugin → Install from GitHub…** nhận URL thư mục ghim vào
   commit 40 ký tự; Ru chỉ tải đúng thư mục đó, không chạy gì khi cài, và plugin vẫn tắt cho tới

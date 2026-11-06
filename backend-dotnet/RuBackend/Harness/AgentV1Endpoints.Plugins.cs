@@ -58,6 +58,13 @@ public static partial class AgentV1Endpoints
         {
             var receipt = await packages.Installer.InstallAsync(request.SourceUrl,
                 request.Action == "update" ? SkillPackageInstallAction.Update : SkillPackageInstallAction.Install, ct).ConfigureAwait(false);
+            if (receipt.Action == "installed")
+            {
+                // A fresh install may reuse the id of a plugin removed earlier; its old enable
+                // flag and approval must not carry over to new content.
+                UserPlugins.SetEnabled(receipt.Id, false);
+                UserPlugins.SetApproval(receipt.Id, null);
+            }
             return PluginListResponse(new
             {
                 action = receipt.Action, id = receipt.Id, name = receipt.Name, source = receipt.Source,
@@ -88,7 +95,8 @@ public static partial class AgentV1Endpoints
         [property: JsonPropertyName("description")] string? Description,
         [property: JsonPropertyName("with_instructions")] bool? WithInstructions,
         [property: JsonPropertyName("with_skill")] bool? WithSkill,
-        [property: JsonPropertyName("digest")] string? Digest);
+        [property: JsonPropertyName("digest")] string? Digest,
+        [property: JsonPropertyName("path")] string? Path = null);
 
     private static IResult GetPlugins() => PluginListResponse();
 
@@ -104,6 +112,7 @@ public static partial class AgentV1Endpoints
         catch (Exception error) when (error is JsonException or DecoderFallbackException)
         { return PluginError(400, "invalid_request", "Invalid plugin request."); }
 
+        if (request is { Action: "import" }) return ImportPlugin(request.Path);
         if (request is null || !UserPlugins.IsValidId(request.Id))
             return PluginError(400, "invalid_plugin_id", "A plugin id is 1 to 24 lowercase letters, digits or dashes, starting with a letter.");
 
@@ -148,6 +157,47 @@ public static partial class AgentV1Endpoints
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             return PluginError(500, "plugin_io_failed", "Ru could not write the plugin files.");
+        }
+
+        return PluginListResponse();
+    }
+
+    /// <summary>
+    /// Copies a plugin draft folder into <c>~/.ru/plugins</c> (ADR 0044 phase 4). Only the user
+    /// reaches this route; the plugin is added switched off, and its commands still need consent.
+    /// </summary>
+    private static IResult ImportPlugin(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Length > 1024)
+            return PluginError(400, "plugin_import_path_invalid", "Give the full path of a plugin folder.");
+        try
+        {
+            UserPlugins.Import(path.Trim().Trim('"'));
+        }
+        catch (ArgumentException)
+        {
+            return PluginError(400, "plugin_import_path_invalid", "That folder does not exist. Give the full path of a plugin folder.");
+        }
+        catch (InvalidDataException error)
+        {
+            var problem = error.Message.StartsWith("plugin_import_invalid: ", StringComparison.Ordinal)
+                ? error.Message["plugin_import_invalid: ".Length..] : "ru-plugin.json is missing or invalid";
+            return PluginError(400, "plugin_import_invalid", $"Not a valid plugin folder: {problem}.");
+        }
+        catch (IOException error) when (error.Message is "plugin_exists" or "plugin_import_already_installed"
+            or "plugin_import_unsafe" or "plugin_import_too_large")
+        {
+            return error.Message switch
+            {
+                "plugin_exists" => PluginError(409, "plugin_exists", "A plugin with that id is already installed. Remove it first."),
+                "plugin_import_already_installed" => PluginError(409, "plugin_import_already_installed", "That folder is already an installed plugin."),
+                "plugin_import_unsafe" => PluginError(400, "plugin_import_unsafe", "The folder contains a link or junction; Ru copies only plain files."),
+                _ => PluginError(413, "plugin_import_too_large", $"A plugin can hold at most {UserPlugins.MaxImportFiles} files and 64 MiB."),
+            };
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return PluginError(500, "plugin_io_failed", "Ru could not copy the plugin files.");
         }
 
         return PluginListResponse();

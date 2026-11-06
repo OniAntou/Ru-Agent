@@ -25,7 +25,9 @@ grants permissions from `allowed-tools` or other metadata.
 
 Default root precedence is workspace `skills`, `.ru/skills`, `.agents/skills`,
 `RU_SKILLS_ROOT`, `~/.ru/skills`, `~/.agents/skills`, then `%LOCALAPPDATA%/Ru/skills`. Registered roots
-follow those defaults. The first matching canonical ID wins. Discovery is
+follow those defaults, then enabled user plugins' `skills/` ([ADR 0044](../adr/0044-user-plugins.md)),
+then the built-in skills shipped in `skills-builtin` next to the Host (`create-plugin`). The first
+matching canonical ID wins. Discovery is
 bounded and breadth-first: a skill may be inside grouping folders, up to six
 directory levels, 256 visited directories and 4,096 enumerated entries per root.
 A folder with `SKILL.md`

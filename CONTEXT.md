@@ -201,13 +201,13 @@ _Avoid_: a new execution authority, a user conversation, or an OS sandbox
 
 
 **Markdown Skill**:
-A discovered `SKILL.md` package identified by its canonical directory ID, with metadata advertised separately from its on-demand workflow body. Explicit chat invocation captures a bounded, versioned workflow snapshot for that run; successful skill receipts can restore the same snapshot after compaction or restart. Metadata and referenced files never grant execution authority or run automatically.
+A discovered `SKILL.md` package identified by its canonical directory ID, with metadata advertised separately from its on-demand workflow body. Explicit chat invocation captures a bounded, versioned workflow snapshot for that run; successful skill receipts can restore the same snapshot after compaction or restart. Metadata and referenced files never grant execution authority or run automatically. Built-in skills ship with Ru in `skills-builtin` next to the Host and have the lowest precedence, below plugin skills.
 Implementation: [harness](docs/architecture/harness.md#markdown-skill).
 _Avoid_: treating `SKILL.md` as a permission manifest or executable plugin
 
 
 **User Plugin**:
-A folder with a strict `ru-plugin.json` in `~/.ru/plugins` or `%LOCALAPPDATA%\Ru\plugins` that bundles skills and an `AGENTS.md` (and, behind a consent digest, hooks and MCP servers). It is off until the user enables it; enabled plugins have the lowest precedence after the user's own files and apply to new runs. Plugins are user-level only and never grant permission.
+A folder with a strict `ru-plugin.json` in `~/.ru/plugins` or `%LOCALAPPDATA%\Ru\plugins` that bundles skills and an `AGENTS.md` (and, behind a consent digest, hooks and MCP servers). It is off until the user enables it; enabled plugins have the lowest precedence after the user's own files and apply to new runs. Plugins are user-level only and never grant permission. A plugin draft the agent writes in the workspace becomes a User Plugin only when the user imports it, switched off and unapproved.
 Implementation: [ADR 0044](docs/adr/0044-user-plugins.md).
 _Avoid_: project plugins, a plugin enabling itself, plugin content as execution authority
 

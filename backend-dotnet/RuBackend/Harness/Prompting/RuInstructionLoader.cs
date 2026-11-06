@@ -181,7 +181,11 @@ public sealed partial class RuInstructionLoader
         }
 
         var markdownRoots = RuAgent.Protocol.SkillRoots.For(canonicalRoot, _localApplicationDataRoot, _userProfileRoot);
-        var pluginSkillRoots = RuAgent.Protocol.UserPlugins.EnabledSkillRoots(_localApplicationDataRoot, _userProfileRoot);
+        IReadOnlyList<string> pluginSkillRoots =
+        [
+            .. RuAgent.Protocol.UserPlugins.EnabledSkillRoots(_localApplicationDataRoot, _userProfileRoot),
+            RuAgent.Protocol.BuiltInSkills.Root,
+        ];
         var preferencesPath = Path.Combine(_localApplicationDataRoot, "Ru", "skill-preferences.json");
         var markdownResult = _markdownSkillLoader is null
             ? new SkillCatalog(canonicalRoot, preferencesPath, markdownRoots, pluginSkillRoots).Discover()

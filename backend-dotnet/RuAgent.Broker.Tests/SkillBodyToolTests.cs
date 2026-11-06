@@ -387,6 +387,24 @@ public sealed class SkillBodyToolTests
     }
 
     [Fact]
+    public void The_built_in_create_plugin_skill_ships_and_loses_to_any_other_skill()
+    {
+        using var fixture = Fixture.Create();
+        var preferences = Path.Combine(fixture.Root, "builtin-prefs.json");
+        Assert.True(File.Exists(Path.Combine(RuAgent.Protocol.BuiltInSkills.Root, "create-plugin", "SKILL.md")));
+
+        var builtIn = new SkillCatalog(fixture.Root, preferences, [Path.Combine(fixture.Root, "skills")], [RuAgent.Protocol.BuiltInSkills.Root])
+            .Discover(refresh: true).Items.Single(item => item.Id == "create-plugin");
+        Assert.Contains("Add from folder", builtIn.Description, StringComparison.Ordinal);
+
+        File.WriteAllText(Path.Combine(Directory.CreateDirectory(Path.Combine(fixture.Root, "skills", "create-plugin")).FullName, "SKILL.md"),
+            "---\nname: create-plugin\ndescription: My own version\n---\nBody");
+        var items = new SkillCatalog(fixture.Root, preferences, [Path.Combine(fixture.Root, "skills")], [RuAgent.Protocol.BuiltInSkills.Root])
+            .Discover(refresh: true).Items;
+        Assert.Equal("My own version", items.Single(item => item.Id == "create-plugin").Description);
+    }
+
+    [Fact]
     public void Existing_catalog_refreshes_registered_roots_from_shared_preferences()
     {
         using var fixture = Fixture.Create();

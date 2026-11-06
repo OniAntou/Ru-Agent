@@ -59,7 +59,8 @@ public sealed partial class SkillCatalog
         _preferencesPath = Path.GetFullPath(preferencesPath ?? Path.Combine(appDataRoot, "Ru", "skill-preferences.json"));
         _baseRoots = (roots ?? (userOnly ? SkillRoots.ForUser() : SkillRoots.For(_workspaceRoot)))
             .Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxRoots).ToList();
-        _pluginRoots = (pluginRoots ?? (roots is null ? UserPlugins.EnabledSkillRoots() : Array.Empty<string>()))
+        // Built-in skills ship with Ru and come after plugins: anything else with the same id wins.
+        _pluginRoots = (pluginRoots ?? (roots is null ? [.. UserPlugins.EnabledSkillRoots(), BuiltInSkills.Root] : Array.Empty<string>()))
             .Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         _roots = new(_baseRoots);
         _cacheKey = BuildCacheKey(_roots);

@@ -157,6 +157,7 @@
                             <Button.Flyout>
                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
                                     <MenuFlyoutItem Text="New plugin…" Click="OnNewPluginClick" />
+                                    <MenuFlyoutItem Text="Add from folder…" Click="OnImportPluginClick" />
                                     <MenuFlyoutSeparator />
                                     <MenuFlyoutItem Text="Install from GitHub…" Tag="install" Click="OnInstallPluginPackageClick" />
                                     <MenuFlyoutItem Text="Update from GitHub…" Tag="update" Click="OnInstallPluginPackageClick" />

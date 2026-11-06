@@ -10,6 +10,8 @@
     <PackageReference Include="Acornima" />
     <PackageReference Include="PdfPig" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
+    <!-- Built-in skills (create-plugin) ship next to the Host; see BuiltInSkills.Root. -->
+    <None Update="skills-builtin\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="..\..\README.md" LogicalName="RuAgent.Broker.HelpDocs.ru-overview.md" />
     <EmbeddedResource Include="..\..\docs\architecture.md" LogicalName="RuAgent.Broker.HelpDocs.architecture.md" />
     <EmbeddedResource Include="..\..\docs\operations\runtime-behavior.md" LogicalName="RuAgent.Broker.HelpDocs.runtime.md" />

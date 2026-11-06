@@ -40,6 +40,8 @@ public sealed class CustomizationUiContractTests
         var clicks = GuiSource.Require(document, "NewPluginButton").Descendants()
             .Select(element => GuiSource.AttributeValue(element, "Click")).ToList();
         Assert.Contains("OnNewPluginClick", clicks);
+        Assert.Contains("OnImportPluginClick", clicks);
+        Assert.Contains("client.ImportAsync", GuiSource.MethodBody(GuiSource.Text("Views", "CustomizeView.UserPlugins.cs"), "ImportPluginAsync"), StringComparison.Ordinal);
         Assert.Equal(2, clicks.Count(click => click == "OnInstallPluginPackageClick"));
         Assert.Contains("client.InstallPackageAsync", GuiSource.MethodBody(GuiSource.Text("Views", "CustomizeView.UserPlugins.cs"), "InstallPluginPackageAsync"), StringComparison.Ordinal);
         GuiSource.Require(document, "PluginsEmpty");

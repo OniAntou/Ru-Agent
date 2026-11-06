@@ -59,8 +59,12 @@ and needs the boundaries the owner chose: full contents, with consent.
 4. **Consent for executable parts.** The executable surface of a plugin is the
    canonical list of hook events, matchers, commands and timeouts, plus each MCP
    server's transport, command, args, cwd, url and environment variable names (never
-   values). Enabling a plugin with an executable surface shows that list and records
-   its SHA-256. Every load recomputes the digest; on a mismatch the hooks and MCP
+   values; the digest still covers the values, so changing one asks again). Enabling
+   a plugin with an executable surface shows that list and records its SHA-256 once the
+   user allows it; the approval request carries the digest the user was shown and fails
+   with `plugin_changed` if the plugin changed meanwhile. A plugin hook receives its
+   folder as `RU_PLUGIN_ROOT`; a plugin MCP server starts in its plugin folder unless
+   its `cwd` says otherwise. Every load recomputes the digest; on a mismatch the hooks and MCP
    servers of that plugin are suspended (fail closed) and Customize shows "changed,
    approve again". Skills, commands and instructions need only enable, like today's
    files. Instructions and skills remain guidance and never grant permission.
@@ -111,8 +115,8 @@ Each phase is built, tested and committed on its own.
 
 1. Manifest and loader; user plugins with skills and instructions; the plugin list
    with enable/disable in Customize → Plugins (Computer use stays); New plugin
-   scaffolding.
+   scaffolding. Done.
 2. Hooks and MCP with the consent digest and path protection (policy change: full
-   matrix).
+   matrix). Done.
 3. GitHub install and update (new routes: full matrix and route guards).
 4. `create-plugin` skill and Add plugin from folder.

@@ -91,8 +91,18 @@ The id is 1 to 24 lowercase letters, digits or dashes and must match the folder 
 `ru-plugin.json` accepts only `id`, `name`, `description` and `version`. A plugin does nothing
 until you switch it on in **Customize → Plugins**, and changes apply from your next message.
 Plugins are yours only: Ru never loads one from a project folder. A project or user skill with the
-same id wins over a plugin's skill, and at most eight enabled plugins add skills. Hooks and MCP
-servers in a plugin are listed but not loaded yet; see [ADR 0044](../adr/0044-user-plugins.md).
+same id wins over a plugin's skill, and at most eight enabled plugins add skills.
+
+A plugin can also carry `hooks.json` and `mcp.json`, in the same format as your own. Those run
+programs as you, so turning such a plugin on shows every command it would run and asks you to
+allow them; **Turn on without commands** keeps only its skills and instructions. Allowed hooks
+run after your own `~/.ru/hooks.json` and before the project's, with `RU_PLUGIN_ROOT` set to the
+plugin folder so a command can find its scripts. MCP servers are named `<plugin>-<server>`, start
+in the plugin folder unless `cwd` says otherwise, and lose to a server with the same name in your
+own `mcp.json`; each MCP call still asks according to your permission preset. If a plugin's commands
+change later, Ru pauses them and shows **changed, review again** until you allow the new ones. Ru's
+own tools cannot edit your plugins or this approval in `plan` or `standard`. See
+[ADR 0044](../adr/0044-user-plugins.md).
 
 ## Custom commands
 

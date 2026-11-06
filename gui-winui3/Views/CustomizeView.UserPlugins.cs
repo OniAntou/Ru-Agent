@@ -63,6 +63,8 @@ public sealed partial class CustomizeView
     private void RenderPlugins(PluginListResponse list)
     {
         _pluginsRoot = list.LocalRoot;
+        _pluginsById.Clear();
+        foreach (var plugin in list.Plugins) _pluginsById[plugin.Id] = plugin;
         PluginsList.Children.Clear();
         foreach (var plugin in list.Plugins) PluginsList.Children.Add(PluginCard(plugin));
         PluginsEmpty.Visibility = list.Plugins.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -84,12 +86,33 @@ public sealed partial class CustomizeView
         var parts = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 4, 0, 0) };
         if (plugin.HasSkills) parts.Children.Add(Chip("Skills", "RuInkBrush"));
         if (plugin.HasInstructions) parts.Children.Add(Chip("Instructions", "RuInkBrush"));
-        if (plugin.HasHooks) parts.Children.Add(Chip("Hooks · not loaded yet", "RuMutedBrush"));
-        if (plugin.HasMcpServers) parts.Children.Add(Chip("MCP · not loaded yet", "RuMutedBrush"));
+        if (plugin.HasHooks || plugin.HasMcpServers)
+        {
+            var runs = plugin.HasHooks && plugin.HasMcpServers ? "Hooks and MCP" : plugin.HasHooks ? "Hooks" : "MCP";
+            parts.Children.Add(plugin.Consent switch
+            {
+                "approved" => Chip($"{runs} · approved", "RuInkBrush"),
+                "changed" => Chip($"{runs} · changed, review again", "RuWarningBrush"),
+                _ => Chip($"{runs} · needs approval", "RuWarningBrush"),
+            });
+        }
+
         parts.Children.Add(Chip(plugin.Source == "managed" ? "Installed" : "Local", "RuMutedBrush"));
         details.Children.Add(parts);
-        foreach (var note in plugin.Diagnostics.Where(note => !note.StartsWith("Hooks and MCP", StringComparison.Ordinal)))
+        foreach (var note in plugin.Diagnostics)
             details.Children.Add(Text(note, 12, "RuWarningBrush", wrap: true));
+        if (plugin.Consent != "not_needed")
+        {
+            var review = new HyperlinkButton
+            {
+                Content = plugin.NeedsConsent ? "Review commands" : "View commands",
+                Padding = new Thickness(0),
+                Tag = plugin,
+            };
+            AutomationProperties.SetName(review, $"Review the commands of the {plugin.Name} plugin");
+            review.Click += OnReviewPluginCommandsClick;
+            details.Children.Add(review);
+        }
 
         var toggle = new ToggleSwitch
         {
@@ -159,11 +182,101 @@ public sealed partial class CustomizeView
         Child = Text(text, 11.5, brush),
     };
 
+    private readonly Dictionary<string, PluginItem> _pluginsById = new(StringComparer.Ordinal);
+
     private async void OnPluginToggled(object sender, RoutedEventArgs e)
     {
-        if (sender is not ToggleSwitch { Tag: string id } toggle) return;
-        toggle.IsEnabled = false;
-        await UpdatePluginsAsync(new PluginSettingsRequest("set_enabled", id, Enabled: toggle.IsOn));
+        try
+        {
+            if (sender is not ToggleSwitch { Tag: string id } toggle) return;
+            toggle.IsEnabled = false;
+            // Turning on a plugin whose commands wait on consent asks first, showing exactly them.
+            if (toggle.IsOn && _pluginsById.TryGetValue(id, out var plugin) && plugin.NeedsConsent)
+            {
+                var choice = await AskPluginConsentAsync(plugin, turningOn: true);
+                if (choice == PluginConsentChoice.Cancel)
+                {
+                    await LoadPluginsAsync();
+                    return;
+                }
+
+                if (choice == PluginConsentChoice.Allow)
+                    await UpdatePluginsAsync(new PluginSettingsRequest("approve", id, Digest: plugin.Digest));
+            }
+
+            await UpdatePluginsAsync(new PluginSettingsRequest("set_enabled", id, Enabled: toggle.IsOn));
+        }
+        catch (Exception error)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[Customize] Plugin toggle failed: {error.GetType().Name}");
+        }
+    }
+
+    private async void OnReviewPluginCommandsClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (sender is not FrameworkElement { Tag: PluginItem plugin }) return;
+            var choice = await AskPluginConsentAsync(plugin, turningOn: false);
+            if (choice == PluginConsentChoice.Allow)
+                await UpdatePluginsAsync(new PluginSettingsRequest("approve", plugin.Id, Digest: plugin.Digest));
+            else if (choice == PluginConsentChoice.Revoke)
+                await UpdatePluginsAsync(new PluginSettingsRequest("revoke", plugin.Id));
+        }
+        catch (Exception error)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[Customize] Plugin review failed: {error.GetType().Name}");
+        }
+    }
+
+    private enum PluginConsentChoice { Cancel, Allow, WithoutCommands, Revoke }
+
+    /// <summary>
+    /// Shows every command the plugin would run, as the Host read them, and asks for consent.
+    /// The approval sent back carries the digest of exactly this list.
+    /// </summary>
+    private async Task<PluginConsentChoice> AskPluginConsentAsync(PluginItem plugin, bool turningOn)
+    {
+        var body = new StackPanel { Spacing = 10, MaxWidth = 560 };
+        body.Children.Add(Text(plugin.Consent == "changed"
+            ? "This plugin's commands changed since you approved them, so they are paused. Ru will run these as you, without asking again:"
+            : "When this plugin is on, Ru will run these commands as you, without asking again:", 13, "RuInkBrush", wrap: true));
+        var list = new StackPanel { Spacing = 6 };
+        foreach (var line in plugin.Executable ?? [])
+        {
+            var text = Text(line, 12, "RuInkBrush", wrap: true);
+            text.FontFamily = (FontFamily)Application.Current.Resources["RuMonoFontFamily"];
+            text.IsTextSelectionEnabled = true;
+            list.Children.Add(new Border
+            {
+                Padding = new Thickness(8, 6, 8, 6),
+                CornerRadius = (CornerRadius)Application.Current.Resources["AppControlCornerRadius"],
+                Background = Brush("RuSurfaceBrush"),
+                Child = text,
+            });
+        }
+
+        body.Children.Add(new ScrollViewer { MaxHeight = 280, Content = list });
+        body.Children.Add(Text("Only allow commands from a plugin you trust. If the plugin changes them later, they stop until you approve again. Tool calls still follow your permission preset.",
+            12, "RuMutedBrush", wrap: true));
+
+        var approved = plugin.Consent == "approved";
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = $"Allow commands from {plugin.Name}?",
+            Content = body,
+            PrimaryButtonText = approved ? string.Empty : turningOn ? "Allow and turn on" : "Allow",
+            SecondaryButtonText = turningOn ? "Turn on without commands" : approved ? "Stop allowing" : string.Empty,
+            CloseButtonText = turningOn ? "Cancel" : "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        return await ContentDialogGate.ShowAsync(dialog) switch
+        {
+            ContentDialogResult.Primary => PluginConsentChoice.Allow,
+            ContentDialogResult.Secondary => turningOn ? PluginConsentChoice.WithoutCommands : PluginConsentChoice.Revoke,
+            _ => PluginConsentChoice.Cancel,
+        };
     }
 
     private void OnOpenPluginFolderClick(object sender, RoutedEventArgs e)

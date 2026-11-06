@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(plugins)**: User plugin, phase 2 ([ADR 0044](docs/adr/0044-user-plugins.md)): plugin
+  giờ chạy được `hooks.json` và `mcp.json`, nhưng chỉ sau khi user đồng ý. Bật plugin có lệnh sẽ
+  hiện đúng danh sách lệnh nó chạy (tên biến môi trường, không hiện giá trị) để chọn **Allow and
+  turn on** hoặc **Turn on without commands**. Ru lưu digest SHA-256 của các lệnh đó; nếu plugin
+  đổi lệnh, hooks và MCP của nó bị dừng cho tới khi user duyệt lại. Hook của plugin chạy sau
+  `~/.ru/hooks.json`, trước hooks của workspace, kèm `RU_PLUGIN_ROOT`; MCP server được đặt tên
+  `<plugin>-<server>` và thua server cùng tên trong `mcp.json` của user. Thư mục plugin và file
+  ghi trạng thái bật/duyệt thành protected path (catalog version 4): tool của agent không sửa được
+  ở `plan`/`standard`.
+
 - **feat(plugins)**: User plugin, phase 1 ([ADR 0044](docs/adr/0044-user-plugins.md)). Một plugin
   là thư mục trong `~/.ru/plugins` (hoặc `%LOCALAPPDATA%\Ru\plugins`) có `ru-plugin.json`
   chặt chẽ, gom `skills/` và `AGENTS.md`. Plugin tắt cho đến khi user bật trong **Customize →

@@ -631,8 +631,9 @@ from terminal execution; neither path uses OS network confinement.
 Workspace `SKILL.md` bodies are untrusted prompt guidance. LSP and extensions are
 not loaded or discoverable. User plugins ([ADR 0044](../adr/0044-user-plugins.md)) load
 only from `~/.ru/plugins` and `%LOCALAPPDATA%\Ru\plugins`, only once the user enables
-them, and today contribute skills and instructions only; a repository cannot supply one.
-MCP servers come only from the user's own `~/.ru/mcp.json`, never from the workspace.
+them; their hooks and MCP servers run only for the exact commands the user approved, and a
+repository cannot supply one. MCP servers come from the user's own `~/.ru/mcp.json` and from
+those approved plugins, never from the workspace.
 
 Selecting a preset while idle does not add a composer status row, so the empty
 conversation welcome content keeps its position. The Agent inline status appears only

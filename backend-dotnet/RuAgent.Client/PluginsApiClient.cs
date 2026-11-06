@@ -18,7 +18,14 @@ public sealed record PluginItem(
     [property: JsonPropertyName("has_instructions")] bool HasInstructions,
     [property: JsonPropertyName("has_hooks")] bool HasHooks,
     [property: JsonPropertyName("has_mcp_servers")] bool HasMcpServers,
-    [property: JsonPropertyName("diagnostics")] IReadOnlyList<string> Diagnostics);
+    [property: JsonPropertyName("diagnostics")] IReadOnlyList<string> Diagnostics,
+    [property: JsonPropertyName("consent")] string Consent = "not_needed",
+    [property: JsonPropertyName("executable")] IReadOnlyList<string>? Executable = null,
+    [property: JsonPropertyName("digest")] string? Digest = null)
+{
+    /// <summary>Hooks or MCP servers that wait on the user's approval, first-time or after a change.</summary>
+    public bool NeedsConsent => Consent is "needs_approval" or "changed";
+}
 
 public sealed record PluginListResponse(
     [property: JsonPropertyName("local_root")] string LocalRoot,
@@ -32,7 +39,8 @@ public sealed record PluginSettingsRequest(
     [property: JsonPropertyName("name")] string? Name = null,
     [property: JsonPropertyName("description")] string? Description = null,
     [property: JsonPropertyName("with_instructions")] bool? WithInstructions = null,
-    [property: JsonPropertyName("with_skill")] bool? WithSkill = null);
+    [property: JsonPropertyName("with_skill")] bool? WithSkill = null,
+    [property: JsonPropertyName("digest")] string? Digest = null);
 
 /// <summary>Authenticated user plugin list, enable switch and creation (ADR 0044).</summary>
 public sealed class PluginsApiClient : IDisposable
@@ -64,8 +72,8 @@ public sealed class PluginsApiClient : IDisposable
     public async Task<PluginListResponse> UpdateAsync(PluginSettingsRequest settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (settings.Action is not ("set_enabled" or "create"))
-            throw new ArgumentException("Choose set_enabled or create.", nameof(settings));
+        if (settings.Action is not ("set_enabled" or "create" or "approve" or "revoke"))
+            throw new ArgumentException("Choose set_enabled, create, approve or revoke.", nameof(settings));
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_session.BaseUri, "agent/v1/plugins/settings"))
         {
             Content = new StringContent(JsonSerializer.Serialize(settings), Encoding.UTF8, "application/json"),
@@ -105,7 +113,9 @@ public sealed class PluginsApiClient : IDisposable
                 || result.Plugins.Count > RuAgent.Protocol.UserPlugins.MaxPlugins
                 || result.Plugins.Any(plugin => plugin is null || !RuAgent.Protocol.UserPlugins.IsValidId(plugin.Id)
                     || string.IsNullOrWhiteSpace(plugin.Name) || string.IsNullOrWhiteSpace(plugin.Directory)
-                    || plugin.Source is not ("local" or "managed") || plugin.Diagnostics is null))
+                    || plugin.Source is not ("local" or "managed") || plugin.Diagnostics is null
+                    || plugin.Consent is not ("not_needed" or "needs_approval" or "approved" or "changed")
+                    || (plugin.Consent != "not_needed" && (plugin.Digest is not { Length: 64 } || plugin.Executable is not { Count: > 0 }))))
                 throw new AgentApiException("invalid_response", "Invalid plugin list response.");
             return result;
         }

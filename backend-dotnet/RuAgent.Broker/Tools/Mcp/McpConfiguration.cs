@@ -67,12 +67,18 @@ public sealed class McpConfiguration
 
     public static string PathFor(string userHome) => Path.Combine(userHome, ".ru", "mcp.json");
 
-    public static McpConfiguration Load(string? userHome)
+    /// <summary>The servers a plugin may add on top of the user's own file, and at most this many in all.</summary>
+    public const int MaxMergedServers = 32;
+
+    public static McpConfiguration Load(string? userHome) =>
+        string.IsNullOrWhiteSpace(userHome) ? Empty : LoadFile(PathFor(userHome));
+
+    /// <summary>Reads one <c>mcp.json</c> with the same rules as the user's file (a plugin's, ADR 0044).</summary>
+    public static McpConfiguration LoadFile(string path)
     {
-        if (string.IsNullOrWhiteSpace(userHome)) return Empty;
         try
         {
-            var info = new FileInfo(PathFor(userHome));
+            var info = new FileInfo(path);
             if (!info.Exists || info.Length > MaxFileBytes || (info.Attributes & FileAttributes.ReparsePoint) != 0) return Empty;
             return Parse(File.ReadAllText(info.FullName));
         }
@@ -81,6 +87,26 @@ public sealed class McpConfiguration
             return Empty;
         }
     }
+
+    /// <summary>
+    /// The user's servers, then approved plugin servers whose names the user's file does not
+    /// already declare: the user's own declaration always wins.
+    /// </summary>
+    public static McpConfiguration Merge(McpConfiguration user, IReadOnlyList<McpServerDefinition> plugins)
+    {
+        if (plugins.Count == 0) return user;
+        var names = user.Servers.Select(server => server.Name).ToHashSet(StringComparer.Ordinal);
+        var merged = user.Servers.ToList();
+        foreach (var server in plugins)
+        {
+            if (merged.Count >= MaxMergedServers) break;
+            if (names.Add(server.Name)) merged.Add(server);
+        }
+
+        return merged.Count == 0 ? Empty : new McpConfiguration(merged);
+    }
+
+    public static bool IsValidServerName(string name) => ServerName.IsMatch(name);
 
     internal static McpConfiguration Parse(string json)
     {

@@ -403,6 +403,31 @@ public sealed partial class PolicyEvaluationTests
     }
 
     [Theory]
+    [InlineData("plan", "deny", "protected_path")]
+    [InlineData("standard", "deny", "protected_path")]
+    [InlineData("full_access", "allow", "full_access_allow")]
+    public void A_user_plugin_follows_the_protected_path_rule(string preset, string decision, string reasonCode)
+    {
+        // ADR 0044: a plugin's hooks run once approved and its guidance reaches every run,
+        // so the model must not write one in plan or standard; full_access stays literally full.
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
+        var evaluator = new PolicySnapshotEvaluator();
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        foreach (var path in new[]
+        {
+            Path.Combine(profile, ".ru", "plugins", "team", "hooks.json"),
+            Path.Combine(localAppData, "Ru", "plugin-preferences.json"),
+        })
+        {
+            var evaluation = evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", path), PolicyRequestInvariants.Valid, Now);
+            Assert.Equal(decision, evaluation.Decision);
+            Assert.Equal(reasonCode, evaluation.ReasonCode);
+        }
+    }
+
+    [Theory]
     [InlineData("plan", "deny", "plan_preset_read_only")]
     [InlineData("standard", "ask", "mcp_call_requires_approval")]
     [InlineData("full_access", "allow", "full_access_allow")]

@@ -3,7 +3,9 @@ namespace RuAgent.Broker.Tools.Paths;
 /// <summary>
 /// The catalog-protected paths: the harness's own key material and runtime
 /// descriptors, Ru configuration that runs programs (<c>.ru\hooks.json</c>,
-/// <c>.ru\mcp.json</c>), plus any paths the user adds through
+/// <c>.ru\mcp.json</c>), the user's plugins and their consent record (ADR 0044:
+/// <c>%USERPROFILE%\.ru\plugins</c>, <c>%LOCALAPPDATA%\Ru\plugins</c>,
+/// <c>%LOCALAPPDATA%\Ru\plugin-preferences.json</c>), plus any paths the user adds through
 /// <see cref="ExtraPathsEnvironmentVariable"/>. Credential stores and developer
 /// files (.ssh, .env, .git, cloud CLI homes) are ordinary paths: they follow the
 /// preset profile like any other target, matching the mainstream agents that
@@ -13,7 +15,7 @@ namespace RuAgent.Broker.Tools.Paths;
 /// </summary>
 public static class ProtectedPathCatalog
 {
-    public const string Version = "3";
+    public const string Version = "4";
 
     /// <summary>Semicolon-separated absolute paths that join the catalog-protected set.</summary>
     public const string ExtraPathsEnvironmentVariable = "RU_PROTECTED_PATHS";
@@ -95,7 +97,43 @@ public static class ProtectedPathCatalog
             return true;
         }
 
-        return IsExtraProtected(normalized, environment);
+        return IsPluginProtected(normalized, environment) || IsExtraProtected(normalized, environment);
+    }
+
+    /// <summary>
+    /// A plugin's hooks and MCP servers run as the user once approved, and its skills and
+    /// instructions reach every run. The model must not write a plugin, nor the record of
+    /// which plugins are on and which commands were approved, or one allowed write would
+    /// add guidance or commands the user never chose. The roots are the exact user folders,
+    /// never any folder that happens to be named <c>plugins</c>.
+    /// </summary>
+    private static bool IsPluginProtected(string normalized, EnvironmentAccessor environment)
+    {
+        var protectedRoots = new List<string>(3);
+        if (environment("USERPROFILE") is { Length: > 0 } profile)
+            protectedRoots.Add(Path.Combine(profile, ".ru", "plugins"));
+        if (environment("LOCALAPPDATA") is { Length: > 0 } localAppData)
+        {
+            protectedRoots.Add(Path.Combine(localAppData, "Ru", "plugins"));
+            protectedRoots.Add(Path.Combine(localAppData, "Ru", "plugin-preferences.json"));
+        }
+
+        foreach (var entry in protectedRoots)
+        {
+            string root;
+            try
+            {
+                root = CanonicalizeConfiguredRoot(entry);
+            }
+            catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                continue;
+            }
+
+            if (IsAtOrBelow(normalized, root) || IsAtOrBelow(normalized.TrimEnd('.', ' '), root)) return true;
+        }
+
+        return false;
     }
 
     private static bool IsExtraProtected(string normalized, EnvironmentAccessor environment)

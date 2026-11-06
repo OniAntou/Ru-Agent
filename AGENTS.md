@@ -40,7 +40,8 @@ Use CONTEXT.md's domain language and update it when concepts change.
 - **Scoped permissions.** Permissions are session-scoped; approval tokens are
   single-use, bound to exact canonical arguments and lost on restart.
   Structured file tools deny harness key/database files, runtime descriptors
-  and `.ru\hooks.json`/`.ru\mcp.json` in `plan` and `standard`; `full_access` is literally full and treats those
+  and `.ru\hooks.json`/`.ru\mcp.json`, plus user plugins (`~\.ru\plugins`, `%LOCALAPPDATA%\Ru\plugins`) and
+  their consent record, in `plan` and `standard`; `full_access` is literally full and treats those
   protected paths (`RU_PROTECTED_PATHS` entries included) as ordinary targets.
   Terminal authority
   follows profile v2: Standard permits executable/shell launches from a workspace

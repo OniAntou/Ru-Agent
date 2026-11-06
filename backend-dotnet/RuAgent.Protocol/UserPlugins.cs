@@ -43,7 +43,8 @@ public sealed record UserPlugin(
 /// off until the user enables it; the enabled set lives in Ru's own data folder, never in a
 /// plugin. Enabled plugins add their <c>skills/</c> after the user skill roots and their
 /// <c>AGENTS.md</c> after the user instructions, so they have the lowest precedence.
-/// Hooks and MCP servers in a plugin are recognized but not loaded yet.
+/// Hooks and MCP servers run only once the user approved the plugin's executable surface;
+/// the Host computes that surface and its digest (<c>PluginExecutableSurface</c>).
 /// </summary>
 public static partial class UserPlugins
 {
@@ -194,25 +195,58 @@ public static partial class UserPlugins
         return problem.Length == 0 ? manifest : null;
     }
 
-    public static IReadOnlySet<string> ReadEnabled(string? localApplicationDataRoot = null)
+    public static IReadOnlySet<string> ReadEnabled(string? localApplicationDataRoot = null) =>
+        new HashSet<string>((ReadPreferences(localApplicationDataRoot).Enabled ?? []).Where(IsValidId), StringComparer.Ordinal);
+
+    /// <summary>
+    /// The executable-surface digest the user approved for each plugin (ADR 0044). A plugin's
+    /// hooks and MCP servers run only while their current digest equals the approved one.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ReadApprovals(string? localApplicationDataRoot = null) =>
+        (ReadPreferences(localApplicationDataRoot).Approved ?? new Dictionary<string, string>())
+            .Where(pair => IsValidId(pair.Key) && IsDigest(pair.Value))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+    /// <summary>Turns one plugin on or off. Writes are atomic and serialized across processes.</summary>
+    public static void SetEnabled(string id, bool enabled, string? localApplicationDataRoot = null) =>
+        UpdatePreferences(id, localApplicationDataRoot, (set, _) =>
+        {
+            if (enabled) set.Add(id);
+            else set.Remove(id);
+        });
+
+    /// <summary>Records (or, with null, withdraws) the user's approval of one executable-surface digest.</summary>
+    public static void SetApproval(string id, string? digest, string? localApplicationDataRoot = null)
+    {
+        if (digest is not null && !IsDigest(digest)) throw new ArgumentException("invalid_plugin_digest", nameof(digest));
+        UpdatePreferences(id, localApplicationDataRoot, (_, approvals) =>
+        {
+            if (digest is null) approvals.Remove(id);
+            else approvals[id] = digest;
+        });
+    }
+
+    private static bool IsDigest(string? value) =>
+        value is { Length: 64 } && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+
+    private static PluginPreferences ReadPreferences(string? localApplicationDataRoot)
     {
         var path = PreferencesPath(localApplicationDataRoot);
         try
         {
             var info = new FileInfo(path);
-            if (!info.Exists || info.Length > MaxPreferenceBytes) return new HashSet<string>(StringComparer.Ordinal);
-            var preferences = JsonSerializer.Deserialize<PluginPreferences>(File.ReadAllBytes(path));
-            return new HashSet<string>((preferences?.Enabled ?? []).Where(IsValidId), StringComparer.Ordinal);
+            if (!info.Exists || info.Length > MaxPreferenceBytes || IsLink(info)) return new PluginPreferences(null, null);
+            return JsonSerializer.Deserialize<PluginPreferences>(File.ReadAllBytes(path)) ?? new PluginPreferences(null, null);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
         {
-            // Unreadable preferences enable nothing: plugins stay off rather than on by accident.
-            return new HashSet<string>(StringComparer.Ordinal);
+            // Unreadable preferences enable and approve nothing: plugins stay off rather than on by accident.
+            return new PluginPreferences(null, null);
         }
     }
 
-    /// <summary>Turns one plugin on or off. Writes are atomic and serialized across processes.</summary>
-    public static void SetEnabled(string id, bool enabled, string? localApplicationDataRoot = null)
+    private static void UpdatePreferences(string id, string? localApplicationDataRoot,
+        Action<SortedSet<string>, SortedDictionary<string, string>> change)
     {
         if (!IsValidId(id)) throw new ArgumentException("invalid_plugin_id", nameof(id));
         var path = PreferencesPath(localApplicationDataRoot);
@@ -223,9 +257,11 @@ public static partial class UserPlugins
         try
         {
             var set = new SortedSet<string>(ReadEnabled(localApplicationDataRoot), StringComparer.Ordinal);
-            if (enabled) set.Add(id);
-            else set.Remove(id);
-            WriteAtomically(path, JsonSerializer.SerializeToUtf8Bytes(new PluginPreferences(set.ToArray()), WriteJson));
+            var approvals = new SortedDictionary<string, string>(
+                ReadApprovals(localApplicationDataRoot).ToDictionary(pair => pair.Key, pair => pair.Value), StringComparer.Ordinal);
+            change(set, approvals);
+            WriteAtomically(path, JsonSerializer.SerializeToUtf8Bytes(
+                new PluginPreferences(set.ToArray(), new Dictionary<string, string>(approvals)), WriteJson));
         }
         finally
         {
@@ -280,8 +316,6 @@ public static partial class UserPlugins
         bool hasHooks = File.Exists(Path.Combine(directory, "hooks.json"));
         bool hasMcp = File.Exists(Path.Combine(directory, "mcp.json"));
         var diagnostics = new List<string>();
-        if (hasHooks || hasMcp)
-            diagnostics.Add("Hooks and MCP servers in plugins are not loaded yet; this plugin's skills and instructions work.");
         if (!hasSkills && !hasInstructions && !hasHooks && !hasMcp)
             diagnostics.Add("This plugin is empty: add a skills folder or an AGENTS.md.");
         return new UserPlugin(manifest, directory, source, enabled, hasSkills, hasInstructions, hasHooks, hasMcp, diagnostics);
@@ -310,5 +344,7 @@ public static partial class UserPlugins
         }
     }
 
-    private sealed record PluginPreferences([property: JsonPropertyName("enabled")] string[]? Enabled);
+    private sealed record PluginPreferences(
+        [property: JsonPropertyName("enabled")] string[]? Enabled,
+        [property: JsonPropertyName("approved")] Dictionary<string, string>? Approved);
 }

@@ -11,8 +11,11 @@ public enum HookEvent
     Stop,
 }
 
-/// <summary>One user-configured command bound to a tool-id pattern.</summary>
-public sealed record HookDefinition(HookEvent Event, string? ToolPattern, string Command, TimeSpan Timeout)
+/// <summary>
+/// One user-configured command bound to a tool-id pattern. <paramref name="PluginRoot"/> is the
+/// folder of the plugin that declared it (ADR 0044), passed to the hook as <c>RU_PLUGIN_ROOT</c>.
+/// </summary>
+public sealed record HookDefinition(HookEvent Event, string? ToolPattern, string Command, TimeSpan Timeout, string? PluginRoot = null)
 {
     private static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(50);
 
@@ -32,7 +35,8 @@ public sealed record HookDefinition(HookEvent Event, string? ToolPattern, string
 }
 
 /// <summary>
-/// Hooks from <c>~/.ru/hooks.json</c> then <c>&lt;workspace&gt;/.ru/hooks.json</c>:
+/// Hooks from <c>~/.ru/hooks.json</c>, then enabled plugins whose commands the user approved
+/// (user-level, ADR 0044), then <c>&lt;workspace&gt;/.ru/hooks.json</c>:
 /// <code>{"hooks":{"PreToolUse":[{"matcher":"powershell|run_process|edit_file","command":"...","timeout_seconds":30}]}}</code>
 /// Unreadable, oversized or malformed files contribute nothing; individual invalid entries are skipped.
 /// </summary>
@@ -61,18 +65,24 @@ public sealed class HookConfiguration
     public IReadOnlyList<HookDefinition> ForEvent(HookEvent hookEvent) =>
         _hooks.Where(hook => hook.Event == hookEvent).ToArray();
 
-    /// <param name="workspaceRoot">Null loads only the user's hooks, as for a workspace not yet trusted.</param>
-    public static HookConfiguration Load(string? workspaceRoot, string? userHome)
+    /// <param name="workspaceRoot">Null loads only the user-level hooks (the user's and approved plugins'), as for a workspace not yet trusted.</param>
+    /// <param name="localApplicationDataRoot">Where Ru keeps plugin consent; null is the real one.</param>
+    public static HookConfiguration Load(string? workspaceRoot, string? userHome, string? localApplicationDataRoot = null)
     {
         var hooks = new List<HookDefinition>();
-        foreach (var root in new[] { userHome, workspaceRoot })
+        if (!string.IsNullOrWhiteSpace(userHome))
         {
-            if (string.IsNullOrWhiteSpace(root)) continue;
-            hooks.AddRange(ReadFile(Path.Combine(root, ".ru", "hooks.json")));
+            hooks.AddRange(ReadFile(Path.Combine(userHome, ".ru", "hooks.json")));
+            hooks.AddRange(Plugins.PluginExecutableSurface.ApprovedHooks(localApplicationDataRoot, userHome));
         }
 
+        if (!string.IsNullOrWhiteSpace(workspaceRoot))
+            hooks.AddRange(ReadFile(Path.Combine(workspaceRoot, ".ru", "hooks.json")));
         return hooks.Count == 0 ? Empty : new HookConfiguration(hooks);
     }
+
+    /// <summary>One <c>hooks.json</c>, as a list; a plugin's surface is read through this.</summary>
+    public static IReadOnlyList<HookDefinition> LoadFile(string path) => ReadFile(path);
 
     internal static IReadOnlyList<HookDefinition> Parse(string json)
     {

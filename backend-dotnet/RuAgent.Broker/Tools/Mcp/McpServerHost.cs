@@ -67,7 +67,14 @@ public sealed class McpServerHost : IAsyncDisposable
         _httpHandler = httpHandler;
     }
 
-    public McpConfiguration Configuration => McpConfiguration.Load(_userHome());
+    /// <summary>
+    /// Servers from enabled user plugins whose executable surface the user approved (ADR 0044),
+    /// read on every access like the user's file. They never replace a server the user declared.
+    /// </summary>
+    public Func<IReadOnlyList<McpServerDefinition>>? PluginServers { get; init; }
+
+    public McpConfiguration Configuration =>
+        McpConfiguration.Merge(McpConfiguration.Load(_userHome()), PluginServers?.Invoke() ?? []);
 
     /// <summary>The declared servers, without starting any.</summary>
     public JsonObject ListServers()

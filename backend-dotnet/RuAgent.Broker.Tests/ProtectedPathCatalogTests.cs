@@ -65,9 +65,9 @@ public sealed class ProtectedPathCatalogTests
     }
 
     [Fact]
-    public void Catalog_version_is_locked_at_3()
+    public void Catalog_version_is_locked_at_4()
     {
-        Assert.Equal("3", ProtectedPathCatalog.Version);
+        Assert.Equal("4", ProtectedPathCatalog.Version);
     }
 
     [Theory]
@@ -81,6 +81,38 @@ public sealed class ProtectedPathCatalogTests
     {
         Assert.True(ProtectedPathCatalog.IsProtected(path, _ => null));
     }
+
+    [Theory]
+    [InlineData(@"C:\Users\u\.ru\plugins")]
+    [InlineData(@"C:\Users\u\.ru\plugins\team\hooks.json")]
+    [InlineData(@"C:\Users\u\.ru\plugins\team\skills\x\SKILL.md")]
+    [InlineData(@"C:\Users\u\.RU\Plugins\team\ru-plugin.json")]
+    [InlineData(@"C:\Users\u\AppData\Local\Ru\plugins\installed\mcp.json")]
+    [InlineData(@"C:\Users\u\AppData\Local\Ru\plugin-preferences.json")]
+    [InlineData(@"C:\Users\u\AppData\Local\Ru\plugin-preferences.json.")]
+    public void User_plugins_and_their_consent_record_are_protected(string path)
+    {
+        Assert.True(ProtectedPathCatalog.IsProtected(path, PluginEnvironment));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\u\.ru\skills\x\SKILL.md")]
+    [InlineData(@"C:\Users\u\.ru\AGENTS.md")]
+    [InlineData(@"C:\ws\repo\plugins\team\hooks.json.bak")]
+    [InlineData(@"C:\ws\repo\.ru\plugins\draft\ru-plugin.json")]
+    [InlineData(@"C:\Users\u\AppData\Local\Ru\skill-preferences.json")]
+    [InlineData(@"C:\Users\other\.ru\plugins\team\hooks.json.txt")]
+    public void Folders_that_are_not_the_users_plugin_roots_stay_editable(string path)
+    {
+        Assert.False(ProtectedPathCatalog.IsProtected(path, PluginEnvironment));
+    }
+
+    private static string? PluginEnvironment(string name) => name switch
+    {
+        "USERPROFILE" => @"C:\Users\u",
+        "LOCALAPPDATA" => @"C:\Users\u\AppData\Local",
+        _ => null,
+    };
 
     [Theory]
     [InlineData(@"C:\ws\repo\hooks.json")]

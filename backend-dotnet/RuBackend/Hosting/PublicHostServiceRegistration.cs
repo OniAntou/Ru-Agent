@@ -240,7 +240,11 @@ internal static class PublicHostServiceRegistration
         // Windows Credential Manager by entry name when a server starts.
         services.AddSingleton(_ => new RuAgent.Broker.Tools.Mcp.McpServerHost(
             () => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            name => new RuBackend.Business.Settings.WindowsCredentialApi().Read(name)?.Secret));
+            name => new RuBackend.Business.Settings.WindowsCredentialApi().Read(name)?.Secret)
+        {
+            // Approved servers of enabled user plugins (ADR 0044); the user's own file wins on a name.
+            PluginServers = () => RuBackend.Harness.Plugins.PluginExecutableSurface.ApprovedServers(),
+        });
         services.AddSingleton(_ => new RuAgent.Broker.Skills.SkillPackageInstaller(
             RuAgent.Protocol.SkillRoots.UserInstallationRoot()));
         // Computer use (ADR 0031): one desktop controller per Host. The stop hotkey is

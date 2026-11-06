@@ -48,6 +48,8 @@ public sealed class HookProcessRunner : IHookRunner
         start.Environment.Clear();
         foreach (var (name, value) in new AgentCommandEnvironment().ChildEnvironment) start.Environment[name] = value;
         start.Environment["RU_HOOK_EVENT"] = hook.Event.ToString();
+        // A plugin's hook finds its own scripts through this, wherever the run's workspace is.
+        if (hook.PluginRoot is { Length: > 0 } pluginRoot) start.Environment["RU_PLUGIN_ROOT"] = pluginRoot;
 
         using var job = WindowsJobProcessTree.Create();
         SuspendedProcess.StartedProcess? started = null;

@@ -77,7 +77,7 @@ public sealed class UserPluginsTests : IDisposable
     }
 
     [Fact]
-    public void Hooks_and_mcp_are_recognized_but_reported_as_not_loaded_yet()
+    public void Hooks_and_mcp_files_are_recognized()
     {
         var directory = WritePlugin(UserPlugins.LocalRoot(Profile), "runner", "Runner");
         File.WriteAllText(Path.Combine(directory, "hooks.json"), "{}");
@@ -85,7 +85,24 @@ public sealed class UserPluginsTests : IDisposable
         var plugin = Assert.Single(UserPlugins.Discover(AppData, Profile));
 
         Assert.True(plugin.HasHooks);
-        Assert.Contains(plugin.Diagnostics, note => note.Contains("not loaded yet", StringComparison.Ordinal));
+        Assert.False(plugin.HasMcpServers);
+    }
+
+    [Fact]
+    public void Approvals_are_stored_per_plugin_and_survive_enabling_changes()
+    {
+        var digest = new string('a', 64);
+        UserPlugins.SetApproval("runner", digest, AppData);
+        UserPlugins.SetEnabled("runner", true, AppData);
+        UserPlugins.SetEnabled("other", true, AppData);
+
+        Assert.Equal(digest, UserPlugins.ReadApprovals(AppData)["runner"]);
+        Assert.Contains("runner", UserPlugins.ReadEnabled(AppData));
+
+        UserPlugins.SetApproval("runner", null, AppData);
+        Assert.False(UserPlugins.ReadApprovals(AppData).ContainsKey("runner"));
+        Assert.Contains("runner", UserPlugins.ReadEnabled(AppData));
+        Assert.Throws<ArgumentException>(() => UserPlugins.SetApproval("runner", "not-a-digest", AppData));
     }
 
     [Fact]

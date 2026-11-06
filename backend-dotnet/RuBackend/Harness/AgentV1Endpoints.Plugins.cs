@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RuAgent.Protocol;
+using RuBackend.Harness.Plugins;
 
 namespace RuBackend.Harness;
 
@@ -10,7 +11,9 @@ public static partial class AgentV1Endpoints
     private static void MapPlugins(WebApplication app)
     {
         // User plugins (ADR 0044). Enabling a plugin adds guidance (skills, instructions) for
-        // new runs; it never grants execution authority.
+        // new runs; its hooks and MCP servers run only after the user approves exactly the
+        // commands shown (approve carries the digest of what the user saw). Neither grants
+        // execution authority over tool calls, which policy still decides.
         app.MapGet("/agent/v1/plugins", GetPlugins);
         app.MapPost("/agent/v1/plugins/settings", PostPluginSettingsAsync);
     }
@@ -22,7 +25,8 @@ public static partial class AgentV1Endpoints
         [property: JsonPropertyName("name")] string? Name,
         [property: JsonPropertyName("description")] string? Description,
         [property: JsonPropertyName("with_instructions")] bool? WithInstructions,
-        [property: JsonPropertyName("with_skill")] bool? WithSkill);
+        [property: JsonPropertyName("with_skill")] bool? WithSkill,
+        [property: JsonPropertyName("digest")] string? Digest);
 
     private static IResult GetPlugins() => PluginListResponse();
 
@@ -49,6 +53,19 @@ public static partial class AgentV1Endpoints
                     if (enabled && UserPlugins.Discover().All(plugin => plugin.Id != request.Id))
                         return PluginError(404, "plugin_not_found", "No plugin with that id is installed.");
                     UserPlugins.SetEnabled(request.Id!, enabled);
+                    break;
+                case "approve" when request.Digest is { Length: 64 }:
+                    // Consent binds to the exact commands the user was shown: if the plugin
+                    // changed since the list was read, nothing is approved.
+                    var surface = PluginExecutableSurface.ForAll().FirstOrDefault(item => item.Plugin.Id == request.Id);
+                    if (surface is null) return PluginError(404, "plugin_not_found", "No plugin with that id is installed.");
+                    if (surface.Digest is null) return PluginError(400, "plugin_runs_nothing", "This plugin declares no hooks or MCP servers.");
+                    if (!string.Equals(surface.Digest, request.Digest, StringComparison.Ordinal))
+                        return PluginError(409, "plugin_changed", "The plugin's commands changed since you looked; review them again.");
+                    UserPlugins.SetApproval(request.Id!, request.Digest);
+                    break;
+                case "revoke":
+                    UserPlugins.SetApproval(request.Id!, null);
                     break;
                 case "create" when request.Name is { Length: > 0 }:
                     UserPlugins.Create(request.Id!, request.Name, request.Description,
@@ -77,10 +94,10 @@ public static partial class AgentV1Endpoints
     private static IResult PluginListResponse()
     {
         var skipped = new List<string>();
-        IReadOnlyList<UserPlugin> plugins;
+        IReadOnlyList<PluginExecutableSurface> plugins;
         try
         {
-            plugins = UserPlugins.Discover(skipped: skipped);
+            plugins = PluginExecutableSurface.ForAll(skipped: skipped);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
@@ -90,20 +107,29 @@ public static partial class AgentV1Endpoints
         return Results.Json(new
         {
             local_root = UserPlugins.LocalRoot(),
-            plugins = plugins.Select(plugin => new
+            plugins = plugins.Select(surface => new
             {
-                id = plugin.Id,
-                name = plugin.Manifest.Name,
-                description = plugin.Manifest.Description,
-                version = plugin.Manifest.Version,
-                source = plugin.Source == UserPluginSource.Managed ? "managed" : "local",
-                directory = plugin.Directory,
-                enabled = plugin.Enabled,
-                has_skills = plugin.HasSkills,
-                has_instructions = plugin.HasInstructions,
-                has_hooks = plugin.HasHooks,
-                has_mcp_servers = plugin.HasMcpServers,
-                diagnostics = plugin.Diagnostics,
+                id = surface.Plugin.Id,
+                name = surface.Plugin.Manifest.Name,
+                description = surface.Plugin.Manifest.Description,
+                version = surface.Plugin.Manifest.Version,
+                source = surface.Plugin.Source == UserPluginSource.Managed ? "managed" : "local",
+                directory = surface.Plugin.Directory,
+                enabled = surface.Plugin.Enabled,
+                has_skills = surface.Plugin.HasSkills,
+                has_instructions = surface.Plugin.HasInstructions,
+                has_hooks = surface.Hooks.Count > 0,
+                has_mcp_servers = surface.Servers.Count > 0,
+                diagnostics = surface.Plugin.Diagnostics.Concat(surface.Problems),
+                consent = surface.Consent switch
+                {
+                    PluginConsentState.NeedsApproval => "needs_approval",
+                    PluginConsentState.Approved => "approved",
+                    PluginConsentState.Changed => "changed",
+                    _ => "not_needed",
+                },
+                executable = surface.Lines,
+                digest = surface.Digest,
             }),
             skipped,
         });

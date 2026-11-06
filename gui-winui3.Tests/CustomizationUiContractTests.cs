@@ -45,6 +45,20 @@ public sealed class CustomizationUiContractTests
         Assert.Contains("\"set_enabled\"", GuiSource.MethodBody(code, "OnPluginToggled"), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Turning_on_a_plugin_with_commands_asks_first_and_approves_the_digest_it_showed()
+    {
+        var code = GuiSource.Text("Views", "CustomizeView.UserPlugins.cs");
+        var toggled = GuiSource.MethodBody(code, "OnPluginToggled");
+        Assert.Contains("plugin.NeedsConsent", toggled, StringComparison.Ordinal);
+        Assert.Contains("AskPluginConsentAsync", toggled, StringComparison.Ordinal);
+        Assert.Contains("\"approve\", id, Digest: plugin.Digest", toggled, StringComparison.Ordinal);
+        var ask = GuiSource.MethodBody(code, "AskPluginConsentAsync");
+        Assert.Contains("plugin.Executable", ask, StringComparison.Ordinal);
+        Assert.Contains("ContentDialogGate.ShowAsync", ask, StringComparison.Ordinal);
+        Assert.Contains("DefaultButton = ContentDialogButton.Close", ask, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("My team rules", "my-team-rules")]
     [InlineData("Quy tắc Đội", "quy-tac-doi")]

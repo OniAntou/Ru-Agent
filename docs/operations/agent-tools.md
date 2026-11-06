@@ -446,7 +446,7 @@ targets (`external_directory_rule_allow`); deny and ask rules keep precedence,
 the plan read-only gate still applies, and no grant ever authorizes terminal
 intent. Full Access instead selects an ephemeral nearest external
 ancestor for that structured call and does not persist a folder grant.
-Structured protected paths (harness key/database files, runtime descriptors and Ru hook and MCP configuration files,
+Structured protected paths (harness key/database files, runtime descriptors and Ru hook and MCP configuration files, user plugins and their consent record,
 plus user-added `RU_PROTECTED_PATHS` entries) are denied in `plan` and
 `standard` and allowed in `full_access`, and canonical, symlink, junction, and
 hard-link checks stay active. An ambiguous
@@ -632,7 +632,7 @@ sockets, including outside the workspace; terminal execution has no OS
 filesystem/network confinement. Repository
 cleanliness is irrelevant. Full Access still has hard timeout, output cap,
 cancellation, redaction, and process-tree cleanup. The structured protected
-paths (harness key/database files, runtime descriptors and Ru hook and MCP configuration files) are denied in `plan`
+paths (harness key/database files, runtime descriptors and Ru hook and MCP configuration files, user plugins and their consent record) are denied in `plan`
 and `standard` and allowed in `full_access`, but they never re-impose terminal
 confinement.
 
@@ -772,7 +772,7 @@ external structured targets and external terminal cwd ask. Terminal/git children
 in both execution presets run as the current Windows user without OS
 filesystem/network confinement. Full
 Access is the skip-all mode: external structured files, arbitrary terminal, and
-structured protected paths (harness key/database files, runtime descriptors and Ru hook and MCP configuration files)
+structured protected paths (harness key/database files, runtime descriptors and Ru hook and MCP configuration files, user plugins and their consent record)
 are automatic, while hard-invalid requests remain denied.
 
 Workspace trust is not a preset. It is explicit once per canonical identity:
@@ -984,7 +984,9 @@ device.
 
 [ADR 0025](../adr/0025-mcp-servers-through-the-broker.md) and
 [ADR 0035](../adr/0035-mcp-streamable-http.md) define this surface. Servers are
-declared only in the user's own `%USERPROFILE%\.ru\mcp.json`; a workspace file is never read,
+declared only in the user's own `%USERPROFILE%\.ru\mcp.json` or by an enabled user plugin whose
+commands the user approved (named `<plugin>-<server>`; the user's own name wins, see
+[ADR 0044](../adr/0044-user-plugins.md)); a workspace file is never read,
 and the file is a structured protected path, so the agent cannot change it in `plan` or
 `standard`:
 

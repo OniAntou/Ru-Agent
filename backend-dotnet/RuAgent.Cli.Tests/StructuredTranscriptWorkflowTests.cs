@@ -109,6 +109,21 @@ public sealed partial class StructuredTranscriptWorkflowTests
         });
 
     [Fact]
+    public Task A_meta_activity_row_settles_in_place() =>
+        RunWorker(async ui =>
+        {
+            // The thinking row opens as meta and settles there. Restricting the update to
+            // tool rows left it reading "Thinking" for the rest of the turn.
+            ui.Writer.AppendActivityPresentation("think", TranscriptLine.Plain("  ◦ Thinking", TranscriptRole.Meta));
+            ui.Writer.UpdateActivityPresentation("think", TranscriptLine.Plain("  ◦ Thought 6.1s", TranscriptRole.Meta));
+            await ui.OnUi(() =>
+            {
+                Assert.Equal("  ◦ Thought 6.1s", ui.View.Lines[^1].Text.TrimEnd());
+                Assert.Equal(TranscriptStyle.Meta, ui.View.Lines[^1].Style);
+            });
+        });
+
+    [Fact]
     public Task Typed_output_keeps_detached_scroll_and_reasoning_copy_then_resumes_tail() =>
         RunWorker(async ui =>
         {

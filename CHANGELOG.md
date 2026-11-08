@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(harness)!**: Subagent không còn trần bước/tool riêng. Mỗi child từng dừng ở 128 model step
+  hoặc 256 tool call với `subagent_model_step_limit` / `subagent_tool_call_limit` — trạng thái không
+  ai tiếp tục được. Giờ child tự mở budget window như root, nên chỉ còn giới hạn 4 giờ mỗi attempt
+  và family pool 1.024/2.048 dùng chung mỗi window của root. **Breaking:** hai mã lỗi trên không còn
+  được phát.
+
 - **feat(harness)!**: Bỏ trần số budget window của một run. Root run tự mở window mới không giới
   hạn, nên một run chỉ kết thúc khi model xong, người dùng dừng, hoặc gặp lỗi — không còn park
   `WaitingUser` với `model_step_budget_exhausted` / `tool_call_budget_exhausted`. 128 step và 256

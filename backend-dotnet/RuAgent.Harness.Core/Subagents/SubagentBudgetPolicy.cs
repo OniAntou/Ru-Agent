@@ -1,18 +1,15 @@
-using RuAgent.Protocol.Subagents;
-
 namespace RuAgent.Harness.Core.Subagents;
 
 public static class SubagentBudgetPolicy
 {
+    // A child used to stop at its own step/tool ceiling, which parked it where nobody
+    // could continue it. It now opens windows like a root, so only the family pool and
+    // a real failure bound how long a child works.
     public static AgentBudgetReservation ReserveModelStep(AgentRun run, DateTimeOffset now) =>
-        run.ModelStepsInWindow >= SubagentLimits.MaxModelSteps
-            ? Reject(run, true, "subagent_model_step_limit", now)
-            : AgentBudgetPolicy.ReserveModelStep(run, now);
+        AgentBudgetPolicy.ReserveModelStep(run, now, allowAutomaticWindow: true);
 
     public static AgentBudgetReservation ReserveToolCalls(AgentRun run, int count, DateTimeOffset now) =>
-        count > SubagentLimits.MaxToolCalls - run.ToolCallsInWindow
-            ? Reject(run, true, "subagent_tool_call_limit", now)
-            : AgentBudgetPolicy.ReserveToolCalls(run, count, now);
+        AgentBudgetPolicy.ReserveToolCalls(run, count, now, allowAutomaticWindow: true);
 
     public static AgentBudgetReservation Reject(AgentRun run, bool terminal, string code, DateTimeOffset now)
     {

@@ -65,15 +65,16 @@ The parent alone uses `agent_spawn`, `agent_send`, `agent_wait`, `agent_cancel` 
 `agent_apply`. Depth is one, with at most three runnable children/eight identities and
 three attempts each. Child role, immutable parent policy ceiling, budgets, deadlines and
 Broker lease lifetime intersect; none grant additional permissions.
-Each child attempt is bounded to 128 model steps, 256 tool calls and four hours; the
-root and its children share 1,024 model steps and 2,048 tool calls per root budget
-window (persisted bounds since schema v35).
+Each child attempt is bounded to four hours, not by its own counters: like a root, a
+child opens budget windows as it works, so only the shared family pool and a real
+failure bound how long it runs. The root and its children share 1,024 model steps and
+2,048 tool calls per root budget window (persisted bounds since schema v35).
 `agent_wait.timeout_ms` accepts 0 through 600,000 milliseconds. For longer tasks,
 the parent waits again after a timeout rather than passing a larger timeout.
 A successful native `subagent_wait_timeout` receipt permits repeating that single
-wait with the same arguments. It does not spend repetition-repair notes; model-step,
-tool-call and family budgets still apply. Failed, ambiguous or already-completed
-waits remain subject to the normal repetition guard.
+wait with the same arguments. It does not spend repetition-repair notes; the family
+budget still applies. Failed, ambiguous or already-completed waits remain subject to
+the normal repetition guard.
 The root's `agent_wait` row reads "Waiting for subagents" while the root is parked.
 The wait coordinator settles that same row when it wakes the root (`subagent_wait_completed`
 or `subagent_wait_timeout`), so a check-in that ran out of time stops looking live.

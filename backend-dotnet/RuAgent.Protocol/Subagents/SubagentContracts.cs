@@ -11,11 +11,6 @@ public static class SubagentLimits
     public const int MaxIdentities = 8;
     public const int MaxRunnable = 3;
     public const int MaxAttempts = 3;
-    // Raised for day-long runs (owner decision, 2026-11-04). A child's own limits stay
-    // within one budget window (128 steps / 256 tool calls): a child never opens a
-    // window by itself, so a higher value would park it where nobody can continue it.
-    public const int MaxModelSteps = 128;
-    public const int MaxToolCalls = 256;
     // Per root budget window, shared by the root and its children. The persisted
     // counters' CHECK bounds follow these values (schema v35).
     public const int FamilyModelSteps = 1024;

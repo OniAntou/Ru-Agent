@@ -100,25 +100,25 @@ public sealed partial class AgentRunCoordinatorTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Child_attempt_limits_fail_without_dispatch_or_user_continue(bool modelLimit)
+    public async Task A_child_opens_a_window_instead_of_failing_at_its_old_ceiling(bool modelLimit)
     {
+        // A child used to fail with subagent_model_step_limit / subagent_tool_call_limit,
+        // which parked it where nobody could continue it. It opens windows like a root.
         var original = Run(new(HarnessRunState.Running));
         var run = new AgentRun(original.RunId, original.SessionId, original.WorkspaceId, original.Status,
             original.Version, original.LastSequence, 1,
-            modelLimit ? RuAgent.Protocol.Subagents.SubagentLimits.MaxModelSteps : 0,
-            modelLimit ? 0 : RuAgent.Protocol.Subagents.SubagentLimits.MaxToolCalls,
+            modelLimit ? AgentBudgetPolicy.ModelStepLimit : 0,
+            modelLimit ? 0 : AgentBudgetPolicy.ToolCallLimit,
             original.Preset, original.PolicySnapshotVersion, original.PolicySnapshotSha256, original.CreatedAt, original.UpdatedAt);
         var store = new InMemoryHarnessEventStore();
         store.Seed(run);
         var model = new FakeModelStepRunner();
-        model.Enqueue(modelLimit ? FinalStep("should not run") : ToolStep());
+        model.Enqueue(modelLimit ? FinalStep("done") : ToolStep());
         var gateway = new FakeToolGateway();
         var result = await Coordinator(model, gateway, store, internalRun: true).RunOneStepAsync(RunId(), default);
-        Assert.Equal(HarnessRunState.Failed, result.Run.State);
-        Assert.Equal(modelLimit ? "subagent_model_step_limit" : "subagent_tool_call_limit", result.ErrorCode);
-        Assert.Equal(modelLimit ? 0 : 1, model.Requests.Count);
-        Assert.Empty(gateway.ExecuteAttempts);
-        Assert.Empty(store.Commits.SelectMany(commit => commit.ConversationOutbox));
+        Assert.NotEqual(HarnessRunState.Failed, result.Run.State);
+        Assert.Equal(2, result.Run.BudgetWindow);
+        Assert.Equal(1, model.Requests.Count);
     }
 
     [Fact]

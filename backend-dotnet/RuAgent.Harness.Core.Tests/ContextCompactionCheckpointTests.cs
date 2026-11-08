@@ -162,16 +162,20 @@ public sealed partial class ContextCompactionCoordinatorTests
     }
 
     [Fact]
-    public async Task Child_budget_exhaustion_is_terminal_without_a_summary_call()
+    public async Task A_child_opens_a_window_instead_of_failing_at_its_old_ceiling()
     {
+        // A child used to fail here with subagent_model_step_limit, which parked it
+        // where nobody could continue it. It opens windows like a root now.
         var store = new InMemoryHarnessEventStore();
-        store.Seed(Run(RuAgent.Protocol.Subagents.SubagentLimits.MaxModelSteps));
+        store.Seed(Run(AgentBudgetPolicy.ModelStepLimit));
         var model = new CheckpointModel(store);
         var result = await CheckpointCoordinator(model, store, internalRun: true)
             .CompactAsync(RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
-        Assert.Equal(HarnessRunState.Failed, result.Run!.State);
-        Assert.Equal("subagent_model_step_limit", result.ErrorCode);
-        Assert.Equal(0, model.Calls);
+        Assert.Equal(HarnessRunState.Running, result.Run!.State);
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(2, result.Run.BudgetWindow);
+        Assert.Equal(1, result.Run.ModelStepsInWindow);
+        Assert.Equal(1, model.Calls);
     }
 
     [Fact]

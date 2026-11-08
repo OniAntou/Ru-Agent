@@ -181,7 +181,11 @@ public sealed partial class TgTranscriptView : View
 
     internal void ReplaceToolRow(int index, TgTranscriptRow row, IReadOnlyList<string>? details = null)
     {
-        if (index < 0 || index >= _lines.Count || _lines[index].Style != TranscriptStyle.Tool) return;
+        // An activity row is a tool row or a meta row (the thinking row opens as meta and
+        // settles in place); anything else means the mark went stale and must not be
+        // overwritten.
+        if (index < 0 || index >= _lines.Count
+            || _lines[index].Style is not (TranscriptStyle.Tool or TranscriptStyle.Meta)) return;
         var text = row.Text;
         var bounded = BoundLine(text);
         _retainedCharacters += CharacterCount(bounded) - CharacterCount(_lines[index].Text);

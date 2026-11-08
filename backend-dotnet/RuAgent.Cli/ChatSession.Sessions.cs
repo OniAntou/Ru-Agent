@@ -19,42 +19,19 @@ public sealed partial class AgentCommands
 {
     private sealed partial class ChatSession
     {
-        /// <summary>
-        /// Reprints the loaded replay through the same renderer a live turn uses: the prompt
-        /// echo for user rows and the streaming/markdown assistant path for replies. Nothing
-        /// is invented here, so a replay row reads exactly like the row the turn produced.
-        /// </summary>
+        /// <summary>Writes one prompt read back from history; the choice lives in <see cref="SessionHistoryPromptWriter"/>.</summary>
+        void WriteReplayPrompt(string prompt) =>
+            SessionHistoryPromptWriter.Write(
+                prompt,
+                tgMode,
+                typed => chatEngine?.EchoPrompt(typed),
+                line => sessionRenderer.Surface.WriteLine(line));
+
         /// <summary>
         /// Redraws a reopened session's newest turns the way they looked live: prompt,
         /// narration, thoughts, tool rows and the footer. Falls back to the text replay
         /// when the turn record cannot be read.
         /// </summary>
-        /// <summary>
-        /// Writes one prompt read back from history.
-        /// </summary>
-        /// <remarks>
-        /// A reopened prompt is the same user block the composer echoed live. Writing it as
-        /// plain text left it unboxed, so history read as prose where the live turn read as
-        /// something the operator had typed.
-        /// </remarks>
-        void WriteReplayPrompt(string prompt)
-        {
-            var (typed, labels) = Tui.ChatPromptEcho.SplitStored(prompt);
-            if (tgMode)
-            {
-                chatEngine?.EchoPrompt(typed);
-                foreach (var label in labels)
-                {
-                    sessionRenderer.Surface.WriteLine("  " + label);
-                }
-            }
-            else
-            {
-                sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.Format(
-                    typed, labels.Count == 0 ? null : labels));
-            }
-        }
-
         async Task RenderSessionHistoryAsync(
             string targetSessionId,
             ChatSessionReplayResult fallback,
@@ -100,6 +77,11 @@ public sealed partial class AgentCommands
             sessionRenderer.Flush();
         }
 
+        /// <summary>
+        /// Reprints the loaded replay through the same renderer a live turn uses: the prompt
+        /// echo for user rows and the streaming/markdown assistant path for replies. Nothing
+        /// is invented here, so a replay row reads exactly like the row the turn produced.
+        /// </summary>
         void RenderSessionReplay(
             string targetSessionId,
             ChatSessionReplayResult replay)

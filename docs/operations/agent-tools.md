@@ -493,9 +493,10 @@ provider-transient failures retain their existing retry/Continue behavior, and
 prompt failures never take the note path.
 
 The shared budget remains 256 model-initiated tool calls per window; there is no
-new low per-step cap. A root run opens up to 192 windows by itself before it
-parks for an explicit Continue, so one long prompt does not pause at the first
-128 steps; internal children keep their own bound. Read-only calls may execute
+new low per-step cap. A window is a counter reset, not a run limit: a root run
+opens the next window by itself without a cap, so one long prompt does not pause
+for a click and the run ends only when the model finishes, the user stops it or a
+failure does. Internal children keep their own bound. Read-only calls may execute
 concurrently in chunks of at most eight while receipts retain model order.
 Mutations and terminal calls are sequential and act as barriers; an unknown
 mutation outcome stops later work until reconciliation. A model cannot claim

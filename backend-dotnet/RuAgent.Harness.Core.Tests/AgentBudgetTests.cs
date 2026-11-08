@@ -53,13 +53,12 @@ public sealed class AgentBudgetTests
     }
 
     [Fact]
-    public void A_window_allows_a_long_coding_run_before_asking_the_user_to_continue()
+    public void A_window_allows_a_long_coding_run_before_it_resets()
     {
         // Regression guard for coding autonomy: a single window must comfortably fit
         // many exploratory tool calls plus edit/verify cycles, not just a few steps.
         Assert.True(AgentBudgetPolicy.ModelStepLimit >= 128);
         Assert.True(AgentBudgetPolicy.ToolCallLimit >= 256);
-        Assert.True(AgentBudgetPolicy.AutomaticWindowLimit >= 8);
     }
 
     [Fact]
@@ -78,19 +77,20 @@ public sealed class AgentBudgetTests
     }
 
     [Fact]
-    public void Automatic_windows_stop_at_the_limit_and_need_an_explicit_continue()
+    public void A_root_run_keeps_opening_windows_however_many_it_has_spent()
     {
-        var run = Run(
-            modelSteps: AgentBudgetPolicy.ModelStepLimit,
-            budgetWindow: AgentBudgetPolicy.AutomaticWindowLimit);
+        // There is no window cap: a root run is bounded by the model finishing, the
+        // user stopping it, or a failure, never by its own counters.
+        var run = Run(modelSteps: AgentBudgetPolicy.ModelStepLimit, budgetWindow: 10_000);
 
-        var refused = AgentBudgetPolicy.ReserveModelStep(run, Now.AddSeconds(1), allowAutomaticWindow: true);
+        var admitted = AgentBudgetPolicy.ReserveModelStep(run, Now.AddSeconds(1), allowAutomaticWindow: true);
 
-        Assert.False(refused.Granted);
-        Assert.Equal("model_step_budget_exhausted", refused.ErrorCode);
-        Assert.Equal(HarnessRunState.WaitingUser, refused.NextRun.State);
-        Assert.Equal(AgentBudgetPolicy.AutomaticWindowLimit, refused.NextRun.BudgetWindow);
-        Assert.Equal(AgentBudgetPolicy.ModelStepLimit, refused.NextRun.ModelStepsInWindow);
+        Assert.True(admitted.Granted);
+        Assert.Null(admitted.ErrorCode);
+        Assert.Equal(10_001, admitted.NextRun.BudgetWindow);
+        Assert.Equal(1, admitted.NextRun.ModelStepsInWindow);
+        Assert.Equal(0, admitted.NextRun.ToolCallsInWindow);
+        Assert.Equal(HarnessRunState.Running, admitted.NextRun.State);
     }
 
     [Fact]

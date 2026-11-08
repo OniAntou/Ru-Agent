@@ -61,6 +61,12 @@ retired in 2026-09-04; the current pending-approval model exposes
 > Amended 2026-10-31: a root run now opens up to eight budget windows by itself
 > before it parks for an explicit Continue; internal child runs keep their bound.
 > See [runtime behavior](../operations/runtime-behavior.md).
+>
+> Amended 2026-11-08: the window cap is gone. A root run keeps opening windows
+> and ends only when the model finishes, the user stops it or a failure does, so
+> the budget bounds one window's counters and never the length of a run. Internal
+> child runs still keep their own bound. See
+> [runtime behavior](../operations/runtime-behavior.md).
 
 ## Superseded history
 

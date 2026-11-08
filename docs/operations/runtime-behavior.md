@@ -488,15 +488,13 @@ starts; every already-started read drains, including reads admitted before that
 outcome was known. Cancellation or failure also drains owned work before return.
 See [phase timing and Host benchmarks](agent-performance.md).
 
-A root run does not stop at its first full window. It opens the next window
-automatically, up to **192 windows** (24,576 model steps / 49,152 tool calls) in one
-run, roughly a day of unattended work, so a single long prompt does not pause for a click. Only after that
-automatic allowance does it move to `WaitingUser` with
-`model_step_budget_exhausted` / `tool_call_budget_exhausted`; an explicit
-Continue then opens one further window, and every later window is manual. The
-per-window counters, not a wall-clock timer, bound the loop. Internal subagent
-runs never take an automatic window: their own limits fail them. When a park
-happens, the TUI shows a `▲ run paused` row plus `resume with Continue (or 'ru
+A root run does not stop at a full window. It opens the next window
+automatically and keeps working, and there is **no window cap**: a root run ends
+when the model finishes, the user stops it, or a failure does — not because its
+own counters ran out. The per-window counters, not a wall-clock timer, bound the
+loop, and no wall-clock or cost cap exists. Internal subagent runs never take an
+automatic window: their own limits fail them. When a run parks for any other
+reason, the TUI shows a `▲ run paused` row plus `resume with Continue (or 'ru
 agent continue <run-id>')`; typing `Continue` while a parked run is known POSTs
 the resume and follows that tracked run from its durable cursor. Native calls,
 calls written out as text, arguments, and outputs never enter the visible transcript

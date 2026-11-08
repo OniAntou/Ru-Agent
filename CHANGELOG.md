@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(harness)!**: Bỏ trần số budget window của một run. Root run tự mở window mới không giới
+  hạn, nên một run chỉ kết thúc khi model xong, người dùng dừng, hoặc gặp lỗi — không còn park
+  `WaitingUser` với `model_step_budget_exhausted` / `tool_call_budget_exhausted`. 128 step và 256
+  tool call giờ chỉ là kích thước một window (counter reset), không phải trần của run. Run subagent
+  nội bộ vẫn giữ bound riêng. **Breaking:** không còn `Continue` để mở thêm window sau khi cạn
+  budget, vì trạng thái đó không còn xảy ra.
+
 - **fix(gui)**: New Chat không còn để lại session rỗng trên Host. Bấm New Chat khi bản nháp rỗng đang
   mở thì giữ bản nháp đó; bấm trong lúc đang tạo thì bỏ qua; bản nháp bị bỏ (hoặc bị lần bấm sau
   vượt qua) được dọn bằng `DELETE /sessions/{id}?if_empty=true`, Host chỉ xoá khi session vẫn chưa có

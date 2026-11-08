@@ -64,24 +64,6 @@ public sealed partial class ContextCompactionCoordinatorTests
         Assert.Contains(store.Commits, commit => commit.ContextCompaction is not null);
     }
 
-    [Fact]
-    public async Task Format_repair_cannot_dispatch_after_the_automatic_window_cap()
-    {
-        var store = new InMemoryHarnessEventStore();
-        store.Seed(Run(
-            AgentBudgetPolicy.ModelStepLimit - 1,
-            budgetWindow: AgentBudgetPolicy.AutomaticWindowLimit));
-        var model = new CheckpointModel(store) { MalformedFirst = true };
-        var result = await CheckpointCoordinator(model, store).CompactAsync(
-            RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
-
-        Assert.Equal("model_step_budget_exhausted", result.ErrorCode);
-        Assert.Equal(HarnessRunState.WaitingUser, result.Run!.State);
-        Assert.Equal(AgentBudgetPolicy.ModelStepLimit, result.Run.ModelStepsInWindow);
-        Assert.Equal(1, model.Calls);
-        Assert.DoesNotContain(store.Commits, commit => commit.ContextCompaction is not null);
-    }
-
     [Theory]
     [InlineData("checkpoint_invalid")]
     [InlineData("checkpoint_incomplete")]
@@ -114,22 +96,6 @@ public sealed partial class ContextCompactionCoordinatorTests
         Assert.Equal(2, result.Run!.BudgetWindow);
         Assert.Equal(1, result.Run.ModelStepsInWindow);
         Assert.Equal(1, model.Calls);
-    }
-
-    [Fact]
-    public async Task Checkpoint_never_dispatches_when_the_automatic_window_cap_is_reached()
-    {
-        var store = new InMemoryHarnessEventStore();
-        var run = Run(
-            AgentBudgetPolicy.ModelStepLimit,
-            budgetWindow: AgentBudgetPolicy.AutomaticWindowLimit);
-        store.Seed(run);
-        var model = new CheckpointModel(store);
-        var result = await CheckpointCoordinator(model, store).CompactAsync(RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
-        Assert.Equal("model_step_budget_exhausted", result.ErrorCode);
-        Assert.Equal(HarnessRunState.WaitingUser, result.Run!.State);
-        Assert.Equal(0, model.Calls);
-        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events), evt => evt.SafeCode == "checkpoint_started");
     }
 
     [Fact]
@@ -179,20 +145,6 @@ public sealed partial class ContextCompactionCoordinatorTests
         Assert.Equal("checkpoint_incomplete", result.ErrorCode);
         Assert.Equal(1, model.Calls);
         Assert.DoesNotContain(store.Commits, commit => commit.ContextCompaction is not null);
-    }
-
-    [Fact]
-    public async Task Automatic_budget_exhaustion_waits_for_continue_without_a_summary_call()
-    {
-        var store = new InMemoryHarnessEventStore();
-        store.Seed(Run(
-            AgentBudgetPolicy.ModelStepLimit,
-            budgetWindow: AgentBudgetPolicy.AutomaticWindowLimit));
-        var model = new CheckpointModel(store);
-        var result = await CheckpointCoordinator(model, store).RunOneStepAsync(RunId(), default);
-        Assert.Equal(HarnessRunState.WaitingUser, result.Run.State);
-        Assert.Equal("model_step_budget_exhausted", result.ErrorCode);
-        Assert.Equal(0, model.Calls);
     }
 
     [Fact]

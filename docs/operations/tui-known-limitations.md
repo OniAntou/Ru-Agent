@@ -171,9 +171,9 @@ another terminal, and a resumed
 (`HarnessRecoveryScanner` re-registering its runtime root) because the drive
 loop starts `Running` runs and rehydrates `WaitingApproval` runs, but never
 picks up an unregistered one. An
-adopted `running` run offers `/follow <run-id>` and
-`ru agent attach <run-id>`; it is never followed automatically. In-chat
-typed `Continue` and `/follow` accept only runs belonging to the current session.
+adopted `running` run is attached explicitly with `ru agent attach <run-id>`;
+it is never followed automatically. In-chat typed `Continue` accepts only runs
+belonging to the current session.
 
 ### Retained approval recovery differs between GUI and TUI
 
@@ -185,7 +185,7 @@ and keeps Stop enabled, without faking a pending-approval re-arm. An approval
 requested before the restart is not re-delivered on the resumed cursor, so it
 cannot be answered from the adopted session and the run fails as
 `approval_expired` once the 30-minute approval lifetime passes. The
-TUI adopts `waiting_approval` and offers `/follow`. That explicit command reads
+TUI adopts `waiting_approval` and offers `ru agent attach <run-id>`. That command reads
 at most 2,048 durable events through the captured cursor with a four-second
 deadline, recovers the latest approval and checks a fresh run version before
 posting the user's decision. Missing/incomplete replay fails closed. Another

@@ -66,9 +66,9 @@ Opening a session adopts its newest non-terminal run, so a run that outlived
 the host is not invisible: WinUI re-arms Continue/Stop for it (`AdoptRunAsync`;
 a running run is subscribed from its durable `LastSequence`, a parked one waits
 for the typed Continue), the TUI adopts it when `chat --session` reopens the
-session (parked → typed `Continue`, running or approval-waiting → an
-explicit `/follow` action), and switching sessions detaches a parked run
-instead of cancelling it. In-chat follow/continue reject foreign-session runs.
+session (parked → typed `Continue`; a running or approval-waiting run is attached
+explicitly with `ru agent attach <run-id>`), and switching sessions detaches a
+parked run instead of cancelling it. In-chat continue rejects foreign-session runs.
 The Continue path is the same on both clients: a parked run
 (`waiting_user`, `reconciliation_required`) resumes only when the client
 continues or reconciles it.

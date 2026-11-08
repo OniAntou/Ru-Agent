@@ -284,8 +284,8 @@ reconciliation surfaces from Phase 3:
   width, including while tool details are expanded; evicted text does not stay alive
   through the cache. Turn-end assistant reconciliation reads at most four payloads
   concurrently and preserves their model-step order and types. Optional header-title
-  reads have a 250 ms cancellation deadline. Reopened sessions and `/follow` treat
-  `waiting_subagents` parents as active without posting Continue.
+  reads have a 250 ms cancellation deadline. Reopened sessions and an explicit
+  attach treat `waiting_subagents` parents as active without posting Continue.
   Tool activity metadata is updated by ID and consumed in durable proposal order;
   the transient durable sequence is a stream anchor, not a tool identity.
   Silent durable run/model metadata does not flush unfinished assistant prose.

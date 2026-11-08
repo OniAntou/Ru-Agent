@@ -43,34 +43,35 @@ Type `/` to see suggestions, or press `Ctrl+P`.
 
 | Command | What it does |
 | --- | --- |
-| `/model [name]` | Show or switch the model |
-| `/backend <name>` | Switch the provider |
-| `/key [provider]` | Show or set a provider's API key |
-| `/reasoning [effort]` | Show or set the reasoning effort |
-| `/attach <path>`, `/attachments`, `/detach <n>` | Add, list and remove attachments |
-| `/status` | Show the session, preset, model, turns and tokens |
-| `/new`, `/sessions`, `/resume [id]` | Start, find and reopen sessions |
-| `/continue`, `/follow`, `/release` | Resume, follow or cancel a paused or running run |
-| `/retry` | Resend the last prompt that was held back |
-| `/subagents` | See delegated tasks and read their results |
-| `/delete [id]` | Delete another session |
-| `/update` | Check for or install an update |
-| `/clear`, `/help`, `/exit` | Clear the view, list every command, quit |
+| `/model [name]` | Switch or show the active model |
+| `/provider [name]` | Choose a provider, then enter its API key |
+| `/reasoning [effort]` | Show or set the active model's reasoning effort |
+| `/computer [on\|off]` | Show or set computer use for new turns |
+| `/status [overview\|context\|usage]` | Inspect status, context and token usage |
+| `/preset [plan\|standard\|full_access\|rules]` | Choose permissions or manage remembered rules |
+| `/new` | Start a new session |
+| `/sessions [query\|id:<session-id>]` | Browse saved sessions and reopen one by id |
+| `/subagents [run-id]` | See delegated tasks and read their results |
+| `/tasks [run-id]` / `/tasks kill <execution-id>` | View and stop background terminal tasks |
+| `/update [--yes] [--channel stable\|preview]` | Check for or install an update |
+| `/help`, `/exit` | List every command, quit |
 
 Custom commands you add appear in the same list; see [Teach Ru your project](teach-ru.md).
 
 ## Attachments
 
-Attach images with `--image PATH` at startup (up to four), `/attach <path>`, a dropped path or
+Attach images with `--image PATH` at startup (up to four), a dropped path or
 `Ctrl+V`. Ru resizes and validates images before sending them, and a model that cannot read images may
 reject them. Text and code files up to 5 MB are added to the prompt as code blocks. Attachments travel
 with the next prompt, and Office documents are not supported as attachments.
 
 ## Sessions and paused runs
 
-Each chat is a session. `/sessions` finds one and `/resume` reopens it, printing its newest messages.
-A run can pause, for example while waiting for a payment or quota problem to be fixed. `/continue`
-resumes it and `/release` cancels it. `/follow` reattaches to a run that is still going.
+Each chat is a session. `/sessions` finds one and `/sessions id:<session-id>` reopens it, redrawing its
+newest turns as they looked live. A run can pause, for example while waiting for a payment or quota
+problem to be fixed; typing `Continue` resumes the parked run this session tracks, and `Escape`
+interrupts a running turn. A run that is still going is attached from another terminal with
+`ru agent attach <run-id>` and abandoned with `ru agent cancel <run-id>`.
 
 ## What the terminal UI leaves to the desktop app
 

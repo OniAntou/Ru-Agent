@@ -157,9 +157,8 @@
       "scriptedSteps": [
         {
           "tool": {
-            "id": "bash",
+            "id": "powershell",
             "arguments": {
-              "mode": "shell",
               "script": "Get-Content seed.txt",
               "working_directory": "."
             }
@@ -924,9 +923,8 @@
       "scriptedSteps": [
         {
           "tool": {
-            "id": "bash",
+            "id": "powershell",
             "arguments": {
-              "mode": "shell",
               "script": "Get-Content logs/build-output.txt",
               "working_directory": "."
             }
@@ -934,9 +932,8 @@
         },
         {
           "tool": {
-            "id": "bash",
+            "id": "terminal_read",
             "arguments": {
-              "mode": "read_output",
               "execution_id": "$projection_spool_id",
               "offset": 0,
               "limit": 32768
@@ -945,9 +942,8 @@
         },
         {
           "tool": {
-            "id": "bash",
+            "id": "terminal_read",
             "arguments": {
-              "mode": "read_output",
               "execution_id": "$projection_spool_id",
               "offset": "$projection_next_offset",
               "limit": 32768
@@ -956,9 +952,8 @@
         },
         {
           "tool": {
-            "id": "bash",
+            "id": "terminal_read",
             "arguments": {
-              "mode": "read_output",
               "execution_id": "$projection_spool_id",
               "offset": "$projection_next_offset",
               "limit": 32768
@@ -1032,29 +1027,36 @@
       "scriptedSteps": [
         {
           "tool": {
-            "id": "edit",
+            "id": "edit_file",
             "arguments": {
               "path": "src/core.cs",
-              "old_string": "public static string Format(string value) => value.Trim();",
-              "new_string": "public static string Format(string? value) => value?.Trim() ?? string.Empty;"
+              "edits": [
+                {
+                  "old_string": "public static string Format(string value) => value.Trim();",
+                  "new_string": "public static string Format(string? value) => value?.Trim() ?? string.Empty;"
+                }
+              ]
             }
           }
         },
         {
           "tool": {
-            "id": "edit",
+            "id": "edit_file",
             "arguments": {
               "path": "src/label.cs",
-              "old_string": "public static string Render(string value) => value;",
-              "new_string": "public static string Render(string? value) => Fixture.Core.Format(value);"
+              "edits": [
+                {
+                  "old_string": "public static string Render(string value) => value;",
+                  "new_string": "public static string Render(string? value) => Fixture.Core.Format(value);"
+                }
+              ]
             }
           }
         },
         {
           "tool": {
-            "id": "write",
+            "id": "write_file",
             "arguments": {
-              "op": "write",
               "path": "tests/core.tests.cs",
               "content": "using Fixture;\nif (Core.Format(\" x \") != \"x\" || Core.Format(null) != string.Empty) throw new Exception(\"Format contract failed.\");\nConsole.WriteLine(\"Fixture checks passed.\");\n",
               "overwrite": true
@@ -1063,9 +1065,8 @@
         },
         {
           "tool": {
-            "id": "bash",
+            "id": "run_process",
             "arguments": {
-              "mode": "run",
               "executable": "dotnet",
               "arguments": ["run", "--project", "Fixture.csproj"],
               "working_directory": "."
@@ -1111,21 +1112,29 @@
       "scriptedSteps": [
         {
           "tool": {
-            "id": "edit",
+            "id": "edit_file",
             "arguments": {
               "path": "seed.txt",
-              "old_string": "missing",
-              "new_string": "fixed"
+              "edits": [
+                {
+                  "old_string": "missing",
+                  "new_string": "fixed"
+                }
+              ]
             }
           }
         },
         {
           "tool": {
-            "id": "edit",
+            "id": "edit_file",
             "arguments": {
               "path": "seed.txt",
-              "old_string": "seed",
-              "new_string": "fixed"
+              "edits": [
+                {
+                  "old_string": "seed",
+                  "new_string": "fixed"
+                }
+              ]
             }
           }
         },
@@ -1198,9 +1207,8 @@
       "scriptedSteps": [
         {
           "tool": {
-            "id": "bash",
+            "id": "run_process",
             "arguments": {
-              "mode": "run",
               "executable": "dotnet",
               "arguments": ["run", "--project", "Fixture.csproj"],
               "working_directory": "."
@@ -1209,9 +1217,8 @@
         },
         {
           "tool": {
-            "id": "bash",
+            "id": "terminal_read",
             "arguments": {
-              "mode": "read_output",
               "execution_id": "$projection_spool_id",
               "offset": 0,
               "limit": 32768
@@ -1220,11 +1227,15 @@
         },
         {
           "tool": {
-            "id": "edit",
+            "id": "edit_file",
             "arguments": {
               "path": "src/core.cs",
-              "old_string": "public static string Format(string value) => value;",
-              "new_string": "public static string Format(string value) => value.Trim();"
+              "edits": [
+                {
+                  "old_string": "public static string Format(string value) => value;",
+                  "new_string": "public static string Format(string value) => value.Trim();"
+                }
+              ]
             }
           },
           "context_oracle": {
@@ -1233,9 +1244,8 @@
         },
         {
           "tool": {
-            "id": "bash",
+            "id": "run_process",
             "arguments": {
-              "mode": "run",
               "executable": "dotnet",
               "arguments": ["run", "--project", "Fixture.csproj"],
               "working_directory": "."
@@ -1285,9 +1295,8 @@
       "scriptedSteps": [
         {
           "tool": {
-            "id": "bash",
+            "id": "run_process",
             "arguments": {
-              "mode": "run",
               "executable": "powershell.exe",
               "arguments": ["-NoProfile", "-Command", "Get-Content ../external/blocked.txt"],
               "working_directory": "."

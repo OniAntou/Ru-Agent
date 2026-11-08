@@ -185,7 +185,7 @@ function Get-ClientResultPayload($HostSession, [string]$RunId, [string]$PayloadI
         $request.Headers.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Bearer", $HostSession.token)
         $requestDeadline = [System.Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds([Math]::Min($Limits.ReadinessRequestSeconds, (Get-RemainingSeconds $Deadline))))
         $response = $client.SendAsync($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead, $requestDeadline.Token).GetAwaiter().GetResult()
-        if (-not $response.IsSuccessStatusCode) { throw "Oracle failure: $($EventType) result payload was not client-readable (HTTP $([int]$response.StatusCode))." }
+        if (-not $response.IsSuccessStatusCode) { $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult(); throw "Oracle failure: $($EventType) result payload was not client-readable (HTTP $([int]$response.StatusCode)) run=$RunId payload=$PayloadId body=$body" }
         if ($null -ne $response.Content.Headers.ContentLength -and $response.Content.Headers.ContentLength -gt $Limits.ResultPayloadBytes) { throw "Oracle failure: result payload exceeds its collection bound." }
         $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
         $buffer = [System.IO.MemoryStream]::new()

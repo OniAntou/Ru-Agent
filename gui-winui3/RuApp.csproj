@@ -63,6 +63,9 @@
     <PackageReference Include="System.Drawing.Common" />
     <PackageReference Include="Markdig.Signed" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
+    <!-- GPU renderer for the New Chat black hole easter egg (Controls/BlackHoleRenderer.cs). -->
+    <PackageReference Include="Vortice.Direct3D11" />
+    <PackageReference Include="Vortice.D3DCompiler" />
   </ItemGroup>
 
   <!--

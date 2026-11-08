@@ -868,8 +868,20 @@ namespace RuApp
 
 
 
+        // Easter egg: eight New Chat clicks inside two and a half seconds open a black hole.
+        private readonly Services.ClickBurstDetector _newChatBurst = new(8, TimeSpan.FromSeconds(2.5));
+        private readonly System.Diagnostics.Stopwatch _newChatClock = System.Diagnostics.Stopwatch.StartNew();
+
         private async void OnNewChatClick(object sender, RoutedEventArgs e)
         {
+            // Compile the black hole shaders on the first click, so a burst finds them ready.
+            if (ReferenceEquals(sender, NavNewChat)) Controls.BlackHoleOverlay.Prepare();
+            if (ReferenceEquals(sender, NavNewChat) && _newChatBurst.Register(_newChatClock.Elapsed))
+            {
+                await PlayBlackHoleAsync();
+                return;
+            }
+
             if (_apiService == null || _chatView == null) return;
             try
             {
@@ -881,6 +893,19 @@ namespace RuApp
                 // async void: an unhandled exception here tears the process down.
                 GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] New chat failed: {ex.Message}");
                 Shell.ReportError("Could not create a new chat session");
+            }
+        }
+
+        private async Task PlayBlackHoleAsync()
+        {
+            try
+            {
+                await BlackHole.PlayAsync(ShellRoot);
+            }
+            catch (Exception ex)
+            {
+                // Decoration only: a failed effect must never take the window down.
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Black hole effect failed: {ex.GetType().Name}");
             }
         }
 

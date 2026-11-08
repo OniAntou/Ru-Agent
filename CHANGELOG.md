@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: New Chat không còn để lại session rỗng trên Host. Bấm New Chat khi bản nháp rỗng đang
+  mở thì giữ bản nháp đó; bấm trong lúc đang tạo thì bỏ qua; bản nháp bị bỏ (hoặc bị lần bấm sau
+  vượt qua) được dọn bằng `DELETE /sessions/{id}?if_empty=true`, Host chỉ xoá khi session vẫn chưa có
+  tin nhắn (kiểm tra trong cùng transaction).
+
+- **feat(gui)**: Easter egg: bấm **New Chat** liên tục (8 lần trong 2,5 giây) để mở một hố đen kiểu
+  Interstellar, ray-traced trên GPU mỗi khung hình (Direct3D 11 qua Vortice). Giao diện thật của app bị
+  bẻ cong quanh hố thành vòng Einstein, xoáy vào và bị nuốt; camera lao vào đĩa bồi tụ, hố đen sụp rồi
+  nổ, sóng xung kích trả cửa sổ về nguyên trạng. Chỉ là hình ảnh; bỏ qua khi Windows tắt animation
+  hoặc không có GPU.
+
 - **fix(tui)**: Mở lại session vẽ prompt của người dùng bằng đúng khối `❯` có nền như lúc gõ,
   thay vì một dòng text trơn. Trước đây replay ghi `> …` qua đường text nên prompt trông như prose
   và lẫn vào nội dung trả lời.

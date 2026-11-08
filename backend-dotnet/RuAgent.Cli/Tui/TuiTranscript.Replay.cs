@@ -87,6 +87,16 @@ public sealed partial class TuiTranscript
                 || activity.Kind is AgentActivityKind.Status or AgentActivityKind.Todo && !string.IsNullOrWhiteSpace(activity.ToolDisplay));
         if (!settles)
         {
+            // A thinking row opens with its step and settles in place, so a replay must walk
+            // the same two steps. Without it a sub-second thought had a row live and none
+            // here, and a longer one landed under the answer in one surface and above it in
+            // the other.
+            if (activity.Kind == AgentActivityKind.Thinking
+                && activity.State is AgentActivityState.Completed or AgentActivityState.Failed)
+            {
+                ApplyActivity(activity with { State = AgentActivityState.Started });
+            }
+
             ApplyActivity(activity);
             return;
         }

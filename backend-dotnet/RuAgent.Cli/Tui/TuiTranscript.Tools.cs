@@ -24,6 +24,13 @@ public sealed partial class TuiTranscript
 
                 return;
 
+            // The model's own sentence between tool calls. The Desktop feed gives it a row
+            // of its own; without one the terminal showed nothing while the run narrated,
+            // and a reopened session then replayed that same text as assistant prose.
+            case AgentActivityKind.Narration:
+                WriteNarration(activity.Detail);
+                return;
+
             case AgentActivityKind.Compaction:
                 if (activity.State is AgentActivityState.Started or AgentActivityState.Waiting)
                 {
@@ -80,8 +87,15 @@ public sealed partial class TuiTranscript
                 // raw code ("subagent_spawned") is not a sentence; the Desktop feed hides
                 // the first and words the second. A failure is never hidden.
                 if (TuiActivityLabels.IsSilentStatus(activity.State, activity.SafeCode)) return;
-                Notice(TuiActivityLabels.StatusText(activity.SafeCode),
-                    activity.State == AgentActivityState.Failed ? TuiToken.Err : TuiToken.Line);
+                var status = TuiActivityLabels.StatusText(activity.SafeCode);
+                if (status is null)
+                {
+                    // A failure is never hidden, even when its code has no sentence yet.
+                    if (activity.State != AgentActivityState.Failed) return;
+                    status = "stopped: " + activity.SafeCode.Replace('_', ' ');
+                }
+
+                Notice(status, activity.State == AgentActivityState.Failed ? TuiToken.Err : TuiToken.Line);
                 return;
 
             case AgentActivityKind.Todo:
@@ -104,6 +118,23 @@ public sealed partial class TuiTranscript
 
             default:
                 return;
+        }
+    }
+
+    /// <summary>
+    /// One dim row per narration line, guttered like feed content so the model's aside
+    /// reads apart from the answer it precedes.
+    /// </summary>
+    private void WriteNarration(string? detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail)) return;
+        var flat = Escape(detail);
+        if (flat.Length == 0) return;
+        foreach (var line in flat.Split('\n'))
+        {
+            var bounded = TuiText.SafeCut(line, 16_000).TrimEnd();
+            if (bounded.Length == 0) continue;
+            MetaRow("│ ", bounded, TuiToken.Meta);
         }
     }
 
@@ -259,11 +290,8 @@ public sealed partial class TuiTranscript
             return activity.Symbol;
         }
 
-        if (activity.Count is { } count)
-        {
-            return count == 1 ? "1 result" : $"{count} results";
-        }
-
+        // A bare count is not a target: the metrics column already carries "5 files" or
+        // "12 matches", so repeating it here printed the same number twice on one row.
         return null;
     }
 

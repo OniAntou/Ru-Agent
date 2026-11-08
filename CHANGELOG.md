@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Activity feed hiện narration — câu model nói giữa các lần gọi tool — bằng một row
+  dim riêng, khớp Desktop feed. Trước đây live bỏ hẳn nội dung này, chỉ khi mở lại session mới thấy,
+  và thấy dưới dạng prose.
+
+- **fix(tui)**: Feed bớt nhiễu còn lại: `agent_spawn`/`agent_send`/`agent_wait`/`agent_cancel`/
+  `agent_apply` hiện đúng tên thay vì `status: in progress` rồi `Tool … outcome unavailable`; mã
+  trạng thái không có câu chữ không còn in thô (chỉ lỗi mới luôn hiện); số lượng của tool dò tìm
+  chỉ nằm ở cột metrics. Replay cũng mở `Thinking` từ đầu step nên thought ngắn hiện giống live.
+
 - **fix(tui)**: Mở lại session vẽ prompt của người dùng bằng đúng khối `❯` có nền như lúc gõ,
   thay vì một dòng text trơn. Trước đây replay ghi `> …` qua đường text nên prompt trông như prose
   và lẫn vào nội dung trả lời.

@@ -240,7 +240,7 @@ public sealed class TuiActivityFlowTests
     }
 
     [Fact]
-    public void Status_rows_hide_ok_word_known_codes_and_never_hide_a_failure()
+    public void Status_rows_hide_ok_hide_unworded_codes_and_never_hide_a_failure()
     {
         var (renderer, view) = Create();
         renderer.Transcript.ApplyActivity(Activity("ok", AgentActivityKind.Status, null) with { SafeCode = "ok" });
@@ -251,8 +251,10 @@ public sealed class TuiActivityFlowTests
         var texts = view.Rows.Select(row => row.Text.Trim()).ToArray();
         Assert.DoesNotContain("· ok", texts);
         Assert.Contains("· started a subagent", texts);
-        Assert.Contains("· status: ok", texts);
-        Assert.Contains("· status: brand new code", texts);
+        // A failure always shows; a code with no sentence is worded, not printed raw.
+        Assert.Contains("· stopped: ok", texts);
+        // An unworded success code explains nothing, so it earns no row at all.
+        Assert.DoesNotContain(texts, text => text.Contains("brand new code", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -353,6 +355,8 @@ public sealed class TuiActivityFlowTests
         var command = Activity("command", AgentActivityKind.Terminal, "Terminal") with { Detail = "dotnet test", ExitCode = 0, DurationMs = 900 };
 
         var (live, liveView) = Create();
+        // A live step announces its thinking before it settles; replay walks the same two.
+        live.Transcript.ApplyActivity(thought with { State = AgentActivityState.Started });
         live.Transcript.ApplyActivity(thought);
         live.Transcript.AppendAssistant("Checking the tests first.\n\n");
         live.Transcript.ApplyActivity(command with { State = AgentActivityState.Started });

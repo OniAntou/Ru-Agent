@@ -86,10 +86,14 @@ A command row names the script's first real statement, skipping preference, enco
 environment and location setup, and counts the remaining statements (`(+3 more)`). A
 failed row's reason line is omitted when it only repeats the exit code. A status row
 that only reports `ok` is hidden, as in the Desktop feed; other status codes are worded
-(`started a subagent`) and a failed status always shows. A provider-reported thought of
-at least one second leaves a `◦ Thought 31.0s` row where it happened. Blocks of tool
-rows print no tally of their own: the turn footer carries the tool count plus edits and
-failures (`✓ 2m13s · 27 tools · 4 edits · 1 failed`). Unknown outcomes stay explicit;
+(`started a subagent`) and a failed status always shows. A provider-reported thought
+opens a `◦ Thinking` row when its step starts and settles in place, so it sits above the
+answer that step streams rather than under it: `◦ Thought 31.0s` at a second or more,
+`◦ Thought briefly` under a second, and `◦ Thought stopped` when the step fails. A plain
+output surface cannot rewrite a row, so it keeps the completion-only form and announces
+only thoughts of at least one second. Blocks of tool rows print no tally of their own:
+the turn footer carries the tool count plus edits and failures
+(`✓ 2m13s · 27 tools · 4 edits · 1 failed`). Unknown outcomes stay explicit;
 run completion never proves tool success. The live row distinguishes waiting for
 the model, provider-reported thinking, response streaming, tool execution,
 compaction and tool/request retry. Approval, trust and parked states keep their

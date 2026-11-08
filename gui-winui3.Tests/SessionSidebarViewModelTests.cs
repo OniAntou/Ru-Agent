@@ -161,10 +161,11 @@ public sealed partial class SessionSidebarViewModelTests : IDisposable
         Assert.Equal(SessionDraftPresentation.PlaceholderTitle, viewModel.Sessions[0].Title);
         Assert.Equal(draft!.Id, viewModel.ActiveSessionId);
 
-        // Leaving an unstarted draft hides it (the Host record is not deleted).
+        // Leaving an unstarted draft hides it; its Host record is only tidied if still empty.
         viewModel.Select(viewModel.Sessions.Single(session => session.Id == "old"));
         Assert.DoesNotContain(viewModel.Sessions, session => session.Id == draft.Id);
         Assert.Empty(backend.Deleted);
+        await backend.WaitForCleanupAsync(draft.Id);
 
         var started = await viewModel.CreateDraftAsync(SidebarSessionOrganization.RecentsKey, AppRoot);
         viewModel.MarkStarted(started!.Id, "  fix   the build please ");
@@ -189,6 +190,38 @@ public sealed partial class SessionSidebarViewModelTests : IDisposable
 
         Assert.Null(await pending);
         Assert.DoesNotContain(viewModel.Sessions, session => session.Id == "late");
+        await backend.WaitForCleanupAsync("late");
+    }
+
+    [Fact]
+    public async Task New_chat_spam_keeps_the_open_empty_draft_and_creates_one_session()
+    {
+        var backend = new FakeSessions();
+        var viewModel = NewViewModel(backend);
+        var first = await viewModel.CreateDraftAsync(null, null);
+        viewModel.NoteOpened(first!.Id);
+
+        for (var click = 0; click < 10; click++)
+            Assert.Same(first, await viewModel.CreateDraftAsync(null, null));
+
+        Assert.Equal(1, backend.CreatedCount);
+        Assert.Single(viewModel.Sessions, session => session.Id == first.Id);
+    }
+
+    [Fact]
+    public async Task Clicks_during_an_in_flight_create_are_ignored()
+    {
+        var backend = new FakeSessions();
+        var gate = new TaskCompletionSource<SessionInfo?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.CreateHook = () => gate.Task;
+        var viewModel = NewViewModel(backend);
+
+        var pending = viewModel.CreateDraftAsync(null, null);
+        Assert.Null(await viewModel.CreateDraftAsync(null, null));
+        gate.SetResult(Session("only", string.Empty));
+
+        Assert.Equal("only", (await pending)!.Id);
+        Assert.Equal(1, backend.CreateCalls);
     }
 
     [Fact]
@@ -415,7 +448,10 @@ public sealed partial class SessionSidebarViewModelTests : IDisposable
             new SidebarOrganizationStore(Path.Combine(_root, "organization.json")),
             new WorkspaceGroupPreferenceStore(Path.Combine(_root, "groups.json")),
             new WorkspacePinStore(Path.Combine(_root, "pins.json")),
-            new SessionWorkspaceMapStore(Path.Combine(_root, "workspaces.json")));
+            new SessionWorkspaceMapStore(Path.Combine(_root, "workspaces.json")))
+        {
+            DraftCleanupDelay = TimeSpan.Zero,
+        };
 
     private static SessionInfo Session(string id, string title) => new()
     {
@@ -441,6 +477,24 @@ public sealed partial class SessionSidebarViewModelTests : IDisposable
         public Queue<ApiService.SessionDeletionOutcome> DeleteOutcomes { get; } = new();
 
         public Func<Task<SessionInfo?>>? CreateHook { get; set; }
+
+        public int CreateCalls { get; private set; }
+
+        public int CreatedCount => _created;
+
+        public System.Collections.Concurrent.ConcurrentBag<string> CleanedUp { get; } = new();
+
+        public Task CleanupEmptySessionAsync(string sessionId)
+        {
+            CleanedUp.Add(sessionId);
+            return Task.CompletedTask;
+        }
+
+        public async Task WaitForCleanupAsync(string sessionId)
+        {
+            for (var attempt = 0; attempt < 200 && !CleanedUp.Contains(sessionId); attempt++) await Task.Delay(10);
+            Assert.Contains(sessionId, CleanedUp);
+        }
 
         public Action? OnList { get; set; }
 
@@ -487,7 +541,13 @@ public sealed partial class SessionSidebarViewModelTests : IDisposable
         }
 
         public Task<SessionInfo?> CreateSessionAsync() =>
-            CreateHook?.Invoke() ?? Task.FromResult<SessionInfo?>(new SessionInfo { Id = "draft" + ++_created });
+            Create();
+
+        private Task<SessionInfo?> Create()
+        {
+            CreateCalls++;
+            return CreateHook?.Invoke() ?? Task.FromResult<SessionInfo?>(new SessionInfo { Id = "draft" + ++_created });
+        }
 
         public async Task<ApiService.SessionDeletionOutcome> DeleteSessionAsync(string sessionId)
         {

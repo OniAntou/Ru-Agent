@@ -573,6 +573,33 @@ public sealed partial class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task Empty_only_delete_removes_an_abandoned_draft_and_keeps_a_started_chat()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+        var store = factory.Services.GetRequiredService<ISessionStore>();
+
+        async Task<string> CreateAsync()
+        {
+            using var response = await client.PostAsync("/sessions/new", null);
+            return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("session_id").GetString()!;
+        }
+
+        var draft = await CreateAsync();
+        var started = await CreateAsync();
+        Assert.True(await store.AppendAsync(started, [new SessionMessage("user", "first prompt")], CancellationToken.None));
+
+        using var draftResponse = await client.DeleteAsync($"/sessions/{draft}?if_empty=true");
+        using var startedResponse = await client.DeleteAsync($"/sessions/{started}?if_empty=true");
+
+        Assert.Equal("ok", (await draftResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetString());
+        Assert.Equal("ok", (await startedResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetString());
+        Assert.Null(await store.GetAsync(draft, CancellationToken.None));
+        Assert.NotNull(await store.GetAsync(started, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Missing_session_delete_returns_a_stable_error()
     {
         using var data = TemporaryBusinessData.Create();

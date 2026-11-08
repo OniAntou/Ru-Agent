@@ -14,9 +14,18 @@ public sealed partial class MainWindow
     private async Task CreateDraftSessionAsync(string? workspaceKey, string? workspacePath)
     {
         if (_apiService is null || _chatView is null) return;
+        var openBefore = Sidebar.ActiveSessionId;
         var session = await Sidebar.CreateDraftAsync(workspaceKey, workspacePath);
         // A late create must not take over a newer create or session selection.
         if (_closed || session is null) return;
+        if (string.Equals(session.Id, openBefore, StringComparison.OrdinalIgnoreCase))
+        {
+            // The open chat is already an empty draft: keep it and its composer, just go there.
+            if (!ReferenceEquals(ContentFrame.Content, _chatView) || Shell.IsSettingsOpen)
+                OnNavClick(NavChat, new RoutedEventArgs());
+            _chatView.FocusComposer();
+            return;
+        }
 
         _chatView.SetRequestedWorkspace(workspacePath);
         // Staying on chat should not restart navigation's model/catalog refreshes.

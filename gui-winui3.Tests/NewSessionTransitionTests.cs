@@ -19,7 +19,8 @@ public sealed partial class SessionSidebarViewModelTests
             visibleDrafts.Add(viewModel.Rows.OfType<SessionInfo>().Select(row => row.Id).ToArray());
         };
 
-        var next = await viewModel.CreateDraftAsync(SidebarSessionOrganization.RecentsKey, null);
+        // A new chat in another workspace replaces the empty draft (the same workspace keeps it).
+        var next = await viewModel.CreateDraftAsync("group", @"D:\work\api");
 
         Assert.NotNull(next);
         Assert.Equal(1, renders);

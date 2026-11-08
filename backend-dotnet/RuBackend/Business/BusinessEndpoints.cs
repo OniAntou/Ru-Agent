@@ -325,12 +325,23 @@ public static partial class BusinessEndpoints
 
     private static async Task<IResult> DeleteSessionAsync(
         string sessionId,
+        HttpRequest request,
         IHarnessSessionDeletionCoordinator deletion,
+        ISessionStore sessions,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
         try
         {
+            // ?if_empty=true: the GUI tidying an abandoned New Chat draft. The row is removed
+            // only if it still has no messages, checked in the same transaction, so a chat
+            // whose first prompt has landed is never touched.
+            if (string.Equals(request.Query["if_empty"], "true", StringComparison.OrdinalIgnoreCase))
+            {
+                var cleaned = await sessions.CleanupEmptyAsync(sessionId, cancellationToken).ConfigureAwait(false);
+                return Results.Ok(new { status = cleaned ? "ok" : "error" });
+            }
+
             var outcome = await deletion.DeleteAsync(sessionId, cancellationToken)
                 .ConfigureAwait(false);
             return outcome switch

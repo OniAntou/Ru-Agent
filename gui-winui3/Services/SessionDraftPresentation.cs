@@ -6,7 +6,7 @@ namespace RuApp.Services;
 internal sealed class SessionDraftPresentation
 {
     internal const string PlaceholderTitle = "New Session";
-    private sealed record Draft(SessionInfo Row, bool Started);
+    private sealed record Draft(SessionInfo Row, bool Started, string? WorkspaceKey = null);
     private readonly Dictionary<string, Draft> _drafts = new(StringComparer.Ordinal);
     private string? _activeSessionId;
 
@@ -27,7 +27,7 @@ internal sealed class SessionDraftPresentation
         row.WorkspaceLabel = workspacePath is null ? null : WorkspaceSessionProjection.LabelForPath(workspacePath);
         if (string.IsNullOrEmpty(row.CreatedAt)) row.CreatedAt = DateTimeOffset.UtcNow.ToString("O");
         if (string.IsNullOrEmpty(row.UpdatedAt)) row.UpdatedAt = row.CreatedAt;
-        _drafts[row.Id] = new(row, false);
+        _drafts[row.Id] = new(row, false, workspaceKey);
     }
 
     internal bool MarkStarted(string sessionId, string prompt)
@@ -55,4 +55,9 @@ internal sealed class SessionDraftPresentation
     }
 
     internal void Remove(string sessionId) => _drafts.Remove(sessionId);
+
+    /// <summary>True for a draft with no prompt yet, created for the same workspace group.</summary>
+    internal bool IsUnstarted(string sessionId, string? workspaceKey) =>
+        _drafts.TryGetValue(sessionId, out var draft) && !draft.Started
+        && string.Equals(draft.WorkspaceKey, workspaceKey, StringComparison.OrdinalIgnoreCase);
 }

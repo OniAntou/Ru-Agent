@@ -99,6 +99,23 @@ namespace RuApp.Services
             return null;
         }
 
+        /// <summary>
+        /// Asks the Host to remove a session if, and only if, it still has no messages: the
+        /// cleanup for New Chat drafts that were abandoned before their first prompt.
+        /// </summary>
+        public async Task CleanupEmptySessionAsync(string sessionId, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                using var response = await _httpClient.DeleteAsync(
+                    $"{_baseUrl}/sessions/{Uri.EscapeDataString(sessionId)}?if_empty=true", cancellationToken);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                LogApiError("CleanupEmptySessionAsync", ex);
+            }
+        }
+
         public async Task<bool> ActivateSessionAsync(
             string sessionId,
             CancellationToken cancellationToken = default)

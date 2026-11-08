@@ -16,6 +16,9 @@ internal interface ISessionListBackend
     Task<SessionInfo?> CreateSessionAsync();
 
     Task<ApiService.SessionDeletionOutcome> DeleteSessionAsync(string sessionId);
+
+    /// <summary>Removes a session only if it is still empty (the Host checks atomically).</summary>
+    Task CleanupEmptySessionAsync(string sessionId) => Task.CompletedTask;
 }
 
 /// <summary>Resolves the current <see cref="ApiService"/> per call, so a reconnect needs no rewiring.</summary>
@@ -34,6 +37,9 @@ internal sealed class ApiSessionListBackend(Func<ApiService?> api) : ISessionLis
     public Task<ApiService.SessionDeletionOutcome> DeleteSessionAsync(string sessionId) =>
         api()?.DeleteSessionAsync(sessionId)
         ?? Task.FromResult(new ApiService.SessionDeletionOutcome(false, false, null));
+
+    public Task CleanupEmptySessionAsync(string sessionId) =>
+        api()?.CleanupEmptySessionAsync(sessionId) ?? Task.CompletedTask;
 }
 
 internal sealed record SessionListPageBatch(
@@ -106,6 +112,10 @@ internal sealed record SidebarMoveTarget(string Text, string SessionId, string G
 public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly ISessionListBackend _backend;
+    private bool _creatingDraft;
+
+    /// <summary>How long an abandoned draft waits before its empty Host session is removed.</summary>
+    internal TimeSpan DraftCleanupDelay { get; set; } = TimeSpan.FromSeconds(5);
     private readonly SidebarOrganizationStore _organization;
     private readonly WorkspaceGroupPreferenceStore _groupPreferences;
     private readonly WorkspacePinStore _pins;
@@ -541,6 +551,7 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         if (ActiveSessionId is not null && discarded.Contains(ActiveSessionId)) ActiveSessionId = null;
         foreach (var id in discarded)
         {
+            CleanupLater(id);
             var row = Sessions.FirstOrDefault(session => session.Id == id);
             if (row is not null) Sessions.Remove(row);
             _sessionWorkspaces.Remove(id);
@@ -570,9 +581,32 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     /// </summary>
     internal async Task<SessionInfo?> CreateDraftAsync(string? workspaceKey, string? workspacePath)
     {
+        // New Chat on an empty draft that is already open keeps it: no second Host session.
+        if (ActiveSessionId is { } open && _drafts.IsUnstarted(open, workspaceKey)
+            && Sessions.FirstOrDefault(session => session.Id == open) is { } existing)
+            return existing;
+
+        // One create at a time: rapid clicks while one is in flight are ignored.
+        if (_creatingDraft) return null;
+        _creatingDraft = true;
         var navigation = ++_navigationGeneration;
-        var session = await _backend.CreateSessionAsync();
-        if (_disposed || navigation != _navigationGeneration) return null;
+        SessionInfo? session;
+        try
+        {
+            session = await _backend.CreateSessionAsync();
+        }
+        finally
+        {
+            _creatingDraft = false;
+        }
+
+        if (_disposed || navigation != _navigationGeneration)
+        {
+            // Overtaken by another navigation: the new Host session is not shown, so remove it.
+            if (session is not null) CleanupLater(session.Id);
+            return null;
+        }
+
         if (session is null)
         {
             ActionFailed?.Invoke("Could not create a new chat session");
@@ -587,6 +621,29 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         _groupPreferences.SetExpanded(GroupFor(session).Key, true);
         Render();
         return session;
+    }
+
+    /// <summary>
+    /// Removes an abandoned draft's Host session once it is clearly unused. The Host deletes it
+    /// only if it is still empty, so a draft whose first prompt is just being accepted survives;
+    /// the delay gives that prompt time to land. Best effort: an empty session is invisible anyway.
+    /// </summary>
+    private void CleanupLater(string sessionId)
+    {
+        _ = Run();
+
+        async Task Run()
+        {
+            try
+            {
+                await Task.Delay(DraftCleanupDelay).ConfigureAwait(false);
+                await _backend.CleanupEmptySessionAsync(sessionId).ConfigureAwait(false);
+            }
+            catch (Exception error)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[Sidebar] Draft cleanup failed: {error.GetType().Name}");
+            }
+        }
     }
 
     /// <summary>The first accepted prompt titles a draft and keeps it after it is left.</summary>

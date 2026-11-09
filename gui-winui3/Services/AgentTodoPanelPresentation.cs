@@ -10,14 +10,13 @@ internal enum TodoSegmentState
     Done,
 }
 
-/// <param name="AllDone">Every task is completed; the shelf keeps a completion summary instead of disappearing.</param>
-/// <param name="HeaderPrimary">The first header line: the current task, the remaining count, or the completion sentence.</param>
+/// <param name="IsVisible">False for an empty plan or one whose last task just completed.</param>
+/// <param name="HeaderPrimary">The first header line: the current task, or the remaining count once open.</param>
 /// <param name="HeaderSecondary">The second header line: the next task or the closing note.</param>
 /// <param name="UseSegments">False for plans longer than <see cref="MaxSegments"/>; the view draws one continuous bar instead.</param>
 /// <param name="BarFraction">Completed fraction for the continuous-bar fallback.</param>
 internal sealed record AgentTodoPanelPresentation(
     bool IsVisible,
-    bool AllDone,
     int Done,
     int Total,
     int Remaining,
@@ -44,7 +43,7 @@ internal sealed record AgentTodoPanelPresentation(
         var items = todos ?? Array.Empty<TodoItemModel>();
         if (items.Count == 0)
         {
-            return new(false, false, 0, 0, 0, string.Empty, string.Empty, string.Empty,
+            return new(false, 0, 0, 0, string.Empty, string.Empty, string.Empty,
                 false, 64, true, Array.Empty<TodoSegmentState>(), 0);
         }
 
@@ -63,44 +62,41 @@ internal sealed record AgentTodoPanelPresentation(
             }
         }
 
-        bool allDone = done == items.Count;
+        if (done == items.Count)
+        {
+            // The shelf is for a live plan: the last completion hides it immediately.
+            return new(false, done, items.Count, 0, string.Empty, string.Empty, string.Empty,
+                false, 64, false, Array.Empty<TodoSegmentState>(), 1);
+        }
+
         int remaining = items.Count - done;
         int currentIndex = activeIndex >= 0 ? activeIndex : FirstIncomplete(items);
-        string current = allDone
-            ? $"All {items.Count} tasks complete"
-            : currentIndex >= 0 ? items[currentIndex].Content : string.Empty;
+        string current = items[currentIndex].Content;
 
         // The next task is the first incomplete item after the current one; a plan
         // that lists a pending item before the active one still gets a next line.
         string? next = null;
-        if (!allDone)
+        int start = currentIndex + 1;
+        for (int index = start; index < items.Count && next is null; index++)
         {
-            int start = currentIndex + 1;
-            for (int index = start; index < items.Count && next is null; index++)
+            if (!items[index].IsCompleted)
             {
-                if (!items[index].IsCompleted)
-                {
-                    next = items[index].Content;
-                }
-            }
-
-            for (int index = 0; index < start && next is null; index++)
-            {
-                if (index != currentIndex && !items[index].IsCompleted)
-                {
-                    next = items[index].Content;
-                }
+                next = items[index].Content;
             }
         }
 
-        string secondary = allDone
-            ? "Plan finished"
-            : next is not null ? $"Next: {next}" : "Last task in the plan";
-        string primary = allDone
-            ? $"All {items.Count} tasks complete"
-            : expanded
-                ? $"{remaining} task{(remaining == 1 ? string.Empty : "s")} remaining"
-                : current;
+        for (int index = 0; index < start && next is null; index++)
+        {
+            if (index != currentIndex && !items[index].IsCompleted)
+            {
+                next = items[index].Content;
+            }
+        }
+
+        string secondary = next is not null ? $"Next: {next}" : "Last task in the plan";
+        string primary = expanded
+            ? $"{remaining} task{(remaining == 1 ? string.Empty : "s")} remaining"
+            : current;
 
         bool useSegments = items.Count <= MaxSegments;
         TodoSegmentState[] segments = useSegments
@@ -111,7 +107,6 @@ internal sealed record AgentTodoPanelPresentation(
 
         return new(
             IsVisible: true,
-            AllDone: allDone,
             Done: done,
             Total: items.Count,
             Remaining: remaining,

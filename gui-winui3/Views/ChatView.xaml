@@ -864,7 +864,7 @@
                     </Style>
                 </Border.Resources>
                 <StackPanel>
-                    <ScrollViewer x:Name="TodoPanelScroll" MaxHeight="224" Visibility="Collapsed"
+                    <ScrollViewer x:Name="TodoPanelScroll" Height="0" MaxHeight="224" Visibility="Collapsed"
                                   Padding="12,10,12,6"
                                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                   HorizontalScrollMode="Disabled" VerticalScrollMode="Enabled">
@@ -884,8 +884,7 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <!-- A small drawn mark, not an icon glyph: ring while pending,
-                                 a 5px dot while working, check once done. The line, not the
-                                 mark, is the subject. -->
+                                 a dot while working. The line, not the mark, is the subject. -->
                             <Grid x:Name="TodoPanelMark"
                                   Grid.Column="0"
                                   Width="16"
@@ -906,14 +905,7 @@
                                          StrokeThickness="1"
                                          HorizontalAlignment="Center"
                                          VerticalAlignment="Center"
-                                         Visibility="Collapsed" />
-                                <FontIcon x:Name="TodoPanelMarkCheck"
-                                          Glyph="&#xE73E;"
-                                          FontSize="10"
-                                          Foreground="{StaticResource RuSuccessBrush}"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"
-                                          Visibility="Collapsed" />
+                                         Opacity="0" />
                             </Grid>
                             <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
                                 <TextBlock x:Name="TodoPanelHeader"
@@ -951,6 +943,7 @@
                                   AutomationProperties.Name="Task progress">
                                 <Border Background="{StaticResource RuLineBrush}" CornerRadius="{StaticResource AppMicroPillCornerRadius}" />
                                 <Border x:Name="TodoPanelBarFill"
+                                        Width="0"
                                         HorizontalAlignment="Left"
                                         Background="{StaticResource RuAccentBrush}"
                                         CornerRadius="{StaticResource AppMicroPillCornerRadius}" />

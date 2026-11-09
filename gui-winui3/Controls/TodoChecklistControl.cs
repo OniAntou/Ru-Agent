@@ -6,8 +6,11 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Shapes;
 using RuApp.Models;
+using RuApp.Services;
+using Windows.Foundation;
 using Windows.UI;
 
 namespace RuApp.Controls
@@ -24,6 +27,10 @@ namespace RuApp.Controls
     /// colour alone, so the list still reads for someone who cannot tell the accent from
     /// the muted tone. The active row also carries a quiet surface tint and an accent
     /// ordinal; there is no separate "NOW" label to read on every refresh.
+    ///
+    /// Rows are reconciled by content: an advancing plan updates the existing elements
+    /// in place so the tint and marks can cross-fade instead of snapping through a
+    /// rebuild. A genuinely different plan rebuilds its rows once.
     /// </remarks>
     public sealed partial class TodoChecklistControl : UserControl
     {
@@ -41,6 +48,8 @@ namespace RuApp.Controls
             new(Color.FromArgb(255, 46, 46, 46));
 
         private readonly StackPanel _rows = new() { Spacing = 2 };
+        private readonly List<TodoRowView> _rowViews = new();
+        private string[] _renderedContents = Array.Empty<string>();
 
         public TodoChecklistControl()
         {
@@ -52,37 +61,82 @@ namespace RuApp.Controls
         /// </summary>
         public void Render(IReadOnlyList<TodoItemModel>? todos)
         {
-            _rows.Children.Clear();
-            if (todos is null || todos.Count == 0)
+            var items = todos ?? Array.Empty<TodoItemModel>();
+            if (items.Count == 0)
             {
+                ClearRows();
                 return;
             }
 
-            int ordinal = 0;
-            foreach (TodoItemModel todo in todos)
+            if (items.Count != _rowViews.Count || !ContentsMatch(items))
             {
-                _rows.Children.Add(BuildRow(todo, ++ordinal));
+                BuildRows(items);
+                return;
+            }
+
+            for (int index = 0; index < items.Count; index++)
+            {
+                ApplyState(_rowViews[index], items[index], ordinal: index + 1, animate: true);
             }
         }
 
-        private static Grid BuildRow(TodoItemModel todo, int ordinal)
+        private bool ContentsMatch(IReadOnlyList<TodoItemModel> items)
         {
+            for (int index = 0; index < items.Count; index++)
+            {
+                if (!string.Equals(_renderedContents[index], items[index].Content, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private void BuildRows(IReadOnlyList<TodoItemModel> items)
+        {
+            ClearRows();
+            var contents = new string[items.Count];
+            for (int index = 0; index < items.Count; index++)
+            {
+                TodoItemModel todo = items[index];
+                TodoRowView view = BuildRow(todo, ordinal: index + 1);
+                ApplyState(view, todo, ordinal: index + 1, animate: false);
+                _rowViews.Add(view);
+                _rows.Children.Add(view.Root);
+                contents[index] = todo.Content;
+            }
+
+            _renderedContents = contents;
+        }
+
+        private void ClearRows()
+        {
+            foreach (TodoRowView view in _rowViews)
+            {
+                view.DotPop?.Stop();
+            }
+
+            _rows.Children.Clear();
+            _rowViews.Clear();
+            _renderedContents = Array.Empty<string>();
+        }
+
+        private static TodoRowView BuildRow(TodoItemModel todo, int ordinal)
+        {
+            var view = new TodoRowView();
             var row = new Grid
             {
                 ColumnSpacing = 8,
                 MinHeight = 28,
                 Padding = new Thickness(4, 2, 8, 2),
-                CornerRadius = RuApp.Services.UiCornerRadius.Control,
-                // The active row carries the only tint; completed and pending rows stay
-                // on the shelf's own surface.
-                Background = todo.IsInProgress ? Brush("RuAccentSoftBrush", FallbackInsetBrush) : null,
+                CornerRadius = UiCornerRadius.Control,
             };
-
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            double activitySize = RuApp.Services.TranscriptTypography.Instance.ActivityFontSize;
+            double activitySize = TranscriptTypography.Instance.ActivityFontSize;
 
             var number = new TextBlock
             {
@@ -91,89 +145,212 @@ namespace RuApp.Controls
                 // One step under the label; the ordinal is a reading aid, not content.
                 FontSize = Math.Max(9, activitySize - 3.5),
                 VerticalAlignment = VerticalAlignment.Center,
-                Foreground = todo.IsInProgress
-                    ? Brush("RuAccentBrush", FallbackAccentBrush)
-                    : Brush("RuMutedBrush", FallbackMutedBrush),
-                Opacity = todo.IsCompleted ? 0.65 : 1,
             };
 
-            // The active mark is a 5px dot, the pending mark a 6px ring and the completed
-            // mark a small check: glyph-sized circles read as buttons in a dense list.
-            FrameworkElement mark;
-            if (todo.IsInProgress)
+            // A drawn mark, not a glyph-sized circle: the active dot stays 7px, the
+            // pending ring 8px and the completed check one step under the label.
+            var mark = new Grid
             {
-                mark = new Ellipse
-                {
-                    Width = 7,
-                    Height = 7,
-                    Fill = Brush("RuAccentBrush", FallbackAccentBrush),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-            }
-            else if (todo.IsCompleted)
+                Width = 16,
+                Height = 16,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            var dot = new Ellipse
             {
-                mark = new FontIcon
-                {
-                    Glyph = todo.MarkGlyph,
-                    FontSize = Math.Max(10, activitySize - 3),
-                    Foreground = Brush("RuSuccessBrush", FallbackSuccessBrush),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-            }
-            else
+                Width = 7,
+                Height = 7,
+                Fill = Brush("RuAccentBrush", FallbackAccentBrush),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Opacity = 0,
+            };
+            var ring = new Ellipse
             {
-                mark = new Ellipse
-                {
-                    Width = 8,
-                    Height = 8,
-                    Stroke = Brush("RuMutedBrush", FallbackMutedBrush),
-                    StrokeThickness = 1,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-            }
+                Width = 8,
+                Height = 8,
+                Stroke = Brush("RuMutedBrush", FallbackMutedBrush),
+                StrokeThickness = 1,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Opacity = 0,
+            };
+            var check = new FontIcon
+            {
+                Glyph = TodoItemModel.CompletedGlyph,
+                FontSize = Math.Max(10, activitySize - 3),
+                Foreground = Brush("RuSuccessBrush", FallbackSuccessBrush),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Opacity = 0,
+            };
+            mark.Children.Add(dot);
+            mark.Children.Add(ring);
+            mark.Children.Add(check);
 
-            var text = new TextBlock
+            var label = new TextBlock
             {
                 Text = todo.Content,
                 FontFamily = UiFont,
                 FontSize = Math.Max(11, activitySize - 1),
                 TextWrapping = TextWrapping.Wrap,
-                // The active row is the only emphasised one, which is what the
-                // single-active rule buys the eye.
-                FontWeight = todo.IsInProgress ? FontWeights.SemiBold : FontWeights.Normal,
-                Foreground = todo.IsCompleted
-                    ? Brush("RuMutedBrush", FallbackMutedBrush)
-                    : Brush("RuInkBrush", FallbackInkBrush),
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
             Grid.SetColumn(number, 0);
             Grid.SetColumn(mark, 1);
-            Grid.SetColumn(text, 2);
+            Grid.SetColumn(label, 2);
             row.Children.Add(number);
             row.Children.Add(mark);
-            row.Children.Add(text);
+            row.Children.Add(label);
 
             AutomationProperties.SetName(row, todo.AccessibleName);
-            return row;
+            view.Root = row;
+            view.Number = number;
+            view.Dot = dot;
+            view.Ring = ring;
+            view.Check = check;
+            view.Label = label;
+            return view;
         }
 
-        /// <summary>The app's mono stack, or a system fallback when resources are not loaded.</summary>
-        private static FontFamily MonoFont
+        private static void ApplyState(TodoRowView view, TodoItemModel todo, int ordinal, bool animate)
         {
-            get
-            {
-                if (Application.Current?.Resources is { } resources
-                    && resources.TryGetValue("RuMonoFontFamily", out object? value)
-                    && value is FontFamily font)
-                {
-                    return font;
-                }
+            Brush accent = Brush("RuAccentBrush", FallbackAccentBrush);
+            Brush muted = Brush("RuMutedBrush", FallbackMutedBrush);
+            Brush ink = Brush("RuInkBrush", FallbackInkBrush);
+            Brush success = Brush("RuSuccessBrush", FallbackSuccessBrush);
+            Brush tint = Brush("RuAccentSoftBrush", FallbackInsetBrush);
 
-                return new FontFamily("Consolas");
+            bool active = todo.IsInProgress;
+            bool done = todo.IsCompleted;
+
+            string ordinalText = ordinal.ToString("00", CultureInfo.InvariantCulture);
+            if (!string.Equals(view.Number.Text, ordinalText, StringComparison.Ordinal))
+            {
+                view.Number.Text = ordinalText;
+            }
+
+            SetForeground(view.Number, active ? accent : muted, animate);
+            view.Number.Opacity = done ? 0.65 : 1;
+            SetForeground(view.Label, done ? muted : ink, animate);
+            view.Label.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+            SetBackground(view.Root, active ? tint : null, animate);
+
+            SetOpacity(view.Dot, active ? 1 : 0, animate);
+            SetOpacity(view.Ring, !active && !done ? 1 : 0, animate);
+            SetOpacity(view.Check, done ? 1 : 0, animate);
+
+            if (active && !view.WasActive && animate)
+            {
+                PopDot(view);
+            }
+            else if (!active)
+            {
+                ResetDot(view);
+            }
+
+            view.WasActive = active;
+        }
+
+        private static void SetForeground(TextBlock element, Brush target, bool animate)
+        {
+            if (animate)
+            {
+                UiMotion.FadeBrush(element, TextBlock.ForegroundProperty, target);
+            }
+            else
+            {
+                element.Foreground = target;
+            }
+        }
+
+        private static void SetBackground(FrameworkElement element, Brush? target, bool animate)
+        {
+            if (animate)
+            {
+                UiMotion.FadeBrush(element, Panel.BackgroundProperty, target);
+            }
+            else
+            {
+                element.SetValue(Panel.BackgroundProperty, target);
+            }
+        }
+
+        private static void SetOpacity(FrameworkElement element, double target, bool animate)
+        {
+            if (Math.Abs(element.Opacity - target) < 0.01)
+            {
+                return;
+            }
+
+            if (animate)
+            {
+                UiMotion.FadeOpacity(element, target);
+            }
+            else
+            {
+                element.Opacity = target;
+            }
+        }
+
+        private static void PopDot(TodoRowView view)
+        {
+            view.DotPop?.Stop();
+            view.DotPop = null;
+            if (!UiTiming.AnimationsEnabled)
+            {
+                return;
+            }
+
+            var scale = new ScaleTransform { ScaleX = 0.8, ScaleY = 0.8 };
+            view.Dot.RenderTransformOrigin = new Point(0.5, 0.5);
+            view.Dot.RenderTransform = scale;
+            try
+            {
+                var growX = new DoubleAnimation
+                {
+                    To = 1,
+                    Duration = TimeSpan.FromMilliseconds(120),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                };
+                var growY = new DoubleAnimation
+                {
+                    To = 1,
+                    Duration = TimeSpan.FromMilliseconds(120),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                };
+                Storyboard.SetTarget(growX, scale);
+                Storyboard.SetTargetProperty(growX, nameof(ScaleTransform.ScaleX));
+                Storyboard.SetTarget(growY, scale);
+                Storyboard.SetTargetProperty(growY, nameof(ScaleTransform.ScaleY));
+
+                var storyboard = new Storyboard();
+                storyboard.Children.Add(growX);
+                storyboard.Children.Add(growY);
+                storyboard.Completed += (_, _) =>
+                {
+                    scale.ScaleX = 1;
+                    scale.ScaleY = 1;
+                };
+                view.DotPop = storyboard;
+                storyboard.Begin();
+            }
+            catch (Exception)
+            {
+                scale.ScaleX = 1;
+                scale.ScaleY = 1;
+            }
+        }
+
+        private static void ResetDot(TodoRowView view)
+        {
+            view.DotPop?.Stop();
+            view.DotPop = null;
+            if (view.Dot.RenderTransform is ScaleTransform scale)
+            {
+                scale.ScaleX = 1;
+                scale.ScaleY = 1;
             }
         }
 
@@ -194,6 +371,34 @@ namespace RuApp.Controls
             }
 
             return fallback;
+        }
+
+        /// <summary>The app's mono stack, or a system fallback when resources are not loaded.</summary>
+        private static FontFamily MonoFont
+        {
+            get
+            {
+                if (Application.Current?.Resources is { } resources
+                    && resources.TryGetValue("RuMonoFontFamily", out object? value)
+                    && value is FontFamily font)
+                {
+                    return font;
+                }
+
+                return new FontFamily("Consolas");
+            }
+        }
+
+        private sealed class TodoRowView
+        {
+            public Grid Root { get; set; } = null!;
+            public TextBlock Number { get; set; } = null!;
+            public Ellipse Dot { get; set; } = null!;
+            public Ellipse Ring { get; set; } = null!;
+            public FontIcon Check { get; set; } = null!;
+            public TextBlock Label { get; set; } = null!;
+            public bool WasActive { get; set; }
+            public Storyboard? DotPop { get; set; }
         }
     }
 }

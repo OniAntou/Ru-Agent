@@ -65,6 +65,10 @@ public static class UiTiming
     /// </summary>
     public static readonly TimeSpan StreamTextRefresh = TimeSpan.FromMilliseconds(100);
 
+    /// <summary>The task shelf's list drawer: open slower than it closes.</summary>
+    public static readonly TimeSpan TodoListOpen = TimeSpan.FromMilliseconds(160);
+    public static readonly TimeSpan TodoListClose = TimeSpan.FromMilliseconds(120);
+
     /// <summary>Fade-and-rise played when a reply block renders its first text.</summary>
     public const double ReplyTextArrivalMilliseconds = 140;
 

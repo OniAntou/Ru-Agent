@@ -42,9 +42,6 @@ namespace RuApp.Views
                 return;
             }
 
-            // A plan that finished in the previous turn has said everything it can;
-            // the next turn starts without that completed shelf.
-            ClearCompletedTodoShelf();
             StartNewAgentActivityRun();
             BeginAgentReply(text, attachments, displayUserText, addUserMessage);
             ClearComposerStatus();

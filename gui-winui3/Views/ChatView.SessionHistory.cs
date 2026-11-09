@@ -967,6 +967,7 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            StopTodoMotion();
             ClearChangeNavigation();
             SidePanel.SubagentsChanged -= OnSubagentsChanged;
         SidePanel.DisposeSubagents();

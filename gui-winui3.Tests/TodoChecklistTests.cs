@@ -17,13 +17,14 @@ public sealed class TodoChecklistTests
     [Fact]
     public void The_panel_hides_without_a_list_and_shows_with_one()
     {
-        // The panel owns visibility now, not a template binding: empty hides it,
-        // a fresh list shows it.
+        // The panel owns visibility now: an empty or finished plan clears it, and a
+        // fresh live plan shows it through the shared motion helper.
         string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
-        Assert.Contains("Visibility.Collapsed", update, StringComparison.Ordinal);
-        Assert.Contains("Visibility.Visible", update, StringComparison.Ordinal);
+        Assert.Contains("!state.IsVisible", update, StringComparison.Ordinal);
+        Assert.Contains("ClearTodoPanel", update, StringComparison.Ordinal);
+        Assert.Contains("UiMotion.SetVisible(TodoPanel", update, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -121,10 +122,12 @@ public sealed class TodoChecklistTests
         // the next-task line is shown only while the list is open.
         string code = GuiSource.ViewText("ChatView");
 
-        string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
-        Assert.Contains("TodoPanelList.Visibility", update, StringComparison.Ordinal);
-        Assert.Contains("TodoPanelNext.Visibility", update, StringComparison.Ordinal);
-        Assert.Contains("listOpen &&", update, StringComparison.Ordinal);
+        string header = GuiSource.MethodBody(code, "UpdateTodoHeader");
+        Assert.Contains("TodoPanelNext.Visibility", header, StringComparison.Ordinal);
+        Assert.Contains("listOpen &&", header, StringComparison.Ordinal);
+
+        string list = GuiSource.MethodBody(code, "ApplyTodoListState");
+        Assert.Contains("TodoPanelList.Visibility", list, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -153,9 +156,14 @@ public sealed class TodoChecklistTests
     [Fact]
     public void The_header_mark_follows_whether_a_task_is_in_progress()
     {
-        string mark = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ApplyTodoMark");
-        Assert.Contains("TodoPanelMarkDot.Visibility", mark, StringComparison.Ordinal);
-        Assert.Contains("TodoPanelMarkCheck.Visibility", mark, StringComparison.Ordinal);
+        string code = GuiSource.ViewText("ChatView");
+        string mark = GuiSource.MethodBody(code, "ApplyTodoMark");
+        Assert.Contains("SetMarkOpacity(TodoPanelMarkDot", mark, StringComparison.Ordinal);
+        Assert.Contains("SetMarkOpacity(TodoPanelMarkRing", mark, StringComparison.Ordinal);
+        Assert.DoesNotContain("TodoPanelMarkCheck", mark, StringComparison.Ordinal);
+
+        string setMark = GuiSource.MethodBody(code, "SetMarkOpacity");
+        Assert.Contains("UiMotion.FadeOpacity", setMark, StringComparison.Ordinal);
 
         var active = RuApp.Services.AgentTodoPanelPresentation.Create(
             [new("Working", TodoItemModel.InProgress), new("Later", TodoItemModel.Pending)], 800);
@@ -164,10 +172,6 @@ public sealed class TodoChecklistTests
         Assert.True(active.HasActive);
         Assert.False(waiting.HasActive);
         Assert.Equal("Later", waiting.Current);
-
-        var finished = RuApp.Services.AgentTodoPanelPresentation.Create(
-            [new("Done", TodoItemModel.Completed)], 800);
-        Assert.True(finished.AllDone);
     }
 
     [Fact]
@@ -176,9 +180,65 @@ public sealed class TodoChecklistTests
         string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
-        Assert.Contains("TodoPanelCount.Text", update, StringComparison.Ordinal);
-        Assert.Contains("TodoPanelNext.Text", update, StringComparison.Ordinal);
+        Assert.Contains("UpdateTodoHeader", update, StringComparison.Ordinal);
+        Assert.Contains("UpdateTodoCount", update, StringComparison.Ordinal);
         Assert.Contains("ApplyTodoProgress", update, StringComparison.Ordinal);
+
+        string header = GuiSource.MethodBody(code, "UpdateTodoHeader");
+        Assert.Contains("TodoPanelNext.Text", header, StringComparison.Ordinal);
+        string count = GuiSource.MethodBody(code, "UpdateTodoCount");
+        Assert.Contains("TodoPanelCount.Text", count, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_list_drawer_animates_with_reduced_motion_guard()
+    {
+        // The drawer grows and fades instead of snapping; a reader with animations
+        // off gets the final height immediately.
+        string code = GuiSource.ViewText("ChatView");
+        string list = GuiSource.MethodBody(code, "ApplyTodoListState");
+
+        Assert.Contains("UiTiming.AnimationsEnabled", list, StringComparison.Ordinal);
+        Assert.Contains("UiTiming.TodoListOpen", list, StringComparison.Ordinal);
+        Assert.Contains("UiTiming.TodoListClose", list, StringComparison.Ordinal);
+        Assert.Contains("TodoPanelScroll.Height", list, StringComparison.Ordinal);
+        Assert.Contains("EnableDependentAnimation", list, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Segments_are_reused_and_cross_faded()
+    {
+        // Rebuilding the strip every update would reset its colours and kill the
+        // transition; the same borders are recoloured, and the active one breathes.
+        string code = GuiSource.ViewText("ChatView");
+        string progress = GuiSource.MethodBody(code, "ApplyTodoProgress");
+
+        Assert.Contains("_todoSegmentVisuals", progress, StringComparison.Ordinal);
+        Assert.Contains("UiMotion.FadeBrush", progress, StringComparison.Ordinal);
+        Assert.Contains("StartTodoSegmentPulse", progress, StringComparison.Ordinal);
+
+        string pulse = GuiSource.MethodBody(code, "StartTodoSegmentPulse");
+        Assert.Contains("UiTiming.AnimationsEnabled", pulse, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rows_transition_in_place_when_the_plan_advances()
+    {
+        // The checklist reconciles rows by content so the active tint and marks can
+        // cross-fade; a genuinely different plan rebuilds once.
+        string control = GuiSource.Text("Controls", "TodoChecklistControl.cs");
+        string render = GuiSource.MethodBody(control, "Render");
+        Assert.Contains("ContentsMatch", render, StringComparison.Ordinal);
+
+        string apply = GuiSource.MethodBody(control, "ApplyState");
+        Assert.Contains("SetForeground", apply, StringComparison.Ordinal);
+        Assert.Contains("SetBackground", apply, StringComparison.Ordinal);
+        Assert.Contains("SetOpacity", apply, StringComparison.Ordinal);
+        Assert.Contains("PopDot", apply, StringComparison.Ordinal);
+
+        Assert.Contains("UiMotion.FadeBrush", GuiSource.MethodBody(control, "SetBackground"), StringComparison.Ordinal);
+        Assert.Contains("UiMotion.FadeOpacity", GuiSource.MethodBody(control, "SetOpacity"), StringComparison.Ordinal);
+        Assert.Contains("UiTiming.AnimationsEnabled", GuiSource.MethodBody(control, "PopDot"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -193,25 +253,19 @@ public sealed class TodoChecklistTests
     }
 
     [Fact]
-    public void A_finished_plan_keeps_its_completion_summary_until_the_next_turn()
+    public void A_finished_plan_hides_the_shelf_immediately()
     {
-        // A finished plan is a result, not an empty shelf: it stays visible with the
-        // completion sentence, then the next accepted turn clears it.
+        // The shelf is for a live plan: when the last task completes it clears in the
+        // same update rather than keeping a completion summary.
         var state = RuApp.Services.AgentTodoPanelPresentation.Create(
             [new("Done", TodoItemModel.Completed)], 800);
-        Assert.True(state.IsVisible);
-        Assert.True(state.AllDone);
+        Assert.False(state.IsVisible);
 
         string code = GuiSource.ViewText("ChatView");
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
-        Assert.Contains("state.AllDone", update, StringComparison.Ordinal);
-
-        string begin = GuiSource.MethodBody(code, "BeginAcceptedAgentTurn");
-        Assert.Contains("ClearCompletedTodoShelf", begin, StringComparison.Ordinal);
-
-        string clear = GuiSource.MethodBody(code, "ClearCompletedTodoShelf");
-        Assert.Contains("IsCompleted", clear, StringComparison.Ordinal);
-        Assert.Contains("ClearTodoPanel", clear, StringComparison.Ordinal);
+        Assert.Contains("!state.IsVisible", update, StringComparison.Ordinal);
+        Assert.Contains("ClearTodoPanel", update, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClearCompletedTodoShelf", code, StringComparison.Ordinal);
     }
 
     [Fact]

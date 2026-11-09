@@ -26,7 +26,6 @@ public sealed class AgentTodoPanelPresentationTests
         Assert.Equal(3, state.Total);
         Assert.Equal(2, state.Remaining);
         Assert.True(state.HasActive);
-        Assert.False(state.AllDone);
         Assert.Equal("Working", state.HeaderPrimary);
         Assert.Equal("Next: Later", state.HeaderSecondary);
     }
@@ -63,7 +62,7 @@ public sealed class AgentTodoPanelPresentationTests
     }
 
     [Fact]
-    public void Empty_and_completed_plans_still_describe_their_state()
+    public void Empty_and_completed_plans_hide_the_shelf()
     {
         Assert.False(Create(null, 800).IsVisible);
 
@@ -71,13 +70,11 @@ public sealed class AgentTodoPanelPresentationTests
             new("Done", TodoItemModel.Completed),
             new("Also done", TodoItemModel.Completed)], 800);
 
-        Assert.True(done.IsVisible);
-        Assert.True(done.AllDone);
-        Assert.Equal("All 2 tasks complete", done.HeaderPrimary);
-        Assert.Equal("Plan finished", done.HeaderSecondary);
-        Assert.Equal(
-            new[] { TodoSegmentState.Done, TodoSegmentState.Done },
-            done.Segments);
+        Assert.False(done.IsVisible);
+        Assert.Equal(2, done.Done);
+        Assert.Equal(2, done.Total);
+        Assert.Equal(0, done.Remaining);
+        Assert.Empty(done.Segments);
     }
 
     [Fact]

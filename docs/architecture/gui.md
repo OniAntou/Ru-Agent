@@ -527,8 +527,12 @@ count and the next task as a second line. The list opens above it with an
 ordinal, a state mark and the task text per row; the active row carries a quiet
 tint and semibold text, with no "NOW"/"NEXT" labels. Expanded tasks use a
 scroll viewport capped at 224 pixels and one quarter of the chat height
-(64-pixel minimum). A plan whose tasks are all complete stays as a completion
-summary until the next accepted turn or a session change. Incoming activity data and session replay own its current plan;
+(64-pixel minimum). The shelf clears as soon as its last task completes; it
+never keeps a completion summary. Opening the drawer grows and fades it in over
+160 milliseconds (120 to close); segments cross-fade, the active segment breathes
+while a run is live, and an advancing row's tint and marks cross-fade. Every
+transition applies instantly when Windows animations are off. Incoming activity
+data and session replay own its current plan;
 realizing or recycling a transcript row cannot update it. Routine run/model-step
 status stays in the transcript; the composer feedback row is for actionable
 failures, resumable states and local input feedback.

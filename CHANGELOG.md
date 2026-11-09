@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Todo shelf dễ đọc hơn: header gọn một dòng khi thu gọn (việc đang làm),
+  khi mở thêm dòng số việc còn lại và việc kế tiếp; thanh tiến độ chia đoạn theo từng task
+  (thanh liền khi kế hoạch dài hơn 12 việc), danh sách có số thứ tự và dòng đang làm được
+  tô nền; bỏ nhãn NOW/NEXT và thu nhỏ mark trạng thái. Kế hoạch đã xong giữ lại dòng
+  "All tasks complete" tới lượt kế tiếp thay vì biến mất ngay; vùng cuộn mở rộng từ 180
+  lên 224 px.
+
 - **feat(harness)!**: Subagent không còn trần bước/tool riêng. Mỗi child từng dừng ở 128 model step
   hoặc 256 tool call với `subagent_model_step_limit` / `subagent_tool_call_limit` — trạng thái không
   ai tiếp tục được. Giờ child tự mở budget window như root, nên chỉ còn giới hạn 4 giờ mỗi attempt

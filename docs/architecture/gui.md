@@ -520,11 +520,15 @@ reasoning stretches across the available reading column instead of a fixed
 left-aligned width.
 The task shelf is a tab tucked under the composer: the composer surface with a
 hairline on its open sides, rounded on top, its bottom edge hidden beneath the
-composer. One row (status mark, current task, a short progress bar, done/total count
-and chevron) is the disclosure; the list opens above it and shares its mark column.
-Expanded tasks use a scroll
-viewport capped at 180 pixels and one quarter of the chat height (64-pixel
-minimum). Incoming activity data and session replay own its current plan;
+composer. Its header is the disclosure: collapsed it is one quiet line with the
+current task, then a per-task segmented progress strip (a continuous bar past
+twelve tasks), done/total count and chevron. Opening the list adds the remaining
+count and the next task as a second line. The list opens above it with an
+ordinal, a state mark and the task text per row; the active row carries a quiet
+tint and semibold text, with no "NOW"/"NEXT" labels. Expanded tasks use a
+scroll viewport capped at 224 pixels and one quarter of the chat height
+(64-pixel minimum). A plan whose tasks are all complete stays as a completion
+summary until the next accepted turn or a session change. Incoming activity data and session replay own its current plan;
 realizing or recycling a transcript row cannot update it. Routine run/model-step
 status stays in the transcript; the composer feedback row is for actionable
 failures, resumable states and local input feedback.

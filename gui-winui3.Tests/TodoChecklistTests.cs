@@ -117,11 +117,14 @@ public sealed class TodoChecklistTests
     [Fact]
     public void The_collapsed_panel_keeps_only_its_header_line()
     {
-        // Collapsed means exactly one header line: the rows hide until expanded.
+        // Collapsed means exactly one header line: the rows hide until expanded, and
+        // the next-task line is shown only while the list is open.
         string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
         Assert.Contains("TodoPanelList.Visibility", update, StringComparison.Ordinal);
+        Assert.Contains("TodoPanelNext.Visibility", update, StringComparison.Ordinal);
+        Assert.Contains("listOpen &&", update, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -140,16 +143,19 @@ public sealed class TodoChecklistTests
         Assert.StartsWith("14,0,14,-", GuiSource.AttributeValue(panel, "Margin"), StringComparison.Ordinal);
 
         var toggle = GuiSource.Require(document, "TodoPanelToggle");
-        foreach (var name in new[] { "TodoPanelMark", "TodoPanelHeader", "TodoPanelProgress", "TodoPanelCount", "TodoPanelToggleIcon" })
+        foreach (var name in new[] { "TodoPanelMark", "TodoPanelHeader", "TodoPanelNext", "TodoPanelSegments", "TodoPanelBar", "TodoPanelCount", "TodoPanelToggleIcon" })
             Assert.True(GuiSource.IsDescendantOf(GuiSource.Require(document, name), toggle), name);
-        Assert.Equal("44", GuiSource.AttributeValue(GuiSource.Require(document, "TodoPanelProgress"), "Width"));
+        Assert.Equal("74", GuiSource.AttributeValue(GuiSource.Require(document, "TodoPanelBar"), "Width"));
+        // The head mark is a drawn dot, not a glyph that reads as a button.
+        Assert.Equal("7", GuiSource.AttributeValue(GuiSource.Require(document, "TodoPanelMarkDot"), "Width"));
     }
 
     [Fact]
-    public void The_line_mark_follows_whether_a_task_is_in_progress()
+    public void The_header_mark_follows_whether_a_task_is_in_progress()
     {
-        string update = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateTodoPanel");
-        Assert.Contains("TodoPanelMark.Fill = state.HasActive", update, StringComparison.Ordinal);
+        string mark = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ApplyTodoMark");
+        Assert.Contains("TodoPanelMarkDot.Visibility", mark, StringComparison.Ordinal);
+        Assert.Contains("TodoPanelMarkCheck.Visibility", mark, StringComparison.Ordinal);
 
         var active = RuApp.Services.AgentTodoPanelPresentation.Create(
             [new("Working", TodoItemModel.InProgress), new("Later", TodoItemModel.Pending)], 800);
@@ -158,16 +164,21 @@ public sealed class TodoChecklistTests
         Assert.True(active.HasActive);
         Assert.False(waiting.HasActive);
         Assert.Equal("Later", waiting.Current);
+
+        var finished = RuApp.Services.AgentTodoPanelPresentation.Create(
+            [new("Done", TodoItemModel.Completed)], 800);
+        Assert.True(finished.AllDone);
     }
 
     [Fact]
-    public void The_header_shows_a_count_pill_and_a_progress_hairline()
+    public void The_header_shows_the_count_the_next_line_and_the_progress_strip()
     {
         string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
-        Assert.Contains("TodoPanelCount", update, StringComparison.Ordinal);
-        Assert.Contains("TodoPanelProgress", update, StringComparison.Ordinal);
+        Assert.Contains("TodoPanelCount.Text", update, StringComparison.Ordinal);
+        Assert.Contains("TodoPanelNext.Text", update, StringComparison.Ordinal);
+        Assert.Contains("ApplyTodoProgress", update, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -177,19 +188,45 @@ public sealed class TodoChecklistTests
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var scroll = GuiSource.Require(document, "TodoPanelScroll");
         Assert.Equal("Auto", GuiSource.AttributeValue(scroll, "VerticalScrollBarVisibility"));
-        Assert.Equal("180", GuiSource.AttributeValue(scroll, "MaxHeight"));
+        Assert.Equal("224", GuiSource.AttributeValue(scroll, "MaxHeight"));
         Assert.True(GuiSource.IsDescendantOf(GuiSource.Require(document, "TodoPanelList"), scroll));
     }
 
     [Fact]
-    public void The_panel_disappears_when_every_task_is_done()
+    public void A_finished_plan_keeps_its_completion_summary_until_the_next_turn()
     {
-        // A finished plan has nothing to watch: the panel hides itself and
-        // gives the composer its standalone border back.
-        string code = GuiSource.ViewText("ChatView");
+        // A finished plan is a result, not an empty shelf: it stays visible with the
+        // completion sentence, then the next accepted turn clears it.
+        var state = RuApp.Services.AgentTodoPanelPresentation.Create(
+            [new("Done", TodoItemModel.Completed)], 800);
+        Assert.True(state.IsVisible);
+        Assert.True(state.AllDone);
 
+        string code = GuiSource.ViewText("ChatView");
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
-        Assert.Contains("ClearTodoPanel", update, StringComparison.Ordinal);
+        Assert.Contains("state.AllDone", update, StringComparison.Ordinal);
+
+        string begin = GuiSource.MethodBody(code, "BeginAcceptedAgentTurn");
+        Assert.Contains("ClearCompletedTodoShelf", begin, StringComparison.Ordinal);
+
+        string clear = GuiSource.MethodBody(code, "ClearCompletedTodoShelf");
+        Assert.Contains("IsCompleted", clear, StringComparison.Ordinal);
+        Assert.Contains("ClearTodoPanel", clear, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rows_carry_an_ordinal_and_no_status_labels()
+    {
+        // The active row is told by mark, weight, tint and its ordinal; the old
+        // "NOW"/"NEXT" text labels were removed by owner request.
+        string control = GuiSource.Text("Controls", "TodoChecklistControl.cs");
+        string body = GuiSource.MethodBody(control, "BuildRow");
+
+        Assert.Contains("ToString(\"00\"", body, StringComparison.Ordinal);
+        Assert.Contains("new Ellipse", body, StringComparison.Ordinal);
+        Assert.Contains("activitySize - 3", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("NOW", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("NEXT", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -219,7 +256,8 @@ public sealed class TodoChecklistTests
         string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
-        Assert.Contains("AutomationProperties.SetName(TodoPanelProgress", update, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.SetName(TodoPanelToggle", update, StringComparison.Ordinal);
+        Assert.Contains("ApplyTodoProgress", update, StringComparison.Ordinal);
         Assert.Contains("SetToolTip", update, StringComparison.Ordinal);
         Assert.Contains("Collapse task list", update, StringComparison.Ordinal);
         Assert.Contains("Expand task list", update, StringComparison.Ordinal);

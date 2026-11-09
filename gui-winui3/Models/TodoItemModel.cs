@@ -15,6 +15,11 @@ namespace RuApp.Models
         public const string InProgress = "in_progress";
         public const string Completed = "completed";
 
+        /// <summary>Segoe Fluent Icons: hollow ring, filled record, check.</summary>
+        public const string PendingGlyph = "\uEA3A";
+        public const string InProgressGlyph = "\uEA3B";
+        public const string CompletedGlyph = "\uE73E";
+
         public TodoItemModel(string content, string status)
         {
             Content = content ?? string.Empty;
@@ -34,11 +39,11 @@ namespace RuApp.Models
         /// <summary>Segoe Fluent Icons glyph for the row's state.</summary>
         public string MarkGlyph => Status switch
         {
-            Completed => "\uE73E",
-            // One family with the shelf's status dot: ring while pending, filled circle in
+            Completed => CompletedGlyph,
+            // One family with the shelf's status mark: ring while pending, filled circle in
             // progress, check once done. A ticked box for the active task read as finished.
-            InProgress => "\uEA3B",
-            _ => "\uEA3A",
+            InProgress => InProgressGlyph,
+            _ => PendingGlyph,
         };
 
         /// <summary>The state in words, for the accessibility name.</summary>

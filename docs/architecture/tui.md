@@ -75,10 +75,13 @@ existing invocation rules.
 
 ### Activity and conversation flow
 
-Native chat uses compact action rows between model prose and the following
+Native chat keeps routine successful tool receipts out of the transcript, including
+their result lines and bounded diffs. The live activity indicator remains while a tool
+runs; the turn footer still counts all tools and successful edits. This presentation
+filter applies to live and replayed activity without changing stored evidence.
+Failed or unknown actions retain compact rows between model prose and the following
 response. Common actions align their targets in a shared column on wide terminals;
-narrow terminals reclaim that space. Settled actions use verbs such as Read,
-Edited and Ran. Failed or unknown actions keep neutral action names and explicit
+narrow terminals reclaim that space. These rows use neutral action names and explicit
 outcomes rather than claiming an edit succeeded. Units follow the actual tool:
 read counts are lines, search counts are matches, and terminal exit codes appear
 only when supplied by typed activity metadata. Exit/failure evidence takes priority
@@ -87,8 +90,12 @@ when space is limited.
 A native tool row is self-contained: display name, target, and bounded metrics stay
 inline, and the row keeps no hidden inspector. Ctrl+O is reserved for the model's
 reasoning; diffs are bounded and the overflow is summarized as a line count rather
-than hidden behind a key. Completed metadata updates the same row by activity
-identity, preserving semantic colors.
+than hidden behind a key. Late successful metadata removes an unknown receipt without
+a blank gap; late failure metadata can reveal a previously hidden successful receipt.
+Visible diagnostic rows update by activity identity, preserving semantic colors.
+Explicit failure or a nonzero process exit code takes precedence over a legacy
+success label. Row removal rebases other activity and recovery marks on the UI thread;
+retention generations still protect evicted history from stale updates.
 
 A command row names the script's first real statement, skipping preference, encoding,
 environment and location setup, and counts the remaining statements (`(+3 more)`). A

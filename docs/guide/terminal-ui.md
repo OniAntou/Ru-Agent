@@ -3,6 +3,11 @@
 The terminal UI is a full-screen chat with your project: a transcript, tool rows, approvals, a composer
 and session history. It needs a terminal of at least 80 by 24 cells.
 
+While tools run, the live indicator shows their activity. Successful tool receipts
+are hidden in native chat, including reopened sessions; the turn footer still counts
+them. Failures, unknown outcomes and approval requests stay visible. Plain text logs
+keep their existing tool receipts.
+
 ## Start
 
 ```text

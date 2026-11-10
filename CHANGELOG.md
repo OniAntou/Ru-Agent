@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Hide successful tool receipts and their inline diffs in native chat,
+  including replay. Keep live activity, failures, unknown outcomes, approvals and
+  accurate footer counts; handle late outcome corrections without blank rows.
 - **feat(advisor)**: The advisor belongs to each session instead of being one global setting (ADR 0047, amended). `/advisor` in the terminal and the desktop composer change only the current session, a new session starts with no advisor, and a choice made before the chat's first message is saved to the session that message creates. The Host keeps it in `agent_session_advisors` (schema v38, deleted with the session) behind `GET`/`PUT /agent/v1/sessions/{sessionId}/advisor`. A global advisor saved by an older build is no longer used, and `POST /settings` refuses `advisor_backend`/`advisor_model`.
 - **fix(usage)**: The desktop usage panel and the terminal's `/status usage` price runs with one shared rule set (`UsageCost`), so they no longer disagree on a run's cost. The terminal now prices runs from providers that report no cache counts and treats a model priced at zero as free; a step report without input or output tokens stays unpriced in both.
 

@@ -290,8 +290,11 @@ public sealed class TgLongParagraphTests
         });
     }
 
-    [Fact]
-    public void Settled_tool_rows_precede_the_streaming_paragraph_without_replacing_its_prefix()
+    [Theory]
+    [InlineData(AgentActivityState.Completed)]
+    [InlineData(AgentActivityState.Failed)]
+    [InlineData(AgentActivityState.Started)]
+    public void Tool_outcomes_preserve_the_streaming_paragraph_without_replacing_its_prefix(AgentActivityState state)
     {
         WithWriter((view, writer) =>
         {
@@ -300,10 +303,10 @@ public sealed class TgLongParagraphTests
             foreach (var id in new[] { "activity_one", "activity_two" })
             {
                 renderer.Transcript.ApplyActivity(new AgentActivityModel(id, AgentActivityKind.Search,
-                    AgentActivityState.Completed, "README.md", null, null, null, 1, null, null, 12,
-                    "succeeded", "Search", null, null));
+                    state, "README.md", null, null, null, 1, null, null, 12,
+                    state == AgentActivityState.Completed ? "succeeded" : "unavailable", "Search", null, null));
                 renderer.Transcript.ApplyDurable(new(1, "evt_" + id, "run_1", "session_1", 1,
-                    "tool.execution_completed", "2026-10-25T00:00:00Z", "succeeded", "ok"));
+                    "tool.execution_completed", "2026-10-25T00:00:00Z", "running", "ok"));
             }
             var reply = string.Concat(Enumerable.Repeat("answer words **bold** ", 300)) + "TAIL";
             renderer.Transcript.AppendAssistant(reply);
@@ -311,11 +314,17 @@ public sealed class TgLongParagraphTests
             Assert.Equal(string.Concat(MarkdigInline.Parse(reply).Select(run => run.Text)), view.CopyText().Trim());
             Assert.Equal(string.Concat(MarkdigInline.Parse(reply).Select(run => run.Text)),
                 string.Concat(view.Lines.Where(row => row.Style == TranscriptStyle.Prose).Select(row => row.Text)).Trim());
-            // The settled rows stay ahead of the paragraph, and no block tally sits between.
+            // Successes stay hidden; diagnostic receipts stay before the intact paragraph.
             Assert.DoesNotContain(view.Lines, row => row.Text.Contains("2 searched", StringComparison.Ordinal));
             var lastTool = view.Lines.ToList().FindLastIndex(row => row.Text.Contains("README.md", StringComparison.Ordinal));
             var firstProse = view.Lines.ToList().FindIndex(row => row.Text.Contains("answer words", StringComparison.Ordinal));
-            Assert.True(lastTool >= 0 && lastTool < firstProse);
+            if (state == AgentActivityState.Completed)
+            {
+                Assert.Equal(-1, lastTool);
+                Assert.DoesNotContain(view.Lines, row => row.Style == TranscriptStyle.Tool);
+            }
+            else Assert.True(lastTool >= 0 && lastTool < firstProse);
+            Assert.Equal(2, renderer.Transcript.ToolsSettled);
         });
     }
 

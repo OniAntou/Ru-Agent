@@ -10,8 +10,10 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TuiFeedContinuityTests
 {
-    [Fact]
-    public void LateToolDetailsUpdateTheExistingRowWithoutOverwritingNarration()
+    [Theory]
+    [InlineData(AgentActivityState.Completed)]
+    [InlineData(AgentActivityState.Failed)]
+    public void LateToolOutcomePreservesNarrationAndOnlyKeepsDiagnostics(AgentActivityState state)
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
@@ -27,8 +29,11 @@ public sealed class TuiFeedContinuityTests
             Assert.Contains(window.Transcript.Lines, row => row.Style == TranscriptStyle.Tool && row.Text.StartsWith("  · Read", StringComparison.Ordinal));
             renderer.Transcript.AppendAssistant("Here is the result.");
             renderer.Flush();
-            renderer.Transcript.ApplyActivity(activity with { State = AgentActivityState.Completed, DurationMs = 120 });
-            Assert.Single(window.Transcript.Lines, row => row.Style == TranscriptStyle.Tool && row.Text.StartsWith("  ✓ Read", StringComparison.Ordinal));
+            renderer.Transcript.ApplyActivity(activity with { State = state, DurationMs = 120 });
+            if (state == AgentActivityState.Completed)
+                Assert.DoesNotContain(window.Transcript.Lines, row => row.Style == TranscriptStyle.Tool);
+            else
+                Assert.Single(window.Transcript.Lines, row => row.Style == TranscriptStyle.Tool && row.Text.StartsWith("  ✗ Read", StringComparison.Ordinal));
             Assert.Contains(window.Transcript.Lines, row => row.Text == "Here is the result.");
             Assert.Equal(1, renderer.Transcript.ToolsSettled);
             app.RequestStop();

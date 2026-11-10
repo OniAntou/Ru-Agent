@@ -45,10 +45,10 @@ public sealed partial class TuiTranscript
         status == ToolLineStatus.Ok && detail is not null ? TitleCase(detail.Verb)
             : string.IsNullOrWhiteSpace(detail?.Display) ? "Tool" : detail.Display;
 
-    private static ToolLineStatus ToolStatus(ToolDetail detail) => detail.State switch
+    private static ToolLineStatus ToolStatus(ToolDetail detail) => detail switch
     {
-        AgentActivityState.Completed => ToolLineStatus.Ok,
-        AgentActivityState.Failed => ToolLineStatus.Failed,
+        { State: AgentActivityState.Failed } or { ExitCode: not null and not 0 } => ToolLineStatus.Failed,
+        { State: AgentActivityState.Completed } => ToolLineStatus.Ok,
         _ => ToolLineStatus.Unknown,
     };
 

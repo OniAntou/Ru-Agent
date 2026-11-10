@@ -115,4 +115,25 @@ public sealed partial class TgTranscriptWriter
 
     public Task<bool> ReplaceAssistantPresentationAsync(IReadOnlyList<TranscriptLine> rows) =>
         ReplaceNativeAssistantAsync(rows.SelectMany(ParagraphRows).ToArray());
+
+    public void RemoveActivityPresentation(string activityId)
+    {
+        try { app.Invoke(() =>
+        {
+            if (!_toolRows.TryGetValue(activityId, out var mark)
+                || mark.Version != transcript.RetentionVersion || !transcript.RemoveToolRow(mark.Row)) return;
+            _toolRows.Remove(activityId);
+            // Deletion shifts later receipts and recovery marks, including an active
+            // streaming step. Rebase valid marks without reviving evicted history.
+            foreach (var key in _toolRows.Keys)
+            {
+                var other = _toolRows[key];
+                if (other.Version == mark.Version && other.Row > mark.Row)
+                    _toolRows[key] = (other.Row - 1, other.Version);
+            }
+            if (_turnRetentionVersion == mark.Version && _turnMark > mark.Row) _turnMark--;
+            if (_assistantStepMark > mark.Row) _assistantStepMark--;
+        }); }
+        catch (NotInitializedException) { }
+    }
 }

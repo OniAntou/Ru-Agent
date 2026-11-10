@@ -245,14 +245,34 @@ public sealed partial class TuiTranscript
 
     private void UpdateSettledTool(AgentActivityModel activity)
     {
-        if (!_fullScreenCards || activity.State is not (AgentActivityState.Completed or AgentActivityState.Failed)
+        if ((!_fullScreenCards && _surface.Presentation is null) || activity.State is not (AgentActivityState.Completed or AgentActivityState.Failed)
             || !_settledToolRows.TryGetValue(activity.ActivityId, out var previous)) return;
         var detail = MergeTool(previous, activity);
+        // A later generic success must not erase an already reported failure for
+        // this activity. A retry is a distinct activity, with its own outcome.
+        if (_surface.Writer is ITranscriptToolResultFilter
+            && ToolStatus(previous) == ToolLineStatus.Failed && ToolStatus(detail) == ToolLineStatus.Ok) return;
         _settledToolRows[activity.ActivityId] = detail;
         var status = ToolStatus(detail);
         if (_surface.Presentation is { } presentation)
         {
             UpdateGroupWork(previous, detail);
+            if (_surface.Writer is ITranscriptToolResultFilter filter)
+            {
+                if (status == ToolLineStatus.Ok)
+                {
+                    filter.RemoveActivityPresentation(activity.ActivityId);
+                    return;
+                }
+                if (ToolStatus(previous) == ToolLineStatus.Ok)
+                {
+                    // A late failure must remain visible even if its first outcome
+                    // was successful and therefore never had a screen row.
+                    WriteNativeTool(detail, status, detail.Target);
+                    if (ResultLine(status, detail.SafeCode) is { } reason) WriteResultLine(reason);
+                    return;
+                }
+            }
             presentation.UpdateActivityPresentation(activity.ActivityId, TuiToolRow.ComposePresentation(status,
                 ActionLabel(detail, status), detail.Target, InspectorMetrics(detail), Width,
                 actionColumnWidth: ActivityActionColumnWidth), null);
@@ -328,6 +348,7 @@ public sealed partial class TuiTranscript
         // The public envelope's status describes the RUN, not this tool's
         // outcome. A running/completed run must not paint every tool as failed
         // (or every failed tool as successful). Typed activity carries the result.
+        var filterSuccesses = _surface.Writer is ITranscriptToolResultFilter;
         var status = envelope.Status.ToLowerInvariant() switch
         {
             "succeeded" => ToolLineStatus.Ok,
@@ -335,10 +356,16 @@ public sealed partial class TuiTranscript
             _ when detail?.State == AgentActivityState.Failed => ToolLineStatus.Failed,
             _ => ToolLineStatus.Unknown,
         };
+        // Native filtering must never conceal contradictory failure evidence.
+        // Append-only adapters retain their existing legacy envelope interpretation.
+        if (filterSuccesses && detail is not null && ToolStatus(detail) == ToolLineStatus.Failed)
+            status = ToolLineStatus.Failed;
+        if (status == ToolLineStatus.Ok && detail is not null && ToolStatus(detail) == ToolLineStatus.Unknown)
+            detail = detail with { State = AgentActivityState.Completed };
         var failed = status == ToolLineStatus.Failed;
 
         var target = detail?.Target;
-        var resultLine = ResultLine(status, detail?.State == AgentActivityState.Failed
+        var resultLine = ResultLine(status, failed && detail is not null
             && detail.SafeCode is not ("started" or "succeeded" or "ok" or "failed" or "error")
             ? detail.SafeCode : envelope.SafeSummary);
         // "process exit nonzero" under a row that already says "failed · exit 1" repeats it.
@@ -350,7 +377,8 @@ public sealed partial class TuiTranscript
         // auditable detail the durable stream carries, so it takes the target column.
         // A known tool with no target (terminal_read, terminal_stop) keeps an empty column:
         // its summary is a policy class ("read_only"), not something it acted on.
-        if (!failed && detail is null && string.IsNullOrWhiteSpace(target) && !string.IsNullOrWhiteSpace(envelope.SafeSummary))
+        var hideSuccess = status == ToolLineStatus.Ok && filterSuccesses;
+        if (!hideSuccess && !failed && detail is null && string.IsNullOrWhiteSpace(target) && !string.IsNullOrWhiteSpace(envelope.SafeSummary))
         {
             var safe = Escape(envelope.SafeSummary);
             if (_fullScreenCards)
@@ -364,7 +392,12 @@ public sealed partial class TuiTranscript
             }
         }
 
-        if (_fullScreenCards || _surface.Presentation is not null)
+        if (hideSuccess)
+        {
+            // Keep bounded metadata for late corrections without retaining a receipt.
+            if (detail is not null) _settledToolRows[detail.ActivityId] = detail;
+        }
+        else if (_fullScreenCards || _surface.Presentation is not null)
         {
             WriteToolRow(status, detail, target);
             if (resultLine is not null)
@@ -385,9 +418,9 @@ public sealed partial class TuiTranscript
             }
         }
 
-        // A bounded diff is part of the inline result now that tool rows have no
-        // inspector; both surfaces show the same first lines and overflow count.
-        ApplyDiffText(envelope.SafeSummary, Width);
+        // Diagnostic receipts retain bounded diffs; hidden successes must not leave
+        // result fragments behind. Plain logs keep their existing result output.
+        if (!hideSuccess) ApplyDiffText(envelope.SafeSummary, Width);
 
         _toolsSettled++;
         RecordGroupWork(detail, status);

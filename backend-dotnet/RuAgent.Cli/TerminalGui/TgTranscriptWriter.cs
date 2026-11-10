@@ -11,7 +11,7 @@ namespace RuAgent.Cli.TerminalGui;
 /// TextWriter and the older string interfaces remain import adapters for slash-command
 /// reports, diagnostics and existing callers; their ANSI parsing is outside that path.
 /// </summary>
-public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptView transcript) : TextWriter, ITranscriptLineWriter, ITranscriptStepRewriter, ITranscriptTurnRewriter, ITranscriptActivityWriter, ITranscriptPresentationWriter
+public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptView transcript) : TextWriter, ITranscriptLineWriter, ITranscriptStepRewriter, ITranscriptTurnRewriter, ITranscriptActivityWriter, ITranscriptPresentationWriter, ITranscriptToolResultFilter
 {
     private readonly StringBuilder _pending = new();
     private bool _rowOpen;

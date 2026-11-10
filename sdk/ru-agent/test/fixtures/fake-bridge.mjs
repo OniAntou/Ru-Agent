@@ -21,6 +21,8 @@ const METHODS = [
   "run.command",
   "run.reconcile",
   "run.output",
+  "subagent.list",
+  "subagent.get",
   "policy.list",
   "policy.import",
   "policy.remove",
@@ -108,6 +110,100 @@ rl.on("line", (line) => {
   if (request.method === "run.output") {
     const data = Buffer.from("hello", "utf8");
     send({ jsonrpc: "2.0", id: request.id, result: { encoding: "base64", data: data.toString("base64"), byte_length: data.length } });
+    return;
+  }
+  if (request.method === "host.status") {
+    send({ jsonrpc: "2.0", id: request.id, result: { ready: true, base_url: "http://127.0.0.1:9" } });
+    return;
+  }
+  if (request.method === "run.trust") {
+    send({
+      jsonrpc: "2.0",
+      id: request.id,
+      result: { run_id: request.params.runId, status: request.params.approve ? "running" : "cancelled" },
+    });
+    return;
+  }
+  if (request.method === "run.command") {
+    send({ jsonrpc: "2.0", id: request.id, result: { dispatched: request.params.command } });
+    return;
+  }
+  if (request.method === "run.reconcile") {
+    send({ jsonrpc: "2.0", id: request.id, result: { outcome: request.params.outcome, hash: request.params.hash } });
+    return;
+  }
+  if (request.method === "policy.list") {
+    send({
+      jsonrpc: "2.0",
+      id: request.id,
+      result: [
+        {
+          rule_id: "rule_" + "a".repeat(32),
+          scope: request.params.scope ?? "global",
+          decision: "allow",
+          matcher: { tool_id: "read" },
+          creation_order: 1,
+        },
+      ],
+    });
+    return;
+  }
+  if (request.method === "policy.import") {
+    send({
+      jsonrpc: "2.0",
+      id: request.id,
+      result: {
+        imported: [
+          { rule_id: "rule_" + "b".repeat(32), scope: "global", decision: "allow", matcher: { tool_id: "read" } },
+        ],
+      },
+    });
+    return;
+  }
+  if (request.method === "policy.remove") {
+    send({ jsonrpc: "2.0", id: request.id, result: { removed: request.params.ruleId } });
+    return;
+  }
+  if (request.method === "subagent.list") {
+    send({
+      jsonrpc: "2.0",
+      id: request.id,
+      result: {
+        root_run_id: request.params.runId,
+        root_status: "running",
+        snapshot_id: "snap_1",
+        agents: [],
+        preparations: [],
+        unavailable_attempts: 0,
+        usage: {
+          model_steps: 0,
+          reported_steps: 0,
+          input_tokens: null,
+          output_tokens: null,
+          total_tokens: null,
+          is_complete: true,
+        },
+      },
+    });
+    return;
+  }
+  if (request.method === "subagent.get") {
+    send({
+      jsonrpc: "2.0",
+      id: request.id,
+      result: {
+        root_run_id: request.params.runId,
+        agent: {
+          agent_id: request.params.agentId,
+          role: "coding",
+          task: null,
+          canceled: false,
+          attempts: [],
+          results: [],
+        },
+        result: null,
+      },
+    });
     return;
   }
   send({ jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "method_not_found: " + request.method } });

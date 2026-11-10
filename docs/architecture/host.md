@@ -102,8 +102,8 @@ External tools get a local-only stdio surface: `ru agent rpc` speaks JSON-RPC
 2.0 over stdin/stdout, resolving the same `runtime_descriptor.json` and bearer
 token and reusing the same HTTP/SSE clients as the CLI. It adds no HTTP route
 and opens no transport beyond stdio; the TypeScript SDK at
-[`sdk/ru-agent`](../../sdk/ru-agent/README.md) wraps the bridge with typed session
-and run handles.
+[`sdk/ru-agent`](../../sdk/ru-agent/README.md) wraps the bridge with typed
+host-status, session, run, subagent and policy handles.
 
 ### Multimodal image attachments
 

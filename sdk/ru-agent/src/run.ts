@@ -2,7 +2,7 @@ import { Subagents } from "./subagents.js";
 import { BridgeTransportError } from "./errors.js";
 import { BoundedQueue } from "./bounded-queue.js";
 import { RunSubscriptionOwnership } from "./run-subscription-ownership.js";
-import type { ApprovalDecision, RunEvent, RunTransient } from "./types.js";
+import type { ApprovalDecision, ReconcileOutcome, RunEvent, RunTransient, RunTrustResult } from "./types.js";
 import type { BridgeTransport } from "./transport.js";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "canceled", "interrupted"]);
@@ -273,6 +273,21 @@ export class Run {
 
   async continue(): Promise<void> {
     await this.transport.request("run.continue", { runId: this.runId });
+  }
+
+  /** Answers a pending workspace-trust challenge. The default denies, matching the bridge. */
+  async trust(approve = false): Promise<RunTrustResult> {
+    return await this.transport.request<RunTrustResult>("run.trust", { runId: this.runId, approve });
+  }
+
+  /** Dispatches a bounded run command through `run.command`. */
+  async command(command: string): Promise<Record<string, unknown>> {
+    return await this.transport.request<Record<string, unknown>>("run.command", { runId: this.runId, command });
+  }
+
+  /** Resolves a reconciliation request with an explicit outcome and 64-character hash. */
+  async reconcile(outcome: ReconcileOutcome, hash: string): Promise<Record<string, unknown>> {
+    return await this.transport.request<Record<string, unknown>>("run.reconcile", { runId: this.runId, outcome, hash });
   }
 
   async status(): Promise<Record<string, unknown>> {

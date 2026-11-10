@@ -11,7 +11,7 @@ the host, exactly as `ru agent run` can.
 Run it with no further arguments — `ru agent rpc`. The bridge owns stdin/stdout for its
 whole life, so it cannot be re-invoked between the phases of a run. The TypeScript SDK
 at [`sdk/ru-agent`](../../sdk/ru-agent/README.md) wraps the spawn and exposes typed
-session and run handles.
+host-status, session, run, subagent and policy handles.
 
 ## Framing
 
@@ -258,9 +258,11 @@ await ru.close();
 ```
 
 The SDK spawns the bridge, manages request ids and cancellation, and surfaces
-`data.ruCode` as a typed error field. `RuAgent.start()` also checks the
-`methods` handshake list against what the wrapper can call and rejects with
-`bridge_method_missing` on drift. `run.events()` ends on a terminal event and
+`data.ruCode` as a typed error field. It exposes host status, sessions, runs
+(including trust, commands, reconciliation and output), subagent observation and
+policy rules; `policies.import` and `policies.remove` require an explicit
+confirmation. `RuAgent.start()` checks the `methods` handshake list against what
+the wrapper can call and rejects with `bridge_method_missing` on drift. `run.events()` ends on a terminal event and
 throws a bounded `BridgeTransportError` if the subscription ends first
 (`run.detached`) or the bridge shuts down/exits, instead of waiting forever. See
 [`sdk/ru-agent/README.md`](../../sdk/ru-agent/README.md) for the full API.

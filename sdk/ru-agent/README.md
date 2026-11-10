@@ -2,7 +2,11 @@
 
 TypeScript client for the Ru agent RPC bridge. It spawns `ru agent rpc` as a child
 process, speaks newline-delimited JSON-RPC over stdio (protocol v1), and exposes
-typed session and run handles, including streaming run events.
+typed session, run, policy and subagent handles, including streaming run events.
+
+Current package version: **0.1.3**, aligned with the product's 0.1.3 release line.
+It covers every method the v1 bridge advertises; the handshake rejects a bridge
+that is missing any method the wrapper can call.
 
 ## Requirements
 
@@ -27,6 +31,34 @@ for await (const event of run.events()) {
 await run.cancel();
 await ru.close();
 ```
+
+## Host and policy rules
+
+```ts
+const status = await ru.host.status();          // { ready, base_url }
+const rules = await ru.policies.list("global");
+await ru.policies.import("C:\\policies.json", true);
+await ru.policies.remove(rules[0]!.rule_id, true);
+```
+
+`host.status()` reports readiness and the loopback base URL; it never returns the
+bearer token. `policies.list(scope?)` returns the host's policy rules.
+`import(file, true)` reads a v1 policy JSON file through the bridge, and
+`remove(ruleId, true)` deletes one rule. The literal `true` is part of the
+TypeScript signatures, so a caller cannot confirm a destructive policy change by
+accident; the bridge enforces the same requirement.
+
+## Run controls
+
+```ts
+await run.trust(true);                       // approve; the default false denies
+await run.command("/status");                // bounded run command
+await run.reconcile("applied", hash);        // applied | not_applied | unknown_continue
+```
+
+`trust` answers a pending workspace-trust challenge. `command` dispatches a
+bounded run command. `reconcile` resolves a durable reconciliation request; both
+the outcome and the 64-character snapshot hash are required.
 
 `RuAgent.start` accepts `command`, `args`, `agentArgs`, `cwd`, and `env` to
 control how the bridge process is spawned, and rejects the handshake if the
@@ -69,8 +101,9 @@ This does not send `run.cancel` to the shared Host.
 
 ## Protocol
 
-This SDK targets RPC protocol **v1**. The wire contract (methods,
-notifications, and error codes) is documented in
+This SDK targets RPC protocol **v1** and wraps its full method surface:
+sessions, runs, subagents, host status and policy rules. The wire contract
+(methods, notifications, and error codes) is documented in
 [`docs/operations/rpc.md`](../../docs/operations/rpc.md).
 
 ## Development
@@ -81,6 +114,10 @@ npm test        # vitest
 npm run typecheck
 npm run build   # tsup -> dist/
 ```
+
+TypeScript is pinned to 6.x: tsup 9 emits `dist/index.d.ts` through the TypeScript
+compiler API, which TypeScript 7 no longer ships. The CLI and typecheck run on
+6.0.3.
 
 ## Subagent observation
 

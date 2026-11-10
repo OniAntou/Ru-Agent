@@ -158,6 +158,39 @@ describe("RuAgent", () => {
     await ru.close();
   });
 
+  it("reads the host status", async () => {
+    const ru = await start();
+    await expect(ru.host.status()).resolves.toEqual({ ready: true, base_url: "http://127.0.0.1:9" });
+    await ru.close();
+  });
+
+  it("lists, imports and removes policy rules with explicit confirmation", async () => {
+    const ru = await start();
+    const rules = await ru.policies.list("global");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.scope).toBe("global");
+
+    const imported = await ru.policies.import("C:\\policy.json", true);
+    expect(imported.imported).toHaveLength(1);
+
+    const ruleId = "rule_" + "a".repeat(32);
+    await expect(ru.policies.remove(ruleId, true)).resolves.toEqual({ removed: ruleId });
+    await ru.close();
+  });
+
+  it("trusts, commands and reconciles through the run handle", async () => {
+    const ru = await start();
+    const run = await ru.runs.start({ workspace: "C:\\w", prompt: "hello" });
+
+    await expect(run.trust(true)).resolves.toMatchObject({ status: "running" });
+    await expect(run.trust()).resolves.toMatchObject({ status: "cancelled" });
+    await expect(run.command("/status")).resolves.toEqual({ dispatched: "/status" });
+
+    const hash = "a".repeat(64);
+    await expect(run.reconcile("applied", hash)).resolves.toEqual({ outcome: "applied", hash });
+    await ru.close();
+  });
+
   it("accepts a bridge that advertises every required method", async () => {
     const ru = await start();
     await ru.close();

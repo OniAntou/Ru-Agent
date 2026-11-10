@@ -1,24 +1,37 @@
+import { Policies } from "./policies.js";
 import { Subagents } from "./subagents.js";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { BridgeTransport } from "./transport.js";
 import { RuRpcError } from "./errors.js";
 import { Run } from "./run.js";
-import type { RunHandleInfo, RuAgentStartOptions } from "./types.js";
+import type { HostStatus, RunHandleInfo, RuAgentStartOptions } from "./types.js";
+
+/** Keep in sync with package.json. */
+const SDK_VERSION = "0.1.3";
 
 const REQUIRED_BRIDGE_METHODS = [
   "initialize",
+  "host.status",
   "session.create",
   "session.list",
   "session.rewind",
   "run.start",
   "run.attach",
   "run.detach",
+  "run.trust",
   "run.approve",
   "run.cancel",
   "run.continue",
   "run.status",
+  "run.command",
+  "run.reconcile",
   "run.output",
+  "subagent.list",
+  "subagent.get",
+  "policy.list",
+  "policy.import",
+  "policy.remove",
 ] as const;
 
 const HANDSHAKE_ERROR_MAX_CHARS = 256;
@@ -75,7 +88,7 @@ export class RuAgent {
     try {
       const handshake = await transport.request<Record<string, unknown>>("initialize", {
         protocolVersion: 1,
-        clientInfo: { name: "@ru/agent-sdk", version: "0.1.0" },
+        clientInfo: { name: "@ru/agent-sdk", version: SDK_VERSION },
       });
       assertBridgeHandshake(handshake);
     } catch (error) {
@@ -83,6 +96,16 @@ export class RuAgent {
       throw error;
     }
     return agent;
+  }
+
+  get host() {
+    return {
+      status: (): Promise<HostStatus> => this.#transport.request<HostStatus>("host.status", {}),
+    };
+  }
+
+  get policies(): Policies {
+    return new Policies(this.#transport);
   }
 
   get sessions() {

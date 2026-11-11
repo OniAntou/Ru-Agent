@@ -33,8 +33,11 @@ namespace RuApp.Services
         /// </summary>
         private const double CompletionSlackMilliseconds = 40;
 
-        /// <summary>Fades an element in and lifts it into place.</summary>
-        public static void Enter(FrameworkElement element)
+        /// <summary>
+        /// Fades an element in and lifts it into place. A <paramref name="delayMilliseconds"/>
+        /// holds it invisible first, so a run of cards can arrive one after another.
+        /// </summary>
+        public static void Enter(FrameworkElement element, double delayMilliseconds = 0)
         {
             ArgumentNullException.ThrowIfNull(element);
             if (!UiTiming.AnimationsEnabled)
@@ -48,7 +51,7 @@ namespace RuApp.Services
                 var visual = ElementVisual(element);
                 visual.Opacity = 0f;
                 visual.Properties.InsertVector3(TranslationProperty, new Vector3(0f, (float)RiseDistance, 0f));
-                Animate(visual, toOpacity: 1f, translationY: 0f, EntranceMilliseconds);
+                Animate(visual, toOpacity: 1f, translationY: 0f, EntranceMilliseconds, delayMilliseconds);
             }
             catch (Exception error)
             {
@@ -316,7 +319,8 @@ namespace RuApp.Services
             return (ContainerVisual)ElementCompositionPreview.GetElementVisual(element);
         }
 
-        private static void Animate(ContainerVisual visual, float toOpacity, float translationY, double milliseconds)
+        private static void Animate(
+            ContainerVisual visual, float toOpacity, float translationY, double milliseconds, double delayMilliseconds = 0)
         {
             var compositor = visual.Compositor;
             var duration = TimeSpan.FromMilliseconds(milliseconds);
@@ -325,12 +329,26 @@ namespace RuApp.Services
             var fade = compositor.CreateScalarKeyFrameAnimation();
             fade.InsertKeyFrame(1f, toOpacity, ease);
             fade.Duration = duration;
+            ApplyDelay(fade, delayMilliseconds);
             visual.StartAnimation("Opacity", fade);
 
             var glide = compositor.CreateVector3KeyFrameAnimation();
             glide.InsertKeyFrame(1f, new Vector3(0f, translationY, 0f), ease);
             glide.Duration = duration;
+            ApplyDelay(glide, delayMilliseconds);
             visual.StartAnimation(TranslationProperty, glide);
+        }
+
+        /// <summary>The element keeps its starting value until the delay has passed.</summary>
+        private static void ApplyDelay(KeyFrameAnimation animation, double delayMilliseconds)
+        {
+            if (delayMilliseconds <= 0)
+            {
+                return;
+            }
+
+            animation.DelayTime = TimeSpan.FromMilliseconds(delayMilliseconds);
+            animation.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
         }
 
         /// <summary>

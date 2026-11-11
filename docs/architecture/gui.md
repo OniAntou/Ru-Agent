@@ -534,7 +534,7 @@ every entry calls an existing handler (a permission change goes through
 `ShellViewModel.ChoosePresetInSettings`, the Settings path). Shortcuts live in
 `KeyboardShortcutCatalog`, which the shell's key handler, the palette hints and the
 shortcuts sheet share; the composer still carries no permission control.
-`ApprovalRulesViewModel` backs Settings → Approval rules through `IApprovalRulesClient`
+`ApprovalRulesViewModel` backs Settings → Permissions (remembered approvals) through `IApprovalRulesClient`
 (implemented by the run client adapter over `GET/DELETE /agent/v1/policies`): it reads
 global rules once and project rules per workspace the user has sessions in, keeps its
 rows when a read fails, and only removes rules. `ChatComposerViewModel` keeps an

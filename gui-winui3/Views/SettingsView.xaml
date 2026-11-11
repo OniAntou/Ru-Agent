@@ -112,6 +112,16 @@
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel x:Name="SettingsNavigationButtons" Spacing="4">
                         <TextBlock x:Name="SettingsNavigationHeading" Text="Settings" Style="{StaticResource SidebarCategoryHeadingStyle}" Margin="8,0,8,6" />
+                        <TextBox x:Name="SettingsSearchBox"
+                                 PlaceholderText="Search settings"
+                                 AutomationProperties.Name="Search settings"
+                                 FontFamily="{StaticResource RuUiFontFamily}"
+                                 FontSize="12.5"
+                                 MinHeight="32"
+                                 Margin="0,0,0,8"
+                                 IsSpellCheckEnabled="False"
+                                 TextChanged="OnSettingsSearchChanged"
+                                 KeyDown="OnSettingsSearchKeyDown" />
                         <!-- General Tab Button -->
                         <Button x:Name="NavGeneralBtn"
                                 Content="General"
@@ -125,8 +135,8 @@
                                 Click="OnNavModelsClick"
                                 Style="{StaticResource SidebarNavButtonStyle}" />
                         <Button x:Name="NavRulesBtn"
-                                Content="Approval rules"
-                                AutomationProperties.Name="Approval rules"
+                                Content="Permissions"
+                                AutomationProperties.Name="Permissions"
                                 Click="OnNavRulesClick"
                                 Style="{StaticResource SidebarNavButtonStyle}" />
                         <Button x:Name="NavShortcutsBtn"
@@ -134,9 +144,15 @@
                                 AutomationProperties.Name="Keyboard shortcuts"
                                 Click="OnNavShortcutsClick"
                                 Style="{StaticResource SidebarNavButtonStyle}" />
+                        <TextBlock x:Name="SettingsNavigationRuHeading" Text="Ru" Style="{StaticResource SidebarCategoryHeadingStyle}" />
                         <Button x:Name="NavAboutBtn" Content="About"
                                 AutomationProperties.Name="About Ru"
                                 Click="OnNavAboutClick" Style="{StaticResource SidebarNavButtonStyle}" />
+                        <TextBlock x:Name="SettingsNoResultsText"
+                                   Visibility="Collapsed"
+                                   Margin="8,8,8,0"
+                                   Style="{StaticResource SettingDescStyle}"
+                                   AutomationProperties.LiveSetting="Polite" />
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
@@ -178,106 +194,60 @@
                             <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Appearance" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Choose Light, Dark, or Meteor Shower" Style="{StaticResource SettingDescStyle}" />
+                                    <TextBlock Text="Light, Dark, or Meteor Shower (dark with falling stars)" Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
-                                <Button x:Name="ThemeButton"
-                                        Grid.Column="1"
-                                        Width="260"
-                                        MinHeight="36"
-                                        Style="{StaticResource RuDropdownButtonStyle}"
+                                <Border x:Name="ThemeChoice" Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Padding="3"
+                                        Background="{StaticResource RuCanvasBrush}"
+                                        BorderBrush="{StaticResource RuLineBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="{StaticResource AppControlCornerRadius}"
                                         AutomationProperties.Name="Appearance theme">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock x:Name="ThemeButtonLabel"
-                                                   Text="Dark"
-                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                   FontSize="13"
-                                                   FontWeight="Medium"
-                                                   Foreground="{StaticResource RuInkBrush}"
-                                                   VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis" />
-                                        <FontIcon Grid.Column="1"
-                                                  Glyph="&#xE70D;"
-                                                  FontSize="9"
-                                                  Foreground="{StaticResource RuMutedBrush}"
-                                                  VerticalAlignment="Center"
-                                                  Margin="8,0,0,0" />
-                                    </Grid>
-                                    <Button.Flyout>
-                                        <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
-                                            <StackPanel Width="260" Spacing="2">
-                                                <Button x:Name="ThemeDarkOption"
-                                                        Tag="dark"
-                                                        Click="OnThemeOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Dark theme">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="ThemeDarkText"
-                                                                   Text="Dark"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="ThemeDarkCheck"
-                                                                  Grid.Column="1"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                                <Button x:Name="ThemeLightOption"
-                                                        Tag="light"
-                                                        Click="OnThemeOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Light theme">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="ThemeLightText"
-                                                                   Text="Light"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="ThemeLightCheck"
-                                                                  Grid.Column="1"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                                <Button x:Name="ThemeDarkMeteorOption"
-                                                        Tag="dark-meteor"
-                                                        Click="OnThemeOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Dark Meteor Shower theme">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="ThemeDarkMeteorText"
-                                                                   Text="Dark Meteor Shower"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="ThemeDarkMeteorCheck"
-                                                                  Grid.Column="1"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                            </StackPanel>
-                                        </Flyout>
-                                    </Button.Flyout>
-                                </Button>
+                                    <Grid x:Name="ThemeTrack">
+                                        <Border x:Name="ThemeThumb"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Center"
+                                                Opacity="0"
+                                                IsHitTestVisible="False"
+                                                Background="{StaticResource RuSurfaceBrush}"
+                                                CornerRadius="{StaticResource AppControlCornerRadius}" />
+                                        <StackPanel Orientation="Horizontal" Spacing="2">
+                                        <StackPanel.Resources>
+                                            <Style x:Key="ThemeSegment" TargetType="ToggleButton">
+                                                <Setter Property="MinWidth" Value="72" />
+                                                <Setter Property="Padding" Value="12,5" />
+                                                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                                                <Setter Property="FontSize" Value="13" />
+                                                <Setter Property="BorderThickness" Value="0" />
+                                                <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
+                                            </Style>
+                                            <SolidColorBrush x:Key="ToggleButtonBackgroundChecked" Color="Transparent" />
+                                            <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="Transparent" />
+                                            <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="Transparent" />
+                                            <SolidColorBrush x:Key="ToggleButtonForegroundChecked" Color="{ThemeResource RuInkColor}" />
+                                            <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="{ThemeResource RuInkColor}" />
+                                            <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPressed" Color="{ThemeResource RuInkColor}" />
+                                            <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="Transparent" />
+                                            <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="Transparent" />
+                                            <SolidColorBrush x:Key="ToggleButtonForegroundPointerOver" Color="{ThemeResource RuInkColor}" />
+                                        </StackPanel.Resources>
+                                        <ToggleButton x:Name="ThemeLightOption" Content="Light" Tag="light"
+                                                      Style="{StaticResource ThemeSegment}"
+                                                      Click="OnThemeOptionClick"
+                                                      AutomationProperties.Name="Light theme" />
+                                        <ToggleButton x:Name="ThemeDarkOption" Content="Dark" Tag="dark"
+                                                      Style="{StaticResource ThemeSegment}"
+                                                      Click="OnThemeOptionClick"
+                                                      AutomationProperties.Name="Dark theme" />
+                                        <ToggleButton x:Name="ThemeDarkMeteorOption" Content="Meteor" Tag="dark-meteor"
+                                                      Style="{StaticResource ThemeSegment}"
+                                                      Click="OnThemeOptionClick"
+                                                      AutomationProperties.Name="Dark Meteor Shower theme" />
+                                    </StackPanel></Grid>
+                                </Border>
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -328,7 +298,15 @@
                                     BorderThickness="1"
                                     CornerRadius="{StaticResource AppControlCornerRadius}"
                                     AutomationProperties.LabeledBy="{Binding ElementName=AgentActivityStyleLabel}">
-                                <StackPanel Orientation="Horizontal" Spacing="2">
+                                <Grid x:Name="ActivityTrack">
+                                        <Border x:Name="ActivityThumb"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Center"
+                                                Opacity="0"
+                                                IsHitTestVisible="False"
+                                                Background="{StaticResource RuSurfaceBrush}"
+                                                CornerRadius="{StaticResource AppControlCornerRadius}" />
+                                        <StackPanel Orientation="Horizontal" Spacing="2">
                                     <StackPanel.Resources>
                                         <Style x:Key="ActivityStyleSegment" TargetType="ToggleButton">
                                             <Setter Property="MinWidth" Value="84" />
@@ -340,9 +318,9 @@
                                             <Setter Property="Background" Value="Transparent" />
                                             <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
                                         </Style>
-                                        <SolidColorBrush x:Key="ToggleButtonBackgroundChecked" Color="{ThemeResource RuSurfaceColor}" />
-                                        <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="{ThemeResource RuSurfaceColor}" />
-                                        <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="{ThemeResource RuSurfaceColor}" />
+                                        <SolidColorBrush x:Key="ToggleButtonBackgroundChecked" Color="Transparent" />
+                                        <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="Transparent" />
+                                        <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="Transparent" />
                                         <SolidColorBrush x:Key="ToggleButtonForegroundChecked" Color="{ThemeResource RuInkColor}" />
                                         <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="{ThemeResource RuInkColor}" />
                                         <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPressed" Color="{ThemeResource RuInkColor}" />
@@ -358,7 +336,7 @@
                                                   Style="{StaticResource ActivityStyleSegment}"
                                                   Click="OnAgentActivityStyleClick"
                                                   AutomationProperties.Name="Compact agent activity" />
-                                </StackPanel>
+                                </StackPanel></Grid>
                             </Border>
                         </Grid>
                     </Border>
@@ -420,125 +398,6 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Agent Capabilities Card -->
-                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
-                        <StackPanel Spacing="16">
-                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                    <TextBlock Text="Permission preset" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Applies to new turns. Full Access asks to confirm before the next one."
-                                               Style="{StaticResource SettingDescStyle}" />
-                                </StackPanel>
-                                <Button x:Name="PresetButton"
-                                        Grid.Column="1"
-                                        Width="260"
-                                        MinHeight="36"
-                                        Style="{StaticResource RuDropdownButtonStyle}"
-                                        AutomationProperties.Name="Permission preset">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock x:Name="PresetButtonLabel"
-                                                   Text="Standard"
-                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                   FontSize="13"
-                                                   FontWeight="Medium"
-                                                   Foreground="{StaticResource RuInkBrush}"
-                                                   VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis" />
-                                        <FontIcon Grid.Column="1"
-                                                  Glyph="&#xE70D;"
-                                                  FontSize="9"
-                                                  Foreground="{StaticResource RuMutedBrush}"
-                                                  VerticalAlignment="Center"
-                                                  Margin="8,0,0,0" />
-                                    </Grid>
-                                    <Button.Flyout>
-                                        <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
-                                            <StackPanel Width="260" Spacing="2">
-                                                <Button x:Name="PresetPlanOption"
-                                                        Tag="plan"
-                                                        Click="OnPresetOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Plan preset">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <StackPanel Spacing="1">
-                                                            <TextBlock x:Name="PresetPlanText"
-                                                                       Text="Plan"
-                                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                                       FontSize="12.5"
-                                                                       Foreground="{StaticResource RuInkBrush}"
-                                                                       TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="Reads and web run automatically; edits and terminal are refused."
-                                                                       Style="{StaticResource SettingDescStyle}" />
-                                                        </StackPanel>
-                                                        <FontIcon x:Name="PresetPlanCheck"
-                                                                  Grid.Column="1"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                                <Button x:Name="PresetStandardOption"
-                                                        Tag="standard"
-                                                        Click="OnPresetOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Standard preset">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <StackPanel Spacing="1">
-                                                            <TextBlock x:Name="PresetStandardText"
-                                                                       Text="Standard"
-                                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                                       FontSize="12.5"
-                                                                       Foreground="{StaticResource RuInkBrush}"
-                                                                       TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="Workspace edits and terminal commands run automatically. External working directories and explicit rules ask."
-                                                                       Style="{StaticResource SettingDescStyle}" />
-                                                        </StackPanel>
-                                                        <FontIcon x:Name="PresetStandardCheck"
-                                                                  Grid.Column="1"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                                <Button x:Name="PresetFullAccessOption"
-                                                        Tag="full_access"
-                                                        Click="OnPresetOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Full Access preset">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <StackPanel Spacing="1">
-                                                            <TextBlock x:Name="PresetFullAccessText"
-                                                                       Text="Full Access"
-                                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                                       FontSize="12.5"
-                                                                       Foreground="{StaticResource RuInkBrush}"
-                                                                       TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="Skips approval prompts; terminal runs as your Windows user."
-                                                                       Style="{StaticResource SettingDescStyle}" />
-                                                        </StackPanel>
-                                                        <FontIcon x:Name="PresetFullAccessCheck"
-                                                                  Grid.Column="1"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                            </StackPanel>
-                                        </Flyout>
-                                    </Button.Flyout>
-                                </Button>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
             </ScrollViewer>
 
@@ -960,12 +819,95 @@
                                                     Visibility="{x:Bind ViewModel.IsCustomEditorOpen, Mode=OneWay}" />
                 </StackPanel>
             </ScrollViewer>
-            <!-- Approval rules: what "Always allow" remembered, and the way to forget it. -->
+            <!-- Permissions: the session preset, then what "Always allow" remembered and the way to forget it. -->
             <ScrollViewer x:Name="PanelRulesScrollViewer" Grid.Row="1"
                           Padding="28,20,28,32" Background="Transparent"
                           HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
                           Visibility="Collapsed">
                 <StackPanel Spacing="16">
+                    <!-- Permission preset: three named cards, so what each one allows is read before choosing. -->
+                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
+                        <StackPanel Spacing="12">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Permission preset" Style="{StaticResource SettingLabelStyle}" />
+                                <TextBlock Text="Applies to new turns. Full Access asks to confirm before the next one."
+                                           Style="{StaticResource SettingDescStyle}" />
+                            </StackPanel>
+                            <Grid x:Name="PresetChoice" ColumnDefinitions="*,*,*" ColumnSpacing="8"
+                                  AutomationProperties.Name="Permission preset">
+                                <Grid.Resources>
+                                    <Style x:Key="PresetCard" TargetType="ToggleButton">
+                                        <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                        <Setter Property="VerticalAlignment" Value="Stretch" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Left" />
+                                        <Setter Property="VerticalContentAlignment" Value="Top" />
+                                        <Setter Property="Padding" Value="12" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
+                                        <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                    </Style>
+                                    <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="RuAccentSoftBrush" />
+                                    <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="RuAccentSoftBrush" />
+                                    <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="RuAccentSoftBrush" />
+                                    <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="RuAccentBrush" />
+                                    <StaticResource x:Key="ToggleButtonBorderBrushCheckedPointerOver" ResourceKey="RuAccentBrush" />
+                                    <StaticResource x:Key="ToggleButtonBorderBrushCheckedPressed" ResourceKey="RuAccentBrush" />
+                                    <StaticResource x:Key="ToggleButtonBackgroundPointerOver" ResourceKey="RuAccentSoftBrush" />
+                                    <StaticResource x:Key="ToggleButtonBackgroundPressed" ResourceKey="RuAccentSoftBrush" />
+                                </Grid.Resources>
+                                <ToggleButton x:Name="PresetPlanOption" Grid.Column="0" Tag="plan"
+                                          Style="{StaticResource PresetCard}"
+                                          Click="OnPresetOptionClick"
+                                          AutomationProperties.Name="Plan preset">
+                                <StackPanel Spacing="4">
+                                    <TextBlock x:Name="PresetPlanText" Text="Plan"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource RuInkBrush}" />
+                                    <TextBlock Text="Reads and web run automatically; edits and terminal are refused."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                            </ToggleButton>
+                                <ToggleButton x:Name="PresetStandardOption" Grid.Column="1" Tag="standard"
+                                          Style="{StaticResource PresetCard}"
+                                          Click="OnPresetOptionClick"
+                                          AutomationProperties.Name="Standard preset">
+                                <StackPanel Spacing="4">
+                                    <TextBlock x:Name="PresetStandardText" Text="Standard"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource RuInkBrush}" />
+                                    <TextBlock Text="Workspace edits and terminal commands run automatically. External working directories and explicit rules ask."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                            </ToggleButton>
+                                <ToggleButton x:Name="PresetFullAccessOption" Grid.Column="2" Tag="full_access"
+                                          Style="{StaticResource PresetCard}"
+                                          Click="OnPresetOptionClick"
+                                          AutomationProperties.Name="Full Access preset">
+                                <StackPanel Spacing="4">
+                                    <TextBlock x:Name="PresetFullAccessText" Text="Full Access"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource RuInkBrush}" />
+                                    <TextBlock Text="Skips approval prompts; terminal runs as your Windows user."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                            </ToggleButton>
+                            </Grid>
+                            <Border x:Name="FullAccessNotice" Visibility="Collapsed"
+                                    Padding="12,8"
+                                    BorderBrush="{StaticResource AppWarningBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource AppControlCornerRadius}">
+                                <TextBlock Text="Full Access skips approval prompts. Terminal commands run as your Windows user, with no filesystem or network confinement."
+                                           Style="{StaticResource SettingDescStyle}"
+                                           Foreground="{StaticResource RuInkBrush}" />
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
                     <Border Style="{StaticResource FluentCardStyle}">
                         <StackPanel Spacing="12">
                             <Grid ColumnDefinitions="*,Auto">
@@ -990,6 +932,12 @@
                                        Visibility="{x:Bind Rules.HasNoRules, Mode=OneWay}"
                                        Style="{StaticResource SettingDescStyle}" TextWrapping="Wrap" />
                             <ItemsControl x:Name="RulesList" ItemsSource="{x:Bind Rules.Rules}">
+                                <ItemsControl.ItemContainerTransitions>
+                                    <TransitionCollection>
+                                        <EntranceThemeTransition IsStaggeringEnabled="True" />
+                                        <RepositionThemeTransition />
+                                    </TransitionCollection>
+                                </ItemsControl.ItemContainerTransitions>
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <StackPanel Spacing="8" />
@@ -1050,34 +998,93 @@
                           HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
                           Visibility="Collapsed">
                 <StackPanel Spacing="16">
-                    <Border Style="{StaticResource FluentCardStyle}">
+                    <!-- Plain text, no tile or badges: the name, what it is, and one line of facts. -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Ru Agent" FontSize="22" FontWeight="SemiBold"
+                                   FontFamily="{StaticResource RuDisplayFontFamily}" Foreground="{StaticResource RuInkBrush}" />
+                        <TextBlock Text="Windows coding agent" Style="{StaticResource SettingDescStyle}" />
+                        <TextBlock Style="{StaticResource SettingDescStyle}">
+                            <Run x:Name="AboutVersionText" /><Run Text=" · " /><Run x:Name="AboutBuildText" /><Run Text=" · " /><Run x:Name="AboutPlatformText" /><Run Text=" · " /><Hyperlink NavigateUri="https://github.com/OniAntou/Ru-Agent">GitHub</Hyperlink>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <TextBlock Text="Updates" Style="{StaticResource SidebarCategoryHeadingStyle}" Margin="0,8,0,0" />
+                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
                         <StackPanel Spacing="12">
-                            <TextBlock Text="Ru Agent" FontSize="22" FontWeight="SemiBold"
-                                       FontFamily="{StaticResource RuDisplayFontFamily}" Foreground="{StaticResource RuInkBrush}" />
-                            <TextBlock Text="Windows coding agent" Style="{StaticResource SettingDescStyle}" />
-                            <TextBlock x:Name="AboutVersionText" Style="{StaticResource SettingLabelStyle}" />
-                            <TextBlock x:Name="AboutBuildText" Style="{StaticResource SettingDescStyle}" />
-                            <TextBlock x:Name="AboutPlatformText" Style="{StaticResource SettingDescStyle}" />
-                            <HyperlinkButton Content="GitHub · OniAntou/Ru-Agent"
-                                             NavigateUri="https://github.com/OniAntou/Ru-Agent"
-                                             HorizontalAlignment="Left" Padding="0" />
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource FluentCardStyle}">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="Updates" Style="{StaticResource SettingLabelStyle}" />
-                            <ComboBox x:Name="UpdateChannelCombo" Header="Release channel" SelectedIndex="0"
-                                      SelectionChanged="OnUpdateChannelChanged" HorizontalAlignment="Stretch">
-                                <ComboBoxItem Content="Stable" />
-                                <ComboBoxItem Content="Preview — includes early releases" />
-                            </ComboBox>
-                            <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" Style="{StaticResource SettingDescStyle}" />
-                            <ProgressBar x:Name="UpdateProgress" Minimum="0" Maximum="100" Visibility="Collapsed" />
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button x:Name="CheckUpdatesButton" Content="Check for updates" Click="OnCheckUpdatesClick" />
-                                <Button x:Name="InstallUpdateButton" Content="Install and restart" IsEnabled="False" Click="OnInstallUpdateClick" />
-                                <Button x:Name="CancelUpdateButton" Content="Cancel" Visibility="Collapsed" Click="OnCancelUpdateClick" />
-                            </StackPanel>
+                            <!-- One row, one state: the headline names it and the buttons follow it. -->
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock x:Name="UpdateHeadlineText" Style="{StaticResource SettingLabelStyle}"
+                                               AutomationProperties.LiveSetting="Polite" />
+                                    <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <Button x:Name="CheckUpdatesButton" Content="Check for updates"
+                                            Style="{StaticResource RuToolbarButtonStyle}" Click="OnCheckUpdatesClick" />
+                                    <Button x:Name="InstallUpdateButton" Content="Install and restart" IsEnabled="False"
+                                            Visibility="Collapsed"
+                                            Style="{StaticResource RuPrimaryButtonStyle}" Click="OnInstallUpdateClick" />
+                                    <Button x:Name="CancelUpdateButton" Content="Cancel" Visibility="Collapsed"
+                                            Style="{StaticResource RuToolbarButtonStyle}" Click="OnCancelUpdateClick" />
+                                </StackPanel>
+                            </Grid>
+                            <ProgressBar x:Name="UpdateProgress" Minimum="0" Maximum="100" MinHeight="2" Visibility="Collapsed" />
+                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.5" />
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock x:Name="UpdateChannelLabel" Text="Release channel" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Preview includes early releases." Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <Border x:Name="UpdateChannelChoice" Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Padding="3"
+                                        Background="{StaticResource RuCanvasBrush}"
+                                        BorderBrush="{StaticResource RuLineBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="{StaticResource AppControlCornerRadius}"
+                                        AutomationProperties.LabeledBy="{Binding ElementName=UpdateChannelLabel}">
+                                    <Grid x:Name="UpdateChannelTrack">
+                                        <Border x:Name="UpdateChannelThumb"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Center"
+                                                Opacity="0"
+                                                IsHitTestVisible="False"
+                                                Background="{StaticResource RuSurfaceBrush}"
+                                                CornerRadius="{StaticResource AppControlCornerRadius}" />
+                                        <StackPanel Orientation="Horizontal" Spacing="2">
+                                            <StackPanel.Resources>
+                                                <Style x:Key="ChannelSegment" TargetType="ToggleButton">
+                                                    <Setter Property="MinWidth" Value="72" />
+                                                    <Setter Property="Padding" Value="12,5" />
+                                                    <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                                                    <Setter Property="FontSize" Value="13" />
+                                                    <Setter Property="BorderThickness" Value="0" />
+                                                    <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
+                                                </Style>
+                                                <SolidColorBrush x:Key="ToggleButtonBackgroundChecked" Color="Transparent" />
+                                                <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="Transparent" />
+                                                <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="Transparent" />
+                                                <SolidColorBrush x:Key="ToggleButtonForegroundChecked" Color="{ThemeResource RuInkColor}" />
+                                                <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="{ThemeResource RuInkColor}" />
+                                                <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPressed" Color="{ThemeResource RuInkColor}" />
+                                                <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="Transparent" />
+                                                <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="Transparent" />
+                                                <SolidColorBrush x:Key="ToggleButtonForegroundPointerOver" Color="{ThemeResource RuInkColor}" />
+                                            </StackPanel.Resources>
+                                            <ToggleButton x:Name="UpdateStableOption" Content="Stable" Tag="stable"
+                                                          Style="{StaticResource ChannelSegment}"
+                                                          Click="OnUpdateChannelClick"
+                                                          AutomationProperties.Name="Stable release channel" />
+                                            <ToggleButton x:Name="UpdatePreviewOption" Content="Preview" Tag="preview"
+                                                          Style="{StaticResource ChannelSegment}"
+                                                          Click="OnUpdateChannelClick"
+                                                          AutomationProperties.Name="Preview release channel" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>

@@ -11,7 +11,7 @@ public sealed class AboutUpdatesUiContractTests
         var about = GuiSource.Require(document, "PanelAboutScrollViewer");
         var general = GuiSource.Require(document, "PanelGeneralScrollViewer");
         GuiSource.Require(document, "NavAboutBtn");
-        foreach (var name in new[] { "AboutVersionText", "AboutBuildText", "AboutPlatformText", "UpdateChannelCombo", "CheckUpdatesButton", "InstallUpdateButton" })
+        foreach (var name in new[] { "AboutVersionText", "AboutBuildText", "AboutPlatformText", "UpdateChannelChoice", "CheckUpdatesButton", "InstallUpdateButton" })
         {
             var control = GuiSource.Require(document, name);
             Assert.Contains(about, control.Ancestors());

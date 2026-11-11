@@ -52,6 +52,9 @@ public sealed partial class SettingsView
         SettingsNavigationScroll.VerticalScrollBarVisibility = narrow ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
         SettingsNavigationScroll.VerticalScrollMode = narrow ? ScrollMode.Disabled : ScrollMode.Enabled;
         SettingsNavigationHeading.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
+        SettingsSearchBox.Width = narrow ? 200 : double.NaN;
+        SettingsSearchBox.Margin = narrow ? new Thickness(0) : new Thickness(0, 0, 0, 8);
+        UpdateRuHeadingVisibility();
         ProviderActions.Orientation = narrow ? Orientation.Vertical : Orientation.Horizontal;
         Grid.SetColumn(SettingsBody, narrow ? 0 : 1);
         Grid.SetColumnSpan(SettingsBody, narrow ? 2 : 1);

@@ -306,16 +306,16 @@ public sealed class AgentApprovalUiContractTests
     [Fact]
     public void The_single_preset_control_offers_the_ladder_only()
     {
-        // The permission preset lives in exactly one control: the Settings dropdown.
+        // The permission preset lives in exactly one control: the Settings preset cards.
         // The composer's duplicate ComboBox was retired, so the session preset is
         // chosen where it is persisted, not on the message input row.
         var chatView = GuiSource.NamedElements(GuiSource.Xml("Views", "ChatView.xaml"));
         Assert.False(chatView.ContainsKey("AgentPresetBox"), "AgentPresetBox was retired from the composer.");
 
         var document = GuiSource.Xml("Views", "SettingsView.xaml");
-        var presetButton = GuiSource.Require(document, "PresetButton");
+        var presetChoice = GuiSource.Require(document, "PresetChoice");
 
-        var tags = presetButton.Descendants()
+        var tags = presetChoice.Descendants()
             .Select(element => GuiSource.AttributeValue(element, "Tag"))
             .Where(tag => tag is not null)
             .ToList();

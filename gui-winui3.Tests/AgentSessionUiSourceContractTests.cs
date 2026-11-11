@@ -447,9 +447,9 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains(AgentPermissionPreset.FullAccess, Enum.GetValues<AgentPermissionPreset>());
 
         var document = GuiSource.Xml("Views", "SettingsView.xaml");
-        var presetButton = GuiSource.Require(document, "PresetButton");
+        var presetChoice = GuiSource.Require(document, "PresetChoice");
 
-        var tags = presetButton.Descendants()
+        var tags = presetChoice.Descendants()
             .Select(element => GuiSource.AttributeValue(element, "Tag"))
             .Where(tag => tag is not null)
             .ToList();

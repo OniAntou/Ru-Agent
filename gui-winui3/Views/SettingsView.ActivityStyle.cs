@@ -39,6 +39,7 @@ namespace RuApp.Views
             VerboseActivityOption.IsChecked = !compact;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(
                 AgentActivityStyleChoice, compact ? "Compact" : "Verbose");
+            PlaceSegmentThumb(ActivityThumb);
         }
     }
 }

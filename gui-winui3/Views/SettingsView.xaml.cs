@@ -59,10 +59,6 @@ namespace RuApp.Views
         /// </summary>
         private double _transcriptSize = TranscriptTypography.Instance.MessageFontSize;
 
-        private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value);
-
-        private IReadOnlyList<DropdownOption>? _themeOptions;
-        private IReadOnlyList<DropdownOption>? _presetOptions;
 
         public SettingsView()
         {
@@ -71,7 +67,8 @@ namespace RuApp.Views
             this.InitializeComponent();
             InitializeSettingsLayout();
             InitializeUpdates();
-            InitDropdownOptions();
+            InitChoiceControls();
+            InitializeSegmentThumbs();
             InitTranscriptSizeOptions();
             InitializeActivityStyleChoice();
             InitializeSettingsHoverEffects();
@@ -159,53 +156,26 @@ namespace RuApp.Views
 
         private void RefreshThemeUI()
         {
-            if (_themeOptions == null || ThemeButtonLabel == null) return;
-            RefreshDropdownUI(_themeOptions, ViewModel.ThemeChoice, ThemeButtonLabel);
+            if (ThemeChoice == null) return;
+            var current = ViewModel.ThemeChoice;
+            foreach (var segment in new[] { ThemeLightOption, ThemeDarkOption, ThemeDarkMeteorOption })
+                segment.IsChecked = string.Equals(segment.Tag as string, current, StringComparison.OrdinalIgnoreCase);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(ThemeChoice, current);
+            PlaceSegmentThumb(ThemeThumb);
         }
 
         private void RefreshPresetUI()
         {
-            if (_presetOptions == null || PresetButtonLabel == null) return;
-            RefreshDropdownUI(_presetOptions, ViewModel.PresetChoice, PresetButtonLabel);
+            if (PresetChoice == null) return;
+            var current = ViewModel.PresetChoice;
+            foreach (var card in new[] { PresetPlanOption, PresetStandardOption, PresetFullAccessOption })
+                card.IsChecked = string.Equals(card.Tag as string, current, StringComparison.OrdinalIgnoreCase);
+            UiMotion.SetVisible(FullAccessNotice, string.Equals(current, "full_access", StringComparison.OrdinalIgnoreCase));
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(PresetChoice, current);
         }
 
-        private static void RefreshDropdownUI(
-            IReadOnlyList<DropdownOption> options,
-            string current,
-            TextBlock triggerLabel)
+        private void InitChoiceControls()
         {
-            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            var selectedBrush = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
-            foreach (var option in options)
-            {
-                bool isSelected = string.Equals(option.Value, current, StringComparison.OrdinalIgnoreCase);
-                option.Button.Background = isSelected ? selectedBrush : transparent;
-                option.Check.Visibility = isSelected ? Visibility.Visible : Visibility.Collapsed;
-                option.Label.FontWeight = isSelected
-                    ? Microsoft.UI.Text.FontWeights.SemiBold
-                    : Microsoft.UI.Text.FontWeights.Normal;
-                option.Label.Opacity = isSelected ? 1.0 : 0.88;
-                if (isSelected)
-                {
-                    triggerLabel.Text = option.Label.Text;
-                }
-            }
-        }
-
-        private void InitDropdownOptions()
-        {
-            _themeOptions = new[]
-            {
-                new DropdownOption(ThemeDarkOption, ThemeDarkText, ThemeDarkCheck, "dark"),
-                new DropdownOption(ThemeLightOption, ThemeLightText, ThemeLightCheck, "light"),
-                new DropdownOption(ThemeDarkMeteorOption, ThemeDarkMeteorText, ThemeDarkMeteorCheck, "dark-meteor"),
-            };
-            _presetOptions = new[]
-            {
-                new DropdownOption(PresetPlanOption, PresetPlanText, PresetPlanCheck, "plan"),
-                new DropdownOption(PresetStandardOption, PresetStandardText, PresetStandardCheck, "standard"),
-                new DropdownOption(PresetFullAccessOption, PresetFullAccessText, PresetFullAccessCheck, "full_access"),
-            };
             RefreshThemeUI();
             RefreshPresetUI();
         }
@@ -363,16 +333,18 @@ namespace RuApp.Views
 
         private void OnThemeOptionClick(object sender, RoutedEventArgs e)
         {
-            if (sender is not Button { Tag: string tag }) return;
+            if (sender is not FrameworkElement { Tag: string tag }) return;
             ViewModel.SelectThemeCommand.Execute(tag);
-            (ThemeButton.Flyout as Flyout)?.Hide();
+            // A click on the segment already chosen must not leave it looking unchosen.
+            RefreshThemeUI();
         }
 
         private void OnPresetOptionClick(object sender, RoutedEventArgs e)
         {
-            if (sender is not Button { Tag: string tag }) return;
+            if (sender is not FrameworkElement { Tag: string tag }) return;
             ViewModel.SelectPresetCommand.Execute(tag);
-            (PresetButton.Flyout as Flyout)?.Hide();
+            // A click on the card already chosen must not leave it looking unchosen.
+            RefreshPresetUI();
         }
 
         public void Dispose()

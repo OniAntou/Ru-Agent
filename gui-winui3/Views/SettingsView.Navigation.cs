@@ -1,18 +1,14 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using RuApp.Services;
 
 namespace RuApp.Views
 {
     public sealed partial class SettingsView
     {
-        public bool HasOpenComboBox => UpdateChannelCombo.IsDropDownOpen;
-
         public void DismissFlyouts()
         {
-            ThemeButton.Flyout?.Hide();
-            PresetButton.Flyout?.Hide();
             ProviderButton.Flyout?.Hide();
-            UpdateChannelCombo.IsDropDownOpen = false;
         }
 
         private void InitializeSettingsHoverEffects()
@@ -44,11 +40,11 @@ namespace RuApp.Views
             OnNavModelsClick(this, new RoutedEventArgs());
         }
 
-        private enum SettingsTab { General, Models, Rules, Shortcuts, About }
+        private enum SettingsTab { General, Models, Permissions, Shortcuts, About }
 
         private void OnNavRulesClick(object sender, RoutedEventArgs e)
         {
-            SelectTab(SettingsTab.Rules);
+            SelectTab(SettingsTab.Permissions);
             _ = Rules.RefreshAsync();
         }
 
@@ -71,33 +67,52 @@ namespace RuApp.Views
             CheckForUpdates();
         }
 
+        private SettingsTab? _shownTab;
+
         private void SelectTab(SettingsTab tab)
         {
+            // Only a real change plays the entrance: the first call is the view being
+            // built, and a click on the tab already open must not replay it.
+            bool animate = _shownTab is { } previous && previous != tab && IsLoaded;
+            _shownTab = tab;
             PanelGeneralScrollViewer.Visibility = tab == SettingsTab.General ? Visibility.Visible : Visibility.Collapsed;
             PanelModelsScrollViewer.Visibility = tab == SettingsTab.Models ? Visibility.Visible : Visibility.Collapsed;
-            PanelRulesScrollViewer.Visibility = tab == SettingsTab.Rules ? Visibility.Visible : Visibility.Collapsed;
+            PanelRulesScrollViewer.Visibility = tab == SettingsTab.Permissions ? Visibility.Visible : Visibility.Collapsed;
             PanelShortcutsScrollViewer.Visibility = tab == SettingsTab.Shortcuts ? Visibility.Visible : Visibility.Collapsed;
             PanelAboutScrollViewer.Visibility = tab == SettingsTab.About ? Visibility.Visible : Visibility.Collapsed;
             var (title, subtitle, active) = tab switch
             {
-                SettingsTab.General => ("General", "Manage application theme and agent defaults.", NavGeneralBtn),
+                SettingsTab.General => ("General", "Appearance, reading size, and notifications.", NavGeneralBtn),
                 SettingsTab.Models => ("Models", "Connect providers and manage access to their models.", NavModelsBtn),
-                SettingsTab.Rules => ("Approval rules", "Review and remove the approvals Ru remembers.", NavRulesBtn),
+                SettingsTab.Permissions => ("Permissions", "What Ru can do without asking, and the approvals it remembers.", NavRulesBtn),
                 SettingsTab.Shortcuts => ("Keyboard shortcuts", "Every shortcut Ru binds. Ctrl+K opens the command palette.", NavShortcutsBtn),
                 _ => ("About", "Application information and updates.", NavAboutBtn),
             };
             CategoryTitleText.Text = title;
             CategorySubtitleText.Text = subtitle;
             foreach (var button in new[] { NavGeneralBtn, NavModelsBtn, NavRulesBtn, NavShortcutsBtn, NavAboutBtn })
-                HighlightNavButton(button, button == active);
+                HighlightNavButton(button, button == active, animate);
+            if (animate) PlayTabEntrance(tab);
         }
 
-        private static void HighlightNavButton(Button button, bool active)
+        private static void HighlightNavButton(Button button, bool active, bool animate)
         {
-            button.Background = active
-                ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"]
+            var resources = Application.Current.Resources;
+            var background = active
+                ? (Microsoft.UI.Xaml.Media.Brush)resources["RuLineBrush"]
                 : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            button.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources[active ? "RuInkBrush" : "RuMutedBrush"];
+            var foreground = (Microsoft.UI.Xaml.Media.Brush)resources[active ? "RuInkBrush" : "RuMutedBrush"];
+            if (animate)
+            {
+                UiMotion.FadeBrush(button, Control.BackgroundProperty, background);
+                UiMotion.FadeBrush(button, Control.ForegroundProperty, foreground);
+            }
+            else
+            {
+                button.Background = background;
+                button.Foreground = foreground;
+            }
+
             button.FontWeight = active ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
         }
     }

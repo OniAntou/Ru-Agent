@@ -13,6 +13,8 @@ public sealed partial class SettingsView
     private ReleaseUpdate? _availableUpdate;
     private InstalledRelease? _installedRelease;
     private bool _updatesInitializing;
+    private UpdateUiState _updateState = UpdateUiState.Idle;
+    private int _updateChannelIndex;
     private CancellationTokenSource? _updateDownload;
     private UpdateAvailabilityMonitor? _updateMonitor;
     private Task? _updateMonitorTask;
@@ -59,10 +61,11 @@ public sealed partial class SettingsView
         _updatesInitializing = true;
         AboutVersionText.Text = "Version " + InstalledRelease.SoftwareVersion;
         AboutBuildText.Text = "Source build";
+        SetUpdateState(UpdateUiState.SourceBuild, animate: false);
         AboutPlatformText.Text = "Windows · " + System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture;
         try
         {
-            UpdateChannelCombo.SelectedIndex = _updatePreferences.LoadChannel() == UpdateChannel.Preview ? 1 : 0;
+            SetChannelSelection(_updatePreferences.LoadChannel() == UpdateChannel.Preview ? 1 : 0);
             _installedRelease = InstalledRelease.Load(AppContext.BaseDirectory);
             AboutVersionText.Text = "Version " + (_installedRelease?.Version ?? InstalledRelease.SoftwareVersion);
             AboutBuildText.Text = _installedRelease is null ? "Source build" : "Installed Desktop release";
@@ -71,23 +74,85 @@ public sealed partial class SettingsView
                 : "Updates install only when you choose. Sessions and API keys are kept.";
             if (_updatePreferences.LoadLastResult() is { } last) UpdateStatusText.Text = last;
             CheckUpdatesButton.IsEnabled = _installedRelease is not null;
+            SetUpdateState(_installedRelease is null ? UpdateUiState.SourceBuild : UpdateUiState.Idle, animate: false);
         }
         catch (Exception ex) when (ex is UpdateException or IOException or UnauthorizedAccessException)
-        { AboutBuildText.Text = "Installation details unavailable"; UpdateStatusText.Text = "The installation information could not be read. Reinstall a release package."; CheckUpdatesButton.IsEnabled = false; }
+        {
+            AboutBuildText.Text = "Installation details unavailable";
+            UpdateStatusText.Text = "The installation information could not be read. Reinstall a release package.";
+            CheckUpdatesButton.IsEnabled = false;
+            SetUpdateState(UpdateUiState.Unavailable, animate: false);
+        }
         finally { _updatesInitializing = false; }
     }
 
-    private void OnUpdateChannelChanged(object sender, SelectionChangedEventArgs e)
+    private void OnUpdateChannelClick(object sender, RoutedEventArgs e)
     {
-        if (_updatesInitializing || UpdateStatusText is null) return;
+        if (sender is not FrameworkElement { Tag: string tag }) return;
+        int index = tag == "preview" ? 1 : 0;
+        bool changed = index != _updateChannelIndex;
+        // A click on the channel already chosen must not leave it looking unchosen.
+        SetChannelSelection(index);
+        if (!changed || _updatesInitializing || UpdateStatusText is null) return;
         SetAvailableUpdate(null);
         try
         {
-            _updatePreferences.SaveChannel(UpdateChannelCombo.SelectedIndex == 1 ? UpdateChannel.Preview : UpdateChannel.Stable);
+            _updatePreferences.SaveChannel(index == 1 ? UpdateChannel.Preview : UpdateChannel.Stable);
+            SetUpdateState(UpdateUiState.Idle);
             UpdateStatusText.Text = "Channel changed. Check for updates to see available releases.";
             CheckForUpdates();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { UpdateStatusText.Text = "Could not save the update channel."; }
+    }
+
+    private void SetChannelSelection(int index)
+    {
+        _updateChannelIndex = index;
+        UpdateStableOption.IsChecked = index == 0;
+        UpdatePreviewOption.IsChecked = index == 1;
+        PlaceSegmentThumb(UpdateChannelThumb);
+    }
+
+    /// <summary>The channel is locked while a check or a download is running.</summary>
+    private void SetChannelEnabled(bool enabled)
+    {
+        UpdateStableOption.IsEnabled = enabled;
+        UpdatePreviewOption.IsEnabled = enabled;
+        UiMotion.FadeOpacity(UpdateChannelChoice, enabled ? 1 : 0.5);
+    }
+
+    /// <summary>
+    /// Puts the update row in one state: the headline, the check label, which of the
+    /// buttons and the progress line exist. The description under the headline is set
+    /// by the caller, because only it knows what went wrong or what is kept.
+    /// </summary>
+    private void SetUpdateState(UpdateUiState state, string? version = null, bool animate = true)
+    {
+        _updateState = state;
+        var headline = UpdateStatusPresentation.Headline(state, version);
+        if (!string.Equals(UpdateHeadlineText.Text, headline, StringComparison.Ordinal))
+        {
+            UpdateHeadlineText.Text = headline;
+            if (animate && IsLoaded)
+            {
+                // The headline follows the state: it fades in rather than swapping.
+                UpdateHeadlineText.Opacity = 0;
+                UiMotion.FadeOpacity(UpdateHeadlineText, 1);
+            }
+        }
+
+        CheckUpdatesButton.Content = UpdateStatusPresentation.CheckLabel(state);
+        ShowUpdateElement(CheckUpdatesButton, UpdateStatusPresentation.ShowCheck(state), animate);
+        ShowUpdateElement(InstallUpdateButton, UpdateStatusPresentation.ShowInstall(state), animate);
+        ShowUpdateElement(CancelUpdateButton, UpdateStatusPresentation.ShowCancel(state), animate);
+        ShowUpdateElement(UpdateProgress, UpdateStatusPresentation.ShowProgress(state), animate);
+        UpdateStatusText.Visibility = string.IsNullOrWhiteSpace(UpdateStatusText.Text) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void ShowUpdateElement(FrameworkElement element, bool visible, bool animate)
+    {
+        if (animate && IsLoaded) UiMotion.SetVisible(element, visible);
+        else element.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async void OnCheckUpdatesClick(object sender, RoutedEventArgs e)
@@ -102,24 +167,38 @@ public sealed partial class SettingsView
         SetAvailableUpdate(null);
         CheckUpdatesButton.IsEnabled = false;
         InstallUpdateButton.IsEnabled = false;
-        UpdateChannelCombo.IsEnabled = false;
-        UpdateStatusText.Text = "Checking releases…";
+        SetChannelEnabled(false);
+        UpdateStatusText.Text = string.Empty;
+        SetUpdateState(UpdateUiState.Checking);
         try
         {
             using var client = new ReleaseUpdateClient();
-            var channel = UpdateAvailabilityMonitor.ChannelFromSelection(UpdateChannelCombo.SelectedIndex);
+            var channel = UpdateAvailabilityMonitor.ChannelFromSelection(_updateChannelIndex);
             var release = await client.CheckAsync(_installedRelease, channel, cancellationToken);
             if (_updateLifetime.IsCancellationRequested) return;
             SetAvailableUpdate(release);
-            UpdateStatusText.Text = _availableUpdate is null ? "No newer compatible release is available on this channel." : $"Ru {_availableUpdate.Version} is available.";
+            UpdateStatusText.Text = _availableUpdate is null
+                ? "No newer compatible release is available on this channel."
+                : "Sessions and API keys are kept. It installs only when you choose.";
+            SetUpdateState(_availableUpdate is null ? UpdateUiState.UpToDate : UpdateUiState.Available, _availableUpdate?.Version);
             InstallUpdateButton.IsEnabled = _availableUpdate is not null;
         }
-        catch (OperationCanceledException) { if (!_updateLifetime.IsCancellationRequested) UpdateStatusText.Text = "Update check timed out. Try again."; }
+        catch (OperationCanceledException)
+        {
+            if (!_updateLifetime.IsCancellationRequested)
+            {
+                UpdateStatusText.Text = "The request timed out.";
+                SetUpdateState(UpdateUiState.Failed);
+            }
+        }
         catch (Exception ex) when (ex is UpdateException or HttpRequestException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-        { UpdateStatusText.Text = $"Could not check for updates: {ex.Message}"; }
+        {
+            UpdateStatusText.Text = ex.Message;
+            SetUpdateState(UpdateUiState.Failed);
+        }
         finally
         {
-            if (!_updateLifetime.IsCancellationRequested) { CheckUpdatesButton.IsEnabled = true; UpdateChannelCombo.IsEnabled = true; }
+            if (!_updateLifetime.IsCancellationRequested) { CheckUpdatesButton.IsEnabled = true; SetChannelEnabled(true); }
         }
     }
 
@@ -135,10 +214,9 @@ public sealed partial class SettingsView
         if (_updateLifetime.IsCancellationRequested) return;
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (!_updateLifetime.IsCancellationRequested)
-                UpdateStatusText.Text = error is TimeoutException
-                    ? "Update check timed out. Try again."
-                    : $"Could not check for updates: {error.Message}";
+            if (_updateLifetime.IsCancellationRequested) return;
+            UpdateStatusText.Text = error is TimeoutException ? "The request timed out." : error.Message;
+            SetUpdateState(UpdateUiState.Failed);
         });
     }
 
@@ -149,14 +227,13 @@ public sealed partial class SettingsView
         if (CanInstallUpdate?.Invoke() != true) { UpdateStatusText.Text = "Finish or stop the current Agent run before updating."; return; }
         InstallUpdateButton.IsEnabled = false;
         CheckUpdatesButton.IsEnabled = false;
-        UpdateChannelCombo.IsEnabled = false;
-        UpdateProgress.Visibility = Visibility.Visible;
+        SetChannelEnabled(false);
         UpdateProgress.Value = 0;
-        CancelUpdateButton.Visibility = Visibility.Visible;
+        UpdateStatusText.Text = "Downloading and verifying. Ru restarts when it finishes.";
+        SetUpdateState(UpdateUiState.Downloading, release.Version);
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(_updateLifetime.Token);
         operation.CancelAfter(TimeSpan.FromMinutes(10));
         _updateDownload = operation;
-        UpdateStatusText.Text = "Downloading and verifying update…";
         try
         {
             using var client = new ReleaseUpdateClient();
@@ -167,20 +244,31 @@ public sealed partial class SettingsView
             }));
             var downloaded = await client.DownloadAsync(release, staging, progress, operation.Token);
             if (CanInstallUpdate?.Invoke() != true) throw new UpdateException("update_busy");
-            CancelUpdateButton.Visibility = Visibility.Collapsed;
+            UpdateStatusText.Text = "Ru will restart.";
+            SetUpdateState(UpdateUiState.Installing, release.Version);
             await UpdateMaintenance.PrepareAsync(operation.Token);
             await UpdateLauncher.StartAsync(downloaded, AppContext.BaseDirectory, _updatePreferences.DirectoryPath, restartDesktop: true, operation.Token);
-            UpdateStatusText.Text = "Installing verified update. Ru will restart.";
             UpdateRestartRequested?.Invoke();
         }
-        catch (OperationCanceledException) { if (!_updateLifetime.IsCancellationRequested) UpdateStatusText.Text = "Update cancelled."; }
+        catch (OperationCanceledException)
+        {
+            if (!_updateLifetime.IsCancellationRequested)
+            {
+                UpdateStatusText.Text = "Nothing was installed. Install again whenever you like.";
+                SetUpdateState(UpdateUiState.Cancelled, release.Version);
+            }
+        }
         catch (Exception ex) when (ex is UpdateException or HttpRequestException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-        { UpdateStatusText.Text = $"Could not install update: {ex.Message}. Finish active runs or close other Ru windows, then retry."; }
+        {
+            // The release is still there to install: the row returns to Available with the reason under it.
+            UpdateStatusText.Text = $"Couldn't install: {ex.Message}. Finish active runs or close other Ru windows, then retry.";
+            SetUpdateState(UpdateUiState.Available, release.Version);
+        }
         finally
         {
             _updateDownload = null;
             if (!_updateLifetime.IsCancellationRequested)
-            { CancelUpdateButton.Visibility = Visibility.Collapsed; UpdateProgress.Visibility = Visibility.Collapsed; CheckUpdatesButton.IsEnabled = true; InstallUpdateButton.IsEnabled = true; UpdateChannelCombo.IsEnabled = true; }
+            { CheckUpdatesButton.IsEnabled = true; InstallUpdateButton.IsEnabled = true; SetChannelEnabled(true); }
         }
     }
 

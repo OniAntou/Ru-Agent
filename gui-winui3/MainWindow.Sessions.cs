@@ -226,7 +226,7 @@ namespace RuApp
             {
                 // Nested flyouts own the first Escape; closing the owner here
                 // leaves the popup floating above the chat.
-                if (_settingsView?.HasOpenComboBox == true || Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(SettingsModalOverlay.XamlRoot)
+                if (Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(SettingsModalOverlay.XamlRoot)
                     .Any(popup => popup.Child is FlyoutPresenter or MenuFlyoutPresenter)) return;
                 e.Handled = true;
                 CloseSettingsPopup();

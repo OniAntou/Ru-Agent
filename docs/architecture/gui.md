@@ -70,36 +70,32 @@ Current reference. [System ownership](../architecture.md) · [Domain glossary](.
 
 ## Startup screen
 
-The desktop startup uses a centered native Inter `Ru Agent` wordmark rather than
-the CLI's blocky lettering. `WelcomeOverlay` owns layout/status and its Motion
-partial owns a bounded entrance, a green loading sweep, and a 180 ms exit.
-The Braille partial owns a decorative green wave field behind the brand treatment.
-Real startup readiness interrupts the entrance; there
-is no minimum display time, invented percentage or completion delay. Large text
-and narrow/short windows use a bounded wordmark and a scrollable content host.
-The content StackPanel explicitly centers on both axes. The overlay is pinned to
-the actual `XamlRoot.Size`, aligned top-left, and follows viewport changes rather
-than inheriting a possibly wider shell layout. Its Layout partial releases the
-XamlRoot subscription on unload/close. The wordmark remains fully opaque while
-waiting; the moving accent is decorative and exposes no percentage to automation.
-`RuBrandGreenBrush` gives the wordmark a true green identity, with a darker variant
-for Light. A green-to-mint accent sweeps underneath it on a 1.6-second cycle and
-stays static under reduced motion. Background waves use actual eight-dot Unicode
-Braille cells, with deterministic spatial dithering, green-to-mint depth and an empty central ellipse
-for the wordmark and status. A bounded 128-column by 56-row field updates at most
-every 50 ms while visible and starting; resizing adapts cell counts to the viewport.
-Smooth density falloff softens the screen edges and the central exclusion; slow
-wave phases keep adjacent dot patterns coherent. Column geometry is reused across
-rows, and identical frames do not trigger another text layout.
-The subdued cinematic treatment adds a dimmer, out-of-phase Braille field at half
-speed, refreshed at most every 100 ms on the same timer. A stationary native
-Composition radial light rises softly from below the viewport and fades toward
-the edges. It is weaker in Light theme and hidden in high contrast; its visuals
-are released on unload/disposal. The wordmark enters over 650 ms, interruptible
-by readiness, while its foreground and central quiet area remain clear.
-Reduced motion uses a fixed frame, and high contrast hides the decorative field.
-The Braille timer stops on readiness, error, exit, unload and disposal; the display
-never waits for a wave cycle. No web surface or per-frame rendering event is used.
+The desktop startup wordmark is "Ru Agent" written out in Inter, one run per letter
+(`WelcomeOverlay.Wave.cs`). While the app loads, a colour wave travels through the letters:
+each takes its colour from a point on a looping ink, brand green, info blue, ink ramp
+(`StartupWordmarkWave`, 3.6 s per loop), offset by a fixed share of a loop per letter so the colour
+moves through the word. The wave is the loading indicator: there is no progress rail or sweep.
+Ready, error and reduced motion use the resting colours instead: Ru in the brand green, Agent in
+ink, and grey after an error. There is no glow or gradient on the text.
+
+The backdrop is the app's own meteor shower (`MeteorShowerField`, also the Meteor Shower theme's
+backdrop), not a separate field. It runs while loading and stops on an error, when Windows
+animations are off, in high contrast, and on dismissal. A neutral Composition vignette
+(`WelcomeOverlay.Vignette.cs`, black corners, clear centre, no brand colour) frames the screen in
+Dark only; it is hidden in Light and in high contrast. A slow push-in (16 seconds, ease-out)
+scales the meteor field (5%) and the wordmark (9%) at different rates so they read as depth; on
+ready the push continues for the 180 ms exit and the wordmark swells as the screen clears.
+
+`WelcomeOverlay` owns layout/status and its Motion partial owns a bounded entrance and the exit;
+the Backdrop partial owns the meteor field and the 50 ms timer that drives the wave. Real startup
+readiness interrupts the entrance; there is no minimum display time, invented percentage or
+completion delay, and the colour wave exposes nothing to automation. Large text and narrow/short
+windows scale the wordmark down inside a scrollable content host. The content StackPanel
+explicitly centers on both axes. The overlay is pinned to the actual `XamlRoot.Size`, aligned
+top-left, and follows viewport changes rather than inheriting a possibly wider shell layout. Its
+Layout partial releases the XamlRoot subscription on unload/close. The wave timer stops on
+readiness, error, exit, unload and disposal; the display never waits for a wave cycle. No web
+surface or per-frame rendering event is used.
 
 `StartupScreenPresentation` maps the shell's startup phase to reader-facing copy.
 Host readiness waits for `MainWindow` to compose the chat surface before dismissal;
@@ -109,12 +105,11 @@ Host failure and unexpected startup exceptions stop motion and remain visible wi
 an Open app action; Enter/Space also dismiss those settled error states.
 
 The loading watch checks the shared OS animation gate every 250 ms, replacing
-motion with a static wordmark and Braille frame when animations are disabled,
+motion with the resting wordmark and a still backdrop when animations are disabled,
 including live changes.
 Unloading/window close stops timers and storyboards and completes any pending
 dismissal task; repeated dismissal shares the in-flight completion. Ready/error
 status is applied immediately and announced politely rather than delayed by a fade.
-
 ## Model picker loading
 
 `ChatModelPickerViewModel` refreshes the selected provider in parallel with the

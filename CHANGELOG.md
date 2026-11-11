@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Làm lại màn hình khởi động. Viết nguyên chữ "Ru Agent" bằng Inter, và trong lúc tải một làn sóng màu (trắng, xanh thương hiệu, xanh dương) chạy xuyên qua từng chữ cái; làn sóng này chính là chỉ báo đang tải, không còn thanh chạy bên dưới. Khi sẵn sàng, lỗi hoặc tắt hiệu ứng thì chữ về màu nghỉ (Ru xanh, Agent trắng, lỗi thì xám). Nền đổi từ sóng Braille sang sao băng (dùng lại MeteorShowerField của giao diện Meteor Shower), dừng khi lỗi, khi Windows tắt hiệu ứng hoặc bật tương phản cao. Nền và chữ phóng to chậm với tốc độ khác nhau tạo chiều sâu và phóng tiếp khi thoát; góc màn tối nhẹ (vignette trung tính, chỉ ở nền tối). Giữ nguyên hành vi: không phần trăm giả, không trễ tối thiểu.
+
+- **style(gui)**: Biểu tượng của ba nút đóng/mở panel (thanh tiêu đề, header chat, thanh tab của panel) đổi từ ô bo góc sang ô vuông góc sắc.
+
 - **fix(gui)**: Model picker không còn tự cuộn. Trước đây mỗi lần danh sách dựng lại (catalog cập nhật, gõ tìm
   kiếm) nó cuộn thẳng tới model đang chọn, nên vừa mở picker là danh sách nhảy xuống cuối. Giờ chỉ lúc mở
   mới đưa model đang dùng vào giữa khung, còn dựng lại thì giữ nguyên vị trí cuộn. Lần mở đầu tiên sau khi

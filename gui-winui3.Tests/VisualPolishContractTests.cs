@@ -291,7 +291,7 @@ public sealed class VisualPolishContractTests
         foreach (var token in new[]
                  {
                      "RuCanvasBrush", "RuSurfaceBrush", "RuInkBrush", "RuMutedBrush",
-                     "RuLineBrush", "RuBrandGreenBrush", "RuSuccessBrush", "RuDangerBrush",
+                     "RuLineBrush", "RuBrandGreenBrush", "RuInfoBrush", "RuDangerBrush",
                  })
         {
             Assert.Contains(token, overlay, StringComparison.Ordinal);

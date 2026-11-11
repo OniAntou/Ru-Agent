@@ -49,20 +49,22 @@ public sealed class WelcomeOverlayContractTests
     [Fact]
     public void WelcomeOverlay_gates_decorative_motion_and_cleans_up_on_disposal()
     {
-        // The owner chose Braille waves; both motion owners share OS preferences.
+        // The backdrop is the meteor shower; the meteor field and the wave timer both follow OS preferences.
         var source = GuiSource.ViewText("WelcomeOverlay");
 
         Assert.DoesNotContain("BackgroundPaths", source, StringComparison.Ordinal);
         Assert.DoesNotContain("CompositionTarget.Rendering", source, StringComparison.Ordinal);
         var pulse = GuiSource.MethodBody(source, "StartLoadingSweep");
         Assert.Contains("UiTiming.AnimationsEnabled", pulse, StringComparison.Ordinal);
-        Assert.Contains("_accentSlide", pulse, StringComparison.Ordinal);
-        Assert.DoesNotContain("_ruWordmark", pulse, StringComparison.Ordinal);
+        // The wave on the wordmark is the loader: no separate rail or sweep remains.
+        Assert.Contains("StartWaveMotion", pulse, StringComparison.Ordinal);
+        Assert.DoesNotContain("_accent", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("_wordmark", pulse, StringComparison.Ordinal);
         Assert.Contains("StopBrandMotion", GuiSource.MethodBody(source, "Dispose"), StringComparison.Ordinal);
         Assert.Contains("_watchTimer?.Stop()", GuiSource.MethodBody(source, "Dispose"), StringComparison.Ordinal);
-        Assert.Contains("UiTiming.AnimationsEnabled", GuiSource.MethodBody(source, "OnBrailleTick"), StringComparison.Ordinal);
-        Assert.Contains("StopBrailleMotion", GuiSource.MethodBody(source, "StopBrandMotion"), StringComparison.Ordinal);
-        Assert.Contains("DisposeBraille", GuiSource.MethodBody(source, "Dispose"), StringComparison.Ordinal);
+        Assert.Contains("UiTiming.AnimationsEnabled", GuiSource.MethodBody(source, "OnWaveTick"), StringComparison.Ordinal);
+        Assert.Contains("StopWaveMotion", GuiSource.MethodBody(source, "StopBrandMotion"), StringComparison.Ordinal);
+        Assert.Contains("DisposeBackdrop", GuiSource.MethodBody(source, "Dispose"), StringComparison.Ordinal);
     }
 
     [Fact]

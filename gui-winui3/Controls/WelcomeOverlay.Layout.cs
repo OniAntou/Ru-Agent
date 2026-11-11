@@ -41,7 +41,6 @@ public sealed partial class WelcomeOverlay
         VerticalAlignment = VerticalAlignment.Top;
         Width = viewportWidth;
         Height = viewportHeight;
-        ResizeBraille(viewportWidth, viewportHeight);
         _content.MaxWidth = Math.Min(480, Math.Max(0, viewportWidth - 48));
         _brandHost.Width = Math.Min(340, _content.MaxWidth);
         _brandHost.Height = viewportHeight < 300 ? 56 : 76;

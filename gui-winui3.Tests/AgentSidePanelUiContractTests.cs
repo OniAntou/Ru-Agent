@@ -174,8 +174,8 @@ public sealed class AgentSidePanelUiContractTests
     [Fact]
     public void The_collapse_control_draws_the_panel_glyph()
     {
-        Assert.Contains("M4.5,3.5", GuiSource.Text("Controls", "AgentSidePanelControl.xaml"), StringComparison.Ordinal);
-        Assert.Contains("M4.5,3.5", GuiSource.Text("MainWindow.xaml"), StringComparison.Ordinal);
+        Assert.Contains("M2.5,3.5 H13.5 V12.5 H2.5 Z", GuiSource.Text("Controls", "AgentSidePanelControl.xaml"), StringComparison.Ordinal);
+        Assert.Contains("M2.5,3.5 H13.5 V12.5 H2.5 Z", GuiSource.Text("MainWindow.xaml"), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -12,7 +12,6 @@ public sealed partial class WelcomeOverlay
     private readonly Stopwatch _clock = new();
     private DispatcherQueueTimer? _watchTimer;
     private Storyboard? _brandEntrance;
-    private Storyboard? _brandSweep;
     private Storyboard? _exitAnimation;
     private TaskCompletionSource<bool>? _exitCompletion;
     private bool _motionEnabled;
@@ -71,33 +70,25 @@ public sealed partial class WelcomeOverlay
         _brandEntrance.Begin();
     }
 
+    // The loading indicator is the colour wave on the wordmark (see RenderWordmarkWave), so
+    // starting the loading motion means starting the timer that drives it, and the camera.
     private void StartLoadingSweep()
     {
         if (_disposed || _isReady || _isDismissed || !UiTiming.AnimationsEnabled) return;
-        _brandSweep?.Stop();
-        var pulse = new DoubleAnimation
-        {
-            From = -36, To = 120, Duration = TimeSpan.FromMilliseconds(1600),
-            RepeatBehavior = RepeatBehavior.Forever,
-        };
-        Storyboard.SetTarget(pulse, _accentSlide);
-        Storyboard.SetTargetProperty(pulse, "X");
-        _brandSweep = new Storyboard();
-        _brandSweep.Children.Add(pulse);
-        _brandSweep.Begin();
-        StartBrailleMotion();
+        StartWaveMotion();
+        StartCameraPush();
+        SyncMeteors();
     }
-
     private void StopBrandMotion(bool settle)
     {
-        StopBrailleMotion(settle);
-        double opacity = _brandHost.Opacity, offset = _brandSlide.Y, accentOffset = _accentSlide.X;
+        StopWaveMotion(settle);
+        StopCamera(settle);
+        SyncMeteors();
+        double opacity = _brandHost.Opacity, offset = _brandSlide.Y;
         _brandEntrance?.Stop();
-        _brandSweep?.Stop();
-        _brandEntrance = _brandSweep = null;
+        _brandEntrance = null;
         _brandHost.Opacity = settle ? 1 : opacity;
         _brandSlide.Y = settle ? 0 : offset;
-        _accentSlide.X = settle ? 42 : accentOffset;
     }
 
     private Task PlayExitAsync()
@@ -118,6 +109,18 @@ public sealed partial class WelcomeOverlay
         Storyboard.SetTargetProperty(fade, "Opacity");
         var animation = new Storyboard();
         animation.Children.Add(fade);
+        // The camera keeps pushing through the cut: the mark swells as the screen clears.
+        foreach (var property in new[] { "ScaleX", "ScaleY" })
+        {
+            var push = new DoubleAnimation
+            {
+                To = _contentCamera.ScaleX * 1.08, Duration = TimeSpan.FromMilliseconds(ExitMilliseconds),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            };
+            Storyboard.SetTarget(push, _contentCamera);
+            Storyboard.SetTargetProperty(push, property);
+            animation.Children.Add(push);
+        }
         animation.Completed += (_, _) =>
         {
             if (ReferenceEquals(_exitAnimation, animation)) CompleteDismiss();
@@ -131,6 +134,7 @@ public sealed partial class WelcomeOverlay
     {
         if (_isDismissed) return;
         _isDismissed = true;
+        SyncMeteors();
         _exitAnimation?.Stop();
         _exitAnimation = null;
         Visibility = Visibility.Collapsed;
@@ -158,6 +162,6 @@ public sealed partial class WelcomeOverlay
         _clock.Stop();
         StopBrandMotion(settle: true);
         CompleteDismiss();
-        DisposeBraille();
+        DisposeBackdrop();
     }
 }

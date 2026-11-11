@@ -71,6 +71,10 @@ public sealed partial class ToolExecutionService
                 // spool is gone falls back to the same window, empty or not.
                 page = SlicePage(snapshot.Text, offset, limit);
                 totalChars = snapshot.Text.Length;
+                // The window is a head, not the complete capture. Carry the
+                // registry's truncation fact so the caller does not verify
+                // against an incomplete log that looks complete.
+                isTruncated = snapshot.TextTruncated;
             }
             else
             {
@@ -374,7 +378,15 @@ public sealed partial class ToolExecutionService
         finally
         {
             writer.Complete();
-            _backgroundTasks.Complete(context.SessionId, executionId, status, exitCode, writer.Window);
+            _backgroundTasks.Complete(
+                context.SessionId,
+                executionId,
+                status,
+                exitCode,
+                writer.Window,
+                // The registry keeps only the head; remember that output beyond it
+                // existed so a read after the spool is gone still says so.
+                writer.TotalChars > writer.Window.Length || writer.Truncated);
             RetainSpool(context, writer);
         }
 

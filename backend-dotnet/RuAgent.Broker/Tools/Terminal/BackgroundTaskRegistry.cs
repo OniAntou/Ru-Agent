@@ -22,7 +22,8 @@ public sealed record BackgroundTaskSnapshot(
     int? ExitCode,
     string Text,
     bool IsBackground,
-    string Command = "");
+    string Command = "",
+    bool TextTruncated = false);
 
 public enum BackgroundKillOutcome
 {
@@ -232,6 +233,13 @@ public sealed class BackgroundTaskRegistry
             {
                 entry.Text.Append(frame, 0, Math.Min(frame.Length, room));
             }
+
+            if (frame.Length > room)
+            {
+                // The live window is the head only; say so instead of letting a
+                // later read treat it as the complete capture.
+                entry.TextTruncated = true;
+            }
         }
     }
 
@@ -239,7 +247,17 @@ public sealed class BackgroundTaskRegistry
     /// Finalizes the task: the state comes from the user kill flag, the
     /// lifetime token, then the runner's result status.
     /// </summary>
-    public void Complete(string sessionId, string executionId, string resultStatus, int? exitCode, string finalText)
+    /// <param name="textTruncated">
+    /// True when the task produced output beyond the retained live window, so a
+    /// read after the spool is gone still reports an incomplete capture.
+    /// </param>
+    public void Complete(
+        string sessionId,
+        string executionId,
+        string resultStatus,
+        int? exitCode,
+        string finalText,
+        bool textTruncated = false)
     {
         TaskEntry completed;
         lock (_gate)
@@ -261,6 +279,7 @@ public sealed class BackgroundTaskRegistry
                         _ => BackgroundTaskState.Failed,
                     };
             entry.ExitCode = exitCode;
+            entry.TextTruncated |= textTruncated;
             entry.Text.Clear();
             var retained = finalText.Length > TerminalLimits.MaxSpoolChars
                 ? finalText[..TerminalLimits.MaxSpoolChars]
@@ -284,7 +303,8 @@ public sealed class BackgroundTaskRegistry
                     entry.ExitCode,
                     entry.Text.ToString(),
                     entry.IsBackground,
-                    entry.Command);
+                    entry.Command,
+                    entry.TextTruncated);
                 return true;
             }
         }
@@ -336,7 +356,8 @@ public sealed class BackgroundTaskRegistry
                     entry.ExitCode,
                     entry.Text.ToString(),
                     entry.IsBackground,
-                    entry.Command));
+                    entry.Command,
+                    entry.TextTruncated));
             }
 
             return snapshots;
@@ -404,6 +425,9 @@ public sealed class BackgroundTaskRegistry
 
         public bool IsBackground { get; set; }
         public string Command { get; init; } = string.Empty;
+
+        /// <summary>True once output beyond the retained live window was observed.</summary>
+        public bool TextTruncated { get; set; }
 
         public long Sequence { get; }
 

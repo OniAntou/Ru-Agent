@@ -68,14 +68,16 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         string? terminalSpoolRoot = null,
         TerminalConcurrencyOptions? terminalConcurrencyOptions = null,
         Func<string, bool>? skillCapabilityAvailable = null,
-        AgentCommandEnvironment? commandEnvironment = null)
+        AgentCommandEnvironment? commandEnvironment = null,
+        TerminalOutputSpool? terminalSpool = null,
+        BackgroundTaskRegistry? backgroundTaskRegistry = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _session = session;
         var terminalLimits = terminalConcurrencyOptions
             ?? TerminalConcurrencyOptions.FromEnvironment(Environment.GetEnvironmentVariable);
-        _backgroundTasks = new BackgroundTaskRegistry(terminalLimits.MaxConcurrentTasks);
+        _backgroundTasks = backgroundTaskRegistry ?? new BackgroundTaskRegistry(terminalLimits.MaxConcurrentTasks);
         _workspace = new WorkspacePathGuard(workspaceRoot);
         _fileList = new FileListAdapter(_workspace.Root);
         _fileGlob = new FileGlobAdapter(_workspace.Root);
@@ -85,7 +87,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         _fileDelete = new FileDeleteAdapter(_workspace.Root, _recoveryStore);
         _fileRestore = new FileRestoreAdapter(_workspace.Root, _recoveryStore);
         _mutationResolver = new CanonicalPathResolver(_workspace.Root);
-        _spools = new TerminalOutputSpool(terminalSpoolRoot);
+        _spools = terminalSpool ?? new TerminalOutputSpool(terminalSpoolRoot);
         _helpDocs = HelpDocsTool.CreateDefault();
         _commandEnvironment = commandEnvironment ?? new AgentCommandEnvironment();
         _terminal = new TerminalAdapter(

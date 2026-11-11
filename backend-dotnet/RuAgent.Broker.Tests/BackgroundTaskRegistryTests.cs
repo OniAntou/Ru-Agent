@@ -81,6 +81,28 @@ public sealed class BackgroundTaskRegistryTests
     }
 
     [Fact]
+    public void Live_window_truncation_is_reported_for_running_and_completed_tasks()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session", "t1", 60_000, isBackground: true, out _));
+        registry.Append("session", "t1", new string('x', TerminalLimits.MaxSpoolChars + 5));
+
+        Assert.True(registry.TryRead("session", "t1", out var running));
+        Assert.Equal(TerminalLimits.MaxSpoolChars, running.Text.Length);
+        Assert.True(running.TextTruncated);
+
+        registry.Complete("session", "t1", ToolResultStatuses.Succeeded, 0, running.Text);
+
+        Assert.True(registry.TryRead("session", "t1", out var done));
+        Assert.True(done.TextTruncated);
+
+        Assert.True(registry.TryStart("session", "t2", 60_000, isBackground: true, out _));
+        registry.Complete("session", "t2", ToolResultStatuses.Succeeded, 0, "short");
+        Assert.True(registry.TryRead("session", "t2", out var shortTask));
+        Assert.False(shortTask.TextTruncated);
+    }
+
+    [Fact]
     public void Kill_marks_the_task_and_completion_reports_killed()
     {
         var registry = new BackgroundTaskRegistry();

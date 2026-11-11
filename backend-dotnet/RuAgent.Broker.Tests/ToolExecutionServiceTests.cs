@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Tools;
+using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using BrokerRunLease = RuAgent.Broker.Runtime.BrokerRunLease;
@@ -509,6 +510,61 @@ public sealed partial class ToolExecutionServiceTests
         }
         finally
         {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Terminal_read_reports_truncation_when_the_spool_is_gone()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-evicted-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var session = CreateSession(Path.Combine(root, "session"));
+        const string sessionId = "session-terminal-evicted";
+        session.Open(
+            sessionId,
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
+                StringComparer.Ordinal));
+        var registry = new BackgroundTaskRegistry();
+        // No spool entry exists for this task id: the read must fall back to the
+        // registry's window and still report that the window was a truncated head.
+        var spools = new TerminalOutputSpool(Path.Combine(root, "spool"));
+        var service = new ToolExecutionService(
+            session,
+            workspaceRoot,
+            terminalSpool: spools,
+            backgroundTaskRegistry: registry);
+        try
+        {
+            const string executionId = "req-evicted-spool";
+            Assert.True(registry.TryStart(sessionId, executionId, 60_000, isBackground: true, out _));
+            registry.Append(sessionId, executionId, "head-only");
+            registry.Complete(
+                sessionId,
+                executionId,
+                ToolResultStatuses.Succeeded,
+                0,
+                "head-only",
+                textTruncated: true);
+
+            var page = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-read-evicted-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["execution_id"] = executionId,
+                }, toolId: "terminal_read"),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, page.Status);
+            Assert.Equal("head-only", page.Output["page"]!.GetValue<string>());
+            Assert.True(page.Output["spool_truncated"]!.GetValue<bool>());
+            Assert.False(page.Output["truncated"]!.GetValue<bool>());
+        }
+        finally
+        {
+            service.Dispose();
             Directory.Delete(root, recursive: true);
         }
     }

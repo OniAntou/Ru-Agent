@@ -165,6 +165,50 @@ public sealed class CommandIntentResolverTests
     }
 
     [Fact]
+    public void Background_requests_accept_the_background_lifetime_cap()
+    {
+        var workspace = CreateTemporaryRoot("ru-intent-background-cap-");
+        try
+        {
+            var resolver = CreateResolver(workspace, EmptySearchDirectories);
+            var executable = Path.Combine(Environment.SystemDirectory, "where.exe");
+            var request = new CanonicalCommandRequest(
+                executable,
+                TimeoutMs: 3_600_000,
+                MaximumTimeoutMs: TerminalLimits.BackgroundMaxLifetimeMs);
+
+            var run = resolver.ResolveRun(request);
+            Assert.Equal(3_600_000, run.TimeoutMs);
+            Assert.Equal(TerminalTimeoutClass.ApprovalRequired, run.TimeoutClass);
+
+            var shell = resolver.ResolveShell(new CanonicalShellRequest(
+                "Get-Date",
+                TimeoutMs: 3_600_000,
+                MaximumTimeoutMs: TerminalLimits.BackgroundMaxLifetimeMs));
+            Assert.Equal(3_600_000, shell.TimeoutMs);
+
+            var overBackgroundCap = Assert.Throws<CommandIntentException>(() =>
+                resolver.ResolveRun(new CanonicalCommandRequest(
+                    executable,
+                    TimeoutMs: TerminalLimits.BackgroundMaxLifetimeMs + 1,
+                    MaximumTimeoutMs: TerminalLimits.BackgroundMaxLifetimeMs)));
+            Assert.Equal("timeout_exceeds_hard_max", overBackgroundCap.Code);
+
+            // A caller cannot widen the process-wide ceiling through the cap field.
+            var overGlobalCap = Assert.Throws<CommandIntentException>(() =>
+                resolver.ResolveRun(new CanonicalCommandRequest(
+                    executable,
+                    TimeoutMs: TerminalLimits.BackgroundMaxLifetimeMs + 1,
+                    MaximumTimeoutMs: int.MaxValue)));
+            Assert.Equal("timeout_exceeds_hard_max", overGlobalCap.Code);
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Rejects_invalid_executable_and_unbounded_argument_vectors()
     {
         var workspace = CreateTemporaryRoot("ru-intent-bounds-");

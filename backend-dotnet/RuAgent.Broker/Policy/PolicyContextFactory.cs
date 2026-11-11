@@ -213,11 +213,18 @@ public sealed partial class PolicyContextFactory
             {
                 requestedExecutable = resolvedExecutable;
                 var commands = new CommandIntentResolver(_canonicalRoot);
+                // A background task is bounded by its own lifetime cap; the
+                // resolver must accept the larger schema bound or every request
+                // over the foreground maximum is denied before the evaluator
+                // can apply the background rule.
+                var maximumTimeoutMs = background
+                    ? TerminalLimits.BackgroundMaxLifetimeMs
+                    : TerminalLimits.HardMaxTimeoutMs;
                 terminalIntent = mode == "run"
                     ? commands.ResolveRun(new CanonicalCommandRequest(resolvedExecutable!, argv,
-                        canonicalCwd, timeoutMs, networkDeclared))
+                        canonicalCwd, timeoutMs, networkDeclared, maximumTimeoutMs))
                     : commands.ResolveShell(new CanonicalShellRequest(shellScript!, canonicalCwd,
-                        timeoutMs, networkDeclared, OptionalText(arguments, "shell")));
+                        timeoutMs, networkDeclared, OptionalText(arguments, "shell"), maximumTimeoutMs));
                 if (terminalIntent.ResolvedExecutable.Length > TerminalLimits.MaxCanonicalExecutableChars)
                     throw new CommandIntentException("executable_invalid");
                 if (!string.Equals(terminalIntent.CanonicalWorkingDirectory, canonicalCwd, StringComparison.Ordinal))

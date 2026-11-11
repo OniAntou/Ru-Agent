@@ -11,22 +11,30 @@ public sealed class CommandIntentException(string code) : Exception(code)
 /// <summary>
 /// A bounded terminal.run request before canonical resolution.
 /// </summary>
+/// <param name="MaximumTimeoutMs">
+/// Hard cap for this request's timeout. Foreground launches keep the standard
+/// maximum; a background launch passes its own lifetime cap so the schema's
+/// larger bound remains reachable.
+/// </param>
 public sealed record CanonicalCommandRequest(
     string Executable,
     IReadOnlyList<string>? Arguments = null,
     string? WorkingDirectory = null,
     int? TimeoutMs = null,
-    bool NetworkIntent = false);
+    bool NetworkIntent = false,
+    int MaximumTimeoutMs = TerminalLimits.HardMaxTimeoutMs);
 
 /// <summary>
 /// A bounded terminal.shell request; only explicit PowerShell runtimes are legal.
 /// </summary>
+/// <param name="MaximumTimeoutMs">See <see cref="CanonicalCommandRequest.MaximumTimeoutMs"/>.</param>
 public sealed record CanonicalShellRequest(
     string Script,
     string? WorkingDirectory = null,
     int? TimeoutMs = null,
     bool NetworkIntent = false,
-    string? ShellRuntime = null);
+    string? ShellRuntime = null,
+    int MaximumTimeoutMs = TerminalLimits.HardMaxTimeoutMs);
 
 /// <summary>
 /// The immutable, fully resolved execution identity for one terminal call.

@@ -61,7 +61,7 @@ public sealed class CommandIntentResolver
         var arguments = request.Arguments ?? [];
         ValidateExecutableText(request.Executable);
         ValidateArguments(arguments);
-        var timeoutMs = ValidateTimeout(request.TimeoutMs);
+        var timeoutMs = ValidateTimeout(request.TimeoutMs, request.MaximumTimeoutMs);
 
         var workingDirectory = ResolveWorkingDirectory(request.WorkingDirectory);
         var resolvedExecutable = ResolveExecutable(request.Executable, workingDirectory.CanonicalPath);
@@ -97,7 +97,7 @@ public sealed class CommandIntentResolver
             throw new CommandIntentException("unsupported_shell_runtime");
         }
 
-        var timeoutMs = ValidateTimeout(request.TimeoutMs);
+        var timeoutMs = ValidateTimeout(request.TimeoutMs, request.MaximumTimeoutMs);
         var workingDirectory = ResolveWorkingDirectory(request.WorkingDirectory);
         var resolvedExecutable = ResolvePowerShellExecutable(runtime);
         return BuildIntent(
@@ -233,7 +233,7 @@ public sealed class CommandIntentResolver
 
     }
 
-    private static int ValidateTimeout(int? timeoutMs)
+    private static int ValidateTimeout(int? timeoutMs, int maximumTimeoutMs)
     {
         var effective = timeoutMs ?? TerminalLimits.DefaultTimeoutMs;
         if (effective < 1)
@@ -241,7 +241,10 @@ public sealed class CommandIntentResolver
             throw new CommandIntentException("timeout_invalid");
         }
 
-        if (effective > TerminalLimits.HardMaxTimeoutMs)
+        // No caller may widen the process-wide ceiling; a background request
+        // narrows the default foreground cap to its own lifetime bound instead.
+        var maximum = Math.Clamp(maximumTimeoutMs, 1, TerminalLimits.BackgroundMaxLifetimeMs);
+        if (effective > maximum)
         {
             throw new CommandIntentException("timeout_exceeds_hard_max");
         }

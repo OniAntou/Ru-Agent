@@ -1477,6 +1477,22 @@ public sealed partial class PolicyEvaluationTests
         var allowed = evaluator.Evaluate(lease.Snapshot, background, valid, Now);
         Assert.Equal("allow", allowed.Decision);
 
+        // The schema's full background lifetime reaches execution; a background
+        // request over the foreground cap must not fail resolution before the
+        // evaluator can apply its own lifetime rule.
+        var extendedBackground = factory.Create("bash", "1.0.0", new JsonObject
+        {
+            ["mode"] = "run",
+            ["executable"] = "dotnet",
+            ["arguments"] = new JsonArray("test"),
+            ["background"] = true,
+            ["timeout_ms"] = 3_600_000,
+        });
+        Assert.Null(extendedBackground.TerminalResolutionError);
+        Assert.NotNull(extendedBackground.TerminalIntent);
+        Assert.Equal(3_600_000, extendedBackground.TerminalIntent!.TimeoutMs);
+        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, extendedBackground, valid, Now).Decision);
+
         var overCap = factory.Create("bash", "1.0.0", new JsonObject
         {
             ["mode"] = "run",

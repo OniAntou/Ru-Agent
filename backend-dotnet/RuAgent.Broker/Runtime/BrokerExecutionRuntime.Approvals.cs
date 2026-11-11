@@ -198,6 +198,23 @@ public sealed partial class BrokerExecutionRuntime
             command = ApprovalCommandV2.AllowOnce;
         }
 
+        // Resolve the folder before the approval is consumed. A folder that is gone
+        // grants nothing either way, but the pending approval stays answerable, so
+        // the user can still allow the call once or deny it.
+        CanonicalDirectoryIdentity? grantedDirectory = null;
+        if (command == ApprovalCommandV2.AllowSessionDirectory)
+        {
+            try
+            {
+                grantedDirectory = CanonicalDirectoryIdentity.CreateExisting(pending.Binding.BoundaryDirectory!);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException
+                or ArgumentException or NotSupportedException)
+            {
+                return ApprovalDecisionResult.Denied("grant_invalid", "approved directory is no longer available");
+            }
+        }
+
         var now = DateTimeOffset.UtcNow;
         var resolution = _pendingV2.TryConsumeV2(approvalId!, command, expectedBinding, now);
 
@@ -212,18 +229,9 @@ public sealed partial class BrokerExecutionRuntime
             case V2ApprovalOutcome.ConsumedDenied:
                 return ApprovalDecisionResult.Denied("approval_denied", "approval denied");
             case V2ApprovalOutcome.ConsumedApproved:
-                if (command == ApprovalCommandV2.AllowSessionDirectory)
+                if (grantedDirectory is not null)
                 {
-                    try
-                    {
-                        _session.DirectoryGrants.Add(
-                            request.SessionId,
-                            CanonicalDirectoryIdentity.CreateExisting(pending.Binding.BoundaryDirectory!));
-                    }
-                    catch
-                    {
-                        return ApprovalDecisionResult.Denied("grant_invalid", "approved directory is no longer available");
-                    }
+                    _session.DirectoryGrants.Add(request.SessionId, grantedDirectory);
                 }
 
                 // Issue authorization token (60s) bound to snapshot + intent hash + tool identity

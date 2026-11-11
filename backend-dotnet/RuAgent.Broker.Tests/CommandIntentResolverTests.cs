@@ -516,6 +516,12 @@ public sealed class CommandIntentResolverTests
     [InlineData("  using namespace System.Text\nGet-Date", false)]
     [InlineData("param($x)\n$x", false)]
     [InlineData("#Requires -Version 5\nGet-Date", false)]
+    [InlineData("# note\nparam($x)\n$x", false)]
+    [InlineData("<# header\n#>\r\n  using namespace System.Text\nGet-Date", false)]
+    [InlineData("param (\n$x)\n$x", false)]
+    [InlineData("# note\nGet-Date", true)]
+    [InlineData("ParamTool.exe --version", true)]
+    [InlineData("<# unterminated", true)]
     public void Shell_scripts_get_the_utf8_prelude_unless_a_leading_statement_forbids_it(string script, bool prefixed)
     {
         var resolved = CommandIntentResolver.WithUtf8Output(script);

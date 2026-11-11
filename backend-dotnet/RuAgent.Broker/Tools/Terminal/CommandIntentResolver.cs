@@ -125,15 +125,41 @@ public sealed class CommandIntentResolver
 
     // using statements and a param block must be the first statements of a script, so a
     // prelude in front of them would turn a valid script into a parse error.
-    internal static string WithUtf8Output(string script)
+    internal static string WithUtf8Output(string script) =>
+        FirstStatementMustStayFirst(script) ? script : Utf8OutputPrelude + script;
+
+    // Comments may precede using/param without losing their first-statement position,
+    // so they are skipped before the keyword check. The keyword must end at a token
+    // boundary: a command that merely starts with "param" still gets the prelude.
+    private static bool FirstStatementMustStayFirst(string script)
     {
-        var start = script.AsSpan().TrimStart();
-        return start.StartsWith("using ", StringComparison.OrdinalIgnoreCase)
-            || start.StartsWith("param", StringComparison.OrdinalIgnoreCase)
-            || start.StartsWith("#requires", StringComparison.OrdinalIgnoreCase)
-            ? script
-            : Utf8OutputPrelude + script;
+        var rest = script.AsSpan();
+        while (true)
+        {
+            rest = rest.TrimStart();
+            if (rest.StartsWith("<#", StringComparison.Ordinal))
+            {
+                var end = rest.IndexOf("#>", StringComparison.Ordinal);
+                if (end < 0) return false;
+                rest = rest[(end + 2)..];
+                continue;
+            }
+
+            if (!rest.StartsWith("#", StringComparison.Ordinal)) break;
+            if (rest.StartsWith("#requires", StringComparison.OrdinalIgnoreCase)) return true;
+            var lineEnd = rest.IndexOf('\n');
+            if (lineEnd < 0) return false;
+            rest = rest[(lineEnd + 1)..];
+        }
+
+        return StartsWithKeyword(rest, "using") || StartsWithKeyword(rest, "param");
     }
+
+    private static bool StartsWithKeyword(ReadOnlySpan<char> text, string keyword) =>
+        text.StartsWith(keyword, StringComparison.OrdinalIgnoreCase)
+        && (text.Length == keyword.Length
+            || char.IsWhiteSpace(text[keyword.Length])
+            || text[keyword.Length] == '(');
 
     private CanonicalCommandIntent BuildIntent(
         string resolvedExecutable,

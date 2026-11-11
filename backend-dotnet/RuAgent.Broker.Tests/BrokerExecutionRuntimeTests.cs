@@ -865,6 +865,46 @@ public sealed class BrokerExecutionRuntimeTests
     }
 
     [Fact]
+    public async Task Session_directory_grant_for_a_removed_folder_leaves_the_approval_answerable()
+    {
+        using var fixture = new RuntimeFixture();
+        var external = Path.Combine(Path.GetTempPath(), "ru-runtime-grant-gone-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "probe.txt"), "external");
+        try
+        {
+            const string sessionId = "session-runtime-grant-gone";
+            const string runId = "run_grantgone11111111111111111111111";
+            var opened = await fixture.Runtime.OpenRunAsync(
+                RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()),
+                default);
+            Assert.Null(opened.Error);
+
+            var ask = await fixture.Runtime.EvaluateAsync(
+                Evaluate("evaluate-grant-gone", sessionId, runId, "read", new JsonObject { ["path"] = Path.Combine(external, "probe.txt") }),
+                default);
+            Assert.Equal("external_directory_required", ask.Decision!.ReasonCode);
+
+            Directory.Delete(external, recursive: true);
+            var refused = await fixture.Runtime.RespondApprovalAsync(
+                ApprovalRespond("approve-grant-gone", sessionId, runId, ask.Decision.ApprovalId!, "allow_session_directory"),
+                default);
+            Assert.Equal("grant_invalid", refused.ErrorCode);
+            Assert.Null(refused.AuthorizationToken);
+
+            // The refused grant did not consume the approval: it can still be answered.
+            var denied = await fixture.Runtime.RespondApprovalAsync(
+                ApprovalRespond("deny-grant-gone", sessionId, runId, ask.Decision.ApprovalId!, "deny"),
+                default);
+            Assert.Equal("approval_denied", denied.ErrorCode);
+        }
+        finally
+        {
+            if (Directory.Exists(external)) Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Policy_rebind_invalidates_a_decision_issued_under_the_old_binding()
     {
         using var fixture = new RuntimeFixture();

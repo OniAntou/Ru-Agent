@@ -134,12 +134,17 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
     /// True when the database already holds rows encrypted under this key.
     /// </summary>
     /// <remarks>
+    /// Every encrypted column in the profile counts, not only
+    /// <c>agent_payloads</c>: workspace roots, the change journal, session work
+    /// state and subagent artifacts share this key. A missing key beside any of
+    /// them is a lost key, and minting a replacement would leave those rows
+    /// undecryptable while the store reported itself available.
+    ///
     /// "Cannot tell" is never "nothing to lose": a database locked by a racing
     /// host is exactly the shape that used to mint a replacement key over live
     /// protected rows, so an unopenable or unreadable database now fails the
     /// store closed instead of reporting it fresh. Only a database that opens
-    /// cleanly and genuinely has no payload rows yet (or no payload table)
-    /// counts as fresh.
+    /// cleanly and genuinely has no protected rows yet counts as fresh.
     /// </remarks>
     private async Task<bool> HasProtectedRowsAsync(CancellationToken cancellationToken)
     {
@@ -163,29 +168,58 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
         try
         {
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            await using var tableCommand = connection.CreateCommand();
-            tableCommand.CommandText = """
-                SELECT EXISTS(
-                    SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_payloads'
-                );
-                """;
-            var hasTable = await tableCommand.ExecuteScalarAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (hasTable is 0L)
+            // Keep the original payload-row guarantee: a payload row is protected
+            // data even when its schema predates the descriptive column names.
+            await using (var tableCommand = connection.CreateCommand())
             {
-                return false;
+                tableCommand.CommandText = """
+                    SELECT EXISTS(
+                        SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_payloads'
+                    );
+                    """;
+                var hasPayloadTable = await tableCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (hasPayloadTable is not 0L and not 1L)
+                {
+                    throw new HarnessStoreException("harness_key_probe_unavailable");
+                }
+
+                if (hasPayloadTable is 1L)
+                {
+                    await using var rowCommand = connection.CreateCommand();
+                    rowCommand.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_payloads LIMIT 1);";
+                    if (await rowCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is long and not 0)
+                    {
+                        return true;
+                    }
+                }
             }
 
-            if (hasTable is not 1L)
+            foreach (var (table, columns) in await ReadTableColumnsAsync(connection, cancellationToken).ConfigureAwait(false))
             {
-                throw new HarnessStoreException("harness_key_probe_unavailable");
+                cancellationToken.ThrowIfCancellationRequested();
+                if (string.Equals(table, "agent_payloads", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var encryptedColumns = columns.Where(IsEncryptedColumn).ToArray();
+                if (encryptedColumns.Length == 0)
+                {
+                    continue;
+                }
+
+                await using var rowCommand = connection.CreateCommand();
+                var predicate = string.Join(" OR ", encryptedColumns
+                    .Select(column => $"{QuoteIdentifier(column)} IS NOT NULL"));
+                rowCommand.CommandText =
+                    $"SELECT EXISTS(SELECT 1 FROM {QuoteIdentifier(table)} WHERE {predicate} LIMIT 1);";
+                if (await rowCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is long and not 0)
+                {
+                    return true;
+                }
             }
 
-            await using var rowCommand = connection.CreateCommand();
-            rowCommand.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_payloads LIMIT 1);";
-            var result = await rowCommand.ExecuteScalarAsync(cancellationToken)
-                .ConfigureAwait(false);
-            return result is long and not 0;
+            return false;
         }
         catch (SqliteException error) when (error.SqliteErrorCode is 5 or 6)
         {
@@ -202,6 +236,49 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
             return false;
         }
     }
+
+    private static bool IsEncryptedColumn(string column) =>
+        column.Contains("ciphertext", StringComparison.OrdinalIgnoreCase)
+        || column.Contains("protected", StringComparison.OrdinalIgnoreCase)
+        || column.Contains("authentication_tag", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<IReadOnlyList<(string Table, string[] Columns)>> ReadTableColumnsAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var list = connection.CreateCommand();
+        list.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';";
+        var names = new List<string>();
+        await using (var reader = await list.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                names.Add(reader.GetString(0));
+            }
+        }
+
+        var tables = new List<(string, string[])>(names.Count);
+        foreach (var name in names)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await using var columnsCommand = connection.CreateCommand();
+            // PRAGMA does not accept a bound parameter for the table name.
+            columnsCommand.CommandText = $"PRAGMA table_info({QuoteIdentifier(name)});";
+            var columns = new List<string>();
+            await using var reader = await columnsCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                columns.Add(reader.GetString(1));
+            }
+
+            tables.Add((name, columns.ToArray()));
+        }
+
+        return tables;
+    }
+
+    private static string QuoteIdentifier(string identifier) =>
+        "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
     private async Task CreateKeyFileAsync(
         string directory,

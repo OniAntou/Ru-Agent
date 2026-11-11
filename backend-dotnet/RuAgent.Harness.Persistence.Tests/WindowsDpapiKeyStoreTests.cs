@@ -164,6 +164,75 @@ public sealed class WindowsDpapiKeyStoreTests
 
     [Fact]
     [SupportedOSPlatform("windows")]
+    public async Task A_lost_key_beside_non_payload_protected_rows_is_refused_instead_of_replaced()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "ru-dpapi-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var keyPath = Path.Combine(root, "agent_harness.key");
+        var databasePath = Path.Combine(root, "agent_harness.db");
+        try
+        {
+            var store = new WindowsDpapiKeyStore(keyPath, databasePath);
+            _ = (await store.GetOrCreateKeyAsync(CancellationToken.None)).ToArray();
+            // The workspace root and change journal share this key even when the
+            // profile has no payload rows (for example after every chat is deleted).
+            await SeedEncryptedWorkspaceRowAsync(databasePath);
+            File.Delete(keyPath);
+
+            var error = await Assert.ThrowsAsync<HarnessStoreException>(
+                async () => await store.GetOrCreateKeyAsync(CancellationToken.None));
+            Assert.Equal("harness_key_missing", error.Code);
+            Assert.False(File.Exists(keyPath), "a refused store must not write a replacement key");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public async Task A_database_with_empty_encrypted_tables_still_gets_a_key()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "ru-dpapi-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var keyPath = Path.Combine(root, "agent_harness.key");
+        var databasePath = Path.Combine(root, "agent_harness.db");
+        try
+        {
+            await using (var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText =
+                    "CREATE TABLE agent_workspaces (workspace_id TEXT PRIMARY KEY, canonical_root_ciphertext BLOB NOT NULL);";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var store = new WindowsDpapiKeyStore(keyPath, databasePath);
+            var key = (await store.GetOrCreateKeyAsync(CancellationToken.None)).ToArray();
+
+            Assert.Equal(32, key.Length);
+            Assert.True(File.Exists(keyPath));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
     public async Task A_database_locked_by_another_host_refuses_key_minting()
     {
         if (!OperatingSystem.IsWindows())
@@ -262,6 +331,22 @@ public sealed class WindowsDpapiKeyStoreTests
         command.CommandText = """
             CREATE TABLE agent_payloads (payload_id TEXT PRIMARY KEY);
             INSERT INTO agent_payloads(payload_id) VALUES ('payload-1');
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task SeedEncryptedWorkspaceRowAsync(string databasePath)
+    {
+        await using var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False");
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE agent_workspaces (
+                workspace_id TEXT PRIMARY KEY,
+                canonical_root_ciphertext BLOB NOT NULL
+            );
+            INSERT INTO agent_workspaces(workspace_id, canonical_root_ciphertext)
+                VALUES ('workspace-1', X'0102');
             """;
         await command.ExecuteNonQueryAsync();
     }

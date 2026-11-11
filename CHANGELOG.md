@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(host)**: Danh mục skill trong system prompt chỉ còn `id: mô tả` (mô tả cắt ở 320 ký tự), bỏ
+  `source_path`, `resource_base` và `revision` của từng skill; tool `skill` vẫn trả các giá trị này khi
+  load. Với 41 skill dùng chung, danh mục giảm từ khoảng 25 KB xuống 11 KB và không còn skill nào bị
+  loại vì hết ngân sách. Sửa nội dung một skill không còn làm đổi prompt.
+
+- **docs**: Gỡ ba khái niệm đã nghỉ hưu (Runtime Worker, Worker Contract, Retired Local Model Assets)
+  khỏi `CONTEXT.md` và `host.md`; lịch sử vẫn nằm trong ADR 0001/0012/0014.
+
 - **feat(harness)!**: Bỏ trần pool của family subagent (1.024 model step / 2.048 tool call mỗi window của
   root). Schema v36 dựng lại `agent_subagent_budgets` không còn cận trên; bộ đếm chỉ còn để ghi nhận và
   giữ reservation idempotent. Hàng đợi continuation cũng không còn dừng khi bộ đếm đạt 128.

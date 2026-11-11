@@ -179,7 +179,8 @@ public sealed partial class RuPromptContextProviderTests
         var third = await provider.BuildAsync(run, snapshot, CancellationToken.None);
         var firstSkill = first.InstructionBlocks.Single(block => block.SourceId == "skill:catalog");
         var thirdSkill = third.InstructionBlocks.Single(block => block.SourceId == "skill:catalog");
-        Assert.NotEqual(firstSkill.ContentSha256, thirdSkill.ContentSha256);
+        // A body edit leaves the listing, and so the cached prompt prefix, unchanged: bodies load on demand.
+        Assert.Equal(firstSkill.ContentSha256, thirdSkill.ContentSha256);
         Assert.Contains("skill tool", thirdSkill.Content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("changed skill body", thirdSkill.Content, StringComparison.Ordinal);
         Assert.NotEqual(first.InstructionBlocks[0].ContentSha256, second.InstructionBlocks[0].ContentSha256);

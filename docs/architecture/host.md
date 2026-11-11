@@ -147,16 +147,6 @@ Agent model generation and the tool execution authority in process (ADR-0012,
 ADR-0014; RuApp/CLI start-or-attach via descriptor).
 _Avoid_: Edge, proxy, FastAPI backend
 
-## Runtime Worker
-
-The retired private model-generation process. It was an authenticated loopback
-managed C# process that served Agent v2 on `/worker/v2`; model generation now
-runs inside the Public Host through the typed `ModelStepService` behind
-`IModelStepRunner`, so no worker process, port, or protocol exists (ADR-0012).
-There is no device v1 boundary, no Python Worker startup, and no media adapter
-graph.
-_Avoid_: Python backend, upstream server
-
 ## Public Contract
 
 The stable authenticated surface of HTTP method/path pairs with no WebSocket
@@ -168,15 +158,6 @@ bridge (`ru agent rpc`), wrapped by the TypeScript SDK at
 [`sdk/ru-agent`](../../sdk/ru-agent/README.md); the bridge adds no HTTP route and
 opens no transport beyond stdin/stdout.
 _Avoid_: Compatibility routes
-
-## Worker Contract
-
-The retired versioned typed commands, events, ordering, cancellation, limits,
-errors, and capabilities that the Host exchanged with the managed C# Runtime
-Worker over `/worker/v2`. In-process model steps are typed calls, and no
-private transport remains: tool execution is in process as well (ADR-0012,
-ADR-0014).
-_Avoid_: Runtime HTTP relay
 
 ## Approval flow
 
@@ -240,9 +221,3 @@ Settings, sessions and their message history, activity, credentials, and
 reviewed examples used by the active product. Business records live under
 `%LOCALAPPDATA%\Ru`, and `RU_DATA_ROOT` isolates them for tests.
 _Avoid_: Cleanup candidates, generated data
-
-## Retired Local Model Assets
-
-Source, configs, scripts, datasets, checkpoints, evaluations, and documents
-whose only purpose was in-process conversational-model generation or training.
-_Avoid_: Reintroducing local model or training dependencies

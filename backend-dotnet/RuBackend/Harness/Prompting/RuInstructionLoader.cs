@@ -37,6 +37,19 @@ public sealed partial class RuInstructionLoader
     public const int MaxInstructionBytes = 64 * 1024;
     public const int MaxCombinedInstructionBytes = 256 * 1024;
     private const int MaxSkillCatalogTokens = 6_144;
+
+    // Long enough for the "use when" sentence that decides whether a skill applies; the
+    // full description stays one skill-tool query away.
+    private const int MaxCatalogDescriptionChars = 320;
+
+    private static string CatalogDescription(string description)
+    {
+        var flat = string.Join(' ', description.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (flat.Length <= MaxCatalogDescriptionChars) return flat;
+        var cut = MaxCatalogDescriptionChars;
+        if (char.IsHighSurrogate(flat[cut - 1])) cut--;
+        return flat[..cut].TrimEnd() + "...";
+    }
     private const int SkillCatalogNoticeReserveBytes = 512;
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
@@ -224,7 +237,11 @@ public sealed partial class RuInstructionLoader
         foreach (var skill in markdownResult.Items.Where(skill => skill.Enabled && skill.ModelInvocable))
         {
             var requirements = skill.Requires.Count == 0 ? string.Empty : $" | requires={string.Join(",", skill.Requires)}";
-            var catalogLine = $"- {skill.Id} | {skill.Name} | {skill.Description}{requirements} | source_path={skill.SourcePath} | resource_base={skill.ResourceBase} | revision={skill.Revision}";
+            // The listing only has to let the model recognise a skill and name it: the skill
+            // tool returns the path, resource base and revision when a skill is loaded, so
+            // repeating them for every skill in every prompt bought nothing.
+            var label = string.Equals(skill.Name, skill.Id, StringComparison.OrdinalIgnoreCase) ? skill.Id : $"{skill.Id} ({skill.Name})";
+            var catalogLine = $"- {label}: {CatalogDescription(skill.Description)}{requirements}";
             var lineBytes = StrictUtf8.GetByteCount(catalogLine + "\n");
             if (catalogBytes > skillCatalogBudget - lineBytes)
             {

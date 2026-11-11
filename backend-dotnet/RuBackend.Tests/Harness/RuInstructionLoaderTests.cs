@@ -157,10 +157,12 @@ public sealed class RuInstructionLoaderTests
         Assert.Equal(PromptInstructionOrigin.Workspace, result.Blocks[0].Origin);
         Assert.All(result.Blocks.Skip(1), block => Assert.Equal(PromptInstructionOrigin.ExternalSkill, block.Origin));
         var alpha = result.Blocks.Single(block => block.SourceId == "skill:catalog");
-        // The single catalog block carries bounded metadata and paths, never workflow bodies.
+        // The single catalog block carries bounded ids and descriptions, never paths or workflow bodies.
         Assert.Equal("Available skills", alpha.DisplayName);
         Assert.Contains("skill tool", alpha.Content, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("alpha | alpha", alpha.Content, StringComparison.Ordinal);
+        Assert.Contains("- alpha: ", alpha.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("source_path=", alpha.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("revision=", alpha.Content, StringComparison.Ordinal);
         Assert.Contains("alpha-copy", alpha.Content, StringComparison.Ordinal);
         Assert.DoesNotContain("Workspace alpha", alpha.Content, StringComparison.Ordinal);
         Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("Alpha copy", StringComparison.Ordinal));
@@ -260,7 +262,7 @@ public sealed class RuInstructionLoaderTests
 
         Assert.Equal(new[] { "skill:catalog" }, result.Blocks.Select(block => block.SourceId));
         Assert.Contains("delta-home", result.Blocks[0].Content, StringComparison.Ordinal);
-        Assert.Contains("zeta | Shared Zeta | Shared user workflow", result.Blocks[0].Content, StringComparison.Ordinal);
+        Assert.Contains("- zeta (Shared Zeta): Shared user workflow", result.Blocks[0].Content, StringComparison.Ordinal);
         Assert.DoesNotContain("Home delta must lose", result.Blocks[0].Content, StringComparison.Ordinal);
         Assert.DoesNotContain("Shared delta must lose", result.Blocks[0].Content, StringComparison.Ordinal);
         Assert.DoesNotContain("Shared epsilon must lose", result.Blocks[0].Content, StringComparison.Ordinal);

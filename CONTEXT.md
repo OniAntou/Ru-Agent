@@ -27,12 +27,6 @@ Implementation: [host](docs/architecture/host.md#public-host).
 _Avoid_: Edge, proxy, FastAPI backend
 
 
-**Runtime Worker**:
-The retired private model-generation process. Current model steps run inside the Public Host; no worker transport is active.
-Implementation: [host](docs/architecture/host.md#runtime-worker).
-_Avoid_: Python backend, upstream server
-
-
 **Generation Kernel**:
 The module owning pinned provider selection, request projection, generation and cancellation for a model step.
 Implementation: [providers](docs/architecture/providers.md#generation-kernel).
@@ -43,12 +37,6 @@ _Avoid_: ModelRunner globals, backend core
 The canonical authenticated HTTP/SSE routes declared in `backend-dotnet/public-route-contract.json`, shared by Desktop, CLI and the stdio bridge. No WebSocket or second chat-generation transport exists.
 Implementation: [host](docs/architecture/host.md#public-contract).
 _Avoid_: Compatibility routes
-
-
-**Worker Contract**:
-The retired Host-to-worker wire protocol. Current model steps use typed in-process requests and results.
-Implementation: [host](docs/architecture/host.md#worker-contract).
-_Avoid_: Runtime HTTP relay
 
 
 **Agent Session**:
@@ -400,9 +388,3 @@ _Avoid_: Requiring GUI feature parity or treating presentation metadata as autho
 Settings, conversation history, activity, credentials and other active product records. Generated-output cleanup never authorizes removing these records.
 Implementation: [host](docs/architecture/host.md#protected-user-data).
 _Avoid_: Cleanup candidates, generated data
-
-
-**Retired Local Model Assets**:
-Artifacts whose sole purpose was the removed in-process conversational-model/training stack. Their retirement does not permit deleting active user data.
-Implementation: [host](docs/architecture/host.md#retired-local-model-assets).
-_Avoid_: Reintroducing local model or training dependencies

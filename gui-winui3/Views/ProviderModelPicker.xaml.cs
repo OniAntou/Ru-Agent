@@ -96,8 +96,23 @@ namespace RuApp.Views
                 return;
             }
 
+            bool isRefresh = _lastProjection is not null;
+            bool hadRows = _rowButtons.Count > 0;
+            // A rebuild empties and refills the list, which resets its scroll to the top.
+            // Keep where the reader was, unless the search changed: then the list is a
+            // different list and starts from its top.
+            double savedOffset = isRefresh ? PickerScroll.VerticalOffset : 0;
+            bool sameSearch = string.Equals(PickerSearchBox.Text, _lastSearchText, StringComparison.Ordinal);
+            _lastSearchText = PickerSearchBox.Text;
             _lastProjection = projection;
             PickerListContainer.Children.Clear();
+            if (isRefresh)
+            {
+                // A search or a catalog update changed the list: let it settle in rather
+                // than snapping to the new rows.
+                PickerListContainer.Opacity = 0.5;
+                UiMotion.FadeOpacity(PickerListContainer, 1);
+            }
             _rowButtons.Clear();
             _rowModels.Clear();
 
@@ -106,6 +121,7 @@ namespace RuApp.Views
                 PickerListContainer.Children.Add(
                     CreateEmptyStateText(projection.EmptyStateText));
                 RebuildKeyboard();
+                RestoreScroll(isRefresh, hadRows, sameSearch, savedOffset);
                 return;
             }
 
@@ -128,12 +144,40 @@ namespace RuApp.Views
             }
 
             RebuildKeyboard();
+            RestoreScroll(isRefresh, hadRows, sameSearch, savedOffset);
         }
 
+        private string _lastSearchText = string.Empty;
+
+        private void RestoreScroll(bool isRefresh, bool hadRows, bool sameSearch, double savedOffset)
+        {
+            // The first rows to appear (the catalog arrives after the picker opens): the
+            // list has just come into being, so starting it on the model in use is not a
+            // jump the reader can see.
+            if (!hadRows && _rowButtons.Count > 0)
+            {
+                CenterSelectedRow();
+                return;
+            }
+
+            if (!isRefresh)
+            {
+                return;
+            }
+
+            PickerScroll.UpdateLayout();
+            PickerScroll.ChangeView(null, sameSearch ? savedOffset : 0, null, disableAnimation: true);
+        }
+
+        /// <summary>
+        /// Called when the flyout opens: focuses the search field and puts the list on the
+        /// model in use, centred and without animation. The fade-in the caller starts hides
+        /// the one jump, so the list opens already where it should be.
+        /// </summary>
         public void FocusSearch()
         {
             PickerSearchBox.Focus(FocusState.Programmatic);
-            StartCursorOnSelection();
+            StartCursorOnSelection(scrollToRow: true);
         }
 
         /// <summary>
@@ -141,20 +185,56 @@ namespace RuApp.Views
         /// the flyout is showing rather than from the top of a list the user has never
         /// seen.
         /// </summary>
-        public void StartCursorOnSelection()
+        public void StartCursorOnSelection(bool scrollToRow = false)
         {
+            int target = 0;
             for (int i = 0; i < _rowModels.Count; i++)
             {
                 if (_rowModels[i].IsSelected)
                 {
-                    _keyboard.MoveCursor(i);
-                    return;
+                    target = i;
+                    break;
                 }
             }
 
-            _keyboard.MoveCursor(0);
+            // The cursor moves without asking to scroll; the one place that does scroll,
+            // opening the picker, asks for it explicitly. A catalog update or a search
+            // rebuilds the list while it is open, and scrolling then threw the list to
+            // the model in use under the reader's hand.
+            _keyboard.MoveCursor(target, show: false);
+            if (scrollToRow)
+            {
+                CenterSelectedRow();
+            }
         }
 
+        /// <summary>
+        /// Puts the row in use in the middle of the viewport, by offset and without
+        /// animation. The list is laid out first, because the rows have no position until
+        /// then and a bring-into-view request against them did nothing.
+        /// </summary>
+        private void CenterSelectedRow()
+        {
+            int target = 0;
+            for (int i = 0; i < _rowModels.Count; i++)
+            {
+                if (_rowModels[i].IsSelected)
+                {
+                    target = i;
+                    break;
+                }
+            }
+
+            if (target >= _rowButtons.Count)
+            {
+                return;
+            }
+
+            UpdateLayout();
+            double rowTop = _rowButtons[target].TransformToVisual(PickerListContainer).TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
+            double offset = rowTop - (PickerScroll.ViewportHeight - _rowButtons[target].ActualHeight) / 2;
+            PickerScroll.ChangeView(null, Math.Max(0, offset), null, disableAnimation: true);
+        }
         /// <summary>
         /// Rebinds the key controller to the rows just built.
         /// </summary>
@@ -176,7 +256,7 @@ namespace RuApp.Views
                 // and asked to fetch it. A row that is merely adjacent is not on screen.
                 index => _rowButtons[index].StartBringIntoView());
             _keyboard.CursorChanged += OnCursorChanged;
-            StartCursorOnSelection();
+            StartCursorOnSelection(scrollToRow: false);
         }
 
         private void ActivateRowAt(int index)
@@ -202,12 +282,13 @@ namespace RuApp.Views
         /// </remarks>
         private void OnCursorChanged(int index)
         {
+            // No animation on the marked row: hover and the arrow keys answer instantly,
+            // and a fade here read as lag whichever way it ran.
             for (int i = 0; i < _rowButtons.Count; i++)
             {
                 _rowButtons[i].Background = i == index ? _brushes.Cursor : _brushes.Rest;
             }
         }
-
         private void OnPickerKeyDown(object sender, KeyRoutedEventArgs e)
         {
             // Space is a character here: the focus is in the search field, and a user
@@ -246,9 +327,10 @@ namespace RuApp.Views
         /// </remarks>
         private void OnSearchFocusChanged(object sender, RoutedEventArgs e)
         {
-            PickerSearchWell.BorderBrush = PickerSearchBox.FocusState == FocusState.Unfocused
-                ? _brushes.Line
-                : _brushes.Accent;
+            UiMotion.FadeBrush(
+                PickerSearchWell,
+                Border.BorderBrushProperty,
+                PickerSearchBox.FocusState == FocusState.Unfocused ? _brushes.Line : _brushes.Accent);
         }
 
         /// <summary>

@@ -183,6 +183,35 @@ estimate or usage arrives; only switching conversations clears it.
 The meter button's accessible help includes the total and all three values, so
 the reading remains available even when the flyout opens as a transient hover.
 
+## Model picker and reasoning panel
+
+The composer's model picker lists models under their provider heading; a footer names the keys. Opening the picker centres the model in use by offset, without animation; a catalog update or a
+search rebuild keeps the reader's scroll offset (a new search starts at the top), so the list never
+jumps while it is open. The first open after launch can only do this once the catalog has arrived, so
+that open starts at the top. The marked row is painted instantly (a fade there read as lag); the search well's focus
+border fades (`UiMotion.FadeBrush`); a changed list fades in, and both panels enter with `UiMotion.Enter`.
+The reasoning panel is one segmented choice. A pill (`UiMotion.SlideX`) marks the segment under
+the pointer or the keys (Left/Right or Up/Down), and the sentence below it, from
+`ReasoningEffortDescriptions`, fades when it changes. Click or Enter commits and closes; leaving
+changes nothing. The sentences say what a level asks of the model, not how a provider behaves,
+and an unknown level is named as "Provider setting". A model that offers only its default shows
+one dimmed segment and says it has no adjustable reasoning effort. Everything applies instantly
+when Windows animations are off.
+
+## Workspace trust card
+
+The first run in a folder the user chose waits for explicit workspace trust. The prompt is a
+card in the chat flow (`WorkspaceTrustPanelControl`), in the same floating slot as the approval
+and question cards, not a modal dialog. It shows the policy copy, the folder in a mono inset and,
+for a drive root or the user profile, a scope warning. Focus lands on Cancel, Escape cancels, and
+nothing approves by default; Approve and Cancel are the only paths to `TrustAsync`, and the decision
+stays the Host's. Because the card does not block the window it can go away unanswered: a session
+change, a run that no longer needs trust, a new guard owner or window close completes the pending wait
+with no decision (`DismissWorkspaceTrustCard`), the run stays parked, and the prompt returns when the
+session is shown again. A declined send still returns to the composer. Chat Escape does not stop
+the run while the card is showing, and the native preview hides under it like under approvals.
+A Host-confirmed scratch workspace is still approved silently and never shows the card.
+
 ## Session usage panel
 
 Opened from a session row's menu, the panel reports what the session's runs cost: price

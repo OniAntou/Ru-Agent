@@ -994,6 +994,8 @@ namespace RuApp.Views
             RunPanel.ApprovalArrived -= OnRunPanelApprovalArrived;
             RunPanel.QuestionArrived -= OnRunPanelQuestionArrived;
             RunPanel.TrustPromptRequested -= OnRunPanelTrustPromptRequested;
+            TrustPanel.DecisionRequested -= OnTrustPanelDecisionRequested;
+            DismissWorkspaceTrustCard();
             StopTaskRefreshTimer();
             DisposeMessageRail();
             DisposeChatHeader();

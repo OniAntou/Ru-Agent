@@ -29,23 +29,14 @@ namespace RuApp.Views
 {
     public sealed partial class ChatView
     {
-        /// <summary>
-        /// Width the reasoning rows reserve for the margin beside the selection rule, so
-        /// every label starts on the same line whether or not the rule is drawn.
-        /// </summary>
-        /// <remarks>
-        /// The same 11px the model picker reserves, and for the same reason: a rule that
-        /// only exists on the selected row must not push that row's label out of line
-        /// with the other three.
-        /// </remarks>
-        private const double ReasoningSelectionColumnWidth = 11;
-
         private readonly List<Button> _reasoningRows = new();
+        private readonly List<TextBlock> _reasoningLabels = new();
         private readonly List<string> _reasoningEfforts = new();
         private OptionListKeyboard _reasoningKeyboard = new(0, _ => { }, () => { });
-        private Brush? _reasoningCursorBrush;
-        private Brush? _reasoningRestBrush;
-
+        private Border? _reasoningPill;
+        private Grid? _reasoningSegments;
+        private TextBlock? _reasoningDescription;
+        private bool _reasoningPillPlaced;
         /// <summary>The composer's provider/model and reasoning-effort state.</summary>
         public ChatModelPickerViewModel ModelSelection { get; }
 
@@ -73,6 +64,7 @@ namespace RuApp.Views
         private void OnChatModelFlyoutOpened(object sender, object e)
         {
             AttachChatFlyoutEscape(ChatModelFlyout);
+            UiMotion.Enter(ModelPicker);
             ModelPicker.FocusSearch();
             ModelSelection.OnPickerOpened();
         }
@@ -101,46 +93,59 @@ namespace RuApp.Views
             ChatModelFlyout.Hide();
 
         /// <summary>
-        /// Builds the reasoning effort list.
+        /// Builds the reasoning panel: one segmented choice and a sentence for the segment
+        /// under the cursor.
         /// </summary>
         /// <remarks>
-        /// The rows are the same shape the model picker uses, and deliberately so: one
-        /// style from App.xaml, the same 28px rhythm, the same rule in the margin for the
-        /// row in use, the same cursor fill for the row the keys are on. Two option lists
-        /// in one toolbar answering the same question should not be two designs, and a
-        /// shared style makes the next change to one a change to both rather than
-        /// something somebody has to remember.
+        /// A pill marks the segment the pointer or the keys are on and glides between
+        /// segments; the sentence below fades when it changes. Clicking or pressing Enter
+        /// commits the marked effort and closes the panel, and leaving without a commit
+        /// changes nothing. The sentences come from <see cref="ReasoningEffortDescriptions"/>
+        /// and say what a setting asks of the model, never how a provider behaves. A model
+        /// that offers only its default shows a single dimmed segment and says so.
         ///
-        /// The check glyph is gone for the reason it is gone from the model picker: a rule
-        /// in the margin is found faster in a list that moves, and the check was a second
-        /// signal for a fact the rule already carries. It was also not doing what its
-        /// comment claimed. The old row held the check in an auto-width column and
-        /// collapsed it when the row was not selected, so the label did shift sideways by
-        /// the width of a check on every state change; "always present" was true of the
-        /// object and false of the layout.
-        ///
-        /// No descriptions. "low" and "high" are the levels the provider publishes, and
-        /// any sentence written under them about what they feel like would be prose nobody
-        /// can check. The values are the interface.
-        ///
-        /// The container takes the focus and the rows are not tab stops, so Tab leaves the
-        /// flyout rather than walking four buttons to get out of it.
+        /// The container takes the focus and the segments are not tab stops, so Tab leaves
+        /// the flyout rather than walking the buttons to get out of it.
         /// </remarks>
         private void OnChatReasoningFlyoutOpened(object sender, object e)
         {
             AttachChatFlyoutEscape(ChatReasoningFlyout);
             ReasoningOptionsContainer.Children.Clear();
             _reasoningRows.Clear();
+            _reasoningLabels.Clear();
             _reasoningEfforts.Clear();
+            _reasoningPillPlaced = false;
             var options = ModelSelection.ReasoningOptions();
+            bool adjustable = options.Count > 1;
 
             var resources = Application.Current.Resources;
             var font = (FontFamily)resources["RuUiFontFamily"];
-            var ink = (Brush)resources["RuInkBrush"];
-            var accent = (Brush)resources["RuAccentBrush"];
-            _reasoningCursorBrush = (Brush)resources["RuAccentSoftBrush"];
-            _reasoningRestBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            var muted = (Brush)resources["RuMutedBrush"];
+            var line = (Brush)resources["RuLineBrush"];
             var rowStyle = (Style)resources["RuOptionRowStyle"];
+
+            ReasoningOptionsContainer.Children.Add(new TextBlock
+            {
+                Text = $"Reasoning effort · {ModelSelection.ModelLabel}",
+                FontFamily = font,
+                FontSize = 12,
+                Foreground = muted,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(4, 2, 4, 8),
+            });
+
+            var segments = new Grid();
+            var pill = new Border
+            {
+                Background = (Brush)resources["RuAccentSoftBrush"],
+                CornerRadius = Services.UiCornerRadius.Control,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                IsHitTestVisible = false,
+            };
+            Grid.SetColumnSpan(pill, Math.Max(1, options.Count));
+            segments.Children.Add(pill);
+            _reasoningPill = pill;
+            _reasoningSegments = segments;
 
             int selectedIndex = 0;
             foreach (var option in options)
@@ -148,57 +153,61 @@ namespace RuApp.Views
                 bool isSelected = string.Equals(option.Value, ModelSelection.SelectedEffort, StringComparison.OrdinalIgnoreCase);
                 string label = option.Label ?? option.Value;
                 int index = _reasoningRows.Count;
-                if (isSelected)
-                {
-                    selectedIndex = index;
-                }
+                if (isSelected) selectedIndex = index;
 
+                segments.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var text = new TextBlock
+                {
+                    Text = CapitalizeEffort(label),
+                    FontFamily = font,
+                    FontSize = 12.5,
+                    Foreground = muted,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
                 var btn = new Button
                 {
                     Style = rowStyle,
-                    Background = _reasoningRestBrush,
+                    Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                    Padding = new Thickness(0),
+                    MinHeight = 30,
+                    HorizontalContentAlignment = HorizontalAlignment.Center,
+                    Content = text,
                     Tag = index,
                 };
                 AutomationProperties.SetName(btn, $"Reasoning effort: {label}");
                 btn.PointerEntered += OnReasoningRowPointerEntered;
-
-                var grid = new Grid();
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ReasoningSelectionColumnWidth) });
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                if (isSelected)
-                {
-                    var bar = new Border
-                    {
-                        Width = 3,
-                        Background = accent,
-                        Margin = new Thickness(2, 0, 0, 0),
-                        VerticalAlignment = VerticalAlignment.Stretch,
-                    };
-                    Grid.SetColumn(bar, 0);
-                    grid.Children.Add(bar);
-                }
-
-                var titleBlock = new TextBlock
-                {
-                    Text = label,
-                    FontFamily = font,
-                    FontSize = 13,
-                    Foreground = ink,
-                    FontWeight = isSelected
-                        ? Microsoft.UI.Text.FontWeights.SemiBold
-                        : Microsoft.UI.Text.FontWeights.Normal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                Grid.SetColumn(titleBlock, 1);
-                grid.Children.Add(titleBlock);
-
-                btn.Content = grid;
                 btn.Click += OnReasoningOptionClicked;
-                ReasoningOptionsContainer.Children.Add(btn);
+                Grid.SetColumn(btn, index);
+                segments.Children.Add(btn);
                 _reasoningRows.Add(btn);
+                _reasoningLabels.Add(text);
                 _reasoningEfforts.Add(option.Value);
             }
+
+            segments.SizeChanged += OnReasoningSegmentsSizeChanged;
+            ReasoningOptionsContainer.Children.Add(new Border
+            {
+                Background = (Brush)resources["RuCanvasBrush"],
+                BorderBrush = line,
+                BorderThickness = new Thickness(1),
+                CornerRadius = Services.UiCornerRadius.Control,
+                Padding = new Thickness(3),
+                Opacity = adjustable ? 1 : 0.55,
+                Child = segments,
+            });
+
+            _reasoningDescription = new TextBlock
+            {
+                FontFamily = font,
+                FontSize = 12,
+                LineHeight = 17,
+                Foreground = muted,
+                TextWrapping = TextWrapping.Wrap,
+                MinHeight = 34,
+                Margin = new Thickness(4, 10, 4, 2),
+            };
+            ReasoningOptionsContainer.Children.Add(_reasoningDescription);
 
             _reasoningKeyboard = new OptionListKeyboard(
                 _reasoningRows.Count,
@@ -207,11 +216,18 @@ namespace RuApp.Views
             _reasoningKeyboard.CursorChanged += OnReasoningCursorChanged;
             _reasoningKeyboard.MoveCursor(selectedIndex);
 
+            UiMotion.Enter(ReasoningOptionsContainer);
             ReasoningOptionsContainer.Focus(FocusState.Programmatic);
         }
 
-        private void OnChatReasoningFlyoutClosed(object sender, object e) =>
+        private static string CapitalizeEffort(string label) =>
+            string.IsNullOrEmpty(label) ? label : char.ToUpperInvariant(label[0]) + label[1..];
+
+        private void OnChatReasoningFlyoutClosed(object sender, object e)
+        {
+            if (_reasoningSegments is not null) _reasoningSegments.SizeChanged -= OnReasoningSegmentsSizeChanged;
             OnChatOwnedFlyoutClosed(ChatReasoningFlyout);
+        }
 
         private void OnContextWindowFlyoutOpened(object sender, object e) =>
             AttachChatFlyoutEscape(ContextWindowFlyout);
@@ -220,8 +236,8 @@ namespace RuApp.Views
             OnChatOwnedFlyoutClosed(ContextWindowFlyout);
 
         /// <summary>
-        /// The pointer is the cursor, exactly as in the model picker: one marked row, so
-        /// "what will Enter pick" has a single answer whichever device the user reached
+        /// The pointer is the cursor, exactly as in the model picker: one marked segment,
+        /// so "what will Enter pick" has a single answer whichever device the user reached
         /// for.
         /// </summary>
         private void OnReasoningRowPointerEntered(object sender, PointerRoutedEventArgs e)
@@ -232,16 +248,66 @@ namespace RuApp.Views
             }
         }
 
-        private void OnReasoningCursorChanged(int index)
+        // The pill is as wide as one segment; it is sized, and put under the cursor, once
+        // the segments have a width.
+        private void OnReasoningSegmentsSizeChanged(object sender, SizeChangedEventArgs e)
         {
-            for (int i = 0; i < _reasoningRows.Count; i++)
-            {
-                _reasoningRows[i].Background = i == index ? _reasoningCursorBrush : _reasoningRestBrush;
-            }
+            if (_reasoningPill is null || _reasoningRows.Count == 0 || e.NewSize.Width <= 0) return;
+            _reasoningPill.Width = e.NewSize.Width / _reasoningRows.Count;
+            _reasoningPill.Height = e.NewSize.Height;
+            MoveReasoningPill(Math.Max(0, _reasoningKeyboard.Cursor), animate: false);
+            _reasoningPillPlaced = true;
         }
 
+        private void MoveReasoningPill(int index, bool animate)
+        {
+            if (_reasoningPill is null || _reasoningSegments is null || _reasoningRows.Count == 0) return;
+            double width = _reasoningSegments.ActualWidth / _reasoningRows.Count;
+            UiMotion.SlideX(_reasoningPill, index * width, animate);
+        }
+
+        private void OnReasoningCursorChanged(int index)
+        {
+            var resources = Application.Current.Resources;
+            var ink = (Brush)resources["RuInkBrush"];
+            var muted = (Brush)resources["RuMutedBrush"];
+            for (int i = 0; i < _reasoningLabels.Count; i++)
+            {
+                _reasoningLabels[i].Foreground = i == index ? ink : muted;
+                _reasoningLabels[i].FontWeight = i == index
+                    ? Microsoft.UI.Text.FontWeights.SemiBold
+                    : Microsoft.UI.Text.FontWeights.Normal;
+            }
+
+            MoveReasoningPill(index, animate: _reasoningPillPlaced);
+
+            if (_reasoningDescription is not null && index >= 0 && index < _reasoningEfforts.Count)
+            {
+                string text = _reasoningEfforts.Count > 1
+                    ? ReasoningEffortDescriptions.For(_reasoningEfforts[index])
+                    : ReasoningEffortDescriptions.NotAdjustable;
+                if (!string.Equals(_reasoningDescription.Text, text, StringComparison.Ordinal))
+                {
+                    _reasoningDescription.Text = text;
+                    if (_reasoningPillPlaced)
+                    {
+                        // The sentence follows the cursor: it fades in rather than swapping.
+                        _reasoningDescription.Opacity = 0;
+                        UiMotion.FadeOpacity(_reasoningDescription, 1);
+                    }
+                }
+            }
+        }
         private void OnReasoningContainerKeyDown(object sender, KeyRoutedEventArgs e)
         {
+            // The segments run left to right, so Left and Right walk them like Up and Down.
+            if (e.Key is Windows.System.VirtualKey.Left or Windows.System.VirtualKey.Right)
+            {
+                _reasoningKeyboard.MoveCursorBy(e.Key == Windows.System.VirtualKey.Left ? -1 : 1);
+                e.Handled = true;
+                return;
+            }
+
             // No text field holds the focus here, so Space is free to commit.
             if (_reasoningKeyboard.HandleKey(e.Key, spaceActivates: true))
             {

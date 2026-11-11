@@ -43,7 +43,7 @@ public sealed partial class ChatView
         SidePanel.TasksRefreshRequested += OnSidePanelTasksRefreshRequested;
         SidePanel.WidthChanged += OnSidePanelWidthChanged;
         SidePanel.WidthCommitted += OnSidePanelWidthCommitted;
-        SidePanel.SetPreviewOcclusion(() => ApprovalPanel.IsShown || QuestionPanel.IsShown);
+        SidePanel.SetPreviewOcclusion(() => ApprovalPanel.IsShown || QuestionPanel.IsShown || TrustPanel.IsShown);
     }
 
     /// <summary>Hides or restores the whole surface; the title-bar toggle's action.</summary>

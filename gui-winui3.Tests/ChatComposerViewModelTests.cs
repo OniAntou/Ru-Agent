@@ -302,7 +302,7 @@ public sealed class DeclinedTrustWiringTests
     {
         // Behavior: ChatComposerViewModelTests.A_send_whose_workspace_trust_is_declined_comes_back_to_the_composer.
         string code = GuiSource.ViewText("ChatView");
-        string prompt = GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync");
+        string prompt = GuiSource.MethodBody(code, "ShowWorkspaceTrustCardAsync");
         Assert.Contains("Composer.RestoreDeclinedSend(run.SessionId", prompt, StringComparison.Ordinal);
         Assert.Contains("Composer.ForgetAcceptedSend(run.SessionId)", prompt, StringComparison.Ordinal);
         Assert.Contains("Composer.ClearAfterSend(submittedSessionId, snapshot)", GuiSource.MethodBody(code, "SendCurrentMessageAsync"), StringComparison.Ordinal);

@@ -40,50 +40,41 @@ namespace RuApp.Views
             return _requestedWorkspaceBySession.TryGetValue(sessionId, out var requested) ? requested : null;
         }
 
-        private static UIElement BuildTrustPromptContent(WorkspaceTrustPromptPolicy.Prompt prompt)
-        {
-            var panel = new StackPanel { Spacing = 12 };
-            panel.Children.Add(new TextBlock { Text = prompt.Content, TextWrapping = TextWrapping.Wrap });
-            var path = new TextBlock
-            {
-                Text = prompt.WorkspaceText,
-                TextWrapping = TextWrapping.Wrap,
-                IsTextSelectionEnabled = true,
-                FontFamily = (FontFamily)Application.Current.Resources["RuMonoFontFamily"],
-            };
-            AutomationProperties.SetName(path, $"Workspace: {prompt.WorkspaceText}");
-            panel.Children.Add(new Border
-            {
-                Padding = new Thickness(10, 8, 10, 8),
-                CornerRadius = Services.UiCornerRadius.Control,
-                Background = (Brush)Application.Current.Resources["RuAccentSoftBrush"],
-                Child = path,
-            });
-            if (prompt.ScopeWarning is { } warning)
-            {
-                // Ink text beside a warning glyph: the warning colour fails AA as body
-                // text on the light theme, so it marks the line instead of painting it.
-                var row = new Grid { ColumnSpacing = 8 };
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.Children.Add(new FontIcon
-                {
-                    Glyph = "",
-                    FontSize = 14,
-                    Foreground = (Brush)Application.Current.Resources["RuWarningBrush"],
-                    VerticalAlignment = VerticalAlignment.Top,
-                    Margin = new Thickness(0, 2, 0, 0),
-                });
-                var text = new TextBlock { Text = warning, TextWrapping = TextWrapping.Wrap };
-                Grid.SetColumn(text, 1);
-                row.Children.Add(text);
-                panel.Children.Add(row);
-            }
+        // The card's pending answer. True trusts, false declines, null means the card
+        // went away without an answer (session change, run no longer needs trust, window
+        // close). A null never reaches the Host as a decision: the run stays parked.
+        private TaskCompletionSource<bool?>? _trustCardWait;
 
-            return panel;
+        private Task<bool?> AskWorkspaceTrustAsync(WorkspaceTrustPromptPolicy.Prompt prompt)
+        {
+            _trustCardWait?.TrySetResult(null);
+            var wait = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _trustCardWait = wait;
+            TrustPanel.Show(prompt);
+            return wait.Task;
         }
 
-        private async void ShowWorkspaceTrustDialogAsync()
+        private void OnTrustPanelDecisionRequested(object? sender, bool approved)
+        {
+            var wait = _trustCardWait;
+            _trustCardWait = null;
+            TrustPanel.Hide();
+            wait?.TrySetResult(approved);
+        }
+
+        /// <summary>
+        /// Takes the card away without answering it. Every exit that is not the user's own
+        /// choice goes through here, so the pending wait always completes and the guard it
+        /// holds is released.
+        /// </summary>
+        private void DismissWorkspaceTrustCard()
+        {
+            var wait = _trustCardWait;
+            _trustCardWait = null;
+            TrustPanel?.Hide();
+            wait?.TrySetResult(null);
+        }
+        private async void ShowWorkspaceTrustCardAsync()
         {
             var controller = _agentController;
             var run = controller?.CurrentRun;
@@ -101,6 +92,7 @@ namespace RuApp.Views
             UpdateAgentInlineState();
 
             Exception? failure = null;
+            bool dismissed = false;
             try
             {
                 // A scratch workspace is a folder Ru created under its own data root for a chat
@@ -126,29 +118,27 @@ namespace RuApp.Views
                 var prompt = WorkspaceTrustPromptPolicy.For(
                     _workspaceTrustMemory.IsReTrust(_agentWorkspace, run.DisplayIdentityHash),
                     ResolveRunWorkspacePath(run.SessionId));
-                var dialog = new ContentDialog
-                {
-                    Title = prompt.Title,
-                    Content = BuildTrustPromptContent(prompt),
-                    PrimaryButtonText = prompt.PrimaryButtonText,
-                    CloseButtonText = "Cancel",
-                    DefaultButton = ContentDialogButton.Close,
-                    XamlRoot = XamlRoot,
-                };
-
-                ContentDialogResult result = await ContentDialogGate.ShowAsync(dialog);
+                bool? decision = await AskWorkspaceTrustAsync(prompt);
                 bool isCurrentRequest = ReferenceEquals(_agentController, controller)
                     && RunPanel.OwnsTrustPrompt(controller, run.RunId, run.SessionId)
                     && controller.CurrentRun is { } currentRun
                     && string.Equals(currentRun.RunId, run.RunId, StringComparison.Ordinal)
                     && string.Equals(currentRun.SessionId, _activeSessionId, StringComparison.Ordinal)
                     && controller.NeedsWorkspaceTrust;
+                if (decision is null)
+                {
+                    // Dismissed, not answered: no decision goes to the Host and the run stays
+                    // parked, so the prompt can come back when the session is shown again.
+                    dismissed = true;
+                    return;
+                }
+
                 if (!isCurrentRequest)
                 {
                     return;
                 }
 
-                if (result == ContentDialogResult.Primary)
+                if (decision == true)
                 {
                     await controller.TrustAsync(approve: true);
                     // Only an accepted approval reaches this line: the client throws on a
@@ -174,9 +164,9 @@ namespace RuApp.Views
             }
             finally
             {
-                // A prompt that could not open (another dialog was up) is retried by the
-                // next monitor refresh after a short cooldown, not counted as answered.
-                bool couldNotOpen = failure is not null && ContentDialogGate.IsDialogConflict(failure);
+                // A card taken away without an answer is retried by the next monitor refresh
+                // after a short cooldown, not counted as answered.
+                bool couldNotOpen = dismissed;
                 bool ownsGuard = RunPanel.EndTrustPrompt(controller, run.RunId, run.SessionId, couldNotOpen, DateTimeOffset.UtcNow);
                 if (!RunPanel.IsTrustPromptOpen)
                 {
@@ -186,14 +176,7 @@ namespace RuApp.Views
 
                 if (failure is not null && ownsGuard)
                 {
-                    if (couldNotOpen)
-                    {
-                        ShowAgentInlineStatus("Could not open the workspace trust prompt. Close any open dialog; the prompt will reappear.");
-                    }
-                    else
-                    {
-                        ShowAgentError(failure);
-                    }
+                    ShowAgentError(failure);
                 }
             }
         }

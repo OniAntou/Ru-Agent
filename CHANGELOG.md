@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Model picker không còn tự cuộn. Trước đây mỗi lần danh sách dựng lại (catalog cập nhật, gõ tìm
+  kiếm) nó cuộn thẳng tới model đang chọn, nên vừa mở picker là danh sách nhảy xuống cuối. Giờ chỉ lúc mở
+  mới đưa model đang dùng vào giữa khung, còn dựng lại thì giữ nguyên vị trí cuộn. Lần mở đầu tiên sau khi
+  khởi động, vì catalog tải sau, danh sách bắt đầu ở đầu.
+
+- **feat(gui)**: Model picker và panel reasoning effort ở composer được làm lại. Picker có dòng gợi ý phím, viền ô tìm kiếm mờ dần khi focus, danh
+  sách mờ dần khi tìm kiếm hoặc catalog cập nhật. Reasoning effort là một thanh chọn có viên trượt theo con
+  trỏ hoặc phím trái/phải, kèm một câu mô tả mờ dần theo mức đang trỏ; model chỉ có mức mặc định hiện một ô
+  mờ và ghi rõ không điều chỉnh được. Cả hai panel hiện dần khi mở và tôn trọng tuỳ chọn hiệu ứng của Windows.
+
+- **feat(gui)**: Hỏi tin cậy workspace không còn là hộp thoại: nó là thẻ nổi trong luồng chat, cùng chỗ với
+  thẻ phê duyệt, có đường dẫn thư mục và cảnh báo khi thư mục quá rộng. Focus mặc định ở Cancel, Escape
+  huỷ, không có nút mặc định đồng ý. Đổi session, run không còn cần tin cậy hoặc đóng cửa sổ thì thẻ tự ẩn
+  mà không gửi quyết định nào; run vẫn chờ và thẻ hiện lại khi mở lại session. Thư mục scratch Ru tự tạo
+  vẫn tự đồng ý như cũ.
+
 - **feat(gui)**: Panel Session usage gọn lại: chi phí và tổng token ở đầu, một thanh chia input/output/cache
   kèm chú giải, dòng "Context now" (chỉ cho session đang mở) đặt cạnh tổng để hai con số không còn trông như
   lệch nhau, và danh sách run được gập sau một tiêu đề. Bỏ nhãn "Billed tokens" (cache read tính cả vào làm

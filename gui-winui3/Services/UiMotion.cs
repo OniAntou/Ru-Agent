@@ -167,7 +167,11 @@ namespace RuApp.Services
         /// and animates that instead. Non-solid targets (a gradient, or a reader with
         /// animations off) are applied instantly.
         /// </summary>
-        public static void FadeBrush(DependencyObject owner, DependencyProperty property, Brush? target)
+        public static void FadeBrush(
+            DependencyObject owner,
+            DependencyProperty property,
+            Brush? target,
+            double milliseconds = BrushFadeMilliseconds)
         {
             ArgumentNullException.ThrowIfNull(owner);
             ArgumentNullException.ThrowIfNull(property);
@@ -194,7 +198,7 @@ namespace RuApp.Services
                 var animation = new ColorAnimation
                 {
                     To = to,
-                    Duration = TimeSpan.FromMilliseconds(BrushFadeMilliseconds),
+                    Duration = TimeSpan.FromMilliseconds(milliseconds),
                     EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
                 };
                 Storyboard.SetTarget(animation, brush);
@@ -238,6 +242,39 @@ namespace RuApp.Services
             {
                 Trace("opacity fade", error);
                 element.Opacity = target;
+            }
+        }
+
+        public const double SlideMilliseconds = 180;
+
+        /// <summary>
+        /// Moves an element sideways to <paramref name="x"/> (relative to its layout slot)
+        /// with an eased glide, for a marker that follows a selection. With
+        /// <paramref name="animate"/> false, or with animations off, it jumps.
+        /// </summary>
+        public static void SlideX(FrameworkElement element, double x, bool animate = true)
+        {
+            ArgumentNullException.ThrowIfNull(element);
+            try
+            {
+                var visual = ElementVisual(element);
+                visual.StopAnimation(TranslationProperty);
+                var target = new Vector3((float)x, 0f, 0f);
+                if (!animate || !UiTiming.AnimationsEnabled)
+                {
+                    visual.Properties.InsertVector3(TranslationProperty, target);
+                    return;
+                }
+
+                var ease = visual.Compositor.CreateCubicBezierEasingFunction(new Vector2(0.16f, 1f), new Vector2(0.3f, 1f));
+                var glide = visual.Compositor.CreateVector3KeyFrameAnimation();
+                glide.InsertKeyFrame(1f, target, ease);
+                glide.Duration = TimeSpan.FromMilliseconds(SlideMilliseconds);
+                visual.StartAnimation(TranslationProperty, glide);
+            }
+            catch (Exception error)
+            {
+                Trace("slide", error);
             }
         }
 

@@ -399,6 +399,7 @@ namespace RuApp.Views
             _agentController?.RunAdopted += OnAgentRunAdopted;
             ApprovalPanel.DecisionRequested += OnApprovalDecisionRequested;
             QuestionPanel.AnswerRequested += OnQuestionAnswerRequested;
+            TrustPanel.DecisionRequested += OnTrustPanelDecisionRequested;
             UpdateAgentComposerVisuals();
             UpdateAgentInlineState();
 

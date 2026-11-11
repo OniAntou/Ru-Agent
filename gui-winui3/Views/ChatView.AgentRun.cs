@@ -162,7 +162,7 @@ namespace RuApp.Views
 
         private void OnRunPanelQuestionArrived() => QuestionPanel.FocusAnswer();
 
-        private void OnRunPanelTrustPromptRequested() => ShowWorkspaceTrustDialogAsync();
+        private void OnRunPanelTrustPromptRequested() => ShowWorkspaceTrustCardAsync();
 
         private void UpdateAgentInlineState()
         {
@@ -172,6 +172,13 @@ namespace RuApp.Views
             SidePanel.BindSubagents(_agentController?.SubagentClient, ResolveSidePanelTaskRunId());
             RunPanel.ForgetTrustIfRunChanged(
                 _agentController, _agentController?.CurrentRun?.RunId, _agentController?.CurrentRun?.SessionId, _activeSessionId);
+            // The card is a prompt for one run: when that run no longer waits for trust, or the
+            // guard moved on, the card goes away without a decision.
+            if (_trustCardWait is not null
+                && (!RunPanel.IsTrustPromptOpen || _agentController?.NeedsWorkspaceTrust != true))
+            {
+                DismissWorkspaceTrustCard();
+            }
             bool agentBusy = AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).IsSessionBusy;
             if (_agentBusySeen && !agentBusy)
             {
@@ -330,6 +337,8 @@ namespace RuApp.Views
 
         private void ResetAgentState(bool preserveTranscript = false)
         {
+            // The trust card belongs to the session on screen; leaving it unanswered.
+            DismissWorkspaceTrustCard();
             CancelPreparingSubmission();
             ClearChangeNavigation();
             _changesPanelExplicitlyOpened = false;
@@ -434,7 +443,7 @@ namespace RuApp.Views
                     var escape = AgentRunKeyboardPolicy.Resolve(
                         runInHand: _isSendButtonInStopMode || IsActiveAgentRunPending(),
                         approvalShowing: ApprovalPanel?.IsShown == true,
-                        questionShowing: QuestionPanel?.IsShown == true,
+                        questionShowing: QuestionPanel?.IsShown == true || TrustPanel?.IsShown == true,
                         flyoutShowing: IsChatFlyoutShowing());
 
                     switch (escape)
@@ -520,7 +529,7 @@ namespace RuApp.Views
             var escape = AgentRunKeyboardPolicy.Resolve(
                 runInHand: _isSendButtonInStopMode || IsActiveAgentRunPending(),
                 approvalShowing: ApprovalPanel?.IsShown == true,
-                questionShowing: QuestionPanel?.IsShown == true,
+                questionShowing: QuestionPanel?.IsShown == true || TrustPanel?.IsShown == true,
                 flyoutShowing: IsChatFlyoutShowing());
 
             if (escape == EscapeOutcome.DenyApproval)

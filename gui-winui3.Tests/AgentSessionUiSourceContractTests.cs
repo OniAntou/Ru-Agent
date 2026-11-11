@@ -488,31 +488,29 @@ public sealed class AgentSessionUiSourceContractTests
     public void Workspace_trust_ownership_gate_precedes_the_guarded_dialog()
     {
         var code = GuiSource.ViewText("ChatView");
-        var dialog = GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync");
+        var dialog = GuiSource.MethodBody(code, "ShowWorkspaceTrustCardAsync");
         int currentRun = RequiredSourceIndex(dialog, "controller?.CurrentRun");
         int controllerGate = RequiredSourceIndex(dialog, "controller is null");
         int runGate = RequiredSourceIndex(dialog, "run is null");
         int sessionGate = RequiredSourceIndex(dialog, "run.SessionId, _activeSessionId");
         int requestGate = RequiredSourceIndex(dialog, "controller.NeedsWorkspaceTrust");
         int guard = RequiredSourceIndex(dialog, "RunPanel.TryBeginTrustPrompt");
-        int dialogConstruction = RequiredSourceIndex(dialog, "new ContentDialog");
-        int show = RequiredSourceIndex(dialog, "await ContentDialogGate.ShowAsync(dialog)");
+        int show = RequiredSourceIndex(dialog, "await AskWorkspaceTrustAsync(prompt)");
 
         Assert.True(currentRun < controllerGate, "The current run must be read before controller validity.");
         Assert.True(controllerGate < runGate, "Controller validity must precede run validity.");
         Assert.True(runGate < sessionGate, "Run validity must precede the session gate.");
         Assert.True(sessionGate < requestGate, "The session gate must precede the request gate.");
         Assert.True(requestGate < guard, "The valid-request gate must precede the guard.");
-        Assert.True(guard < dialogConstruction, "The guard must be established before dialog construction.");
-        Assert.True(dialogConstruction < show, "Dialog construction must precede ShowAsync.");
+        Assert.True(guard < show, "The guard must be established before the card is shown.");
     }
 
     [Fact]
     public void Workspace_trust_dialog_counts_all_calls_and_requires_each_to_be_awaited()
     {
         var code = GuiSource.ViewText("ChatView");
-        var dialog = GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync");
-        int show = RequiredSourceIndex(dialog, "await ContentDialogGate.ShowAsync(dialog)");
+        var dialog = GuiSource.MethodBody(code, "ShowWorkspaceTrustCardAsync");
+        int show = RequiredSourceIndex(dialog, "await AskWorkspaceTrustAsync(prompt)");
         var invocations = ReadTrustInvocations(dialog);
         var decisions = invocations.Where(invocation => invocation.Index > show).ToArray();
 
@@ -537,12 +535,42 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
+    public void A_dismissed_trust_card_sends_no_decision_and_every_exit_completes_the_wait()
+    {
+        // The card does not block the window, so it can go away without an answer. A null
+        // result returns before either TrustAsync call; the wait completes from reset,
+        // from the inline-state refresh, and from dispose, so the guard is always released.
+        var code = GuiSource.ViewText("ChatView");
+        var card = GuiSource.MethodBody(code, "ShowWorkspaceTrustCardAsync");
+        string afterAsk = card.Substring(card.IndexOf("await AskWorkspaceTrustAsync(prompt)", StringComparison.Ordinal));
+        Assert.True(afterAsk.IndexOf("decision is null", StringComparison.Ordinal) < afterAsk.IndexOf(".TrustAsync(", StringComparison.Ordinal),
+            "A dismissed card must return before any TrustAsync call.");
+
+        Assert.Contains("DismissWorkspaceTrustCard()", GuiSource.MethodBody(code, "ResetAgentState"), StringComparison.Ordinal);
+        Assert.Contains("DismissWorkspaceTrustCard()", GuiSource.MethodBody(code, "UpdateAgentInlineState"), StringComparison.Ordinal);
+        Assert.Contains("DismissWorkspaceTrustCard()", GuiSource.MethodBody(code, "Dispose"), StringComparison.Ordinal);
+        Assert.DoesNotContain("ContentDialog", card, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_trust_card_focuses_cancel_and_escape_declines()
+    {
+        var document = GuiSource.Xml("Controls", "WorkspaceTrustPanelControl.xaml");
+        GuiSource.Require(document, "CancelButton");
+        GuiSource.Require(document, "ApproveButton");
+        string code = GuiSource.Text("Controls", "WorkspaceTrustPanelControl.xaml.cs");
+        Assert.Contains("CancelButton?.Focus", GuiSource.MethodBody(code, "FocusDecision"), StringComparison.Ordinal);
+        Assert.Contains("Decide(false)", GuiSource.MethodBody(code, "OnPanelKeyDown"), StringComparison.Ordinal);
+        Assert.DoesNotContain("Approve", GuiSource.MethodBody(code, "FocusDecision"), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Workspace_trust_guard_is_cleared_in_the_actual_finally_block_and_on_reset()
     {
         // The guard's rules are covered by AgentRunPanelViewModelTests; this pins that the
         // view releases it from the finally block and on session reset.
         var code = GuiSource.ViewText("ChatView");
-        string finallyBody = ReadFinallyBody(GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync"));
+        string finallyBody = ReadFinallyBody(GuiSource.MethodBody(code, "ShowWorkspaceTrustCardAsync"));
         Assert.Contains("RunPanel.EndTrustPrompt", finallyBody, StringComparison.Ordinal);
         Assert.Contains("RunPanel.Reset()", GuiSource.MethodBody(code, "ResetAgentState"), StringComparison.Ordinal);
         Assert.Contains("RunPanel.ForgetTrustIfRunChanged", GuiSource.MethodBody(code, "UpdateAgentInlineState"), StringComparison.Ordinal);
@@ -551,7 +579,7 @@ public sealed class AgentSessionUiSourceContractTests
     [Fact]
     public void Workspace_trust_errors_are_projected_after_the_inline_state_refresh()
     {
-        var dialog = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ShowWorkspaceTrustDialogAsync");
+        var dialog = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ShowWorkspaceTrustCardAsync");
         int stateRefresh = dialog.LastIndexOf("UpdateAgentInlineState()", StringComparison.Ordinal);
         int errorProjection = dialog.LastIndexOf("ShowAgentError(failure)", StringComparison.Ordinal);
 

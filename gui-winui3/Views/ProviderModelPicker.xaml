@@ -75,7 +75,7 @@
              is the panel's floor: anything taller than this and the flyout stops being a
              flyout. The scrollbar resources below stay as they are, tuned thin, because
              a stock WinUI scrollbar is wider than the row text beside it. -->
-        <ScrollViewer MaxHeight="300"
+        <ScrollViewer x:Name="PickerScroll" MaxHeight="300"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       HorizontalScrollMode="Disabled"
@@ -94,5 +94,16 @@
             </ScrollViewer.Resources>
             <StackPanel x:Name="PickerListContainer" Spacing="2" />
         </ScrollViewer>
+
+        <!-- The keys the list answers to, so the arrows are not a secret. -->
+        <Border BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,1,0,0" Margin="6,0,6,0" Padding="5,7,5,6"
+                AutomationProperties.AccessibilityView="Raw">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="↑↓ select · Enter confirm" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11"
+                           Foreground="{StaticResource RuMutedBrush}" />
+                <TextBlock Grid.Column="1" Text="Esc close" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11"
+                           Foreground="{StaticResource RuMutedBrush}" />
+            </Grid>
+        </Border>
     </StackPanel>
 </UserControl>

@@ -89,7 +89,7 @@ An unresolved program trace blocks verified completion; Continue does not clear
 the journal or authorize repeating it. If the effects cannot be established,
 report `[BLOCKED]` and start a fresh run after inspecting the workspace.
 The root's displayed model-tool counter still counts model-visible calls;
-the shared family pool also counts nested calls. Continue opens a new window.
+the shared family counters also count nested calls and have no ceiling. Continue opens a new window.
 
 The full trace remains encrypted audit/completion evidence. Provider context
 always receives selected results without the trace, including when the response
@@ -584,8 +584,8 @@ note in the model context naming the failed receipt code, so the model can redo 
 call, use a different tool, or report the blocker. The note states the reason from
 the failed receipt and requires the next reply to be a repair tool call or a final
 `[BLOCKED]` report; a plain final reply cannot complete the run. The unverified
-case is bounded to 4 notes and every recovery case shares a global cap of 24 notes
-per run; once the
+case is bounded to 4 notes and every recovery case shares a cap of 24 notes
+within the recovery window (the last 512 durable events, about fifty steps); once the
 bound is spent the run fails with the receipt error code (falling back to `tool_failed`)
 exactly as before. An unverified success claim is never displayed to the user as a
 completed answer. A subsequent different tool call remains eligible for normal execution
@@ -1176,7 +1176,7 @@ diagnostic checks. Passed negative tests are diagnostics; unresolved declared
 checks are never evicted to admit optional failures. Recent expected-failure
 receipt identities are retained for the latest bounded tool batch without
 turning successful negative tests into a tracking-limit failure. Exhausting
-required evidence still reports `verification_tracking_limit`.
+required evidence with checks that still owe an answer reports `verification_tracking_limit`; passed checks give up their rows first.
 
 The model receives one effective continuation per pageable result:
 `next_offset` with `has_more`, or `next_line` with `has_more` for line reads.

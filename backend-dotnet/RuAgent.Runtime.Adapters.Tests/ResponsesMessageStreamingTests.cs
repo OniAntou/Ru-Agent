@@ -67,7 +67,9 @@ public sealed class ResponsesMessageStreamingTests
     {
         var output = new JsonArray(Message("msg_1", new string('a', ProviderContinuation.MaximumBytes), "commentary"), Call());
         var error = await Assert.ThrowsAsync<ModelProviderException>(() => Generate(output, ""));
-        Assert.Equal("provider_continuation_too_large", error.Code);
+        // The continuation cap sits above the response bounds, so an oversized stream is
+        // stopped by those first; either way the failure is a bounded, named code.
+        Assert.Equal("response_too_large", error.Code);
         Assert.False(error.Retryable);
     }
 

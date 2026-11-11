@@ -18,11 +18,16 @@ public static class CompletionChecklistGuard
 
     /// <summary>
     /// The unverified-source-edit note already asks for the same requirement check, so this
-    /// hold stays silent once that note has been issued.
+    /// hold stays silent once that note has been issued. A run whose declared checks never
+    /// failed pays no review either: the request, the edit and a first-time pass leave nothing
+    /// the review would re-open, and the extra model round trip is the whole cost of it. A run
+    /// that had to repair a failed check gets the review, because a repair is where a
+    /// requirement is most often traded away to make the check pass.
     /// </summary>
     public static bool ShouldAdviseCompletionReview(ModelContextSnapshot context) =>
         context.VerificationEvidence.BlockingCode is null
         && context.VerificationEvidence.HasSourceEdits
+        && context.VerificationEvidence.HadFailedDeclaredCheck
         && !context.VerificationEvidence.SourceEditAwaitingVerification
         && !context.VerificationEvidence.HasCompletedTodoList
         && AgentRecoveryNotes.NoteCount(context, AgentRecoveryKind.UnverifiedSourceEdit) == 0

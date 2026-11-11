@@ -30,8 +30,17 @@ internal sealed class VerificationEvidenceBuffer(int requiredLimit)
         var old = Find(check.Identity);
         if (Required(check) && (old is null || !Required(old)) && _requiredCount >= requiredLimit)
         {
-            Overflowed = true;
-            return;
+            // A passed check owes nothing more, so a long run that has declared many different
+            // checks gives up one of those rows instead of losing track of a new check. Only a
+            // buffer full of checks that still owe an answer overflows.
+            var retired = _checks.Values.FirstOrDefault(row => Required(row) && row.Status == VerificationCheckStatus.Passed);
+            if (retired is null)
+            {
+                Overflowed = true;
+                return;
+            }
+
+            Remove(retired.Identity);
         }
         Remove(check.Identity);
         _checks[check.Identity] = check;

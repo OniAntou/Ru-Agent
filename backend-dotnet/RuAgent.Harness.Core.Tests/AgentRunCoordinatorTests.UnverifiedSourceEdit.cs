@@ -111,11 +111,13 @@ public sealed partial class AgentRunCoordinatorTests
     }
 
     [Fact]
-    public async Task Unverified_source_edit_passing_check_holds_one_completion_review_before_completing()
+    public async Task Source_edit_whose_check_failed_then_passed_holds_one_completion_review_before_completing()
     {
         var source = new FixedContextSource(VerificationCompletionTests.Batch(1, "edit", "write_file",
             SourceEdit, ToolExecutionOutcome.Succeeded, "ok", "{}"));
-        AppendEntries(source, VerificationCompletionTests.Batch(3, "check", "bash",
+        AppendEntries(source, VerificationCompletionTests.Batch(3, "check-failed", "bash",
+            PassingCheck, ToolExecutionOutcome.Failed, "process_exit_nonzero", """{"exit_code":1}"""));
+        AppendEntries(source, VerificationCompletionTests.Batch(5, "check", "bash",
             PassingCheck, ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""));
         var model = new FakeModelStepRunner();
         model.Enqueue(FinalStep("Added X and verified it."));
@@ -132,7 +134,7 @@ public sealed partial class AgentRunCoordinatorTests
             store.Commits.Last().Events,
             item => item.Kind == HarnessEventKind.RunNoteAdded);
         Assert.Equal("completion_review", note.SafeCode);
-        AppendNote(source, store.Commits.Last().Payloads, sequence: 5);
+        AppendNote(source, store.Commits.Last().Payloads, sequence: 7);
 
         var final = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 

@@ -57,8 +57,20 @@ public sealed class NativeContextSequenceTests
         await runner.RunStepAsync(second.WithPreparation(next), _ => ValueTask.CompletedTask, default);
         var before = JsonNode.Parse(handler.Bodies[0])!["messages"]!.AsArray();
         var after = JsonNode.Parse(handler.Bodies[1])!["messages"]!.AsArray();
-        Assert.True(after.Count > before.Count);
-        for (int i = 0; i < before.Count; i++) Assert.True(JsonNode.DeepEquals(before[i], after[i]));
+        if (change)
+        {
+            // The superseded snapshot was the last message of the first request: every message
+            // before it stays a byte-identical prefix, and the old snapshot itself is gone.
+            Assert.Equal(prepared.RuntimeContextSnapshot, before[^1]!["content"]!.GetValue<string>());
+            for (int i = 0; i < before.Count - 1; i++) Assert.True(JsonNode.DeepEquals(before[i], after[i]));
+            Assert.DoesNotContain(after, message => message!["content"]?.GetValueKind() == System.Text.Json.JsonValueKind.String
+                && message["content"]!.GetValue<string>() == prepared.RuntimeContextSnapshot);
+        }
+        else
+        {
+            Assert.True(after.Count > before.Count);
+            for (int i = 0; i < before.Count; i++) Assert.True(JsonNode.DeepEquals(before[i], after[i]));
+        }
         Assert.Single(before, message => message!["content"]?.GetValueKind() == System.Text.Json.JsonValueKind.String
             && message["content"]!.GetValue<string>() == "Read file.txt");
         Assert.DoesNotContain(after, message => message!["content"]?.ToString() == "Continue from the durable tool results.");

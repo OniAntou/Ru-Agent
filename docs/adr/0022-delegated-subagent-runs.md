@@ -108,7 +108,8 @@ failed physical workspace identity checks. Durable metadata is encrypted, and
 missing metadata/model pins cannot be replaced with current global settings after
 a restart. Waiting parents must release drive slots so children can finish.
 
-The family budget includes the root's consumption before its first child. Tool
+The family budget includes the root's consumption before its first child. Since schema v36 the
+family counters are accounting only: they have no ceiling, so a family is never refused for size. Tool
 batches reserve their full count before dispatch; the first spawn seeds that
 already-reserved count. Repeated reservations use stable step identities, and
 uncertain execution does not refund them. Child attempts retain their own caps.

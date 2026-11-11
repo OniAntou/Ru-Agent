@@ -105,6 +105,29 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
     /// the caller should fall back to whatever weaker signal it has, and only an
     /// explicit false (the provider declared text-only) is a rejection.
     /// </summary>
+    /// <summary>
+    /// Whether the Models.dev entry for this provider and model declares that reasoning is
+    /// replayed in <c>reasoning_content</c>. Anything but an explicit declaration is false.
+    /// </summary>
+    public async Task<bool> DeclaresReasoningContentReplayAsync(
+        string backend,
+        string model,
+        CancellationToken ct)
+    {
+        const string prefix = "models.dev:";
+        if (!backend.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            || backend.Length <= prefix.Length
+            || string.IsNullOrWhiteSpace(model))
+        {
+            return false;
+        }
+
+        var providers = await GetModelsDevAsync(ct).ConfigureAwait(false);
+        var provider = providers.FirstOrDefault(p =>
+            string.Equals(p.Id, backend[prefix.Length..], StringComparison.OrdinalIgnoreCase));
+        return provider?.ReasoningContentReplay?.Contains(model) == true;
+    }
+
     public async Task<bool?> DeclaresVisionAsync(
         string backend,
         string model,

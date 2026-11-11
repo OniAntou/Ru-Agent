@@ -57,11 +57,12 @@ public sealed partial class AgentRunCoordinatorTests
     }
 
     [Fact]
-    public async Task Source_edit_with_a_passing_check_holds_one_completion_review_then_completes()
+    public async Task Source_edit_whose_check_failed_then_passed_holds_one_completion_review_then_completes()
     {
         var source = new FixedContextSource();
         AppendEntries(source, SourceEditEntries(1));
-        AppendEntries(source, PassingCheckEntries(3));
+        AppendEntries(source, FailingCheckEntries(3));
+        AppendEntries(source, PassingCheckEntries(5));
         var model = new FakeModelStepRunner();
         model.Enqueue(FinalStep("Added X and verified it."));
         model.Enqueue(FinalStep("Added X; every requirement is checked and verified."));
@@ -80,7 +81,7 @@ public sealed partial class AgentRunCoordinatorTests
             item.Kind == HarnessEventKind.ModelStepCompleted
             && item.SafeCode == "completion_review_advised");
         Assert.Empty(store.Commits.SelectMany(item => item.ConversationOutbox));
-        AppendNote(source, commit.Payloads, sequence: 5);
+        AppendNote(source, commit.Payloads, sequence: 7);
 
         var final = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
@@ -161,7 +162,8 @@ public sealed partial class AgentRunCoordinatorTests
     {
         var source = new FixedContextSource();
         AppendEntries(source, SourceEditEntries(1));
-        AppendEntries(source, PassingCheckEntries(3));
+        AppendEntries(source, FailingCheckEntries(3));
+        AppendEntries(source, PassingCheckEntries(5));
         var model = new FakeModelStepRunner();
         model.Enqueue(FinalStep("Added X."));
         model.Enqueue(FinalStep("[BLOCKED] the test runner is unavailable in this sandbox"));
@@ -171,7 +173,7 @@ public sealed partial class AgentRunCoordinatorTests
 
         var held = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
         Assert.Equal(HarnessRunState.Running, held.Run.State);
-        AppendNote(source, store.Commits.Last().Payloads, sequence: 5);
+        AppendNote(source, store.Commits.Last().Payloads, sequence: 7);
 
         var blocked = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
@@ -223,4 +225,8 @@ public sealed partial class AgentRunCoordinatorTests
     private static ModelContextEntry[] PassingCheckEntries(long sequence) =>
         VerificationCompletionTests.Batch(sequence, "check-" + sequence, "bash", PassingCheck,
             ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}""");
+
+    private static ModelContextEntry[] FailingCheckEntries(long sequence) =>
+        VerificationCompletionTests.Batch(sequence, "check-" + sequence, "bash", PassingCheck,
+            ToolExecutionOutcome.Failed, "process_exit_nonzero", """{"exit_code":1}""");
 }

@@ -53,8 +53,6 @@ public sealed partial class SqliteSubagentWorkspaceAllocationStore(HarnessSqlite
             ?? throw new HarnessStoreException("subagent_root_not_found");
         if (root.State.IsTerminal() || root.Preset == AgentPermissionPreset.Plan)
             throw new HarnessStoreException("subagent_root_inactive");
-        if (root.ModelStepsInWindow > SubagentLimits.FamilyModelSteps || root.ToolCallsInWindow > SubagentLimits.FamilyToolCalls)
-            throw new HarnessStoreException("subagent_family_budget_exhausted");
         if (await HarnessSqliteQueries.SessionDeletedAsync(connection, transaction, root.SessionId, ct).ConfigureAwait(false))
             throw new HarnessStoreException("session_deleted");
         using var command = connection.CreateCommand();

@@ -316,18 +316,17 @@ public sealed class AnthropicMessagesModelProviderTests
     [Fact]
     public async Task GenerateAsync_native_aggregate_continuation_overflow_is_a_bounded_provider_error()
     {
+        // Each block stays under the SSE event bound; together they pass the continuation cap.
         const int blockLength = 64_000;
+        var blocks = RuAgent.Harness.Core.Prompting.ProviderContinuation.MaximumBytes / blockLength + 1;
         var text = new string('x', blockLength);
         var lifecycle = MessageStart()
-            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 0, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = text } })
-            + ContentBlockStop(0)
-            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 1, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = text } })
-            + ContentBlockStop(1)
-            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 2, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = text } })
-            + ContentBlockStop(2)
-            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 3, ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_overflow", ["name"] = "read", ["input"] = new JsonObject() } })
-            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 3, ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "{\"path\":\"seed.txt\"}" } })
-            + ContentBlockStop(3) + MessageDelta("tool_use") + MessageStop();
+            + string.Concat(Enumerable.Range(0, blocks).Select(index =>
+                Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = index, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = text } })
+                + ContentBlockStop(index)))
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = blocks, ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_overflow", ["name"] = "read", ["input"] = new JsonObject() } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = blocks, ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "{\"path\":\"seed.txt\"}" } })
+            + ContentBlockStop(blocks) + MessageDelta("tool_use") + MessageStop();
         var provider = new AnthropicMessagesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
             { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") })));
 

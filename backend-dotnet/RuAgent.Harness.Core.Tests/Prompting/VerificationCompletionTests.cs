@@ -111,7 +111,7 @@ public sealed class VerificationCompletionTests
         var entries = Enumerable.Range(0, RunVerificationEvidence.MaximumChecks + 1)
             .SelectMany(index => Batch(index * 2 + 1, "test-" + index, "bash",
                 Verification.Replace("dotnet test", "dotnet test project" + index),
-                ToolExecutionOutcome.Succeeded, "ok", """{"exit_code":0}"""));
+                ToolExecutionOutcome.Failed, "process_exit_nonzero", """{"exit_code":1}"""));
         var evidence = Snapshot(entries).VerificationEvidence;
         Assert.Equal(RunVerificationEvidence.MaximumChecks, evidence.Checks.Count);
         Assert.Equal("verification_tracking_limit", evidence.BlockingCode);

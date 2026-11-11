@@ -65,10 +65,11 @@ The parent alone uses `agent_spawn`, `agent_send`, `agent_wait`, `agent_cancel` 
 `agent_apply`. Depth is one, with at most three runnable children/eight identities and
 three attempts each. Child role, immutable parent policy ceiling, budgets, deadlines and
 Broker lease lifetime intersect; none grant additional permissions.
-Each child attempt is bounded to four hours, not by its own counters: like a root, a
-child opens budget windows as it works, so only the shared family pool and a real
-failure bound how long it runs. The root and its children share 1,024 model steps and
-2,048 tool calls per root budget window (persisted bounds since schema v35).
+Each child attempt has four hours to be admitted and, once running, no work limit (its row is reclaimed as stale after 30 days), and is not bounded by its own counters: like a root, a
+child opens budget windows as it works, so only a real failure, its parent's cancel or
+its own completion ends it. The root and its children still record their model steps and
+tool calls in shared family counters per root budget window, which keep reservations
+idempotent but no longer have a ceiling (schema v36).
 `agent_wait.timeout_ms` accepts 0 through 600,000 milliseconds. For longer tasks,
 the parent waits again after a timeout rather than passing a larger timeout.
 A successful native `subagent_wait_timeout` receipt permits repeating that single

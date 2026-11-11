@@ -6,24 +6,6 @@ namespace RuAgent.Harness.Persistence.Tests;
 
 public sealed partial class SubagentWorkspaceAllocationTests
 {
-    [Fact]
-    public async Task Exhausted_parent_budget_denies_preparation_before_reserving_storage()
-    {
-        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
-        await fixture.RegisterWorkspaceAsync(1);
-        var root = fixture.NewRun(1, 1, 1);
-        await fixture.CreateEventStore().TryCreateRunAsync(root, default);
-        await using var connection = fixture.CreateRawConnection();
-        await connection.OpenAsync();
-        using var command = connection.CreateCommand();
-        command.CommandText = $"UPDATE agent_runs SET model_steps_in_window={RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps + 1}";
-        await command.ExecuteNonQueryAsync();
-        var store = new SqliteSubagentWorkspaceAllocationStore(fixture.Options, new(new FakeHarnessKeyStore()));
-        var error = await Assert.ThrowsAsync<HarnessStoreException>(() => store.ReserveAsync(root.Run.RunId, "agent_one", default));
-        Assert.Equal("subagent_family_budget_exhausted", error.Code);
-        Assert.Empty(await store.ListAsync(root.Run.RunId, default));
-    }
-
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

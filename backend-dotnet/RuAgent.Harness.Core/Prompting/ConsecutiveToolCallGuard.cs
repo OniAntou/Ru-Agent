@@ -18,7 +18,9 @@ public static class ConsecutiveToolCallGuard
     public const string RepairNotePrefix = "[REPETITION GUARD]";
 
     // Bounded self-repair budget: a model that ignores the note still stops,
-    // but a weak model gets a real chance to change its arguments first.
+    // but a weak model gets a real chance to change its arguments first. Like the
+    // recovery notes, it counts notes inside the recovery window, so repeats far
+    // apart in a long run each get the same chance.
     public const int MaximumRepairNotes = 2;
 
 
@@ -158,9 +160,11 @@ public static class ConsecutiveToolCallGuard
     private static int RepairNoteCount(ModelContextSnapshot context)
     {
         var count = 0;
+        var oldest = AgentRecoveryNotes.WindowStart(context);
         foreach (var entry in context.Entries)
         {
-            if (entry.Kind == ModelContextEntryKind.Text
+            if (entry.Sequence >= oldest
+                && entry.Kind == ModelContextEntryKind.Text
                 && entry.Content is { } content
                 && content.StartsWith(RepairNotePrefix, StringComparison.Ordinal))
             {

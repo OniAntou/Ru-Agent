@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(harness)!**: Bỏ trần pool của family subagent (1.024 model step / 2.048 tool call mỗi window của
+  root). Schema v36 dựng lại `agent_subagent_budgets` không còn cận trên; bộ đếm chỉ còn để ghi nhận và
+  giữ reservation idempotent. Hàng đợi continuation cũng không còn dừng khi bộ đếm đạt 128.
+  **Breaking:** xoá `SubagentLimits.FamilyModelSteps` / `FamilyToolCalls`; database đã lên v36 không mở
+  được bằng bản Ru cũ hơn.
+
+- **feat(harness)!**: Bỏ thêm các trần cho run dài. Output mỗi bước không còn kẹp ở 32.000 token mà theo
+  giới hạn model, tối đa 1/4 context và 128.000. Continuation tăng từ 128 KiB lên 4 MiB và tham số một
+  tool call từ 64 KiB lên 1 MiB, nên `provider_continuation_too_large` không còn chặn bước ghi file lớn.
+  Subagent đã được nhận không còn hạn 4 giờ làm việc (hàng chỉ bị thu hồi sau 30 ngày); hạn chờ nhận
+  vẫn 4 giờ. **Breaking:** `ModelOutputBudget.Default` bị xoá.
+
+- **perf(harness)**: Snapshot chỉ khác ở sổ sách receipt (file đã quan sát, check đã ghi, version của
+  work state) không được gửi lại; lịch sử đã chứa chính các tool call đó. Sau compaction thì gửi đầy đủ.
+
+- **perf(harness)**: Model chỉ nhận runtime context snapshot mới nhất; các bản đã bị thay thế vẫn lưu
+  bền nhưng không còn gửi lại. Trước đây mỗi bước cộng thêm một bản đầy đủ (~1,4k token ở benchmark),
+  nên run càng dài context càng phình. Prefix đã cache của provider không đổi.
+
+- **feat(harness)!**: Giới hạn recovery note và repetition note tính trong cửa sổ 512 event gần nhất
+  thay vì cả đời run, nên run dài gặp cùng một lỗi cách xa nhau không còn bị fail vì hết quota tích luỹ.
+  Ba nudge một lần (`unverified_source_edit`, `open_todos`, `completion_review`) vẫn một lần mỗi run.
+  **Breaking:** hằng số `MaximumNotesPerRun` đổi thành `MaximumNotesPerWindow`.
+
+- **fix(harness)**: Khi đủ 256 check, check đã pass nhường chỗ cho check mới; `verification_tracking_limit`
+  chỉ còn xuất hiện khi cả 256 check đều còn nợ kết quả.
+
+- **perf(providers)**: Run mới trên gateway Chat Completions HTTPS mà Models.dev khai báo
+  `interleaved.field = "reasoning_content"` cho model (ví dụ `opencode-go`) giờ gửi lại reasoning của
+  các bước trước, như đã làm với `api.deepseek.com`. Trước đây model phải suy luận lại từ đầu mỗi bước.
+  Bước có reasoning cùng tool call vượt 128 KiB vẫn fail `provider_continuation_too_large`.
+
+- **perf(harness)**: `completion_review` chỉ giữ câu trả lời cuối khi trong run từng có declared check
+  fail; check pass ngay lần đầu thì hoàn tất luôn, bớt một vòng model.
+
+- **perf(harness)**: Core contract giữ việc trong phạm vi yêu cầu: không tự thêm validation, tài liệu
+  hay file test khi đề bài không yêu cầu và project chưa có test cho phần đó (kiểm tra bằng một lệnh
+  ngắn), không nháp nội dung file trong reasoning, không tốn một bước cho lệnh dò phiên bản. Nhắm vào
+  hai bước chiếm ~70% output token của bài T1 trong benchmark so với OpenCode. Chưa đo lại.
+
+- **fix(broker)**: Script PowerShell mở đầu bằng comment rồi mới tới `param`/`using` không còn bị
+  chèn prelude UTF-8 lên trước (trước đây lỗi "param is not recognized"); lệnh chỉ bắt đầu bằng
+  chữ "param" vẫn nhận prelude.
+
+- **fix(broker)**: `allow_session_directory` cho thư mục đã bị xóa trả `grant_invalid` mà không
+  tiêu approval, nên vẫn có thể trả lời allow once hoặc deny.
+
+- **fix(host)**: Lỗi khi tạo policy (`policy_create_failed`) giờ được ghi log kèm nguyên nhân.
+
+- **docs**: `SECURITY.md` nói rõ terminal con của agent đọc được descriptor và gọi được Host;
+  `host.md` mô tả hooks do Host khởi chạy; chi tiết trình bày TUI chuyển từ `broker.md` sang `tui.md`.
+
 - **feat(gui)**: Todo shelf dễ đọc hơn: header gọn một dòng khi thu gọn (việc đang làm),
   khi mở thêm dòng số việc còn lại và việc kế tiếp; thanh tiến độ chia đoạn theo từng task
   (thanh liền khi kế hoạch dài hơn 12 việc), danh sách có số thứ tự và dòng đang làm được

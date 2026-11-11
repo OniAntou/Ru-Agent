@@ -15,9 +15,8 @@ public sealed partial class SqliteSubagentStore
             JOIN agent_subagent_families f ON f.root_run_id=s.root_run_id
             JOIN agent_runs root ON root.run_id=s.root_run_id
             JOIN agent_subagent_attempts a ON a.agent_id=s.agent_id JOIN agent_runs child ON child.run_id=a.run_id
-            LEFT JOIN agent_subagent_budgets b ON b.root_run_id=root.run_id AND b.window=root.budget_window
             WHERE s.canceled=0 AND f.canceled=0 AND root.terminal_at_utc IS NULL AND child.state IN($completed,$failed)
-                AND s.agent_id>$after AND COALESCE(b.model_steps,root.model_steps_in_window)<128
+                AND s.agent_id>$after
                 AND NOT EXISTS(SELECT 1 FROM agent_subagent_attempts newer WHERE newer.agent_id=s.agent_id AND newer.attempt_number>a.attempt_number)
                 AND EXISTS(SELECT 1 FROM agent_subagent_messages m WHERE m.agent_id=s.agent_id
                     AND m.consumed_run_id IS NULL AND m.continuation_run_id IS NULL AND m.continuation_error_code IS NULL)

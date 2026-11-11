@@ -29,10 +29,14 @@ public enum AgentRecoveryKind
 /// "the model was already told".
 /// </summary>
 /// <remarks>
-/// The cap is <see cref="MaximumNotesPerRun"/>, not per budget window. A note is
-/// persisted with <see cref="ModelContextRole.System"/> and the compaction planner
-/// protects every system entry, so a note is never folded into a summary and never
-/// leaves the count mid-run. The name says "run" because that is what it measures.
+/// The bounds measure recent trouble, not a run's lifetime: a note counts while it lies
+/// within <see cref="RecoveryWindowSequences"/> durable events of the newest context entry.
+/// A run that works for days may meet the same failure many times, far apart, and each
+/// time it gets the same bounded chance to recover; a run that keeps failing in place
+/// still spends its bound and stops. A note is persisted with
+/// <see cref="ModelContextRole.System"/> and the compaction planner protects every system
+/// entry, so a note is never folded into a summary and keeps its event sequence. The
+/// one-time completion nudges stay once per run.
 /// </remarks>
 public static class AgentRecoveryNotes
 {
@@ -72,9 +76,13 @@ public static class AgentRecoveryNotes
     private const int MaximumListedOpenTodos = 8;
     private const int MaximumOpenTodoLength = 120;
 
-    // Global cap across every recovery case, counted from the context for the
-    // whole run. This bounds recovery across all cases, including truncation.
-    public const int MaximumNotesPerRun = 24;
+    // Cap across every recovery case within the recovery window, including truncation.
+    public const int MaximumNotesPerWindow = 24;
+
+    // Durable events back from the newest context entry in which a note still counts.
+    // A model step with its tool calls writes roughly ten events, so this is about
+    // fifty steps of recent work.
+    public const long RecoveryWindowSequences = 512;
     public const int MaximumCommentaryNotes = 3;
     public const int MaximumContextOverflowNotes = 2;
 
@@ -279,8 +287,40 @@ public static class AgentRecoveryNotes
         // notes issued in a row, while the global cap still bounds the whole run.
         var caseCount = kind == AgentRecoveryKind.OutputTruncated
             ? ConsecutiveNoteCount(context, kind)
-            : NoteCount(context, kind);
-        return NoteCount(context) < MaximumNotesPerRun && caseCount < MaximumNotes(kind);
+            : kind is AgentRecoveryKind.UnverifiedSourceEdit or AgentRecoveryKind.OpenTodos
+                or AgentRecoveryKind.CompletionReview
+                ? NoteCount(context, kind)
+                : RecentNoteCount(context, kind);
+        return RecentNoteCount(context, null) < MaximumNotesPerWindow && caseCount < MaximumNotes(kind);
+    }
+
+    /// <summary>
+    /// Recovery notes inside the recovery window, of one case or (null) of every case.
+    /// </summary>
+    public static int RecentNoteCount(ModelContextSnapshot context, AgentRecoveryKind? kind)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var marker = kind is { } value ? $"{NotePrefix} {KindMarker(value)}" : NotePrefix;
+        var oldest = WindowStart(context);
+        var count = 0;
+        foreach (var entry in context.Entries)
+        {
+            if (entry.Sequence >= oldest && IsRecoveryNote(entry)
+                && entry.Content!.StartsWith(marker, StringComparison.Ordinal))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>The oldest event sequence that still lies inside the recovery window.</summary>
+    internal static long WindowStart(ModelContextSnapshot context)
+    {
+        var newest = 0L;
+        foreach (var entry in context.Entries) newest = Math.Max(newest, entry.Sequence);
+        return newest - RecoveryWindowSequences;
     }
 
     /// <summary>

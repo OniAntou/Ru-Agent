@@ -11,16 +11,20 @@ public static class SubagentLimits
     public const int MaxIdentities = 8;
     public const int MaxRunnable = 3;
     public const int MaxAttempts = 3;
-    // Per root budget window, shared by the root and its children. The persisted
-    // counters' CHECK bounds follow these values (schema v35).
-    public const int FamilyModelSteps = 1024;
-    public const int FamilyToolCalls = 2048;
     // Ten minutes, so a root waiting on long children parks instead of spending a
     // model step on every check-in.
     public const int MaxWaitMilliseconds = 600_000;
     public const int MaxSnapshotFiles = 50_000;
     public const long MaxSnapshotBytes = 256L * 1024 * 1024;
+    /// <summary>How long an attempt may wait to be admitted before it is abandoned.</summary>
     public static readonly TimeSpan AttemptTimeout = TimeSpan.FromHours(4);
+
+    /// <summary>
+    /// How long an admitted attempt keeps its row before it is reclaimed as stale. It is not a
+    /// work limit: a child ends when it finishes, fails or its parent cancels it, and provider
+    /// and tool calls carry their own timeouts. The deadline only bounds a row nobody is driving.
+    /// </summary>
+    public static readonly TimeSpan AttemptRunTimeout = TimeSpan.FromDays(30);
 }
 
 [JsonConverter(typeof(SubagentRoleJsonConverter))]

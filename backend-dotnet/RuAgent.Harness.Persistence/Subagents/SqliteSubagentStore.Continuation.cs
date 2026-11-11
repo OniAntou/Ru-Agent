@@ -51,18 +51,14 @@ public sealed partial class SqliteSubagentStore
         if (await HarnessSqliteQueries.SessionDeletedAsync(connection, transaction, root.SessionId, ct).ConfigureAwait(false)
             || await HarnessSqliteQueries.SessionDeletedAsync(connection, transaction, next.Run.SessionId, ct).ConfigureAwait(false))
             throw new HarnessStoreException("session_deleted");
-        if (root.ModelStepsInWindow > SubagentLimits.FamilyModelSteps || root.ToolCallsInWindow > SubagentLimits.FamilyToolCalls)
-            throw new HarnessStoreException("subagent_family_budget_exhausted");
         command.Parameters.AddWithValue("$window", root.BudgetWindow);
         command.Parameters.AddWithValue("$steps", root.ModelStepsInWindow);
         command.Parameters.AddWithValue("$tools", root.ToolCallsInWindow);
         command.CommandText = """
             INSERT INTO agent_subagent_budgets(root_run_id,window,model_steps,tool_calls)
             VALUES($root,$window,$steps,$tools) ON CONFLICT DO NOTHING;
-            SELECT model_steps FROM agent_subagent_budgets WHERE root_run_id=$root AND window=$window;
             """;
-        if ((long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? (long)SubagentLimits.FamilyModelSteps) >= SubagentLimits.FamilyModelSteps)
-            throw new HarnessStoreException("subagent_family_budget_exhausted");
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         await HarnessSqliteWriteSet.InsertRunAsync(connection, transaction, next, ct).ConfigureAwait(false);
         await MarkInternalRunAsync(connection, transaction, next.Run.RunId, rootId, ct).ConfigureAwait(false);
         await SqliteAgentRunProviderSelectionStore.CopyPinnedAsync(connection, transaction, previous.Run.RunId, next.Run.RunId, ct).ConfigureAwait(false);

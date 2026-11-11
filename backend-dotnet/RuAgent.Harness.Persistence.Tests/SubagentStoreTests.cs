@@ -11,7 +11,7 @@ namespace RuAgent.Harness.Persistence.Tests;
 public sealed class SubagentStoreTests
 {
     [Fact]
-    public async Task Family_seed_counts_entire_prior_root_batch_and_batch_reservations_are_atomic()
+    public async Task Family_seed_counts_prior_root_batch_and_batch_reservations_are_idempotent()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
@@ -21,18 +21,18 @@ public sealed class SubagentStoreTests
         {
             await connection.OpenAsync();
             using var command = connection.CreateCommand();
-            command.CommandText = $"UPDATE agent_runs SET model_steps_in_window=10,tool_calls_in_window={RuAgent.Protocol.Subagents.SubagentLimits.FamilyToolCalls - 2}";
+            command.CommandText = $"UPDATE agent_runs SET model_steps_in_window=10,tool_calls_in_window=2046";
             await command.ExecuteNonQueryAsync();
         }
         await new SqliteSubagentStore(fixture.Options, fixture.PayloadStore).CreateAsync(
             new("agent_one", root.Run.RunId, "spawn_one", SubagentRole.Review, fixture.NewRun(2, 2, 1)), default);
         var budgets = new SqliteSubagentBudgetStore(fixture.Options);
-        Assert.False(await budgets.ReserveAmountAsync(root.Run.RunId, 1, "tools_failed", SubagentBudgetKind.ToolCall, 3, 0, 0, default));
+        Assert.True(await budgets.ReserveAmountAsync(root.Run.RunId, 1, "tools_past_old_pool", SubagentBudgetKind.ToolCall, 3, 0, 0, default));
         Assert.True(await budgets.ReserveAmountAsync(root.Run.RunId, 1, "tools_one", SubagentBudgetKind.ToolCall, 2, 0, 0, default));
         Assert.True(await budgets.ReserveAmountAsync(root.Run.RunId, 1, "tools_one", SubagentBudgetKind.ToolCall, 2, 0, 0, default));
         await Assert.ThrowsAsync<HarnessStoreException>(() => budgets.ReserveAmountAsync(
             root.Run.RunId, 1, "tools_one", SubagentBudgetKind.ToolCall, 1, 0, 0, default));
-        Assert.False(await budgets.ReserveAmountAsync(root.Run.RunId, 1, "tools_two", SubagentBudgetKind.ToolCall, 1, 0, 0, default));
+        Assert.True(await budgets.ReserveAmountAsync(root.Run.RunId, 1, "tools_two", SubagentBudgetKind.ToolCall, 1, 0, 0, default));
     }
 
     [Fact]
@@ -143,7 +143,7 @@ public sealed class SubagentStoreTests
         Assert.True(await store.TryAdmitAsync("agent_one", now, default));
         var attempt = await store.GetLatestAttemptAsync(root.Run.RunId, "agent_one", default);
         Assert.Equal(HarnessRunState.Running, attempt!.Run.State);
-        Assert.Equal(now.Add(RuAgent.Protocol.Subagents.SubagentLimits.AttemptTimeout), attempt!.DeadlineAt);
+        Assert.Equal(now.Add(RuAgent.Protocol.Subagents.SubagentLimits.AttemptRunTimeout), attempt!.DeadlineAt);
         Assert.False(await store.TryAdmitAsync("agent_one", now.AddMinutes(1), default));
         Assert.Equal(attempt.DeadlineAt, (await store.GetLatestAttemptAsync(root.Run.RunId, "agent_one", default))!.DeadlineAt);
         await store.CancelFamilyAsync(root.Run.RunId, default);
@@ -187,16 +187,33 @@ public sealed class SubagentStoreTests
     }
 
     [Fact]
-    public async Task Budget_reservation_is_shared_idempotent_and_counts_prior_root_usage()
+    public async Task Family_counters_accept_values_past_the_old_pool_and_still_reject_negative_ones()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var root = fixture.NewRun(1, 1, 1);
+        await fixture.CreateEventStore().TryCreateRunAsync(root, default);
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.Parameters.AddWithValue("$root", root.Run.RunId.Value);
+        command.CommandText = "INSERT INTO agent_subagent_budgets(root_run_id,window,model_steps,tool_calls) VALUES($root,1,500000,900000)";
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+        command.CommandText = "UPDATE agent_subagent_budgets SET model_steps=-1 WHERE root_run_id=$root";
+        await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => command.ExecuteNonQueryAsync());
+    }
+
+    [Fact]
+    public async Task Budget_reservation_is_shared_idempotent_and_has_no_family_ceiling()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
         var root = fixture.NewRun(1, 1, 1);
         await fixture.CreateEventStore().TryCreateRunAsync(root, default);
         var budgets = new SqliteSubagentBudgetStore(fixture.Options);
-        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "step1", SubagentBudgetKind.ModelStep, RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps - 1, 0, default));
-        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "step1", SubagentBudgetKind.ModelStep, RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps - 1, 0, default));
-        Assert.False(await budgets.ReserveAsync(root.Run.RunId, 1, "step2", SubagentBudgetKind.ModelStep, RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps - 1, 0, default));
-        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "tool1", SubagentBudgetKind.ToolCall, RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps - 1, 0, default));
+        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "step1", SubagentBudgetKind.ModelStep, 1023, 0, default));
+        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "step1", SubagentBudgetKind.ModelStep, 1023, 0, default));
+        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "step2", SubagentBudgetKind.ModelStep, 1023, 0, default));
+        Assert.True(await budgets.ReserveAsync(root.Run.RunId, 1, "tool1", SubagentBudgetKind.ToolCall, 1023, 0, default));
     }
 }

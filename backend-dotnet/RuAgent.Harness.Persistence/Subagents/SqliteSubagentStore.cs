@@ -44,8 +44,6 @@ public sealed partial class SqliteSubagentStore(HarnessSqliteOptions options, Ha
         var nested = (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0;
         if (root.Status.State.IsTerminal() || canceled || nested || root.SessionId == request.ChildRun.Run.SessionId)
             throw new HarnessStoreException("subagent_root_inactive");
-        if (root.ModelStepsInWindow > SubagentLimits.FamilyModelSteps || root.ToolCallsInWindow > SubagentLimits.FamilyToolCalls)
-            throw new HarnessStoreException("subagent_family_budget_exhausted");
         if (root.Preset == AgentPermissionPreset.Plan && request.Role == SubagentRole.Coding
             || root.Preset != request.ChildRun.Run.Preset) throw new HarnessStoreException("subagent_role_denied");
         command.Parameters.AddWithValue("$agent", request.AgentId);

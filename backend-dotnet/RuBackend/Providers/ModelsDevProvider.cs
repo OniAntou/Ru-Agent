@@ -10,4 +10,5 @@ public sealed record ModelsDevProvider(
     IReadOnlyDictionary<string, CatalogCost>? Costs = null,
     IReadOnlyDictionary<string, bool>? Vision = null,
     IReadOnlyDictionary<string, int>? Contexts = null,
-    IReadOnlyDictionary<string, int>? OutputLimits = null);
+    IReadOnlyDictionary<string, int>? OutputLimits = null,
+    IReadOnlyCollection<string>? ReasoningContentReplay = null);

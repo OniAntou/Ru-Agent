@@ -118,8 +118,8 @@ lifetime,
 30-second refresh throttle and provider/endpoint/credential-revision identity.
 OpenAI uses `Authorization: Bearer` plus `store:false`; Anthropic uses
 `x-api-key` and pinned `anthropic-version: 2023-06-01`. A new pin on any protocol
-reserves its output cap (`max_tokens` / `max_completion_tokens`) = min(model limit, 32,000,
- a quarter of the context window) when both the model's output limit (registry or
+reserves its output cap (`max_tokens` / `max_completion_tokens`) = min(model limit,
+ a quarter of the context window, the Messages ceiling of 128,000) when both the model's output limit (registry or
  Models.dev `limit.output`) and its context window are known, and the earlier 8,192
  otherwise (`ModelOutputBudget`); the value travels in `output_token_reserve`,
  so existing pins keep theirs. Custom uses only its canonical key. The live catalog is
@@ -345,10 +345,12 @@ is introduced.
 New selections for HTTPS `api.deepseek.com:443` Chat Completions pin
 `_ru_chat_reasoning_content_v1` in their secret-free request-option record. The
 Host consumes that internal marker before creating wire options; existing pins
-without it retain their previous mode. Unknown gateways do not acquire the format
+without it retain their previous mode. An HTTPS Chat Completions selection whose
+Models.dev entry declares `interleaved.field = "reasoning_content"` for the model pins
+`_ru_chat_reasoning_content_catalog_v1` instead and replays the same way. Unknown gateways do not acquire the format
 from model names. Full `reasoning_content` is captured separately from the bounded
 display excerpt, and the validated tool batch is recorded as an encrypted private
-Chat continuation under the existing 128 KiB continuation cap. Oversize state fails
+Chat continuation under the 4 MiB continuation cap, which a step bounded by the model's output limit cannot reach. Oversize state fails
 as `provider_continuation_too_large` without executable calls. Rehydration checks
 model, text, ordered call IDs, names and arguments before replay; missing state
 fails as `provider_continuation_missing`. The marker never reaches a provider.

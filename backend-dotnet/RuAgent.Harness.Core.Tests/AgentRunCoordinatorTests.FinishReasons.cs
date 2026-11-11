@@ -43,7 +43,7 @@ public sealed partial class AgentRunCoordinatorTests
     public async Task Unusable_finish_reason_never_completes_or_executes_calls(
         AssistantFinishReason reason, string code, bool withTools)
     {
-        var source = new FixedContextSource(Enumerable.Range(0, AgentRecoveryNotes.MaximumNotesPerRun)
+        var source = new FixedContextSource(Enumerable.Range(0, AgentRecoveryNotes.MaximumNotesPerWindow)
             .Select(i => ModelContextEntry.Text($"note-{i}", i + 1, ModelContextRole.System,
                 $"{AgentRecoveryNotes.NotePrefix} existing-{i}")).ToArray());
         var model = new FakeModelStepRunner();
@@ -72,7 +72,7 @@ public sealed partial class AgentRunCoordinatorTests
         var notes = Enumerable.Range(0, AgentRecoveryNotes.MaximumTruncatedNotes)
             .Select(i => ModelContextEntry.Text($"note-{i}", i + 1, ModelContextRole.System,
                 AgentRecoveryNotes.BuildTruncatedNote())).ToArray();
-        Assert.True(notes.Length < AgentRecoveryNotes.MaximumNotesPerRun);
+        Assert.True(notes.Length < AgentRecoveryNotes.MaximumNotesPerWindow);
         var model = new FakeModelStepRunner();
         model.Enqueue(new AssistantStep("unfinished", [], AssistantFinishReason.Length, 16));
         var store = new InMemoryHarnessEventStore();

@@ -72,7 +72,7 @@ public sealed partial class SqliteSubagentStore
             WHERE agent_id=$agent AND attempt_number=$attempt AND admitted_at_utc IS NULL
             """;
         command.Parameters.AddWithValue("$now", now.ToUniversalTime().ToString("O"));
-        command.Parameters.AddWithValue("$deadline", now.Add(SubagentLimits.AttemptTimeout).ToUniversalTime().ToString("O"));
+        command.Parameters.AddWithValue("$deadline", now.Add(SubagentLimits.AttemptRunTimeout).ToUniversalTime().ToString("O"));
         command.Parameters.AddWithValue("$attempt", attempt.AttemptNumber);
         if (await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false) != 1) return false;
         var admission = SubagentAdmission.CreateCommit(attempt.Run, new EventId("evt_" + Guid.NewGuid().ToString("N")), now);

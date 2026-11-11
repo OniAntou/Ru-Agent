@@ -38,7 +38,7 @@ public sealed class SubagentFamilyBudgetTests
         await using (var connection = await storage.Options.OpenConnectionAsync(default))
         {
             using var command = connection.CreateCommand();
-            command.CommandText = $"UPDATE agent_runs SET model_steps_in_window={RuAgent.Protocol.Subagents.SubagentLimits.FamilyModelSteps - 1},tool_calls_in_window={RuAgent.Protocol.Subagents.SubagentLimits.FamilyToolCalls - 2}";
+            command.CommandText = $"UPDATE agent_runs SET model_steps_in_window=1023,tool_calls_in_window=2046";
             await command.ExecuteNonQueryAsync();
         }
         var identity = await new WindowsWorkspaceIdentityResolver().ResolveAsync(storage.RootPath, default);
@@ -62,12 +62,13 @@ public sealed class SubagentFamilyBudgetTests
         Assert.True(await gate.ReserveModelAsync(actor, step, default));
         Assert.True(await gate.ReserveModelAsync(actor, step, default));
         Assert.True(await gate.ReserveCheckpointAsync(actor, step, default));
-        Assert.False(await gate.ReserveModelAsync(actor, new("step_" + new string('2', 32)), default));
-        Assert.False(await gate.ReserveModelAsync((await storage.EventStore.GetRunAsync(root.Run.RunId, default))!,
+        // Past the old 1,024-step pool: the family counters no longer refuse a step.
+        Assert.True(await gate.ReserveModelAsync(actor, new("step_" + new string('2', 32)), default));
+        Assert.True(await gate.ReserveModelAsync((await storage.EventStore.GetRunAsync(root.Run.RunId, default))!,
             new("step_" + new string('3', 32)), default));
         Assert.True(await gate.ReserveToolsAsync(actor, step, 2, default));
         Assert.True(await gate.ReserveToolsAsync(actor, step, 2, default));
-        Assert.False(await gate.ReserveToolsAsync(actor, new("step_" + new string('2', 32)), 1, default));
+        Assert.True(await gate.ReserveToolsAsync(actor, new("step_" + new string('5', 32)), 1, default));
         await agents.CancelFamilyAsync(root.Run.RunId, default);
         Assert.False(await gate.ReserveModelAsync(actor, step, default));
         Assert.False(await gate.ReserveCheckpointAsync(actor, step, default));

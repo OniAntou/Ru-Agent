@@ -73,6 +73,7 @@ public static partial class HarnessSqliteSchema
                 SELECT 1;
                 """),
             new(34, 35, SubagentFamilyBudgetMigration),
+            new(35, 36, SubagentFamilyBudgetUnboundedMigration),
         ];
     }
 }

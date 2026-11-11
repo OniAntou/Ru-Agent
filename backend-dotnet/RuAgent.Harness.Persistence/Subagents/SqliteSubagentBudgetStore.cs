@@ -41,7 +41,6 @@ public sealed class SqliteSubagentBudgetStore(HarnessSqliteOptions options)
                 return true;
             }
         }
-        if (priorRootModelSteps > SubagentLimits.FamilyModelSteps || priorRootToolCalls > SubagentLimits.FamilyToolCalls) return false;
         command.Parameters.AddWithValue("$steps", priorRootModelSteps);
         command.Parameters.AddWithValue("$tools", priorRootToolCalls);
         command.CommandText = """
@@ -50,8 +49,8 @@ public sealed class SqliteSubagentBudgetStore(HarnessSqliteOptions options)
             """;
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         command.CommandText = kind == SubagentBudgetKind.ModelStep
-            ? $"UPDATE agent_subagent_budgets SET model_steps=model_steps+$amount WHERE root_run_id=$root AND window=$window AND model_steps<={SubagentLimits.FamilyModelSteps}-$amount"
-            : $"UPDATE agent_subagent_budgets SET tool_calls=tool_calls+$amount WHERE root_run_id=$root AND window=$window AND tool_calls<={SubagentLimits.FamilyToolCalls}-$amount";
+            ? "UPDATE agent_subagent_budgets SET model_steps=model_steps+$amount WHERE root_run_id=$root AND window=$window"
+            : "UPDATE agent_subagent_budgets SET tool_calls=tool_calls+$amount WHERE root_run_id=$root AND window=$window";
         if (await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false) != 1) return false;
         command.CommandText = "INSERT INTO agent_subagent_reservations(root_run_id,window,invocation_id,kind,amount) VALUES($root,$window,$invocation,$kind,$amount)";
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);

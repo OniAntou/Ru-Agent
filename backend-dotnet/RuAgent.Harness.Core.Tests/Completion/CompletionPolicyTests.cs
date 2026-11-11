@@ -303,9 +303,10 @@ public sealed class CompletionPolicyTests
     // R7: completion review.
 
     [Fact]
-    public void R7_source_edit_with_a_passing_check_and_no_todos_is_held_for_one_review()
+    public void R7_source_edit_whose_check_failed_before_passing_is_held_for_one_review()
     {
-        var decision = After(Step("Done."), Snapshot(Edit(1).Concat(Passing(3))));
+        var decision = After(Step("Done."),
+            Snapshot(Edit(1).Concat(Failing(3)).Concat(Edit(5)).Concat(Passing(7))));
 
         AssertHold(decision, "R7.completion_review", AgentRecoveryKind.CompletionReview,
             AgentRecoveryNotes.BuildCompletionReviewNote());

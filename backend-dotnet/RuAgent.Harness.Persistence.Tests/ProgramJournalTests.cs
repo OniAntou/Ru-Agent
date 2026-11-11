@@ -36,32 +36,33 @@ public sealed class ProgramJournalTests
     }
 
     [Fact]
-    public async Task NestedCallsShareWindowBudgetAndReservationIsIdempotent()
+    public async Task NestedCallsShareFamilyCountersAndReservationIsIdempotent()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
         var root = fixture.NewRun(1, 1, 1);
         await fixture.CreateEventStore().TryCreateRunAsync(root, default);
-        await SetRunningAsync(fixture, RuAgent.Protocol.Subagents.SubagentLimits.FamilyToolCalls - 1);
+        await SetRunningAsync(fixture, 2047);
         IProgramJournal journal = fixture.PayloadStore;
         Assert.True(await journal.ReserveToolAsync(root.Run.RunId.Value, "program_one", default));
         Assert.True(await journal.ReserveToolAsync(root.Run.RunId.Value, "program_one", default));
-        Assert.False(await journal.ReserveToolAsync(root.Run.RunId.Value, "program_two", default));
+        // The family counters have no ceiling: a call past the old 2,048 pool is still reserved.
+        Assert.True(await journal.ReserveToolAsync(root.Run.RunId.Value, "program_two", default));
         var agents = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(fixture.Options, fixture.PayloadStore);
         Assert.True(await agents.HasFamilyAsync(root.Run.RunId, default));
     }
 
     [Fact]
-    public async Task BatchReservationIsAtomicAndIdempotentAgainstSharedFamilyBudget()
+    public async Task BatchReservationIsAtomicAndIdempotentAgainstSharedFamilyCounters()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
         var root = fixture.NewRun(1, 1, 1);
         await fixture.CreateEventStore().TryCreateRunAsync(root, default);
-        await SetRunningAsync(fixture, tools: RuAgent.Protocol.Subagents.SubagentLimits.FamilyToolCalls - 6);
+        await SetRunningAsync(fixture, tools: 2042);
         IProgramJournal journal = fixture.PayloadStore;
 
-        Assert.False(await journal.ReserveToolsAsync(root.Run.RunId.Value, "program_batch", 8, default));
+        Assert.True(await journal.ReserveToolsAsync(root.Run.RunId.Value, "program_past_old_pool", 8, default));
         Assert.True(await journal.ReserveToolsAsync(root.Run.RunId.Value, "program_batch", 6, default));
         Assert.True(await journal.ReserveToolsAsync(root.Run.RunId.Value, "program_batch", 6, default));
         await Assert.ThrowsAsync<HarnessStoreException>(() => journal.ReserveToolsAsync(

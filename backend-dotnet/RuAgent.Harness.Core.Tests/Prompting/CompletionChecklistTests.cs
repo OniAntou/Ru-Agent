@@ -88,13 +88,38 @@ public sealed class CompletionChecklistTests
     }
 
     [Fact]
-    public void Source_edit_with_a_passing_check_and_no_todos_asks_for_one_completion_review()
+    public void Source_edit_whose_check_failed_before_passing_asks_for_one_completion_review()
+    {
+        var context = Snapshot(Edit(1, "src/a.cs").Concat(Failing(3)).Concat(Edit(5, "src/a.cs")).Concat(Passing(7)));
+
+        Assert.True(context.VerificationEvidence.HasSourceEdits);
+        Assert.False(context.VerificationEvidence.SourceEditAwaitingVerification);
+        Assert.Null(context.VerificationEvidence.BlockingCode);
+        Assert.True(context.VerificationEvidence.HadFailedDeclaredCheck);
+        Assert.True(CompletionChecklistGuard.ShouldAdviseCompletionReview(context));
+    }
+
+    [Fact]
+    public void Source_edit_whose_check_passed_first_time_pays_no_completion_review()
     {
         var context = Snapshot(Edit(1, "src/a.cs").Concat(Passing(3)));
 
         Assert.True(context.VerificationEvidence.HasSourceEdits);
         Assert.False(context.VerificationEvidence.SourceEditAwaitingVerification);
-        Assert.True(CompletionChecklistGuard.ShouldAdviseCompletionReview(context));
+        Assert.False(context.VerificationEvidence.HadFailedDeclaredCheck);
+        Assert.False(CompletionChecklistGuard.ShouldAdviseCompletionReview(context));
+    }
+
+    [Fact]
+    public void A_failed_declared_check_stays_recorded_across_projection()
+    {
+        var previous = RunVerificationEvidence.Project(Edit(1).Concat(Failing(3)));
+        Assert.True(previous.HadFailedDeclaredCheck);
+
+        var carried = RunVerificationEvidence.Project(Edit(5).Concat(Passing(7)), previous);
+
+        Assert.True(carried.HadFailedDeclaredCheck);
+        Assert.Null(carried.BlockingCode);
     }
 
     [Fact]
@@ -152,7 +177,7 @@ public sealed class CompletionChecklistTests
     {
         var note = ModelContextEntry.Text("review-note", 5, ModelContextRole.System,
             AgentRecoveryNotes.BuildCompletionReviewNote());
-        var context = Snapshot(Edit(1, "src/a.cs").Concat(Passing(3)).Append(note));
+        var context = Snapshot(Edit(1, "src/a.cs").Concat(Failing(3)).Concat(Passing(4)).Append(note));
 
         Assert.Equal(1, AgentRecoveryNotes.NoteCount(context, AgentRecoveryKind.CompletionReview));
         Assert.False(CompletionChecklistGuard.ShouldAdviseCompletionReview(context));
@@ -238,6 +263,19 @@ public sealed class CompletionChecklistTests
         Assert.Contains("Before the final reply, re-read the request and your changes and confirm each requirement is met; "
             + "then report the result and any remaining limits.", contract, StringComparison.Ordinal);
         Assert.DoesNotContain("Once the requested change and relevant verification are complete", contract, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Core_contract_keeps_work_to_the_requested_scope_and_out_of_the_reasoning()
+    {
+        var contract = RuAgentPromptBlocks.CoreContractBlock("test-model");
+
+        Assert.Contains("do not add validation, options, documentation or tests they do not ask for", contract, StringComparison.Ordinal);
+        Assert.Contains("Write a test file only when the request asks for tests or the project already keeps tests for that code",
+            contract, StringComparison.Ordinal);
+        Assert.Contains("do not draft file contents in your reasoning", contract, StringComparison.Ordinal);
+        Assert.DoesNotContain("add focused behavioral regression tests where that coverage is missing", contract, StringComparison.Ordinal);
+        Assert.DoesNotContain("Think the change through once", contract, StringComparison.Ordinal);
     }
 
     [Fact]

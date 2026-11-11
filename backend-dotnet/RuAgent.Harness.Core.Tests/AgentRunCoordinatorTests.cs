@@ -144,7 +144,7 @@ public sealed partial class AgentRunCoordinatorTests
         // Regression: a held (or failed) reply was billed by the provider but never reported,
         // so run totals, cost and the context meter skipped those steps.
         var source = exhaustNotes
-            ? new FixedContextSource(Enumerable.Range(0, AgentRecoveryNotes.MaximumNotesPerRun)
+            ? new FixedContextSource(Enumerable.Range(0, AgentRecoveryNotes.MaximumNotesPerWindow)
                 .Select(i => ModelContextEntry.Text($"note-{i}", i + 1, ModelContextRole.System,
                     $"{AgentRecoveryNotes.NotePrefix} existing-{i}")).ToArray())
             : null;
@@ -1032,7 +1032,7 @@ public sealed partial class AgentRunCoordinatorTests
     {
         var prior = ToolStep();
         const string toolErrorCode = "workspace_path_outside_root";
-        var notes = Enumerable.Range(0, AgentRecoveryNotes.MaximumNotesPerRun)
+        var notes = Enumerable.Range(0, AgentRecoveryNotes.MaximumNotesPerWindow)
             .Select(index => ModelContextEntry.Text(
                 $"note-{index}",
                 index + 1,
@@ -1041,7 +1041,7 @@ public sealed partial class AgentRunCoordinatorTests
             .ToArray();
         // The prior turn must sit past the seeded notes: the context rejects a
         // duplicate sequence, and the note count now exceeds the old fixed 10/11.
-        var priorSequence = AgentRecoveryNotes.MaximumNotesPerRun + 1;
+        var priorSequence = AgentRecoveryNotes.MaximumNotesPerWindow + 1;
         var source = new FixedContextSource(
             [
                 .. notes,

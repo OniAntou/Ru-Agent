@@ -54,7 +54,8 @@ internal static class ModelsDevCatalogParser
                     ReadModelCosts(property.Value),
                     ReadModelVision(property.Value),
                     ReadModelLimits(property.Value, "context"),
-                    ReadModelLimits(property.Value, "output")));
+                    ReadModelLimits(property.Value, "output"),
+                    ReadReasoningContentReplay(property.Value)));
             }
         }
 
@@ -178,6 +179,42 @@ internal static class ModelsDevCatalogParser
     /// to be rejected as non-vision despite declaring <c>["text","image"]</c>.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Model ids whose entry declares <c>interleaved.field = "reasoning_content"</c>: the
+    /// endpoint expects each assistant tool-call message to carry the reasoning it was
+    /// produced with. Any other shape, including a bare <c>interleaved: true</c>, names no
+    /// field and is not a declaration.
+    /// </summary>
+    private static IReadOnlyCollection<string> ReadReasoningContentReplay(JsonElement entry)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (entry.ValueKind != JsonValueKind.Object
+            || !entry.TryGetProperty("models", out var models)
+            || models.ValueKind != JsonValueKind.Object)
+        {
+            return ids;
+        }
+
+        foreach (var model in models.EnumerateObject())
+        {
+            var id = model.Name?.Trim() ?? string.Empty;
+            if (id.Length is 0 or > 256 || id.Any(char.IsControl)) continue;
+            if (model.Value.ValueKind == JsonValueKind.Object
+                && model.Value.TryGetProperty("interleaved", out var interleaved)
+                && interleaved.ValueKind == JsonValueKind.Object
+                && interleaved.TryGetProperty("field", out var field)
+                && field.ValueKind == JsonValueKind.String
+                && field.GetString() == "reasoning_content")
+            {
+                ids.Add(id);
+            }
+
+            if (ids.Count >= 5000) break;
+        }
+
+        return ids;
+    }
+
     private static IReadOnlyDictionary<string, bool> ReadModelVision(JsonElement entry)
     {
         var vision = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);

@@ -7,9 +7,12 @@ namespace RuAgent.Harness.Core.Prompting;
 
 public sealed record ProviderContinuation
 {
-    public const int MaximumBytes = 128 * 1024;
+    // Sized so a step can never outgrow it: one tool call's arguments are bounded by
+    // ModelToolCall.MaximumArgumentBytes, and the reasoning and text of a step by the
+    // model's own output limit. The cap stops a malformed provider stream, not real work.
+    public const int MaximumBytes = 4 * 1024 * 1024;
     public const int MaximumEnvelopeBytes = MaximumBytes + 2048;
-    public const int MaximumFunctionArgumentsBytes = 64 * 1024;
+    public const int MaximumFunctionArgumentsBytes = ModelToolCall.MaximumArgumentBytes;
     private const int MaximumIdentityChars = 256;
     private const int MaximumToolNameChars = 128;
     private const int MaximumItems = 32;

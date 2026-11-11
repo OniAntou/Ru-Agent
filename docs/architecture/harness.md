@@ -767,8 +767,8 @@ After the refresh, for a step without tool calls:
   evidence fails the run with its code.
 - R5 `unverified_source_edit`: one hold after source edits with no declared check since them.
 - R6 `open_todos`: one hold while the latest task list has open rows. It quotes up to eight of them.
-- R7 `completion_review`: one hold after source edits, when no declared check is outstanding or
-  awaiting verification, the source-edit hold was not issued and the latest list is not fully completed.
+- R7 `completion_review`: one hold after source edits in a run where a declared check failed at least
+  once, when no declared check is outstanding or awaiting verification, the source-edit hold was not issued and the latest list is not fully completed.
 - R8 `empty_reply`: a blank final reply gets up to three notes, then fails as `empty_model_reply`.
 - R9 `complete`: the reply is accepted.
 
@@ -784,11 +784,11 @@ context. Bounds are per kind — 3 `unverified_after_tool_failure` notes (shared
 and verification holds), 4 `model_repairable` notes, 3 `empty_model_reply` notes and 3 consecutive
 `model_output_truncated` notes, plus 3 `model_commentary_only` notes, one
 `unverified_source_edit` note, one `open_todos` note and one `completion_review`
-note — under a global cap of
-24 notes per run, measured over the recovery notes visible in the assembled
-context. A note is persisted with the system role and is therefore never folded
-away by compaction, so the cap is cumulative for the whole run rather than
-per budget window. Every note is
+note — under a cap of
+24 notes within the recovery window (the last 512 durable events, about fifty steps), measured over the recovery notes visible in the assembled
+context. The per-case bounds count the same window, except the three one-time nudges, which stay once per run; a long run that meets the same failure far apart gets the same bounded recovery each time. A note is persisted with the system role and is therefore never folded
+away by compaction, so it keeps its event sequence and leaves the count only when the
+run has moved past the window. Every note is
 same-model bounded self-correction, never provider/model/tool substitution.
 Responses commentary-only text stays in model context with its original phase,
 without a final conversation outbox entry; the next step receives a recovery
@@ -841,7 +841,7 @@ the global cap. `open_todos` fires when the latest successful `todo_write` list 
 has rows that are not `completed`. Its note quotes up to eight open items, each
 flattened to one line and cut at 120 characters, and asks the model to finish and check
 each one, mark it completed, or remove it with a reason. `completion_review` fires when
-the run made source edits, no declared check is outstanding or awaiting verification, the
+the run made source edits, a declared check failed at least once in the run (a first-time pass pays no review), no declared check is outstanding or awaiting verification, the
 source-edit note was never issued, and the latest list is not fully completed. Its note asks the model to
 re-read the request and the changed code, confirm each explicit requirement is met and
 exercised by a check, fix any gap and rerun the affected `purpose=verification` check,
@@ -903,7 +903,8 @@ edit ran (sticky), and the latest successful `todo_write` list. A failed or unpa
   call, a policy denial or an unresolvable executable) observed nothing and creates no obligation.
   Its failed receipt still counts as a tool failure for the tool-failure guard.
 - **Tracking.** Up to 256 required checks are retained separately from 64 recent diagnostics.
-  Overflow of required evidence reports `verification_tracking_limit`, which is verification-bound.
+  At the limit a passed check gives up its row to a new one; only a buffer full of checks that still owe an answer
+  reports `verification_tracking_limit`, which is verification-bound.
 - **Holds, completion and labels.** Final-reply handling follows the [completion policy](#completion-policy).
   An outstanding check or the tracking limit holds a final reply up to three times (R4c). When
   those notes are spent, the run completes (R4d) with its summary verification state `unverified`.

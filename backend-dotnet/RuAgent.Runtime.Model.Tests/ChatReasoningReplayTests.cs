@@ -30,7 +30,7 @@ public sealed class ChatReasoningReplayTests
     [Fact]
     public async Task Oversized_private_reasoning_fails_by_name_without_promoting_calls()
     {
-        var service = new ModelStepService(new Provider(12));
+        var service = new ModelStepService(new Provider(ProviderContinuation.MaximumBytes / 12_000 + 1));
         var error = await Assert.ThrowsAsync<ModelStepException>(() =>
             service.RunPreparedAsync(service.PrepareRequest(Request(true)), null, default));
         Assert.Equal("provider_continuation_too_large", error.Code);

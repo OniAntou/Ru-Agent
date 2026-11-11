@@ -173,6 +173,8 @@ public sealed class AgentProviderSnapshotFactory(
         var outputTokenReserve = maximumOutput
             ?? ModelOutputBudget.For(DocumentedOutputLimit(selected) ?? modelMetadata?.MaxOutputTokens, contextWindowTokens);
         if (ChatReasoningReplayPolicy.Supports(selected)) options[ChatReasoningReplayPolicy.PinField] = true;
+        else if (await ChatReasoningReplayPolicy.DeclaredByCatalogAsync(catalog, selected, ct).ConfigureAwait(false))
+            options[ChatReasoningReplayPolicy.CatalogPinField] = true;
         options[RuAgent.Protocol.AgentToolProfiles.PinField] = AgentToolProfilePin.SelectNew();
         if (await ImageInputPolicy.AcceptsAsync(catalog, selected, ct).ConfigureAwait(false))
         {

@@ -506,7 +506,7 @@ failed or unverified tool receipt is suppressed and answered with a durable
 and a runner-rejected malformed or unavailable tool call, or an unreadable call
 written out as text (`invalid_selection`), gets up to 4.
 Incomplete `Length` finishes get up to 3 truncation notes in a row (a later truncation after progress starts a new count). These kinds share a
-cumulative cap of 24 notes per run. System recovery notes remain visible through
+cap of 24 notes within the recovery window (the last 512 durable events, about fifty steps). System recovery notes remain visible through
 compaction. Feedback keeps the same model/provider; spent bounds fail with the
 original code. Exact repeated calls and short failed cycles receive at most two
 `[REPETITION GUARD]` notes, then park for Continue. The suppressed assistant step

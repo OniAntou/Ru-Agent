@@ -41,6 +41,12 @@ public sealed partial class RunVerificationEvidence
     public bool DeclaredCheckSinceSourceEdit { get; }
 
     /// <summary>
+    /// Sticky: true once a declared check (purpose=verification or expected_failure) reported a failed
+    /// result in this run, even if the same check passed later. Read by the completion review only.
+    /// </summary>
+    public bool HadFailedDeclaredCheck { get; }
+
+    /// <summary>
     /// Rows of the most recent successful todo_write in this run, or null when none ran.
     /// A later empty list is a real, empty list rather than null.
     /// </summary>
@@ -61,7 +67,7 @@ public sealed partial class RunVerificationEvidence
     private RunVerificationEvidence(IEnumerable<VerificationCheckEvidence> checks,
         HashSet<string> expectedFailures, bool overflowed, string? programFailure,
         bool sourceEditAwaitingVerification, bool hasSourceEdits, bool declaredCheckSinceSourceEdit,
-        IReadOnlyList<AgentTodoRow>? latestTodos)
+        IReadOnlyList<AgentTodoRow>? latestTodos, bool hadFailedDeclaredCheck)
     {
         Checks = new ReadOnlyCollection<VerificationCheckEvidence>(checks.ToArray());
         _expectedFailures = expectedFailures;
@@ -71,6 +77,7 @@ public sealed partial class RunVerificationEvidence
         HasSourceEdits = hasSourceEdits;
         DeclaredCheckSinceSourceEdit = declaredCheckSinceSourceEdit;
         LatestTodos = latestTodos;
+        HadFailedDeclaredCheck = hadFailedDeclaredCheck;
     }
 
     public string? BlockingCode => _programFailure ?? (Overflowed ? "verification_tracking_limit"
@@ -89,6 +96,7 @@ public sealed partial class RunVerificationEvidence
         bool hasSourceEdits = previous?.HasSourceEdits ?? false;
         bool declaredCheckSinceSourceEdit = previous?.DeclaredCheckSinceSourceEdit ?? false;
         IReadOnlyList<AgentTodoRow>? latestTodos = previous?.LatestTodos;
+        bool hadFailedDeclaredCheck = previous?.HadFailedDeclaredCheck ?? false;
         string? programFailure = previous?._programFailure;
         foreach (var (entry, proposed) in ExpandProgramEvidence(originalRunEntries, () =>
             {
@@ -143,7 +151,11 @@ public sealed partial class RunVerificationEvidence
             {
                 var executionId = StringArg(args, "execution_id");
                 foreach (var prior in executionId is null ? [] : evidence.Pending(executionId))
-                    evidence.Store(Assess(prior, receipt, entry.Content, providerId, mode == "kill"));
+                {
+                    var settled = Assess(prior, receipt, entry.Content, providerId, mode == "kill");
+                    evidence.Store(settled);
+                    hadFailedDeclaredCheck |= IsFailedDeclaredCheck(settled);
+                }
                 continue;
             }
 
@@ -169,6 +181,7 @@ public sealed partial class RunVerificationEvidence
                 WorkingDirectory: metadata.WorkingDirectory);
             var assessed = Assess(initial, receipt, entry.Content, providerId, false);
             evidence.Store(assessed);
+            hadFailedDeclaredCheck |= IsFailedDeclaredCheck(assessed);
 
             // A declared check that launched answers the awaiting edit, whatever its exit. A failing one
             // stays outstanding through the check path, so this flag never hides it.
@@ -181,8 +194,12 @@ public sealed partial class RunVerificationEvidence
             }
         }
         return new(evidence.Checks, evidence.ExpectedFailures, evidence.Overflowed, programFailure,
-            sourceEditAwaitingVerification, hasSourceEdits, declaredCheckSinceSourceEdit, latestTodos);
+            sourceEditAwaitingVerification, hasSourceEdits, declaredCheckSinceSourceEdit, latestTodos,
+            hadFailedDeclaredCheck);
     }
+
+    private static bool IsFailedDeclaredCheck(VerificationCheckEvidence check) =>
+        (check.IsVerification || check.ExpectedExitCode != 0) && check.Status == VerificationCheckStatus.Failed;
 
     /// <summary>Outstanding declared checks: failed or pending latest results (ADR 0039 decision 2).</summary>
     private IEnumerable<VerificationCheckEvidence> OutstandingChecks() =>

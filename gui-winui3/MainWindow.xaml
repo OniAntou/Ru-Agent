@@ -69,22 +69,23 @@
                     <Setter Property="Width" Value="46" />
                     <Setter Property="Height" Value="32" />
                     <Setter Property="Padding" Value="0" />
-                    <Setter Property="UseSystemFocusVisuals" Value="True" />
+                    <!-- No system focus rectangle: the template draws its own rounded ring. -->
+                    <Setter Property="UseSystemFocusVisuals" Value="False" />
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="Button">
-                                <Grid x:Name="Root" Background="{TemplateBinding Background}">
+                                <Grid x:Name="Root" Background="Transparent">
                                     <VisualStateManager.VisualStateGroups>
                                         <VisualStateGroup x:Name="CommonStates">
                                             <VisualState x:Name="Normal" />
                                             <VisualState x:Name="PointerOver">
                                                 <VisualState.Setters>
-                                                    <Setter Target="Root.Background" Value="{StaticResource RuAccentSoftBrush}" />
+                                                    <Setter Target="Plate.Background" Value="{StaticResource RuAccentSoftBrush}" />
                                                 </VisualState.Setters>
                                             </VisualState>
                                             <VisualState x:Name="Pressed">
                                                 <VisualState.Setters>
-                                                    <Setter Target="Root.Background" Value="{StaticResource RuLineBrush}" />
+                                                    <Setter Target="Plate.Background" Value="{StaticResource RuLineBrush}" />
                                                 </VisualState.Setters>
                                             </VisualState>
                                             <VisualState x:Name="Disabled">
@@ -93,7 +94,25 @@
                                                 </VisualState.Setters>
                                             </VisualState>
                                         </VisualStateGroup>
+                                        <VisualStateGroup x:Name="FocusStates">
+                                            <VisualState x:Name="Unfocused" />
+                                            <VisualState x:Name="PointerFocused" />
+                                            <VisualState x:Name="Focused">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Ring.Opacity" Value="1" />
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                        </VisualStateGroup>
                                     </VisualStateManager.VisualStateGroups>
+                                    <!-- The hover fill is an inset rounded plate, not the whole 46x32 slot. -->
+                                    <Border x:Name="Plate" Margin="2" CornerRadius="6" Background="Transparent">
+                                        <Border.BackgroundTransition>
+                                            <BrushTransition Duration="0:0:0.12" />
+                                        </Border.BackgroundTransition>
+                                    </Border>
+                                    <Border x:Name="Ring" Margin="2" CornerRadius="6" Opacity="0"
+                                            BorderThickness="1" BorderBrush="{StaticResource RuAccentBrush}"
+                                            IsHitTestVisible="False" />
                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Grid>
                             </ControlTemplate>
@@ -108,11 +127,43 @@
                         Style="{StaticResource TitleBarIconButtonStyle}"
                         ToolTipService.ToolTip="Hide workspace sidebar"
                         AutomationProperties.Name="Hide workspace sidebar">
+                    <!-- Stretch makes the Path measure its drawn bounds; without it the Path measures from
+                         the origin, and the Viewbox draws the glyph ~2 px low and right of centre. -->
                     <Viewbox Width="16" Height="16">
                         <Path Data="M2.5,3.5 H13.5 V12.5 H2.5 Z M5.5,3.5 V12.5"
+                              Stretch="Uniform" Width="10" Height="8"
                               Stroke="{StaticResource RuInkBrush}" StrokeThickness="1.2" />
                     </Viewbox>
                 </Button>
+
+            <!-- Back and forward through the sessions and screens already visited; they sit beside the sidebar toggle. -->
+            <StackPanel x:Name="TitleBarHistory" Orientation="Horizontal" Spacing="0"
+                        HorizontalAlignment="Left" VerticalAlignment="Top" Margin="40,0,0,0">
+                <Button x:Name="HistoryBackButton"
+                            Width="36" IsEnabled="False"
+                            Click="OnHistoryBackClick"
+                            Style="{StaticResource TitleBarIconButtonStyle}"
+                            ToolTipService.ToolTip="Back"
+                            AutomationProperties.Name="Back">
+                        <Canvas Width="16" Height="16">
+                            <Path Data="M10.5,2.25 L5.5,8 L10.5,13.75"
+                                  Stroke="{StaticResource RuInkBrush}" StrokeThickness="1.5"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                        </Canvas>
+                    </Button>
+                <Button x:Name="HistoryForwardButton"
+                            Width="36" IsEnabled="False"
+                            Click="OnHistoryForwardClick"
+                            Style="{StaticResource TitleBarIconButtonStyle}"
+                            ToolTipService.ToolTip="Forward"
+                            AutomationProperties.Name="Forward">
+                        <Canvas Width="16" Height="16">
+                            <Path Data="M5.5,2.25 L10.5,8 L5.5,13.75"
+                                  Stroke="{StaticResource RuInkBrush}" StrokeThickness="1.5"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                        </Canvas>
+                    </Button>
+            </StackPanel>
 
             <!-- The update badge remains immediately left of the system captions. -->
             <StackPanel x:Name="TitleBarActions" Orientation="Horizontal" Spacing="2"

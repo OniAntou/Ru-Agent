@@ -438,7 +438,10 @@ breadcrumb, the welcome workspace row or the Customize subtitle. The Settings mo
 scales from 880×560 up to 1040×720 with the window and always fits its margins.
 `SidebarLayoutState` owns one expanded width in the 220–360 px range for every
 window tier. The workspace-sidebar toggle at the far left of the title bar hides
-it completely and restores its last width. `MainWindow.SidebarLayout.cs` handles pointer identity,
+it completely and restores its last width. Back and Forward buttons beside it replay a
+`NavigationHistory<NavLocation>` (screen plus chat session, 50 entries): `ApplyNavigation` and the chat
+`SessionOpened` event record each visit, a history move sets `_applyingHistory` so it does not record
+itself, and `MainWindow.History.cs` skips and forgets sessions that no longer exist. `MainWindow.SidebarLayout.cs` handles pointer identity,
 capture cancellation and width presentation; the focusable splitter exposes
 RangeValue, arrows and Home/End. Ctrl+Left/Right uses the same bounds; double-click
 resets to 250 px. The splitter has a real 10 px layout column and transparent hit

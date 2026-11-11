@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Back and Forward buttons beside the sidebar toggle walk through the sessions and screens already visited, like a browser; a session that no longer exists is skipped. The title-bar icon buttons now hover as an inset rounded plate and draw their own rounded focus ring instead of the square system focus rectangle.
+
 - **feat(gui)**: Redesign Settings. Permissions now holds the permission preset (three cards, with a notice for Full Access) beside remembered approvals; theme, agent activity and update channel are segmented choices with a sliding thumb; a search box filters cards and tabs; the rail gains a "Ru" group. Pages enter card by card and the rail cross-fades, all through the shared motion module so they follow the Windows animation setting. About is plain text plus one update row whose headline, buttons and progress follow a single state (checking, available, downloading, up to date, failed, source build).
 
 - **feat(gui)**: Làm lại màn hình khởi động. Viết nguyên chữ "Ru Agent" bằng Inter, và trong lúc tải một làn sóng màu (trắng, xanh thương hiệu, xanh dương) chạy xuyên qua từng chữ cái; làn sóng này chính là chỉ báo đang tải, không còn thanh chạy bên dưới. Khi sẵn sàng, lỗi hoặc tắt hiệu ứng thì chữ về màu nghỉ (Ru xanh, Agent trắng, lỗi thì xám). Nền đổi từ sóng Braille sang sao băng (dùng lại MeteorShowerField của giao diện Meteor Shower), dừng khi lỗi, khi Windows tắt hiệu ứng hoặc bật tương phản cao. Nền và chữ phóng to chậm với tốc độ khác nhau tạo chiều sâu và phóng tiếp khi thoát; góc màn tối nhẹ (vignette trung tính, chỉ ở nền tối). Giữ nguyên hành vi: không phần trăm giả, không trễ tối thiểu.

@@ -16,6 +16,13 @@ namespace RuApp
     {
         private Windows.Graphics.RectInt32? _titleBarActionsRegion;
         private Windows.Graphics.RectInt32? _navigationSidebarRegion;
+        private Windows.Graphics.RectInt32? _titleBarHistoryRegion;
+
+        /// <summary>
+        /// Back and forward start this far inside the toggle's slot. Each slot has an empty
+        /// margin around a small icon; without the overlap the icons sit ~40 px apart.
+        /// </summary>
+        private const double HistoryOverlap = 6;
 
         private void InitializeSidePanelToggle()
         {
@@ -55,6 +62,13 @@ namespace RuApp
 
             NavigationSidebarToggleButton.Margin = new Thickness(
                 TitleBarLayout.InsetInLayoutUnits(_appWindow.TitleBar.LeftInset, scale), 0, 0, 0);
+            // Back and forward follow the toggle: its slot is 46 wide until measured.
+            TitleBarHistory.Height = captionHeight > 0 ? captionHeight : TitleBarHistory.Height;
+            TitleBarHistory.Margin = new Thickness(
+                NavigationSidebarToggleButton.Margin.Left
+                    + (NavigationSidebarToggleButton.ActualWidth > 0 ? NavigationSidebarToggleButton.ActualWidth : 46)
+                    - HistoryOverlap,
+                0, 0, 0);
             TitleBarActions.Margin = new Thickness(
                 0,
                 0,
@@ -73,16 +87,21 @@ namespace RuApp
             }
 
             var navigation = RegionFor(NavigationSidebarToggleButton);
+            var history = RegionFor(TitleBarHistory);
             var update = TitleBarUpdateButton.Visibility == Visibility.Visible ? RegionFor(TitleBarActions) : null;
-            if (Nullable.Equals(_navigationSidebarRegion, navigation) && Nullable.Equals(_titleBarActionsRegion, update)) return;
+            if (Nullable.Equals(_navigationSidebarRegion, navigation)
+                && Nullable.Equals(_titleBarHistoryRegion, history)
+                && Nullable.Equals(_titleBarActionsRegion, update)) return;
             var regions = new List<Windows.Graphics.RectInt32>();
             if (navigation is { } left) regions.Add(left);
+            if (history is { } middle) regions.Add(middle);
             if (update is { } right) regions.Add(right);
             var source = InputNonClientPointerSource.GetForWindowId(_appWindow.Id);
             source.SetRegionRects(
                 NonClientRegionKind.Passthrough,
                 regions.ToArray());
             _navigationSidebarRegion = navigation;
+            _titleBarHistoryRegion = history;
             _titleBarActionsRegion = update;
 
             Windows.Graphics.RectInt32? RegionFor(FrameworkElement element)
@@ -103,6 +122,7 @@ namespace RuApp
 
             bool isActive = args.WindowActivationState != WindowActivationState.Deactivated;
             Services.UiMotion.FadeOpacity(NavigationSidebarToggleButton, isActive ? 1 : 0.55);
+            Services.UiMotion.FadeOpacity(TitleBarHistory, isActive ? 1 : 0.55);
         }
 
         /// <summary>

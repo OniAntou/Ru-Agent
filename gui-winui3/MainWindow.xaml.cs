@@ -461,6 +461,7 @@ namespace RuApp
         {
             Sidebar.ActivateDrafts(e.SessionId);
             SyncSidebarSelection(e.SessionId);
+            RecordLocation(ShellDestination.Chat, e.SessionId);
         }
 
         private void OnChatSessionPresetAdopted(object? sender, SessionPresetAdoptedEventArgs e)
@@ -595,6 +596,7 @@ namespace RuApp
 
         private void ApplyNavigation(ShellNavigation navigation)
         {
+            SeedHistoryWithTheChatBeingLeft();
             if (navigation.LeavesChat) LeaveChatSession();
             SwapNavContent(navigation.Destination);
             if (navigation.KeepsCatalogPolling)
@@ -614,6 +616,7 @@ namespace RuApp
             _diagnosticsView?.SetActive(navigation.IsDiagnosticsActive);
             _logView?.SetActive(navigation.IsLogActive);
             _customizeView?.SetActive(navigation.IsCustomizeActive);
+            RecordLocation(navigation.Destination, _chatView?.CurrentSessionId);
         }
 
         private object? ViewFor(Services.ShellDestination destination) => destination switch

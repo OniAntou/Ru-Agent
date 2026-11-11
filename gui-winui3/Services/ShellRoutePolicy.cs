@@ -33,6 +33,17 @@ public static class ShellRoutePolicy
         _ => ShellDestination.Chat,
     };
 
+    /// <summary>The tag that navigates to a destination: the inverse of <see cref="Resolve"/>.</summary>
+    public static string TagFor(ShellDestination destination) => destination switch
+    {
+        ShellDestination.Log => "log",
+        ShellDestination.Diagnostics => "diagnostics",
+        ShellDestination.Policy => "policy",
+        ShellDestination.Audit => "audit",
+        ShellDestination.Customize => "customize",
+        _ => "chat",
+    };
+
     public static bool IsDiagnosticsActive(string? tag) =>
         Resolve(tag) == ShellDestination.Diagnostics;
 

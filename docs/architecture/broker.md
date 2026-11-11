@@ -107,7 +107,7 @@ reconciliation surfaces from Phase 3:
     `model_reported_blocker` when no failed receipt exists), without another recovery note;
   - terminal outbox delivery does not recreate runtime or transition the run to success.
   - Otherwise, after the case budget (3 unverified notes, shared by tool-failure and verification holds) or the
-    global cap (24 notes per run) is spent, a tool failure fails the run with its error code, and a
+    window cap (24 notes within the recovery window (the last 512 durable events, about fifty steps)) is spent, a tool failure fails the run with its error code, and a
     verification failure completes the run with state `unverified` ([completion policy](harness.md#completion-policy)).
   - An empty or whitespace-only final step is answered the same way up to 3 notes before failing as
     `empty_model_reply`;
@@ -236,105 +236,8 @@ reconciliation surfaces from Phase 3:
 - Client attachments accept images and text/code files only. GUI picker, paste and drop share the same type checks; CLI attachment loading refuses unsupported formats. DOCX/XLSX/PPTX are not extracted or inlined. Document processing uses workspace files through ordinary terminal tools and optional skills with user-provided dependencies; it has no built-in converter or separate execution authority.
 - Bundled help path: `help` (`help@1.0.0`) is a model-visible `system.read` tool backed by five explicitly embedded Markdown resources. It is offline, workspace-independent, approval-free, and bounded; it returns stable document IDs and excerpts only. It never reads workspace files or live process/device state, and its reference text cannot override higher-priority instructions.
 - Interactive and headless CLI: `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run execution to HTTP/SSE. Its Terminal.Gui TUI owns terminal presentation, command navigation, attachment submission and run-following interaction; it also exposes headless commands and safe event envelopes. Model execution and execution policy remain Harness/Broker owned. Commands include `agent approve`/`deny`, policy management, and run/chat preset selection. `run` and `chat` require `--trust-workspace` for an untrusted canonical identity and `--confirm-full-access` for `full_access`; `--json` is accepted only with the explicit trust/full-access flags and cannot confirm an approval. The canonical Plan profile does not synthesize `web_approval_required`; an explicit ask rule may still surface that compatibility reason.
-  Terminal.Gui is the sole interactive screen engine. Redirected input/output,
-  `--classic`, `--json`, `NO_COLOR`, dumb and undersized terminals use
-  `PlainChatInput`: append-only line output with bounded submission history,
-  no cursor key loop and no screen/resize reconstruction. Shared command
-  metadata belongs to `ChatCommandCatalog`, not the line reader. Minimal
-  credential input remains separate and never echoes the secret; Terminal.Gui
-  retains its own masked panels. Startup selection uses 80×24; an active frame
-  hands over only below 20×12 after 400 ms. Handover disposes the frame before
-  using plain output and preserves the session/run state. `TgTranscriptView`
-  remains the single bounded scroll owner and emits follow-tail state changes
-  for busy/idle hints, including clear. Workspace-busy hints persist until Host
-  acceptance or a successful session switch, independent of composer keystrokes.
-  `TgChatLayout` owns responsive positioning: centred landing and a padded session
-  column with a multiline `TgPromptEditor`. Composer height grows within the
-  screen budget and uses the chat column's full width in active sessions (80 at home).
-  `TgRuleView` separates session context from chat without consuming another row.
-  The prompt is the opencode-style filled block in the panel tone: no frame
-  outline and no accent rail, with the preset, model and provider on the meta row
-  inside the block.
-  Slash suggestions match composer width; modal picker, approval, secret,
-  report and command-palette surfaces centre on the whole terminal.
-  The footer exposes one contextual shortcut and a short five-cell medium block wave,
-  leaving space for feedback and the queue status.
-  Transcript and slash-suggestion bounds follow the composer frame. Modal
-  dismissal restores source-text cursor position and draft focus. `TgHintsView`
-  presents running, approval and paused states independently of feedback and
-  queue count. Retained tool/reasoning blocks share the transcript's row/character
-  bounds; selection, expansion and explicit copy remain presentation operations.
-  The session column sits below a two-row header: title/usage, then workspace. The live activity
-  moved out of the header into the transcript: `TgTranscriptView` keeps one live
-  row pinned after the last committed row (opencode-style), drawn from the shared
-  activity presentation, and a settled tool row replaces it in place. The activity
-  projection separates glyph/action, target and right-aligned metrics;
-  response deltas show writing, parked states stay still, and queued tools retain
-  their own action after another tool settles. Settled rows preserve outcome text
-  and metrics when shortening targets. Frames below
-  20 rows keep a single heading row. The header projects session data and catalog
-  metadata; optional title probes read the session only while its title is missing.
-  Every animation phase (braille spinner, running-tool
-  glyph rotation, busy-hint colour wave, elapsed clock) is a pure function of
-  elapsed seconds in
-  `TuiSpinner`, so the 18 ms meteor ticker and any slower cadence yield the same
-  motion; the ticker runs only while the frame is live, and the live row's
-  spinner pauses on parked states. Streaming reflows a dirty tail at draw/scroll
-  boundaries. Unchanged wrapped rows are cached by retained text, paint and viewport
-  width, including while tool details are expanded; evicted text does not stay alive
-  through the cache. Turn-end assistant reconciliation reads at most four payloads
-  concurrently and preserves their model-step order and types. Optional header-title
-  reads have a 250 ms cancellation deadline. Reopened sessions and an explicit
-  attach treat `waiting_subagents` parents as active without posting Continue.
-  Tool activity metadata is updated by ID and consumed in durable proposal order;
-  the transient durable sequence is a stream anchor, not a tool identity.
-  Silent durable run/model metadata does not flush unfinished assistant prose.
-  Step-rewind callbacks read their row marker on the UI loop after the queued
-  step-start callback, so a worker-thread retry removes the superseded reply.
-  When durable text reveals a missing streamed head, the screen replaces the
-  current turn's prose with the complete step texts, separated by paragraphs,
-  retaining tool rows and earlier turns. Recovery declines after screen-retention
-  eviction or reset; sequential output keeps its explicit truncation notice.
-  Tool-result badges use typed completion activity: the public envelope's status
-  is a run status and `running` alone is not a tool failure. Without outcome
-  metadata the tool row remains neutral and says outcome unavailable.
-  Late completion details update that existing tool row in place. Row markers
-  are invalidated by retention, reset and rewinds rather than guessing at a
-  shifted row. Document panels own their paging keys while focused.
-  The TUI intentionally keeps core chat, inline tools/diffs, approvals, attachments,
-  session/model controls, run recovery, help and updates. The live header context
-  meter remains. Plans render an inline checklist when new and one progress line
-  after, at existing transcript boundaries, without splitting streamed prose or
-  retaining a separate task list.
-  Activity/todo/change inspectors, the project-file browser, session tree, rewind,
-  Markdown export and separate token/prompt-history reports are absent from the
-  interactive command surface. Up/Down prompt recall remains. Headless CLI and RPC
-  retain their own capabilities. File intake uses clipboard/drop or `--image`;
-  parked chat runs resume on typed `Continue`. `/attach`, `/attachments`, `/paste`,
-  `/detach`, `/continue` and `/quit` are absent from dispatch, help and completion.
-  `/exit` is the sole quit command. Escape dismisses overlays or interrupts an
-  active turn; idle Escape keeps the chat and draft open. Conversation replay retains the latest
-  20 nonempty messages, with a 100,000-character bound per message; screen
-  retention is independently bounded by `TgTranscriptView`.
-  Command overlays follow the composer and remain bounded within the frame.
-  Prose reflows across the full viewport width like the classic renderer; verified
-  Markdown table blocks reflow
-  from raw rows and preserve values on narrow screens.
-  A model step the host suppresses for recovery drops the rows it painted, so the
-  answer that replaces it never reads as the same answer printed twice.
-  One flat card frame backs every popup — picker, approval, workspace trust,
-  secret key, document window and slash suggestions — with the title and its
-  dismiss hint, a dim header rule, the filled selection bar, footer keys and a
-  scroll position when a list is clipped. The session card switches on Enter and
-  deletes behind a confirm on Delete, moving off the open session when it is the
-  one removed. Reasoning uses the same
-  bounded collapsed-detail owner without repeated feed summaries. Web tool detail
-  includes queries up to 160 characters or fetched host names. Detail passes the
-  existing known-secret redactor before the public activity sink; URL credentials,
-  path, query and fragment do not enter the fetched-host label.
+  Presentation, layout and turn-ownership details live in [TUI terminal presentation](tui.md#terminal-presentation).
 
-- CLI submission ownership: `ChatSubmissionState` owns pending attachments, snapshot admission, held retry identity and accepted attachment transfers in both terminal paths. A declined trust gate returns the transfer to pending state once; cancellation and failure release its temporary images. `ChatSubmissionSnapshot` retains immutable intent and the original idempotency key. Rendering and run orchestration remain in the existing dispatcher.
-- CLI turn ownership: `ChatRunSession` owns turn cancellation, active/parked/followable run identities and unique assistant payload references. A failed Continue retains the parked identity; parking cancels following without requesting server cancellation. Interrupting another active run still targets that run. The dispatcher renders and performs the HTTP operations through this state owner.
 
 The Harness tool pipeline uses one proposal-batch implementation for classification,
 input/approval pause selection, execution and abort cleanup. Initial proposal
@@ -699,7 +602,7 @@ PowerShell otherwise writes redirected output in the system code page while the
 runner decodes UTF-8, so accented text such as Vietnamese reached the model as `?` or
 U+FFFD. The prelude is part of the executed intent's argv and hash. Policy context,
 approval bindings, previews and remembered rules keep the model's own script exactly as
-before; the prelude is a fixed Host transform of it. Scripts that start with `using`, `param` or `#Requires` are left
+before; the prelude is a fixed Host transform of it. Scripts whose first statement, after any leading comments, is `using` or `param`, or that begin with `#Requires`, are left
 unchanged because those statements must come first. Programs launched with
 `run_process` keep their own output encoding.
 

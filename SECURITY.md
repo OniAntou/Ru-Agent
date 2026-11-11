@@ -31,6 +31,13 @@ not authorize, or turns a bounded tool result into unbounded execution or output
 - **The local surface is not hardened against your own user account.** Anything
   that can read `%LOCALAPPDATA%\Ru\runtime_descriptor.json` can talk to the
   Host; the boundary is the bearer token in an owner-only descriptor.
+  That includes the agent's own terminal children: a command launched in
+  `standard` or `full_access` runs as you, so it can read the descriptor and
+  call the Host, including the approval and policy routes. Approvals, ask rules
+  and the `X-Interactive-Confirmed` guardrail therefore guard the structured
+  tools and the launch decision; they do not contain a command that is already
+  running. Use `plan`, or a deny rule on terminal launches, for work you do not
+  trust to run commands.
 - **Prompts and tool results go to the provider you choose.** Data leaving the
   machine on the way to your model provider is expected behaviour, not a leak.
 

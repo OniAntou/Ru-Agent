@@ -65,6 +65,20 @@ managed startup failure exits with a bounded code.
 
 Closing the GUI sends an authenticated `POST /host/shutdown` so the Host exits gracefully; CLI detach still does not force-kill the shared Host.
 
+## Hooks
+
+The Host starts user-configured hook commands itself: `HookToolGateway` decorates
+the tool gateway for `PreToolUse`/`PostToolUse`, and `RunLifecycleHooks` runs
+`UserPromptSubmit` and `Stop`. `HookProcessRunner` launches each one through
+`cmd.exe` with the credential-stripped terminal environment, a hard timeout and a
+kill-on-close Job Object. These are commands the user (or an approved plugin,
+[ADR 0044](../adr/0044-user-plugins.md)) declared, not model-visible tools: they
+never pass through `IToolGateway` policy evaluation and add no tool, grant or
+approval. A workspace `hooks.json` loads only after workspace trust. This is the
+one process launch the Host owns outside the execution authority; model-requested
+file, terminal and network actions stay in the Broker. Behaviour and limits:
+[Hooks](../operations/agent-tools.md#hooks).
+
 ## Contracts and transport
 
 The canonical Public Contract is

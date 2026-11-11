@@ -926,8 +926,12 @@ public static partial class AgentV1Endpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            // The client sees only the bounded code, so the cause is logged here.
+            context.RequestServices.GetService<ILoggerFactory>()
+                ?.CreateLogger("RuBackend.Harness.AgentPolicies")
+                .LogError(error, "policy creation failed");
             return Results.Json(new { error_code = "policy_create_failed", message = "Unable to create policy." }, statusCode: 500);
         }
     }

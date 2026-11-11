@@ -149,6 +149,17 @@ namespace RuApp.Views
             }
         }
 
+        /// <summary>
+        /// The window reading shown beside a session's usage total, for the session open in
+        /// the chat only. Any other session has no current window, so it gets null.
+        /// </summary>
+        public string? ContextReadingFor(string sessionId)
+        {
+            if (!string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal)) return null;
+            var text = ContextUsedLabel.Text;
+            return string.IsNullOrWhiteSpace(text) || text.StartsWith("~0 tokens", StringComparison.Ordinal) ? null : text;
+        }
+
         private void PaintContextBreakdown(ContextPanelReading reading, int usedTokens, int maximumTokens)
         {
             ContextSystemLabel.Text = reading.System;

@@ -19,6 +19,13 @@ namespace RuApp.Models
         public string? SourceRunId { get; set; }
         public int? SourceMessageIndex { get; set; }
 
+        /// <summary>
+        /// Set only on a row added live by a send. The transcript plays one short entrance
+        /// when the row first realizes and clears it, so history loads, reconciles and
+        /// recycled rows never animate.
+        /// </summary>
+        public bool ArrivesLive { get; set; }
+
         private string _id = Guid.NewGuid().ToString();
         private string _role = "user";
         private string _content = string.Empty;

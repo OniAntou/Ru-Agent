@@ -881,6 +881,17 @@ namespace RuApp.Views
                 return;
             }
 
+            // A row a send just added fades and lifts in once; the flag clears so a later
+            // realization (scroll, recycle, reconcile) stays still. Composition only.
+            if (args.Item is ChatMessageItem { ArrivesLive: true } arriving)
+            {
+                arriving.ArrivesLive = false;
+                if (args.ItemContainer is FrameworkElement container)
+                {
+                    Services.UiMotion.Enter(container);
+                }
+            }
+
             if (FindMessageColumn(args.ItemContainer) is { } column)
             {
                 LayoutMessageColumn(column);

@@ -126,7 +126,7 @@ namespace RuApp.Controls
                 SessionScopeHint.Visibility = Visibility.Collapsed;
             }
 
-            Panel.Visibility = Visibility.Visible;
+            RuApp.Services.UiMotion.SetVisible(Panel, true);
         }
 
         public void Hide()

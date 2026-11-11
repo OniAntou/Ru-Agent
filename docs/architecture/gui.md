@@ -183,6 +183,16 @@ estimate or usage arrives; only switching conversations clears it.
 The meter button's accessible help includes the total and all three values, so
 the reading remains available even when the flyout opens as a transient hover.
 
+## Session usage panel
+
+Opened from a session row's menu, the panel reports what the session's runs cost: price
+and token total, one four-segment bar (input, output, cache read, cache write) with a legend,
+and the runs folded behind a header that opens the per-run ledger. The total counts every
+model step, and each step re-sends the context, so it is many windows, not one. For the
+session open in the chat the panel therefore shows "Context now" (the composer meter's
+reading, `ChatView.ContextReadingFor`) beside it; any other session shows no current window.
+The label says "tokens", not "billed": cache reads are the cheap part and dominated the figure.
+
 ## Activity rows
 
 Terminal row details use `TerminalActivityCard`: the existing row disclosure opens
@@ -603,6 +613,11 @@ on disposal. All programmatic follow scrolls are unanimated: a native animation
 can otherwise outlive the layout/session it targeted. Reader scrolling resumes
 follow only at the actual bottom, after intermediate view changes finish, rather
 than anywhere inside streaming's 100-pixel proximity allowance.
+A message a send just added live carries `ChatMessageItem.ArrivesLive`; its container plays one
+`UiMotion.Enter` when first realized and clears the flag, so history loads, reconciles and recycled
+rows never animate. The approval and question cards enter the same way when they appear. Sidebar
+session rows fade hover/press/selection layers over 140 ms instead of swapping brushes. The composer
+carries a 1 px hairline that fades to the muted ink while its text box has focus (`ChatView.ComposerFocus.cs`).
 Activity row attachment only binds typography, status and live announcements;
 it does not fade or translate the row. Visual realization/recycling is not a new
 agent event. Running label sweeps still respect the OS animation setting.

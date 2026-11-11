@@ -265,7 +265,8 @@ namespace RuApp
                 _apiService,
                 sessionId,
                 sessionTitle,
-                _chatView?.ProviderCatalogState);
+                _chatView?.ProviderCatalogState,
+                _chatView?.ContextReadingFor(sessionId));
         }
 
         private void CloseSessionUsage()

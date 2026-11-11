@@ -72,6 +72,7 @@ namespace RuApp.Views
                 Messages.Add(new ChatMessageItem
                 {
                     Role = "user",
+                    ArrivesLive = true,
                     Content = !string.IsNullOrEmpty(displayUserText) ? displayUserText : text,
                     SessionId = _activeSessionId,
                     Attachments = attachments != null && attachments.Count > 0
@@ -91,6 +92,7 @@ namespace RuApp.Views
                 Content = string.Empty,
                 IsStreaming = true,
                 SessionId = _activeSessionId,
+                ArrivesLive = true,
             };
             _activeAgentAssistantMessage.AgentActivities = AgentActivities;
             _segmentFrozenLength = 0;

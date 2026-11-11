@@ -93,9 +93,10 @@ public sealed class SessionUsagePanelUiSourceContractTests
 
         GuiSource.Require(document, "SessionTitleText");
         GuiSource.Require(document, "CoverageText");
-        GuiSource.Require(document, "ElapsedValueText");
+        GuiSource.Require(document, "CostValueText");
         GuiSource.Require(document, "BilledValueText");
-        GuiSource.Require(document, "PeakValueText");
+        GuiSource.Require(document, "ContextNowRow");
+        GuiSource.Require(document, "RunsToggleButton");
         GuiSource.Require(document, "ShareBarGrid");
         GuiSource.Require(document, "InputValueText");
         GuiSource.Require(document, "OutputValueText");
@@ -131,25 +132,20 @@ public sealed class SessionUsagePanelUiSourceContractTests
     }
 
     [Fact]
-    public void Each_part_names_itself_beside_its_own_bar()
+    public void Each_part_of_the_one_bar_is_named_in_a_legend_item()
     {
-        // The legend this replaced cost three rounded swatches and a lookup. The colour
-        // and the figure now sit in the same cell, so the split needs no key.
+        // One bar of four segments replaced four bars; each segment's colour is repeated
+        // by a square swatch in its own legend item, so the split needs no separate key.
         var document = GuiSource.Xml("Controls", "SessionUsagePanel.xaml");
 
         foreach (string part in new[] { "Input", "Output", "CacheRead", "CacheWrite" })
         {
-            var bar = GuiSource.Require(document, part + "ShareBar");
-            var cell = bar.Parent!;
-            Assert.Contains(
-                cell.Elements()
-                    .Select(element => GuiSource.AttributeValue(element, "Text")),
-                label => label is not null
-                    && label.StartsWith(part.Replace("CacheRead", "Cache read", StringComparison.Ordinal)
-                        .Replace("CacheWrite", "Cache write", StringComparison.Ordinal), StringComparison.Ordinal));
+            var segment = GuiSource.Require(document, part + "ShareBar");
+            Assert.Same(GuiSource.Require(document, "ShareBarGrid"), segment.Parent);
+            var item = GuiSource.Require(document, part + "LegendItem");
+            Assert.True(GuiSource.IsDescendantOf(GuiSource.Require(document, part + "ValueText"), item));
         }
     }
-
     [Fact]
     public void The_split_keeps_cache_reads_and_writes_apart()
     {
@@ -163,9 +159,25 @@ public sealed class SessionUsagePanelUiSourceContractTests
         Assert.Equal(4, columns.Split(',').Length);
 
         string code = GuiSource.Text("Controls", "SessionUsagePanel.xaml.cs");
-        string render = GuiSource.MethodBody(code, "Render");
-        Assert.Contains("CacheReadShare", render, StringComparison.Ordinal);
-        Assert.Contains("CacheWriteShare", render, StringComparison.Ordinal);
+        string split = GuiSource.MethodBody(code, "PaintSplit");
+        Assert.Contains("CacheReadShare", split, StringComparison.Ordinal);
+        Assert.Contains("CacheWriteShare", split, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_panel_shows_the_session_total_beside_the_current_window_and_folds_the_runs()
+    {
+        // The total is many windows (every step re-sends the context), so the panel puts
+        // the open session's current window on the same screen, and says "tokens", not
+        // "billed": cache reads are billed at a fraction and made the number look huge.
+        string code = GuiSource.Text("Controls", "SessionUsagePanel.xaml.cs");
+        Assert.Contains("ContextNowRow", GuiSource.MethodBody(code, "Render"), StringComparison.Ordinal);
+        Assert.Contains(" tokens", GuiSource.MethodBody(code, "Render"), StringComparison.Ordinal);
+        var document = GuiSource.Xml("Controls", "SessionUsagePanel.xaml");
+        Assert.Equal("Collapsed", GuiSource.AttributeValue(GuiSource.Require(document, "RowsPanel"), "Visibility"));
+        Assert.DoesNotContain(
+            GuiSource.AttributeValues(document, "Text"),
+            value => value == "Billed tokens" || value == "Peak context");
     }
 
     [Fact]
@@ -240,15 +252,14 @@ public sealed class SessionUsagePanelUiSourceContractTests
 
         // The bars are split by the shared shares, and a zero share gets no segment: a
         // sliver for a figure nobody measured would be a lie the panel cannot correct.
-        string render = GuiSource.MethodBody(code, "Render");
+        string render = GuiSource.MethodBody(code, "PaintSplit");
         Assert.Contains("InputShare", render, StringComparison.Ordinal);
         Assert.Contains("OutputShare", render, StringComparison.Ordinal);
         Assert.Contains("CacheReadShare", render, StringComparison.Ordinal);
         Assert.Contains("CacheWriteShare", render, StringComparison.Ordinal);
 
-        string cell = GuiSource.MethodBody(code, "PaintShareCell");
-        Assert.Contains("if (share <= 0)", cell, StringComparison.Ordinal);
-        Assert.Contains("return;", cell, StringComparison.Ordinal);
+        string split = GuiSource.MethodBody(code, "PaintSplit");
+        Assert.Contains("Math.Max(0, shares[index])", split, StringComparison.Ordinal);
 
         string row = GuiSource.MethodBody(code, "BuildRow");
         Assert.Contains("AutomationProperties.SetName", row, StringComparison.Ordinal);

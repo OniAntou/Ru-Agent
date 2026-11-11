@@ -38,6 +38,8 @@ namespace RuApp.Controls
         // from the old session never paints over the new one.
         private CancellationTokenSource? _loadCts;
         private long _loadGeneration;
+        private string? _contextNow;
+        private bool _runsExpanded;
 
         public SessionUsagePanel()
         {
@@ -62,6 +64,11 @@ namespace RuApp.Controls
         /// <param name="api">The session read.</param>
         /// <param name="sessionId">Which session's runs to read.</param>
         /// <param name="sessionTitle">Its name, for the heading.</param>
+        /// <param name="contextNow">
+        /// The window reading of the session open in the chat (for example "~25.1K / 1M"),
+        /// or null for any other session. It is shown beside the total because the two
+        /// answer different questions; a session that is not open has no current window.
+        /// </param>
         /// <param name="catalog">
         /// The catalog whose published rates price the runs, or null when none is
         /// loaded. Null is not "everything is free": it means no run carries a figure
@@ -71,15 +78,16 @@ namespace RuApp.Controls
             ApiService api,
             string sessionId,
             string? sessionTitle,
-            ProviderCatalogState? catalog)
+            ProviderCatalogState? catalog,
+            string? contextNow = null)
         {
             ArgumentNullException.ThrowIfNull(api);
             ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
             SessionTitleText.Text = string.IsNullOrWhiteSpace(sessionTitle) ? "Session" : sessionTitle;
             CoverageText.Text = "reading…";
-            ElapsedValueText.Text = "—";
-            PeakCaptionText.Text = "Largest single step";
+            _contextNow = string.IsNullOrWhiteSpace(contextNow) ? null : contextNow.Trim();
+            ContextNowRow.Visibility = Visibility.Collapsed;
             RowsPanel.Children.Clear();
             EmptyText.Visibility = Visibility.Collapsed;
 
@@ -90,15 +98,11 @@ namespace RuApp.Controls
             CostValueText.Text = "—";
             CostCoverageText.Text = string.Empty;
             CostCoverageText.Visibility = Visibility.Collapsed;
-            PeakValueText.Text = "—";
             InputValueText.Text = "—";
             OutputValueText.Text = "—";
             CacheReadValueText.Text = "—";
             CacheWriteValueText.Text = "—";
-            PaintShareCell(InputShareBar, InputValueText, "—", 0, "RuAccentBrush", false);
-            PaintShareCell(OutputShareBar, OutputValueText, "—", 0, "RuVioletBrush", false);
-            PaintShareCell(CacheReadShareBar, CacheReadValueText, "—", 0, "RuInfoBrush", false);
-            PaintShareCell(CacheWriteShareBar, CacheWriteValueText, "—", 0, "RuPinkBrush", false);
+            PaintSplit(SessionUsagePolicy.Summarize(Array.Empty<SessionUsageRow>()));
             ShowLoading();
 
             var previous = _loadCts;
@@ -153,53 +157,34 @@ namespace RuApp.Controls
             var summary = SessionUsagePolicy.Summarize(all);
             int count = rows?.Count ?? 0;
 
+            string elapsed = FormatElapsed(rows);
             CoverageText.Text = rows is null
                 ? "unavailable"
-                : summary.ReportedRuns == count
-                    ? count == 0 ? "no runs" : $"all {count} reported"
-                    : $"{summary.ReportedRuns} of {count} reported";
-            if (rows is not null && count > 0)
-                CoverageText.Text = $"Latest {count} runs · {summary.ReportedRuns} reported"
-                    + (summary.CacheHitPercent is { } hit
-                        ? $" · cache hit {AgentModelUsage.FormatCacheHit(hit)} ({summary.CacheReportedRuns} runs)" : string.Empty);
+                : count == 0
+                    ? "no runs"
+                    : (count == 1 ? "1 run" : $"{count} runs")
+                        + (summary.ReportedRuns < count ? $" · {summary.ReportedRuns} reported" : string.Empty)
+                        + (elapsed != "—" ? $" · {elapsed}" : string.Empty);
 
-            BilledValueText.Text = ModelContextSpecs.FormatTokens(summary.BilledTokens);
-            PeakValueText.Text = ModelContextSpecs.FormatTokens(summary.PeakTotal);
-            ElapsedValueText.Text = FormatElapsed(rows);
+            BilledValueText.Text = summary.HasAny ? ModelContextSpecs.FormatTokens(summary.BilledTokens) + " tokens" : "—";
 
             var prices = SessionUsagePricing.PriceRuns(all, rates);
             PaintCost(prices.Values, count, rates.Count);
+            PaintSplit(summary);
 
-            InputValueText.Text = ModelContextSpecs.FormatTokens(summary.TotalInput);
-            OutputValueText.Text = ModelContextSpecs.FormatTokens(summary.TotalOutput);
-
-            // Reads and writes are separate figures, not one cache figure. Adding them
-            // hid the one thing the split is for: a session that mostly re-read a warm
-            // cache looks identical to one that mostly paid for fresh input.
-            PaintShareCell(
-                InputShareBar, InputValueText,
-                summary.InputComplete ? ModelContextSpecs.FormatTokens(summary.TotalInput) : "—",
-                summary.InputShare, "RuAccentBrush", summary.HasAny && summary.HasCompleteSplit);
-            PaintShareCell(
-                OutputShareBar, OutputValueText,
-                summary.OutputComplete ? ModelContextSpecs.FormatTokens(summary.TotalOutput) : "—",
-                summary.OutputShare, "RuVioletBrush", summary.HasAny && summary.HasCompleteSplit);
-            PaintShareCell(
-                CacheReadShareBar, CacheReadValueText,
-                summary.CacheReadComplete ? ModelContextSpecs.FormatTokens(summary.CacheRead) : "—",
-                summary.CacheReadShare, "RuInfoBrush", summary.HasCompleteSplit && summary.CacheRead > 0);
-            PaintShareCell(
-                CacheWriteShareBar, CacheWriteValueText,
-                summary.CacheWriteComplete ? ModelContextSpecs.FormatTokens(summary.CacheWrite) : "—",
-                summary.CacheWriteShare, "RuPinkBrush", summary.HasCompleteSplit && summary.CacheWrite > 0);
-
+            if (_contextNow is not null)
+            {
+                ContextNowValueText.Text = _contextNow;
+                ContextNowRow.Visibility = Visibility.Visible;
+            }
             RunsHeaderText.Text = count switch
             {
                 0 => "Runs",
                 1 => "1 run",
                 _ => $"{count} runs",
             };
-            RunsHeaderText.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            RunsToggleButton.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            ApplyRunsExpanded();
 
             RowsPanel.Children.Clear();
             // Newest first: the run the user just watched is the one they opened the
@@ -322,43 +307,54 @@ namespace RuApp.Controls
         }
 
         /// <summary>
-        /// Paints one part of the split: its figure, and a bar sized against the whole
-        /// measured total so the four lengths are directly comparable and their sum is
-        /// the width of the section.
+        /// Paints the split: one bar of four segments sized by their measured shares, and
+        /// a legend naming each part with its figure.
         /// </summary>
         /// <remarks>
-        /// The bar is two star columns rather than a computed pixel width: a cell's
-        /// width is not known until layout runs, and asking for it here would mean a
-        /// second pass over the panel every time it is opened. A part that measured
-        /// nothing gets a zero-width column and so draws nothing at all — never a
-        /// sliver, which would be a figure the panel cannot correct.
+        /// Reads and writes stay separate parts. Adding them hid the one thing the split
+        /// is for: a session that mostly re-read a warm cache looks identical to one that
+        /// mostly paid for fresh input. The segments are star columns, not computed pixel
+        /// widths, since a width is not known until layout runs. A part that measured
+        /// nothing gets a zero-width column and draws nothing, never a sliver.
         /// </remarks>
-        private static void PaintShareCell(
-            Grid bar,
-            TextBlock value,
-            string figure,
-            double share,
-            string fillKey,
-            bool measured)
+        private void PaintSplit(SessionUsageSummary summary)
         {
-            value.Text = measured ? figure : "—";
-            value.Foreground = ThemeBrush(measured ? "RuInkBrush" : "RuMutedBrush");
-
-            bar.Children.Clear();
-            bar.ColumnDefinitions.Clear();
-            if (share <= 0)
+            bool measured = summary.HasAny && summary.HasCompleteSplit;
+            double[] shares =
             {
-                return;
+                measured ? summary.InputShare : 0,
+                measured ? summary.OutputShare : 0,
+                measured ? summary.CacheReadShare : 0,
+                measured ? summary.CacheWriteShare : 0,
+            };
+            for (int index = 0; index < shares.Length; index++)
+            {
+                ShareBarGrid.ColumnDefinitions[index].Width = new GridLength(Math.Max(0, shares[index]), GridUnitType.Star);
             }
 
-            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(share, GridUnitType.Star) });
-            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100 - share, GridUnitType.Star) });
+            InputValueText.Text = "Input " + (summary.InputComplete ? ModelContextSpecs.FormatTokens(summary.TotalInput) : "—");
+            OutputValueText.Text = "Output " + (summary.OutputComplete ? ModelContextSpecs.FormatTokens(summary.TotalOutput) : "—");
+            CacheReadValueText.Text = "Cache " + (summary.CacheReadComplete ? ModelContextSpecs.FormatTokens(summary.CacheRead) : "—");
+            CacheWriteValueText.Text = "Cache write " + (summary.CacheWriteComplete ? ModelContextSpecs.FormatTokens(summary.CacheWrite) : "—");
 
-            var segment = new Border { Background = ThemeBrush(fillKey) };
-            Grid.SetColumn(segment, 0);
-            bar.Children.Add(segment);
+            // Cache parts appear only when something was read or written.
+            CacheReadLegendItem.Visibility = summary.CacheRead > 0 ? Visibility.Visible : Visibility.Collapsed;
+            CacheWriteLegendItem.Visibility = summary.CacheWrite > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
+        private void OnRunsToggleClick(object sender, RoutedEventArgs e)
+        {
+            _runsExpanded = !_runsExpanded;
+            ApplyRunsExpanded();
+        }
+
+        private void ApplyRunsExpanded()
+        {
+            RowsPanel.Visibility = _runsExpanded ? Visibility.Visible : Visibility.Collapsed;
+            RunsScaleText.Visibility = _runsExpanded ? Visibility.Visible : Visibility.Collapsed;
+            RunsChevron.Glyph = _runsExpanded ? "\uE70E" : "\uE70D";
+            AutomationProperties.SetName(RunsToggleButton, _runsExpanded ? "Hide runs" : "Show runs");
+        }
         /// <summary>
         /// One run: when it ran, how it ended, how long it took, what the provider
         /// counted, and its share of the session's billed total.

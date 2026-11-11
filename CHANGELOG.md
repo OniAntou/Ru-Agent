@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Panel Session usage gọn lại: chi phí và tổng token ở đầu, một thanh chia input/output/cache
+  kèm chú giải, dòng "Context now" (chỉ cho session đang mở) đặt cạnh tổng để hai con số không còn trông như
+  lệch nhau, và danh sách run được gập sau một tiêu đề. Bỏ nhãn "Billed tokens" (cache read tính cả vào làm
+  số trông rất lớn) và thẻ Peak context.
+
+- **feat(gui)**: Composer có viền mảnh khi nghỉ và sáng lên mượt khi ô nhập được focus, nên rõ chỗ đang
+  gõ mà không thêm vòng sáng.
+
+- **feat(gui)**: Thêm chuyển động cho ba chỗ còn khựng. Tin nhắn vừa gửi (của anh và dòng trả lời đang chờ)
+  trượt nhẹ và hiện dần một lần khi xuất hiện; lịch sử, reconcile và dòng được tái dùng vẫn đứng yên.
+  Thẻ phê duyệt và thẻ câu hỏi hiện dần khi xuất hiện. Hàng session ở sidebar chuyển mờ dần (140 ms)
+  giữa hover, nhấn và đang chọn thay vì đổi màu tức thì. Tất cả tôn trọng tuỳ chọn hiệu ứng của Windows.
+
 - **feat(gui)**: Dọn bảy điểm trên giao diện. Sidebar và transcript có tên accessible đọc được (tiêu đề
   session, tên mục, người nói kèm đoạn đầu tối đa 120 ký tự) thay vì tên kiểu dữ liệu. Bấm lại session đang
   mở khi đang ở Customize hoặc trang khác sẽ quay về chat. Chat chưa chọn project (thư mục scratch do Host

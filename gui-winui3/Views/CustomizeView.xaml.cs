@@ -17,6 +17,7 @@ public sealed partial class CustomizeView : UserControl, IDisposable
 {
     private ApiService? _api;
     private Func<string?> _workspace = () => null;
+    private Func<bool> _workspaceIsScratch = () => false;
     private bool _active;
     private readonly CustomizeSkillsLoader _skillsLoader;
     private long _activationGeneration;
@@ -37,12 +38,13 @@ public sealed partial class CustomizeView : UserControl, IDisposable
     /// <summary>A skill the user chose to run; the shell returns to chat with it typed.</summary>
     public event EventHandler<string>? UseSkillRequested;
 
-    public void Initialize(ApiService apiService, Func<string?> workspace)
+    public void Initialize(ApiService apiService, Func<string?> workspace, Func<bool>? workspaceIsScratch = null)
     {
         CancelSkillWork();
         _activationGeneration++;
         _api = apiService ?? throw new ArgumentNullException(nameof(apiService));
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
+        _workspaceIsScratch = workspaceIsScratch ?? (() => false);
         // A reconnected Host is a new session: the old skills client is bound to the last one.
         _skills?.Dispose();
         ResetPluginsClient();

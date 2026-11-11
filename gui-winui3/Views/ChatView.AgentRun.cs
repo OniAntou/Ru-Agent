@@ -807,7 +807,7 @@ namespace RuApp.Views
             // and returns its canonical path with the created run.
             string workspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace) ?? string.Empty;
 
-            SetAgentWorkspace(workspace);
+            SetAgentWorkspace(workspace, _requestedWorkspaceIsScratch && _requestedWorkspace is not null);
             UpdateChatHeaderWorkspace();
             // The exact folder this run is created for, so the trust prompt can name it.
             _requestedWorkspaceBySession[submittedSessionId] = workspace;
@@ -878,7 +878,8 @@ namespace RuApp.Views
                 var createdWorkspace = _agentController.CurrentRun?.WorkspacePath;
                 if (!string.IsNullOrWhiteSpace(createdWorkspace))
                 {
-                    SetAgentWorkspace(createdWorkspace);
+                    SetAgentWorkspace(createdWorkspace,
+                        string.Equals(_agentController.CurrentRun?.WorkspaceKind, "scratch", StringComparison.Ordinal));
                     _requestedWorkspaceBySession[submittedSessionId!] = createdWorkspace;
                     UpdateChatHeaderWorkspace();
                 }

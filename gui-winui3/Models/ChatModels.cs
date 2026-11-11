@@ -327,6 +327,23 @@ namespace RuApp.Models
 
         public string RoleLabel => Role == "assistant" ? "Ru" : "You";
 
+        private const int AutomationExcerptChars = 120;
+
+        /// <summary>
+        /// UI Automation names a transcript row by its data object's string form: the speaker
+        /// and a bounded excerpt, never the whole (possibly huge) reply. Not for logging.
+        /// </summary>
+        public override string ToString()
+        {
+            var text = Content;
+            if (string.IsNullOrWhiteSpace(text)) return RoleLabel;
+            var start = 0;
+            while (start < text.Length && char.IsWhiteSpace(text[start])) start++;
+            var length = Math.Min(AutomationExcerptChars, text.Length - start);
+            var excerpt = text.AsSpan(start, length).ToString().ReplaceLineEndings(" ");
+            return start + length < text.Length ? $"{RoleLabel}: {excerpt}…" : $"{RoleLabel}: {excerpt}";
+        }
+
         public string TimeLabel => Timestamp.ToString("HH:mm");
 
         public event PropertyChangedEventHandler? PropertyChanged;

@@ -199,7 +199,7 @@ public sealed partial class MainWindow
         if (_chatView is null) return;
         try
         {
-            _chatView.SetRequestedWorkspace(Sidebar.Select(session));
+            _chatView.SetRequestedWorkspace(Sidebar.Select(session), IsScratchSession(session));
             OnNavClick(NavChat, new RoutedEventArgs());
             await _chatView.OpenSessionAsync(session.Id, session.Title);
             SyncSidebarSelection(session.Id);

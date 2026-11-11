@@ -122,6 +122,12 @@ namespace RuApp.Views
         private string _agentWorkspace = string.Empty;
         private string? _defaultAgentWorkspace;
         private string? _requestedWorkspace;
+        // Host-confirmed (workspace_kind == "scratch") only; a path's shape never decides it.
+        private bool _requestedWorkspaceIsScratch;
+        private bool _agentWorkspaceIsScratch;
+
+        /// <summary>True while the chat works in a Ru-owned scratch folder, not a chosen project.</summary>
+        public bool CurrentWorkspaceIsScratch => _agentWorkspaceIsScratch;
         /// <summary>Last approved identity hash per workspace path; drives the re-trust copy only.</summary>
         private readonly WorkspaceTrustMemoryStore _workspaceTrustMemory = new();
         private readonly SessionHistoryPresenter _sessionHistoryPresenter = new();

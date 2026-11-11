@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Dọn bảy điểm trên giao diện. Sidebar và transcript có tên accessible đọc được (tiêu đề
+  session, tên mục, người nói kèm đoạn đầu tối đa 120 ký tự) thay vì tên kiểu dữ liệu. Bấm lại session đang
+  mở khi đang ở Customize hoặc trang khác sẽ quay về chat. Chat chưa chọn project (thư mục scratch do Host
+  cấp, nhận biết bằng `workspace_kind`) không còn hiện tên thư mục băm ở breadcrumb, dòng workspace của màn
+  chào hay phụ đề Customize; màn chào không còn dấu chấm trơ. Side card gọn hơn khi chưa có subagent, và
+  mục Background tasks ghi "Tasks appear here while a run is active." khi không có run thay vì báo
+  không khả dụng. Hộp Settings lớn dần theo cửa sổ (880×560 đến 1040×720) và có dòng mẫu theo cỡ chữ
+  đang chọn. Customize và Models dùng font Ru nhất quán; thanh công cụ Customize co ô tìm kiếm
+  (96–260 px) để nút Reload và Add không bị mất ở cửa sổ hẹp.
+
 - **perf(host)**: Danh mục skill trong system prompt chỉ còn `id: mô tả` (mô tả cắt ở 320 ký tự), bỏ
   `source_path`, `resource_base` và `revision` của từng skill; tool `skill` vẫn trả các giá trị này khi
   load. Với 41 skill dùng chung, danh mục giảm từ khoảng 25 KB xuống 11 KB và không còn skill nào bị

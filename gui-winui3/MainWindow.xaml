@@ -508,6 +508,7 @@
                                   DragItemsStarting="OnSidebarDragItemsStarting" DragItemsCompleted="OnSidebarDragItemsCompleted"
                                   DragOver="OnSidebarDragOver" DragLeave="OnSidebarDragLeave" Drop="OnSidebarDrop"
                                   AutomationProperties.AutomationId="SessionList"
+                                  IsItemClickEnabled="True" ItemClick="OnSessionItemClick"
                                   SelectionChanged="OnSessionSelectionChanged" Margin="8,0,4,0" Padding="0,0,12,16"
                                   Background="Transparent" BorderThickness="0" ItemTemplateSelector="{StaticResource SidebarRowSelector}"
                                   ItemContainerStyleSelector="{StaticResource SidebarContainerSelector}">

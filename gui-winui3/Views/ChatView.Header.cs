@@ -71,7 +71,8 @@ namespace RuApp.Views
 
         private void UpdateChatHeaderWorkspace()
         {
-            var name = ChatHeaderPresentation.WorkspaceName(_agentWorkspace);
+            // A Ru-owned scratch folder is not a project: its generated name says nothing.
+            var name = _agentWorkspaceIsScratch ? string.Empty : ChatHeaderPresentation.WorkspaceName(_agentWorkspace);
             var visibility = name.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
             ChatHeaderWorkspaceText.Text = name;
             ChatHeaderWorkspace.Visibility = visibility;

@@ -16,9 +16,15 @@ public sealed partial class ChatView
 
     public event EventHandler? CurrentWorkspaceChanged;
 
-    private void SetAgentWorkspace(string workspace)
+    private void SetAgentWorkspace(string workspace, bool isScratch = false)
     {
-        if (string.Equals(_agentWorkspace, workspace, StringComparison.OrdinalIgnoreCase)) return;
+        var kindChanged = _agentWorkspaceIsScratch != isScratch;
+        _agentWorkspaceIsScratch = isScratch;
+        if (string.Equals(_agentWorkspace, workspace, StringComparison.OrdinalIgnoreCase))
+        {
+            if (kindChanged) CurrentWorkspaceChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
         _agentWorkspace = workspace;
         CurrentWorkspaceChanged?.Invoke(this, EventArgs.Empty);
     }

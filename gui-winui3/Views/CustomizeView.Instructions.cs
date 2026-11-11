@@ -34,7 +34,9 @@ public sealed partial class CustomizeView
             _workspaceInstructions = workspacePath is null ? null : ReadInstructions(workspacePath);
             bool hasWorkspace = workspacePath is not null;
             WorkspaceInstructionsPath.Text = hasWorkspace
-                ? $@"{Path.GetFileName(workspace!.TrimEnd('\\', '/'))}\.ru\AGENTS.md · this project only"
+                ? (_workspaceIsScratch()
+                    ? @"Scratch folder\.ru\AGENTS.md · this chat only"
+                    : $@"{Path.GetFileName(workspace!.TrimEnd('\\', '/'))}\.ru\AGENTS.md · this project only")
                 : "No workspace open";
             ToolTipService.SetToolTip(WorkspaceInstructionsPath, workspacePath);
             WorkspaceInstructionsBox.Text = _workspaceInstructions?.Text ?? string.Empty;

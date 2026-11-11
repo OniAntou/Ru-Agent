@@ -168,6 +168,16 @@ public sealed partial class ChatView
         RenderTaskObservation();
     }
 
-    private void RenderTaskObservation() => SidePanel.RenderTasks(_taskObservation.Rows, _taskObservation.Status);
+    // Task data stays "unavailable", never "empty". With no live run and nothing known, the
+    // alarming wording gives way to a plain note on when the list can fill in.
+    private void RenderTaskObservation()
+    {
+        var quiet = _taskObservation.GatewayUnavailable
+            && _taskObservation.Rows.Count == 0
+            && _sidePanelRunRunning != true;
+        SidePanel.RenderTasks(
+            _taskObservation.Rows,
+            quiet ? "Tasks appear here while a run is active." : _taskObservation.Status);
+    }
 
 }

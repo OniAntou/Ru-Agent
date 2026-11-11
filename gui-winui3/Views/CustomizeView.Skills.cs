@@ -54,7 +54,8 @@ public sealed partial class CustomizeView
         var hasWorkspace = !string.IsNullOrWhiteSpace(state.Workspace);
         // The subtitle describes the Skills tab; the other tabs set their own.
         if (SkillsTab.IsChecked == true)
-            WorkspaceText.Text = hasWorkspace ? $"Skills for {state.Workspace}"
+            WorkspaceText.Text = hasWorkspace
+                ? (_workspaceIsScratch() ? "Skills for this chat · no project folder chosen" : $"Skills for {state.Workspace}")
                 : "User skills · open a workspace to change availability or add folders.";
         AddButton.IsEnabled = hasWorkspace;
         var showSkeleton = state.IsLoading && state.Items.Count == 0;

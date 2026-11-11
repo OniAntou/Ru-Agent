@@ -477,9 +477,10 @@ namespace RuApp.Views
         }
 
         /// <summary>Overrides the workspace for the next runs; null restores the app root default.</summary>
-        public void SetRequestedWorkspace(string? workspacePath)
+        public void SetRequestedWorkspace(string? workspacePath, bool isScratch = false)
         {
             _requestedWorkspace = string.IsNullOrWhiteSpace(workspacePath) ? null : workspacePath.Trim();
+            _requestedWorkspaceIsScratch = isScratch && _requestedWorkspace is not null;
         }
 
         public async Task OpenSessionAsync(string sessionId, string title, bool isNewSession = false)
@@ -510,8 +511,12 @@ namespace RuApp.Views
                 UpdateLoadEarlierHistoryButton();
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 UpdateChatHeaderTitle();
-                SetAgentWorkspace(AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
-                    ?? (isNewSession ? string.Empty : _agentWorkspace));
+                var resolvedWorkspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace);
+                SetAgentWorkspace(
+                    resolvedWorkspace ?? (isNewSession ? string.Empty : _agentWorkspace),
+                    resolvedWorkspace is not null
+                        ? _requestedWorkspace is not null && _requestedWorkspaceIsScratch
+                        : !isNewSession && _agentWorkspaceIsScratch);
                 ResetAgentState(preserveTranscript: true);
                 _sidePanelRunRunning = null;
                 // The outgoing rows stay on screen until the history arrives; laying

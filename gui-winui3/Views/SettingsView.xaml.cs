@@ -293,6 +293,7 @@ namespace RuApp.Views
         private void RefreshTranscriptSizeSpecimens()
         {
             if (TranscriptSizeOptionsPanel == null) return;
+            if (TranscriptSizePreview != null) TranscriptSizePreview.FontSize = _transcriptSize;
             var selectedBrush = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
             var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             var accent = (Brush)Application.Current.Resources["RuAccentBrush"];

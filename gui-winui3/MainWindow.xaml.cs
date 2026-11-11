@@ -479,9 +479,17 @@ namespace RuApp
         {
             if (e.NewSize.Width > 0 && e.NewSize.Height > 0)
             {
-                SettingsModalCard.Width = Math.Max(0, Math.Min(880, e.NewSize.Width - 48));
-                SettingsModalCard.Height = Math.Max(0, Math.Min(560, e.NewSize.Height - 40));
+                FitSettingsModalCard(e.NewSize.Width, e.NewSize.Height);
             }
+        }
+
+        /// <summary>Settings keeps a comfortable 880x560 floor, grows with a large window up to 1040x720, and always fits inside the margins.</summary>
+        private void FitSettingsModalCard(double overlayWidth, double overlayHeight)
+        {
+            double availableWidth = Math.Max(0, overlayWidth - 48);
+            double availableHeight = Math.Max(0, overlayHeight - 40);
+            SettingsModalCard.Width = Math.Min(availableWidth, Math.Clamp(overlayWidth * 0.7, 880, 1040));
+            SettingsModalCard.Height = Math.Min(availableHeight, Math.Clamp(overlayHeight * 0.72, 560, 720));
         }
 
         private void OpenSettingsPopup()
@@ -493,8 +501,7 @@ namespace RuApp
             Services.UiMotion.Enter(SettingsModalOverlay);
             if (SettingsModalOverlay.ActualWidth > 0 && SettingsModalOverlay.ActualHeight > 0)
             {
-                SettingsModalCard.Width = Math.Max(0, Math.Min(880, SettingsModalOverlay.ActualWidth - 48));
-                SettingsModalCard.Height = Math.Max(0, Math.Min(560, SettingsModalOverlay.ActualHeight - 40));
+                FitSettingsModalCard(SettingsModalOverlay.ActualWidth, SettingsModalOverlay.ActualHeight);
             }
             _settingsView?.SetCurrentTheme(Shell.Theme);
             _settingsView?.SetCurrentPreset(Shell.SettingsPreset);
@@ -696,7 +703,7 @@ namespace RuApp
             _settingsView?.Initialize(_apiService, _providerCatalogController);
             _logView?.Initialize(_apiService);
             _diagnosticsView?.Initialize(_apiService);
-            _customizeView?.Initialize(_apiService, () => _chatView?.CurrentWorkspace);
+            _customizeView?.Initialize(_apiService, () => _chatView?.CurrentWorkspace, () => _chatView?.CurrentWorkspaceIsScratch == true);
 
             await Sidebar.RefreshAsync();
         }
@@ -909,6 +916,23 @@ namespace RuApp
             }
         }
 
+        /// <summary>Host-confirmed scratch ownership only; path shape never decides it.</summary>
+        private static bool IsScratchSession(SessionInfo session)
+            => string.Equals(session.WorkspaceKind, "scratch", StringComparison.Ordinal);
+
+        // SelectionChanged never fires for the row that is already selected, so leaving
+        // Customize (or Settings) by clicking the open session needs its own handler.
+        private void OnSessionItemClick(object sender, ItemClickEventArgs e)
+        {
+            if (e.ClickedItem is SessionInfo clicked
+                && ReferenceEquals(SidebarSessionList.SelectedItem, clicked)
+                && _chatView != null
+                && Shell.Destination != Services.ShellDestination.Chat)
+            {
+                OnNavClick(NavChat, new RoutedEventArgs());
+            }
+        }
+
         private async void OnSessionSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             try
@@ -933,7 +957,7 @@ namespace RuApp
 
             if (SidebarSessionList.SelectedItem is SessionInfo selected && _chatView != null)
             {
-                _chatView.SetRequestedWorkspace(Sidebar.Select(selected));
+                _chatView.SetRequestedWorkspace(Sidebar.Select(selected), IsScratchSession(selected));
 
                 // Select Chat tab if not selected
                 OnNavClick(NavChat, new RoutedEventArgs());

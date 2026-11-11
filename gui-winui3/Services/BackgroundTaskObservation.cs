@@ -8,6 +8,9 @@ public sealed class BackgroundTaskObservation
     private int _failures;
     public IReadOnlyList<AgentTaskRow> Rows { get; private set; } = [];
     public string Status { get; private set; } = "No background tasks";
+
+    /// <summary>The last read said the gateway cannot report tasks (not a transient failure).</summary>
+    public bool GatewayUnavailable { get; private set; }
     public TimeSpan RefreshInterval => TimeSpan.FromSeconds(Math.Min(30, 2 << _failures));
     public bool ShouldPoll(bool mainRunRunning) => mainRunRunning || _failures > 0 || Rows.Any(row => row.State == "running");
 
@@ -16,6 +19,7 @@ public sealed class BackgroundTaskObservation
         Rows = result.Rows;
         Status = result.Status;
         _failures = 0;
+        GatewayUnavailable = false;
     }
 
     public void Fail(bool retryable = true)
@@ -23,6 +27,7 @@ public sealed class BackgroundTaskObservation
         if (!retryable)
         {
             _failures = 0;
+            GatewayUnavailable = true;
             Status = Rows.Count > 0
                 ? "Task status unavailable · showing last known tasks."
                 : "Task status unavailable for this run.";

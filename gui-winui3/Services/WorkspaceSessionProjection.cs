@@ -121,15 +121,26 @@ public sealed record SidebarSectionRow(string Key, string Label, bool IsExpanded
     public bool IsCli => Key == SidebarSessionOrganization.CliKey;
     public bool IsRecents => Key == SidebarSessionOrganization.RecentsKey;
     public string ChevronGlyph => IsExpanded ? "\uE70D" : "\uE70E";
+
+    // The row's accessible name: the heading, not the record's field dump.
+    public override string ToString() => Label;
 }
 
-public sealed record SidebarEmptyRow(string Key, string Label);
+public sealed record SidebarEmptyRow(string Key, string Label)
+{
+    public override string ToString() => Label;
+}
 
 /// <summary>Sidebar row for a workspace header; chevron follows expand state.</summary>
 public sealed record WorkspaceGroupRow(WorkspaceGroup Group, bool IsExpanded)
 {
     public string ChevronGlyph => IsExpanded ? "" : "";
+
+    public override string ToString() => Group.Label;
 }
 
 /// <summary>Sidebar row expanding a folded group.</summary>
-public sealed record WorkspaceShowMoreRow(string GroupKey, string DisplayText);
+public sealed record WorkspaceShowMoreRow(string GroupKey, string DisplayText)
+{
+    public override string ToString() => DisplayText;
+}

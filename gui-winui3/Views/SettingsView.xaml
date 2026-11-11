@@ -299,6 +299,14 @@
                           <Grid x:Name="TranscriptSizeOptionsPanel"
                                 ColumnDefinitions="*,*,*,*"
                                 ColumnSpacing="8" />
+                          <!-- The four "Aa" specimens differ by a pixel each; a full line
+                            at the chosen size makes the difference readable. -->
+                          <TextBlock x:Name="TranscriptSizePreview"
+                                     Text="The quick brown fox reads the file, runs the tests and explains what changed."
+                                     FontFamily="{StaticResource RuUiFontFamily}"
+                                     Foreground="{StaticResource RuMutedBrush}"
+                                     TextWrapping="Wrap"
+                                     AutomationProperties.AccessibilityView="Raw" />
                         </StackPanel>
                     </Border>
 
@@ -727,7 +735,7 @@
                                         </Flyout>
                                     </Button.Flyout>
                                 </Button>
-                            <Button x:Name="AddCustomProviderButton" Content="Add custom model API"
+                            <Button x:Name="AddCustomProviderButton" Content="Add custom model API" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13"
                                     Command="{x:Bind ViewModel.AddCustomProviderCommand}"
                                     IsEnabled="{x:Bind ViewModel.IsProviderManagementEnabled, Mode=OneWay}"
                                     MinHeight="36" Padding="16,8" CornerRadius="8"
@@ -770,13 +778,13 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <Border Padding="5,1" CornerRadius="3" BorderThickness="1"
                                                             BorderBrush="{StaticResource RuLineBrush}" Visibility="{x:Bind IsCustom}">
-                                                        <TextBlock Text="Custom" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                                                        <TextBlock Text="Custom" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
                                                     </Border>
-                                                    <TextBlock Text="{x:Bind Status}" FontSize="12" Foreground="{StaticResource RuMutedBrush}"
+                                                    <TextBlock Text="{x:Bind Status}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="12" Foreground="{StaticResource RuMutedBrush}"
                                                                VerticalAlignment="Center" />
                                                 </StackPanel>
                                             </StackPanel>
-                                            <Button Grid.Column="1" Content="Edit" Tag="{x:Bind Choice}" Click="OnEditProviderClick"
+                                            <Button Grid.Column="1" Content="Edit" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Tag="{x:Bind Choice}" Click="OnEditProviderClick"
                                                     Padding="12,5" CornerRadius="6" VerticalAlignment="Center"
                                                     AutomationProperties.Name="{x:Bind EditAutomationName}" />
                                         </Grid>

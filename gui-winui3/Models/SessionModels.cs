@@ -97,6 +97,12 @@ namespace RuApp.Models
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
+        /// <summary>
+        /// UI Automation names a list row by its data object's string form; the title is
+        /// what a screen reader should read (not the type name). Never used for logging.
+        /// </summary>
+        public override string ToString() => string.IsNullOrWhiteSpace(Title) ? "New Session" : Title;
+
         private void SetField<T>(ref T storage, T value, [CallerMemberName] string? property = null)
         {
             if (EqualityComparer<T>.Default.Equals(storage, value)) return;

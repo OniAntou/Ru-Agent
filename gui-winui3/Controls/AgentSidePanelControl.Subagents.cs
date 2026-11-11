@@ -27,6 +27,7 @@ public sealed partial class AgentSidePanelControl
         var rows = agents?.Select(SubagentPresentation.Row).ToArray() ?? [];
         SubagentSummary = SubagentPresentation.ObserverSummary(SubagentBrowser.Snapshot, SubagentBrowser.RefreshFailed);
         CardSubagentsSummary.Text = SubagentSummary;
+        CardSubagentsDetail.Visibility = HasSubagents ? Visibility.Visible : Visibility.Collapsed;
         AutomationProperties.SetName(CardSubagentsRow, "View subagents, " + SubagentSummary);
         CardSubagentGlyphs.Children.Clear();
         foreach (var row in rows.OrderBy(r => r.Group).Take(4))

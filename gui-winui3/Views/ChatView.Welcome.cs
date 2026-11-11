@@ -85,9 +85,13 @@ public sealed partial class ChatView
             return;
         }
 
-        string workspace = string.IsNullOrWhiteSpace(_agentWorkspace) ? "." : _agentWorkspace;
+        // No chosen project (empty or a Ru-owned scratch folder): the readout has nothing
+        // useful to name, so the row steps aside instead of showing a bare dot.
+        bool hasProject = !_agentWorkspaceIsScratch && !string.IsNullOrWhiteSpace(_agentWorkspace);
+        WelcomeWorkspaceRow.Visibility = hasProject ? Visibility.Visible : Visibility.Collapsed;
+        string workspace = hasProject ? _agentWorkspace : string.Empty;
         WelcomeWorkspaceText.Text = workspace;
-        ToolTipService.SetToolTip(WelcomeWorkspaceText, workspace);
+        ToolTipService.SetToolTip(WelcomeWorkspaceText, hasProject ? workspace : null);
     }
 
     private void PlayWelcomeHeroEntrance()

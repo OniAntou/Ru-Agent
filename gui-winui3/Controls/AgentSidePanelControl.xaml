@@ -254,7 +254,10 @@
                                        Foreground="{StaticResource RuInkBrush}"
                                        VerticalAlignment="Center" />
                         </Grid>
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="18,0,0,0">
+                        <!-- Quiet while there is nothing to report: the row's title and its
+                             accessible name already say "No subagents yet". -->
+                        <Grid x:Name="CardSubagentsDetail" Visibility="Collapsed"
+                              ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="18,0,0,0">
                             <StackPanel x:Name="CardSubagentGlyphs" Orientation="Horizontal" Spacing="2" />
                             <TextBlock x:Name="CardSubagentsSummary" Grid.Column="1" Text="No subagents yet" FontSize="11"
                                        VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource RuMutedBrush}" />

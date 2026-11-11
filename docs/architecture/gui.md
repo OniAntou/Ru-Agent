@@ -392,6 +392,16 @@ switching chats, and rewind invalidates obsolete history cursors.
 Workspaces, Recents and CLI Sessions headings pair their labels with decorative
 grid, history and minimal terminal-prompt icons; the labels and existing controls
 remain the accessible interaction targets.
+List rows are named for UI Automation by their data object's `ToString()`: a session
+reads as its title, sidebar headings as their label, and a transcript message as the
+speaker plus at most 120 characters of its text. These strings are accessibility
+names only and are never written to logs. Clicking the already-selected session
+(`ItemClick`, since `SelectionChanged` does not fire for it) returns to Chat from
+Customize or another page without reopening the session. A chat in a Host-confirmed
+scratch workspace (`workspace_kind == "scratch"`, carried from the session row or the
+created run, never inferred from the path) shows no folder name in the header
+breadcrumb, the welcome workspace row or the Customize subtitle. The Settings modal
+scales from 880×560 up to 1040×720 with the window and always fits its margins.
 `SidebarLayoutState` owns one expanded width in the 220–360 px range for every
 window tier. The workspace-sidebar toggle at the far left of the title bar hides
 it completely and restores its last width. `MainWindow.SidebarLayout.cs` handles pointer identity,
@@ -911,7 +921,9 @@ failures, labels them stale and retries at 4/8/16/30-second intervals while the
 surface remains visible. An authoritative successful response resets the delay
 and can establish an empty list; a root/session change drops the old observation.
 An explicit `broker_gateway_unavailable` response retains uncertainty without
-promising endless retries for a completed run. Running turns or last-known running
+promising endless retries for a completed run; with no live run and no known task the
+card says "Tasks appear here while a run is active." instead of an unavailable notice,
+and the Subagents row hides its detail line until there is something to report. Running turns or last-known running
 tasks still trigger polling; unavailable data is never presented as an empty list.
 The subagent observer publishes freshness changes even when snapshot identity is
 unchanged. Card, narrow-window peek and reader share one summary that includes

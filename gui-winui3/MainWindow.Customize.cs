@@ -15,7 +15,7 @@ public sealed partial class MainWindow
     {
         if (_apiService is null) return;
         _customizeView = new CustomizeView();
-        _customizeView.Initialize(_apiService, () => _chatView?.CurrentWorkspace);
+        _customizeView.Initialize(_apiService, () => _chatView?.CurrentWorkspace, () => _chatView?.CurrentWorkspaceIsScratch == true);
         _customizeView.UseSkillRequested += OnUseSkillRequested;
         _customizeView.SetActive(false);
         if (_chatView is not null)

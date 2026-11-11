@@ -1,7 +1,7 @@
 namespace RuAgent.Cli.Tui;
 
 /// <summary>Renders a verified header/separator/body block from retained raw rows.</summary>
-internal static class TuiMarkdownTable
+internal static partial class TuiMarkdownTable
 {
     internal const int MaximumRows = 100;
 
@@ -10,7 +10,7 @@ internal static class TuiMarkdownTable
 
     internal static int ColumnCount(string row) => Cells(row).Length;
 
-    private static bool TryReadHeader(string headerText, string dividerText, out string[] header, out string[] divider)
+    private static bool TryReadHeader(string headerText, string dividerText, out TranscriptLine[] header, out string[] divider)
     {
         header = []; divider = [];
         if (!headerText.Contains('|')) return false;
@@ -20,12 +20,20 @@ internal static class TuiMarkdownTable
         divider = Cells(dividerText);
         if (divider.Length is < 2 or > 12
             || divider.Any(cell => cell.Trim(':').Length < 3 || cell.Trim(':').Any(c => c != '-'))) return false;
-        header = Cells(headerText);
+        header = StyledCells(headerText);
         return header.Length == divider.Length;
     }
 
     internal static bool TryRender(IReadOnlyList<string> lines, int start, int width,
         out int consumed, out IReadOnlyList<string> rendered)
+    {
+        var success = TryRenderPresentation(lines, start, width, out consumed, out var rows);
+        rendered = rows.Select(row => row.Text).ToArray();
+        return success;
+    }
+
+    internal static bool TryRenderPresentation(IReadOnlyList<string> lines, int start, int width,
+        out int consumed, out IReadOnlyList<TranscriptLine> rendered)
     {
         consumed = 0;
         rendered = [];
@@ -38,59 +46,60 @@ internal static class TuiMarkdownTable
     private static bool MayBeDivider(string text) => text.AsSpan().IndexOfAny('-', '&') >= 0;
 
     private static bool RenderTable(IReadOnlyList<string> lines, int start, int width,
-        out int consumed, out IReadOnlyList<string> rendered)
+        out int consumed, out IReadOnlyList<TranscriptLine> rendered)
     {
         consumed = 0;
         rendered = [];
         if (!TryReadHeader(lines[start], lines[start + 1], out var header, out var divider)) return false;
-        var rows = new List<string[]> { header };
+        var styledHeader = header.Select(DecorateCell).ToArray();
+        var rows = new List<TranscriptLine[]> { styledHeader };
         consumed = 2;
         while (start + consumed < lines.Count && rows.Count < MaximumRows)
         {
             var raw = lines[start + consumed];
             if (!raw.Contains('|')) break;
-            var cells = Cells(raw);
+            var cells = StyledCells(raw);
             if (cells.Length != header.Length) break;
-            rows.Add(cells);
+            rows.Add(cells.Select(DecorateCell).ToArray());
             consumed++;
         }
         var available = width - (header.Length - 1) * 3;
-        var output = new List<string>();
+        var output = new List<TranscriptLine>();
         if (width < 40 || available < header.Length * 4)
         {
             foreach (var row in rows.Skip(1))
             {
                 for (int c = 0; c < header.Length; c++)
-                    output.AddRange(TuiText.Wrap(header[c] + ": " + row[c], Math.Max(1, width)));
-                output.Add(string.Empty);
+                    output.AddRange(WrapCell(JoinCells([styledHeader[c], TranscriptLine.Plain(": "), row[c]]), Math.Max(1, width)));
+                output.Add(TranscriptLine.Plain(string.Empty));
             }
         }
         else
         {
             var widths = Enumerable.Range(0, header.Length)
-                .Select(c => Math.Clamp(rows.Max(row => TuiText.VisibleWidth(row[c])), 4, 60)).ToArray();
+                .Select(c => Math.Clamp(rows.Max(row => TuiText.VisibleWidth(row[c].Text)), 4, 60)).ToArray();
             while (widths.Sum() > available)
             {
                 int largest = Array.IndexOf(widths, widths.Max());
                 widths[largest]--;
             }
             var aligns = Enumerable.Range(0, header.Length)
-                .Select(c => AlignmentFor(divider[c], rows.Skip(1).Select(row => row[c])))
+                .Select(c => AlignmentFor(divider[c], rows.Skip(1).Select(row => row[c].Text)))
                 .ToArray();
             foreach (var row in rows)
             {
-                var wrapped = row.Select((cell, c) => TuiText.Wrap(cell, widths[c])).ToArray();
+                var wrapped = row.Select((cell, c) => WrapCell(cell, widths[c])).ToArray();
                 for (int r = 0; r < wrapped.Max(cell => cell.Count); r++)
                 {
-                    var parts = new List<string>();
+                    var parts = new List<TranscriptLine>();
                     for (int c = 0; c < widths.Length; c++)
                     {
-                        var text = r < wrapped[c].Count ? wrapped[c][r] : string.Empty;
-                        parts.Add(Align(text, widths[c], aligns[c]));
+                        var cell = r < wrapped[c].Count ? wrapped[c][r] : TranscriptLine.Plain(string.Empty);
+                        parts.Add(AlignCell(cell, widths[c], aligns[c]));
                     }
-                    output.Add(string.Join(" │ ", parts));
+                    output.Add(JoinCells(parts, " │ "));
                 }
-                if (ReferenceEquals(row, header)) output.Add(string.Join("─┼─", widths.Select(w => new string('─', w))));
+                if (ReferenceEquals(row, styledHeader)) output.Add(TranscriptLine.Plain(string.Join("─┼─", widths.Select(w => new string('─', w)))));
             }
         }
         rendered = output;
@@ -149,20 +158,11 @@ internal static class TuiMarkdownTable
         return digits > 0;
     }
 
-    private static string Align(string text, int width, CellAlign align)
-    {
-        var padding = Math.Max(0, width - TuiText.VisibleWidth(text));
-        return align switch
-        {
-            CellAlign.Right => new string(' ', padding) + text,
-            CellAlign.Center => new string(' ', padding / 2) + text + new string(' ', padding - padding / 2),
-            _ => text + new string(' ', padding),
-        };
-    }
+    private static string[] Cells(string line) => StyledCells(line).Select(cell => cell.Text).ToArray();
 
-    private static string[] Cells(string line)
+    private static TranscriptLine[] StyledCells(string line)
     {
-        var cells = new List<string>();
+        var cells = new List<TranscriptLine>();
         var buffer = new System.Text.StringBuilder();
         bool code = false;
         var trimmed = line.Trim().Trim('|');
@@ -171,10 +171,10 @@ internal static class TuiMarkdownTable
             char c = trimmed[i];
             if (c == '\\' && i + 1 < trimmed.Length && trimmed[i + 1] == '|') { buffer.Append('|'); i++; }
             else if (c == '`') { code = !code; buffer.Append(c); }
-            else if (c == '|' && !code) { cells.Add(TuiText.Strip(string.Concat(TuiMarkdown.PresentationInline(buffer.ToString().Trim()).Select(run => run.Text)))); buffer.Clear(); }
+            else if (c == '|' && !code) { cells.Add(ParseCell(buffer.ToString().Trim())); buffer.Clear(); }
             else buffer.Append(c);
         }
-        cells.Add(TuiText.Strip(string.Concat(TuiMarkdown.PresentationInline(buffer.ToString().Trim()).Select(run => run.Text))));
+        cells.Add(ParseCell(buffer.ToString().Trim()));
         return cells.ToArray();
     }
 }

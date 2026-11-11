@@ -343,14 +343,7 @@ internal static class TgAnsiPaint
     // they read as data wherever the renderer itself left them unpainted.
     // ------------------------------------------------------------------
 
-    private static readonly System.Text.RegularExpressions.Regex NumberPattern =
-        new(@"\b\d{1,3}(?:,\d{3})+\b", System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    private static readonly System.Text.RegularExpressions.Regex FilePathPattern =
-        new(@"\b[A-Za-z][\w.-]{0,63}\.(?:md|json|jsonl|cs|py|ps1|cmd|bat|txt|yml|yaml|toml|ini|log)\b",
-            System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    /// <summary>Splits runs at comma-grouped numbers and file-path-like tokens, tinting
+    /// <summary>Splits runs at supported numeric/date forms and file-path-like tokens, tinting
     /// them with distinct accents — but only inside the default-to-ink runs. Anything the
     /// renderer already painted (bold, code, heading, notice) passes through untouched,
     /// and the visible text is never changed, only the paint boundaries.</summary>
@@ -361,25 +354,14 @@ internal static class TgAnsiPaint
             return spans;
         }
 
-        var matches = new List<(int Start, int End, Attr Accent)>();
-        var numberAccent = TgPalette.Attr(TuiToken.Brand);
-        var pathAccent = TgPalette.Attr(TuiToken.Brand2);
-        foreach (System.Text.RegularExpressions.Match match in NumberPattern.Matches(text))
-        {
-            matches.Add((match.Index, match.Index + match.Length, numberAccent));
-        }
-
-        foreach (System.Text.RegularExpressions.Match match in FilePathPattern.Matches(text))
-        {
-            matches.Add((match.Index, match.Index + match.Length, pathAccent));
-        }
+        var matches = TuiDataTone.FindMatches(text)
+            .Select(match => (match.Start, match.End, Accent: TgPalette.Attr(match.Token))).ToList();
 
         if (matches.Count == 0)
         {
             return spans;
         }
 
-        matches.Sort((left, right) => left.Start.CompareTo(right.Start));
         var source = spans is { Count: > 0 } ? spans : [new TgSpan(text, TgPalette.Attr(TuiToken.Ink))];
         var tinted = TintRuns(source, text, matches);
         return MergeAdjacent(tinted);

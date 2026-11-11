@@ -227,6 +227,25 @@ commit remains eager; queued rows flush before previews, empty commits and retur
 from `Append`, so subsequent tool/lifecycle output cannot overtake them. Each
 dispatch owns its row array. There is no timer or cross-event buffering, and the
 unfinished-line preview cadence is unchanged.
+
+Important-text paint combines explicit Markdown styles with a shared deterministic
+`TuiDataTone` matcher for numeric/date forms and supported file extensions,
+including `.js`, `.jsx`, `.ts`, `.tsx`, `.html` and `.css`. Extension matching is
+case-insensitive; the original displayed spelling is preserved.
+Numeric forms include signed dot/comma decimals, grouped amounts, percentages and
+common currency symbols or USD/EUR/GBP/JPY/CNY/VND codes. Dates use ISO year-month-day
+or day-month-year with slash, dash or dot separators and require a valid calendar
+date. Invalid date candidates stay plain instead of exposing colored numeric
+fragments. File matches, including digit-leading basenames, take precedence over
+numbers; version/IP chains and bare integers remain plain. Matching changes paint,
+not the displayed text or the interpretation of a numeric value.
+Native prose, including indented text, lists and quotes, receives the same default-ink
+decoration on preview and commit. Explicit bold, links and inline-code paint remains
+authoritative. Fenced code is identified by its Line-colored gutter and retains its
+lexical styles. Verified tables retain typed inline runs through alignment, wrapping
+and the narrow label/value layout; cells receive data tone before wrapping so tokens
+split across display rows keep their paint. Plain table output serializes the same
+layout without terminal attributes. None of this changes model context or tool policy.
 Its
 `StreamingParagraphParser` checkpoints settled top-level inline content at whitespace
 boundaries, using Markdig source spans rather than pairing Markdown delimiters itself.

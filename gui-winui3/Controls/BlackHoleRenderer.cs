@@ -40,6 +40,16 @@ internal sealed unsafe class BlackHoleRenderer : IDisposable
         public Vector2 ShakeOffset;
         public float MaxShock;
         public float Fade;
+        public float Elevation;
+        public float Azimuth;
+        public float Roll;
+        public float Jets;
+        public float Waves;
+        public float WavePhase;
+        public float Tear;
+        public float Streak;
+        public float Shards;
+        public Vector3 Pad;
     }
 
     [StructLayout(LayoutKind.Sequential)]

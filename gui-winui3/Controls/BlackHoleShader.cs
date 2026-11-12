@@ -23,6 +23,9 @@ cbuffer Scene : register(b0)
     float Swirl; float Pull; float Phase; float Flash;
     float Shock; float Heat; float HoleOn; float ShadowPx;
     float2 ShakeOffset; float MaxShock; float Fade;
+    float Elevation; float Azimuth; float Roll; float Jets;
+    float Waves; float WavePhase; float Tear; float Streak;
+    float Shards; float3 ScenePad;
 };
 
 Texture2D Ui : register(t0);
@@ -38,8 +41,6 @@ VsOut VSMain(uint id : SV_VertexID)
     return o;
 }
 
-static const float Elevation = 0.2;
-static const float Roll = -0.26;
 static const float InnerRadius = 3.15;
 static const float Pi = 3.14159265;
 
@@ -69,7 +70,8 @@ float Fibres(float r, float ang, float level)
     float n = 0, a = 0.5;
     [unroll] for (int o = 0; o < 4; o++)
     {
-        float v = Noise3(p);
+        // Fine structure boils over time while the large filaments are carried round.
+        float v = Noise3(p + Time * 0.09 * o);
         n += a * (1 - abs(2 * v - 1));
         p = p * float3(2.3, 1.55, 1.55) + 7.13;
         a *= 0.55;
@@ -105,19 +107,48 @@ float3 Sky(float3 d, float3 camF, float3 camR, float3 camU)
     if (z <= 0.05) return Space(d);
     float2 s = float2(dot(d, camR), dot(d, camU)) / z / TanHalf;
     float2 q = float2(s.x, -s.y) * Resolution.y * 0.5;
+    float2 screen = Center + q;
     float rr = length(q) + 1e-3;
+    float2 radial = q / rr;
+    float angle = atan2(q.y, q.x);
+
+    // Gravitational waves: rings of stretched space running out from the hole.
+    float wave = sin(rr * 0.035 - WavePhase) * exp(-rr / (Resolution.y * 0.9)) * Waves;
+    q += radial * wave * 14;
 
     // Behind the shockwave the window is whole again.
-    float restore = Shock >= 0 ? smoothstep(Shock - 180, Shock + 30, rr) : 1;
-    float swirl = Swirl * restore * exp(-rr / (Resolution.y * 0.38));
+    float restore = Shock >= 0 ? smoothstep(Shock - 260, Shock + 30, rr) : 1;
+
+    // Tidal tearing: streams of the window are dragged in at different rates and sheared into
+    // fibres. Noise around the circle (cos, sin) keeps it smooth and seamless.
+    float2 around = float2(cos(angle), sin(angle));
+    float coarse = Noise3(float3(around * 3.2, rr * 0.004 + Time * 0.35));
+    float fine = Noise3(float3(around * 15, rr * 0.02 - Time * 0.8));
+    float drag = 1 + Tear * restore * 1.1 * (coarse - 0.5);
+    float twist = Tear * restore * (0.5 * (Noise3(float3(around * 5, 9 + rr * 0.002)) - 0.5) + 0.06 * (fine - 0.5));
+
+    float swirl = (Swirl * drag + twist) * restore * exp(-rr / (Resolution.y * 0.38));
     float sn, cs;
     sincos(swirl, sn, cs);
     q = float2(cs * q.x - sn * q.y, sn * q.x + cs * q.y);
-    q *= 1 + Pull * restore * (Resolution.y * 0.42) / (rr + 24);
+    q *= 1 + Pull * drag * restore * (Resolution.y * 0.42) / (rr + 24);
+
     if (Shock >= 0)
     {
         float w = rr - Shock;
-        q += q / rr * 34 * exp(-w * w / 5200) * (1 - Shock / MaxShock);
+        q += radial * 34 * exp(-w * w / 5200) * (1 - Shock / MaxShock);
+        // Shards: just behind the front the window comes back as tiles flying into place.
+        float flying = (1 - restore) * smoothstep(Shock - 260, Shock - 20, rr) * Shards;
+        float2 cell = floor(screen / 72);
+        float2 middle = (cell + 0.5) * 72 - Center;
+        float spin = (Hash31(float3(cell, 3)) - 0.5) * 1.4 * flying;
+        float ss, sc;
+        sincos(spin, ss, sc);
+        float2 local = q - middle;
+        local = float2(sc * local.x - ss * local.y, ss * local.x + sc * local.y);
+        q = middle + local
+            + radial * flying * (40 + 90 * Hash31(float3(cell, 5)))
+            + float2(-radial.y, radial.x) * flying * (Hash31(float3(cell, 8)) - 0.5) * 60;
     }
 
     float2 uv = (Center + q) / Resolution;
@@ -136,7 +167,9 @@ struct SceneOut
 SceneOut PSScene(VsOut input)
 {
     float2 frag = input.Position.xy + ShakeOffset;
-    float3 camPos = float3(0, sin(Elevation), cos(Elevation)) * CameraDistance;
+    // The camera falls in on an orbit: azimuth sweeps round, elevation sinks toward the disk.
+    float ce = cos(Elevation);
+    float3 camPos = float3(ce * sin(Azimuth), sin(Elevation), ce * cos(Azimuth)) * CameraDistance;
     float3 f = -normalize(camPos);
     float3 right0 = normalize(cross(f, float3(0, 1, 0)));
     float3 up0 = cross(right0, f);
@@ -195,12 +228,47 @@ SceneOut PSScene(VsOut input)
                 if (v < 0 && rad > CameraDistance * 1.3 + 40) break;
                 if (phi > 12.5) { captured = true; break; }
 
+                float sn0, cs0;
+                sincos(phi, sn0, cs0);
+                float3 P0 = rad * (cs0 * e1 + sn0 * e2);
+                float ds0 = h * sqrt(v * v / (u * u * u * u) + rad * rad);
+
+                // Relativistic jets along the poles: knots of plasma racing outward.
+                if (Jets > 0.001 && abs(P0.y) > 2.5 && abs(P0.y) < 46)
+                {
+                    float ry = length(P0.xz);
+                    float width = 0.35 + 0.07 * abs(P0.y);
+                    float core = exp(-ry * ry / (width * width));
+                    if (core > 0.002)
+                    {
+                        float knots = 0.45 + 0.55 * Noise3(float3(abs(P0.y) * 0.55 - Time * 9, P0.y > 0 ? 3 : 7, 1));
+                        float fall = exp(-abs(P0.y) / 22) * smoothstep(2.5, 5, abs(P0.y));
+                        emission += transmit * float3(0.45, 0.62, 1.4) * core * knots * fall * Jets * ds0 * 0.9;
+                    }
+                }
+
+                // Plasma plumes erupting from the inner disk, rising and fading in cycles.
+                if (Disk > 0.001 && rad > 3.4 && rad < 7.2 && abs(P0.y) < 2.2)
+                {
+                    float th = atan2(P0.z, P0.x);
+                    [unroll] for (int m = 0; m < 3; m++)
+                    {
+                        float cycle = frac(Time * (0.55 + 0.17 * m) + m * 0.37);
+                        float pr = 4.1 + m * 0.9;
+                        float pa = 1.1 + m * 2.3 - Phase * 1.3 * pow(InnerRadius / pr, 1.5);
+                        float da = th - pa;
+                        da -= 2 * Pi * round(da / (2 * Pi));
+                        float lift = cycle * 1.7 * (m == 1 ? -1 : 1);
+                        float g = exp(-pow((rad - pr) / 0.45, 2) - pow(da * rad / 0.5, 2) - pow((P0.y - lift) / 0.35, 2));
+                        emission += transmit * float3(0.55, 0.75, 1.3) * g * pow(1 - cycle, 1.5) * Disk * 2.6 * ds0;
+                    }
+                }
+
                 if (Disk > 0.001 && rad < rOut && rad > InnerRadius)
                 {
-                    float sn, cs;
-                    sincos(phi, sn, cs);
+                    float sn = sn0, cs = cs0;
                     float3 outward = cs * e1 + sn * e2;
-                    float3 P = rad * outward;
+                    float3 P = P0;
                     float H = 0.12 + 0.048 * rad;
                     float level = P.y / H;
                     if (abs(level) < 1)
@@ -225,7 +293,7 @@ SceneOut PSScene(VsOut input)
                         float boost = clamp(pow(doppler, 2.0), 0.18, 3.0);
 
                         float dens = Disk * profile * exp(-2.6 * level * level) * (0.22 + 1.5 * fib);
-                        float heat = dens * (1.0 + Heat * 0.9) * boost;
+                        float heat = dens * (1.0 + Heat * 0.45) * boost;
                         float3 glow = Ramp(heat * 0.85) * heat * 2.1;
 
                         // Blue-white plasma flares riding the inner disk.
@@ -236,7 +304,8 @@ SceneOut PSScene(VsOut input)
                             float da = theta - fa;
                             da -= 2 * Pi * round(da / (2 * Pi));
                             float dr = (rad - fr) / 0.5;
-                            float across = da * rad / 0.75;
+                            // A comet-like trail behind each hotspot as it orbits.
+                            float across = da > 0 ? da * rad / 3.2 : da * rad / 0.6;
                             float g = exp(-dr * dr - across * across) * Disk
                                 * (0.55 + 0.45 * sin(Time * (5.3 + k * 1.7) + k)) * (0.5 + fib);
                             glow += float3(0.5, 0.72, 1.35) * g * 3.2 + g * g * 2.5;
@@ -260,8 +329,9 @@ SceneOut PSScene(VsOut input)
 
     float3 bg = captured ? 0 : Sky(dOut, f, camR, camU);
     // The window darkens and reddens as the hole grows and feeds.
-    bg *= lerp(float3(1, 1, 1), float3(0.55, 0.36, 0.28), saturate(Disk * 0.9 + Heat * 0.3));
-    float3 light = emission * 0.8;
+    // Strong enough that a light theme still sinks into darkness and the disk keeps its contrast.
+    bg *= lerp(float3(1, 1, 1), float3(0.3, 0.21, 0.17), saturate(Disk * 0.95 + Heat * 0.3)) * (1 - 0.45 * Heat);
+    float3 light = emission * (0.8 - 0.25 * Heat);
 
     if (HoleOn > 0.5)
     {
@@ -279,6 +349,9 @@ SceneOut PSScene(VsOut input)
         float w = rr - Shock;
         light += float3(1.0, 0.86, 0.72) * exp(-abs(w) / 10) * fade * 2.2;
         light += float3(0.42, 0.58, 1.0) * exp(-abs(w + 46) / 30) * fade * 0.8;
+        // Echo rings: slower shells of hot gas and a violet afterglow.
+        light += float3(1.0, 0.55, 0.25) * exp(-abs(rr - Shock * 0.68) / 16) * fade * 1.1;
+        light += float3(0.6, 0.4, 1.0) * exp(-abs(rr - Shock * 0.4) / 28) * fade * 0.7;
         // Sparks: radial streaks thrown out behind the front.
         float a = atan2(frag.y - Center.y, frag.x - Center.x);
         float cell = (a + Pi) / (2 * Pi) * 260;
@@ -360,6 +433,17 @@ float4 PSComposite(VsOut input) : SV_Target
     bg.r = BackgroundTex.SampleLevel(LinearClamp, uv + fromCenter * bgSplit, 0).r;
     bg.g = BackgroundTex.SampleLevel(LinearClamp, uv, 0).g;
     bg.b = BackgroundTex.SampleLevel(LinearClamp, uv - fromCenter * bgSplit, 0).b;
+
+    // Anamorphic streaks: bright things smear into long horizontal lines, as on film.
+    float3 streak = 0;
+    [unroll] for (int k = 1; k <= 8; k++)
+    {
+        float dx = k * k * 0.0035;
+        float wk = exp(-k * 0.42);
+        streak += (BloomNear.SampleLevel(LinearClamp, uv + float2(dx, 0), 0).rgb
+            + BloomNear.SampleLevel(LinearClamp, uv - float2(dx, 0), 0).rgb) * wk;
+    }
+    bloom += streak * float3(0.55, 0.7, 1.0) * Streak * 0.22 * (1 - 0.9 * shadow);
 
     float3 col = bg + Filmic(light + bloom);
 

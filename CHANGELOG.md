@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Hố đen easter egg sống động hơn: camera bay vòng quanh hố khi lao vào, đĩa bồi tụ cuộn xoáy
+  theo thời gian với điểm nóng để lại vệt sáng, plasma phun lên và hai tia jet ở hai cực; UI bị xé thành
+  dòng xoắn và gợn sóng hấp dẫn; nhịp slow-motion ngay trước khi nổ, ba vòng sóng xung kích, mảnh UI bay
+  về chỗ cũ và vệt lens flare ngang kiểu điện ảnh.
+
 - **fix(harness)**: Long runs on a model that must be sent its own reasoning back no longer stop around step 55 with `context_limit_reached`. The compaction planner measured what to keep and what to cover by the context entries alone, so replayed reasoning (about 12,000 tokens a step at high effort) was invisible: it kept nearly all history as recent and stopped covering once the entries fit, so each compaction committed without shrinking the request and the next step compacted again. The planner now takes the request's replayed tokens, attributes them to the assistant steps, and counts them for both the recent window and the stop condition. A 300-step soak (`RU_SOAK_STEPS`, off by default) now completes with 21 compactions.
 
 - **fix(harness)**: A run on a reasoning model could stop with `prompt_contract_invalid` after a few steps. The replayed reasoning of the retained turns (provider continuations) was capped at 512 KiB while the message history it accompanies may be 8 MiB, so ten steps at high effort crossed it and the host reported the prompt as invalid. The reasoning now shares the history budget. A step that fails while its request is prepared keeps its own code (`model_history_too_large`, `provider_continuation_invalid`) with a plain-language message instead of the generic one, and the remaining unclassified case is written to `RU_PROMPT_DIAGNOSTIC` when set.

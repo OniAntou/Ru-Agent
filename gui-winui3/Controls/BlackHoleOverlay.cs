@@ -95,29 +95,38 @@ public sealed class BlackHoleOverlay : Grid
         }
     }
 
-    /// <summary>Renders on every composition frame until the timeline ends.</summary>
+    /// <summary>
+    /// Renders on every composition frame until the timeline ends. The timeline runs on its own
+    /// clock, which slows to a crawl in the instant before the blast (a cinematic slow-motion
+    /// beat) and then snaps back to full speed.
+    /// </summary>
     private Task RunAsync(BlackHoleRenderer renderer)
     {
         var done = new TaskCompletionSource();
         var clock = Stopwatch.StartNew();
-        float phase = 0, last = 0;
-        renderer.Render(Frame(renderer, 0, 0));
+        float phase = 0, wavePhase = 0, story = 0, last = 0;
+        renderer.Render(Frame(renderer, 0, 0, 0));
 
         void OnFrame(object? sender, object e)
         {
             var now = (float)clock.Elapsed.TotalSeconds;
-            if (now >= Total)
+            var dt = Math.Min(now - last, 0.05f);
+            last = now;
+            var beat = (story - (ExplodeAt - 0.06f)) / 0.16f;
+            story += dt * (1 - 0.78f * MathF.Exp(-beat * beat));
+            if (story >= Total)
             {
                 done.TrySetResult();
                 return;
             }
 
-            var feeding = Smooth(0.3f, CriticalAt, now) + 2.5f * Smooth(CriticalAt, ImplodeAt, now);
-            phase += (now - last) * (0.9f + 2.2f * feeding);
-            last = now;
+            var feeding = Smooth(0.3f, CriticalAt, story) + 2.5f * Smooth(CriticalAt, ImplodeAt, story);
+            phase += dt * (0.9f + 2.2f * feeding);
+            // Gravitational waves quicken as the hole feeds and race during the throb.
+            wavePhase += dt * (4 + 10 * feeding);
             try
             {
-                renderer.Render(Frame(renderer, now, phase));
+                renderer.Render(Frame(renderer, story, phase, wavePhase));
             }
             catch (Exception error)
             {
@@ -149,7 +158,7 @@ public sealed class BlackHoleOverlay : Grid
     }
 
     /// <summary>The whole effect as a function of time: camera, disk, suction, blast.</summary>
-    private BlackHoleRenderer.Scene Frame(BlackHoleRenderer renderer, float t, float phase)
+    private BlackHoleRenderer.Scene Frame(BlackHoleRenderer renderer, float t, float phase, float wavePhase)
     {
         var resolution = new Vector2(renderer.Width, renderer.Height);
         var cameraDistance = t switch
@@ -199,6 +208,19 @@ public sealed class BlackHoleOverlay : Grid
                 MathF.Sin(t * 37.1f) + 0.6f * MathF.Sin(t * 23.3f + 1.7f) + 0.3f * MathF.Sin(t * 61.7f + 0.4f),
                 MathF.Sin(t * 31.7f + 0.6f) + 0.6f * MathF.Sin(t * 19.1f + 2.3f) + 0.3f * MathF.Sin(t * 57.3f + 1.1f)) / 1.9f * shake,
             Fade = Smooth(Total - 0.45f, Total - 0.05f, t),
+
+            // Camera: sweeps a third of the way round while sinking from 20° to graze the disk.
+            Elevation = 0.36f - 0.18f * EaseInOut(t / CriticalAt) + 0.03f * MathF.Sin(t * 1.7f),
+            Azimuth = 1.25f * EaseInOut(t / CriticalAt) + 0.35f * Smooth(CriticalAt, ExplodeAt, t),
+            Roll = -0.06f - 0.26f * Smooth(0.4f, CriticalAt, t) + 0.05f * MathF.Sin(t * 1.3f + 0.5f),
+
+            Jets = t < ExplodeAt ? Smooth(CriticalAt - 0.9f, CriticalAt, t) : 0,
+            Waves = t < ExplodeAt ? 0.5f * Smooth(1.2f, CriticalAt, t) + 1.1f * Smooth(CriticalAt, ImplodeAt, t) : 0,
+            WavePhase = wavePhase,
+            Tear = Smooth(1.6f, 3.9f, t),
+            Streak = (t < ExplodeAt ? 0.25f * Smooth(0.35f, 3.4f, t) + 0.45f * Smooth(CriticalAt, ImplodeAt, t) : 0)
+                + (t >= ExplodeAt ? 2.2f * MathF.Exp(-(t - ExplodeAt) * 2.4f) : 0),
+            Shards = t >= ExplodeAt ? 1 : 0,
         };
     }
 

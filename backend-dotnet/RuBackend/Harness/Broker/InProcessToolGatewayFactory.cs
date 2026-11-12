@@ -151,7 +151,12 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
             var existing = FindReusableGateway(runId.Value, requestedLease);
             if (existing is not null)
             {
-                return existing;
+                // A reused gateway still answers to the user's hooks: the runtime loop
+                // rebuilds its coordinator on every drive pass (a resume after ask_user
+                // or an outside-folder approval keeps the same scope), so returning the
+                // bare gateway here would silently drop PreToolUse blocks for the rest
+                // of the run and flip the run's provider web search surface.
+                return WithHooks(existing, canonicalRoot);
             }
 
             BrokerRunLeaseIdentity lease;
@@ -212,24 +217,31 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
                 await CloseLeaseThroughRuntimeAsync(lease).ConfigureAwait(false);
             }
 
-            // Tool hooks are loaded here for a run the loop actually drives. A root
-            // run is admitted by AgentRunCreationService with the same
-            // IsTrustedAsync(identity, preset) decision RunLifecycleHooks consults: an
-            // untrusted workspace starts in WaitingWorkspaceTrust (never driven), a
-            // trusted one may pass through WaitingHistory, and a subagent run is
-            // provisioned from an already trusted parent. Loading the workspace's
-            // hooks here therefore follows that decision instead of skipping it.
-            var hooks = RuBackend.Harness.Hooks.HookConfiguration.Load(
-                canonicalRoot, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-            return hooks.IsEmpty
-                ? gateway
-                : new RuBackend.Harness.Hooks.HookToolGateway(
-                    gateway, hooks, new RuBackend.Harness.Hooks.HookProcessRunner(), canonicalRoot);
+            return WithHooks(gateway, canonicalRoot);
         }
         finally
         {
             _createGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Wraps a run's gateway in the user's tool hooks, on every Create path. Tool hooks
+    /// are loaded here for a run the loop actually drives. A root run is admitted by
+    /// AgentRunCreationService with the same IsTrustedAsync(identity, preset) decision
+    /// RunLifecycleHooks consults: an untrusted workspace starts in WaitingWorkspaceTrust
+    /// (never driven), a trusted one may pass through WaitingHistory, and a subagent run
+    /// is provisioned from an already trusted parent. Loading the workspace's hooks here
+    /// therefore follows that decision instead of skipping it.
+    /// </summary>
+    private static IToolGateway WithHooks(InProcessToolGateway gateway, string canonicalRoot)
+    {
+        var hooks = RuBackend.Harness.Hooks.HookConfiguration.Load(
+            canonicalRoot, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        return hooks.IsEmpty
+            ? gateway
+            : new RuBackend.Harness.Hooks.HookToolGateway(
+                gateway, hooks, new RuBackend.Harness.Hooks.HookProcessRunner(), canonicalRoot);
     }
 
     /// <summary>

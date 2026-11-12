@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: Tool hooks keep running after a run resumes. The runtime loop rebuilds a run's coordinator on every drive pass, and the gateway factory returned the reused gateway without its `HookToolGateway` wrapper, so after an `ask_user` answer or an outside-folder approval a `PreToolUse` hook that blocks (exit 2) silently stopped applying and `PostToolUse` stopped observing. The same switch flipped provider-hosted web search on mid-run when hooks were configured. Every Create path now wraps the gateway in the user's hooks.
+
+- **fix(harness)**: A long run on a reasoning model with a large context window no longer fails with `provider_continuation_invalid` after 256 tool steps. The continuation reader accepted at most 256 retained assistant steps while the message window holds 1,024 messages; the cap now follows the message window.
+
+- **fix(gui)**: The approval card for a folder outside the workspace no longer offers an "Allow once" that the Host turns into a session folder grant. The approve button now reads "Allow folder for session" and sends that grant explicitly, and the duplicate folder button is gone.
+
+- **docs**: Hooks documentation says that the agent's file tools cannot write `.ru\hooks.json` in Plan or Standard, but a Standard terminal command can.
+
 - **feat(gui)**: Hố đen easter egg sống động hơn: camera bay vòng quanh hố khi lao vào, đĩa bồi tụ cuộn xoáy
   theo thời gian với điểm nóng để lại vệt sáng, plasma phun lên và hai tia jet ở hai cực; UI bị xé thành
   dòng xoắn và gợn sóng hấp dẫn; nhịp slow-motion ngay trước khi nổ, ba vòng sóng xung kích, mảnh UI bay

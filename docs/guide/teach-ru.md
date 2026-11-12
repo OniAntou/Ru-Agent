@@ -170,6 +170,8 @@ project or in `~\.ru\hooks.json`:
 > A hook runs a program on your machine, so treat `hooks.json` like any script you run. Reading a hook
 > never widens what Ru may do: a call a hook allows still goes through the permission policy.
 > In Plan and Standard the agent cannot edit `hooks.json` with its file tools; edit it yourself.
+> Standard still lets the agent run terminal commands in the project, and a command can write the file,
+> so review `.ru\hooks.json` after a Standard run you did not watch.
 
 ## More
 

@@ -9,7 +9,14 @@ namespace RuBackend.Providers;
 
 public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions options, HarnessPayloadStore payloads)
 {
-    private const int MaximumRows = 256;
+    /// <summary>
+    /// The most retained assistant steps one request may replay. Every retained step is at
+    /// least one message of the projected history, so the message window bounds it. It used to
+    /// be 256 while that window held far more single-call tool steps: a long
+    /// run on a large-context reasoning model passed 256 retained steps before compaction
+    /// triggered and failed with provider_continuation_invalid.
+    /// </summary>
+    internal const int MaximumRows = RuAgent.Runtime.Adapters.Models.ModelInputLimits.MaxMessages;
 
     /// <summary>
     /// The most provider-continuation payloads (a model's reasoning and output items, replayed
@@ -100,10 +107,12 @@ public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions option
         IReadOnlyList<string> retainedEventIds)
     {
         if (references.Count != retainedEventIds.Count || references.Count > MaximumRows) return false;
+        // A set keeps the check linear now that a request may retain up to MaximumRows steps.
+        var retained = new HashSet<string>(retainedEventIds, StringComparer.Ordinal);
         var associated = new HashSet<string>(StringComparer.Ordinal);
         foreach (var reference in references)
         {
-            if (!retainedEventIds.Contains(reference.AssistantEventId, StringComparer.Ordinal)
+            if (!retained.Contains(reference.AssistantEventId)
                 || !associated.Add(reference.AssistantEventId)) return false;
         }
         return associated.Count == retainedEventIds.Count;

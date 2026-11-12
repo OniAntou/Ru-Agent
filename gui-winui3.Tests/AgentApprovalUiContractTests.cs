@@ -122,21 +122,23 @@ public sealed class AgentApprovalUiContractTests
         var named = GuiSource.NamedElements(GuiSource.Xml("Controls", "AgentApprovalPanelControl.xaml"));
 
         // One panel, its summary, the command block, the session-scope hint, and
-        // the four decisions (Always only appears for external folders, Remember
-        // for every known ask reason that may become a project rule — including
-        // an external folder, which remembers the folder itself).
+        // the three decisions (Approve becomes the session folder grant on an
+        // external folder, Remember appears for every known ask reason that may
+        // become a project rule — including an external folder, which remembers
+        // the folder itself).
         foreach (var required in new[]
                  {
                      "Panel", "SummaryText", "CommandContainer", "CommandText",
-                     "ApproveButton", "AlwaysButton", "RememberButton", "RememberButtonLabel",
+                     "ApproveButton", "RememberButton", "RememberButtonLabel",
                      "DenyButton", "SessionScopeHint",
                  })
         {
             Assert.True(named.ContainsKey(required), $"{required} must exist.");
         }
 
-        // The retired trust panel and scope pickers are gone.
-        foreach (var retired in new[] { "AgentTrustPanel", "AgentApprovalScopeBox", "AgentApprovalScopePanel" })
+        // The retired trust panel and scope pickers are gone, and so is the separate
+        // folder button: it did what Approve already does on an external folder.
+        foreach (var retired in new[] { "AgentTrustPanel", "AgentApprovalScopeBox", "AgentApprovalScopePanel", "AlwaysButton" })
         {
             Assert.DoesNotContain(named.Keys, name => name.Contains(retired, StringComparison.Ordinal));
         }
@@ -146,35 +148,38 @@ public sealed class AgentApprovalUiContractTests
     public void The_approval_decisions_name_their_exact_scope()
     {
         // Each decision button says what its command actually does: a session-remembered
-        // approval, a one-time folder call, or a remembered project rule. The badge
-        // wording flips on the external-directory case, which is the same predicate
-        // that decides whether the session button is offered.
+        // approval (or, on an external folder, the session folder grant every allow of
+        // that ask becomes), a one-time call under an explicit rule ask, or a
+        // remembered project rule.
         var named = GuiSource.NamedElements(GuiSource.Xml("Controls", "AgentApprovalPanelControl.xaml"));
 
         Assert.Equal("Allow (remember for session)", GuiSource.AttributeValue(named["ApproveButtonLabel"], "Text"));
-        Assert.Equal("Allow this folder for session", ButtonText(named["AlwaysButton"]));
         Assert.Equal("Always allow", ButtonText(named["RememberButton"]));
         Assert.Equal("Deny", ButtonText(named["DenyButton"]));
 
         string code = GuiSource.Text("Controls", "AgentApprovalPanelControl.xaml.cs");
-        Assert.Contains("scope: \"once\"", GuiSource.MethodBody(code, "OnApproveClick"), StringComparison.Ordinal);
-        Assert.Contains("scope: \"session\"", GuiSource.MethodBody(code, "OnAlwaysClick"), StringComparison.Ordinal);
+        string approve = GuiSource.MethodBody(code, "OnApproveClick");
+        Assert.Contains("_approvesSessionFolder ? \"session\" : \"once\"", approve, StringComparison.Ordinal);
         Assert.Contains("scope: \"always\"", GuiSource.MethodBody(code, "OnRememberClick"), StringComparison.Ordinal);
 
-        // The external-directory case keeps the one-time label; every other ask
-        // whose memory the evaluator honours is remembered by the session ledger.
-        // The branch reads the same predicates the visibility rules use, which
-        // the chat view fills from the pinned CanAllowSessionDirectory /
+        // The Host bridges any allow of an outside folder as allow_session_directory,
+        // so the external-directory label names the folder grant and never a one-time
+        // call. Every other ask whose memory the evaluator honours is remembered by the
+        // session ledger; an explicit rule ask stays single-use. The branch reads the
+        // same predicates the chat view fills from the pinned CanAllowSessionDirectory /
         // CanRememberForSession rules.
         string show = GuiSource.MethodBody(code, "Show");
         int predicate = show.IndexOf("allowSessionDirectory", StringComparison.Ordinal);
+        int folderGrant = show.IndexOf("\"Allow folder for session\"", StringComparison.Ordinal);
         int sessionMemory = show.IndexOf("allowSessionMemory", StringComparison.Ordinal);
-        int folderOnce = show.IndexOf("\"Allow once\"", StringComparison.Ordinal);
         int sessionRemembered = show.IndexOf("\"Allow (remember for session)\"", StringComparison.Ordinal);
+        int once = show.IndexOf("\"Allow once\"", StringComparison.Ordinal);
         Assert.True(predicate >= 0, "The label must key off the external-directory predicate.");
-        Assert.True(sessionMemory >= 0, "The label must key off the session-memory predicate.");
-        Assert.True(folderOnce > predicate, "The one-time label must follow the predicates.");
-        Assert.True(sessionRemembered > folderOnce, "The session-remembered label must be the fallback.");
+        Assert.True(folderGrant > predicate, "An external folder must be labelled as the session folder grant.");
+        Assert.True(sessionMemory > folderGrant, "The session-memory predicate decides the remaining labels.");
+        Assert.True(sessionRemembered > sessionMemory, "The session-remembered label follows the memory predicate.");
+        Assert.True(once > sessionRemembered, "The one-time label is the fallback for an explicit rule ask.");
+        Assert.DoesNotContain("folder call once", show, StringComparison.Ordinal);
 
         // The remember button flips its label for an external folder: it then
         // remembers the folder for the project, not one action pattern.

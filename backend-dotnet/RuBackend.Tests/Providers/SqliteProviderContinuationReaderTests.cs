@@ -29,7 +29,7 @@ public sealed class SqliteProviderContinuationReaderTests
     [Fact]
     public void Exact_association_rejects_a_materialized_row_beyond_the_query_cap()
     {
-        var retained = Enumerable.Range(1, 257).Select(Event).ToArray();
+        var retained = Enumerable.Range(1, SqliteProviderContinuationReader.MaximumRows + 1).Select(Event).ToArray();
         var references = retained.Select((eventId, index) => Reference(eventId, index + 1)).ToArray();
 
         Assert.False(SqliteProviderContinuationReader.HasExactAssociations(references, retained));

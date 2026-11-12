@@ -20,6 +20,14 @@ public sealed class ProviderContinuationBudgetTests
     }
 
     [Fact]
+    public void Every_step_the_message_window_can_retain_may_replay_its_continuation()
+    {
+        // Each retained assistant step is at least one projected message, so a step count the
+        // message window accepts must never be refused as provider_continuation_invalid.
+        Assert.True(SqliteProviderContinuationReader.MaximumRows >= ModelInputLimits.MaxMessages);
+    }
+
+    [Fact]
     public void The_run_that_failed_in_practice_now_fits()
     {
         // Ten steps of reasoning (sizes illustrative; the largest 81,040 and the 532,315 total are the real run): over the

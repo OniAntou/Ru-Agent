@@ -34,6 +34,9 @@ namespace RuApp.Controls
         /// <summary>Raised when the user approves or denies.</summary>
         public event EventHandler<AgentApprovalDecidedEventArgs>? DecisionRequested;
 
+        /// <summary>Whether the shown approval is an external-directory ask, whose allow is a session folder grant.</summary>
+        private bool _approvesSessionFolder;
+
         public AgentApprovalPanelControl()
         {
             InitializeComponent();
@@ -53,15 +56,17 @@ namespace RuApp.Controls
 
         /// <summary>
         /// Presents one pending approval. A blank command hides the command block, so
-        /// a non-terminal approval does not show an empty code box. The plain approve
-        /// label follows the Host's session approval ledger: remembered for the
-        /// session on every ask whose memory the evaluator honours, single-use on an
-        /// external-directory ask (whose folder decisions are the separate buttons)
-        /// and an explicit rule ask, which outranks remembered allows. The folder
-        /// affordance appears only for external-directory asks because the server
-        /// fails that command for every other reason; the remember affordance
-        /// appears for every known ask reason that may become a project rule,
-        /// including an external-directory ask (which remembers the folder).
+        /// a non-terminal approval does not show an empty code box. The approve button
+        /// says what the Host will grant. On an external-directory ask every allow is a
+        /// session folder grant (the Host bridges any allow of an outside folder as
+        /// allow_session_directory, docs/architecture/broker.md), so the button is that
+        /// grant and sends it explicitly; a separate one-time button would promise a
+        /// single call the server never gives. Otherwise the label follows the Host's
+        /// session approval ledger: remembered for the session on every ask whose
+        /// memory the evaluator honours, single-use on an explicit rule ask, which
+        /// outranks remembered allows. The remember affordance appears for every known
+        /// ask reason that may become a project rule, including an external-directory
+        /// ask (which remembers the folder).
         /// </summary>
         public void Show(
             string summary,
@@ -83,19 +88,20 @@ namespace RuApp.Controls
                 CommandContainer.Visibility = Visibility.Collapsed;
             }
 
-            bool allowOnce = allowSessionDirectory || !allowSessionMemory;
-            ApproveButtonLabel.Text = allowOnce
-                ? "Allow once"
-                : "Allow (remember for session)";
+            _approvesSessionFolder = allowSessionDirectory;
+            ApproveButtonLabel.Text = allowSessionDirectory
+                ? "Allow folder for session"
+                : allowSessionMemory
+                    ? "Allow (remember for session)"
+                    : "Allow once";
             AutomationProperties.SetName(
                 ApproveButton,
                 allowSessionDirectory
-                    ? "Allow this folder call once"
+                    ? "Allow this folder for the chat session"
                     : allowSessionMemory
                         ? "Allow and remember for this chat session"
                         : "Allow this call once");
 
-            AlwaysButton.Visibility = allowSessionDirectory ? Visibility.Visible : Visibility.Collapsed;
             RememberButton.Visibility = allowRememberAlways ? Visibility.Visible : Visibility.Collapsed;
             RememberButtonLabel.Text = allowSessionDirectory
                 ? "Remember folder for project"
@@ -134,7 +140,6 @@ namespace RuApp.Controls
             Panel.Visibility = Visibility.Collapsed;
             CommandText.Text = string.Empty;
             CommandContainer.Visibility = Visibility.Collapsed;
-            AlwaysButton.Visibility = Visibility.Collapsed;
             RememberButton.Visibility = Visibility.Collapsed;
             SessionScopeHint.Visibility = Visibility.Collapsed;
         }
@@ -146,7 +151,6 @@ namespace RuApp.Controls
         public void SetDecisionEnabled(bool enabled)
         {
             ApproveButton.IsEnabled = enabled;
-            AlwaysButton.IsEnabled = enabled;
             RememberButton.IsEnabled = enabled;
             DenyButton.IsEnabled = enabled;
         }
@@ -191,10 +195,9 @@ namespace RuApp.Controls
         }
 
         private void OnApproveClick(object sender, RoutedEventArgs e) =>
-            DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: true, scope: "once"));
-
-        private void OnAlwaysClick(object sender, RoutedEventArgs e) =>
-            DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: true, scope: "session"));
+            DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(
+                approved: true,
+                scope: _approvesSessionFolder ? "session" : "once"));
 
         private void OnRememberClick(object sender, RoutedEventArgs e) =>
             DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: true, scope: "always"));

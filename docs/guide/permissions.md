@@ -39,8 +39,10 @@ Trust is tied to the folder's identity. If you move or recreate the folder, Ru a
 
 Outside what the mode allows, Ru stops and asks. You can:
 
-- **Allow once** for this request. For a folder outside the workspace, Ru also keeps that folder allowed for the session.
-- **Allow for this session's folder**, when the request is about a folder outside the workspace.
+- **Allow once** for this request.
+- **Allow folder for session**, when the request is about a folder outside the workspace. Any allow of
+  such a request keeps that folder allowed for the session, so the desktop app offers only this choice
+  for it (a drive or share root is never kept and stays a one-time allow).
 - **Always allow**, which saves the approved target as a project rule: a terminal command (its program
   and up to two leading words, or the exact script for PowerShell), an outside folder (its subfolders
   are covered; a drive or share root is never saved), an MCP server tool, the exact set of computer-use

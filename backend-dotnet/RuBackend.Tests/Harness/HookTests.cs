@@ -246,3 +246,65 @@ public sealed class HookToolGatewayTests
         public Task CancelAsync(ExecutionId executionId, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }
+
+/// <summary>
+/// The runtime loop rebuilds a run's coordinator on every drive pass, so the factory sees a
+/// second same-scope Create whenever a run resumes after ask_user or an outside-folder
+/// approval. The reused gateway must keep answering to the workspace hooks.
+/// </summary>
+public sealed class HookGatewayFactoryTests : IDisposable
+{
+    private readonly InProcessExecutionFixture _fixture = new();
+    private readonly RunId _runId = new("run_" + new string('d', 32));
+
+    public void Dispose() => _fixture.Dispose();
+
+    [Fact]
+    public async Task A_reused_same_scope_gateway_still_runs_the_workspace_hooks()
+    {
+        Directory.CreateDirectory(Path.Combine(_fixture.WorkspaceRoot, ".ru"));
+        File.WriteAllText(
+            Path.Combine(_fixture.WorkspaceRoot, ".ru", "hooks.json"),
+            """{"hooks":{"PreToolUse":[{"matcher":"read","command":"echo blocked by test 1>&2 & exit 2"}]}}""");
+
+        var first = await CreateAsync();
+        var second = await CreateAsync();
+
+        Assert.IsType<HookToolGateway>(first);
+        var resumed = Assert.IsType<HookToolGateway>(second);
+        var decision = await resumed.EvaluateAsync(ReadProposal(), CancellationToken.None);
+        Assert.Equal(RuAgent.Harness.Core.Policy.PolicyDecision.Deny, decision.Decision);
+        Assert.Equal(HookToolGateway.BlockedCode, decision.SafeCode);
+    }
+
+    private Task<IToolGateway> CreateAsync() =>
+        _fixture.Factory.CreateAsync(
+            _fixture.WorkspaceRoot,
+            Snapshot(),
+            _runId,
+            agentSessionId: "session-hook-reuse",
+            CancellationToken.None);
+
+    private ToolProposal ReadProposal() =>
+        new(
+            _runId,
+            new ModelStepId("step_" + new string('0', 32)),
+            new ToolCallId("call_" + new string('0', 32)),
+            "provider_call_1",
+            modelOrder: 1,
+            "read",
+            "1.0.0",
+            JsonSerializer.SerializeToElement(new { path = "a.txt" }));
+
+    private static RuAgent.Harness.Core.Policy.PolicySnapshot Snapshot() =>
+        RuAgent.Harness.Core.Policy.PolicySnapshotCanonicalizer.Create(
+            1,
+            RuAgent.Protocol.Harness.AgentPermissionPreset.Standard,
+            new RuAgent.Harness.Core.Workspace.WorkspaceIdentity(
+                new WorkspaceId("ws_" + new string('2', 32)),
+                "VOL-HOOKS",
+                "fid-hooks",
+                new string('b', 64)),
+            [],
+            new DateTimeOffset(2026, 11, 12, 0, 0, 0, TimeSpan.Zero));
+}

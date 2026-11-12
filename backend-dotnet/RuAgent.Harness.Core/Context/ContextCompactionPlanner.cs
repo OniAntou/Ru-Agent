@@ -17,7 +17,8 @@ public static partial class ContextCompactionPlanner
         int maxSummaryChars = DefaultSummaryMaxChars,
         long? estimatedTokensOverride = null,
         long retainRecentTokens = 0,
-        long maximumCoveredTokens = long.MaxValue)
+        long maximumCoveredTokens = long.MaxValue,
+        long replayedTokens = 0)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(decision);
@@ -52,6 +53,23 @@ public static partial class ContextCompactionPlanner
             unit.Measure();
         }
 
+        // The request carries more than the entries measure: a model that must be sent its own
+        // reasoning back adds that to every assistant step it keeps. Left out, a run of long
+        // reasoning looks small, so the planner keeps nearly all of it ("recent") and stops
+        // covering once the entries alone fit the target -- the compaction commits, the request
+        // does not shrink, and the next step compacts again until the context limit ends the run.
+        var remainingReplayTokens = 0L;
+        var totalAssistantSteps = units.Sum(unit => unit.AssistantSteps);
+        if (replayedTokens > 0 && totalAssistantSteps > 0)
+        {
+            foreach (var unit in units)
+            {
+                unit.ReplayTokens = checked(replayedTokens * unit.AssistantSteps / totalAssistantSteps);
+            }
+
+            remainingReplayTokens = units.Sum(unit => unit.ReplayTokens);
+        }
+
         var eligible = units.Where(unit => unit.Entries.All(entry => !protectedEntries.Contains(entry))).ToArray();
         if (eligible.Length == 0)
         {
@@ -69,7 +87,7 @@ public static partial class ContextCompactionPlanner
 
             protectedEntries.UnionWith(unit.Entries);
             eligibleCount--;
-            retained += unit.EstimatedTokens;
+            retained += unit.EstimatedTokens + unit.ReplayTokens;
         }
 
         var totalObjectBytes = units.Sum(unit => (long)unit.ObjectBytes);
@@ -108,7 +126,8 @@ public static partial class ContextCompactionPlanner
             totalObjectBytes -= unit.ObjectBytes;
             remainingEntryCount -= unit.Entries.Count;
             remainingImageCount -= unit.ImageCount;
-            if (EstimateTokens(totalObjectBytes, remainingEntryCount, remainingImageCount)
+            remainingReplayTokens -= unit.ReplayTokens;
+            if (EstimateTokens(totalObjectBytes, remainingEntryCount, remainingImageCount) + remainingReplayTokens
                 <= decision.TargetTokens)
             {
                 break;

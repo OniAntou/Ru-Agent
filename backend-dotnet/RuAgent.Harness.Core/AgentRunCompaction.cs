@@ -213,7 +213,8 @@ internal sealed partial class AgentRunCompaction
                                 ContextCompactionReason.Automatic,
                                 cancellationToken,
                                 outputReserveAlreadyAccounted: true,
-                                estimatedTokensOverride: EstimateInputTokens(context, preparedRequest))
+                                estimatedTokensOverride: EstimateInputTokens(context, preparedRequest),
+                                replayedTokens: ReplayedTokens(context, preparedRequest))
                             .ConfigureAwait(false);
                         if (compaction.Outcome == ContextCompactionOutcome.Committed)
                         {
@@ -253,6 +254,15 @@ internal sealed partial class AgentRunCompaction
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// The tokens the prepared request spends on history beyond what the context entries measure:
+    /// the reasoning a provider needs sent back with each retained assistant step.
+    /// </summary>
+    private static long ReplayedTokens(ModelContextSnapshot context, ModelStepRequest? preparedRequest) =>
+        preparedRequest?.Preparation?.ContextTokens is { } breakdown
+            ? Math.Max(0, breakdown.Messages - ModelContextSizeEstimator.EstimateTokens(context))
+            : 0;
+
     private static long EstimateInputTokens(
         ModelContextSnapshot context,
         ModelStepRequest? preparedRequest) =>
@@ -268,7 +278,8 @@ internal sealed partial class AgentRunCompaction
         CancellationToken cancellationToken,
         bool outputReserveAlreadyAccounted = false,
         long? estimatedTokensOverride = null,
-        long? forcedTargetTokens = null)
+        long? forcedTargetTokens = null,
+        long replayedTokens = 0)
     {
         var startedAt = _time.UtcNow;
         var estimatedTokens = estimatedTokensOverride ?? ModelContextSizeEstimator.EstimateTokens(context);
@@ -286,7 +297,8 @@ internal sealed partial class AgentRunCompaction
             reason,
             estimatedTokensOverride: estimatedTokensOverride,
             retainRecentTokens: reason == ContextCompactionReason.Automatic ? (long)(decision.UsablePromptTokens * 0.16) : 0,
-            maximumCoveredTokens: budget);
+            maximumCoveredTokens: budget,
+            replayedTokens: replayedTokens);
         var plan = PlanAt(coveredBudget);
         if (plan is null)
         {

@@ -254,8 +254,18 @@ public static partial class ContextCompactionPlanner
 
         public long EstimatedTokens { get; private set; }
 
+        /// <summary>Assistant steps in this unit: each one is replayed with its provider continuation.</summary>
+        public int AssistantSteps { get; private set; }
+
+        /// <summary>
+        /// What this unit adds to the provider request beyond what its entries measure
+        /// (reasoning replayed with its assistant steps); set by the planner from the caller's figure.
+        /// </summary>
+        public long ReplayTokens { get; set; }
+
         public void Measure()
         {
+            AssistantSteps = Entries.Count(entry => entry.Kind == ModelContextEntryKind.AssistantStep);
             var canonical = ModelContextSnapshot.Canonicalize(Entries);
             ObjectBytes = canonical.Length - 2 - Math.Max(0, Entries.Count - 1);
             ImageCount = Entries.LongCount(entry => entry.ToolImage is not null);

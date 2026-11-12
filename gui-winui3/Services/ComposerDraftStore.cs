@@ -190,6 +190,7 @@ public sealed class ComposerDraftStore
         clone.ByteSize = attachment.ByteSize;
         clone.Base64Data = attachment.Base64Data;
         clone.TextContent = attachment.TextContent;
+        clone.ReferencePath = attachment.ReferencePath;
         clone.IsImage = attachment.IsImage;
         return clone;
     }

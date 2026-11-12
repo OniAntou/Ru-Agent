@@ -5,7 +5,8 @@ internal sealed record ChatAttachmentIntakeResult(
     bool IsImage,
     int MaximumBytes,
     string? Reason,
-    string? Status);
+    string? Status,
+    bool IsDocument = false);
 
 /// <summary>Pure admission rules shared by picker, paste and drop intake.</summary>
 internal static class ChatAttachmentIntakePresenter
@@ -17,20 +18,24 @@ internal static class ChatAttachmentIntakePresenter
     {
         bool image = ChatAttachmentPolicy.IsImageFile(fileName);
         bool text = ChatAttachmentPolicy.IsTextOrCodeFile(fileName);
-        if (!image && !text)
-            return new(false, false, 0, "unsupported", $"File '{fileName}' is not supported. Only images and text/code files are accepted.");
+        bool document = ChatAttachmentPolicy.IsDocumentFile(fileName);
+        if (!image && !text && !document)
+            return new(false, false, 0, "unsupported",
+                $"File '{fileName}' is not supported. Only images, text/code files and PDF/Word/PowerPoint/Excel documents are accepted.");
 
-        int maximum = image ? ChatAttachmentPolicy.MaxImageAttachmentBytes : ChatAttachmentPolicy.MaxTextAttachmentBytes;
+        int maximum = image
+            ? ChatAttachmentPolicy.MaxImageAttachmentBytes
+            : document ? ChatAttachmentPolicy.MaxDocumentAttachmentBytes : ChatAttachmentPolicy.MaxTextAttachmentBytes;
         if (size > maximum)
         {
             int megabytes = maximum / (1024 * 1024);
-            return new(false, image, maximum, "too_large", $"File '{fileName}' exceeds the {megabytes} MB attachment limit.");
+            return new(false, image, maximum, "too_large", $"File '{fileName}' exceeds the {megabytes} MB attachment limit.", document);
         }
 
         if (imageCount >= ChatAttachmentPolicy.MaxImageCount && image)
             return new(false, true, maximum, "image_limit", ChatAttachmentPolicy.TooManyImagesStatus);
 
-        return new(true, image, maximum, null, null);
+        return new(true, image, maximum, null, null, document);
     }
 
     internal static bool CanAddImage(int imageCount) => imageCount < ChatAttachmentPolicy.MaxImageCount;

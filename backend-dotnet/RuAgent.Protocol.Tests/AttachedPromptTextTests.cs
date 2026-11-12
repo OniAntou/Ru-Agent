@@ -48,6 +48,22 @@ public sealed class AttachedPromptTextTests
         Assert.Equal("review it", parts.Text);
     }
 
+    [Fact]
+    public void Workspace_reference_envelope_splits_without_inlined_content()
+    {
+        var prompt = "[Attached workspace file: src/Program.cs (12 KB)]\n"
+            + "The file contents are not inlined. Read it from the workspace with the file-reading tool when needed.\n\n"
+            + "review it";
+
+        var parts = Assert.IsType<AttachedPromptParts>(AttachedPromptText.TrySplit(prompt));
+
+        var document = Assert.Single(parts.Documents);
+        Assert.Equal("src/Program.cs", document.FileName);
+        Assert.Equal("src/Program.cs", document.ReferencePath);
+        Assert.Equal(string.Empty, document.Content);
+        Assert.Equal("review it", parts.Text);
+    }
+
     [Theory]
     [InlineData("hello")]
     [InlineData("see [Attached file: x.cs (1 B)] below")]

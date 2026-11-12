@@ -23,13 +23,17 @@ internal static class AttachedPromptDisplay
             : new ObservableCollection<ImageAttachmentItem>();
         foreach (var document in parts.Documents)
         {
+            bool reference = document.ReferencePath is { Length: > 0 };
             attachments.Add(new ImageAttachmentItem
             {
-                FileName = document.FileName,
+                FileName = reference
+                    ? System.IO.Path.GetFileName(document.FileName)
+                    : document.FileName,
                 ByteSize = document.ApproximateBytes ?? System.Text.Encoding.UTF8.GetByteCount(document.Content),
                 IsImage = false,
                 MimeType = "text/plain",
-                TextContent = document.Content,
+                TextContent = reference ? null : document.Content,
+                ReferencePath = document.ReferencePath,
             });
         }
 

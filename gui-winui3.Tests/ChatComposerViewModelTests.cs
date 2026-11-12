@@ -292,6 +292,25 @@ public sealed class ChatComposerViewModelTests
         Assert.Equal("only text", ChatComposerViewModel.BuildEffectivePrompt("only text", [Image("shot.png")]));
     }
 
+    [Fact]
+    public void A_workspace_reference_is_not_inlined_into_the_prompt()
+    {
+        var reference = new ImageAttachmentItem
+        {
+            FileName = "Program.cs",
+            IsImage = false,
+            ByteSize = 12 * 1024,
+            ReferencePath = "src/Program.cs",
+        };
+
+        var prompt = ChatComposerViewModel.BuildEffectivePrompt("review", [reference]);
+
+        Assert.Contains("[Attached workspace file: src/Program.cs (12.0 KB)]", prompt);
+        Assert.Contains("not inlined", prompt);
+        Assert.DoesNotContain("```", prompt);
+        Assert.Null(ChatComposerViewModel.PromptLimitStatus(prompt));
+    }
+
     private static ImageAttachmentItem Image(string name) => new() { FileName = name, IsImage = true };
 }
 

@@ -485,6 +485,17 @@ The composed prompt (typed text plus every inlined document) is checked against
 oversized prompt stays in the composer with a named status instead of failing the
 Host's create call. Picker, drop and clipboard images share the same bounded
 preparation path.
+
+Attachments are images, text/code files, or PDF/Word/PowerPoint/Excel documents.
+Images and small text/code files are read and inlined as before. A larger text or
+code file already inside the workspace is attached as a workspace reference: the
+prompt names its relative path and the agent reads the live file with its file
+tool, so the attachment is not limited by the prompt byte bound. PDF and Office
+documents are extracted to bounded plain text locally
+(`AttachmentDocumentExtractor`); a document whose extraction cannot fit the prompt
+is refused at intake rather than accepted and rejected on Send. The workspace
+reference envelope is parsed back into a file chip when history is reopened.
+Folders themselves are not attached; dropping one says to drop its files.
 Signature detection reads the supplied stream directly and leaves it open for
 the decoder; adapters over managed byte streams do not support cloned substreams.
 Intake failures appear above the composer only while the originating session and

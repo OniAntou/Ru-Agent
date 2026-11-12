@@ -21,6 +21,7 @@ using RuAgent.Protocol.Harness;
 using RuApp.Controls;
 using RuApp.Models;
 using RuApp.Services;
+using RuApp.ViewModels;
 using Windows.Storage.Streams;
 using System.IO;
 
@@ -41,6 +42,11 @@ namespace RuApp.Views
             try
             {
                 var props = await file.GetBasicPropertiesAsync();
+                if (TryAddWorkspaceReference(file, props.Size, sessionId, sessionGeneration))
+                {
+                    return;
+                }
+
                 var intake = ChatAttachmentIntakePresenter.Evaluate(file.Name, checked((long)props.Size), Composer.ImageCount);
                 if (!intake.Accepted)
                 {
@@ -49,6 +55,7 @@ namespace RuApp.Views
                 }
 
                 bool isImage = intake.IsImage;
+                bool isDocument = intake.IsDocument;
                 int maximumBytes = intake.MaximumBytes;
 
                 using var readStream = (await file.OpenReadAsync()).AsStreamForRead();
@@ -69,12 +76,26 @@ namespace RuApp.Views
                     mimeType = prepared.MimeType;
                     previewImage = prepared.PreviewImage;
                 }
+                else if (isDocument)
+                {
+                    try
+                    {
+                        string extracted = await Task.Run(
+                            () => AttachmentDocumentExtractor.Extract(file.Name, bytes, CancellationToken.None));
+                        bytes = System.Text.Encoding.UTF8.GetBytes(extracted);
+                    }
+                    catch (AttachmentExtractionException error)
+                    {
+                        ShowAgentInlineStatus(error.Message);
+                        return;
+                    }
+                }
 
                 var item = new ImageAttachmentItem
                 {
                     FileName = file.Name,
                     FilePath = file.Path,
-                    ByteSize = bytes.LongLength,
+                    ByteSize = isDocument ? checked((long)props.Size) : bytes.LongLength,
                     IsImage = isImage,
                     MimeType = mimeType,
                 };
@@ -87,6 +108,12 @@ namespace RuApp.Views
                 else
                 {
                     item.TextContent = ChatAttachmentPolicy.DecodeText(bytes);
+                }
+
+                if (!isImage
+                    && !ChatAttachmentFitsPrompt(item))
+                {
+                    return;
                 }
 
                 TryAddAttachmentToComposer(item, sessionId, sessionGeneration);
@@ -144,12 +171,22 @@ namespace RuApp.Views
                 else if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
                 {
                     var items = await package.GetStorageItemsAsync();
+                    bool sawFolder = false;
                     foreach (var storageItem in items)
                     {
                         if (storageItem is Windows.Storage.StorageFile file)
                         {
                             await AddFileAttachmentAsync(file, sessionId, sessionGeneration);
                         }
+                        else if (storageItem is Windows.Storage.StorageFolder)
+                        {
+                            sawFolder = true;
+                        }
+                    }
+
+                    if (sawFolder)
+                    {
+                        ShowAgentInlineStatus("Folders are not attached. Drag the files inside the folder, or open the Files tab.");
                     }
                 }
             }
@@ -183,6 +220,87 @@ namespace RuApp.Views
             }
 
             return Composer.TryAddAttachment(sessionId, ChatInputTextBox.Text, attachment);
+        }
+
+        /// <summary>
+        /// A large text/code file that already lives in the workspace is attached
+        /// as a reference: the model reads it with the file tool instead of the
+        /// GUI inlining a truncated copy that cannot fit the prompt bound.
+        /// </summary>
+        private bool TryAddWorkspaceReference(
+            Windows.Storage.StorageFile file,
+            ulong size,
+            string sessionId,
+            long sessionGeneration)
+        {
+            const long referenceThresholdBytes = 8 * 1024;
+            if (size <= referenceThresholdBytes
+                || !ChatAttachmentPolicy.IsTextOrCodeFile(file.Name)
+                || !TryGetWorkspaceRelativePath(_agentWorkspace, file.Path, out var relative))
+            {
+                return false;
+            }
+
+            var item = new ImageAttachmentItem
+            {
+                FileName = file.Name,
+                FilePath = file.Path,
+                ByteSize = checked((long)size),
+                IsImage = false,
+                MimeType = "text/plain",
+                ReferencePath = relative,
+            };
+            if (!ChatAttachmentFitsPrompt(item))
+            {
+                return true;
+            }
+
+            TryAddAttachmentToComposer(item, sessionId, sessionGeneration);
+            return true;
+        }
+
+        private static bool TryGetWorkspaceRelativePath(string? workspace, string? filePath, out string relative)
+        {
+            relative = string.Empty;
+            if (string.IsNullOrWhiteSpace(workspace) || string.IsNullOrWhiteSpace(filePath))
+            {
+                return false;
+            }
+
+            try
+            {
+                string root = Path.GetFullPath(workspace).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string full = Path.GetFullPath(filePath);
+                if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                relative = Path.GetRelativePath(root, full).Replace('\\', '/');
+                return relative.Length > 0;
+            }
+            catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// A document that cannot fit the Host prompt bound is refused at intake
+        /// instead of being accepted and then rejected on Send.
+        /// </summary>
+        private bool ChatAttachmentFitsPrompt(ImageAttachmentItem attachment)
+        {
+            var attachments = Composer.Attachments.ToList();
+            attachments.Add(attachment);
+            string prompt = ChatComposerViewModel.BuildEffectivePrompt(ChatInputTextBox.Text, attachments);
+            if (ChatComposerViewModel.PromptLimitStatus(prompt) is not { } status)
+            {
+                return true;
+            }
+
+            ShowAgentInlineStatus(status + " Remove some text or attach a smaller file.");
+            return false;
         }
 
         private sealed record PreparedImageAttachment(
@@ -254,12 +372,22 @@ namespace RuApp.Views
                 if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
                 {
                     var items = await e.DataView.GetStorageItemsAsync();
+                    bool sawFolder = false;
                     foreach (var storageItem in items)
                     {
                         if (storageItem is Windows.Storage.StorageFile file)
                         {
                             await AddFileAttachmentAsync(file, sessionId, sessionGeneration);
                         }
+                        else if (storageItem is Windows.Storage.StorageFolder)
+                        {
+                            sawFolder = true;
+                        }
+                    }
+
+                    if (sawFolder)
+                    {
+                        ShowAgentInlineStatus("Folders are not attached. Drop the files inside the folder, or open the Files tab.");
                     }
                 }
             }

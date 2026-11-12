@@ -5,7 +5,13 @@ using System.Text.RegularExpressions;
 namespace RuAgent.Protocol;
 
 /// <summary>One text document that a composer inlined ahead of the typed prompt.</summary>
-public sealed record AttachedPromptDocument(string FileName, string SizeLabel, long? ApproximateBytes, string Language, string Content);
+public sealed record AttachedPromptDocument(
+    string FileName,
+    string SizeLabel,
+    long? ApproximateBytes,
+    string Language,
+    string Content,
+    string? ReferencePath = null);
 
 /// <summary>A prompt split back into its inlined documents and the text the user typed.</summary>
 public sealed record AttachedPromptParts(IReadOnlyList<AttachedPromptDocument> Documents, string Text);
@@ -31,13 +37,22 @@ public static class AttachedPromptText
         @"^\[Attached file: (?<name>.+) \((?<size>[^()]*)\)\]$",
         RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, TimeSpan.FromMilliseconds(250));
 
+    private static readonly Regex ReferenceHeader = new(
+        @"^\[Attached workspace file: (?<name>.+) \((?<size>[^()]*)\)\]$",
+        RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, TimeSpan.FromMilliseconds(250));
+
+    internal const string ReferenceInstruction =
+        "The file contents are not inlined. Read it from the workspace with the file-reading tool when needed.";
+
     private static readonly Regex Size = new(
         @"^(?<value>\d+(?:\.\d+)?) ?(?<unit>B|KB|MB)$",
         RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, TimeSpan.FromMilliseconds(250));
 
     /// <summary>True when <paramref name="prompt"/> starts with an attachment envelope.</summary>
     public static bool StartsWithAttachment(string? prompt) =>
-        prompt is not null && prompt.StartsWith("[Attached file: ", StringComparison.Ordinal);
+        prompt is not null
+        && (prompt.StartsWith("[Attached file: ", StringComparison.Ordinal)
+            || prompt.StartsWith("[Attached workspace file: ", StringComparison.Ordinal));
 
     /// <summary>
     /// Splits <paramref name="prompt"/> into documents and typed text, or returns null when it
@@ -49,8 +64,32 @@ public static class AttachedPromptText
         var lines = prompt!.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         var documents = new List<AttachedPromptDocument>();
         var index = 0;
-        while (index < lines.Length && Header.Match(lines[index]) is { Success: true } header)
+        while (index < lines.Length)
         {
+            if (ReferenceHeader.Match(lines[index]) is { Success: true } reference)
+            {
+                documents.Add(new AttachedPromptDocument(
+                    reference.Groups["name"].Value,
+                    reference.Groups["size"].Value,
+                    ParseSize(reference.Groups["size"].Value),
+                    string.Empty,
+                    string.Empty,
+                    reference.Groups["name"].Value));
+                index++;
+                if (index < lines.Length && string.Equals(lines[index], ReferenceInstruction, StringComparison.Ordinal))
+                {
+                    index++;
+                }
+
+                if (index < lines.Length && lines[index].Length == 0)
+                {
+                    index++;
+                }
+
+                continue;
+            }
+
+            if (Header.Match(lines[index]) is not { Success: true } header) break;
             if (index + 1 >= lines.Length || !lines[index + 1].StartsWith(Fence, StringComparison.Ordinal)) return null;
             var language = lines[index + 1][Fence.Length..];
             if (language.Contains('`', StringComparison.Ordinal)) return null;

@@ -237,17 +237,26 @@ public sealed partial class ChatComposerViewModel : ObservableObject
     /// </summary>
     public static string BuildEffectivePrompt(string text, IReadOnlyList<ImageAttachmentItem> attachments)
     {
-        var textAttachments = attachments
-            .Where(attachment => !attachment.IsImage && !string.IsNullOrWhiteSpace(attachment.TextContent))
+        var documents = attachments
+            .Where(attachment => !attachment.IsImage
+                && (attachment.IsReference || !string.IsNullOrWhiteSpace(attachment.TextContent)))
             .ToList();
-        if (textAttachments.Count == 0)
+        if (documents.Count == 0)
         {
             return text;
         }
 
         var builder = new System.Text.StringBuilder();
-        foreach (var document in textAttachments)
+        foreach (var document in documents)
         {
+            if (document.IsReference)
+            {
+                builder.AppendLine($"[Attached workspace file: {document.ReferencePath} ({document.FormattedSize})]");
+                builder.AppendLine("The file contents are not inlined. Read it from the workspace with the file-reading tool when needed.");
+                builder.AppendLine();
+                continue;
+            }
+
             string language = document.FileExtension.TrimStart('.');
             builder.AppendLine($"[Attached file: {document.FileName} ({document.FormattedSize})]");
             builder.AppendLine($"```{language}");

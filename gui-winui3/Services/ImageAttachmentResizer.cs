@@ -160,6 +160,18 @@ public static class ImageAttachmentResizer
         {
             return "image/webp";
         }
+        if (totalRead >= 6
+            && (signature.AsSpan(0, 6).SequenceEqual("GIF87a"u8)
+                || signature.AsSpan(0, 6).SequenceEqual("GIF89a"u8)))
+        {
+            return "image/gif";
+        }
+        if (totalRead >= 4
+            && (signature.AsSpan(0, 4).SequenceEqual(new byte[] { 0x49, 0x49, 0x2A, 0x00 })
+                || signature.AsSpan(0, 4).SequenceEqual(new byte[] { 0x4D, 0x4D, 0x00, 0x2A })))
+        {
+            return "image/tiff";
+        }
         if (totalRead >= 2 && signature[0] == (byte)'B' && signature[1] == (byte)'M')
         {
             return "image/bmp";

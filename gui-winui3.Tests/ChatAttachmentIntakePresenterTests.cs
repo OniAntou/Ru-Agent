@@ -7,9 +7,15 @@ public sealed class ChatAttachmentIntakePresenterTests
 {
     [Theory]
     [InlineData("image.PNG", 100, 0, true, null)]
+    [InlineData("image.GIF", 100, 0, true, null)]
     [InlineData("source.cs", 100, 0, true, null)]
-    [InlineData("report.docx", 100, 0, false, "unsupported")]
+    [InlineData("report.docx", 100, 0, true, null)]
+    [InlineData("book.xlsx", 100, 0, true, null)]
+    [InlineData("deck.pptx", 100, 0, true, null)]
+    [InlineData("paper.pdf", 100, 0, true, null)]
+    [InlineData("archive.zip", 100, 0, false, "unsupported")]
     [InlineData("large.txt", 5242881, 0, false, "too_large")]
+    [InlineData("large.pdf", 16777217, 0, false, "too_large")]
     [InlineData("large.png", 100, 4, false, "image_limit")]
     public void Intake_classifies_type_size_and_image_count(
         string fileName,
@@ -22,6 +28,9 @@ public sealed class ChatAttachmentIntakePresenterTests
 
         Assert.Equal(accepted, result.Accepted);
         Assert.Equal(reason, result.Reason);
+        Assert.Equal(
+            ChatAttachmentPolicy.IsDocumentFile(fileName),
+            result.IsDocument);
     }
 
     [Fact]

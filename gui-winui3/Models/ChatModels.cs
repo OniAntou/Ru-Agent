@@ -486,6 +486,27 @@ namespace RuApp.Models
             set => SetProperty(ref _textContent, value);
         }
 
+        private string? _referencePath;
+
+        /// <summary>
+        /// Workspace-relative path when this attachment is a reference the agent
+        /// reads with its file tool, instead of inlined content.
+        /// </summary>
+        public string? ReferencePath
+        {
+            get => _referencePath;
+            set
+            {
+                if (SetProperty(ref _referencePath, value))
+                {
+                    OnPropertyChanged(nameof(IsReference));
+                    OnPropertyChanged(nameof(IsDocument));
+                }
+            }
+        }
+
+        public bool IsReference => !IsImage && !string.IsNullOrEmpty(_referencePath);
+
         public bool IsImage
         {
             get => _isImage;

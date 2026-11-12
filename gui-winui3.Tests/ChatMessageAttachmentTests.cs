@@ -366,18 +366,33 @@ public sealed class ChatMessageAttachmentTests
     }
 
     [Theory]
-    [InlineData("notes.md", false, true)]
-    [InlineData("main.cs", false, true)]
-    [InlineData("data.csv", false, true)]
-    [InlineData("photo.PNG", true, false)]
-    [InlineData("report.docx", false, false)]
-    [InlineData("book.xlsx", false, false)]
-    [InlineData("deck.PPTX", false, false)]
-    [InlineData("archive.zip", false, false)]
-    public void Attachment_policy_accepts_images_and_text_code_only(string name, bool isImage, bool isText)
+    [InlineData("notes.md", false, true, false)]
+    [InlineData("main.cs", false, true, false)]
+    [InlineData("data.csv", false, true, false)]
+    [InlineData("photo.PNG", true, false, false)]
+    [InlineData("photo.GIF", true, false, false)]
+    [InlineData("scan.TIFF", true, false, false)]
+    [InlineData("report.docx", false, false, true)]
+    [InlineData("book.xlsx", false, false, true)]
+    [InlineData("deck.PPTX", false, false, true)]
+    [InlineData("paper.pdf", false, false, true)]
+    [InlineData("archive.zip", false, false, false)]
+    public void Attachment_policy_accepts_images_text_code_and_documents(
+        string name, bool isImage, bool isText, bool isDocument)
     {
         Assert.Equal(isImage, ChatAttachmentPolicy.IsImageFile(name));
         Assert.Equal(isText, ChatAttachmentPolicy.IsTextOrCodeFile(name));
+        Assert.Equal(isDocument, ChatAttachmentPolicy.IsDocumentFile(name));
+    }
+
+    [Fact]
+    public void Extensionless_project_files_are_text()
+    {
+        Assert.True(ChatAttachmentPolicy.IsTextOrCodeFile("Dockerfile"));
+        Assert.True(ChatAttachmentPolicy.IsTextOrCodeFile("dockerfile"));
+        Assert.True(ChatAttachmentPolicy.IsTextOrCodeFile(".gitignore"));
+        Assert.True(ChatAttachmentPolicy.IsTextOrCodeFile("project.csproj"));
+        Assert.False(ChatAttachmentPolicy.IsTextOrCodeFile("archive.zip"));
     }
 
     [Fact]

@@ -275,21 +275,24 @@ public sealed partial class RememberedApprovalIdentityTests
     public async Task Case7_Extra_allow_always_from_the_workspace_cwd_does_not_cover_an_external_cwd()
     {
         // Extra finding, now covered by the Broker plan: the remembered terminal matcher carries the
-        // canonical cwd of the approved call, so an allow from the workspace root cannot cover an
-        // external folder. The first call is asked for a non-cwd reason (timeout above the standard
-        // window) and runs in the workspace root.
+        // canonical cwd of the approved call, so nothing allowed from the workspace root can cover
+        // an external folder. Standard no longer asks a long foreground call in the workspace root
+        // (its duration threshold is the hard maximum), so that call runs without an approval, and
+        // having run it must not let the same command run from an external folder unasked.
         await using var env = await Scenario.StartAsync();
         var session = await env.NewSessionAsync();
         var external = Path.Combine(env.Root, "dotnet-cwd");
         Directory.CreateDirectory(external);
 
-        await AllowAsync(env, session, "dotnet test from workspace root",
-            ToolCall("run_process", RunProcess("dotnet", ["test"], workingDirectory: null, timeoutMs: 1_000_000)), "allow_always");
+        var inside = await RunUntilAskOrEndAsync(env, session, "dotnet test from workspace root",
+            ToolCall("run_process", RunProcess("dotnet", ["test"], workingDirectory: null, timeoutMs: 1_000_000)));
+        Assert.True(inside.ApprovalId is null,
+            $"a long foreground dotnet test in the workspace root asked (status {inside.Status}); Standard no longer gates its duration.");
 
         var outside = await RunUntilAskOrEndAsync(env, session, "dotnet test from external folder",
             ToolCall("run_process", RunProcess("dotnet", ["test"], external)));
         Assert.True(outside.ApprovalId is not null,
-            $"dotnet test in an external folder ran without asking after allow_always from the workspace root (status {outside.Status}): the remembered rule has no cwd.");
+            $"dotnet test in an external folder ran without asking after a workspace-root run (status {outside.Status}).");
     }
 
     // ---- Case 10: remembered terminal target in a new session --------------

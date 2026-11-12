@@ -562,6 +562,14 @@ public static class AgentActivityProjector
             ("list", _) => "List",
             ("help", _) => "Docs",
             ("todo_write", _) => "Plan",
+            // The subagent tools keep the Status kind, but a display name is what lets a
+            // surface draw a named row instead of a bare "status: in progress" code and a
+            // nameless "Tool ... outcome unavailable" settle.
+            ("agent_spawn", _) => "Spawn subagent",
+            ("agent_send", _) => "Message subagent",
+            ("agent_wait", _) => "Wait for subagent",
+            ("agent_cancel", _) => "Cancel subagent",
+            ("agent_apply", _) => "Apply subagent",
             ("mcp", _) => "MCP",
             ("computer", _) => "Computer",
             ("skill", _) => "Skill",

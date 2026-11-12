@@ -12,10 +12,20 @@ internal static class TuiActivityLabels
     /// A completed status row that only says the step went fine explains nothing; the
     /// Desktop feed hides it too. A failed one always shows.
     /// </summary>
+    /// <remarks>
+    /// The bare lifecycle codes are the same kind of non-statement: the live row already
+    /// shows that the run is working, so "status: in progress" only added a row per step.
+    /// </remarks>
     internal static bool IsSilentStatus(AgentActivityState state, string safeCode) =>
-        state != AgentActivityState.Failed && safeCode is "ok" or "succeeded" or "completed";
+        state != AgentActivityState.Failed
+        && safeCode is "ok" or "succeeded" or "completed" or "in_progress" or "waiting" or "started";
 
-    internal static string StatusText(string safeCode) => safeCode switch
+    /// <summary>
+    /// The sentence a status code earns, or null when it has none. A code with no sentence
+    /// is not printed raw: "status: reconciliation required" was the tool's own vocabulary
+    /// leaking into the feed, not something an operator could act on.
+    /// </summary>
+    internal static string? StatusText(string safeCode) => safeCode switch
     {
         "frames_dropped" => "some steps were temporarily skipped",
         "subagent_spawned" => "started a subagent",
@@ -23,8 +33,11 @@ internal static class TuiActivityLabels
         "subagent_wait_completed" => "received subagent results",
         "inspection_required" => "waiting: an action needs a read-only check first",
         "reconciliation_required" => "stopped: the last change is unverified",
-        { Length: > 0 } code => "status: " + code.Replace('_', ' '),
-        _ => "status update",
+        "external_directory_required" or "terminal_external_cwd_requires_approval"
+            => "waiting: this needs a folder outside the workspace",
+        "context_compacted" => "context compacted",
+        "cancelled" => "stopped before finishing",
+        _ => null,
     };
 
     /// <summary>

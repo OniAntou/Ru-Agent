@@ -662,6 +662,29 @@ public sealed partial class AgentActivityProjectorTests
         Assert.Equal(display, activity.ToolDisplay);
     }
 
+    /// <summary>
+    /// The subagent tools keep the Status kind but name themselves.
+    /// </summary>
+    /// <remarks>
+    /// Without a display name a surface could only print the bare lifecycle code
+    /// ("status: in progress") and settle the row as a nameless "Tool ... outcome
+    /// unavailable", which is what a run that delegated looked like.
+    /// </remarks>
+    [Theory]
+    [InlineData("agent_spawn", "Spawn subagent")]
+    [InlineData("agent_send", "Message subagent")]
+    [InlineData("agent_wait", "Wait for subagent")]
+    [InlineData("agent_cancel", "Cancel subagent")]
+    [InlineData("agent_apply", "Apply subagent")]
+    public void ProjectTool_names_the_subagent_tools(string toolId, string display)
+    {
+        var activity = AgentActivityProjector.ProjectTool(
+            Proposal(toolId, "{}"), AgentActivityState.Started);
+
+        Assert.Equal(AgentActivityKind.Status, activity.Kind);
+        Assert.Equal(display, activity.ToolDisplay);
+    }
+
     [Fact]
     public void ProjectTodos_carries_the_number_of_tasks()
     {

@@ -85,16 +85,24 @@ identity, preserving semantic colors.
 A command row names the script's first real statement, skipping preference, encoding,
 environment and location setup, and counts the remaining statements (`(+3 more)`). A
 failed row's reason line is omitted when it only repeats the exit code. A status row
-that only reports `ok` is hidden, as in the Desktop feed; other status codes are worded
-(`started a subagent`) and a failed status always shows. A provider-reported thought of
-at least one second leaves a `◦ Thought 31.0s` row where it happened. Blocks of tool
-rows print no tally of their own: the turn footer carries the tool count plus edits and
-failures (`✓ 2m13s · 27 tools · 4 edits · 1 failed`). Unknown outcomes stay explicit;
-run completion never proves tool success. The live row distinguishes waiting for
-the model, provider-reported thinking, response streaming, tool execution,
-compaction and tool/request retry. Approval, trust and parked states keep their
-nonspinning presentation. This adds no animation timer, Host protocol or execution
-authority. Line/JSON adapters retain their output ownership and plain tool layout.
+that only reports `ok`, or a bare lifecycle code such as `in_progress`, is hidden, as in
+the Desktop feed; a known code is worded (`started a subagent`) and a code with no
+wording earns no row. A failed status always shows, worded from its code when it has no
+sentence. The model's narration between tool rows gets its own dim guttered row, so a
+run that talks through its work says so live instead of only in a reopened session. A
+provider-reported thought opens a `◦ Thinking` row when its step starts and settles in
+place, so it sits above the answer that step streams rather than under it:
+`◦ Thought 31.0s` at a second or more, `◦ Thought briefly` under a second, and
+`◦ Thought stopped` when the step fails. A plain output surface cannot rewrite a row, so
+it keeps the completion-only form and announces only thoughts of at least one second.
+Blocks of tool rows print no tally of their own: the turn footer carries the tool count
+plus edits and failures (`✓ 2m13s · 27 tools · 4 edits · 1 failed`). A discovery row's
+count lives in the metrics column only. Unknown outcomes stay explicit; run completion
+never proves tool success. The live row distinguishes waiting for the model,
+provider-reported thinking, response streaming, tool execution, compaction and
+tool/request retry. Approval, trust and parked states keep their nonspinning
+presentation. This adds no animation timer, Host protocol or execution authority.
+Line/JSON adapters retain their output ownership and plain tool layout.
 
 ### One active conversation
 

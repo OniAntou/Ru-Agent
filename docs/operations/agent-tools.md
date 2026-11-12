@@ -807,7 +807,9 @@ reason code:
   rule dự án; đúng như mọi allow khác, intent chính xác chỉ được nhớ cho session
   (mất khi đóng session hoặc restart Host).
 - `terminal_timeout_requires_approval` — the standard-window gate: a terminal
-  call above 15 minutes asks under `standard`, is automatic under `full_access`
+  call above `TerminalLimits.StandardApprovalThresholdMs` asks under `standard`
+  (that threshold equals the 30-minute hard maximum, so no allowed call reaches it
+  unless the threshold is lowered), is automatic under `full_access`
   (the skip-all mode), and is denied under `plan` with the rest of terminal; a
   timeout above the protocol hard maximum is denied in every preset.
 - `web_approval_required` — compatibility reason emitted only when an explicit
@@ -1011,7 +1013,7 @@ suspended and joins the job before its code runs, so descendants it creates are 
 by the same cleanup. A server whose
 declaration changed or that exited is restarted; all servers stop with the Host. Startup is
 bounded to 20 seconds and each request to the server's `timeout_seconds` (default 60,
-at most 600). `arguments` is a JSON object encoded as a string (at most 64 KB) and follows
+at most 1,800, the foreground terminal maximum). `arguments` is a JSON object encoded as a string (at most 64 KB) and follows
 the schema `list_tools` reports. Text, structured content and resource-link metadata
 are returned within the shared 256 KB bound and marked `untrusted`; images and
 other unsupported content are counted, not returned. Failures are named:

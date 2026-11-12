@@ -1409,10 +1409,11 @@ public sealed partial class PolicyEvaluationTests
 
         var extended = standard.Evaluate(
             standardLease.Snapshot, Terminal(standardFactory, "dotnet", "test", 1_200_000), valid, Now);
-        // Above the standard window the protocol requires an explicit approval, so an
-        // otherwise-allowed bounded command is not silently granted a 20-minute run.
-        Assert.Equal("ask", extended.Decision);
-        Assert.Equal("terminal_timeout_requires_approval", extended.ReasonCode);
+        // A 20-minute test run is a foreground call Standard may launch, so it runs without a
+        // prompt, as the same command launched in the background already did; an unattended
+        // long run no longer parks on it.
+        Assert.Equal("allow", extended.Decision);
+        Assert.Equal("workspace_terminal_allow", extended.ReasonCode);
 
         var atThreshold = standard.Evaluate(
             standardLease.Snapshot, Terminal(standardFactory, "dotnet", "test", TerminalLimits.StandardApprovalThresholdMs), valid, Now);
@@ -1428,11 +1429,8 @@ public sealed partial class PolicyEvaluationTests
 
         var extendedShell = standard.Evaluate(
             standardLease.Snapshot, Shell(standardFactory, "Get-Date", 1_200_000), valid, Now);
-        Assert.Equal("ask", extendedShell.Decision);
-        // The timeout gate is decided before the terminal classifier runs, because it
-        // applies to every terminal call above the standard window, not only the ones
-        // the classifier would have asked about anyway.
-        Assert.Equal("terminal_timeout_requires_approval", extendedShell.ReasonCode);
+        Assert.Equal("allow", extendedShell.Decision);
+        Assert.Equal("workspace_terminal_allow", extendedShell.ReasonCode);
 
         var (fullLease, fullFactory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());
         var full = new PolicySnapshotEvaluator();
@@ -1503,18 +1501,24 @@ public sealed partial class PolicyEvaluationTests
         });
         AssertDeny(evaluator.Evaluate(lease.Snapshot, overCap, valid, Now), "timeout_exceeds_hard_max");
 
-        // Foreground keeps both gates: the standard-window ask and the 30-minute
-        // hard maximum.
+        // Foreground keeps its 30-minute hard maximum; the standard-window ask now sits at that
+        // same maximum, so every foreground call Standard may launch runs without a prompt.
         var foreground = factory.Create("bash", "1.0.0", new JsonObject
         {
             ["mode"] = "run",
             ["executable"] = "dotnet",
             ["arguments"] = new JsonArray("test"),
-            ["timeout_ms"] = TerminalLimits.StandardApprovalThresholdMs + 1,
+            ["timeout_ms"] = TerminalLimits.HardMaxTimeoutMs,
         });
-        var foregroundAsk = evaluator.Evaluate(lease.Snapshot, foreground, valid, Now);
-        Assert.Equal("ask", foregroundAsk.Decision);
-        Assert.Equal("terminal_timeout_requires_approval", foregroundAsk.ReasonCode);
+        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, foreground, valid, Now).Decision);
+        var foregroundOverCap = factory.Create("bash", "1.0.0", new JsonObject
+        {
+            ["mode"] = "run",
+            ["executable"] = "dotnet",
+            ["arguments"] = new JsonArray("test"),
+            ["timeout_ms"] = TerminalLimits.HardMaxTimeoutMs + 1,
+        });
+        Assert.Equal("deny", evaluator.Evaluate(lease.Snapshot, foregroundOverCap, valid, Now).Decision);
     }
 
     [Fact]

@@ -19,7 +19,7 @@ request reaching the history window.
 | Server `Retry-After` honored automatically | 5 min | Longer hints park the step at once | `ProviderRetryPolicy.MaximumAutomaticDelay` |
 | Pending approval | 24 h | The run fails as `approval_expired` | `ApprovalLimits.PendingApprovalLifetimeMinutes` (Protocol), shared by the Host and the Broker |
 | Remembered session approval | 24 h, 64 per session | The same intent asks again | `SessionApprovalLedger.EntryLifetime` (follows `ApprovalLimits`) |
-| Workspace trust challenge | 10 min | The pending run is cancelled; trust again | `HarnessRecoveryScanner.WorkspaceTrustTimeout` |
+| Workspace trust challenge | 10 min | The pending run is cancelled; trust again (asked only when a run starts, while the user is there) | `HarnessRecoveryScanner.WorkspaceTrustTimeout` |
 | Model context | the pinned model's window | Automatic compaction at 80%; `context_limit_reached` only if compaction cannot shrink it | `ContextBudgetPolicyOptions` |
 
 For an unattended long run, use Standard (workspace edits and terminal run without asking)
@@ -42,11 +42,11 @@ bounds stay), so the run rarely waits on the 24-hour approval lifetime.
 
 | Bound | Value | Where to change it |
 |---|---|---|
-| Foreground terminal call | 30 min hard maximum; over 15 min asks in Standard | `TerminalLimits.HardMaxTimeoutMs`, `StandardApprovalThresholdMs` |
+| Foreground terminal call | 30 min hard maximum, no duration prompt in Standard (longer work goes to the background, up to 24 h) | `TerminalLimits.HardMaxTimeoutMs`, `StandardApprovalThresholdMs` |
 | Background terminal task | 30 min default, 24 h maximum, 8 concurrent per session | `TerminalLimits.BackgroundDefaultLifetimeMs`, `BackgroundMaxLifetimeMs`, `MaxBackgroundTasksPerSession` |
 | Retained terminal output | 256 Ki characters in memory, older spools evicted past 32 per session | `TerminalLimits.MaxSpoolChars`, `TerminalOutputSpool.MaxSpoolsPerSession` |
 | One structured file mutation | 64 files / 16 MiB per atomic call | `FileMutationJournal` |
-| MCP tool call | 10 min | `McpConfiguration.MaxCallTimeout` |
+| MCP tool call | 60 s default, up to 30 min per server entry | `McpConfiguration.MaxCallTimeout` |
 | Subagents | 3 runnable, 3 attempts, 10 min per wait (the root parks, it does not fail) | `SubagentLimits` |
 
 `TerminalLimits` values appear in tool schemas, so changing one also updates

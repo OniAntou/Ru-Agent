@@ -418,7 +418,8 @@ runtime descriptors and Ru hook and MCP configuration files, user plugins and th
 automatically; hard-invalid requests remain denied.
 Explicit deny/ask rules, exact single-use authorization, hard-invalid requests
 and process lifetime/output bounds remain enforced.
-Foreground launches above fifteen minutes still ask in Standard; background
+The Standard foreground ask threshold equals the 30-minute hard maximum, so a
+foreground launch Standard allows never asks for its duration; background
 launches use their bounded lifetime instead. Every running terminal task reserves
 a session slot at launch, retained when foreground moves to background. The
 Broker's `RU_MAX_BACKGROUND_TERMINAL_TASKS` setting defaults to 8 (range 1–64);

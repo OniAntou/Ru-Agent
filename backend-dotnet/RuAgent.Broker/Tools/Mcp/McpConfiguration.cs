@@ -49,7 +49,12 @@ public sealed class McpConfiguration
     public const int MaxEnvironmentEntries = 32;
     public const int MaxDescriptionLength = 256;
     public static readonly TimeSpan DefaultCallTimeout = TimeSpan.FromSeconds(60);
-    public static readonly TimeSpan MaxCallTimeout = TimeSpan.FromMinutes(10);
+    /// <summary>
+    /// The longest a server's declared timeout_seconds may make one call. It matches the foreground
+    /// terminal maximum, so a server that runs a long build or test suite can finish it; it was ten
+    /// minutes. A server's own default stays 60 seconds unless its entry asks for more.
+    /// </summary>
+    public static readonly TimeSpan MaxCallTimeout = TimeSpan.FromMilliseconds(RuAgent.Protocol.TerminalLimits.HardMaxTimeoutMs);
 
     private static readonly Regex ServerName = new("^[a-z][a-z0-9_-]{0,31}$", RegexOptions.CultureInvariant);
     private static readonly Regex EnvironmentName = new("^[A-Za-z_][A-Za-z0-9_]{0,63}$", RegexOptions.CultureInvariant);

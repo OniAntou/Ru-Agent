@@ -120,12 +120,14 @@ public sealed class CommandIntentResolverTests
         }
     }
 
+    // The standard window now reaches the foreground hard maximum, so every foreground
+    // timeout a call may carry classifies as the standard window.
     [Theory]
     [InlineData(120_000, TerminalTimeoutClass.StandardWindow)]
     [InlineData(900_000, TerminalTimeoutClass.StandardWindow)]
-    [InlineData(900_001, TerminalTimeoutClass.ApprovalRequired)]
-    [InlineData(1_200_000, TerminalTimeoutClass.ApprovalRequired)]
-    [InlineData(1_800_000, TerminalTimeoutClass.ApprovalRequired)]
+    [InlineData(900_001, TerminalTimeoutClass.StandardWindow)]
+    [InlineData(1_200_000, TerminalTimeoutClass.StandardWindow)]
+    [InlineData(1_800_000, TerminalTimeoutClass.StandardWindow)]
     public void Timeout_is_recorded_in_the_intent_and_classified_against_the_standard_window(
         int timeoutMs,
         TerminalTimeoutClass expectedClass)

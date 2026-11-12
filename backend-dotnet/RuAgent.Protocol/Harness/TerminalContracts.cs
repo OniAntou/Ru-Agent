@@ -33,7 +33,15 @@ public static class TerminalLimits
 {
     public const int DefaultTimeoutMs = 120_000;
     public const int HardMaxTimeoutMs = 1_800_000;
-    public const int StandardApprovalThresholdMs = 900_000;
+
+    /// <summary>
+    /// The foreground timeout above which Standard asks before running. It equals the hard
+    /// maximum, so a foreground call Standard may launch at all runs without a prompt, the way a
+    /// background task of up to a day already does: the gate used to ask above 15 minutes, which
+    /// parked an unattended long run on its first long test suite while a background launch of
+    /// the same command needed no answer. Lower it to bring the prompt back.
+    /// </summary>
+    public const int StandardApprovalThresholdMs = HardMaxTimeoutMs;
 
     /// <summary>
     /// Default concurrent terminal tasks per session. The Broker may configure

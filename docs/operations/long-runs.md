@@ -19,7 +19,7 @@ request reaching the history window.
 | Server `Retry-After` honored automatically | 5 min | Longer hints park the step at once | `ProviderRetryPolicy.MaximumAutomaticDelay` |
 | Pending approval | 24 h | The run fails as `approval_expired` | `ApprovalLimits.PendingApprovalLifetimeMinutes` (Protocol), shared by the Host and the Broker |
 | Remembered session approval | 24 h, 64 per session | The same intent asks again | `SessionApprovalLedger.EntryLifetime` (follows `ApprovalLimits`) |
-| Workspace trust challenge | 10 min | The pending run is cancelled; trust again (asked only when a run starts, while the user is there) | `HarnessRecoveryScanner.WorkspaceTrustTimeout` |
+| Workspace trust challenge | 24 h (the approval lifetime) | The pending run is cancelled; trust again | `HarnessRecoveryScanner.WorkspaceTrustTimeout`, `WorkspaceTrustService` |
 | Model context | the pinned model's window | Automatic compaction at 80%; `context_limit_reached` only if compaction cannot shrink it | `ContextBudgetPolicyOptions` |
 
 For an unattended long run, use Standard (workspace edits and terminal run without asking)

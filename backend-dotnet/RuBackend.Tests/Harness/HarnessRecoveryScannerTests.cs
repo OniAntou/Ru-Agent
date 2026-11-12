@@ -1386,7 +1386,12 @@ public sealed class HarnessRecoveryScannerTests
                 "run_44444444444444444444444444444444");
             tracked.Add(run.RunId);
 
-            var summaries = await ScanAsync(fixture, tracked, Timestamp.AddMinutes(11));
+            // Ten minutes no longer ends the wait; the trust challenge lives as long as an approval.
+            Assert.DoesNotContain(await ScanAsync(fixture, tracked, Timestamp.AddMinutes(11)),
+                early => early.Action == "cancelled_workspace_trust_expired");
+
+            var summaries = await ScanAsync(fixture, tracked,
+                Timestamp + HarnessRecoveryScanner.WorkspaceTrustTimeout + TimeSpan.FromMinutes(1));
 
             var summary = Assert.Single(summaries);
             Assert.Equal("cancelled_workspace_trust_expired", summary.Action);
@@ -1454,24 +1459,29 @@ public sealed class HarnessRecoveryScannerTests
             AgentPermissionPreset.Standard,
             1,
             new string('f', 64),
-            now.AddMinutes(-60),
+            updatedAt.AddMinutes(-1),
             updatedAt,
             null);
 
+        var timeout = HarnessRecoveryScanner.WorkspaceTrustTimeout;
         Assert.True(HarnessRecoveryScanner.IsExpiredWorkspaceTrustWait(
-            Waiting(HarnessRunState.WaitingWorkspaceTrust, now.AddMinutes(-11)),
+            Waiting(HarnessRunState.WaitingWorkspaceTrust, now - timeout - TimeSpan.FromMinutes(1)),
             now));
         Assert.False(HarnessRecoveryScanner.IsExpiredWorkspaceTrustWait(
-            Waiting(HarnessRunState.WaitingWorkspaceTrust, now.AddMinutes(-9)),
+            Waiting(HarnessRunState.WaitingWorkspaceTrust, now - timeout + TimeSpan.FromMinutes(1)),
+            now));
+        Assert.False(HarnessRecoveryScanner.IsExpiredWorkspaceTrustWait(
+            Waiting(HarnessRunState.WaitingWorkspaceTrust, now.AddMinutes(-11)),
             now));
 
         // An expired approval is the loop's other expiry. Each predicate must claim only
         // its own wait, or a live trust prompt would be cancelled out from under the user.
+        var pastBoth = now - timeout - RuAgent.Harness.Core.Approval.ApprovalState.DefaultLifetime - TimeSpan.FromMinutes(1);
         Assert.False(HarnessRecoveryScanner.IsExpiredWorkspaceTrustWait(
-            Waiting(HarnessRunState.WaitingApproval, now.AddMinutes(-31)),
+            Waiting(HarnessRunState.WaitingApproval, pastBoth),
             now));
         Assert.False(HarnessRecoveryScanner.IsExpiredApprovalWait(
-            Waiting(HarnessRunState.WaitingWorkspaceTrust, now.AddMinutes(-31)),
+            Waiting(HarnessRunState.WaitingWorkspaceTrust, pastBoth),
             now));
     }
 

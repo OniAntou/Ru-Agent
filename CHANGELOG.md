@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(harness)**: A workspace trust question waits as long as an approval (24 hours) instead of cancelling the run after ten minutes, so a run started just before stepping away waits for the decision. Trust itself is unchanged: it stays an explicit decision bound to the canonical workspace identity.
+
 - **feat(broker)**: Standard no longer asks before a long foreground terminal call. The duration prompt sat at 15 minutes, so an unattended long run parked on its first long test suite while launching the same command in the background (up to 24 hours) needed no answer. The threshold now equals the 30-minute foreground maximum; lowering `TerminalLimits.StandardApprovalThresholdMs` brings the prompt back. An MCP server entry may set `timeout_seconds` up to 1,800 (was 600), the same maximum.
 
 - **feat(harness)**: An unattended long run that stops on a permission request waits a day for the answer instead of failing as `approval_expired` after 30 minutes, and a remembered session approval lasts as long. The Host's durable approval, the Broker's pending approval and the retry ledgers now share one lifetime (`ApprovalLimits`, 24 hours); the answer is still re-evaluated against the run's current policy snapshot and its authorization stays a single-use token of about a minute.

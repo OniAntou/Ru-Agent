@@ -41,7 +41,9 @@ public sealed class HarnessRecoveryScanner(
     Func<CancellationToken, Task<IReadOnlyList<RunId>>>? pendingRunSource = null,
     ILogger? logger = null)
 {
-    private static readonly TimeSpan WorkspaceTrustTimeout = TimeSpan.FromMinutes(10);
+    // The same lifetime as an approval: a run started just before the user stepped away waits
+    // for the trust decision instead of being cancelled after ten minutes.
+    internal static readonly TimeSpan WorkspaceTrustTimeout = RuAgent.Protocol.Harness.ApprovalLimits.PendingApprovalLifetime;
 
     /// <summary>
     /// True when a run waits on an approval that has outlived the approval
@@ -120,7 +122,7 @@ public sealed class HarnessRecoveryScanner(
                 .ConfigureAwait(false);
         }
 
-        // Workspace trust requests expire after ten minutes. If the host died or
+        // Workspace trust requests expire after the approval lifetime. If the host died or
         // the client abandoned the prompt, leaving this row non-terminal would
         // keep the session's unique active-run ownership forever. Trust is a
         // pre-execution gate, so cancelling an expired request cannot roll back

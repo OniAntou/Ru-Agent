@@ -31,7 +31,7 @@ The mode belongs to the session. Whether the repository has uncommitted changes 
 
 Before anything runs in a folder Ru has not seen, it asks you to trust it. In the terminal UI the answer
 defaults to cancel; pressing `Enter` or `Esc` never grants access. Declining cancels the run. A trust
-question left unanswered for ten minutes expires and cancels the run.
+question left unanswered for 24 hours expires and cancels the run.
 
 Trust is tied to the folder's identity. If you move or recreate the folder, Ru asks again.
 

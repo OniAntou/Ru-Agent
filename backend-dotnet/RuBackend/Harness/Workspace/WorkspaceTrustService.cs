@@ -49,7 +49,8 @@ public sealed class WorkspaceTrustService
         var requestId = new TrustRequestId($"trust_{hex}");
 
         var now = DateTimeOffset.UtcNow;
-        var request = new WorkspaceTrustRequest(requestId, identity, now, now.AddMinutes(10));
+        var request = new WorkspaceTrustRequest(requestId, identity, now,
+            now.Add(RuAgent.Harness.Core.Approval.ApprovalState.DefaultLifetime));
 
         var canonicalRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(workspacePath);
         var encrypted = await EncryptCanonicalRootAsync(

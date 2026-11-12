@@ -323,16 +323,17 @@ public sealed class TgAnsiPaintTests
     }
 
     [Fact]
-    public void Decorate_SkipsDatesAndPlainDecimals()
+    public void Decorate_TintsDatesAndPercentagesButLeavesBareIntegersPlain()
     {
         var spans = new List<TgSpan> { new("ngay 19/10/2026 va 2.86% va 30 gio", TgPalette.Attr(TuiToken.Ink)) };
 
-        // Dates and plain decimals carry no comma-grouped thousands, so the pass keeps
-        // the runs exactly as they were — one untouched ink span per source span.
         var decorated = TgAnsiPaint.Decorate("ngay 19/10/2026 va 2.86% va 30 gio", spans);
 
-        Assert.Single(decorated!);
-        Assert.Equal("ngay 19/10/2026 va 2.86% va 30 gio", decorated![0].Text);
+        Assert.NotNull(decorated);
+        Assert.Equal("ngay 19/10/2026 va 2.86% va 30 gio", string.Concat(decorated.Select(span => span.Text)));
+        Assert.Contains(decorated, span => span.Text == "19/10/2026" && span.Attr == TgPalette.Attr(TuiToken.Brand));
+        Assert.Contains(decorated, span => span.Text == "2.86%" && span.Attr == TgPalette.Attr(TuiToken.Brand));
+        Assert.Contains(decorated, span => span.Text.Contains("30 gio", StringComparison.Ordinal) && span.Attr == TgPalette.Attr(TuiToken.Ink));
     }
 
     [Fact]

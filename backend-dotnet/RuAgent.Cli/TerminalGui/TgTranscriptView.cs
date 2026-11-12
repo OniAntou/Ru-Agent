@@ -588,9 +588,9 @@ public sealed partial class TgTranscriptView : View
         {
             var (text, style, spans) = _lines[i];
             if (style == TranscriptStyle.Prose
-                && TuiMarkdownTable.TryRender(rawRows, i, Math.Min(width, 100), out var consumed, out var table))
+                && TuiMarkdownTable.TryRenderPresentation(rawRows, i, Math.Min(width, 100), out var consumed, out var table))
             {
-                _wrapped.AddRange(table.Select(row => new TgTranscriptRow(row, TranscriptStyle.Prose, TgAnsiPaint.Decorate(row, null))));
+                _wrapped.AddRange(table.Select(TgTranscriptWriter.NativeRow));
                 _lastTableStart = i;
                 _lastTableEnd = i + consumed - 1;
                 _lastTableColumns = TuiMarkdownTable.ColumnCount(text);
@@ -829,7 +829,7 @@ public sealed partial class TgTranscriptView : View
         IReadOnlyList<TgSpan>? spans, string bounded, TranscriptStyle style)
     {
         var fitted = spans is { Count: > 0 } ? FitSpansToLength(spans, bounded) : null;
-        if (style == TranscriptStyle.Prose && !bounded.StartsWith(' ') && !bounded.Contains('│'))
+        if (style == TranscriptStyle.Prose && !HasCodeGutter(bounded, fitted))
         {
             // Replacing a preview with its completed line must use the same data-tone
             // projection as appending it. Existing Markdown/code paint stays authoritative.
@@ -837,6 +837,22 @@ public sealed partial class TgTranscriptView : View
         }
 
         return fitted;
+    }
+
+    private static bool HasCodeGutter(string text, IReadOnlyList<TgSpan>? spans)
+    {
+        // Quotes use the same glyph with dim ink. Fenced code owns a Line-colored
+        // gutter (optionally preceded by a line number), so its lexical paint wins.
+        var gutter = text.IndexOf("│ ", StringComparison.Ordinal);
+        if (gutter < 0 || text.AsSpan(0, gutter).IndexOfAnyExcept(" 0123456789") >= 0 || spans is null)
+            return false;
+        var offset = 0;
+        foreach (var span in spans)
+        {
+            offset += span.Text.Length;
+            if (offset > gutter) return span.Attr == TgPalette.Attr(TuiToken.Line);
+        }
+        return false;
     }
 
     private static IReadOnlyList<TgSpan>? FitSpansToLength(IReadOnlyList<TgSpan> spans, string bounded)

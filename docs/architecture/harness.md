@@ -94,6 +94,14 @@ provider continuation data.
 
 ## Agent prompt contract
 
+The shared core contract requests light Markdown in user-facing prose: bold for
+key decisions and important warnings, inline code for commands, paths and identifiers,
+and short phrases rather than whole-paragraph emphasis. Greetings and simple replies
+stay plain. Explicit user formatting and strict output schemas take precedence;
+raw JSON/tool arguments receive no Markdown wrappers. This guidance is receipt-bound
+in the existing persona block for both native and text tool modes and all presets.
+It adds no model round trip and is guidance, not a guarantee of provider output style.
+
 Outstanding-check decisions (ADR 0039) live in `VerificationObligationPolicy`, shared
 by retained evidence and model-facing guidance. `RunVerificationEvidence` keeps
 receipt projection; separate guidance renders bounded per-check scope and actions.

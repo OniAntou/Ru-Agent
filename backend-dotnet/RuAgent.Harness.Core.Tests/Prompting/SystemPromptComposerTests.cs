@@ -7,6 +7,29 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 
 public sealed class SystemPromptComposerTests
 {
+    [Theory]
+    [InlineData("plan")]
+    [InlineData("standard")]
+    [InlineData("full_access")]
+    public void Response_formatting_is_shared_receipt_bound_and_preserves_machine_output(string preset)
+    {
+        var context = PromptFixtures.ValidContext(preset: preset);
+        var snapshot = SystemPromptComposer.Compose(context);
+        var persona = snapshot.Text[..snapshot.Text.IndexOf("\n\n## agent.contract", StringComparison.Ordinal)];
+
+        Assert.Contains("use **bold** for key decisions and important warnings", persona, StringComparison.Ordinal);
+        Assert.Contains("`inline code` for commands, paths and identifiers", persona, StringComparison.Ordinal);
+        Assert.Contains("Emphasize only the relevant phrase, not whole paragraphs", persona, StringComparison.Ordinal);
+        Assert.Contains("Keep greetings and simple replies plain", persona, StringComparison.Ordinal);
+        Assert.Contains("Follow the user's requested format and any strict output schema", persona, StringComparison.Ordinal);
+        Assert.Contains("never add Markdown wrappers to raw JSON or tool arguments", persona, StringComparison.Ordinal);
+        Assert.Contains("Match the user's language", persona, StringComparison.Ordinal);
+        Assert.Equal(1, snapshot.Text.Split("Format user-facing prose with light Markdown:", StringSplitOptions.None).Length - 1);
+        snapshot.Receipt.ValidateAgainst(context, snapshot.Text);
+        Assert.Throws<ArgumentException>(() => snapshot.Receipt.ValidateAgainst(context,
+            snapshot.Text.Replace("key decisions and important warnings", "every paragraph", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public void Capability_listing_keeps_only_the_purpose_sentence_and_no_inline_schema()
     {

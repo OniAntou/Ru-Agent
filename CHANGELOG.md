@@ -322,6 +322,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`Missing required argument executable.`), lời dặn về dấu ngoặc chỉ dành cho giá trị sai
   kiểu; hint vượt giới hạn được cắt ở ranh giới từ kèm `…`. Nội dung `tool_denied` gửi model
   cũng dùng escape JSON gọn.
+=======
+- **feat(prompt)**: Guide concise Markdown emphasis for key decisions and warnings,
+  with inline code for commands/paths and explicit exceptions for strict output formats.
+
+- **feat(tui)**: Highlight percentages, decimal/currency amounts and valid numeric dates.
+  Preserve filenames and explicit Markdown styles without coloring IP/version chains.
+
+- **fix(tui)**: Keep number/file highlighting consistent in prose, lists and quotes.
+  Preserve bold, inline-code and link styles in table cells across wrapping and resize.
+  Recognize JavaScript, TypeScript, JSX, TSX, HTML and CSS filenames, including uppercase extensions.
 
 - **fix(tui)**: Reconnect an open chat to the managed Host after idle shutdown.
   Recheck the queued prompt's provider and model before starting its run.

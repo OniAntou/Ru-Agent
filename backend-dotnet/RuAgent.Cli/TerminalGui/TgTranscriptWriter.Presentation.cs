@@ -6,7 +6,7 @@ namespace RuAgent.Cli.TerminalGui;
 
 public sealed partial class TgTranscriptWriter
 {
-    private static TgTranscriptRow NativeRow(TranscriptLine row)
+    internal static TgTranscriptRow NativeRow(TranscriptLine row)
     {
         var column = row.StartColumn;
         var spans = row.Runs.Select(run =>

@@ -34,7 +34,7 @@ public sealed partial class BrokerExecutionRuntime
                 { AuthorizationToken = token });
         }
 
-        var expires = DateTimeOffset.UtcNow.AddMinutes(30);
+        var expires = DateTimeOffset.UtcNow.Add(RuAgent.Protocol.Harness.ApprovalLimits.PendingApprovalLifetime);
         var binding = new V2ApprovalBinding(runId, "apply_" + intent, SubagentApplyTool, "1.0.0",
             root.CanonicalRoot, null, [], null, PolicyOperationClasses.Mutation, PolicyNetworkIntents.None,
             root.SnapshotVersion, intent, ApprovalKind: "subagent_apply");

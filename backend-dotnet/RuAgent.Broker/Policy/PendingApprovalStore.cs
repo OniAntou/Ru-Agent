@@ -125,7 +125,7 @@ public sealed record V2PendingApproval(
 public sealed class PendingApprovalStore
 {
     /// <summary>
-    /// Forgets approvals whose 30-minute window elapsed without a response, so
+    /// Forgets approvals whose pending lifetime (ApprovalLimits) elapsed without a response, so
     /// an abandoned approval does not keep its binding in memory for the life
     /// of the session.
     /// </summary>

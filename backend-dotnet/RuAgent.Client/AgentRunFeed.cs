@@ -9,6 +9,14 @@ public sealed record AgentRunFeedOptions
     /// <summary>Refill the resume budget whenever the stream delivers a frame.</summary>
     public bool ResetResumeBudgetOnFrame { get; init; }
 
+    /// <summary>
+    /// Refill the resume budget whenever the durable cursor advances. The budget then bounds
+    /// consecutive reconnects that made no progress, not reconnects over the life of the run,
+    /// so a feed that follows a run for hours is not ended by its fourth ordinary reconnect,
+    /// while a stream that keeps replaying the same position still gives up.
+    /// </summary>
+    public bool ResetResumeBudgetOnProgress { get; init; }
+
     /// <summary>Whether raw socket failures count as reconnectable transport failures.</summary>
     public bool IncludeSocketExceptions { get; init; }
 
@@ -90,6 +98,10 @@ public static class AgentRunFeed
                     if (frame.DurableSequence is { } sequence && sequence > cursor)
                     {
                         cursor = sequence;
+                        if (options.ResetResumeBudgetOnProgress)
+                        {
+                            resumes = 0;
+                        }
                     }
 
                     if (options.ResetResumeBudgetOnFrame)

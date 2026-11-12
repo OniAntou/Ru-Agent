@@ -106,7 +106,7 @@ success. Ordinary unsupported success claims after failed tools still receive
 bounded recovery feedback. Approvals and protected paths are unchanged.
 
 Native declarations carry full tool descriptions, schemas and argument examples;
-the system prompt lists only each tool's purpose. Native history holds up to 1,024 messages / 8 MiB, with
+the system prompt lists only each tool's purpose. Native history holds up to 4,096 messages / 32 MiB, with
 128 Ki-character result pages; encoded prompt context has an 8 MiB cap and
 128 KiB references fitted collectively. Broker tool output now has a 4 MiB ceiling; adapter-specific result, time and network bounds still apply. These are memory ceilings; exact
 provider-token preflight and compaction decide how much fits the selected model.
@@ -399,7 +399,7 @@ in-memory window spills into the session spool (1 GiB UTF-8 bytes per call,
 `background=true` returns an execution ID and `state=running` immediately;
 `terminal_read` also reports live state/exit code, and `terminal_stop` stops it.
 Background launches skip the foreground-window approval gate, but retain all
-other policy checks and a bounded lifetime (30-minute default, 2-hour ceiling).
+other policy checks and a bounded lifetime (30-minute default, 24-hour ceiling).
 A foreground command exceeding its approved window moves to the background
 with `moved_to_background` and the same execution ID/lifetime.
 
@@ -538,7 +538,7 @@ cancelled (startup recovery and the running host's drive loop, safe code
 session's active-run ownership indefinitely. The drive loop covers the long-lived
 desktop host, where no restart would otherwise arrive to notice the expired
 challenge. The same rule covers approvals: a run
-still parked in `WaitingApproval` past the 30-minute approval lifetime fails as
+still parked in `WaitingApproval` past the 24-hour approval lifetime (`ApprovalLimits`) fails as
 `approval_expired` (startup recovery and the running host's drive loop), because
 no client can resolve an older approval — the endpoint refuses it as
 `approval_stale`. The gated tool call is pre-dispatch, so failing that run cannot
@@ -956,7 +956,7 @@ approval: protected-path denials (where the preset carries them) still apply,
 the Broker still decides every
 call, external-directory approvals keep the session directory grant (plus the
 durable rule) and write no entry, each
-entry expires after 30 minutes under a per-session cap, and the memory dies
+entry expires after 24 hours (the approval lifetime) under a per-session cap, and the memory dies
 with the session or a host restart. Ordering is
 `consume one-time approval under snapshot N
 → execute already-authorized call under N → persist final receipt → build/bind

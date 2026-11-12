@@ -13,6 +13,12 @@ namespace RuAgent.Harness.Core;
 /// </summary>
 internal sealed partial class AgentRunCompaction
 {
+    /// <summary>
+    /// The history-window fill at which a run compacts even when its token budget does not ask
+    /// for it, leaving room for the steps that follow before the runner would drop history.
+    /// </summary>
+    internal const double HistoryWindowCompactionFill = 0.75;
+
     private readonly IHarnessEventStore _store;
     private readonly AgentContextAssembler _contextAssembler;
     private readonly IIdGenerator _ids;
@@ -246,6 +252,65 @@ internal sealed partial class AgentRunCompaction
                         else break;
                     }
 
+                    // The runner keeps history inside a fixed message/byte window by dropping
+                    // the oldest of it. On a large-context model the token budget never asks for
+                    // compaction, so a long run filled that window and then silently lost its
+                    // start, the original request included. Compact before the window fills: the
+                    // checkpoint keeps what the covered history said.
+                    for (var pass = 0;
+                         pass < 4 && preparedRequest?.Preparation is { HistoryWindowFill: >= HistoryWindowCompactionFill };
+                         pass++)
+                    {
+                        var beforePass = EstimateInputTokens(context, preparedRequest);
+                        var compaction = await CompactSnapshotLockedAsync(
+                                run,
+                                context,
+                                limitTokens,
+                                ContextCompactionStrategy.Normal,
+                                ContextCompactionReason.Automatic,
+                                cancellationToken,
+                                outputReserveAlreadyAccounted: true,
+                                estimatedTokensOverride: beforePass,
+                                forcedTargetTokens: Math.Max(1, beforePass / 2),
+                                replayedTokens: ReplayedTokens(context, preparedRequest),
+                                retainRecentTokensOverride: beforePass / 4,
+                                optional: true)
+                            .ConfigureAwait(false);
+                        if (compaction.Outcome != ContextCompactionOutcome.Committed)
+                        {
+                            // This compaction is optional: the request still fits. Only a lost
+                            // commit race stops the step; a checkpoint the model failed to write
+                            // leaves the run working with the history it has.
+                            if (compaction.Outcome is ContextCompactionOutcome.CommitConflict
+                                or ContextCompactionOutcome.RunNotFound
+                                || compaction.ErrorCode == "commit_conflict")
+                            {
+                                return new ContextPreflightResult(
+                                    compaction.Run ?? run,
+                                    null,
+                                    compaction.ErrorCode ?? "commit_conflict");
+                            }
+
+                            run = compaction.Run ?? run;
+                            break;
+                        }
+
+                        run = compaction.Run!;
+                        context = await _contextAssembler
+                            .AssembleAsync(run.RunId, cancellationToken)
+                            .ConfigureAwait(false);
+                        preparedRequest = prepareStep is null
+                            ? null
+                            : await prepareStep(run, context, cancellationToken).ConfigureAwait(false);
+                        if (preparedRequest?.Preparation is { } windowPreparation
+                            && windowPreparation.MaxPromptTokens != limitTokens)
+                            return new ContextPreflightResult(run, context, "provider_metadata_mismatch");
+                        decision = _contextBudgetPolicy.EvaluateAvailablePromptTokens(
+                            EstimateInputTokens(context, preparedRequest),
+                            limitTokens,
+                            ContextCompactionStrategy.Normal);
+                        if (EstimateInputTokens(context, preparedRequest) >= beforePass) break;
+                    }
                     return EstimateInputTokens(context, preparedRequest) > decision.UsablePromptTokens
                         ? new ContextPreflightResult(run, null, "context_limit_reached")
                         : new ContextPreflightResult(run, context, null, preparedRequest);
@@ -279,7 +344,9 @@ internal sealed partial class AgentRunCompaction
         bool outputReserveAlreadyAccounted = false,
         long? estimatedTokensOverride = null,
         long? forcedTargetTokens = null,
-        long replayedTokens = 0)
+        long replayedTokens = 0,
+        long? retainRecentTokensOverride = null,
+        bool optional = false)
     {
         var startedAt = _time.UtcNow;
         var estimatedTokens = estimatedTokensOverride ?? ModelContextSizeEstimator.EstimateTokens(context);
@@ -296,7 +363,10 @@ internal sealed partial class AgentRunCompaction
             "compact-" + eventId.Value,
             reason,
             estimatedTokensOverride: estimatedTokensOverride,
-            retainRecentTokens: reason == ContextCompactionReason.Automatic ? (long)(decision.UsablePromptTokens * 0.16) : 0,
+            retainRecentTokens: reason != ContextCompactionReason.Automatic ? 0
+                : retainRecentTokensOverride is { } retain
+                    ? Math.Min(retain, (long)(decision.UsablePromptTokens * 0.16))
+                    : (long)(decision.UsablePromptTokens * 0.16),
             maximumCoveredTokens: budget,
             replayedTokens: replayedTokens);
         var plan = PlanAt(coveredBudget);
@@ -312,7 +382,7 @@ internal sealed partial class AgentRunCompaction
             var callsLeft = 4;
             for (var inputAttempt = 0; ; inputAttempt++)
             {
-                var checkpoint = await BuildCheckpointAsync(run, plan, cancellationToken, Math.Min(2, callsLeft)).ConfigureAwait(false);
+                var checkpoint = await BuildCheckpointAsync(run, plan, cancellationToken, Math.Min(2, callsLeft), optional).ConfigureAwait(false);
                 run = checkpoint.Run;
                 // Count admissions, not a counter delta: an automatic budget window
                 // resets ModelStepsInWindow, and subtracting that reset would hand

@@ -15,9 +15,18 @@ internal sealed partial class AgentRunCompaction
     private readonly Subagents.IAgentFamilyBudget? _familyBudget;
     private readonly bool _internalRun;
 
+    /// <param name="optional">
+    /// The compaction is not needed for the next request to fit (the history-window trigger):
+    /// a failed checkpoint is then reported without parking or failing the run, so the run
+    /// keeps working with the history it has.
+    /// </param>
     private async Task<(AgentRun Run, ContextCompactionPlan? Plan, string? ErrorCode, int AdmittedCalls)> BuildCheckpointAsync(
-        AgentRun run, ContextCompactionPlan plan, CancellationToken ct, int maximumCalls = MaximumCheckpointCalls)
+        AgentRun run, ContextCompactionPlan plan, CancellationToken ct, int maximumCalls = MaximumCheckpointCalls,
+        bool optional = false)
     {
+        async Task<(AgentRun Run, ContextCompactionPlan? Plan, string? ErrorCode)> PauseOrReportAsync(AgentRun current, string code) =>
+            optional ? (current, null, code) : await PauseOrFailCheckpointAsync(current, code, ct).ConfigureAwait(false);
+
         var entries = plan.CoveredEntries.ToArray();
         var snapshot = new ModelContextSnapshot(entries, ModelContextSnapshot.Canonicalize(entries),
             verificationEvidence: plan.VerificationEvidence);
@@ -32,7 +41,7 @@ internal sealed partial class AgentRunCompaction
             {
                 if (admitted.ErrorCode == "commit_conflict")
                     return (run, null, admitted.ErrorCode, admittedCalls);
-                var paused = await PauseOrFailCheckpointAsync(run, admitted.ErrorCode, ct).ConfigureAwait(false);
+                var paused = await PauseOrReportAsync(run, admitted.ErrorCode).ConfigureAwait(false);
                 return (paused.Run, paused.Plan, paused.ErrorCode, admittedCalls);
             }
 
@@ -71,7 +80,7 @@ internal sealed partial class AgentRunCompaction
                     }
                     if (result.ErrorCode is "checkpoint_timeout" or "checkpoint_provider_transient")
                     {
-                        var paused = await PauseOrFailCheckpointAsync(run, result.ErrorCode, ct).ConfigureAwait(false);
+                        var paused = await PauseOrReportAsync(run, result.ErrorCode).ConfigureAwait(false);
                         return (paused.Run, paused.Plan, paused.ErrorCode, admittedCalls);
                     }
                     return (run, null, result.ErrorCode, admittedCalls);
@@ -93,11 +102,19 @@ internal sealed partial class AgentRunCompaction
                 var coveredTokens = ModelContextSizeEstimator.EstimateTokens(snapshot);
                 var summaryTokens = (Encoding.UTF8.GetByteCount(frame) + 3L) / 4;
                 if (summaryTokens >= coveredTokens) return (run, null, "checkpoint_not_smaller", admittedCalls);
-                return (run, plan with { SummaryText = frame, ProjectedEntries = projected, AfterTokens = after }, null, admittedCalls);
+                // The plan reports in the caller's measure, which may be below the entries' own
+                // estimate: carry the checkpoint's change over the plan's figure instead of
+                // replacing it with an entry estimate that could exceed BeforeTokens.
+                var plannedEntries = plan.ProjectedEntries.ToArray();
+                var plannedEntriesAfter = ModelContextSizeEstimator.EstimateTokens(new ModelContextSnapshot(
+                    plannedEntries, ModelContextSnapshot.Canonicalize(plannedEntries),
+                    verificationEvidence: plan.VerificationEvidence));
+                var reportedAfter = Math.Clamp(plan.AfterTokens + (after - plannedEntriesAfter), 0, plan.BeforeTokens);
+                return (run, plan with { SummaryText = frame, ProjectedEntries = projected, AfterTokens = Math.Min(after, reportedAfter) }, null, admittedCalls);
             }
             catch (ContextCheckpointException error) when (error.Code is "checkpoint_timeout" or "checkpoint_provider_transient")
             {
-                var paused = await PauseOrFailCheckpointAsync(run, error.Code, ct).ConfigureAwait(false);
+                var paused = await PauseOrReportAsync(run, error.Code).ConfigureAwait(false);
                 return (paused.Run, paused.Plan, paused.ErrorCode, admittedCalls);
             }
             catch (ContextCheckpointException error) { return (run, null, error.Code, admittedCalls); }

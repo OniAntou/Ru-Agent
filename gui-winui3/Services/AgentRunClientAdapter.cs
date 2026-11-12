@@ -153,6 +153,9 @@ public sealed partial class AgentRunClientAdapter : IAgentRunClient, IDisposable
                 new AgentRunFeedOptions
                 {
                     IncludeSocketExceptions = true,
+                    // A long run reconnects many times over its life; only reconnects that
+                    // made no progress count against the budget.
+                    ResetResumeBudgetOnProgress = true,
                     TransportFailureFactory = (failure, _) => new AgentApiException(
                         "stream_interrupted",
                         $"event stream broke: {failure.Message}",

@@ -140,9 +140,17 @@ public static partial class ContextCompactionPlanner
         }
 
         var covered = entries.Where(coveredSet.Contains).ToArray();
-        return BuildPlan(snapshot, decision, compactionId, reason, covered, maxSummaryChars, beforeTokens);
+        return BuildPlan(snapshot, decision, compactionId, reason, covered, maxSummaryChars, beforeTokens,
+            ModelContextSizeEstimator.EstimateTokens(snapshot));
     }
 
+    /// <param name="beforeTokens">The caller's figure for the request before compaction, reported on the plan.</param>
+    /// <param name="entriesBeforeTokens">
+    /// The same estimator's figure for the entries before compaction. The shrink check compares like
+    /// with like: the caller's figure is a calibrated request estimate, often smaller than the
+    /// entries' own, and comparing the projected entries against it refused every compaction of a
+    /// long run whose request estimate was lower than its entry estimate.
+    /// </param>
     private static ContextCompactionPlan? BuildPlan(
         ModelContextSnapshot snapshot,
         ContextBudgetDecision decision,
@@ -150,7 +158,8 @@ public static partial class ContextCompactionPlanner
         ContextCompactionReason reason,
         IReadOnlyList<ModelContextEntry> covered,
         int maxSummaryChars,
-        long beforeTokens)
+        long beforeTokens,
+        long entriesBeforeTokens)
     {
         var coveredSet = covered.ToHashSet();
         var ranges = BuildRanges(covered);
@@ -203,10 +212,15 @@ public static partial class ContextCompactionPlanner
             projected,
             ModelContextSnapshot.Canonicalize(projected));
         var afterTokens = ModelContextSizeEstimator.EstimateTokens(projectedSnapshot);
-        if (afterTokens >= beforeTokens)
+        if (afterTokens >= entriesBeforeTokens)
         {
             return null;
         }
+
+        // The plan reports after in the caller's measure when that is the smaller one: a
+        // request estimate below the entry estimate would otherwise record an "after" larger
+        // than its "before", which a compaction intent rightly refuses.
+        afterTokens = Math.Min(afterTokens, Math.Max(0, beforeTokens - (entriesBeforeTokens - afterTokens)));
 
         return new ContextCompactionPlan(
             compactionId,

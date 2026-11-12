@@ -38,8 +38,15 @@ internal static class BrokerGatewayContracts
         Encoding.UTF8.GetBytes(content.ToJsonString(ModelContentJson));
 
 
-    /// <summary>The run lease lifetime every gateway-issued lease carries.</summary>
-    internal static readonly TimeSpan LeaseLifetime = TimeSpan.FromMinutes(60);
+    /// <summary>
+    /// The expiry every gateway-issued run lease carries. A run lease used to expire
+    /// 60 minutes after it opened, and a reused same-scope gateway kept that lease, so
+    /// every tool call of a run that worked longer than an hour failed with
+    /// lease_expired. In-process the lease is bounded the same way as the Broker
+    /// session (InProcessExecutionAuthority): by the Host process and by explicit
+    /// release, since run teardown, session close and Host disposal all close it.
+    /// </summary>
+    internal static readonly DateTimeOffset LeaseExpiresAt = DateTimeOffset.MaxValue;
 
     /// <summary>
     /// The access class of a tool call. It is the same classification the hook gateway uses, so the
@@ -254,10 +261,7 @@ internal static class BrokerGatewayContracts
             ["preset"] = wire.Preset,
             ["snapshot_version"] = wire.Version,
             ["snapshot_hash"] = policySnapshot.Sha256,
-            ["expires_at"] = DateTimeOffset
-                .UtcNow
-                .Add(LeaseLifetime)
-                .ToString("O", CultureInfo.InvariantCulture),
+            ["expires_at"] = LeaseExpiresAt.ToString("O", CultureInfo.InvariantCulture),
             ["snapshot"] = BrokerPolicyContracts.WriteSnapshot(wire),
         };
     }

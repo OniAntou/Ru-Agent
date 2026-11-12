@@ -201,10 +201,16 @@ public sealed class HarnessRecoveryScannerTests
         try
         {
             var run = await SeedApprovalBatchAsync(fixture);
+            // An hour is no longer past the lifetime: the retained approval still rehydrates.
+            Assert.NotNull(await new RetainedApprovalRehydrator(
+                    fixture.EventStore,
+                    fixture.PayloadStore,
+                    new FixedTime(Timestamp.AddHours(1)))
+                .RehydrateAsync(run.RunId, CancellationToken.None));
             var rehydrator = new RetainedApprovalRehydrator(
                 fixture.EventStore,
                 fixture.PayloadStore,
-                new FixedTime(Timestamp.AddHours(1)));
+                new FixedTime(Timestamp + RuAgent.Harness.Core.Approval.ApprovalState.DefaultLifetime + TimeSpan.FromHours(1)));
 
             var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
                 rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
@@ -1345,7 +1351,14 @@ public sealed class HarnessRecoveryScannerTests
                 "run_55555555555555555555555555555555");
             tracked.Add(run.RunId);
 
-            var summaries = await ScanAsync(fixture, tracked, Timestamp.AddMinutes(31));
+            // Still parked, not failed, well past the half hour the approval lifetime used to be.
+            Assert.DoesNotContain(await ScanAsync(fixture, tracked, Timestamp.AddMinutes(31)),
+                early => early.Action == "failed_approval_expired");
+            var parked = await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.WaitingApproval, parked!.State);
+
+            var summaries = await ScanAsync(fixture, tracked,
+                Timestamp + RuAgent.Harness.Core.Approval.ApprovalState.DefaultLifetime + TimeSpan.FromMinutes(1));
 
             var summary = Assert.Single(summaries);
             Assert.Equal(run.RunId, summary.RunId);

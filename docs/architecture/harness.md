@@ -195,7 +195,7 @@ references (128 KiB each), and an 8 MiB serialized-context
 cap. The Host budgets the encoded JSON aggregate, including mandatory policy,
 instructions and capability schemas; older references are omitted with a notice
 instead of failing before automatic compaction. Native history retains up to
-1,024 messages and 8 MiB, with 128 Ki-character tool pages and a 64 MiB total
+4,096 messages and 32 MiB, with 128 Ki-character tool pages and a 64 MiB total
 request memory ceiling. Exact provider-request token preflight and automatic
 compaction still enforce the pinned model context window. Existing instruction
 files skipped for invalid encoding, size or containment are reported by safe
@@ -211,7 +211,7 @@ An old writer cannot reserve or refund bytes against a reopened session, or
 publish removed output. Generation-specific directories isolate cleanup from
 new writers; a still-open old spill is cleaned after its writer closes, or at
 the next Broker start. A live background task can defer that cleanup until its
-bounded lifetime ends (at most two hours). Physical writes serialize within their own generation,
+bounded lifetime ends (at most 24 hours). Physical writes serialize within their own generation,
 while the global gate protects only accounting and retained metadata.
 Projection clipping never rewrites the receipt; bounded history may still omit
 older exchanges.
@@ -611,7 +611,7 @@ UTF-8 byte boundaries, web cursors are UTF-16 boundaries outside surrogate
 pairs, and a window too small to advance returns a named failure. Missing
 source identity fails closed when clipping needs a
 cursor. The bounded prompt may still omit older output exchanges. Native history is
-limited to 1,024 messages / 8 MiB and tool pages to 128 Ki characters; exact
+limited to 4,096 messages / 32 MiB and tool pages to 128 Ki characters; exact
 provider-token preflight remains authoritative. Runtime references are at most
 128 KiB each and are collectively fitted to the 8 MiB serialized context cap;
 outputs already present in retained native history are not duplicated in the

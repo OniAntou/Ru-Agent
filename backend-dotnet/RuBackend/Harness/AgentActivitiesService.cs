@@ -32,7 +32,12 @@ public sealed class AgentActivitiesService
         _metadataPolicy = metadataPolicy ?? throw new ArgumentNullException(nameof(metadataPolicy));
     }
 
-    private const int MaxReplayedActivities = 200;
+    /// <summary>
+    /// How many activity rows one replay carries. A long run has far more; the replay keeps the
+    /// newest ones, because a reopened long run used to show only its first 200 rows and none
+    /// of what it was doing when the user came back.
+    /// </summary>
+    internal const int MaxReplayedActivities = 500;
 
     /// <summary>
     /// How many narration chunks a replayed transcript may carry. Past this the
@@ -262,7 +267,7 @@ public sealed class AgentActivitiesService
         }
 
         var wires = new List<JsonElement>();
-        var cappedRows = rows.OrderBy(item => item.Sequence).Take(MaxReplayedActivities).ToList();
+        var cappedRows = rows.OrderBy(item => item.Sequence).TakeLast(MaxReplayedActivities).ToList();
         foreach (var row in cappedRows)
         {
             JsonElement wire;

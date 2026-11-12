@@ -13,6 +13,29 @@ namespace RuBackend.Tests.Harness;
 public sealed class BrokerGatewayContractsTests
 {
     [Fact]
+    public void A_run_lease_does_not_expire_while_the_run_works()
+    {
+        // The lease used to expire an hour after it opened, and a reused gateway kept it, so
+        // every tool call of a run that worked longer than that failed with lease_expired.
+        var snapshot = RuAgent.Harness.Core.Policy.PolicySnapshotCanonicalizer.Create(
+            1,
+            RuAgent.Protocol.Harness.AgentPermissionPreset.Standard,
+            new RuAgent.Harness.Core.Workspace.WorkspaceIdentity(
+                new WorkspaceId("ws_" + new string('3', 32)), "VOL-LEASE", "fid-lease", new string('c', 64)),
+            [],
+            new DateTimeOffset(2026, 11, 12, 0, 0, 0, TimeSpan.Zero));
+
+        var payload = global::RuBackend.Harness.Broker.BrokerGatewayContracts.BuildRunOpenPayload(
+            "session-lease", "run_" + new string('e', 32), Path.GetTempPath(), snapshot);
+
+        var expiresAt = DateTimeOffset.Parse(
+            payload["expires_at"]!.GetValue<string>(),
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind);
+        Assert.Equal(DateTimeOffset.MaxValue, expiresAt);
+    }
+
+    [Fact]
     public void Failed_terminal_receipt_preserves_bounded_compiler_diagnostics()
     {
         var execution = new PreparedToolExecution(new ExecutionId("exec_" + new string('5', 32)),

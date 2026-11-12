@@ -227,15 +227,20 @@ public sealed partial class InProcessModelStepRunnerTests
         Assert.Equal("provider_rate_limited", error.Code);
         Assert.Equal("provider_rate_limited", error.StepErrorCode);
         Assert.True(error.Retryable);
-        Assert.Equal(5, provider.Calls);
+        Assert.Equal(10, provider.Calls);
     }
 
     [Fact]
-    public void Default_retry_backoffs_escalate_to_the_five_attempt_budget()
+    public void Default_retry_backoffs_escalate_to_the_ten_attempt_budget()
     {
+        // About twelve minutes of waiting before the step parks for Continue, so an unattended
+        // long run rides out a short provider outage instead of stopping on it.
         Assert.Equal(
-            [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)],
+            [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20),
+             TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(120), TimeSpan.FromSeconds(180),
+             TimeSpan.FromSeconds(300)],
             InProcessModelStepRunner.DefaultStepRetryBackoffs);
+        Assert.Equal(10, InProcessModelStepRunner.DefaultStepRetryBackoffs.Count + 1);
     }
 
     [Fact]
@@ -263,14 +268,15 @@ public sealed partial class InProcessModelStepRunnerTests
     [Fact]
     public async Task Long_server_delay_parks_without_an_early_automatic_second_attempt()
     {
+        // Beyond the five-minute automatic wait budget the hint is kept and the step parks.
         var provider = new ScriptedProvider((_, _) => Throws(new ModelProviderException(
-            "rate_limited", true, retryAfter: TimeSpan.FromSeconds(120))));
+            "rate_limited", true, retryAfter: TimeSpan.FromMinutes(10))));
         var error = await Assert.ThrowsAsync<ModelRunnerProtocolException>(() =>
             Runner(provider).RunStepAsync(Request(), _ => ValueTask.CompletedTask, default));
         Assert.Equal("provider_rate_limited", error.Code);
         Assert.True(error.Retryable);
         Assert.Equal(1, provider.Calls);
-        Assert.Equal(TimeSpan.FromSeconds(120), Assert.IsType<ModelStepException>(error.InnerException).RetryAfter);
+        Assert.Equal(TimeSpan.FromMinutes(10), Assert.IsType<ModelStepException>(error.InnerException).RetryAfter);
     }
 
     [Fact]

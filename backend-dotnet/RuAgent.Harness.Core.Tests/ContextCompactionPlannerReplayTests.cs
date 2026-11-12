@@ -104,6 +104,31 @@ public sealed class ContextCompactionPlannerReplayTests
     }
 
     [Fact]
+    public void A_request_estimate_below_the_entry_estimate_still_allows_a_shrinking_plan()
+    {
+        // A calibrated request estimate can be smaller than the entries' own estimate. The
+        // shrink check compared the projected entries against that request figure, so on a
+        // long run of small steps every compaction was refused and history was later dropped
+        // without a checkpoint.
+        var snapshot = History();
+        var entryTokens = ModelContextSizeEstimator.EstimateTokens(snapshot);
+        var request = entryTokens / 2;
+        var decision = new ContextBudgetDecision(request, entryTokens * 4, entryTokens * 2, entryTokens * 2,
+            request / 2, true, ContextCompactionStrategy.Normal);
+
+        var plan = ContextCompactionPlanner.Plan(
+            snapshot, decision, "compact-window", ContextCompactionReason.Automatic,
+            estimatedTokensOverride: request,
+            retainRecentTokens: request / 4);
+
+        Assert.NotNull(plan);
+        Assert.True(plan!.AfterTokens < entryTokens);
+        // A compaction intent refuses an "after" above its "before": both stay in one measure.
+        Assert.InRange(plan.AfterTokens, 0, plan.BeforeTokens - 1);
+        Assert.DoesNotContain(plan.CoveredEntries, entry => entry.SourceId == "current");
+    }
+
+    [Fact]
     public void More_replayed_reasoning_never_covers_fewer_steps()
     {
         var snapshot = History();

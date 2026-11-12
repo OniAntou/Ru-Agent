@@ -285,6 +285,11 @@ Definition: [RuAgentBroker](../../CONTEXT.md) (glossary).
 It no longer runs as a child process: the Host composes
 `BrokerExecutionRuntime` behind `IToolGatewayFactory` (ADR-0014).
 
+In-process, neither the Broker session nor a run lease expires on a clock: both are
+bounded by the Host process and by explicit release (run teardown closes the lease,
+session close and Host disposal close the rest). A finite lease lifetime used to deny
+every tool call of a run that worked for more than an hour.
+
 ## Execution Authority
 
 Definition: [Execution Authority](../../CONTEXT.md) (glossary).
@@ -530,7 +535,7 @@ materializes its entries as run-scope allow rules on top of each run's durable
 `PolicySnapshot`, so a later matching call evaluates as allowed
 without a new prompt; protected-path denials and Broker evaluation still decide
 every call. It creates no durable rule, never outlives its session or a host
-restart, is bounded by a 30-minute entry lifetime and a per-session cap, and is
+restart, is bounded by a 24-hour entry lifetime (the approval lifetime) and a per-session cap, and is
 cleared when the session is deleted. External-directory approvals keep the
 Broker session directory grant (plus the durable project rule when
 `allow_always` saved one) and write no entry. The fields the exact intent binds depend on the tool

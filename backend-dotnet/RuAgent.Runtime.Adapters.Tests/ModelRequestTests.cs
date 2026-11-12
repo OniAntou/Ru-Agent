@@ -111,14 +111,16 @@ public sealed class ModelRequestTests
     [InlineData(1, false)]
     public void ModelRequest_enforces_exact_history_byte_boundary(int extra, bool accepted)
     {
-        var placeholders = Enumerable.Range(0, 10).Select(_ => new ModelTurn("user", "x")).ToArray();
+        // Enough turns that each stays under the per-turn content cap at any history budget.
+        const int count = 64;
+        var placeholders = Enumerable.Range(0, count).Select(_ => new ModelTurn("user", "x")).ToArray();
         var remaining = ModelInputLimits.MaxHistoryBytes - (int)ModelRequest.MeasureModelMessagesBytes(placeholders) + extra;
         var turns = placeholders.Select((_, index) => new ModelTurn("user",
-            new string('x', 1 + remaining / 10 + (index < remaining % 10 ? 1 : 0)))).ToArray();
+            new string('x', 1 + remaining / count + (index < remaining % count ? 1 : 0)))).ToArray();
         Assert.Equal(ModelInputLimits.MaxHistoryBytes + extra, ModelRequest.MeasureModelMessagesBytes(turns));
         ModelRequest Construct() => new("test-model", "sys", "hi", turns, new JsonObject(),
             new Uri("https://provider.invalid/v1"), "synthetic");
-        if (accepted) Assert.Equal(10, Construct().Turns.Count);
+        if (accepted) Assert.Equal(count, Construct().Turns.Count);
         else Assert.Throws<ArgumentException>(Construct);
     }
 
@@ -161,7 +163,7 @@ public sealed class ModelRequestTests
     [Fact]
     public void ModelRequest_rejects_history_larger_than_memory_ceiling()
     {
-        var turns = Enumerable.Range(0, 90)
+        var turns = Enumerable.Range(0, ModelInputLimits.MaxHistoryBytes / 100_000 + 2)
             .Select(_ => new ModelTurn("user", new string('x', 100_000)))
             .ToArray();
 

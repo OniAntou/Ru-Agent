@@ -42,7 +42,9 @@ public sealed partial class HeadlessCodingLoopTests
         }, default);
         var credentials = new EphemeralTestCredentialStore();
         await credentials.SetAsync("Ru", "custom_api_key", "synthetic-test-key", default);
-        var provider = new SoakProviderHandler(steps, reasoningKb * 1024);
+        var mixed = Environment.GetEnvironmentVariable("RU_SOAK_MIX") == "1";
+        if (mixed) Directory.CreateDirectory(System.IO.Path.Combine(workspace.Path, "out"));
+        var provider = new SoakProviderHandler(steps, reasoningKb * 1024, mixed);
 
         using var factory = new BackendWebApplicationFactory(
             dataPaths: workspace.DataPaths, credentialStore: credentials, settingsStore: settings, providerHandler: provider,
@@ -51,9 +53,10 @@ public sealed partial class HeadlessCodingLoopTests
         using var client = factory.CreateAuthenticatedClient();
         var clock = System.Diagnostics.Stopwatch.StartNew();
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
+        var minutes = int.TryParse(Environment.GetEnvironmentVariable("RU_SOAK_MINUTES"), out var m) && m > 0 ? m : 8;
         var finished = await WaitForStatusAsync(client, runId,
             new HashSet<string>(StringComparer.Ordinal) { "completed", "failed", "waiting_approval", "cancelled" },
-            TimeSpan.FromMinutes(8));
+            TimeSpan.FromMinutes(minutes));
         clock.Stop();
 
         var status = await GetStatusAsync(client, runId);
@@ -83,6 +86,38 @@ public sealed partial class HeadlessCodingLoopTests
             Console.WriteLine($"SOAK checkpointRequests={provider.Samples.Count(s => s.IsCheckpoint)}");
             Console.WriteLine($"SOAK last request#{provider.Samples.Count - 1} messages={last.Messages} bodyKb={last.BodyBytes / 1024} reasoningKbInRequest={last.ReplayedReasoningBytes / 1024}");
         }
+
+        // RU_SOAK_ASSERT=1 turns the probe into a gate: the run must finish, and no request may
+        // reach the runner's history window, where the oldest history is dropped without a
+        // checkpoint (the original request with it).
+        if (Environment.GetEnvironmentVariable("RU_SOAK_ASSERT") == "1")
+        {
+            Assert.Equal("completed", status);
+            var windowLimit = RuAgent.Runtime.Model.ModelGenerationBounds.MaxModelMessages;
+            Assert.All(provider.Samples, sample => Assert.True(sample.Messages < windowLimit,
+                $"a request carried {sample.Messages} messages, at the {windowLimit}-message window"));
+
+            // A reopened long run shows what it was doing last, not only its first rows.
+            var replay = await client.GetFromJsonAsync<JsonElement>($"/agent/v1/runs/{runId}/activities");
+            var replayed = replay.GetProperty("activities").EnumerateArray()
+                .Select(row => row.TryGetProperty("durable_sequence", out var sequence) && sequence.ValueKind == JsonValueKind.Number
+                    ? sequence.GetInt64() : 0L)
+                .ToArray();
+            var lastToolSequence = events.Last(e => Kind(e) == "tool.execution_completed").GetProperty("sequence").GetInt64();
+            Assert.Contains(replayed, sequence => sequence >= lastToolSequence - 8);
+
+            // Mixed mode: every write landed, and every tool call (writes and terminal
+            // launches included) completed rather than failing or asking.
+            if (mixed)
+            {
+                var writes = Enumerable.Range(0, steps).Count(step => step % 3 == 1);
+                Assert.Equal(writes, Directory.GetFiles(System.IO.Path.Combine(workspace.Path, "out"), "out-*.txt").Length);
+                Assert.DoesNotContain(events, e => Kind(e) is "approval.requested" or "tool.execution_failed");
+                var completed = events.Where(e => Kind(e) == "tool.execution_completed").ToArray();
+                Assert.Equal(steps, completed.Length);
+                Assert.All(completed, e => Assert.Equal("ok", e.GetProperty("safe_summary").GetString()));
+            }
+        }
     }
 
     /// <summary>The model catalog: the one model, with the real DeepSeek context window.</summary>
@@ -97,7 +132,7 @@ public sealed partial class HeadlessCodingLoopTests
 
     private sealed record SoakSample(int Messages, long BodyBytes, long ReplayedReasoningBytes, bool HasTools, bool IsCheckpoint);
 
-    private sealed class SoakProviderHandler(int steps, int reasoningBytes) : HttpMessageHandler
+    private sealed class SoakProviderHandler(int steps, int reasoningBytes, bool mixed = false) : HttpMessageHandler
     {
         private readonly object _gate = new();
         private readonly List<SoakSample> _samples = new();
@@ -175,6 +210,7 @@ public sealed partial class HeadlessCodingLoopTests
                     reasoningSse.Append(Chunk(reasoningChunk.ToJsonString()));
                 }
 
+                var (toolName, toolArguments) = SoakCall(step, mixed);
                 var toolChunk = new JsonObject { ["choices"] = new JsonArray(new JsonObject
                 {
                     ["delta"] = new JsonObject
@@ -186,8 +222,8 @@ public sealed partial class HeadlessCodingLoopTests
                             ["type"] = "function",
                             ["function"] = new JsonObject
                             {
-                                ["name"] = "read",
-                                ["arguments"] = JsonSerializer.Serialize(new { path = $"soak-{step}.txt" }),
+                                ["name"] = toolName,
+                                ["arguments"] = toolArguments,
                             },
                         }),
                     },
@@ -208,5 +244,23 @@ public sealed partial class HeadlessCodingLoopTests
         }
 
         private static string Chunk(string json) => "data: " + json + "\n\n";
+
+        /// <summary>
+        /// The tool call of one soak step. Mixed mode (RU_SOAK_MIX=1) rotates a read, a file
+        /// write and a PowerShell command, so a long run also exercises mutations, the file
+        /// journal and terminal launches, not only reads.
+        /// </summary>
+        internal static (string Name, string Arguments) SoakCall(int step, bool mixed) => !mixed
+            ? ("read", JsonSerializer.Serialize(new { path = $"soak-{step}.txt" }))
+            : (step % 3) switch
+            {
+                0 => ("read", JsonSerializer.Serialize(new { path = $"soak-{step}.txt" })),
+                1 => ("write_file", JsonSerializer.Serialize(new { path = $"out/out-{step}.txt", content = $"step {step} wrote this\n" })),
+                _ => ("powershell", JsonSerializer.Serialize(new
+                {
+                    script = $"(Get-Content -LiteralPath 'out/out-{step - 1}.txt').Length",
+                    purpose = "inspection",
+                })),
+            };
     }
 }

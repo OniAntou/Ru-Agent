@@ -150,7 +150,7 @@ public sealed record ApprovalResolution(
 /// </summary>
 public static class ApprovalState
 {
-    public const int DefaultExpiryMinutes = 30;
+    public const int DefaultExpiryMinutes = RuAgent.Protocol.Harness.ApprovalLimits.PendingApprovalLifetimeMinutes;
 
     /// <summary>
     /// The lifetime a durable approval is bound to. A resolution that arrives after

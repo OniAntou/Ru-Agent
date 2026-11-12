@@ -117,13 +117,16 @@ public sealed partial class HeadlessCodingLoopTests
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths,
             credentialStore: credentials, settingsStore: settings, providerHandler: provider);
         using var client = factory.CreateAuthenticatedClient();
+        // Every retryable attempt runs; the production backoff (minutes) is not what this tests.
+        factory.Services.GetRequiredService<RuBackend.Harness.ModelRunner.InProcessModelStepRunner>()
+            .StepRetryBackoffsOverride = [TimeSpan.Zero];
 
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
         Assert.True(await WaitForStatusAsync(client, runId,
             new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(90)));
 
         Assert.Equal("failed", await GetStatusAsync(client, runId));
-        Assert.Equal(5, provider.RequestCount);
+        Assert.Equal(RuBackend.Harness.ModelRunner.ProviderRetryPolicy.MaximumAttempts, provider.RequestCount);
         Assert.All(provider.Requests, call =>
         {
             Assert.Equal("claude-fable-5", call.Model);

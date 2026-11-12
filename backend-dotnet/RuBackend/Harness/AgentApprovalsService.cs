@@ -57,7 +57,7 @@ public sealed class AgentApprovalsService
     // Static: the ledger guards concurrent HTTP races across all service instances
     // in this process, and tests clear it via ClearHostApprovalsForTests.
     private static readonly ConcurrentDictionary<string, DateTimeOffset> HostApprovalLedger = new(StringComparer.Ordinal);
-    private static readonly TimeSpan HostApprovalLedgerTtl = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan HostApprovalLedgerTtl = ApprovalState.DefaultLifetime;
 
     internal static void ClearHostApprovalsForTests() => HostApprovalLedger.Clear();
 

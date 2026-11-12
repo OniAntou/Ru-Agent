@@ -34,6 +34,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Context management and checkpoints](architecture/context-management.md)
 - [Database history, backup and maintenance](operations/database-maintenance.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
+- [Long runs and their ceilings](operations/long-runs.md)
 - [Agent performance diagnostics and offline benchmark](operations/agent-performance.md)
 - [The stdio RPC bridge](operations/rpc.md)
 - [TypeScript SDK for the bridge](../sdk/ru-agent/README.md)

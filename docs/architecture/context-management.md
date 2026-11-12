@@ -165,6 +165,17 @@ It never lowers an estimate. Without it a tokenizer that bytes/4 undercounts (De
 by about 25% on a long coding run) pushed the 80% compaction trigger to about the full
 window, so the provider rejected the request before Ru compacted.
 
+The token trigger is not the only one. The runner fits history into a fixed window of
+4,096 messages and 32 MiB by dropping the oldest of it, and on a large-context model the
+token budget may never ask for compaction before that window fills. Preflight therefore
+also compacts when the prepared request's history window is three quarters full
+(`HistoryWindowFill`), aiming at half the current estimate and keeping a smaller recent
+tail, so a long run's start reaches a checkpoint instead of being dropped unsummarized.
+The fill measures whichever history the request sends (a native Anthropic or Responses
+history carries the replayed reasoning). Because the request still fits, this compaction
+is optional: a checkpoint that fails, times out or hits a transient provider error leaves
+the run working with its current history instead of parking or failing it.
+
 ## Nested workspace instructions
 
 The fixed root/user instruction sources remain system-prompt blocks. Successful

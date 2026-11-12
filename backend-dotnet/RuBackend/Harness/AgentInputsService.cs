@@ -36,7 +36,7 @@ public sealed class AgentInputsService
     // run state remain authoritative. Expire old entries so a host that answers
     // many requests cannot retain an unbounded amount of memory until restart.
     private static readonly ConcurrentDictionary<string, DateTimeOffset> HostInputLedger = new(StringComparer.Ordinal);
-    private static readonly TimeSpan HostInputLedgerTtl = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan HostInputLedgerTtl = RuAgent.Protocol.Harness.ApprovalLimits.PendingApprovalLifetime;
 
     internal static void ClearHostInputsForTests() => HostInputLedger.Clear();
 

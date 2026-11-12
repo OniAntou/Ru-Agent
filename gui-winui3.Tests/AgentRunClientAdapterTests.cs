@@ -187,6 +187,38 @@ public sealed partial class AgentRunClientAdapterTests
         Assert.Equal("stream_interrupted", error.ErrorCode);
     }
 
+    [Fact]
+    public async Task SubscribeEvents_keeps_following_a_long_run_across_many_reconnects_that_make_progress()
+    {
+        // A long run outlives many streams. Each one ends cleanly after delivering new events;
+        // the feed must keep following instead of giving up on its fourth ordinary reconnect.
+        const int streams = 8;
+        var handler = new FakeHttpHandler();
+        var eventsCalls = 0;
+        handler.Responder = request =>
+        {
+            if (request.RequestUri!.ToString().Contains("/events", StringComparison.Ordinal))
+            {
+                eventsCalls++;
+                return SseResponse(DurableSseFrame(eventsCalls, "step " + eventsCalls));
+            }
+
+            return RunStatusResponse(eventsCalls < streams ? "running" : "completed");
+        };
+        using var http = new HttpClient(handler);
+        var adapter = new AgentRunClientAdapter(MakeSession(), http);
+
+        var received = new List<AgentEventModel>();
+        await adapter.SubscribeEventsAsync(RunId, 0, m =>
+        {
+            received.Add(m);
+            return Task.CompletedTask;
+        });
+
+        Assert.Equal(streams, received.Count);
+        Assert.Equal(Enumerable.Range(1, streams).Select(i => (long?)i), received.Select(item => item.Sequence));
+    }
+
     private static HttpResponseMessage SseResponse(string sse) =>
         new(HttpStatusCode.OK)
         {

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(harness)**: An unattended long run that stops on a permission request waits a day for the answer instead of failing as `approval_expired` after 30 minutes, and a remembered session approval lasts as long. The Host's durable approval, the Broker's pending approval and the retry ledgers now share one lifetime (`ApprovalLimits`, 24 hours); the answer is still re-evaluated against the run's current policy snapshot and its authorization stays a single-use token of about a minute.
+
+- **docs**: `docs/operations/long-runs.md` lists every remaining ceiling of a long run and the one constant that changes it, and the soak gained a mixed mode (`RU_SOAK_MIX=1`) that writes files and launches PowerShell.
+
+- **feat(harness)**: Higher ceilings for long work. Native history holds up to 4,096 messages / 32 MiB (was 1,024 / 8 MiB; the 64 MiB request bound is unchanged), and a background terminal task may live up to 24 hours (was 2 hours; the `powershell`/`run_process` schema maximum and golden locks follow).
+
+- **fix(harness)**: A run can work for longer than an hour. The Broker run lease expired 60 minutes after it opened and a reused gateway kept it, so every tool call after that failed with `lease_expired`. The lease is now bounded like the Broker session: by the Host process and by explicit release when the run ends, its session closes or the Host stops.
+
+- **fix(harness)**: A long run on a large-context model no longer loses the start of its history silently. The runner fits history into a 1,024-message / 8 MiB window by dropping the oldest of it, and the token budget of a 1M-token model never asked for compaction, so a 600-step run kept the last 1,024 messages and dropped the original request with no checkpoint. A run now compacts when that window (now 4,096 messages / 32 MiB, see above) is three quarters full, so the checkpoint keeps what the covered history said. The fill counts the bytes of a native Anthropic or Responses history, which carries the replayed reasoning. This compaction is optional: a checkpoint the model fails to write leaves the run working with the history it has instead of parking or failing it. Making that work also fixed the compaction planner's shrink check, which compared the projected entries' estimate against the calibrated request estimate: when the request estimate was the smaller one, every compaction was refused, and a plan that went through could record an "after" above its "before" and fail the run with `runtime_drive_failed`. A 600-step soak on a 1M-token model now completes with three compactions and never reaches the window.
+
+- **fix(harness)**: An unattended run rides out a provider outage of about twelve minutes. A retryable provider failure used to park the run for Continue after five attempts and about 37 seconds; it now takes ten attempts (2 s up to 5 min backoff, Retry-After honored up to five minutes) before parking. Selection stays pinned and the park-for-Continue behavior is unchanged.
+
+- **fix(harness)**: Reopening a long run shows what it was doing last. The activity replay kept the first 200 rows of a run; it now keeps the newest 500.
+
+- **fix(gui)**: The live feed of a long run no longer ends after its fourth reconnect. The GUI allowed three reconnects over the whole life of a run; the budget now counts only consecutive reconnects that delivered no new event.
+
 - **fix(harness)**: Tool hooks keep running after a run resumes. The runtime loop rebuilds a run's coordinator on every drive pass, and the gateway factory returned the reused gateway without its `HookToolGateway` wrapper, so after an `ask_user` answer or an outside-folder approval a `PreToolUse` hook that blocks (exit 2) silently stopped applying and `PostToolUse` stopped observing. The same switch flipped provider-hosted web search on mid-run when hooks were configured. Every Create path now wraps the gateway in the user's hooks.
 
 - **fix(harness)**: A long run on a reasoning model with a large context window no longer fails with `provider_continuation_invalid` after 256 tool steps. The continuation reader accepted at most 256 retained assistant steps while the message window holds 1,024 messages; the cap now follows the message window.

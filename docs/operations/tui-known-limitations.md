@@ -184,7 +184,7 @@ running: an adopted `waiting_approval` run reads
 and keeps Stop enabled, without faking a pending-approval re-arm. An approval
 requested before the restart is not re-delivered on the resumed cursor, so it
 cannot be answered from the adopted session and the run fails as
-`approval_expired` once the 30-minute approval lifetime passes. The
+`approval_expired` once the 24-hour approval lifetime passes. The
 TUI adopts `waiting_approval` and offers `ru agent attach <run-id>`. That command reads
 at most 2,048 durable events through the captured cursor with a four-second
 deadline, recovers the latest approval and checks a fresh run version before

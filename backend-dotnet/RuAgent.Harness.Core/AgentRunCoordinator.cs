@@ -774,7 +774,7 @@ public sealed partial class AgentRunCoordinator
         // A committed resolution wins over the wall-clock expiry: the user did
         // decide before (or around) the deadline, and the durable approval_resolved
         // event is the authority. Expiry only applies while no resolution exists —
-        // otherwise approving late in the 30-minute window could fail the run
+        // otherwise approving late in the approval window could fail the run
         // after the decision was already recorded.
         if (resolved)
         {

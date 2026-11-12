@@ -37,9 +37,11 @@ generation separately uses its declared reduced effort. Step diagnostics expose
 bounded `provider.attempts`, `provider.selected_effort` and
 `provider.effective_effort` tags; they contain no prompts or credentials.
 
-Generation retries stay bounded to five attempts. The 2/5/10/20-second backoff
-bases use 0.8–1.2 jitter, honor a longer positive HTTP `Retry-After` delta or
-date. The automatic wait budget is 60 seconds per retry: a longer server hint
+Generation retries stay bounded to ten attempts, about twelve minutes of waiting,
+so an unattended long run rides out a short provider outage. The
+2/5/10/20/30/60/120/180/300-second backoff bases use 0.8–1.2 jitter, honor a
+longer positive HTTP `Retry-After` delta or date. The automatic wait budget is
+five minutes per retry: a longer server hint
 is preserved and parks the logical step immediately with its original provider
 code, rather than shortening the hint and retrying early. Continue starts an
 explicit new attempt; this is not an automatic cooldown timer across user actions
@@ -223,7 +225,7 @@ request. Text-only projections fail with `image_unsupported_by_model` rather tha
 drop an image.
 
 Tool images have their own bound: at most four per request, each a valid
-`ModelImage`. The 8 MiB history bound measures text and excludes their data.
+`ModelImage`. The 32 MiB history bound measures text and excludes their data.
 Admission and `RequestContextEstimator` subtract history image base64 from the
 wire bytes and add the same 4,096-token allowance per image as for user images;
 the Core context estimate adds it for every attached tool image.

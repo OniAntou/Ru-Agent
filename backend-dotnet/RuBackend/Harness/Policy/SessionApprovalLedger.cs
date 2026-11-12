@@ -16,7 +16,12 @@ namespace RuBackend.Harness.Policy;
 internal static class SessionApprovalLedger
 {
     internal const int MaxEntriesPerSession = 64;
-    internal static readonly TimeSpan EntryLifetime = TimeSpan.FromMinutes(30);
+    /// <summary>
+    /// A remembered allow lasts as long as an approval may wait: it used to expire after half an
+    /// hour, so a long unattended run asked again for an intent the user had already allowed. It
+    /// still dies with the session and the Host, and the per-session cap still bounds it.
+    /// </summary>
+    internal static readonly TimeSpan EntryLifetime = RuAgent.Protocol.Harness.ApprovalLimits.PendingApprovalLifetime;
 
     internal sealed record Entry(string Key, PolicyMatcher Matcher, DateTimeOffset ExpiresAt);
 

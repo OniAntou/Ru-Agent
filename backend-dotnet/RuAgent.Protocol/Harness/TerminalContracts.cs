@@ -50,9 +50,12 @@ public static class TerminalLimits
     /// <summary>
     /// Hard ceiling on a background task's lifetime. The lifetime cap replaces
     /// the standard-window approval gate for background calls because they do
-    /// not block the turn.
+    /// not block the turn. It is a day, so a long build, test suite, training
+    /// job or dev server can outlive the two hours the cap used to be; the task
+    /// still ends at its own timeout, on terminal_stop, with its run or session,
+    /// or when the Host stops, and its process tree dies with it.
     /// </summary>
-    public const int BackgroundMaxLifetimeMs = 2 * 60 * 60_000;
+    public const int BackgroundMaxLifetimeMs = 24 * 60 * 60_000;
 
     public const int MaxArguments = 128;
     public const int MaxArgumentChars = 4096;

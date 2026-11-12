@@ -19,8 +19,12 @@ namespace RuBackend.Harness.ModelRunner;
 /// </summary>
 public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepRunner, IModelStepRequestPreparer, IContextCheckpointSummarizer
 {
-    private const int MaxModelStepAttempts = ProviderRetryPolicy.MaximumAttempts;
-    private static readonly TimeSpan[] ModelStepRetryBackoffs = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)];
+    private static readonly TimeSpan[] ModelStepRetryBackoffs =
+    [
+        TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20),
+        TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(120), TimeSpan.FromSeconds(180),
+        TimeSpan.FromSeconds(300),
+    ];
 
     // Conversation blocks stay small; untrusted runtime references carry bounded
     // source output and explicit cursors when more can be fetched.
@@ -148,10 +152,9 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 // reported every error frame before the retry.
                 Console.Error.WriteLine(
                     $"ru.host step_rejected code={error.Code} retryable={error.Retryable}");
-                var backoffs = StepRetryBackoffsOverride.Length == MaxModelStepAttempts - 1
-                    ? StepRetryBackoffsOverride
-                    : ModelStepRetryBackoffs;
-                var delay = ComputeRetryDelay(backoffs[attempt], error.RetryAfter, RetryJitterSample());
+                // A shorter override (tests) repeats its last entry for the remaining attempts.
+                var backoffs = StepRetryBackoffsOverride.Length > 0 ? StepRetryBackoffsOverride : ModelStepRetryBackoffs;
+                var delay = ComputeRetryDelay(backoffs[Math.Min(attempt, backoffs.Length - 1)], error.RetryAfter, RetryJitterSample());
                 Console.Error.WriteLine($"ru.host model_retry attempt={attempt + 1} code={error.Code} wait_ms={(int)delay.TotalMilliseconds}");
                 using (RuAgent.Harness.Core.Diagnostics.HarnessPerformance.Measure(
                     RuAgent.Harness.Core.Diagnostics.HarnessPhase.ProviderRetryWait))
@@ -202,7 +205,34 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             generationRequest, request.ModelStepId.Value, requireExactProjection: true, contextScope: request.RunId.Value);
         if (stepRequest.EstimatedInputTokens < 0 || stepRequest.MaxPromptTokens <= 0)
             throw new ModelStepException("provider_request_projection_unavailable", retryable: false);
-        return new InProcessPreparedStep(stepRequest, generationRequest.PendingRuntimeSnapshot);
+        return new InProcessPreparedStep(stepRequest, generationRequest.PendingRuntimeSnapshot, HistoryWindowFill(generationRequest));
+    }
+
+    /// <summary>
+    /// The fill of the history window <see cref="FitModelMessagesToBudget"/> enforces, over
+    /// whichever history shape the request carries (portable messages or a native history).
+    /// Bytes are measured the way <see cref="ModelGenerationRequest"/> validates them: a
+    /// native Responses or Anthropic history carries the replayed reasoning the portable
+    /// messages do not, and history image data is excluded as it has its own bound.
+    /// </summary>
+    internal static double HistoryWindowFill(ModelGenerationRequest request)
+    {
+        var count = Math.Max(request.ModelMessages.Count,
+            Math.Max(request.ResponsesInputItems.Count, request.AnthropicMessages.Count));
+        var imageChars = request.ModelMessages.SelectMany(message => message.Images)
+            .Sum(image => (long)image.Base64Data.Length);
+        var bytes = Math.Max(
+            ModelRequest.MeasureModelMessagesBytes(request.ModelMessages),
+            Math.Max(
+                request.ResponsesInputItems.Count > 0
+                    ? ModelRequest.MeasureResponsesInputBytes(request.ResponsesInputItems) - imageChars
+                    : 0,
+                request.AnthropicMessages.Count > 0
+                    ? ModelRequest.MeasureJsonArrayBytes(request.AnthropicMessages) - imageChars
+                    : 0));
+        return Math.Max(
+            (double)count / ModelGenerationBounds.MaxModelMessages,
+            (double)bytes / ModelGenerationBounds.MaxModelMessagesBytes);
     }
 
     private async Task<ModelGenerationRequest> BuildGenerationRequestAsync(
@@ -880,7 +910,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         };
     }
 
-    private sealed record InProcessPreparedStep(PreparedModelStep StepRequest, string? RuntimeContextSnapshot)
+    private sealed record InProcessPreparedStep(PreparedModelStep StepRequest, string? RuntimeContextSnapshot, double HistoryWindowFill)
         : IPreparedModelStep
     {
         public long EstimatedInputTokens => StepRequest.EstimatedInputTokens;

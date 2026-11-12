@@ -598,51 +598,46 @@ public sealed class InProcessModelConversationTests
     }
 
     [Fact]
-    public void Native_history_budget_counts_exact_array_bytes_at_limit_and_over()
+    public void A_maximal_tool_batch_always_fits_the_history_window()
     {
+        // One batch is indivisible: the window must hold the largest one a step can produce
+        // (64 calls with large results and a maximal narration), or that step could never run.
         const int resultSize = 130_000;
         var calls = Enumerable.Range(0, 64).Select(index => new ModelToolCall(
             "provider_" + index, "unknown", "1.0.0", Json("{}"))).ToArray();
-        var messages = new List<ModelTurn> { new("assistant", "", calls.Select(call =>
-            new ModelFunctionCall(call.ProviderCallId, call.ToolId, call.Arguments)).ToArray()) };
-        messages.AddRange(calls.Select(call => new ModelTurn("tool", new string('r', resultSize),
-            toolCallId: call.ProviderCallId, toolResultCode: "ok")));
-        var narration = ModelInputLimits.MaxHistoryBytes - (int)ModelRequest.MeasureModelMessagesBytes(messages);
-        ModelContextSnapshot Build(int extra)
-        {
-            var entries = new List<ModelContextEntry> { ModelContextEntry.Assistant("batch", 1,
-                new AssistantStep(new string('a', narration + extra), calls, AssistantFinishReason.ToolCalls, 1)) };
-            entries.AddRange(calls.Select((call, index) => ToolResultEntry("result-" + index, index + 2,
-                "internal_" + index, call.ProviderCallId, new string('r', resultSize))));
-            return Snapshot(entries.ToArray());
-        }
-        var (_, _, exact) = InProcessModelStepRunner.BuildConversationForTests(Build(0), hasImages: true);
-        Assert.Equal(ModelInputLimits.MaxHistoryBytes, ModelRequest.MeasureModelMessagesBytes(exact!));
-        var error = Assert.Throws<ModelRunnerProtocolException>(() =>
-            InProcessModelStepRunner.BuildConversationForTests(Build(1), hasImages: true));
-        Assert.Equal("model_history_too_large", error.Code);
+        var entries = new List<ModelContextEntry> { ModelContextEntry.Assistant("batch", 1,
+            new AssistantStep(new string('a', 1_000_000), calls, AssistantFinishReason.ToolCalls, 1)) };
+        entries.AddRange(calls.Select((call, index) => ToolResultEntry("result-" + index, index + 2,
+            "internal_" + index, call.ProviderCallId, new string('r', resultSize))));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()), hasImages: true);
+
+        Assert.Equal(65, messages!.Count);
+        Assert.True(ModelRequest.MeasureModelMessagesBytes(messages) <= ModelInputLimits.MaxHistoryBytes);
     }
 
     [Fact]
     public void Multi_message_history_uses_n_minus_one_separators_at_exact_budget()
     {
-        var placeholder = Enumerable.Range(0, 10).Select(index => ModelContextEntry.Text(
+        // Enough messages that each stays under the per-entry text cap at any history budget.
+        const int count = 64;
+        var placeholder = Enumerable.Range(0, count).Select(index => ModelContextEntry.Text(
             "user-" + index, index + 1, ModelContextRole.User, "x")).ToList();
-        placeholder.Add(ModelContextEntry.Assistant("done", 11, new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
+        placeholder.Add(ModelContextEntry.Assistant("done", count + 1, new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
         var (_, _, baseline) = InProcessModelStepRunner.BuildConversationForTests(Snapshot(placeholder.ToArray()));
         var remaining = ModelInputLimits.MaxHistoryBytes - (int)ModelRequest.MeasureModelMessagesBytes(baseline!);
         ModelContextSnapshot Build(int extra)
         {
-            var entries = Enumerable.Range(0, 10).Select(index => ModelContextEntry.Text("user-"+index,
-                index+1, ModelContextRole.User, new string('x', 1+remaining/10+(index<remaining%10?1:0)+(index==0?extra:0)))).ToList();
+            var entries = Enumerable.Range(0, count).Select(index => ModelContextEntry.Text("user-"+index,
+                index+1, ModelContextRole.User, new string('x', 1+remaining/count+(index<remaining%count?1:0)+(index==0?extra:0)))).ToList();
             entries.Add(placeholder[^1]);
             return Snapshot(entries.ToArray());
         }
         var (_, _, exact) = InProcessModelStepRunner.BuildConversationForTests(Build(0));
-        Assert.Equal(11, exact!.Count);
+        Assert.Equal(count + 1, exact!.Count);
         Assert.Equal(ModelInputLimits.MaxHistoryBytes, ModelRequest.MeasureModelMessagesBytes(exact));
         var (_, _, trimmed) = InProcessModelStepRunner.BuildConversationForTests(Build(1));
-        Assert.Equal(10, trimmed!.Count);
+        Assert.Equal(count, trimmed!.Count);
         Assert.True(ModelRequest.MeasureModelMessagesBytes(trimmed) < ModelInputLimits.MaxHistoryBytes);
     }
 
@@ -654,7 +649,9 @@ public sealed class InProcessModelConversationTests
             ModelContextEntry.Text("src-0", 1, ModelContextRole.User, "nhiem vu goc"),
         };
         var sequence = 2L;
-        for (var index = 0; index < 90; index++)
+        // Enough 100 KB stale results to overflow the byte budget, whatever it is.
+        var staleBatches = ModelInputLimits.MaxHistoryBytes / 100_000 + 5;
+        for (var index = 0; index < staleBatches; index++)
         {
             entries.Add(AssistantStepEntry(
                 $"stale-a-{index}",
@@ -683,7 +680,7 @@ public sealed class InProcessModelConversationTests
             Encoding.UTF8.GetByteCount(message.Content)
             + message.ToolCalls.Sum(call => Encoding.UTF8.GetByteCount(call.Arguments.GetRawText())));
         Assert.True(lowerBoundBytes <= ModelInputLimits.MaxHistoryBytes, $"history lower-bound bytes were {lowerBoundBytes}");
-        Assert.True(messages.Count < 181, $"history was not trimmed: {messages.Count} messages");
+        Assert.True(messages.Count < staleBatches * 2 + 1, $"history was not trimmed: {messages.Count} messages");
         Assert.Equal("provider_fresh", messages[^2].ToolCalls.Single().Id);
         Assert.Equal("provider_fresh", messages[^1].ToolCallId);
     }

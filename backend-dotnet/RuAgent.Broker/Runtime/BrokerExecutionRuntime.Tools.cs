@@ -109,7 +109,7 @@ public sealed partial class BrokerExecutionRuntime
 
     /// <summary>
     /// v2 <c>tool.evaluate</c>: lease check, advertised-capability check, policy
-    /// evaluation, then either a 60s authorization token (allow) or a 30-minute
+    /// evaluation, then either a 60s authorization token (allow) or a pending-lifetime
     /// pending approval bound to snapshot + intent hash (ask).
     /// </summary>
     public Task<ToolEvaluateResult> EvaluateAsync(AgentEnvelope request, CancellationToken cancellationToken) =>
@@ -231,7 +231,7 @@ public sealed partial class BrokerExecutionRuntime
                 ApprovalKind: approvalKind,
                 BoundaryDirectory: approvalKind == "external_directory" ? DeriveGrantDirectory(context) : null,
                 SnapshotSha256: lease.Snapshot.Sha256);
-            var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
+            var expiresAt = DateTimeOffset.UtcNow.Add(RuAgent.Protocol.Harness.ApprovalLimits.PendingApprovalLifetime);
             approvalId = _pendingV2.IssueV2(binding, expiresAt, context, evaluation.ReasonCode);
             approvalExpiresAt = expiresAt;
             matcherPreview = PendingApprovalStore.BuildMatcherPreview(binding);

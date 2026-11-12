@@ -1,10 +1,14 @@
 namespace RuBackend.Harness.ModelRunner;
 
-/// <summary>One bounded retry policy for a logical provider step; selection never changes.</summary>
+/// <summary>
+/// One bounded retry policy for a logical provider step; selection never changes. The budget
+/// rides out a provider outage of about twelve minutes before the step parks for Continue: it
+/// used to give up after about 37 seconds, so an unattended long run stopped on a short blip.
+/// </summary>
 internal static class ProviderRetryPolicy
 {
-    public const int MaximumAttempts = 5;
-    public static readonly TimeSpan MaximumAutomaticDelay = TimeSpan.FromSeconds(60);
+    public const int MaximumAttempts = 10;
+    public static readonly TimeSpan MaximumAutomaticDelay = TimeSpan.FromMinutes(5);
 
     public static bool CanRetry(bool retryable, TimeSpan? retryAfter, int attempt, bool cancelled) =>
         retryable && !cancelled && attempt >= 0 && attempt + 1 < MaximumAttempts

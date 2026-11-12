@@ -1,6 +1,10 @@
 using Markdig.Extensions.TaskLists;
+using Markdig.Extensions.Footnotes;
+using Markdig.Extensions.Mathematics;
+using Markdig.Extensions.Tables;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using RuApp.Services;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -184,11 +188,6 @@ namespace RuApp.Controls
         }
 
         /// <summary>
-        /// Walks a Markdig document into RichText paragraphs. Unknown leaves fall
-        /// back to their literal text so a new extension degrades to visible
-        /// prose, never to a swallowed reply.
-        /// </summary>
-        /// <summary>
         /// One flat run of an emphasis span: plain text plus the styles the
         /// renderer applies. Pure so the emphasis contract is unit-testable
         /// without building XAML.
@@ -202,6 +201,53 @@ namespace RuApp.Controls
             int? LinkGroup,
             string? LinkUrl,
             bool IsBreak);
+
+        /// <summary>
+        /// The decoded text of an HTML entity. Markdig keeps entities as their own
+        /// inline node, so a renderer that does not map it silently drops the
+        /// character (AT&amp;T used to render as ATT).
+        /// </summary>
+        internal static string EntityText(HtmlEntityInline entity) => entity.Transcoded.ToString();
+
+        /// <summary>
+        /// Only a line-break tag has a text equivalent worth rendering. Every
+        /// other tag stays inert: the renderer never executes or injects HTML.
+        /// </summary>
+        internal static bool IsLineBreakHtmlTag(string? tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag))
+            {
+                return false;
+            }
+
+            var normalized = tag.Replace(" ", string.Empty, StringComparison.Ordinal);
+            return normalized.Equals("<br>", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("<br/>", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>The literal TeX an inline math node carries, markers included.</summary>
+        internal static string MathLiteral(MathInline math) => "$" + math.Content + "$";
+
+        /// <summary>The reference marker a footnote link carried in the source.</summary>
+        internal static string FootnoteMarker(FootnoteLink link) =>
+            "[" + (link.Footnote?.Label ?? "^" + link.Index) + "]";
+
+        /// <summary>The source number of an ordered list; unordered lists use 1.</summary>
+        internal static int OrderedListStart(ListBlock list) =>
+            list.IsOrdered
+            && int.TryParse(list.OrderedStart, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var start)
+                ? start
+                : 1;
+
+        /// <summary>Maps a GFM table column alignment onto the text control's alignment.</summary>
+        internal static Microsoft.UI.Xaml.TextAlignment TableColumnAlignment(TableColumnDefinition column) =>
+            column.Alignment switch
+            {
+                TableColumnAlign.Center => Microsoft.UI.Xaml.TextAlignment.Center,
+                TableColumnAlign.Right => Microsoft.UI.Xaml.TextAlignment.Right,
+                _ => Microsoft.UI.Xaml.TextAlignment.Left,
+            };
 
         /// <summary>
         /// Flattens an emphasis span (bold, italic, strikethrough) into runs.
@@ -287,6 +333,12 @@ namespace RuApp.Controls
                         AddText(decoded.Length > 0 ? decoded : entity.Original.ToString(), bold, italic, mono: false, strike, linkGroup, linkUrl);
                         break;
                     }
+                    case MathInline math:
+                        AddText(MathLiteral(math), bold, italic, mono: false, strike, linkGroup, linkUrl);
+                        break;
+                    case FootnoteLink footnote when !footnote.IsBackLink:
+                        AddText(FootnoteMarker(footnote), bold, italic, mono: false, strike, linkGroup, linkUrl);
+                        break;
                     case HtmlInline html:
                         AddText(html.Tag ?? string.Empty, bold, italic, mono: false, strike, linkGroup, linkUrl);
                         break;
@@ -297,7 +349,7 @@ namespace RuApp.Controls
                                 child,
                                 bold || nested.DelimiterCount >= 2,
                                 italic || nested.DelimiterCount == 1,
-                                strike || nested.DelimiterChar == '~',
+                                strike || nested.DelimiterChar == '~' && nested.DelimiterCount >= 2,
                                 linkGroup,
                                 linkUrl);
                         }
@@ -317,10 +369,10 @@ namespace RuApp.Controls
 
             foreach (var child in emphasis)
             {
-                // A strikethrough root carries no bold or italic of its own: the
-                // old renderer never styled `~~x~~` beyond the strike, and the
-                // span supplies the decoration. Nested markers still combine.
-                bool rootStrike = emphasis.DelimiterChar == '~';
+                // Only a double tilde is strikethrough. A single tilde is the
+                // subscript marker enabled by EmphasisExtras: RichTextBlock has
+                // no baseline shift, but drawing it struck through is worse.
+                bool rootStrike = emphasis.DelimiterChar == '~' && emphasis.DelimiterCount >= 2;
                 Append(
                     child,
                     bold: !rootStrike && emphasis.DelimiterCount >= 2,
@@ -344,7 +396,28 @@ namespace RuApp.Controls
                     index < row.Count ? row[index].Replace('\t', ' ') : string.Empty))));
         }
 
-        private sealed partial class BlockRenderer(double bodySize, Brush? foreground, Action<FrameworkElement, double> fitBlock)
+        /// <summary>
+        /// Finds the owning surface for a workspace-local link. The visual-tree
+        /// lookup keeps this control independent of ChatView and of every
+        /// DataTemplate that creates it.
+        /// </summary>
+        private void OpenLocalLink(string target)
+        {
+            for (DependencyObject? current = this; current is not null; current = VisualTreeHelper.GetParent(current))
+            {
+                if (current is IMarkdownLinkHost host)
+                {
+                    _ = host.OpenMarkdownLinkAsync(target);
+                    return;
+                }
+            }
+        }
+
+        private sealed partial class BlockRenderer(
+            double bodySize,
+            Brush? foreground,
+            Action<FrameworkElement, double> fitBlock,
+            Action<string>? openLocalLink)
         {
             /// <summary>
             /// DeepSeek-like air: line height tracks the reader's size choice
@@ -361,9 +434,11 @@ namespace RuApp.Controls
                     ParagraphBlock paragraph => new List<Paragraph> { Prose(paragraph.Inline, indent, bottom: 12) },
                     QuoteBlock quote => Quote(quote, indent),
                     ListBlock list => BuildList(list, indent),
-                    CodeBlock code => new List<Paragraph> { Code(code) },
+                    MathBlock math => new List<Paragraph> { CodeCard(math.Lines.ToString(), "math", indent) },
+                    CodeBlock code => new List<Paragraph> { Code(code, indent) },
                     ThematicBreakBlock => new List<Paragraph> { Rule(indent) },
                     HtmlBlock html => new List<Paragraph> { Html(html, indent) },
+                    FootnoteGroup footnotes => FootnoteSection(footnotes, indent),
                     Markdig.Extensions.Tables.Table table => new List<Paragraph> { Table(table, indent) },
                     LeafBlock leaf => new List<Paragraph> { Literal(leaf, indent) },
                     ContainerBlock container => Children(container, indent),
@@ -374,7 +449,7 @@ namespace RuApp.Controls
             public List<Paragraph> BuildList(ListBlock list, int indent)
             {
                 var rows = new List<Paragraph>();
-                int number = 1;
+                int number = OrderedListStart(list);
                 foreach (var item in list)
                 {
                     if (item is not Markdig.Syntax.ListItemBlock listItem)
@@ -426,7 +501,7 @@ namespace RuApp.Controls
                     if (child is ParagraphBlock itemPara)
                     {
                         Flush();
-                        AddInlines(Current(), itemPara.Inline, bodySize, null, UiFont);
+                        AddInlines(Current().Inlines, itemPara.Inline, bodySize, null, UiFont);
                     }
                     else if (child is ListBlock nested)
                     {
@@ -466,7 +541,7 @@ namespace RuApp.Controls
                     // changing the reading rhythm of ordinary paragraphs.
                     LineHeight = Math.Max(TextLineHeight, Math.Round(size * 1.4)),
                 };
-                AddInlines(paragraph, heading.Inline, size, FontWeights.SemiBold, DisplayFont);
+                AddInlines(paragraph.Inlines, heading.Inline, size, FontWeights.SemiBold, DisplayFont);
                 return paragraph;
             }
 
@@ -477,7 +552,7 @@ namespace RuApp.Controls
                     Margin = new Thickness(indent * 20, 0, 0, bottom),
                     LineHeight = TextLineHeight,
                 };
-                AddInlines(paragraph, inline, bodySize, null, UiFont);
+                AddInlines(paragraph.Inlines, inline, bodySize, null, UiFont);
                 return paragraph;
             }
 
@@ -505,7 +580,7 @@ namespace RuApp.Controls
                     ? brush
                     : foreground ?? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 148, 163, 184));
 
-            private void AddInlines(Paragraph paragraph, ContainerInline? parent, double size, FontWeight? weight, FontFamily fontFamily)
+            private void AddInlines(InlineCollection target, ContainerInline? parent, double size, FontWeight? weight, FontFamily fontFamily)
             {
                 if (parent is null)
                 {
@@ -514,16 +589,16 @@ namespace RuApp.Controls
 
                 foreach (var inline in parent)
                 {
-                    AddInline(paragraph, inline, size, weight, fontFamily);
+                    AddInline(target, inline, size, weight, fontFamily);
                 }
             }
 
-            private void AddInline(Paragraph paragraph, Markdig.Syntax.Inlines.Inline inline, double size, FontWeight? weight, FontFamily fontFamily)
+            private void AddInline(InlineCollection target, Markdig.Syntax.Inlines.Inline inline, double size, FontWeight? weight, FontFamily fontFamily)
             {
                 switch (inline)
                 {
                     case TaskList task:
-                        paragraph.Inlines.Add(new Run
+                        target.Add(new Run
                         {
                             Text = task.Checked ? "\u2612  " : "\u2610  ",
                             FontFamily = UiFont,
@@ -531,57 +606,83 @@ namespace RuApp.Controls
                         });
                         break;
                     case LiteralInline literal:
-                        paragraph.Inlines.Add(CreateRun(literal.Content.ToString(), size, weight, fontFamily));
+                        target.Add(CreateRun(literal.Content.ToString(), size, weight, fontFamily));
                         break;
                     case LineBreakInline lineBreak:
                         if (lineBreak.IsHard)
                         {
-                            paragraph.Inlines.Add(new LineBreak());
+                            target.Add(new LineBreak());
                         }
                         else
                         {
-                            paragraph.Inlines.Add(CreateRun(" ", size, weight, fontFamily));
+                            target.Add(CreateRun(" ", size, weight, fontFamily));
                         }
 
                         break;
                     case CodeInline code:
-                        paragraph.Inlines.Add(new Run { Text = code.Content, FontSize = MonoFontSize, FontFamily = MonoFont });
+                        target.Add(new Run { Text = code.Content, FontSize = MonoFontSize, FontFamily = MonoFont });
+                        break;
+                    case HtmlEntityInline entity:
+                        target.Add(CreateRun(EntityText(entity), size, weight, fontFamily));
+                        break;
+                    case HtmlInline html:
+                        // Tags stay inert. A line-break tag still has a visible
+                        // text equivalent; dropping it joined two lines together.
+                        if (IsLineBreakHtmlTag(html.Tag))
+                        {
+                            target.Add(new LineBreak());
+                        }
+
+                        break;
+                    case MathInline math:
+                        // No math layout is available in RichTextBlock; showing
+                        // the source is better than silently swallowing it.
+                        target.Add(CreateRun(MathLiteral(math), size, weight, fontFamily));
+                        break;
+                    case FootnoteLink footnote:
+                        // The backlink in the footnote body is structural, not a
+                        // second reference in the prose.
+                        if (!footnote.IsBackLink)
+                        {
+                            target.Add(CreateRun(FootnoteMarker(footnote), size, weight, fontFamily));
+                        }
+
                         break;
                     case AutolinkInline auto:
-                        AddAutolink(paragraph, auto, size, weight, fontFamily);
+                        AddAutolink(target, auto, size, weight, fontFamily);
                         break;
                     case LinkInline link:
-                        AddLink(paragraph, link, size, weight, fontFamily);
+                        AddLink(target, link, size, weight, fontFamily);
                         break;
                     case EmphasisInline emphasis:
-                        AddEmphasis(paragraph, emphasis, size, weight, fontFamily);
+                        AddEmphasis(target, emphasis, size, weight, fontFamily);
                         break;
                     case ContainerInline container:
-                        AddInlines(paragraph, container, size, weight, fontFamily);
+                        AddInlines(target, container, size, weight, fontFamily);
                         break;
                 }
             }
 
-            private void AddAutolink(Paragraph paragraph, AutolinkInline auto, double size, FontWeight? weight, FontFamily fontFamily)
+            private void AddAutolink(InlineCollection target, AutolinkInline auto, double size, FontWeight? weight, FontFamily fontFamily)
             {
-                string target = auto.Url ?? string.Empty;
+                string targetUrl = auto.Url ?? string.Empty;
                 var hyperlink = new Hyperlink();
-                if (Uri.TryCreate(target, UriKind.Absolute, out var uri)
+                if (Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri)
                     && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
                 {
                     hyperlink.NavigateUri = uri;
                 }
 
-                hyperlink.Inlines.Add(new Run { Text = target, FontSize = size, FontFamily = fontFamily });
+                hyperlink.Inlines.Add(new Run { Text = targetUrl, FontSize = size, FontFamily = fontFamily });
                 if (weight.HasValue)
                 {
                     hyperlink.FontWeight = weight.Value;
                 }
 
-                paragraph.Inlines.Add(hyperlink);
+                target.Add(hyperlink);
             }
 
-            private void AddLink(Paragraph paragraph, LinkInline link, double size, FontWeight? weight, FontFamily fontFamily)
+            private void AddLink(InlineCollection target, LinkInline link, double size, FontWeight? weight, FontFamily fontFamily)
             {
                 if (link.IsImage)
                 {
@@ -611,11 +712,21 @@ namespace RuApp.Controls
                     {
                         var imageLink = new Hyperlink { NavigateUri = targetUri };
                         imageLink.Inlines.Add(new Run { Text = label, FontSize = size, FontFamily = fontFamily });
-                        paragraph.Inlines.Add(imageLink);
+                        target.Add(imageLink);
+                    }
+                    else if (openLocalLink is not null
+                        && MarkdownLinkResolver.MayBeLocalFile(link.Url))
+                    {
+                        // A workspace image is not loaded automatically either;
+                        // the reader chooses by opening it in the preview.
+                        var imageLink = new Hyperlink();
+                        imageLink.Inlines.Add(new Run { Text = label, FontSize = size, FontFamily = fontFamily });
+                        AttachLocalNavigation(imageLink, link.Url);
+                        target.Add(imageLink);
                     }
                     else
                     {
-                        paragraph.Inlines.Add(CreateRun(label, size, weight, fontFamily));
+                        target.Add(CreateRun(label, size, weight, fontFamily));
                     }
 
                     return;
@@ -628,16 +739,20 @@ namespace RuApp.Controls
                 }
 
                 var hyperlink = new Hyperlink();
-                string? target = !string.IsNullOrEmpty(link.Url) ? link.Url : labelText;
-                if (Uri.TryCreate(target, UriKind.Absolute, out var uri)
+                string? destination = !string.IsNullOrEmpty(link.Url) ? link.Url : labelText;
+                if (Uri.TryCreate(destination, UriKind.Absolute, out var uri)
                     && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
                 {
                     hyperlink.NavigateUri = uri;
                 }
+                else if (hyperlink.NavigateUri is null)
+                {
+                    AttachLocalNavigation(hyperlink, destination);
+                }
 
                 hyperlink.Inlines.Add(new Run
                 {
-                    Text = labelText.Length > 0 ? labelText : target,
+                    Text = labelText.Length > 0 ? labelText : destination,
                     FontSize = size,
                     FontFamily = fontFamily,
                 });
@@ -646,12 +761,23 @@ namespace RuApp.Controls
                     hyperlink.FontWeight = weight.Value;
                 }
 
-                paragraph.Inlines.Add(hyperlink);
+                target.Add(hyperlink);
+            }
+
+            private void AttachLocalNavigation(Hyperlink hyperlink, string? destination)
+            {
+                if (openLocalLink is null || !MarkdownLinkResolver.MayBeLocalFile(destination))
+                {
+                    return;
+                }
+
+                hyperlink.Click += (_, _) => openLocalLink(destination!);
+                ToolTipService.SetToolTip(hyperlink, "Open in preview");
             }
 
             private static string LinkLabel(LinkInline link) => link.Label ?? string.Empty;
 
-            private void AddEmphasis(Paragraph paragraph, EmphasisInline emphasis, double size, FontWeight? weight, FontFamily fontFamily)
+            private void AddEmphasis(InlineCollection target, EmphasisInline emphasis, double size, FontWeight? weight, FontFamily fontFamily)
             {
                 var segments = FlattenEmphasis(emphasis);
                 if (segments.Count == 0)
@@ -659,7 +785,7 @@ namespace RuApp.Controls
                     return;
                 }
 
-                if (emphasis.DelimiterChar == '~')
+                if (emphasis.DelimiterChar == '~' && emphasis.DelimiterCount >= 2)
                 {
                     // RichText paragraphs carry no border for quotes and no tag
                     // for strike: one span holds the decoration so every run in
@@ -668,13 +794,13 @@ namespace RuApp.Controls
                     AppendSegments(struck.Inlines, segments, size, weight, fontFamily);
                     if (struck.Inlines.Count > 0)
                     {
-                        paragraph.Inlines.Add(struck);
+                        target.Add(struck);
                     }
 
                     return;
                 }
 
-                AppendSegments(paragraph.Inlines, segments, size, weight, fontFamily);
+                AppendSegments(target, segments, size, weight, fontFamily);
             }
 
             private void AppendSegments(InlineCollection target, IReadOnlyList<EmphasisSegment> segments, double size, FontWeight? weight, FontFamily fontFamily)

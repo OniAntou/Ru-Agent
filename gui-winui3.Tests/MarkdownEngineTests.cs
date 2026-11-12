@@ -1,5 +1,7 @@
 using Markdig.Extensions.Tables;
 using Markdig.Extensions.TaskLists;
+using Markdig.Extensions.Footnotes;
+using Markdig.Extensions.Mathematics;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using RuApp.Controls;
@@ -99,6 +101,58 @@ public sealed class MarkdownEngineTests
 
         var code = Assert.Single(document.Descendants().OfType<FencedCodeBlock>());
         Assert.Contains("var x = 1;", code.Lines.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Plain_entity_and_line_break_html_stay_visible()
+    {
+        var document = MarkdownEngine.Parse("AT&amp;T<br>next");
+
+        var entity = Assert.Single(document.Descendants().OfType<HtmlEntityInline>());
+        Assert.Equal("&", MarkdownBlock.EntityText(entity));
+        var lineBreak = Assert.Single(document.Descendants().OfType<HtmlInline>());
+        Assert.True(MarkdownBlock.IsLineBreakHtmlTag(lineBreak.Tag));
+    }
+
+    [Fact]
+    public void Table_cells_decode_html_entities()
+    {
+        var document = MarkdownEngine.Parse("| Name |\n|---|\n| AT&amp;T |");
+        var cell = document.Descendants().OfType<TableCell>().Last();
+
+        Assert.Equal("AT&T", MarkdownEngine.TableCellText(cell));
+    }
+
+    [Fact]
+    public void Ordered_list_keeps_its_source_start_number()
+    {
+        var document = MarkdownEngine.Parse("3. third\n4. fourth");
+        var list = Assert.Single(document.Descendants().OfType<ListBlock>());
+
+        Assert.Equal(3, MarkdownBlock.OrderedListStart(list));
+    }
+
+    [Fact]
+    public void Table_columns_map_declared_alignment()
+    {
+        var document = MarkdownEngine.Parse("| l | c | r |\n|:--|:-:|--:|\n| 1 | 2 | 3 |");
+        var columns = Assert.Single(document.Descendants().OfType<Table>()).ColumnDefinitions;
+
+        Assert.Equal(Microsoft.UI.Xaml.TextAlignment.Left, MarkdownBlock.TableColumnAlignment(columns[0]));
+        Assert.Equal(Microsoft.UI.Xaml.TextAlignment.Center, MarkdownBlock.TableColumnAlignment(columns[1]));
+        Assert.Equal(Microsoft.UI.Xaml.TextAlignment.Right, MarkdownBlock.TableColumnAlignment(columns[2]));
+    }
+
+    [Fact]
+    public void Math_and_footnote_references_keep_their_source_markers()
+    {
+        var math = Assert.Single(
+            MarkdownEngine.Parse("inline $x^2$").Descendants().OfType<MathInline>());
+        Assert.Equal("$x^2$", MarkdownBlock.MathLiteral(math));
+
+        var footnote = MarkdownEngine.Parse("claim[^1]\n\n[^1]: note")
+            .Descendants().OfType<FootnoteLink>().First(link => !link.IsBackLink);
+        Assert.Equal("[^1]", MarkdownBlock.FootnoteMarker(footnote));
     }
 
     [Fact]

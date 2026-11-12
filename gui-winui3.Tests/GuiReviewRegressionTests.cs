@@ -225,17 +225,15 @@ public sealed class GuiReviewRegressionTests
     }
 
     [Fact]
-    public void Large_table_has_bounded_preview_and_complete_copy_content()
+    public void Large_table_renders_all_rows_and_columns_with_complete_copy_content()
     {
         string Row(int row) => "|" + string.Join("|", Enumerable.Range(0, 9).Select(column => $"r{row}c{column}")) + "|";
         string markdown = Row(0) + "\n|" + string.Join("|", Enumerable.Repeat("---", 9)) + "|\n"
             + string.Join("\n", Enumerable.Range(1, 60).Select(Row));
         var table = Assert.Single(MarkdownEngine.Parse(markdown).OfType<Table>());
         var presentation = MarkdownTablePresentation.Create(table);
-        Assert.True(presentation.IsTruncated);
-        Assert.Equal(50, presentation.PreviewRows.Count);
-        Assert.Equal(8, presentation.PreviewColumns);
-        Assert.Contains("49 of 60 rows", presentation.Notice);
+        Assert.Equal(61, presentation.Rows.Count);
+        Assert.Equal(9, presentation.Columns);
         Assert.Equal(61, presentation.FullText.Split('\n').Length);
         Assert.Contains("r60c8", presentation.FullText);
     }

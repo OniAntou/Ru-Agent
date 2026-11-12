@@ -61,6 +61,12 @@ public static class MarkdownEngine
                 case AutolinkInline link:
                     builder.Append(link.Url);
                     break;
+                case HtmlEntityInline entity:
+                    builder.Append(entity.Transcoded.ToString());
+                    break;
+                case HtmlInline html when MarkdownBlock.IsLineBreakHtmlTag(html.Tag):
+                    builder.Append(' ');
+                    break;
                 case ContainerInline container:
                     AppendCellInlines(builder, container);
                     break;

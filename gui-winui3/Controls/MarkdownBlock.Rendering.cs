@@ -24,7 +24,7 @@ public sealed partial class MarkdownBlock
         {
             var embedded = new List<(FrameworkElement Element, double Inset)>();
             var renderer = new BlockRenderer(bodySize, Foreground,
-                (element, inset) => FitEmbeddedBlock(element, inset, embedded));
+                (element, inset) => FitEmbeddedBlock(element, inset, embedded), OpenLocalLink);
             var paragraphs = renderer.BuildBlocks(document[index], 0).ToArray();
             staged.Add(new(keys[index], paragraphs, embedded));
         }

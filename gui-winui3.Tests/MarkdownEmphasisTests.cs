@@ -124,4 +124,17 @@ public sealed class MarkdownEmphasisTests
         Assert.Contains(struck, segment => segment.Text == "removed");
         AssertNoTypeNameLeak(segments);
     }
+
+    [Fact]
+    public void Single_tilde_subscript_is_not_strikethrough()
+    {
+        // EmphasisExtras parses H~2~O as a one-character emphasis with a tilde.
+        // Drawing that through the strike span was a false decoration; without a
+        // baseline shift the safest rendering is ordinary text.
+        var segments = MarkdownBlock.FlattenEmphasis(ParseEmphasis("H~2~O", '~'));
+
+        Assert.Contains(segments, segment => segment.Text == "2");
+        Assert.All(segments, segment => Assert.False(segment.Strike));
+        AssertNoTypeNameLeak(segments);
+    }
 }

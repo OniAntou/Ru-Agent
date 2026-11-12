@@ -90,7 +90,7 @@ namespace RuApp.Views
         }
     }
 
-    public sealed partial class ChatView : UserControl, IDisposable
+    public sealed partial class ChatView : UserControl, IDisposable, IMarkdownLinkHost
     {
                 private const double ReadingColumnMaxWidth = 820;
         private const double MessageColumnMaxWidth = 820;

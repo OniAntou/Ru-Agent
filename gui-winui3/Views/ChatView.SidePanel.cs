@@ -61,6 +61,30 @@ public sealed partial class ChatView
     /// <summary>Drops a deleted session's surface state.</summary>
     public void ForgetSidePanelState(string sessionId) => _sidePanelPolicy.Remove(sessionId);
 
+    /// <summary>
+    /// Opens a workspace-local Markdown link in the read-only preview. The
+    /// resolver rejects anything outside the open workspace; the preview repeats
+    /// the bounds, hidden-path and reparse checks before reading a byte.
+    /// </summary>
+    public async Task OpenMarkdownLinkAsync(string target)
+    {
+        try
+        {
+            string? path = MarkdownLinkResolver.ResolveLocalFile(_agentWorkspace, target);
+            if (path is null)
+            {
+                return;
+            }
+
+            await SidePanel.OpenPreviewAsync(_agentWorkspace, path);
+        }
+        catch (Exception error)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Markdown link preview failed: {error.GetType().Name}");
+            ShowAgentInlineStatus("Could not open that file in the preview.");
+        }
+    }
+
     private bool CanShowSidePanel() =>
         RootGrid is not null && Messages.Count > 0 && RootGrid.ActualWidth >= SidePanelMinRootWidth;
 

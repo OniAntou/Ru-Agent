@@ -1,4 +1,7 @@
 using Markdig.Extensions.TaskLists;
+using Markdig.Extensions.Tables;
+using Markdig.Extensions.Mathematics;
+using Markdig.Extensions.Footnotes;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Microsoft.UI.Text;
@@ -16,10 +19,20 @@ namespace RuApp.Controls
     {
         private sealed partial class BlockRenderer
         {
-            private Paragraph Code(CodeBlock code)
+            private Paragraph Code(CodeBlock code, int indent)
             {
-                string text = code.Lines.ToString().TrimEnd('\r', '\n');
-                string? language = code is FencedCodeBlock fenced ? fenced.Info?.Trim() : null;
+                string language = code is FencedCodeBlock fenced ? fenced.Info?.Trim() ?? string.Empty : string.Empty;
+                return CodeCard(code.Lines.ToString(), language, indent);
+            }
+
+            /// <summary>
+            /// Renders raw source in the code card. Math blocks use this too:
+            /// RichTextBlock has no math layout, and a labeled source card is
+            /// clearer than dropping the block into ordinary prose.
+            /// </summary>
+            private Paragraph CodeCard(string source, string? language, int indent)
+            {
+                string text = source.TrimEnd('\r', '\n');
                 if (string.IsNullOrWhiteSpace(language))
                 {
                     language = "code";
@@ -83,10 +96,55 @@ namespace RuApp.Controls
                     CornerRadius = Services.UiCornerRadius.Inset,
                     Child = frame,
                 };
-                fitBlock(outer, 0);
-                var paragraph = new Paragraph { Margin = new Thickness(0, 6, 0, 14) };
+                fitBlock(outer, indent * 20);
+                var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 6, 0, 14) };
                 paragraph.Inlines.Add(new InlineUIContainer { Child = outer });
                 return paragraph;
+            }
+
+            /// <summary>
+            /// Footnote definitions as a separated section. The prose reference
+            /// renders in place; the body keeps its label and drops the structural
+            /// backlink, which AddInline already refuses to print.
+            /// </summary>
+            private List<Paragraph> FootnoteSection(FootnoteGroup group, int indent)
+            {
+                var rows = new List<Paragraph>();
+                var heading = new Paragraph
+                {
+                    Margin = new Thickness(indent * 20, 12, 0, 6),
+                    LineHeight = TextLineHeight,
+                };
+                heading.Inlines.Add(new Run
+                {
+                    Text = "Footnotes",
+                    FontFamily = DisplayFont,
+                    FontSize = bodySize,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = MutedOrDefault(),
+                });
+                rows.Add(heading);
+
+                foreach (var footnote in group.OfType<Footnote>())
+                {
+                    var blocks = BuildBlocks(footnote, indent);
+                    if (blocks.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    string label = string.IsNullOrWhiteSpace(footnote.Label) ? "note" : footnote.Label;
+                    blocks[0].Inlines.Insert(0, new Run
+                    {
+                        Text = "[" + label + "] ",
+                        FontFamily = UiFont,
+                        FontSize = bodySize,
+                        Foreground = MutedOrDefault(),
+                    });
+                    rows.AddRange(blocks);
+                }
+
+                return rows.Count > 1 ? rows : new List<Paragraph>();
             }
 
             private void OnCopyCodeClick(object sender, RoutedEventArgs e)
@@ -143,11 +201,36 @@ namespace RuApp.Controls
                 return rows;
             }
 
+            private void AddCellInlines(InlineCollection target, TableCell cell, bool header)
+            {
+                var paragraphs = cell.Descendants().OfType<ParagraphBlock>().ToArray();
+                if (paragraphs.Length == 0)
+                {
+                    target.Add(CreateRun(MarkdownEngine.TableCellText(cell), bodySize,
+                        header ? FontWeights.SemiBold : null, UiFont));
+                    return;
+                }
+
+                for (int index = 0; index < paragraphs.Length; index++)
+                {
+                    if (index > 0)
+                    {
+                        target.Add(new LineBreak());
+                    }
+
+                    AddInlines(target, paragraphs[index].Inline, bodySize,
+                        header ? FontWeights.SemiBold : null, UiFont);
+                }
+            }
+
             private Paragraph Table(Markdig.Extensions.Tables.Table table, int indent)
             {
                 var presentation = MarkdownTablePresentation.Create(table);
-                var rows = presentation.PreviewRows;
-                int columns = presentation.PreviewColumns;
+                var rows = presentation.Rows;
+                var cellRows = table.OfType<TableRow>()
+                    .Select(row => row.OfType<TableCell>().ToArray())
+                    .ToArray();
+                int columns = presentation.Columns;
                 var line = ThemeBrush("RuLineBrush", 203, 213, 225);
                 var grid = new Grid { MinWidth = columns * 120 };
                 for (int index = 0; index < columns; index++)
@@ -174,16 +257,34 @@ namespace RuApp.Controls
                         string cell = column < rows[rowIndex].Count ? rows[rowIndex][column] : string.Empty;
                         var text = new TextBlock
                         {
-                            Text = cell,
                             FontFamily = UiFont,
                             FontSize = bodySize,
                             LineHeight = LineHeightFor(bodySize),
                             TextWrapping = TextWrapping.Wrap,
                             IsTextSelectionEnabled = true,
+                            // GFM's :---:/:---:/---: alignment is table metadata,
+                            // not cell content; plain left for an undeclared column.
+                            TextAlignment = column < table.ColumnDefinitions.Count
+                                ? MarkdownBlock.TableColumnAlignment(table.ColumnDefinitions[column])
+                                : Microsoft.UI.Xaml.TextAlignment.Left,
                         };
                         if (header)
                         {
                             text.FontWeight = FontWeights.SemiBold;
+                        }
+
+                        var cellNode = rowIndex < cellRows.Length && column < cellRows[rowIndex].Length
+                            ? cellRows[rowIndex][column]
+                            : null;
+                        if (cellNode is not null)
+                        {
+                            // Rebuild the cell's inline runs so emphasis, links and
+                            // code spans survive instead of flattening to plain text.
+                            AddCellInlines(text.Inlines, cellNode, header);
+                        }
+                        else
+                        {
+                            text.Text = cell;
                         }
 
                         var frame = new Border
@@ -207,8 +308,8 @@ namespace RuApp.Controls
                     Padding = new Thickness(6, 4, 6, 4),
                     Tag = presentation.FullText,
                 };
-                ToolTipService.SetToolTip(copy, presentation.IsTruncated ? "Copy full table" : "Copy table");
-                copy.SetValue(AutomationProperties.NameProperty, presentation.IsTruncated ? "Copy full table" : "Copy table");
+                ToolTipService.SetToolTip(copy, "Copy table");
+                copy.SetValue(AutomationProperties.NameProperty, "Copy table");
                 copy.Click += OnCopyCodeClick;
                 var tableHeader = new Grid { Margin = new Thickness(12, 8, 12, 0) };
                 tableHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -228,33 +329,15 @@ namespace RuApp.Controls
 
                 var tableFrame = new StackPanel();
                 tableFrame.Children.Add(tableHeader);
-                if (presentation.IsTruncated)
-                {
-                    var notice = new TextBlock
-                    {
-                        Text = presentation.Notice, FontSize = 12,
-                        Foreground = MutedOrDefault(), TextWrapping = TextWrapping.Wrap,
-                    };
-                    var showAll = new Button
-                    {
-                        Content = "View full table", Tag = presentation.FullText,
-                        Padding = new Thickness(8, 4, 8, 4),
-                    };
-                    AutomationProperties.SetName(showAll, "View full table");
-                    showAll.Click += OnViewFullTableClick;
-                    var summary = new StackPanel { Spacing = 6, Margin = new Thickness(12, 8, 12, 8) };
-                    summary.Children.Add(notice);
-                    summary.Children.Add(showAll);
-                    tableFrame.Children.Add(summary);
-                }
                 tableFrame.Children.Add(new ScrollViewer
                 {
                     Content = grid,
                     HorizontalContentAlignment = HorizontalAlignment.Stretch,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollMode = ScrollMode.Enabled,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    VerticalScrollMode = ScrollMode.Disabled,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    VerticalScrollMode = ScrollMode.Enabled,
+                    MaxHeight = 640,
                 });
                 var outer = new Border
                 {
@@ -267,32 +350,6 @@ namespace RuApp.Controls
                 var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 6, 0, 14) };
                 paragraph.Inlines.Add(new InlineUIContainer { Child = outer });
                 return paragraph;
-            }
-
-            private static async void OnViewFullTableClick(object sender, RoutedEventArgs e)
-            {
-                if (sender is not Button { Tag: string text, XamlRoot: { } root }) return;
-                var body = new TextBox
-                {
-                    IsReadOnly = true, AcceptsReturn = true,
-                    TextWrapping = TextWrapping.NoWrap, FontFamily = MonoFont,
-                    FontSize = MonoFontSize, MinHeight = 180, MaxHeight = 420,
-                };
-                // WinUI discards subsequent lines if Text is assigned before AcceptsReturn.
-                body.Text = text;
-                ScrollViewer.SetHorizontalScrollBarVisibility(body, ScrollBarVisibility.Auto);
-                ScrollViewer.SetVerticalScrollBarVisibility(body, ScrollBarVisibility.Auto);
-                AutomationProperties.SetName(body, "Complete table as tab-separated text");
-                var dialog = new ContentDialog
-                {
-                    Title = "Full table", Content = body, CloseButtonText = "Close",
-                    XamlRoot = root, DefaultButton = ContentDialogButton.Close,
-                };
-                try { await Services.ContentDialogGate.ShowAsync(dialog); }
-                catch (Exception error)
-                {
-                    Services.GuiDiagnosticWriter.AppendTraceLine($"[MarkdownBlock] Full table could not open: {error.GetType().Name}");
-                }
             }
         }
     }

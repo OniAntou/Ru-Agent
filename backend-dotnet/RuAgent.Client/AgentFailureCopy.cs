@@ -248,6 +248,14 @@ public static class AgentFailureCopy
             "Prompt contract invalid",
             "the composed prompt failed validation",
             "retry the turn; if it repeats, restart Ru");
+        Add(table, ["model_history_too_large"],
+            "Conversation too large",
+            "the conversation, with the model's reasoning, is larger than one request may carry",
+            "start a fresh session, or continue in a new chat");
+        Add(table, ["provider_continuation_invalid", "provider_continuation_missing"],
+            "Reasoning history unavailable",
+            "the model's saved reasoning for an earlier step could not be replayed",
+            "retry the turn; if it repeats, start a fresh session");
         Add(table, ["invalid_request"],
             "Request rejected",
             "the host could not assemble the model request from this turn",

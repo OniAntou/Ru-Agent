@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: A run on a reasoning model could stop with `prompt_contract_invalid` after a few steps. The replayed reasoning of the retained turns (provider continuations) was capped at 512 KiB while the message history it accompanies may be 8 MiB, so ten steps at high effort crossed it and the host reported the prompt as invalid. The reasoning now shares the history budget. A step that fails while its request is prepared keeps its own code (`model_history_too_large`, `provider_continuation_invalid`) with a plain-language message instead of the generic one, and the remaining unclassified case is written to `RU_PROMPT_DIAGNOSTIC` when set.
+
 - **feat(gui)**: Back and Forward buttons beside the sidebar toggle walk through the sessions and screens already visited, like a browser; a session that no longer exists is skipped. The title-bar icon buttons now hover as an inset rounded plate and draw their own rounded focus ring instead of the square system focus rectangle.
 
 - **feat(gui)**: Redesign Settings. Permissions now holds the permission preset (three cards, with a notice for Full Access) beside remembered approvals; theme, agent activity and update channel are segmented choices with a sliding thumb; a search box filters cards and tabs; the rail gains a "Ru" group. Pages enter card by card and the rail cross-fades, all through the shared motion module so they follow the Windows animation setting. About is plain text plus one update row whose headline, buttons and progress follow a single state (checking, available, downloading, up to date, failed, source build).

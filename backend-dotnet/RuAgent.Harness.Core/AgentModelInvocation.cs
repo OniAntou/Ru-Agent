@@ -363,11 +363,17 @@ internal sealed class AgentModelInvocation
         }
         catch (Exception error)
         {
-            var code = error is IStableStepError stable
-                ? stable.StepErrorCode
+            var code = error is IStableStepError stable && IsStableStepCode(stable.StepErrorCode)
+                ? stable.StepErrorCode.Trim()
                 : error is ModelContextLimitResolutionException limit
                     ? limit.StepErrorCode
                     : "prompt_contract_invalid";
+            if (code == "prompt_contract_invalid")
+            {
+                // The one code that names no cause: say what it was, when diagnostics are asked for.
+                RecordContractFailure("prepare", $"{error.GetType().Name}: {error.Message}", 0, 0);
+            }
+
             throw new ModelStepPreparationException(code, error);
         }
     }

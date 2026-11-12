@@ -10,7 +10,19 @@ namespace RuBackend.Providers;
 public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions options, HarnessPayloadStore payloads)
 {
     private const int MaximumRows = 256;
-    private const int MaximumHistoryBytes = 512 * 1024;
+
+    /// <summary>
+    /// The most provider-continuation payloads (a model's reasoning and output items, replayed
+    /// with each retained assistant turn) one request may carry.
+    /// </summary>
+    /// <remarks>
+    /// This is the same ceiling the message history itself answers to. It used to be 512 KiB,
+    /// sixteen times smaller, while the history it accompanies may be 8 MiB: a short run on a
+    /// reasoning model at high effort (about 50 KiB of reasoning a step) crossed it after ten
+    /// steps and failed with a code that blamed the prompt. The reasoning is part of the
+    /// history, so it gets the history's budget, and the request's own 64 MiB bound still holds.
+    /// </remarks>
+    internal const int MaximumHistoryBytes = RuAgent.Runtime.Adapters.Models.ModelInputLimits.MaxHistoryBytes;
 
     public async Task<IReadOnlyList<ProviderContinuation>> ReadAsync(
         RunId runId,
@@ -69,11 +81,18 @@ public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions option
             var content = await payloads.ReadProviderContinuationAsync(
                 runId, reference.PayloadId, reference.ModelStepId, provider, bootstrap.Protocol, bootstrap.Model, cancellationToken)
                 .ConfigureAwait(false);
-            aggregateBytes = checked(aggregateBytes + content.Plaintext.Length);
-            if (aggregateBytes > MaximumHistoryBytes) throw new ProviderCatalogException("model_history_too_large");
+            aggregateBytes = AddWithinBudget(aggregateBytes, content.Plaintext.Length);
             result.Add(Parse(content.Plaintext, bootstrap, provider));
         }
         return result;
+    }
+
+    /// <summary>Adds one continuation to the running total, refusing a total over the budget.</summary>
+    internal static int AddWithinBudget(int aggregateBytes, int nextBytes)
+    {
+        var total = checked(aggregateBytes + nextBytes);
+        if (total > MaximumHistoryBytes) throw new ProviderCatalogException("model_history_too_large");
+        return total;
     }
 
     internal static bool HasExactAssociations(

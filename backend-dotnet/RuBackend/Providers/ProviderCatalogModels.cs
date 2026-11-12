@@ -100,9 +100,16 @@ public sealed record ProviderCatalogSnapshot(
     };
 }
 
-public sealed class ProviderCatalogException(string code) : Exception(code)
+public sealed class ProviderCatalogException(string code) : Exception(code), RuAgent.Harness.Core.IStableStepError
 {
     public string Code { get; } = code;
+
+    /// <summary>
+    /// The code is already a bounded name. Without this, a step that failed while the host
+    /// prepared its request (history too large, continuation invalid) reached the run as the
+    /// generic prompt_contract_invalid, which blamed the prompt for a problem it did not have.
+    /// </summary>
+    public string StepErrorCode => Code;
 }
 
 /// <summary>The only reasoning states the picker knows how to present.</summary>

@@ -88,6 +88,18 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
 
     public string RemovedDeltaText => TurnChangesProjection.FormatCount(Removed, "−");
 
+    /// <summary>
+    /// The removed column of a row: empty when nothing was removed or the count is unknown,
+    /// so a list of new files is not a column of dashes. The accessible name and the
+    /// expanded edits still state the recorded value.
+    /// </summary>
+    public string RemovedColumnText => Removed is > 0 ? RemovedDeltaText : string.Empty;
+
+    public bool HasRemovedColumn => Removed is > 0;
+
+    /// <summary>The folder as it follows the file name on the row's single line.</summary>
+    public string FolderSuffix => Folder is null ? string.Empty : "  " + Folder;
+
     public string EditCountText => Edits.Count > 1 ? $"{Edits.Count} edits" : string.Empty;
 
     public string ToolTipText => Edits.Count == 1

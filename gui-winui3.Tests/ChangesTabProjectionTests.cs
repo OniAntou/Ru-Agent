@@ -63,6 +63,23 @@ public sealed class ChangesTabProjectionTests
         Assert.Null(row.Added);
         Assert.Equal("—", row.AddedDeltaText);
         Assert.Equal("—", row.RemovedDeltaText);
+        // The row's removed column stays quiet; the dash above still reaches the accessible name.
+        Assert.Equal(string.Empty, row.RemovedColumnText);
+        Assert.Contains("removed —", row.AccessibleName);
+    }
+
+    [Fact]
+    public void The_row_keeps_one_line_with_the_folder_after_the_name_and_a_removed_count_only_when_lines_went()
+    {
+        var edit = new ChangesTabEdit("activity_1", "a", "b", 1, 4, 2);
+        var nested = new ChangesTabRow("store.js", 4, 2, new[] { edit }, relativePath: "assets/js/store.js");
+        var atRoot = new ChangesTabRow("server.js", 140, 0, new[] { edit }, relativePath: "server.js");
+
+        Assert.Equal("  assets/js", nested.FolderSuffix);
+        Assert.Equal("−2", nested.RemovedColumnText);
+        Assert.Equal(string.Empty, atRoot.FolderSuffix);
+        Assert.Equal(string.Empty, atRoot.RemovedColumnText);
+        Assert.Equal("−0", atRoot.RemovedDeltaText);
     }
 
     [Fact]

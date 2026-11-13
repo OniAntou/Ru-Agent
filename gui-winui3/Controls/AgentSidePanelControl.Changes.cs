@@ -41,10 +41,9 @@ public sealed partial class AgentSidePanelControl
         CardChangesLabel.Text = SidePanelSummary.ChangesLabel(rows);
         CardChangeDeltas.Visibility = rows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        CardAddedText.Text = "+" + added;
-        CardRemovedText.Text = "−" + removed;
-        PanelAddedText.Text = "+" + added;
-        PanelRemovedText.Text = "−" + removed;
+        // One number format for the totals and the rows below them.
+        CardAddedText.Text = PanelAddedText.Text = TurnChangesProjection.FormatCount(added, "+");
+        CardRemovedText.Text = PanelRemovedText.Text = TurnChangesProjection.FormatCount(removed, "−");
         ChangesSummaryText.Text = SidePanelSummary.ChangesLabel(rows);
     }
 
@@ -63,6 +62,68 @@ public sealed partial class AgentSidePanelControl
             : "Files the agent edits in this session appear here.";
         ChangesEmptyText.Visibility = visible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ChangesList.Visibility = visible.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>
+    /// A row's actions button is drawn only while the pointer or the keyboard is on the row.
+    /// It stays in the tab order and the automation tree throughout.
+    /// </summary>
+    private const double ChangeRowActionsWidth = 28;
+
+    private static void SetChangeRowActive(object sender, bool active)
+    {
+        if (sender is not Microsoft.UI.Xaml.Controls.Grid { Children.Count: > 1 } row
+            || row.Children[1] is not Microsoft.UI.Xaml.Controls.Button actions) return;
+        // An open actions menu takes the pointer away; the button stays until it closes.
+        if (!active && actions.Flyout?.IsOpen == true)
+        {
+            void OnClosed(object? source, object args)
+            {
+                actions.Flyout.Closed -= OnClosed;
+                SetChangeRowActive(row, false);
+            }
+
+            actions.Flyout.Closed += OnClosed;
+            return;
+        }
+
+        // No hover surface: sweeping the pointer down the list lit and dimmed each row in
+        // turn, which read as flicker. The counts moving aside for the button is the cue.
+        UiMotion.FadeOpacity(actions, active ? 1 : 0);
+        if (row.Children.Count > 2 && row.Children[2] is FrameworkElement counts)
+            UiMotion.SlideX(counts, active ? -ChangeRowActionsWidth : 0);
+    }
+
+    // The row's Tag remembers whether the pointer is over it, so losing keyboard focus
+    // under a resting pointer (a click elsewhere in the row) does not hide the button.
+    private void OnChangeRowPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is FrameworkElement row) row.Tag = true;
+        SetChangeRowActive(sender, true);
+    }
+
+    private void OnChangeRowPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is FrameworkElement row) row.Tag = false;
+        SetChangeRowActive(sender, false);
+    }
+
+    private void OnChangeRowGotFocus(object sender, RoutedEventArgs e)
+    {
+        // A click also focuses the row; only keyboard focus needs the row lit without a pointer.
+        if (e.OriginalSource is Microsoft.UI.Xaml.Controls.Control { FocusState: FocusState.Keyboard })
+            SetChangeRowActive(sender, true);
+    }
+
+    private void OnChangeRowLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: true }) return;
+        SetChangeRowActive(sender, false);
+    }
+
+    private void OnChangeRowCountsTapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: ChangesTabRow row }) row.IsExpanded = !row.IsExpanded;
     }
 
     private void OnShowScratchClick(object sender, RoutedEventArgs e)

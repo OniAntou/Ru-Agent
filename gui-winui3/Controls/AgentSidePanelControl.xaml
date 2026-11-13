@@ -110,6 +110,31 @@
             <Setter Property="Background" Value="Transparent" />
         </Style>
 
+        <Style x:Key="ChangesRowToggleStyle" TargetType="Button">
+            <!-- The Changes row paints one hover surface for the whole line, so the
+                 toggle inside it has no hover layer or press scale of its own:
+                 two layers would show a seam where the actions button begins, and
+                 scaling a full-width row reads as a jolt. -->
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="{TemplateBinding CornerRadius}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="SidePanelCardRowStyle" TargetType="Button">
             <!-- A summary-card row is one click target: the whole row hovers and
                  opens its details tab, Codex-style. -->
@@ -254,11 +279,13 @@
                                        Foreground="{StaticResource RuInkBrush}"
                                        VerticalAlignment="Center" />
                         </Grid>
-                        <!-- Quiet while there is nothing to report: the row's title and its
-                             accessible name already say "No subagents yet". -->
-                        <Grid x:Name="CardSubagentsDetail" Visibility="Collapsed"
-                              ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="18,0,0,0">
-                            <StackPanel x:Name="CardSubagentGlyphs" Orientation="Horizontal" Spacing="2" />
+                        <!-- Always states its status, like the tasks row below, so the three
+                             card rows read the same way: a label, then where it stands. -->
+                        <Grid x:Name="CardSubagentsDetail"
+                              ColumnDefinitions="Auto,*" Margin="18,0,0,0">
+                            <!-- Collapsed while empty, so the status text starts where the tasks row's does. -->
+                            <StackPanel x:Name="CardSubagentGlyphs" Orientation="Horizontal" Spacing="2" Margin="0,0,8,0"
+                                        Visibility="Collapsed" />
                             <TextBlock x:Name="CardSubagentsSummary" Grid.Column="1" Text="No subagents yet" FontSize="11"
                                        VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource RuMutedBrush}" />
                         </Grid>
@@ -663,7 +690,8 @@
                     <Grid x:Name="ChangesBody" Visibility="Collapsed" RowDefinitions="Auto,*">
                         <!-- The tab already says "Changes", so the header carries the
                              summary instead: files, totals and the scratch-file toggle. -->
-                        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,0,0,8">
+                        <!-- The totals end at the same right edge as the rows' counts. -->
+                        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6" Margin="6,0,6,8">
                             <TextBlock x:Name="ChangesSummaryText"
                                        Text="No file changes"
                                        FontFamily="{StaticResource RuUiFontFamily}"
@@ -673,21 +701,23 @@
                                        TextTrimming="CharacterEllipsis"
                                        VerticalAlignment="Center" />
                             <TextBlock x:Name="PanelAddedText"
-                                       Grid.Column="1"
+                                       Grid.Column="2"
                                        Text="+0"
                                        FontFamily="{StaticResource RuMonoFontFamily}"
                                        FontSize="12"
                                        Foreground="{StaticResource RuSuccessBrush}"
+                                       HorizontalAlignment="Right"
                                        VerticalAlignment="Center" />
                             <TextBlock x:Name="PanelRemovedText"
-                                       Grid.Column="2"
+                                       Grid.Column="3"
                                        Text="−0"
                                        FontFamily="{StaticResource RuMonoFontFamily}"
                                        FontSize="12"
                                        Foreground="{StaticResource RuDangerBrush}"
+                                       HorizontalAlignment="Right"
                                        VerticalAlignment="Center" />
                             <ToggleButton x:Name="ShowScratchToggle"
-                                          Grid.Column="3"
+                                          Grid.Column="1"
                                           Visibility="Collapsed"
                                           Click="OnShowScratchClick"
                                           Padding="6,2"
@@ -730,61 +760,63 @@
                                     <DataTemplate x:DataType="models:ChangesTabRow">
                                         <!-- One row per file; expanding it lists that file's
                                              edits newest first, each with its own diff. -->
-                                        <StackPanel Margin="0,0,0,4">
-                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="2">
+                                        <StackPanel>
+                                            <!-- Every file is one 32 px line, so the list keeps one rhythm
+                                                 whether or not a file sits in a folder. The row is one hover
+                                                 surface: the name, then the counts flush at the right edge.
+                                                 While the row is hovered or focused the counts glide left and
+                                                 the actions button appears after them, at the edge. -->
+                                            <Grid ColumnDefinitions="*,Auto"
+                                                  Background="Transparent"
+                                                  CornerRadius="{StaticResource AppControlCornerRadius}"
+                                                  PointerEntered="OnChangeRowPointerEntered"
+                                                  PointerExited="OnChangeRowPointerExited"
+                                                  GotFocus="OnChangeRowGotFocus"
+                                                  LostFocus="OnChangeRowLostFocus">
                                             <Button Click="OnChangeRowToggleClick"
                                                     Tag="{x:Bind}"
-                                                    Style="{StaticResource RuToolbarButtonStyle}"
-                                                    HorizontalAlignment="Stretch"
-                                                    HorizontalContentAlignment="Stretch"
+                                                    Style="{StaticResource ChangesRowToggleStyle}"
                                                     CornerRadius="{StaticResource AppControlCornerRadius}"
-                                                    Padding="6,3"
+                                                    MinHeight="32"
+                                                    Padding="6,0,28,0"
                                                     Opacity="{x:Bind RowOpacity}"
                                                     ToolTipService.ToolTip="{x:Bind ToolTipText}"
                                                     AutomationProperties.Name="{x:Bind AccessibleName}">
-                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="6">
+                                                <!-- Name, then its folder on the same line: trimming takes the
+                                                     folder first. -->
+                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
                                                     <FontIcon Glyph="{x:Bind ExpansionGlyph, Mode=OneWay}"
                                                               FontSize="10"
                                                               Foreground="{StaticResource RuMutedBrush}"
                                                               VerticalAlignment="Center" />
-                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                        <TextBlock Text="{x:Bind FileName}"
-                                                                   FontFamily="{StaticResource RuMonoFontFamily}"
-                                                                   FontSize="11.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Text="{x:Bind Folder}"
-                                                                   Visibility="{x:Bind HasFolder, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="10.5"
-                                                                   Foreground="{StaticResource RuMutedBrush}"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                    <TextBlock Grid.Column="2"
-                                                               Text="{x:Bind EditCountText}"
-                                                               FontFamily="{StaticResource RuUiFontFamily}"
-                                                               FontSize="11"
-                                                               Foreground="{StaticResource RuMutedBrush}"
-                                                               VerticalAlignment="Center" />
-                                                    <TextBlock Grid.Column="3"
-                                                               Text="{x:Bind AddedDeltaText}"
-                                                               FontFamily="{StaticResource RuMonoFontFamily}"
-                                                               FontSize="11.5"
-                                                               Foreground="{StaticResource RuSuccessBrush}"
-                                                               VerticalAlignment="Center" />
-                                                    <TextBlock Grid.Column="4"
-                                                               Text="{x:Bind RemovedDeltaText}"
-                                                               FontFamily="{StaticResource RuMonoFontFamily}"
-                                                               FontSize="11.5"
-                                                               Foreground="{StaticResource RuDangerBrush}"
-                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               TextWrapping="NoWrap">
+                                                        <Run Text="{x:Bind FileName}"
+                                                             FontFamily="{StaticResource RuMonoFontFamily}"
+                                                             FontSize="12"
+                                                             Foreground="{StaticResource RuInkBrush}" /><Run Text="{x:Bind FolderSuffix}"
+                                                             FontFamily="{StaticResource RuUiFontFamily}"
+                                                             FontSize="11"
+                                                             Foreground="{StaticResource RuMutedBrush}" />
+                                                    </TextBlock>
                                                 </Grid>
                                             </Button>
+                                            <!-- Present for the keyboard and for assistive tech at all times;
+                                                 drawn only while the row is hovered or holds focus. It shares
+                                                 the counts' cell at the right edge; the counts move aside for
+                                                 it, and the name always stops short of that room. -->
                                             <Button Grid.Column="1"
+                                                    HorizontalAlignment="Right"
+                                                    Canvas.ZIndex="1"
+                                                    Margin="0,0,2,0"
                                                     Style="{StaticResource RuToolbarButtonStyle}"
-                                                    Width="24"
+                                                    Width="28"
+                                                    Height="24"
                                                     Padding="0"
-                                                    VerticalAlignment="Stretch"
+                                                    Opacity="0"
+                                                    VerticalAlignment="Center"
                                                     CornerRadius="{StaticResource AppControlCornerRadius}"
                                                     ToolTipService.ToolTip="File actions"
                                                     AutomationProperties.Name="File actions">
@@ -805,9 +837,29 @@
                                                     </MenuFlyout>
                                                 </Button.Flyout>
                                             </Button>
+                                            <!-- The counts end flush at the row's right edge. Tapping them
+                                                 toggles the row like the name does. -->
+                                            <Border Grid.Column="1"
+                                                    Background="Transparent"
+                                                    Padding="6,0,6,0"
+                                                    Opacity="{x:Bind RowOpacity}"
+                                                    Tag="{x:Bind}"
+                                                    Tapped="OnChangeRowCountsTapped">
+                                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                    <TextBlock Text="{x:Bind AddedDeltaText}"
+                                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                                               FontSize="12"
+                                                               Foreground="{StaticResource RuSuccessBrush}" />
+                                                    <TextBlock Text="{x:Bind RemovedColumnText}"
+                                                               Visibility="{x:Bind HasRemovedColumn, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                                               FontSize="12"
+                                                               Foreground="{StaticResource RuDangerBrush}" />
+                                                </StackPanel>
+                                            </Border>
                                             </Grid>
                                             <ItemsControl
-                                                          Margin="16,4,0,4"
+                                                          Margin="22,4,0,8"
                                                           ItemsSource="{x:Bind Edits}"
                                                           Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
                                                 <ItemsControl.ItemTemplate>

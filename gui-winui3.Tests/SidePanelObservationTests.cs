@@ -50,6 +50,8 @@ public sealed class SidePanelObservationTests
         Assert.Contains("1 preparing", text);
         Assert.Contains("1 unavailable", text);
         Assert.Contains("1 done", text);
+        var running = snapshot with { Running = 1, MaxRunnable = 3 };
+        Assert.Contains("active 1/3", SubagentPresentation.ObserverSummary(running, false));
         Assert.StartsWith("Refresh unavailable", SubagentPresentation.ObserverSummary(snapshot, true));
         Assert.DoesNotContain("Refresh unavailable", SubagentPresentation.ObserverSummary(snapshot, false));
         Assert.Equal("Refresh unavailable", SubagentPresentation.ObserverSummary(null, true));

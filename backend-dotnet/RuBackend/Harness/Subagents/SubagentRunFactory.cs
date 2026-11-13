@@ -31,7 +31,6 @@ public sealed class SubagentRunFactory(IHarnessEventStore events, SqliteSubagent
             "review" => SubagentRole.Review,
             _ => throw new HarnessStoreException("subagent_role_invalid"),
         };
-        var brief = Encoding.UTF8.GetBytes(SubagentContextBuilder.Build(role, request.Task, request.Context));
         var requestHash = Hash(JsonSerializer.SerializeToUtf8Bytes(request));
         var identity = Hash(Encoding.UTF8.GetBytes(rootId.Value + ":" + invocationId))[..32];
         var agentId = "agent_" + identity;
@@ -57,6 +56,10 @@ public sealed class SubagentRunFactory(IHarnessEventStore events, SqliteSubagent
                     throw new HarnessStoreException("subagent_preparation_incomplete");
                 return replay;
             }
+
+            var profile = ResolveProfile(parentRoot, role, request.Profile);
+            var brief = Encoding.UTF8.GetBytes(SubagentContextBuilder.Build(
+                role, request.Task, request.Context, profile?.Instructions));
             AgentRunProviderSelection selection;
             try { selection = await models.ResolveAsync(rootId, role, ct, request.Model, request.ProviderId).ConfigureAwait(false); }
             catch (SubagentConfigurationException e)
@@ -87,5 +90,19 @@ public sealed class SubagentRunFactory(IHarnessEventStore events, SqliteSubagent
     }
 
     private static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+    private static SubagentProfile? ResolveProfile(string parentRoot, SubagentRole role, string? profileId)
+    {
+        if (string.IsNullOrWhiteSpace(profileId)) return null;
+        var profile = SubagentProfileCatalog.Find(parentRoot, profileId)
+            ?? throw new SubagentControlRejectedException("subagent_profile_not_found");
+        if (profile.Role != role)
+        {
+            throw new SubagentControlRejectedException("subagent_profile_role_mismatch");
+        }
+
+        return profile;
+    }
+
     public void Dispose() => _prepare.Dispose();
 }

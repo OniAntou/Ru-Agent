@@ -25,6 +25,8 @@ public sealed class SubagentContractTests
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<SubagentRole>(token));
 
     [Theory]
+    [InlineData("agent_spawn", "{\"role\":\"review\",\"task\":\"inspect\",\"profile\":\"bad id\"}")]
+    [InlineData("agent_spawn", "{\"role\":\"review\",\"task\":\"inspect\",\"profile\":\"\"}")]
     [InlineData("agent_spawn", "{\"role\":\"review\",\"task\":\"inspect\",\"admin\":true}")]
     [InlineData("agent_spawn", "{\"role\":\"owner\",\"task\":\"inspect\"}")]
     [InlineData("agent_send", "{\"agent_id\":\"a\",\"message\":\" \"}")]
@@ -40,6 +42,14 @@ public sealed class SubagentContractTests
     {
         using var document = JsonDocument.Parse(json);
         Assert.False(SubagentContractValidator.Validate(toolId, document.RootElement).IsValid);
+    }
+
+    [Fact]
+    public void A_bounded_profile_id_is_valid_wire_arguments()
+    {
+        using var document = JsonDocument.Parse(
+            "{\"role\":\"review\",\"task\":\"inspect\",\"profile\":\"reviewer_2\"}");
+        Assert.True(SubagentContractValidator.Validate("agent_spawn", document.RootElement).IsValid);
     }
 
     [Fact]

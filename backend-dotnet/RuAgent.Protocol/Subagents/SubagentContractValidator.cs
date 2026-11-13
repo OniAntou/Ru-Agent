@@ -28,7 +28,7 @@ public static class SubagentContractValidator
         if (arguments.ValueKind != JsonValueKind.Object) return false;
         string[] fields = toolId switch
         {
-            "agent_spawn" => ["role", "task", "context", "model", "provider_id"],
+            "agent_spawn" => ["role", "task", "context", "model", "provider_id", "profile"],
             "agent_send" => ["agent_id", "message"],
             "agent_wait" => ["agent_ids", "timeout_ms"],
             "agent_cancel" => ["agent_id"],
@@ -48,7 +48,9 @@ public static class SubagentContractValidator
                     || context.ValueKind == JsonValueKind.String
                     && StrictUtf8.GetByteCount(context.GetString()!) <= SubagentLimits.MaxContextBytes)
                 && (!arguments.TryGetProperty("model", out _) || Text(arguments, "model", 256, out _))
-                && (!arguments.TryGetProperty("provider_id", out _) || Text(arguments, "provider_id", 128, out _) && Text(arguments, "model", 256, out _)),
+                && (!arguments.TryGetProperty("provider_id", out _) || Text(arguments, "provider_id", 128, out _) && Text(arguments, "model", 256, out _))
+                && (!arguments.TryGetProperty("profile", out _)
+                    || Text(arguments, "profile", 32, out var profile) && IsValidProfileId(profile)),
             "agent_send" => AgentId(arguments) && Text(arguments, "message", SubagentLimits.MaxTaskCharacters, out _),
             "agent_wait" => Wait(arguments),
             "agent_cancel" => AgentId(arguments),
@@ -60,6 +62,10 @@ public static class SubagentContractValidator
     }
 
     public static bool IsValidId(string? id) => id is { Length: > 0 and <= 128 }
+        && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
+
+    public static bool IsValidProfileId(string? id) => id is { Length: > 0 and <= 32 }
+        && char.IsAsciiLetterOrDigit(id[0])
         && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
 
     private static bool AgentId(JsonElement arguments) =>

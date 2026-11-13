@@ -8,6 +8,7 @@ using RuAgent.Protocol;
 using RuBackend.Business.Settings;
 using RuBackend.Providers;
 using RuBackend.Harness.Workspace;
+using RuBackend.Harness.Subagents;
 
 using RuAgent.Protocol.Harness;
 namespace RuBackend.Harness.Prompting;
@@ -116,6 +117,13 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
                 "Some instructions were not loaded: " + string.Join("; ", skipped.Take(16)
                     .Select(skip => $"{skip.SourceId}: {skip.Reason}"))
                 + ". Do not assume those instructions were applied. Inspect or repair them within current permissions."));
+        }
+        var profiles = SubagentProfileCatalog.Load(_canonicalRoot);
+        if (profiles.Items.Count > 0)
+        {
+            runtime = PromptContextBudget.Append(runtime,
+                new PromptReference("subagent_profiles", "available subagent profiles",
+                    SubagentProfileCatalog.Describe(profiles.Items)));
         }
         var capabilities = BuildCapabilities();
 

@@ -101,6 +101,8 @@ public sealed partial class SubagentTreeView
         }
         finally { _changingVersions = false; }
         ExportButton.IsEnabled = result is not null && !_exporting;
+        ReviewChangesButton.IsEnabled = result is not null && string.Equals(agent.Role, "coding", StringComparison.OrdinalIgnoreCase);
+        ReviewChangesButton.Visibility = agent.Role == "coding" ? Visibility.Visible : Visibility.Collapsed;
         PendingResult.Visibility = result is null ? Visibility.Visible : Visibility.Collapsed;
         PendingResult.Text = row.Group == SubagentGroup.Working ? "Working on this task. The result will appear here."
             : "No result was published for this attempt.";

@@ -9,7 +9,9 @@ public sealed record SubagentListResponse(
     [property: JsonPropertyName("agents")] IReadOnlyList<SubagentSummary> Agents,
     [property: JsonPropertyName("preparations")] IReadOnlyList<SubagentPreparationSummary> Preparations,
     [property: JsonPropertyName("unavailable_attempts")] int UnavailableAttempts,
-    [property: JsonPropertyName("usage")] SubagentUsageSummary Usage);
+    [property: JsonPropertyName("usage")] SubagentUsageSummary Usage,
+    [property: JsonPropertyName("max_runnable")] int MaxRunnable = 0,
+    [property: JsonPropertyName("running")] int Running = 0);
 
 public sealed record SubagentSummary(
     [property: JsonPropertyName("agent_id")] string AgentId,
@@ -69,6 +71,24 @@ public sealed record SubagentDetailResponse(
     [property: JsonPropertyName("root_run_id")] string RootRunId,
     [property: JsonPropertyName("agent")] SubagentSummary Agent,
     [property: JsonPropertyName("result")] SubagentResultPageResponse? Result);
+
+/// <summary>Read-only preview of the files a coding child proposed for integration.</summary>
+public sealed record SubagentChangesResponse(
+    [property: JsonPropertyName("root_run_id")] string RootRunId,
+    [property: JsonPropertyName("agent_id")] string AgentId,
+    [property: JsonPropertyName("result_version")] long ResultVersion,
+    [property: JsonPropertyName("files")] IReadOnlyList<SubagentChangedFileResponse> Files);
+
+public sealed record SubagentChangedFileResponse(
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("base_hash")] string BaseHash,
+    [property: JsonPropertyName("proposed_hash")] string ProposedHash,
+    [property: JsonPropertyName("mode")] int Mode,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("binary")] bool Binary,
+    [property: JsonPropertyName("truncated")] bool Truncated,
+    [property: JsonPropertyName("base_text")] string? BaseText,
+    [property: JsonPropertyName("proposed_text")] string? ProposedText);
 
 public sealed record SubagentResultPageResponse(
     [property: JsonPropertyName("result_version")] long ResultVersion,

@@ -7,8 +7,15 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Persistence.Subagents;
 
-public sealed partial class SqliteSubagentStore(HarnessSqliteOptions options, HarnessPayloadStore payloads) : ISubagentStore
+public sealed partial class SqliteSubagentStore(
+    HarnessSqliteOptions options,
+    HarnessPayloadStore payloads,
+    SubagentConcurrencyOptions? concurrency = null) : ISubagentStore
 {
+    private readonly int _maxRunnable = Math.Clamp(
+        concurrency?.MaxRunnable ?? SubagentLimits.MaxRunnable,
+        SubagentConcurrencyOptions.Minimum,
+        SubagentConcurrencyOptions.Maximum);
     private HarnessSqliteOptions Options => options;
     private HarnessPayloadStore Payloads => payloads;
     public async Task<SubagentRecord> CreateAsync(SubagentCreateCommand request, CancellationToken ct)

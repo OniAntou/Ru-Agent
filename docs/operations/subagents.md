@@ -2,13 +2,37 @@
 
 The main agent can delegate coding and research/review tasks. Users observe the task tree,
 attempts, pinned model/provider/protocol, reported usage and versioned results. The GUI can
-page or export results. Send, Stop-child, Apply and child approval controls are not exposed
-to users. Ask the main agent to change a child task. Stopping the parent still stops its family.
+page or export results, and for a coding result it can open a read-only change review showing
+the proposed files, base-vs-workspace status and a bounded unified diff. Review never applies
+anything: the main agent remains the only actor allowed to call `agent_apply`. A review may
+also copy a bounded unified patch for the user's own Git/PR flow; Ru never pushes, commits or
+opens a pull request automatically. Send, Stop-child,
+Apply and child approval controls are not exposed to users. Ask the main agent to change a child
+task. Stopping the parent still stops its family.
+
+[ADR 0045](../adr/0045-detached-background-subagents.md) proposes detached background
+children and manual PR export; detached execution is **not enabled** in this version.
+A normal root still cancels its family, and the GUI remains observation-only. A coding
+result's read-only change review and bounded patch export are available today.
 
 ## Model selection
 
 Every child inherits the parent's entire pinned selection by default. There is no subagent
 Settings section or coding/review preference. Old `subagents` settings are retired.
+
+## Profiles
+
+A workspace may define reusable subagent profiles in `.ru/subagents.json`; a user-level
+`%USERPROFILE%\.ru\subagents.json` supplies defaults. The file is bounded (64 KiB, at most 16
+profiles) and each profile has `id`, `role` (`coding` or `review`), optional `name` and
+`description`, and bounded `instructions`. Workspace profiles replace user profiles with the
+same id. The root prompt lists the available profiles, and `agent_spawn` may pass
+`profile=<id>`; the declared role must match the tool's `role` argument.
+
+Profile instructions are configuration guidance, not authority: they cannot add tools, widen
+workspace or network boundaries, approve actions, select a provider/model, or change the
+child's role. A model override still requires the explicit root-prompt request described
+below. Invalid profiles are ignored with a catalog diagnostic rather than broadening a run.
 
 For another model, explicitly ask in the main conversation, for example: "Use Claude Opus
 4.5 for the review subagent." The parent passes the requested name in `agent_spawn.model`;
@@ -39,6 +63,13 @@ Continuations preserve the original attempt selection even if settings or creden
 a missing credential fails the pinned run instead of switching providers.
 
 ## Execution and permissions
+
+Children run under the Host's global drive workers, so spawning one does not occupy the
+parent's model worker; `agent_wait` is a deferred wait. The family runs at most three admitted
+children at once by default. Set `RU_MAX_RUNNABLE_SUBAGENTS` to an integer from 1 to 8 to tune
+the admitted-child limit; an invalid or out-of-range value keeps the default rather than
+widening concurrency by typo. The GUI task board reads the current limit and shows
+`active N/limit` while children are admitted.
 
 Use `role=review` for research, web searches (including current prices), analysis and
 code review. It uses the parent's workspace read-only and does not require Git.

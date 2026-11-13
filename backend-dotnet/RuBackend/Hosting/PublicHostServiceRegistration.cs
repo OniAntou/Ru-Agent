@@ -35,6 +35,7 @@ using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Hosting;
 using RuAgent.Protocol.Harness;
+using RuAgent.Protocol.Subagents;
 using RuAgent.Runtime.Adapters.Models;
 using RuAgent.Runtime.Model;
 
@@ -140,6 +141,7 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<IWorkspaceJournalProtector>(services =>
             services.GetRequiredService<WorkspaceJournalProtector>());
         services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore>();
+        services.AddSingleton(SubagentConcurrencyOptions.FromEnvironment(Environment.GetEnvironmentVariable));
         services.AddSingleton<RuAgent.Harness.Core.Subagents.ISubagentInbox>(services =>
             services.GetRequiredService<RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore>());
         services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentBudgetStore>();

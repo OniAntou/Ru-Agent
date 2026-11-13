@@ -12,6 +12,7 @@ public static partial class AgentV1Endpoints
     {
         app.MapGet("/agent/v1/runs/{runId}/subagents", ListSubagentsAsync);
         app.MapGet("/agent/v1/runs/{runId}/subagents/{agentId}", GetSubagentAsync);
+        app.MapGet("/agent/v1/runs/{runId}/subagents/{agentId}/changes", GetSubagentChangesAsync);
     }
 
     private static Task<IResult> ListSubagentsAsync(string runId, SubagentPublicService service, CancellationToken ct) =>
@@ -28,12 +29,23 @@ public static partial class AgentV1Endpoints
             return await service.DetailAsync(new(runId), agentId, version, offset, limit, ct);
         }, 200);
 
+    private static Task<IResult> GetSubagentChangesAsync(string runId, string agentId, HttpContext context,
+        SubagentPublicService service, CancellationToken ct) => SubagentResponseAsync(async () =>
+        {
+            if (!context.Request.Query.TryGetValue("result_version", out var raw)
+                || !long.TryParse(raw, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var version)
+                || version is < 1 or > SubagentLimits.MaxAttempts)
+                throw new FormatException();
+            return await service.ChangesAsync(new(runId), agentId, version, ct);
+        }, 200);
+
     private static async Task<IResult> SubagentResponseAsync(Func<Task<object>> action, int success)
     {
         try { return Results.Json(await action(), statusCode: success); }
         catch (HarnessStoreException e)
         {
-            var status = e.Code is "subagent_root_not_found" or "subagent_not_found" or "subagent_result_not_found" ? 404
+            var status = e.Code is "subagent_root_not_found" or "subagent_not_found" or "subagent_result_not_found" or "subagent_changes_not_found" ? 404
                 : e.Code is "invalid_subagent_arguments" or "subagent_page_invalid" ? 400 : 409;
             return Results.Json(new { error_code = e.Code }, statusCode: status);
         }

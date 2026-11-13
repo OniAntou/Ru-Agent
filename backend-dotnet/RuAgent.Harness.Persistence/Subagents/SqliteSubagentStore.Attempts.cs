@@ -66,7 +66,7 @@ public sealed partial class SqliteSubagentStore
             WHERE s.root_run_id=$root AND s.canceled=0 AND a.admitted_at_utc IS NOT NULL AND r.terminal_at_utc IS NULL
             """;
         command.Parameters.AddWithValue("$root", rootId);
-        if ((long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) >= SubagentLimits.MaxRunnable) return false;
+        if ((long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) >= _maxRunnable) return false;
         command.CommandText = """
             UPDATE agent_subagent_attempts SET admitted_at_utc=$now,deadline_at_utc=$deadline
             WHERE agent_id=$agent AND attempt_number=$attempt AND admitted_at_utc IS NULL

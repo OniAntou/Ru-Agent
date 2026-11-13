@@ -59,6 +59,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 
 ## Decisions
 
+- [Detached background subagents and manual PR integration](adr/0045-detached-background-subagents.md) (proposed)
 - [Advisory verification of declared checks](adr/0039-advisory-verification.md)
 - [Tool descriptor table](adr/0038-tool-descriptor-table.md)
 - [Broker-owned language-server tools](adr/0037-language-server-tools.md)

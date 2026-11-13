@@ -18,6 +18,16 @@ public sealed partial class AgentApiClient
         return SendSubagentRequestAsync<SubagentDetailResponse>(rootRunId, agentId, query, HttpMethod.Get, null, ct);
     }
 
+    /// <summary>Read-only proposed files for one coding result; applying stays a parent-agent action.</summary>
+    public Task<SubagentChangesResponse> GetSubagentChangesAsync(string rootRunId, string agentId,
+        long resultVersion, CancellationToken ct = default)
+    {
+        if (resultVersion is < 1 or > 3)
+            throw new AgentApiException("invalid_subagent_arguments", "Invalid result version");
+        return SendSubagentRequestAsync<SubagentChangesResponse>(rootRunId, agentId,
+            FormattableString.Invariant($"/changes?result_version={resultVersion}"), HttpMethod.Get, null, ct);
+    }
+
     private async Task<T> SendSubagentRequestAsync<T>(string rootRunId, string? agentId, string suffix,
         HttpMethod method, object? body, CancellationToken ct)
     {

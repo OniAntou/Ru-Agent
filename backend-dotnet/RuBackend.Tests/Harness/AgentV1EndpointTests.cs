@@ -31,6 +31,7 @@ public sealed class AgentV1EndpointTests
         ("GET", "/agent/v1/runs/{runId}"),
         ("GET", "/agent/v1/runs/{runId}/subagents"),
         ("GET", "/agent/v1/runs/{runId}/subagents/{agentId}"),
+        ("GET", "/agent/v1/runs/{runId}/subagents/{agentId}/changes"),
 
         ("GET", "/agent/v1/runs/{runId}/events"),
         ("GET", "/agent/v1/runs/{runId}/activities"),
@@ -68,7 +69,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(55, doc.RootElement.GetArrayLength()); // Skills, user plugins and selected admission remain; external session exchange is retired.
+        Assert.Equal(56, doc.RootElement.GetArrayLength()); // Skills, user plugins and selected admission remain; external session exchange is retired.
     }
 
     [Theory]

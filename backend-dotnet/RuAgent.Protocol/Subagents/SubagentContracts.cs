@@ -35,7 +35,8 @@ public sealed record SubagentSpawnRequest(
     [property: JsonPropertyName("task")] string Task,
     [property: JsonPropertyName("context")] string? Context = null,
     [property: JsonPropertyName("model"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Model = null,
-    [property: JsonPropertyName("provider_id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ProviderId = null);
+    [property: JsonPropertyName("provider_id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ProviderId = null,
+    [property: JsonPropertyName("profile"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Profile = null);
 
 public sealed record SubagentSendRequest(
     [property: JsonPropertyName("agent_id")] string AgentId,

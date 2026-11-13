@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using RuAgent.Broker.Tools.Paths;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Subagents;
 using RuAgent.Harness.Persistence;
@@ -9,7 +11,8 @@ using RuAgent.Protocol.Subagents;
 namespace RuBackend.Harness.Subagents;
 
 public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots,
-    SubagentFamilyUsageReader usage, SqliteSubagentUserApplyStore actions)
+    SubagentFamilyUsageReader usage, SqliteSubagentUserApplyStore actions,
+    SqliteSubagentChangeSetStore changeSets, SubagentConcurrencyOptions concurrency)
 {
     public async Task<SubagentListResponse> ListAsync(RunId root, CancellationToken ct)
     {
@@ -21,10 +24,12 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
         var preparations = snapshot.Preparations.Select(a => new SubagentPreparationSummary(a.AgentId, a.Stage.ToString())).ToArray();
         var summary = new SubagentUsageSummary(totals.ModelSteps, totals.ReportedSteps, totals.InputTokens,
             totals.OutputTokens, totals.TotalTokens, totals.IsComplete);
+        var running = rows.Count(row => OccupiesRunnableSlot(row.Attempts.LastOrDefault()?.Status));
         var status = AgentV1Shared.MapRunState(snapshot.Root.Status);
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
-            new { status, rows, preparations, snapshot.UnavailableAttempts, summary })));
-        return new(root.Value, status, fingerprint, rows, preparations, snapshot.UnavailableAttempts, summary);
+            new { status, rows, preparations, snapshot.UnavailableAttempts, summary, concurrency.MaxRunnable, running })));
+        return new(root.Value, status, fingerprint, rows, preparations, snapshot.UnavailableAttempts, summary,
+            concurrency.MaxRunnable, running);
     }
 
     public async Task<SubagentDetailResponse> DetailAsync(RunId root, string agent, long? version, int offset, int limit, CancellationToken ct)
@@ -38,6 +43,166 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
             page = new(value, result.Text, result.Offset, result.TotalBytes, result.NextOffset);
         }
         return new(root.Value, row, page);
+    }
+
+    /// <summary>
+    /// Read-only change review for the coding result a parent may apply. It never
+    /// writes, applies or approves anything; the base side is read from the
+    /// parent workspace only when its current hash still matches the recorded
+    /// base, so a diverged file is never presented as a clean diff.
+    /// </summary>
+    public async Task<SubagentChangesResponse> ChangesAsync(
+        RunId root, string agentId, long version, CancellationToken ct)
+    {
+        var snapshot = await snapshots.ReadAsync(root, ct).ConfigureAwait(false);
+        var agent = snapshot.Agents.SingleOrDefault(a => a.Agent.AgentId == agentId)
+            ?? throw new HarnessStoreException("subagent_not_found");
+        if (!string.Equals(agent.Agent.Role.ToString(), nameof(SubagentRole.Coding), StringComparison.OrdinalIgnoreCase))
+            throw new HarnessStoreException("subagent_changes_not_found");
+        var result = agent.Results.SingleOrDefault(r => r.Result.Version == version)
+            ?? throw new HarnessStoreException("subagent_result_not_found");
+        var changes = await changeSets.GetAsync(root, agentId, result.Result.RunId, ct).ConfigureAwait(false)
+            ?? throw new HarnessStoreException("subagent_changes_not_found");
+        if (changes.ResultVersion != version || changes.Files.Count > SubagentLimits.MaxSnapshotFiles)
+            throw new HarnessStoreException("subagent_changes_invalid");
+
+        var files = new List<SubagentChangedFileResponse>(changes.Files.Count);
+        long totalChars = 0;
+        foreach (var file in changes.Files)
+        {
+            ct.ThrowIfCancellationRequested();
+            var current = ReadCurrentFile(changes.ParentRoot, file.RelativePath);
+            string? currentHash = current.Bytes is null ? null : Hash(current.Bytes);
+            bool exists = current.Exists;
+            string status;
+            if (file.ProposedHash == "missing")
+            {
+                status = !exists ? "applied" : currentHash == file.BaseHash ? "deleted" : "diverged";
+            }
+            else if (!exists)
+            {
+                status = file.BaseHash == "missing" ? "created" : "missing";
+            }
+            else if (currentHash == file.ProposedHash)
+            {
+                status = "applied";
+            }
+            else if (currentHash == file.BaseHash)
+            {
+                status = "base";
+            }
+            else
+            {
+                status = "diverged";
+            }
+
+            bool includeBase = status is "base" or "deleted";
+            var proposed = Text(file.Content.Span, ref totalChars);
+            ReviewText? baseReview = includeBase && current.Bytes is { } baseBytes
+                ? Text(baseBytes, ref totalChars)
+                : null;
+            bool binary = proposed.Binary || baseReview?.Binary == true;
+            bool truncated = proposed.Truncated || baseReview?.Truncated == true
+                || (includeBase && current.Bytes is null && !binary);
+            files.Add(new SubagentChangedFileResponse(
+                file.RelativePath, file.BaseHash, file.ProposedHash, file.Mode, status,
+                binary, truncated, baseReview?.Text, proposed.Binary ? null : proposed.Text));
+        }
+
+        return new(root.Value, agentId, version, files);
+    }
+
+    private static bool OccupiesRunnableSlot(string? status) => status is not
+        (null or "created" or "completed" or "failed" or "cancelled" or "interrupted");
+
+    private const int MaxReviewTextChars = 64 * 1024;
+    private const int MaxReviewTotalChars = 512 * 1024;
+    private const long MaxReviewFileBytes = 8 * 1024 * 1024;
+
+    private readonly record struct CurrentFile(bool Exists, byte[]? Bytes);
+    private readonly record struct ReviewText(string? Text, bool Binary, bool Truncated);
+
+    private static CurrentFile ReadCurrentFile(string parentRoot, string relativePath)
+    {
+        if (!TryResolve(parentRoot, relativePath, out var full) || !File.Exists(full))
+        {
+            return new(false, null);
+        }
+
+        try
+        {
+            var info = new FileInfo(full);
+            if ((info.Attributes & FileAttributes.ReparsePoint) != 0 || info.Length > MaxReviewFileBytes)
+            {
+                return new(true, null);
+            }
+
+            return new(true, File.ReadAllBytes(full));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return new(true, null);
+        }
+    }
+
+    private static bool TryResolve(string root, string relativePath, out string full)
+    {
+        full = string.Empty;
+        if (string.IsNullOrWhiteSpace(relativePath) || relativePath.Length > 4096)
+        {
+            return false;
+        }
+
+        try
+        {
+            // Use the same canonical resolver as the apply path so a junction,
+            // protected harness file or workspace escape cannot be read back as
+            // a "diff".
+            var resolved = new CanonicalPathResolver(root).Resolve(relativePath);
+            if (!resolved.IsInsideWorkspace)
+            {
+                return false;
+            }
+
+            full = resolved.CanonicalPath;
+            return true;
+        }
+        catch (Exception error) when (error is ArgumentException or UnauthorizedAccessException
+            or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static string Hash(byte[] bytes) =>
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+    private static ReviewText Text(ReadOnlySpan<byte> bytes, ref long totalChars)
+    {
+        string text;
+        try
+        {
+            text = new UTF8Encoding(false, true).GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            return new(null, true, false);
+        }
+
+        if (totalChars >= MaxReviewTotalChars)
+        {
+            return new(null, false, true);
+        }
+
+        int allowed = (int)Math.Min(MaxReviewTextChars, MaxReviewTotalChars - totalChars);
+        bool truncated = text.Length > allowed;
+        if (truncated)
+        {
+            text = text[..allowed];
+        }
+
+        totalChars += text.Length;
+        return new(text, false, truncated);
     }
 
     private static SubagentUserActionSummary MapAction(SubagentUserApply a) => new(a.Status, a.Revision, a.ApprovalId, a.Code);

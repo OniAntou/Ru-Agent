@@ -122,6 +122,14 @@
                                             <TextBlock Text="Export result" FontSize="12" />
                                         </StackPanel>
                                     </Button>
+                                    <Button x:Name="ReviewChangesButton" Click="OnReviewChanges" HorizontalAlignment="Left"
+                                            Style="{StaticResource RuToolbarButtonStyle}" AutomationProperties.Name="Review subagent changes"
+                                            ToolTipService.ToolTip="Read-only preview of the files this coding result proposed">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE8A5;" FontSize="12" />
+                                            <TextBlock Text="Review changes" FontSize="12" />
+                                        </StackPanel>
+                                    </Button>
                                 </StackPanel>
                             </Flyout>
                         </Button.Flyout>

@@ -6,6 +6,29 @@ namespace RuAgent.Broker.Tests;
 
 public sealed partial class ToolExecutionServiceTests
 {
+    [Theory]
+    [InlineData("{\"query\":\"one\",\"pattern\":\"two\"}")]
+    [InlineData("{\"pattern\":42}")]
+    [InlineData("{\"pattern\":\"one\",\"max_results\":129}")]
+    public async Task Grep_rejects_ambiguous_or_invalid_alias_arguments_before_search(string json)
+    {
+        var fixture = CreateFullAccessService("ru-grep-alias-invalid-");
+        try
+        {
+            var result = await fixture.Service.ExecuteAuthenticatedV2Async(new AgentEnvelope(
+                AgentEnvelopeCodec.ProtocolVersionV2, "grep-alias-invalid", AgentMessageTypes.ToolExecute,
+                fixture.SessionId, null, 30_000, new JsonObject
+                {
+                    ["tool_id"] = "grep", ["tool_version"] = "1.0.0", ["run_id"] = fixture.RunId,
+                    ["capability_class"] = "internal", ["arguments"] = JsonNode.Parse(json),
+                }), default);
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.Equal("invalid_arguments", result.ErrorCode);
+            Assert.False(result.AdapterInvoked);
+        }
+        finally { await fixture.Service.DisposeAsync(); Directory.Delete(fixture.Root, recursive: true); }
+    }
+
     [Fact]
     public async Task Xml_contaminated_path_is_rejected_with_plain_json_repair_guidance()
     {

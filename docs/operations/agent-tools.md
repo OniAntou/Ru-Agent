@@ -161,6 +161,9 @@ stable sorted relative paths without content access; `grep` takes `query`
 (default false), `is_regex` (default false), `max_results` (1–128, default
 128) and `offset` (0–50000, default 0) for paging the ordinal results,
 and returns bounded match locations with previews up to 512 characters.
+The Broker also accepts a single string `pattern` as a compatibility alias for
+`query` on `grep`. Supplying both fields is rejected. The same query, path and
+permission checks apply.
 `run_process` takes an executable, an `arguments` array and an optional working
 directory; `powershell` takes a script. Both use the same Broker terminal
 policy and bounded process lifecycle. `terminal_read` pages retained output and

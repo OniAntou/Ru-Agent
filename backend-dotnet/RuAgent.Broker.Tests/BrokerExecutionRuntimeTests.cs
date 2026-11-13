@@ -169,6 +169,43 @@ public sealed class BrokerExecutionRuntimeTests
     }
 
     [Fact]
+    public async Task Grep_pattern_uses_the_same_authorized_search_and_keeps_its_input_envelope()
+    {
+        using var fixture = new RuntimeFixture();
+        File.WriteAllText(Path.Combine(fixture.Root, "probe.txt"), "first\nneedle42\nlast");
+        const string sessionId = "session-grep-alias";
+        const string runId = "run_grep_alias111111111111111111111";
+        var opened = await fixture.Runtime.OpenRunAsync(
+            RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default);
+        Assert.Null(opened.Error);
+
+        var arguments = new JsonObject
+        {
+            ["path"] = "probe.txt", ["pattern"] = @"needle\d+", ["is_regex"] = true, ["max_results"] = 128,
+        };
+        var decision = await fixture.Runtime.EvaluateAsync(
+            Evaluate("evaluate-grep-alias", sessionId, runId, "grep", arguments), default);
+        Assert.Equal("allow", decision.Decision!.Decision);
+
+        var different = (JsonObject)arguments.DeepClone();
+        different["pattern"] = "last";
+        var stale = await fixture.Runtime.ExecuteAuthorizedAsync(
+            Execute("execute-grep-changed", sessionId, runId, "grep", decision.Decision.AuthorizationToken!, different), default);
+        Assert.Equal("decision_stale", stale.ErrorCode);
+
+        decision = await fixture.Runtime.EvaluateAsync(
+            Evaluate("evaluate-grep-again", sessionId, runId, "grep", arguments), default);
+        var request = Execute("execute-grep-alias", sessionId, runId, "grep", decision.Decision!.AuthorizationToken!, arguments);
+        var execution = await fixture.Runtime.ExecuteAuthorizedAsync(request, default);
+        Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);
+        Assert.True(execution.Receipt.AdapterInvoked);
+        Assert.Equal(1, execution.Receipt.Output["count"]!.GetValue<int>());
+        Assert.Contains("needle42", execution.Receipt.Output["results"]!.ToJsonString(), StringComparison.Ordinal);
+        Assert.False(request.Payload["arguments"]!.AsObject().ContainsKey("query"));
+        Assert.Equal(@"needle\d+", request.Payload["arguments"]!["pattern"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Evaluate_then_execute_skill_loads_a_workspace_workflow()
     {
         using var fixture = new RuntimeFixture();

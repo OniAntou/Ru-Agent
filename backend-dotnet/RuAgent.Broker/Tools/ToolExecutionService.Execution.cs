@@ -105,6 +105,8 @@ public sealed partial class ToolExecutionService
 
             try
             {
+                if (toolId == "grep")
+                    arguments = NormalizeGrepArguments(arguments);
                 ToolSchemaValidator.Validate(binding.Manifest.InputSchema, arguments);
                 ValidateTerminalLaunchArguments(toolId, arguments);
             }

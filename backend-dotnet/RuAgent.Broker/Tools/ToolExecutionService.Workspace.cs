@@ -78,15 +78,21 @@ public sealed partial class ToolExecutionService
         return null;
     }
 
-    private static JsonObject TranslateGrepArguments(JsonObject arguments)
+    private static JsonObject NormalizeGrepArguments(JsonObject arguments)
     {
-        var translated = new JsonObject();
-        foreach (var property in arguments)
+        if (arguments.ContainsKey("query")
+            || arguments["pattern"] is not JsonValue pattern
+            || !pattern.TryGetValue<string>(out var query))
         {
-            translated[property.Key] = property.Value?.DeepClone();
+            return arguments;
         }
 
-        return translated;
+        // Preserve the authorized envelope and validate the alias through the
+        // canonical query schema before invoking the adapter.
+        var normalized = (JsonObject)arguments.DeepClone();
+        normalized.Remove("pattern");
+        normalized["query"] = query;
+        return normalized;
     }
 
     private static JsonObject TranslateGlobArguments(JsonObject arguments)

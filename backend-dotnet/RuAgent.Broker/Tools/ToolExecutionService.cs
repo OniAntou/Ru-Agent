@@ -186,7 +186,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ["skill"] = ExecuteSkillBodyAsync,
             ["grep"] = async (context, arguments, token) => ToolExecutionOutcome.Succeeded(
                 await ResolveTools(context, TargetPathOf(arguments)).Search.ExecuteAsync(
-                    TranslateGrepArguments(arguments),
+                    arguments,
                     token).ConfigureAwait(false),
                 ToolVerificationStates.NotRequired,
                 "Workspace search completed."),
@@ -292,7 +292,9 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             : fallback;
 
     private static string ArgumentRepairHint(ToolBinding binding, JsonObject arguments) =>
-        ToolArgumentDiagnostics.Find(binding.Manifest.Id, binding.Manifest.Version,
+        binding.Manifest.Id == "grep" && arguments.ContainsKey("pattern")
+            ? "Send grep search text as a single query string. Remove the pattern field."
+            : ToolArgumentDiagnostics.Find(binding.Manifest.Id, binding.Manifest.Version,
             System.Text.Json.JsonSerializer.SerializeToElement(arguments))?.Hint ?? "Tool arguments were rejected.";
 
     /// <summary>

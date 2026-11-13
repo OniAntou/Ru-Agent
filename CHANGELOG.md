@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(broker)**: Accept a single string `pattern` as the `grep` query alias.
 - **fix(tui)**: Hide successful tool receipts and their inline diffs in native chat,
   including replay. Keep live activity, failures, unknown outcomes, approvals and
   accurate footer counts; handle late outcome corrections without blank rows.

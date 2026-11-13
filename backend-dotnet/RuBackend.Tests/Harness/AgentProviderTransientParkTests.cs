@@ -19,7 +19,7 @@ namespace RuBackend.Tests.Harness;
 public sealed partial class AgentProviderTransientParkTests
 {
     [Fact]
-    public async Task Exhausted_provider_transient_parks_the_run_and_continue_retries_a_fresh_step()
+    public async Task Exhausted_provider_transient_fails_the_run_without_a_continue_gate()
     {
         var fixture = await BackendHarnessTestFixture.CreateAsync();
         try
@@ -33,32 +33,18 @@ public sealed partial class AgentProviderTransientParkTests
             var activities = new RecordingActivitySink();
             var coordinator = Coordinator(fixture, provider, activities);
 
-            var parked = await coordinator.RunOneStepAsync(runId, CancellationToken.None);
+            var failed = await coordinator.RunOneStepAsync(runId, CancellationToken.None);
 
-            Assert.Equal(HarnessRunState.WaitingUser, parked.Run.State);
-            Assert.Equal("provider_rate_limited", parked.ErrorCode);
-            Assert.Null(parked.Run.TerminalErrorCode);
+            Assert.Equal(HarnessRunState.Failed, failed.Run.State);
+            Assert.Equal("provider_rate_limited", failed.ErrorCode);
+            Assert.Equal("provider_rate_limited", failed.Run.TerminalErrorCode);
             Assert.Equal(10, provider.Calls);
-            var parkedEvents = await ReadEventsAsync(fixture, runId);
-            Assert.Contains(parkedEvents, item =>
+            var failedEvents = await ReadEventsAsync(fixture, runId);
+            Assert.Contains(failedEvents, item => item.Kind == "run.failed");
+            Assert.DoesNotContain(failedEvents, item =>
                 item.Kind == "run.state_changed" && item.SafeCode == "waiting_user");
-            Assert.Contains(parkedEvents, item =>
-                item.Kind == "continue.requested" && item.SafeCode == "provider_rate_limited");
-            Assert.DoesNotContain(parkedEvents, item => item.Kind == "run.failed");
-            Assert.Contains(activities.Activities, activity =>
-                activity.Kind == AgentActivityKind.Status
-                && activity.State == AgentActivityState.Waiting
-                && activity.SafeCode == "provider_rate_limited");
-
-            var continued = await coordinator.ContinueAsync(runId, CancellationToken.None);
-            Assert.Equal(HarnessRunState.Running, continued.State);
-
-            var completed = await coordinator.RunOneStepAsync(runId, CancellationToken.None);
-
-            Assert.Null(completed.ErrorCode);
-            Assert.Equal(HarnessRunState.WaitingHistory, completed.Run.State);
-            Assert.Equal(HistoryWaitKind.FinalBeforeCompletion, completed.Run.HistoryWaitKind);
-            Assert.Equal(11, provider.Calls);
+            Assert.DoesNotContain(failedEvents, item =>
+                item.Kind == "continue.requested");
         }
         finally
         {

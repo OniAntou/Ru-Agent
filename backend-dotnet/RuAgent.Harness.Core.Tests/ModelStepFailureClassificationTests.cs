@@ -100,7 +100,7 @@ public sealed class ModelStepFailureClassificationTests
     [InlineData("provider_timeout")]
     [InlineData("provider_server_error")]
     [InlineData("provider_transport_error")]
-    public async Task Recoverable_provider_code_parks_the_run_for_continue(string code)
+    public async Task Recoverable_provider_code_fails_the_run_without_a_continue_gate(string code)
     {
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run());
@@ -108,15 +108,15 @@ public sealed class ModelStepFailureClassificationTests
 
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
-        Assert.Equal(HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
         Assert.Equal(code, result.ErrorCode);
-        Assert.Null(result.Run.TerminalErrorCode);
+        Assert.Equal(code, result.Run.TerminalErrorCode);
         var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
-        Assert.Contains(events, item =>
+        Assert.DoesNotContain(events, item =>
             item.Kind == HarnessEventKind.RunStateChanged && item.SafeCode == "waiting_user");
-        Assert.Contains(events, item =>
-            item.Kind == HarnessEventKind.ContinueRequested && item.SafeCode == code);
-        Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.RunFailed);
+        Assert.DoesNotContain(events, item =>
+            item.Kind == HarnessEventKind.ContinueRequested);
+        Assert.Contains(events, item => item.Kind == HarnessEventKind.RunFailed);
     }
 
     [Fact]

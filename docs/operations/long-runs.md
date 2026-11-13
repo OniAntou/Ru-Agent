@@ -15,7 +15,7 @@ request reaching the history window.
 
 | Bound | Value | At the bound | Where to change it |
 |---|---|---|---|
-| Provider retries for one step | 10 attempts, 2 s to 5 min backoff (about 12 min) | The run parks for Continue with the provider code | `ProviderRetryPolicy`, `InProcessModelStepRunner.ModelStepRetryBackoffs` |
+| Provider retries for one step | 10 attempts, 2 s to 5 min backoff (about 12 min) | The run fails with the provider code; there is no Continue gate | `ProviderRetryPolicy`, `InProcessModelStepRunner.ModelStepRetryBackoffs` |
 | Server `Retry-After` honored automatically | 5 min | Longer hints park the step at once | `ProviderRetryPolicy.MaximumAutomaticDelay` |
 | Pending approval | 24 h | The run fails as `approval_expired` | `ApprovalLimits.PendingApprovalLifetimeMinutes` (Protocol), shared by the Host and the Broker |
 | Remembered session approval | 24 h, 64 per session | The same intent asks again | `SessionApprovalLedger.EntryLifetime` (follows `ApprovalLimits`) |

@@ -3,6 +3,7 @@ using System.Text.Json;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Tests.Fakes;
 using Xunit;
 using RuAgent.Protocol.Harness;
@@ -542,52 +543,32 @@ public sealed partial class AgentRunCoordinatorTests
     }
 
     [Fact]
-    public async Task Exhausted_provider_transient_parks_the_run_and_continue_retries_a_fresh_step()
+    public async Task Exhausted_provider_transient_fails_the_run_without_a_continue_gate()
     {
         var model = new ScriptedFailureThenStepRunner(
             new StableModelStepError("provider_rate_limited"),
             FinalStep("done"));
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
-        var activities = new RecordingActivitySink();
-        var coordinator = Coordinator(
-            model,
-            new FakeToolGateway(),
-            store,
-            activitySink: activities);
+        var coordinator = Coordinator(model, new FakeToolGateway(), store);
 
-        var parked = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        var failed = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
-        Assert.Equal(HarnessRunState.WaitingUser, parked.Run.State);
-        Assert.Equal("provider_rate_limited", parked.ErrorCode);
-        Assert.Null(parked.Run.TerminalErrorCode);
+        Assert.Equal(HarnessRunState.Failed, failed.Run.State);
+        Assert.Equal("provider_rate_limited", failed.ErrorCode);
+        Assert.Equal("provider_rate_limited", failed.Run.TerminalErrorCode);
         Assert.Single(model.Requests);
         var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
-        Assert.Contains(events, item =>
+        Assert.DoesNotContain(events, item =>
             item.Kind == HarnessEventKind.RunStateChanged
             && item.SafeCode == "waiting_user");
-        Assert.Contains(events, item =>
-            item.Kind == HarnessEventKind.ContinueRequested
-            && item.SafeCode == "provider_rate_limited");
-        Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.RunFailed);
-        Assert.Contains(activities.Activities, activity =>
-            activity.Kind == AgentActivityKind.Status
-            && activity.State == AgentActivityState.Waiting
-            && activity.SafeCode == "provider_rate_limited");
-
-        var continued = await coordinator.ContinueAsync(RunId(), CancellationToken.None);
-        Assert.Equal(HarnessRunState.Running, continued.State);
-
-        var completed = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
-
-        Assert.Null(completed.ErrorCode);
-        Assert.Equal(HarnessRunState.WaitingHistory, completed.Run.State);
-        Assert.Equal(HistoryWaitKind.FinalBeforeCompletion, completed.Run.HistoryWaitKind);
-        Assert.Equal(2, model.Requests.Count);
+        Assert.DoesNotContain(events, item =>
+            item.Kind == HarnessEventKind.ContinueRequested);
+        Assert.Contains(events, item => item.Kind == HarnessEventKind.RunFailed);
     }
 
     [Fact]
-    public async Task Exhausted_provider_transient_resets_the_partial_stream_before_parking()
+    public async Task Exhausted_provider_transient_resets_the_partial_stream_before_failing()
     {
         var frames = new List<HarnessTransientFrame>();
         var buffer = new TransientFrameBuffer(32, frames.Add);
@@ -600,7 +581,7 @@ public sealed partial class AgentRunCoordinatorTests
         var result = await Coordinator(model, new FakeToolGateway(), store, buffer)
             .RunOneStepAsync(RunId(), CancellationToken.None);
 
-        Assert.Equal(HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
         Assert.Equal("provider_rate_limited", result.ErrorCode);
         Assert.Collection(
             frames,
@@ -1974,7 +1955,7 @@ public sealed partial class AgentRunCoordinatorTests
     }
 
     [Fact]
-    public async Task Mutation_transport_failure_retries_once_then_reconciles_when_retry_fails()
+    public async Task Mutation_transport_failure_retries_once_then_continues_behind_inspection()
     {
         var model = new FakeModelStepRunner();
         model.Enqueue(ToolStep());
@@ -1991,13 +1972,12 @@ public sealed partial class AgentRunCoordinatorTests
         var receipt = Assert.Single(result.Receipts);
         Assert.Equal(ToolExecutionOutcome.OutcomeUnknown, receipt.Outcome);
         Assert.True(receipt.SideEffectsPossible);
-        Assert.Equal(HarnessRunState.ReconciliationRequired, result.Run.State);
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
         Assert.Contains(store.Commits.SelectMany(commit => commit.Events), item =>
+            item.Kind == HarnessEventKind.RunNoteAdded
+                && item.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
+        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events), item =>
             item.Kind == HarnessEventKind.ReconciliationRequired);
-
-        var blocked = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
-        Assert.Equal("run_not_runnable", blocked.ErrorCode);
-        Assert.Equal(2, gateway.ExecuteAttempts.Count);
     }
 
     [Fact]
@@ -2014,7 +1994,7 @@ public sealed partial class AgentRunCoordinatorTests
 
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
-        Assert.Equal(HarnessRunState.ReconciliationRequired, result.Run.State);
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
         Assert.Equal(2, gateway.ExecuteAttempts.Count);
         Assert.Single(gateway.CancelAttempts);
         Assert.Equal(2, result.Receipts.Count);
@@ -2022,6 +2002,9 @@ public sealed partial class AgentRunCoordinatorTests
         Assert.Equal("not_executed_after_unknown", result.Receipts[1].Code);
         Assert.Equal(2, store.Commits.SelectMany(commit => commit.Events)
             .Count(@event => @event.Kind == HarnessEventKind.ToolExecutionCompleted));
+        Assert.Contains(store.Commits.SelectMany(commit => commit.Events), item =>
+            item.Kind == HarnessEventKind.RunNoteAdded
+                && item.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
     }
 
     [Fact]

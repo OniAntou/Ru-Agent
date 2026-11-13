@@ -74,7 +74,7 @@ public sealed class ReconciliationStateTests
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Cancelled_side_effecting_tool_moves_the_run_to_reconciliation_required()
+    public async Task Cancelled_side_effecting_tool_continues_behind_the_inspection_gate()
     {
         var model = new FakeModelStepRunner();
         model.Enqueue(ToolStep());
@@ -90,7 +90,8 @@ public sealed class ReconciliationStateTests
         };
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run());
-        var coordinator = Coordinator(model, gateway, store);
+        var gate = new ReconciliationInspectionGate();
+        var coordinator = Coordinator(model, gateway, store, gate);
 
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
@@ -98,14 +99,17 @@ public sealed class ReconciliationStateTests
         var receipt = Assert.Single(result.Receipts);
         Assert.Equal(ToolExecutionOutcome.Cancelled, receipt.Outcome);
         Assert.True(receipt.SideEffectsPossible);
-        Assert.Equal(HarnessRunState.ReconciliationRequired, result.Run.State);
-        Assert.Contains(
-            store.Commits.SelectMany(commit => commit.Events),
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.True(gate.IsMutationDenied(RunId()));
+        Assert.Contains(store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.RunNoteAdded
+                && item.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
+        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events),
             item => item.Kind == HarnessEventKind.ReconciliationRequired);
     }
 
     [Fact]
-    public async Task Timed_out_side_effecting_tool_also_requires_reconciliation()
+    public async Task Timed_out_side_effecting_tool_continues_behind_the_inspection_gate()
     {
         var model = new FakeModelStepRunner();
         model.Enqueue(ToolStep());
@@ -126,7 +130,10 @@ public sealed class ReconciliationStateTests
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
         Assert.Null(result.ErrorCode);
-        Assert.Equal(HarnessRunState.ReconciliationRequired, result.Run.State);
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.Contains(store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.RunNoteAdded
+                && item.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
     }
 
     [Fact]
@@ -155,103 +162,8 @@ public sealed class ReconciliationStateTests
     }
 
     // ------------------------------------------------------------------
-    // Explicit resolution and the inspection requirement for UnknownContinue.
-    // ------------------------------------------------------------------
-
-    [Fact]
-    public async Task Applied_resolution_returns_the_run_to_running_without_a_gate()
-    {
-        var model = new FakeModelStepRunner();
-        model.Enqueue(ToolStep());
-        var gateway = new FakeToolGateway(ToolAccessKind.Mutation)
-        {
-            ForcedReceipt = CancelledReceipt(),
-        };
-        var store = new InMemoryHarnessEventStore();
-        store.Seed(Run());
-        var coordinator = Coordinator(model, gateway, store);
-        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
-
-        var resolved = await coordinator.ApplyReconciliationAsync(
-            RunId(),
-            ReconciliationCommand.Applied,
-            CancellationToken.None);
-
-        Assert.Equal(HarnessRunState.Running, resolved.State);
-        var required = Assert.Single(
-            store.Commits.SelectMany(commit => commit.Events),
-            item => item.Kind == HarnessEventKind.ReconciliationRequired);
-        var resolution = Assert.Single(
-            store.Commits.SelectMany(commit => commit.Events),
-            item => item.Kind == HarnessEventKind.ReconciliationResolved
-                && item.SafeCode == "applied");
-        Assert.Equal(required.ModelStepId, resolution.ModelStepId);
-        Assert.Equal(required.ToolCallId, resolution.ToolCallId);
-        Assert.Equal(required.ExecutionId, resolution.ExecutionId);
-    }
-
-    [Fact]
-    public async Task Unknown_continue_resumes_evaluation_but_denies_mutation_until_one_read_only_receipt()
-    {
-        var model = new FakeModelStepRunner();
-        model.Enqueue(ToolStep());
-        var gateway = new FakeToolGateway(ToolAccessKind.Mutation)
-        {
-            ForcedReceipt = CancelledReceipt(),
-        };
-        var store = new InMemoryHarnessEventStore();
-        store.Seed(Run());
-        var coordinator = Coordinator(model, gateway, store);
-        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
-        var executedBeforeGate = gateway.ExecuteAttempts.Count;
-
-        var resolved = await coordinator.ApplyReconciliationAsync(
-            RunId(),
-            ReconciliationCommand.UnknownContinue,
-            CancellationToken.None);
-        Assert.Equal(HarnessRunState.Running, resolved.State);
-
-        // The next model step proposes a MUTATION call: the broker-side gate must deny it
-        // with a typed inspection requirement before any adapter dispatch happens.
-        model.Enqueue(ToolStep());
-        var mutationAttempt = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
-        Assert.Null(mutationAttempt.ErrorCode);
-        var denied = Assert.Single(mutationAttempt.Receipts);
-        Assert.Equal(ToolExecutionOutcome.Failed, denied.Outcome);
-        Assert.Equal("inspection_required", denied.Code);
-        Assert.Equal(executedBeforeGate, gateway.ExecuteAttempts.Count);
-
-        // A read-only inspection receipt is the only way to clear the gate: it executes
-        // for real (that is what makes it a durable inspection)...
-        gateway.PreparedKind = ToolAccessKind.ReadOnly;
-        gateway.ForcedReceipt = null;
-        model.Enqueue(ToolStep());
-        var inspection = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
-        Assert.Null(inspection.ErrorCode);
-        var inspected = Assert.Single(inspection.Receipts);
-        Assert.NotEqual("inspection_required", inspected.Code);
-        Assert.Equal(executedBeforeGate + 1, gateway.ExecuteAttempts.Count);
-
-        // ...after which normal evaluation resumes and mutations execute again.
-        gateway.PreparedKind = null;
-        model.Enqueue(ToolStep());
-        var resumed = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
-        Assert.Null(resumed.ErrorCode);
-        Assert.Equal(executedBeforeGate + 2, gateway.ExecuteAttempts.Count);
-    }
-
-    // ------------------------------------------------------------------
     // Fixtures.
     // ------------------------------------------------------------------
-
-    private static ToolExecutionReceipt CancelledReceipt() =>
-        new(
-            ExecutionId(),
-            ToolCallId(),
-            ToolExecutionOutcome.Cancelled,
-            "process_cancelled",
-            null,
-            sideEffectsPossible: true);
 
     // ------------------------------------------------------------------
     // Durable gate projection: the gate must survive a host restart.

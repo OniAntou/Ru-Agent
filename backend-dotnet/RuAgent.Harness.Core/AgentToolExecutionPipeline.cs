@@ -4,6 +4,7 @@ using System.Text.Json;
 using RuAgent.Protocol.Harness;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Reconciliation;
 
 namespace RuAgent.Harness.Core;
@@ -413,32 +414,25 @@ internal sealed partial class AgentToolExecutionPipeline
                     && call.AccessKind != ToolAccessKind.ReadOnly)
                 || ambiguousSideEffects)
             {
-                var transition = AgentRunStateMachine.TryTransition(
-                    run.Status,
-                    HarnessRunTransition.RequireReconciliation);
-                if (!transition.Accepted)
-                {
-                    throw new InvalidOperationException(transition.ErrorCode);
-                }
-
-                nextStatus = transition.Next;
+                // Do not park the run. Keep mutations behind a read-only inspection
+                // gate and give the model a durable note so it can establish what
+                // happened; the first successful read-only call releases the gate.
+                _inspectionGate?.Activate(run.RunId);
+                var noteBytes = System.Text.Encoding.UTF8.GetBytes(
+                    AgentRecoveryNotes.BuildOutcomeUnknownNote(receipt.Code));
+                var notePayload = new HarnessPayloadIntent(_ids.NewPayloadId(),
+                    HarnessPayloadKind.ModelContextNote, HarnessPayloadAudience.ModelContext,
+                    HarnessPayloadEncoding.Utf8Text, noteBytes.Length, noteBytes);
+                receiptPayloads.Add(notePayload);
                 events.Add(new HarnessEventIntent(
                     _ids.NewEventId(),
-                    HarnessEventKind.ReconciliationRequired,
+                    HarnessEventKind.RunNoteAdded,
                     modelStepId: modelStepId,
                     toolCallId: receipt.ToolCallId,
                     providerCallId: receipt.ProviderCallId,
                     executionId: receipt.ExecutionId,
-                    safeCode: receipt.Code));
-                // Entering ReconciliationRequired parks the run: the runtime loop stops
-                // driving it and the only way out is a user reconciliation command. The
-                // transition itself must therefore be visible, or the client sits on a
-                // stale "Running" status forever with no explanation and no next step.
-                events.Add(new HarnessEventIntent(
-                    _ids.NewEventId(),
-                    HarnessEventKind.RunStateChanged,
-                    safeCode: "reconciliation_required"));
-                reconciliationRequired = true;
+                    payloadId: notePayload.PayloadId,
+                    safeCode: ReconciliationGateProjection.OutcomeUnknownContinuedCode));
             }
             else if (gateArmedBeforeThisCall
                      && call.AccessKind == ToolAccessKind.ReadOnly

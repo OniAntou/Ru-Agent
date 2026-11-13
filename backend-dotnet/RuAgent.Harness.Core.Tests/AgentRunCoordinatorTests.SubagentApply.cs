@@ -1,6 +1,7 @@
 using System.Text.Json;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Subagents;
 using RuAgent.Harness.Core.Tests.Fakes;
 using RuAgent.Protocol.Subagents;
@@ -39,7 +40,7 @@ public sealed partial class AgentRunCoordinatorTests
     [Theory]
     [InlineData(SubagentApplyStatus.Partial)]
     [InlineData(SubagentApplyStatus.Unknown)]
-    public async Task Ambiguous_apply_receipt_parks_parent_in_existing_durable_reconciliation_state(SubagentApplyStatus status)
+    public async Task Ambiguous_apply_receipt_continues_behind_inspection_instead_of_parking(SubagentApplyStatus status)
     {
         var (proposal, prepared) = ApplyIdentity();
         var store = new InMemoryHarnessEventStore();
@@ -50,12 +51,15 @@ public sealed partial class AgentRunCoordinatorTests
         var gateway = new FakeToolGateway(ToolAccessKind.Mutation)
             { ForcedReceipt = SubagentApplyReceipt.Create(proposal, prepared, new(status, 1, "fixture_unknown")) };
         var result = await Coordinator(model, gateway, store).RunOneStepAsync(RunId(), default);
-        Assert.Equal(HarnessRunState.ReconciliationRequired, result.Run.State);
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
         Assert.Equal(ToolExecutionOutcome.OutcomeUnknown, Assert.Single(result.Receipts).Outcome);
         Assert.Single(gateway.ExecuteAttempts);
         Assert.Single(model.Requests);
-        Assert.Single(store.Commits.SelectMany(c => c.Events), e => e.Kind == HarnessEventKind.ReconciliationRequired);
-        Assert.False(AgentRunStateMachine.TryTransition(result.Run.Status, HarnessRunTransition.Continue).Accepted);
+        Assert.Contains(store.Commits.SelectMany(c => c.Events), e =>
+            e.Kind == HarnessEventKind.RunNoteAdded
+                && e.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
+        Assert.DoesNotContain(store.Commits.SelectMany(c => c.Events), e =>
+            e.Kind == HarnessEventKind.ReconciliationRequired);
         Assert.Empty(store.Commits.SelectMany(c => c.ConversationOutbox));
     }
 

@@ -421,7 +421,7 @@ public sealed class AgentActivityLifecycleTests
     }
 
     [Fact]
-    public async Task Reconciliation_required_publishes_waiting_reason_activity()
+    public async Task Unknown_side_effecting_tool_continues_and_records_the_inspection_note()
     {
         var model = new FakeModelStepRunner();
         model.Enqueue(MutationToolStep());
@@ -442,13 +442,10 @@ public sealed class AgentActivityLifecycleTests
 
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
-        Assert.Equal(HarnessRunState.ReconciliationRequired, result.Run.State);
-        var reason = Assert.Single(
-            sink.Items,
-            item => item.Activity.Kind == AgentActivityKind.Status
-                && item.Activity.State == AgentActivityState.Waiting);
-        Assert.Equal("reconciliation_required", reason.Activity.SafeCode);
-        Assert.Contains("paused", reason.Activity.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.Contains(store.Commits.SelectMany(c => c.Events), item =>
+            item.Kind == HarnessEventKind.RunNoteAdded
+                && item.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
     }
 
     private static AgentRunCoordinator Coordinator(

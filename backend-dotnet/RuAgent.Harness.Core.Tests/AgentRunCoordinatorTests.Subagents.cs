@@ -28,17 +28,17 @@ public sealed partial class AgentRunCoordinatorTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Exhausted_transient_provider_failure_is_terminal_for_child_and_preserves_root_continue(bool child)
+    public async Task Exhausted_transient_provider_failure_is_terminal_for_root_and_child(bool child)
     {
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run(new(HarnessRunState.Running)));
         var result = await Coordinator(new StableThrowingModelStepRunner("provider_timeout"), new FakeToolGateway(), store,
             internalRun: child).RunOneStepAsync(RunId(), default);
-        Assert.Equal(child ? HarnessRunState.Failed : HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
         Assert.Equal("provider_timeout", result.ErrorCode);
         Assert.Equal(1, result.Run.ModelStepsInWindow);
         Assert.Empty(store.Commits.SelectMany(commit => commit.ConversationOutbox));
-        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events), item => child && item.Kind == HarnessEventKind.ContinueRequested);
+        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events), item => item.Kind == HarnessEventKind.ContinueRequested);
     }
 
     [Theory]

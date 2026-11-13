@@ -56,6 +56,19 @@ public sealed partial class InProcessToolGateway
         }
         catch (AgentProtocolException error) when (!entered)
         { return BrokerGatewayContracts.FailedReceipt(execution, error.Code); }
+        catch (RuAgent.Harness.Persistence.HarnessStoreException error)
+            when (SubagentControlFailures.IsDeterministic(error.Code))
+        {
+            // The refusal was decided before/inside a transaction; no effect can
+            // have committed. Report a verified failure instead of pausing the run
+            // with an unknown mutation outcome.
+            return BrokerGatewayContracts.FailedReceipt(execution, error.Code);
+        }
+        catch (SubagentConfigurationException error)
+            when (SubagentControlFailures.IsDeterministic(error.Code))
+        {
+            return BrokerGatewayContracts.FailedReceipt(execution, error.Code);
+        }
         catch (Exception error) when (error is AgentProtocolException or RuAgent.Harness.Persistence.HarnessStoreException
             or SubagentConfigurationException or RuAgent.Broker.Subagents.Workspaces.SubagentWorkspaceException
             or IOException or UnauthorizedAccessException)

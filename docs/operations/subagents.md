@@ -74,7 +74,9 @@ a missing credential fails the pinned run instead of switching providers.
 
 Children run under the Host's global drive workers, so spawning one does not occupy the
 parent's model worker; `agent_wait` is a deferred wait. The family runs at most three admitted
-children at once by default. Set `RU_MAX_RUNNABLE_SUBAGENTS` to an integer from 1 to 8 to tune
+children at once by default. A ninth identity is refused as a normal verified
+`subagent_identity_limit` tool failure; it does not pause the root run or leave an
+unknown side effect. Set `RU_MAX_RUNNABLE_SUBAGENTS` to an integer from 1 to 8 to tune
 the admitted-child limit; an invalid or out-of-range value keeps the default rather than
 widening concurrency by typo. The GUI task board reads the current limit and shows
 `active N/limit` while children are admitted.

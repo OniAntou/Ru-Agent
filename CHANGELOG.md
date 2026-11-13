@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: Delegating past the eight-subagent identity ceiling now returns a verified `subagent_identity_limit` tool failure instead of pausing the root run with an unverified/unknown side effect. The spawn preflight counts committed children and uncommitted workspace reservations before any effect, and deterministic control refusals are reported as failed receipts rather than `OutcomeUnknown`.
+
 - **docs**: `docs/operations/browser-automation.md` shows how to give the Agent browser DOM, console and network access by attaching Playwright MCP (with the installed Edge) or Chrome DevTools MCP through the existing `mcp` tool, which tools to "Always allow" and which to keep asking for, and the boundaries: navigation is not approved per site, `WebPolicy` does not apply to an MCP browser, and origin lists are advisory. No built-in browser tool is added.
 
 - **feat(gui)**: Custom slash commands work in the desktop composer. Typing `/` lists the `.ru/commands/*.md` templates of the workspace and of `%USERPROFILE%\.ru\commands` (workspace first) with their descriptions; arrow keys move, Tab or Enter completes, Escape closes. Sending or queueing `/name arguments` replaces it with the template's prompt first, so the transcript shows exactly what the Agent received. A template is ordinary prompt text and can never replace `/skills` or `/skill`. The template loader moved from `RuAgent.Cli` to `RuAgent.Client` so both front ends share it.

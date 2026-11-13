@@ -94,6 +94,24 @@ public sealed partial class SqliteSubagentStore(
         return new(request.AgentId, request.RootRunId, request.ChildRun.Run.SessionId, request.Role, false);
     }
 
+    /// <summary>
+    /// Identities include uncommitted workspace reservations, matching the limit
+    /// enforced by both the allocation store and <see cref="CreateAsync"/>.
+    /// </summary>
+    public async Task<int> CountIdentitiesAsync(RunId rootRunId, CancellationToken ct)
+    {
+        await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT count(*) FROM (
+                SELECT agent_id FROM agent_subagents WHERE root_run_id=$root
+                UNION SELECT agent_id FROM agent_subagent_workspace_allocations WHERE root_run_id=$root)
+            """;
+        command.Parameters.AddWithValue("$root", rootRunId.Value);
+        var count = (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
+        return count > int.MaxValue ? int.MaxValue : (int)count;
+    }
+
     public async Task<IReadOnlyList<SubagentRecord>> ListAsync(RunId rootRunId, CancellationToken ct)
     {
         await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);

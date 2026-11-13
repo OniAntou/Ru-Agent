@@ -683,7 +683,6 @@ public sealed class AgentActivityItemTests
     [InlineData("prompt_contract_invalid", "Prompt rejected by the runtime")]
     [InlineData("cancelled", "Cancelled")]
     [InlineData("transport_failure", "Lost connection to the tool")]
-    [InlineData("reconciliation_required", "Stopped: the last change is unverified")]
     public void A_failure_names_its_reason_on_a_row_that_exists_to_explain(string safeCode, string expected)
     {
         var item = new AgentActivityItem(
@@ -740,7 +739,7 @@ public sealed class AgentActivityItemTests
     {
         // These are the rows the kind exists for: they name a reason the reader cannot
         // infer from the rows around them.
-        foreach (var code in new[] { "reconciliation_required", "inspection_required", "frames_dropped" })
+        foreach (var code in new[] { "inspection_required", "frames_dropped" })
         {
             var item = new AgentActivityItem(Activity(
                 AgentActivityState.Completed,

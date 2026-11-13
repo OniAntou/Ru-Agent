@@ -88,7 +88,6 @@ public static class SubagentPresentation
             "cancelled" => (SubagentGroup.Finished, "Stopped", "muted"),
             "failed" => (SubagentGroup.Attention, "Failed", "attention"),
             "interrupted" => (SubagentGroup.Attention, "Interrupted", "attention"),
-            "reconciliation_required" => (SubagentGroup.Attention, "Needs main agent", "attention"),
             "waiting_approval" or "waiting_user" or "waiting_input" or "waiting_workspace_trust" => (SubagentGroup.Attention, "Waiting on main agent", "attention"),
             "waiting_history" or "waiting_history_user" or "waiting_history_final" => (SubagentGroup.Working, "Saving history", "working"),
             "waiting_subagents" => (SubagentGroup.Attention, "Waiting on delegated work", "attention"),

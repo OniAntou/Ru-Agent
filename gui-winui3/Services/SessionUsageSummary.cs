@@ -67,7 +67,6 @@ public sealed record SessionUsageRow(
         "waiting_history" => "reading history",
         "waiting_history_user" => "waiting on you",
         "waiting_history_final" => "reading history",
-        "reconciliation_required" => "needs reconciliation",
         _ => IsTerminal ? "ended" : "in progress",
     };
 

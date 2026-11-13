@@ -131,7 +131,7 @@ public sealed partial class AgentRunController
                     ? AgentParkReasonCopy.Compose(model.SafeSummary)
                     : string.Empty;
             var summaryIsStateToken = model.EventType == "run.state_changed"
-                && model.SafeSummary is "waiting_user" or ReconciliationWaitKind;
+                && model.SafeSummary is "waiting_user";
             if (!string.IsNullOrEmpty(model.SafeSummary)
                 && pauseText.Length == 0
                 && !summaryIsStateToken
@@ -161,19 +161,6 @@ public sealed partial class AgentRunController
                 {
                     _waitKind = null;
                 }
-            }
-
-            // The host parks a run in ReconciliationRequired after an ambiguous
-            // tool outcome and stops driving it. Surface that as a resumable wait
-            // so the user gets a Continue affordance instead of a silent panel.
-            if (!model.IsTransient
-                && model.EventType == "run.state_changed"
-                && string.Equals(model.SafeSummary, ReconciliationWaitKind, StringComparison.Ordinal))
-            {
-                _waitKind = ReconciliationWaitKind;
-                _statusText = AgentParkReasonCopy.Compose(ReconciliationWaitKind) is { Length: > 0 } pausedReconciliation
-                    ? pausedReconciliation
-                    : "Run paused: the last action was interrupted. Send Continue to resume with a read-only inspection.";
             }
 
             if (!model.IsTransient
@@ -530,7 +517,6 @@ public sealed partial class AgentRunController
                 _statusText = _waitKind switch
                 {
                     "waiting_user" => "Waiting to continue. Type Continue to resume.",
-                    ReconciliationWaitKind => "Run paused: the last action was interrupted. Send Continue to resume with a read-only inspection.",
                     _ => "Event stream ended before run completed.",
                 };
             }

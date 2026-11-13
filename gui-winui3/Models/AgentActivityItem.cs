@@ -406,7 +406,6 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
     {
         "waiting_subagents" => "Waiting for subagents",
         "inspection_required" => "Waiting: a read-only check is needed first",
-        "reconciliation_required" => "Stopped: the last change is unverified",
         { Length: > 0 } code => "Waiting: " + code.Replace('_', ' '),
         _ => "Waiting",
     };
@@ -466,7 +465,6 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         "subagent_wait_completed" => "Received subagent results",
         "subagent_spawned" => "Started a subagent",
         "inspection_required" => "Waiting: an action needs a read-only check first",
-        "reconciliation_required" => "Stopped: the last change is unverified",
         { Length: > 0 } code => "Status: " + code.Replace('_', ' '),
         _ => "Status update",
     };
@@ -514,7 +512,6 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         "prompt_contract_invalid" => "Prompt rejected by the runtime",
         "cancelled" => "Cancelled",
         "transport_failure" => "Lost connection to the tool",
-        "reconciliation_required" => "Stopped: the last change is unverified",
         { Length: > 0 } code => "Failed: " + code.Replace('_', ' '),
         _ => "Failed",
     };

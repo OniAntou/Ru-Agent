@@ -1673,12 +1673,8 @@ public sealed partial class AgentRunControllerTests
     }
 
     [Fact]
-    public async Task Continue_stays_available_when_the_run_parks_for_reconciliation()
+    public async Task Continue_is_not_offered_for_retired_reconciliation_status()
     {
-        // A run parked on an ambiguous tool outcome stops being driven by the host.
-        // The only way out is a reconciliation decision, and Continue is the only
-        // affordance the desktop client has, so it must stay enabled here instead
-        // of leaving the user with a dead Stop-only panel.
         var fake = new FakeClient
         {
             Run = new AgentRunModel(
@@ -1699,26 +1695,12 @@ public sealed partial class AgentRunControllerTests
                 null,
                 null),
         };
-        fake.Stream.Add(new AgentEventModel(
-            EventId: "e1",
-            RunId: RunId,
-            SessionId: "sess_1",
-            EventType: "run.state_changed",
-            OccurredAt: "2026",
-            Status: "reconciliation_required",
-            SafeSummary: "reconciliation_required",
-            PayloadRef: null,
-            ApprovalId: null,
-            Sequence: 1,
-            IsTransient: false,
-            TransientSequence: null,
-            TransientData: null));
         var controller = new AgentRunController(fake);
 
         await controller.CreateAndRunAsync(new CreateAgentRunRequest(
             "sess_1", "C:\\work", "do it", "standard", null, "idem-reconciliation"));
 
-        Assert.True(controller.CanContinue);
+        Assert.False(controller.CanContinue);
     }
 
     [Fact]
@@ -1873,7 +1855,7 @@ public sealed partial class AgentRunControllerTests
     }
 
     [Fact]
-    public async Task Adopt_reconciliation_offers_continue()
+    public async Task Adopt_reconciliation_does_not_offer_continue()
     {
         var run = MakeRunWith("reconciliation_required", lastSequence: 9);
         var fake = new FakeClient { Run = run };
@@ -1881,8 +1863,7 @@ public sealed partial class AgentRunControllerTests
 
         await controller.AdoptRunAsync(run);
 
-        Assert.True(controller.CanContinue);
-        Assert.Contains("Run paused", controller.StatusText, StringComparison.Ordinal);
+        Assert.False(controller.CanContinue);
     }
 
     [Fact]

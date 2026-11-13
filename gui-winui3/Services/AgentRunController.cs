@@ -49,12 +49,6 @@ public sealed partial class AgentRunController : INotifyPropertyChanged, IDispos
     private AgentRunModel? _currentRun;
     private string? _waitKind;
 
-    /// <summary>
-    /// Wait kind for a run the host parked in ReconciliationRequired. Matches the
-    /// durable <c>run.state_changed</c> safe summary the host publishes for it.
-    /// </summary>
-    private const string ReconciliationWaitKind = "reconciliation_required";
-
     private bool _isCancelRequested;
 
     /// <summary>
@@ -212,7 +206,7 @@ public sealed partial class AgentRunController : INotifyPropertyChanged, IDispos
     private static string? WaitKindFor(AgentRunModel? run) =>
         run is null
             ? null
-            : run.Status is "waiting_user" or ReconciliationWaitKind
+            : run.Status is "waiting_user"
                 ? run.Status
                 : run.HistoryWaitKind;
 
@@ -222,11 +216,6 @@ public sealed partial class AgentRunController : INotifyPropertyChanged, IDispos
     /// </summary>
     private static string AdoptedStatusText(AgentRunModel run)
     {
-        if (string.Equals(run.Status, ReconciliationWaitKind, StringComparison.Ordinal))
-        {
-            return "Run paused: the last action was interrupted. Send Continue to resume with a read-only inspection.";
-        }
-
         if (string.Equals(run.Status, "waiting_user", StringComparison.Ordinal))
         {
             return "Waiting to continue. Type Continue to resume.";

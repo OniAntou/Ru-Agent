@@ -39,11 +39,10 @@ public sealed partial class AgentRunController
         {
             lock (_gate)
             {
-                // A run parked on reconciliation also resumes through Continue: the
-                // host resolves it as an inspection-gated resume. Without this the
-                // panel offers Stop only and the run can never be resumed.
+                // A run parked on Continue waits for the user; reconciliation is
+                // retired and no longer a resumable wait.
                 return _currentRunId is not null
-                    && (_waitKind == "waiting_user" || _waitKind == ReconciliationWaitKind)
+                    && _waitKind == "waiting_user"
                     && !_isCancelRequested;
             }
         }
@@ -574,7 +573,7 @@ public sealed partial class AgentRunController
             lock (_gate)
             {
                 return _currentRunId is not null
-                    && (_waitKind == "waiting_user" || _waitKind == ReconciliationWaitKind);
+                    && _waitKind == "waiting_user";
             }
         }
     }

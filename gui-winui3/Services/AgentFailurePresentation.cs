@@ -33,10 +33,6 @@ internal static class AgentFailurePresentation
         // never saw the turn: retrying the same turn can repeat it.
         ["invalid_request"] = "Ru could not assemble the model request, so the run was stopped. Please send the request again — if it keeps happening, start a new chat.",
         ["empty_model_reply"] = "The model returned an empty reply. Please try again, or select another model.",
-        // Parked, not failed. The host stops driving the run until a
-        // reconciliation decision arrives; Continue is that decision, and it
-        // resumes with a read-only inspection in front of further mutations.
-        ["reconciliation_required"] = "The last action was interrupted, so its result is unverified. Ru is paused — send Continue to resume with a read-only inspection, or Stop to end the run.",
         // Historical code: the model worker used to be its own process, and the
         // run could not reach it. Nothing about the request was wrong, so the copy
         // asks for a retry instead of a rephrase — and it says the code out loud,
@@ -142,17 +138,9 @@ internal static class AgentFailurePresentation
         if (string.Equals(code, "workspace_busy", StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(blockingRunId))
         {
-            // The server names the blocking run; repeat it so the operator can
-            // answer or cancel exactly that run instead of guessing. A parked run
-            // has no pending prompt: reconciliation needs a Continue (cancelling it
-            // would lose the inspection) and waiting_user only needs the Continue.
+            // A parked run has no pending prompt beyond the regular Continue.
             var status = string.IsNullOrWhiteSpace(blockingStatus) ? "active" : blockingStatus.Trim();
             string runId = blockingRunId.Trim();
-            if (string.Equals(status, "reconciliation_required", StringComparison.Ordinal))
-            {
-                return $"Run {runId} is paused for inspection. Send Continue to resume it (or cancel it), then try again.";
-            }
-
             if (string.Equals(status, "waiting_user", StringComparison.Ordinal))
             {
                 return $"Run {runId} is waiting to continue. Send Continue to resume it, then try again.";

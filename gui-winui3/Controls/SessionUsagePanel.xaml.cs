@@ -538,7 +538,7 @@ namespace RuApp.Controls
         private static string OutcomeBrush(SessionUsageRow row) => row.Status switch
         {
             "completed" => "RuSuccessBrush",
-            "failed" or "reconciliation_required" => "RuDangerBrush",
+            "failed" => "RuDangerBrush",
             "interrupted" or "cancelled" => "RuWarningBrush",
             _ when row.IsWaiting => "RuInfoBrush",
             _ => "RuMutedBrush",

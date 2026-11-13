@@ -802,8 +802,7 @@ namespace RuApp.Views
         }
 
         private static bool IsParkedRunStatus(string status) =>
-            string.Equals(status, "waiting_user", StringComparison.Ordinal)
-            || string.Equals(status, "reconciliation_required", StringComparison.Ordinal);
+            string.Equals(status, "waiting_user", StringComparison.Ordinal);
 
         /// <summary>
         /// True while the attempt that started as <paramref name="generation"/> is still the

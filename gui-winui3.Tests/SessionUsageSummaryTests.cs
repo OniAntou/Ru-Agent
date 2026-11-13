@@ -202,7 +202,6 @@ public sealed class SessionUsageSummaryTests
         Assert.Equal("waiting for you", Outcome(false, "waiting_user"));
         Assert.Equal("reading history", Outcome(false, "waiting_history"));
         Assert.Equal("reading history", Outcome(false, "waiting_history_final"));
-        Assert.Equal("needs reconciliation", Outcome(false, "reconciliation_required"));
         // An unrecognised status still has to name something.
         Assert.Equal("ended", Outcome(true, "something-new"));
         Assert.Equal("in progress", Outcome(false, "something-new"));

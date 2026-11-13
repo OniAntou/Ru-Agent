@@ -112,6 +112,20 @@ public sealed partial class SqliteSubagentStore(
         return count > int.MaxValue ? int.MaxValue : (int)count;
     }
 
+    /// <summary>
+    /// True when this tool call already created an identity. A replay at the
+    /// identity ceiling must still reach the idempotent factory path.
+    /// </summary>
+    public async Task<bool> HasSpawnInvocationAsync(RunId rootRunId, string invocationId, CancellationToken ct)
+    {
+        await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_subagents WHERE root_run_id=$root AND invocation_id=$invocation)";
+        command.Parameters.AddWithValue("$root", rootRunId.Value);
+        command.Parameters.AddWithValue("$invocation", invocationId);
+        return (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0;
+    }
+
     public async Task<IReadOnlyList<SubagentRecord>> ListAsync(RunId rootRunId, CancellationToken ct)
     {
         await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);

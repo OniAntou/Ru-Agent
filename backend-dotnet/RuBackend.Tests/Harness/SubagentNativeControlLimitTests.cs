@@ -74,11 +74,27 @@ public sealed partial class SubagentNativeControlTests
         }
 
         Assert.Equal(SubagentLimits.MaxIdentities, (await agents.ListAsync(root.RunId, default)).Count);
-        var ninth = Proposal(8);
+        var replay = await gateway.EvaluateAsync(Proposal(SubagentLimits.MaxIdentities - 1), default);
+        Assert.Equal(PolicyDecision.Allow, replay.Decision);
+        Assert.Equal(ToolExecutionOutcome.Succeeded, (await Execute(Proposal(SubagentLimits.MaxIdentities - 1))).Outcome);
+        Assert.Equal(SubagentLimits.MaxIdentities, (await agents.ListAsync(root.RunId, default)).Count);
+        var ninth = Proposal(SubagentLimits.MaxIdentities);
         var denied = await gateway.EvaluateAsync(ninth, default);
 
         Assert.Equal(PolicyDecision.Deny, denied.Decision);
         Assert.Equal("subagent_identity_limit", denied.SafeCode);
         Assert.Equal(SubagentLimits.MaxIdentities, (await agents.ListAsync(root.RunId, default)).Count);
+
+        var applyProposal = new ToolProposal(root.RunId,
+            new("step_" + new string('d', 32)), new("call_" + new string('e', 32)), "provider_e",
+            1, "agent_apply", "1.0.0", JsonSerializer.SerializeToElement(new
+            {
+                agent_id = "agent_" + new string('f', 32),
+                result_version = 1,
+            }));
+        var applyDenied = await gateway.EvaluateAsync(applyProposal, default);
+
+        Assert.Equal(PolicyDecision.Deny, applyDenied.Decision);
+        Assert.Equal("subagent_apply_ownership_denied", applyDenied.SafeCode);
     }
 }

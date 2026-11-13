@@ -29,7 +29,8 @@ public sealed class SubagentControlDispatcher(IHarnessEventStore events, SqliteS
             // Refuse the identity ceiling here, before any workspace reservation or
             // child run exists. Execution-time rejection after a mutation started is
             // deliberately an unknown outcome; a known ceiling must not reach it.
-            if (await agents.CountIdentitiesAsync(root.RunId, ct).ConfigureAwait(false) >= SubagentLimits.MaxIdentities)
+            if (await agents.CountIdentitiesAsync(root.RunId, ct).ConfigureAwait(false) >= SubagentLimits.MaxIdentities
+                && !await agents.HasSpawnInvocationAsync(root.RunId, proposal.ToolCallId.Value, ct).ConfigureAwait(false))
                 throw new SubagentControlRejectedException("subagent_identity_limit");
             return;
         }

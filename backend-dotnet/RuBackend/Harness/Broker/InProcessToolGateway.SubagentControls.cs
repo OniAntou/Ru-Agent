@@ -19,7 +19,19 @@ public sealed partial class InProcessToolGateway
             return ToolProposalDecision.Deny(kind, "subagent_control_binding_invalid", gatewayGeneration: lease.Generation);
         if (_subagents is null || !await _runtime.IsToolAdvertisedAsync(lease.SessionId, _runId, proposal.ToolId, ct).ConfigureAwait(false))
             return ToolProposalDecision.Deny(kind, "phase_not_available", gatewayGeneration: lease.Generation);
-        if (proposal.ToolId == "agent_apply") return await _subagents.Value.EvaluateApplyAsync(proposal, ct).ConfigureAwait(false);
+        if (proposal.ToolId == "agent_apply")
+        {
+            try { return await _subagents.Value.EvaluateApplyAsync(proposal, ct).ConfigureAwait(false); }
+            catch (RuAgent.Harness.Persistence.HarnessStoreException error)
+                when (SubagentControlFailures.IsDeterministic(error.Code))
+            {
+                // Ownership, result availability and argument checks run before the
+                // apply journal can write. They are a policy denial, not a transport
+                // failure that should fail or park the root run.
+                return ToolProposalDecision.Deny(ToolAccessKind.Mutation, error.Code,
+                    gatewayGeneration: lease.Generation);
+            }
+        }
         try { await _subagents.Value.ValidateAsync(proposal, ct).ConfigureAwait(false); }
         catch (SubagentControlRejectedException error)
         { return ToolProposalDecision.Deny(kind, error.Code, gatewayGeneration: lease.Generation); }
@@ -68,6 +80,13 @@ public sealed partial class InProcessToolGateway
             when (SubagentControlFailures.IsDeterministic(error.Code))
         {
             return BrokerGatewayContracts.FailedReceipt(execution, error.Code);
+        }
+        catch (InvalidOperationException error) when (error.Message == "subagent_cancel_incomplete")
+        {
+            // Cancellation may have persisted before cleanup failed; do not let the
+            // raw exception escape the tool boundary, but keep the outcome unknown.
+            return new(execution.ExecutionId, execution.ToolCallId, ToolExecutionOutcome.OutcomeUnknown,
+                "subagent_cancel_incomplete", null, true, providerCallId: pending.Proposal.ProviderCallId);
         }
         catch (Exception error) when (error is AgentProtocolException or RuAgent.Harness.Persistence.HarnessStoreException
             or SubagentConfigurationException or RuAgent.Broker.Subagents.Workspaces.SubagentWorkspaceException

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **fix(harness)**: Delegating past the eight-subagent identity ceiling now returns a verified `subagent_identity_limit` tool failure instead of pausing the root run with an unverified/unknown side effect. The spawn preflight counts committed children and uncommitted workspace reservations before any effect, and deterministic control refusals are reported as failed receipts rather than `OutcomeUnknown`.
+- **fix(harness)**: Delegating past the eight-subagent identity ceiling now returns a verified `subagent_identity_limit` tool failure instead of pausing the root run with an unverified/unknown side effect. The spawn preflight counts committed children and uncommitted workspace reservations before any effect, and deterministic control refusals are reported as failed receipts rather than `OutcomeUnknown`. The same boundary covers deterministic apply ownership/result refusals and send queue/invalid errors; a replay of the last spawn at the ceiling still returns its original child.
 
 - **docs**: `docs/operations/browser-automation.md` shows how to give the Agent browser DOM, console and network access by attaching Playwright MCP (with the installed Edge) or Chrome DevTools MCP through the existing `mcp` tool, which tools to "Always allow" and which to keep asking for, and the boundaries: navigation is not approved per site, `WebPolicy` does not apply to an MCP browser, and origin lists are advisory. No built-in browser tool is added.
 

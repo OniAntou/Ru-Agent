@@ -42,6 +42,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Provider catalogs and model-specific reasoning](operations/provider-catalog.md)
 - [Operations and verification](operations/verification.md)
 - [Agent tools and truthful execution](operations/agent-tools.md)
+- [Browser DOM and DevTools automation through MCP](operations/browser-automation.md)
 - [Skill setup, invocation and continuity](operations/skills.md)
 - [Workspace project memory](operations/project-memory.md)
 - [Coding-agent capability and acceptance map](operations/coding-agent-capabilities.md)

@@ -1037,6 +1037,9 @@ tool call. Bearer credentials use the existing user credential store. OAuth logi
 and refresh, autonomous GET streams, prompts, resource reads and sampling are
 not implemented. Resource links are metadata, not automatically fetched content.
 
+[Browser automation](browser-automation.md) shows how to attach a Playwright or Chrome
+DevTools server for DOM, console and network access, and which of its tools to keep asking for.
+
 ## Computer use
 
 [ADR 0031](../adr/0031-computer-use-through-the-broker.md) defines this surface. It is off by

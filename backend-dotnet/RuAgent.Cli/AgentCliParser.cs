@@ -18,7 +18,6 @@ public enum CliCommandKind
     PolicyList,
     PolicyImport,
     PolicyRemove,
-    Reconcile,
     Output,
     Command,
     Chat,
@@ -103,25 +102,6 @@ public sealed record PolicyImportCommand(
 public sealed record PolicyRemoveCommand(
     string RuleId,
     bool Json) : AgentCommand(CliCommandKind.PolicyRemove, Json);
-
-/// <summary>
-/// `agent reconcile <run-id> [--outcome applied|not-applied|unknown] [--hash SHA256]
-/// [--json]`. Without --outcome the command only fetches the reconciliation info.
-/// </summary>
-public sealed record ReconcileCommand(
-    string RunId,
-    string? OutcomeToken,
-    string? SnapshotHash,
-    bool Json) : AgentCommand(CliCommandKind.Reconcile, Json)
-{
-    public string ToWireOutcome() => OutcomeToken switch
-    {
-        "applied" => "applied",
-        "not-applied" => "not_applied",
-        "unknown" => "unknown_continue",
-        _ => throw new InvalidOperationException("invalid_outcome"),
-    };
-}
 
 /// <summary>
 /// `agent output <run-id> <payload-id> [--json]` — the explicit user action that
@@ -256,7 +236,6 @@ public static partial class AgentCliParser
             "deny" => ParseDeny(args),
             "answer" => ParseAnswer(args),
             "policy" => ParsePolicy(args),
-            "reconcile" => ParseReconcile(args),
             "output" => ParseOutput(args),
             "command" => ParseDispatchCommand(args),
             "chat" or "repl" => ParseChat(args, 2),

@@ -87,7 +87,6 @@ public sealed class RpcDispatcherTests
     [Theory]
     [InlineData("run.status", "{\"runId\":\"run_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\"}")]
     [InlineData("run.approve", "{\"runId\":\"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"approvalId\":\"apr_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\",\"decision\":\"allow_once\"}")]
-    [InlineData("run.reconcile", "{\"runId\":\"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"outcome\":\"applied\",\"hash\":\"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\"}")]
     [InlineData("policy.remove", "{\"ruleId\":\"rule_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\",\"confirm\":true}")]
     public async Task Identifiers_are_validated_before_any_http_call(string method, string paramsJson)
     {

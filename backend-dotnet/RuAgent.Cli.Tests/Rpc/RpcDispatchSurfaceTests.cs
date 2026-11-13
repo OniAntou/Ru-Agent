@@ -358,16 +358,6 @@ public sealed partial class RpcDispatchSurfaceTests
     }
 
     [Fact]
-    public async Task Run_reconcile_requires_outcome_and_hash()
-    {
-        var runId = "run_" + new string('a', 32);
-        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json("{}")));
-        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
-            () => dispatcher.DispatchAsync(Req("run.reconcile", $"{{\"runId\":\"{runId}\"}}"), CancellationToken.None));
-        Assert.Equal(RpcProtocol.InvalidParams, ex.RpcErrorCode);
-    }
-
-    [Fact]
     public async Task Run_attach_preflights_an_unknown_run()
     {
         var runId = "run_" + new string('a', 32);
@@ -407,66 +397,6 @@ public sealed partial class RpcDispatchSurfaceTests
     }
 
     [Fact]
-    public async Task Run_reconcile_success_passes_the_body_through()
-    {
-        var runId = "run_" + new string('a', 32);
-        var hash = new string('c', 64);
-        string? body = null;
-        List<string> seen = [];
-        var dispatcher = await CreateInitializedAsync(async request =>
-        {
-            body = await request.Content!.ReadAsStringAsync();
-            return RpcTestHost.Json($"{{\"outcome\":\"applied\",\"snapshot_hash\":\"{hash}\"}}");
-        }, seen);
-        var result = await dispatcher.DispatchAsync(
-            Req("run.reconcile", $"{{\"runId\":\"{runId}\",\"outcome\":\"applied\",\"hash\":\"{hash}\"}}"),
-            CancellationToken.None);
-        Assert.Contains($"POST /agent/v1/runs/{runId}/reconcile", seen);
-        Assert.Contains("\"outcome\":\"applied\"", body);
-        Assert.Contains($"\"snapshot_hash\":\"{hash}\"", body);
-        Assert.Equal("applied", result!["outcome"]!.GetValue<string>());
-        Assert.Equal(hash, result["snapshot_hash"]!.GetValue<string>());
-    }
-
-    [Fact]
-    public async Task Run_reconcile_maps_the_host_error_code()
-    {
-        var runId = "run_" + new string('a', 32);
-        var hash = new string('c', 64);
-        List<string> seen = [];
-        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(
-            RpcTestHost.Json("{\"error_code\":\"reconcile_stale\",\"message\":\"stale snapshot\"}", HttpStatusCode.Conflict)), seen);
-        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
-            () => dispatcher.DispatchAsync(
-                Req("run.reconcile", $"{{\"runId\":\"{runId}\",\"outcome\":\"applied\",\"hash\":\"{hash}\"}}"),
-                CancellationToken.None));
-        Assert.Equal(RpcProtocol.ApplicationError, ex.RpcErrorCode);
-        Assert.Equal("reconcile_stale", ex.RuCode);
-        Assert.Equal(409, ex.HttpStatus);
-        Assert.Equal("stale snapshot", ex.Message);
-    }
-
-    [Fact]
-    public async Task Run_reconcile_fails_bounded_on_an_oversized_response()
-    {
-        var runId = "run_" + new string('a', 32);
-        var hash = new string('c', 64);
-        var dispatcher = await CreateInitializedAsync(_ =>
-        {
-            var response = RpcTestHost.Json("{}");
-            response.Content.Headers.ContentLength = BoundedHttpResponseReader.MaximumBytes + 1;
-            return Task.FromResult(response);
-        });
-        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
-            () => dispatcher.DispatchAsync(
-                Req("run.reconcile", $"{{\"runId\":\"{runId}\",\"outcome\":\"applied\",\"hash\":\"{hash}\"}}"),
-                CancellationToken.None));
-        Assert.Equal(RpcProtocol.ApplicationError, ex.RpcErrorCode);
-        Assert.Equal("response_too_large", ex.RuCode);
-        Assert.True(ex.Message.Length <= 200);
-    }
-
-    [Fact]
     public void MethodNames_matches_the_documented_v1_surface()
     {
         Assert.Equal(
@@ -485,7 +415,6 @@ public sealed partial class RpcDispatchSurfaceTests
                 "run.continue",
                 "run.status",
                 "run.command",
-                "run.reconcile",
                 "run.output",
                 "subagent.list",
                 "subagent.get",

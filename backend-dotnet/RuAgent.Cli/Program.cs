@@ -117,7 +117,6 @@ public static class Program
                 PolicyListCommand list => await commands.PolicyListAsync(list, cts.Token).ConfigureAwait(false),
                 PolicyImportCommand import => await commands.PolicyImportAsync(import, cts.Token).ConfigureAwait(false),
                 PolicyRemoveCommand remove => await commands.PolicyRemoveAsync(remove, cts.Token).ConfigureAwait(false),
-                ReconcileCommand reconcile => await commands.ReconcileAsync(reconcile, cts.Token).ConfigureAwait(false),
                 OutputCommand output => await commands.OutputAsync(output, cts.Token).ConfigureAwait(false),
                 DispatchCommandCommand dispatch => await commands.DispatchCommandAsync(dispatch, cts.Token).ConfigureAwait(false),
                 ChatCommand chat => await commands.ChatAsync(chat, cts.Token).ConfigureAwait(false),
@@ -209,7 +208,6 @@ public static class Program
         Console.Error.WriteLine("  agent cancel <run-id>");
         Console.Error.WriteLine("  agent continue <run-id>");
         Console.Error.WriteLine("  agent status <run-id> [--json]");
-        Console.Error.WriteLine("  agent reconcile <run-id> [--outcome applied|not-applied|unknown] [--hash SHA256] [--json]");
         Console.Error.WriteLine("  agent output <run-id> <payload-id> [--json]");
         Console.Error.WriteLine("  agent policy list [--global] [--json]");
         Console.Error.WriteLine("  agent policy import --global FILE");

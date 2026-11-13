@@ -43,7 +43,6 @@ public sealed class AgentV1EndpointTests
         ("POST", "/agent/v1/runs/{runId}/continue"),
         ("POST", "/agent/v1/runs/{runId}/compact"),
         ("POST", "/agent/v1/runs/{runId}/commands"),
-        ("POST", "/agent/v1/runs/{runId}/reconcile"),
         ("GET", "/agent/v1/sessions/{sessionId}/runs"),
         ("GET", "/agent/v1/sessions/{sessionId}/preset"),
         ("GET", "/agent/v1/policies"),
@@ -69,7 +68,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(56, doc.RootElement.GetArrayLength()); // Skills, user plugins and selected admission remain; external session exchange is retired.
+        Assert.Equal(55, doc.RootElement.GetArrayLength()); // Skills, user plugins and selected admission remain; external session exchange is retired.
     }
 
     [Theory]
@@ -86,7 +85,6 @@ public sealed class AgentV1EndpointTests
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/continue")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compact")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands")]
-    [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runs")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/preset")]
     [InlineData("GET", "/agent/v1/policies")]
@@ -125,7 +123,6 @@ public sealed class AgentV1EndpointTests
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/continue")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compact")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands")]
-    [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runs")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/preset")]
     [InlineData("GET", "/agent/v1/policies")]
@@ -151,7 +148,7 @@ public sealed class AgentV1EndpointTests
     }
 
     [Fact]
-    public async Task Policy_and_approval_and_reconcile_return_phase_not_available()
+    public async Task Policy_and_approval_return_phase_not_available()
     {
         using var factory = new BackendWebApplicationFactory();
         using var client = factory.CreateAuthenticatedClient();
@@ -179,13 +176,6 @@ public sealed class AgentV1EndpointTests
         {
             Assert.NotEqual("phase_not_available", code.GetString());
         }
-
-        using var rec = await client.PostAsJsonAsync("/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile", new { outcome = "applied" });
-        // The reconcile endpoint is live since Task 8: a missing snapshot_hash fails
-        // validation before any run lookup, never with a phase stub.
-        Assert.Equal(400, (int)rec.StatusCode);
-        var recJson = await rec.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("invalid_snapshot_hash", recJson.GetProperty("error_code").GetString());
     }
 
     [Fact]

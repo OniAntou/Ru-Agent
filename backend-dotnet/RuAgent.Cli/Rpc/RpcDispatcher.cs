@@ -53,7 +53,6 @@ public sealed partial class RpcDispatcher
         "run.continue",
         "run.status",
         "run.command",
-        "run.reconcile",
         "run.output",
         "subagent.list",
         "subagent.get",
@@ -136,7 +135,6 @@ public sealed partial class RpcDispatcher
                 "run.continue" => await RunContinueAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.status" => await RunStatusAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.command" => await RunCommandAsync(request, cancellationToken).ConfigureAwait(false),
-                "run.reconcile" => await RunReconcileAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.output" => await RunOutputAsync(request, cancellationToken).ConfigureAwait(false),
                 "subagent.list" or "subagent.get"
                     => await DispatchSubagentAsync(request, cancellationToken).ConfigureAwait(false),
@@ -423,77 +421,6 @@ public sealed partial class RpcDispatcher
         var command = RequireString(request, "command", 8192);
         var response = await _agentClient.DispatchCommandAsync(runId, command, ct).ConfigureAwait(false);
         return JsonSerializer.SerializeToNode(response, JsonOptions) ?? new JsonObject();
-    }
-
-    private async Task<JsonNode> RunReconcileAsync(RpcRequest request, CancellationToken ct)
-    {
-        var runId = RequireRunId(request);
-        var outcome = OptionalString(request, "outcome", 32);
-        var hash = OptionalString(request, "hash", 64);
-        if (outcome is null || hash is null || hash.Length != 64 || !hash.All(char.IsAsciiHexDigit))
-        {
-            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: outcome and a 64-char hash are required.");
-        }
-
-        var wireOutcome = outcome switch
-        {
-            "applied" => "applied",
-            "not_applied" or "not-applied" => "not_applied",
-            "unknown_continue" or "unknown" => "unknown_continue",
-            _ => throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: unknown reconcile outcome."),
-        };
-
-        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/reconcile");
-        using var http = new HttpRequestMessage(HttpMethod.Post, url)
-        {
-            Content = new StringContent(
-                JsonSerializer.Serialize(new { outcome = wireOutcome, snapshot_hash = hash }),
-                System.Text.Encoding.UTF8,
-                "application/json"),
-        };
-        http.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _session.BearerToken);
-        using var response = await _httpClient.SendAsync(http, ct).ConfigureAwait(false);
-        var body = await BoundedHttpResponseReader.ReadAsync(response.Content, ct).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            var (ruCode, message) = MapReconcileFailure(body);
-            throw new RpcDispatchException(RpcProtocol.ApplicationError, message, ruCode, (int)response.StatusCode);
-        }
-
-        return JsonNode.Parse(body) ?? new JsonObject();
-    }
-
-    private static (string RuCode, string Message) MapReconcileFailure(string body)
-    {
-        string? errorCode = null;
-        string? message = null;
-        try
-        {
-            using var document = JsonDocument.Parse(body);
-            if (document.RootElement.ValueKind == JsonValueKind.Object)
-            {
-                if (document.RootElement.TryGetProperty("error_code", out var code) && code.ValueKind == JsonValueKind.String)
-                {
-                    errorCode = code.GetString();
-                }
-
-                if (document.RootElement.TryGetProperty("message", out var text) && text.ValueKind == JsonValueKind.String)
-                {
-                    message = text.GetString();
-                }
-            }
-        }
-        catch (JsonException)
-        {
-        }
-
-        var bounded = (string.IsNullOrWhiteSpace(message) ? body : message).ReplaceLineEndings(" ").Trim();
-        if (bounded.Length > 200)
-        {
-            bounded = bounded[..200];
-        }
-
-        return (string.IsNullOrWhiteSpace(errorCode) ? "reconcile_failed" : errorCode, bounded);
     }
 
     private static string RequireRunId(RpcRequest request)

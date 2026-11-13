@@ -63,7 +63,7 @@ public sealed partial class InProcessToolGateway
         var entered = false;
         try
         {
-            return await _runtime.AuthorizeSubagentControlAsync(Request(sessionId, AgentMessageTypes.ToolExecute, new JsonObject
+            var receipt = await _runtime.AuthorizeSubagentControlAsync(Request(sessionId, AgentMessageTypes.ToolExecute, new JsonObject
             {
                 ["run_id"] = _runId, ["tool_id"] = pending.ToolId, ["tool_version"] = pending.ToolVersion,
                 ["tool_call_id"] = pending.Proposal.ToolCallId.Value,
@@ -74,13 +74,15 @@ public sealed partial class InProcessToolGateway
                 entered = true;
                 return _subagents.Value.DispatchAsync(intent, pending.Proposal, execution, token);
             }, ct).ConfigureAwait(false);
+            return AvoidReconciliation(receipt, pending.ToolId);
         }
         catch (SubagentControlRejectedException error)
         { return BrokerGatewayContracts.FailedReceipt(execution, error.Code); }
         catch (OperationCanceledException)
         {
-            return new(execution.ExecutionId, execution.ToolCallId, ToolExecutionOutcome.Cancelled,
-                "subagent_control_canceled", null, entered && pending.AccessKind != ToolAccessKind.ReadOnly);
+            return new(execution.ExecutionId, execution.ToolCallId, ToolExecutionOutcome.Failed,
+                "subagent_control_canceled", null, entered && pending.AccessKind != ToolAccessKind.ReadOnly,
+                providerCallId: pending.Proposal.ProviderCallId);
         }
         catch (AgentProtocolException error) when (!entered)
         { return BrokerGatewayContracts.FailedReceipt(execution, error.Code); }
@@ -114,9 +116,10 @@ public sealed partial class InProcessToolGateway
         }
         catch (InvalidOperationException error) when (error.Message == "subagent_cancel_incomplete")
         {
-            // Cancellation may have persisted before cleanup failed; do not let the
-            // raw exception escape the tool boundary, but keep the outcome unknown.
-            return new(execution.ExecutionId, execution.ToolCallId, ToolExecutionOutcome.OutcomeUnknown,
+            // Cancellation may have persisted before cleanup failed. Surface the
+            // uncertainty as a failed control result; the model can inspect before
+            // deciding, and the run does not park for a user Continue.
+            return new(execution.ExecutionId, execution.ToolCallId, ToolExecutionOutcome.Failed,
                 "subagent_cancel_incomplete", null, true, providerCallId: pending.Proposal.ProviderCallId);
         }
         catch (Exception error) when (error is AgentProtocolException or RuAgent.Harness.Persistence.HarnessStoreException
@@ -135,9 +138,30 @@ public sealed partial class InProcessToolGateway
                 _ => "subagent_control_io_failed",
             };
             if (string.IsNullOrEmpty(code) || code.Length > 128 || code.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '_')) code = "subagent_control_failed";
-            return new(execution.ExecutionId, execution.ToolCallId,
-                effects ? ToolExecutionOutcome.OutcomeUnknown : ToolExecutionOutcome.Failed,
-                code, null, effects);
+            return new(execution.ExecutionId, execution.ToolCallId, ToolExecutionOutcome.Failed,
+                code, null, effects, providerCallId: pending.Proposal.ProviderCallId);
         }
+    }
+
+    /// <summary>
+    /// Subagent controls are orchestration mutations, not arbitrary workspace writes.
+    /// A durable control either committed or not; recording the uncertainty as a
+    /// failed control result lets the model inspect and decide instead of parking the
+    /// whole root run for a user Continue. Apply/cancel partial writes still carry
+    /// <c>sideEffectsPossible=true</c>.
+    /// </summary>
+    private static ToolExecutionReceipt AvoidReconciliation(ToolExecutionReceipt receipt, string toolId)
+    {
+        if (!SubagentContractValidator.IsControlTool(toolId) && toolId != "agent_apply") return receipt;
+        if (receipt.Outcome != ToolExecutionOutcome.OutcomeUnknown
+            && !(receipt.SideEffectsPossible
+                && receipt.Outcome is ToolExecutionOutcome.Cancelled or ToolExecutionOutcome.TimedOut))
+        {
+            return receipt;
+        }
+
+        return new(receipt.ExecutionId, receipt.ToolCallId, ToolExecutionOutcome.Failed,
+            receipt.Code, receipt.ResultPayloadId, receipt.SideEffectsPossible,
+            receipt.ModelContent, receipt.ContentEncoding, receipt.ProviderCallId);
     }
 }

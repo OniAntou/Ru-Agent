@@ -15,6 +15,12 @@ children and manual PR export; detached execution is **not enabled** in this ver
 A normal root still cancels its family, and the GUI remains observation-only. A coding
 result's read-only change review and bounded patch export are available today.
 
+Subagent controls do not use the generic `ReconciliationRequired` park. If a control's
+outcome is uncertain (partial apply, cancel cleanup, workspace/IO failure), the model
+receives a failed receipt with `sideEffectsPossible=true` and must inspect before
+retrying; it does not wait for a user Continue. Other tool families keep their existing
+reconciliation behavior.
+
 ## Model selection
 
 Every child inherits the parent's entire pinned selection by default. There is no subagent

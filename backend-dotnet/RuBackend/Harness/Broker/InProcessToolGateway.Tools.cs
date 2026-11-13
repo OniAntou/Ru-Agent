@@ -214,8 +214,11 @@ public sealed partial class InProcessToolGateway
         if (RuAgent.Protocol.Subagents.SubagentContractValidator.IsControlTool(pending.ToolId))
             return await ExecuteNativeSubagentAsync(pending, execution, sessionId, cancellationToken).ConfigureAwait(false);
         if (pending.ToolId == "agent_apply")
-            return _subagents is null ? BrokerGatewayContracts.FailedReceipt(execution, "phase_not_available")
-                : await _subagents.Value.ApplyAsync(pending.Proposal, execution, cancellationToken).ConfigureAwait(false);
+        {
+            if (_subagents is null) return BrokerGatewayContracts.FailedReceipt(execution, "phase_not_available");
+            var applied = await _subagents.Value.ApplyAsync(pending.Proposal, execution, cancellationToken).ConfigureAwait(false);
+            return AvoidReconciliation(applied, pending.ToolId);
+        }
 
         // Envelope field, never an argument: the model cannot set it, and approval
         // tokens stay bound to the canonical arguments alone (ADR 0026).

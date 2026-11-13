@@ -91,20 +91,6 @@ public static class AgentRecoveryNotes
         + "The harness reduced older history; no proposed tools from the rejected reply executed. Continue the current request using this checkpoint and retained evidence.";
 
     /// <summary>
-    /// A mutation ended with an unknown effect. The run continues, but mutations
-    /// stay behind a read-only inspection gate until the model proves what happened.
-    /// </summary>
-    public static string BuildOutcomeUnknownNote(string? receiptCode)
-    {
-        var code = string.IsNullOrWhiteSpace(receiptCode) ? "tool_outcome_unknown" : receiptCode;
-        return $"{NotePrefix} outcome_unknown_continued (code: {code}) - the previous mutating tool call may have "
-            + "completed or failed; its side effects are not proven. Mutations are blocked until one read-only "
-            + "inspection succeeds. Inspect the relevant state/file/receipt, then continue without retrying the "
-            + "unverified mutation blindly. If the outcome cannot be established, start the final text with "
-            + "[BLOCKED] and report the uncertainty.";
-    }
-
-    /// <summary>
     /// Names the failed receipt and gives recovery guidance for known effect codes.
     /// The code comes from the sanitized receipt code, so it is safe text.
     /// </summary>

@@ -17,9 +17,9 @@ result's read-only change review and bounded patch export are available today.
 
 Subagent controls do not use the generic `ReconciliationRequired` park. If a control's
 outcome is uncertain (partial apply, cancel cleanup, workspace/IO failure), the model
-receives a failed receipt with `sideEffectsPossible=true` and must inspect before
-retrying; it does not wait for a user Continue. The generic tool pipeline now also keeps
-unknown mutations running behind a read-only inspection gate; legacy reconciliation
+receives a failed receipt with `sideEffectsPossible=true` and decides whether to inspect,
+retry or report it; it does not wait for a user Continue. The generic tool pipeline also
+keeps unknown mutations running with the ordinary failed tool result; legacy reconciliation
 states remain resolvable.
 
 ## Model selection

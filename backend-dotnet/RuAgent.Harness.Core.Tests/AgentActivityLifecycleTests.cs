@@ -443,9 +443,8 @@ public sealed class AgentActivityLifecycleTests
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
         Assert.Equal(HarnessRunState.Running, result.Run.State);
-        Assert.Contains(store.Commits.SelectMany(c => c.Events), item =>
-            item.Kind == HarnessEventKind.RunNoteAdded
-                && item.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
+        Assert.DoesNotContain(store.Commits.SelectMany(c => c.Events), item =>
+            item.Kind == HarnessEventKind.RunNoteAdded);
     }
 
     private static AgentRunCoordinator Coordinator(

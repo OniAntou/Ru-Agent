@@ -64,7 +64,6 @@ public sealed class ReconciliationInspectionGate
 public static class ReconciliationGateProjection
 {
     public const string UnknownContinueCode = "unknown_continue";
-    public const string OutcomeUnknownContinuedCode = "outcome_unknown_continued";
 
     /// <summary>
     /// Safe code of the durable event that records a read-only inspection clearing
@@ -82,12 +81,6 @@ public static class ReconciliationGateProjection
         var armed = false;
         foreach (var item in events)
         {
-            if (string.Equals(item.Kind, "run.note_added", StringComparison.Ordinal)
-                && string.Equals(item.SafeCode, "outcome_unknown_continued", StringComparison.Ordinal))
-            {
-                armed = true;
-            }
-
             if (string.Equals(item.Kind, "reconciliation.resolved", StringComparison.Ordinal))
             {
                 // Any later resolution replaces the earlier one: only an

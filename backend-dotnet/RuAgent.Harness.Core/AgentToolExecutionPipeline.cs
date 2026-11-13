@@ -414,25 +414,10 @@ internal sealed partial class AgentToolExecutionPipeline
                     && call.AccessKind != ToolAccessKind.ReadOnly)
                 || ambiguousSideEffects)
             {
-                // Do not park the run. Keep mutations behind a read-only inspection
-                // gate and give the model a durable note so it can establish what
-                // happened; the first successful read-only call releases the gate.
-                _inspectionGate?.Activate(run.RunId);
-                var noteBytes = System.Text.Encoding.UTF8.GetBytes(
-                    AgentRecoveryNotes.BuildOutcomeUnknownNote(receipt.Code));
-                var notePayload = new HarnessPayloadIntent(_ids.NewPayloadId(),
-                    HarnessPayloadKind.ModelContextNote, HarnessPayloadAudience.ModelContext,
-                    HarnessPayloadEncoding.Utf8Text, noteBytes.Length, noteBytes);
-                receiptPayloads.Add(notePayload);
-                events.Add(new HarnessEventIntent(
-                    _ids.NewEventId(),
-                    HarnessEventKind.RunNoteAdded,
-                    modelStepId: modelStepId,
-                    toolCallId: receipt.ToolCallId,
-                    providerCallId: receipt.ProviderCallId,
-                    executionId: receipt.ExecutionId,
-                    payloadId: notePayload.PayloadId,
-                    safeCode: ReconciliationGateProjection.OutcomeUnknownContinuedCode));
+                // Match the ordinary coding-agent model: the failed/unknown receipt
+                // is the model-visible result. Do not add a durable recovery note,
+                // an inspection gate or a Continue state. The next model step decides
+                // whether to retry, inspect or report the uncertainty.
             }
             else if (gateArmedBeforeThisCall
                      && call.AccessKind == ToolAccessKind.ReadOnly

@@ -348,7 +348,7 @@ as integration bases; unreceipted writes keep the old base and may conflict with
 current parent files. Unknown Continue retains its read-inspection mutation gate.
 Duplicate apply still returns the saved uncertain outcome without replaying writes.
 Startup rehydrates children from their immutable delegation and model pin after
-parents; ambiguous mutations stay running behind a read-only inspection gate.
+parents; ambiguous mutations stay running and return the ordinary failed receipt.
 Internal children cannot use the Host's `ask_user` interception. The model-facing
 tool projection uses their durable role, removes questions/delegation controls,
 and removes filesystem mutations/terminal execution for review. Role eligibility
@@ -810,7 +810,7 @@ notes. Its durable outbox remains deliverable after runtime cleanup. An exhauste
 provider-transient step is failed with its provider code; it does not park for
 Continue. An approval-decision deny never enters recovery: a
 user deny keeps its fail-closed rule and an ambiguous mutation stays running
-behind a read-only inspection gate until one inspection succeeds. A repeated `policy_denied` tool receipt followed
+with its ordinary failed result. A repeated `policy_denied` tool receipt followed
 by prose is a tool outcome, not an approval decision, so it may still take the
 bounded `unverified_after_tool_failure` notes with the denial code as the
 terminal code. The note states the reason from the failed receipt: an expected-exit

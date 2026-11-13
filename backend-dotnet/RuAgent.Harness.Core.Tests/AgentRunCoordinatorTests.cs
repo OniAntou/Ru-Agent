@@ -1973,9 +1973,8 @@ public sealed partial class AgentRunCoordinatorTests
         Assert.Equal(ToolExecutionOutcome.OutcomeUnknown, receipt.Outcome);
         Assert.True(receipt.SideEffectsPossible);
         Assert.Equal(HarnessRunState.Running, result.Run.State);
-        Assert.Contains(store.Commits.SelectMany(commit => commit.Events), item =>
-            item.Kind == HarnessEventKind.RunNoteAdded
-                && item.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
+        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events), item =>
+            item.Kind == HarnessEventKind.RunNoteAdded);
         Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events), item =>
             item.Kind == HarnessEventKind.ReconciliationRequired);
     }
@@ -2002,9 +2001,8 @@ public sealed partial class AgentRunCoordinatorTests
         Assert.Equal("not_executed_after_unknown", result.Receipts[1].Code);
         Assert.Equal(2, store.Commits.SelectMany(commit => commit.Events)
             .Count(@event => @event.Kind == HarnessEventKind.ToolExecutionCompleted));
-        Assert.Contains(store.Commits.SelectMany(commit => commit.Events), item =>
-            item.Kind == HarnessEventKind.RunNoteAdded
-                && item.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
+        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events), item =>
+            item.Kind == HarnessEventKind.RunNoteAdded);
     }
 
     [Fact]

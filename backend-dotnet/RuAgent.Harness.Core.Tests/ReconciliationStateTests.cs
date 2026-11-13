@@ -100,10 +100,9 @@ public sealed class ReconciliationStateTests
         Assert.Equal(ToolExecutionOutcome.Cancelled, receipt.Outcome);
         Assert.True(receipt.SideEffectsPossible);
         Assert.Equal(HarnessRunState.Running, result.Run.State);
-        Assert.True(gate.IsMutationDenied(RunId()));
-        Assert.Contains(store.Commits.SelectMany(commit => commit.Events),
-            item => item.Kind == HarnessEventKind.RunNoteAdded
-                && item.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
+        Assert.False(gate.IsMutationDenied(RunId()));
+        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.RunNoteAdded);
         Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events),
             item => item.Kind == HarnessEventKind.ReconciliationRequired);
     }
@@ -131,9 +130,8 @@ public sealed class ReconciliationStateTests
 
         Assert.Null(result.ErrorCode);
         Assert.Equal(HarnessRunState.Running, result.Run.State);
-        Assert.Contains(store.Commits.SelectMany(commit => commit.Events),
-            item => item.Kind == HarnessEventKind.RunNoteAdded
-                && item.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
+        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.RunNoteAdded);
     }
 
     [Fact]

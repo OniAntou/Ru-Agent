@@ -56,8 +56,9 @@ public sealed partial class AgentRunCoordinatorTests
         Assert.Single(gateway.ExecuteAttempts);
         Assert.Single(model.Requests);
         Assert.Contains(store.Commits.SelectMany(c => c.Events), e =>
-            e.Kind == HarnessEventKind.RunNoteAdded
-                && e.SafeCode == ReconciliationGateProjection.OutcomeUnknownContinuedCode);
+            e.Kind == HarnessEventKind.ToolExecutionCompleted);
+        Assert.DoesNotContain(store.Commits.SelectMany(c => c.Events), e =>
+            e.Kind == HarnessEventKind.RunNoteAdded);
         Assert.DoesNotContain(store.Commits.SelectMany(c => c.Events), e =>
             e.Kind == HarnessEventKind.ReconciliationRequired);
         Assert.Empty(store.Commits.SelectMany(c => c.ConversationOutbox));

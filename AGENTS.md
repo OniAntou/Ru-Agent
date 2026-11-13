@@ -19,10 +19,12 @@ Use CONTEXT.md's domain language and update it when concepts change.
 
 ## Security and execution boundaries
 
-- **Fail closed.** Invalid or ambiguous authority must ask or deny according
-  to policy. Never widen permissions, presets, grants or path rules merely to
-  make a test pass. Intentional policy changes need explicit scope, boundary
-  analysis and tests of allowed and denied behavior.
+- **Prefer bounded recovery.** Resolve invalid or ambiguous authority with the
+  narrowest explicit recovery the policy permits — a bounded retry, a read-only
+  inspection, or a named failure the run can report — instead of an unrecoverable
+  stop. Never widen permissions, presets, grants or path rules merely to make a
+  test pass. Intentional policy changes need explicit scope, boundary analysis
+  and tests of allowed and denied behavior.
 - **One execution authority.** File, terminal and network tools execute
   in-process through `IToolGateway` against the single `BrokerExecutionRuntime`
   composed behind `IToolGatewayFactory`. The Host owns orchestration and the
@@ -30,8 +32,9 @@ Use CONTEXT.md's domain language and update it when concepts change.
   Keep execution policy and side-effecting tool adapters out of the Host.
 - **No silent substitution.** Provider, model, protocol and tool identities
   stay pinned for a run; failures produce bounded, named codes. Bounded retries
-  and durable `[HARNESS RECOVERY]` feedback keep the same selection; exhausted
-  transient providers wait for explicit Continue. User-selected provider/model
+  and durable `[HARNESS RECOVERY]` feedback keep the same selection; an exhausted
+  transient provider surfaces that named failure to the run instead of adding a
+  user Continue gate. User-selected provider/model
   changes apply to new runs. The documented `web_search` exception races its
   fixed upstream engine set within one tool; every request passes `WebPolicy`.
   The second exception, provider-hosted search (ADR 0033), runs at a pinned

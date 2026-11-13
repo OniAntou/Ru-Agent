@@ -292,7 +292,14 @@ fall back to detailed mode.
 **Customize**, directly under New Chat in the sidebar, opens a page in place of the
 chat (`ShellDestination.Customize`); selecting a session or New Chat returns to the
 chat, and `/skills` typed in the composer opens it. The composer carries no skills
-button. The page has three tabs:
+button. Typing `/` in the composer opens a slash menu (`ComposerSlashCommands`,
+`ChatView.SlashCommands.cs`): up to eight `.ru/commands/*.md` templates from the
+workspace and the user profile, then `/skills`. It is a non-light-dismiss `Popup`, so
+focus stays in the text box; arrow keys move, Tab or Enter completes, Escape closes,
+and it closes at the first space. Send and queue both expand a typed custom command
+into its prompt in the composer before the draft is snapshotted, so the prompt-limit
+check, the transcript and the Agent see the same text. `skill` and `skills` are
+reserved names a template cannot replace. The page has three tabs:
 
 - **Skills** lists the active workspace's catalog through `SkillsApiClient`, with
   search, reload, an enable switch per skill, automatic-selection in each row's

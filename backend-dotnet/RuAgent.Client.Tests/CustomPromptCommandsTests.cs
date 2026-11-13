@@ -1,7 +1,7 @@
-using RuAgent.Cli;
+using RuAgent.Client;
 using Xunit;
 
-namespace RuAgent.Cli.Tests;
+namespace RuAgent.Client.Tests;
 
 public sealed class CustomPromptCommandsTests : IDisposable
 {

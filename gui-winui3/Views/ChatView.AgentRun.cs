@@ -411,6 +411,13 @@ namespace RuApp.Views
         {
             try
             {
+                // The slash menu owns its navigation keys before paste, Escape or send.
+                if (TryHandleSlashMenuKey(e))
+                {
+                    e.Handled = true;
+                    return;
+                }
+
                 if (e.Key == Windows.System.VirtualKey.V)
                 {
                     var ctrlDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
@@ -579,6 +586,9 @@ namespace RuApp.Views
             TaskCompletionSource? submissionSettled = null;
             try
             {
+                // A custom command becomes its prompt before anything reads the draft,
+                // so the limit check, the transcript and the Agent all see the same text.
+                ExpandCustomCommandInComposer();
                 var snapshot = Composer.TakeSnapshot(ChatInputTextBox.Text);
                 string text = snapshot.Text;
                 var attachments = snapshot.Attachments.ToList();
@@ -716,6 +726,7 @@ namespace RuApp.Views
                 return false;
             }
 
+            if (ChatInputTextBox is not null) ExpandCustomCommandInComposer();
             var snapshot = Composer.TakeSnapshot(ChatInputTextBox?.Text ?? string.Empty);
             string effectivePrompt = ChatComposerViewModel.BuildEffectivePrompt(snapshot.Text, snapshot.Attachments);
             if (ChatComposerViewModel.PromptLimitStatus(effectivePrompt) is { } promptLimit)

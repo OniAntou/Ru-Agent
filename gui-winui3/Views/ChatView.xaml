@@ -1138,6 +1138,50 @@
                         </ItemsControl>
                     </ScrollViewer>
 
+                    <!-- Slash menu: .ru/commands templates. A Popup keeps the keyboard in the text box. -->
+                    <Popup x:Name="SlashCommandPopup" Grid.Row="2" IsLightDismissEnabled="False">
+                        <Border Background="{StaticResource RuSurfaceBrush}"
+                                BorderBrush="{StaticResource RuLineBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource AppInsetCornerRadius}"
+                                Padding="4"
+                                MinWidth="320"
+                                MaxWidth="520">
+                            <ListView x:Name="SlashCommandList"
+                                      SelectionMode="Single"
+                                      IsItemClickEnabled="True"
+                                      ItemClick="OnSlashCommandClick"
+                                      AllowFocusOnInteraction="False"
+                                      IsTabStop="False"
+                                      AutomationProperties.Name="Slash commands">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="MinHeight" Value="44" />
+                                        <Setter Property="Height" Value="44" />
+                                        <Setter Property="Padding" Value="10,0" />
+                                        <Setter Property="IsTabStop" Value="False" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="services:ComposerSlashSuggestion">
+                                        <StackPanel VerticalAlignment="Center" Spacing="1"
+                                                    AutomationProperties.Name="{x:Bind AutomationLabel}">
+                                            <TextBlock Text="{x:Bind Command}"
+                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource RuInkBrush}" />
+                                            <TextBlock Text="{x:Bind Description}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource RuMutedBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Border>
+                    </Popup>
+
                     <TextBox x:Name="ChatInputTextBox"
                               Grid.Row="2"
                               AutomationProperties.AutomationId="ChatInput"

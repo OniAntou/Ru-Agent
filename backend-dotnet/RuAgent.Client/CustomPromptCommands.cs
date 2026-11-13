@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace RuAgent.Cli;
+namespace RuAgent.Client;
 
 /// <summary>A prompt template found for a custom slash command.</summary>
 public sealed record CustomPromptCommand(string Name, string Description, string Template);

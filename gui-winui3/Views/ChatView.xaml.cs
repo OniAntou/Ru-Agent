@@ -405,6 +405,8 @@ namespace RuApp.Views
             UpdateAgentInlineState();
 
             ChatInputTextBox.TextChanged += OnChatInputTyping;
+            ChatInputTextBox.TextChanged += OnSlashDraftChanged;
+            ChatInputTextBox.LostFocus += OnSlashComposerLostFocus;
 
             Messages.CollectionChanged += (_, __) => UpdateContextUsage();
             Composer.Attachments.CollectionChanged += (_, __) => UpdateContextUsage();

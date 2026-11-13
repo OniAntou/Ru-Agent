@@ -1,4 +1,5 @@
 using RuAgent.Cli.Tui;
+using RuAgent.Client;
 
 namespace RuAgent.Cli;
 

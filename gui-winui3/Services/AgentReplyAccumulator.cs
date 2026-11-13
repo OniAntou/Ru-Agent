@@ -16,6 +16,7 @@ public sealed class AgentReplyAccumulator
     private readonly StringBuilder _builder = new();
     private readonly HashSet<string> _seenKeys = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _stepStarts = new(StringComparer.Ordinal);
+    private string? _pendingResetStep;
     private int? _pendingResetOffset;
     private bool _hasNewText;
 
@@ -30,6 +31,7 @@ public sealed class AgentReplyAccumulator
             if (!string.IsNullOrEmpty(initialText)) _builder.Append(initialText);
             _seenKeys.Clear();
             _stepStarts.Clear();
+            _pendingResetStep = null;
             _pendingResetOffset = null;
             _hasNewText = false;
         }
@@ -44,6 +46,19 @@ public sealed class AgentReplyAccumulator
             if (!string.Equals(_runId, runId, StringComparison.Ordinal)) return false;
             var key = $"{runId}:{modelStepId}:{sequence}";
             if (!_seenKeys.Add(key)) return false;
+            if (_pendingResetStep is not null)
+            {
+                // Apply the deferred truncation only when replacement text arrives.
+                // Until then the view keeps the previous partial answer visible,
+                // so a transient retry does not flash an empty assistant bubble.
+                var offset = Math.Min(_pendingResetOffset ?? _builder.Length, _builder.Length);
+                _builder.Length = offset;
+                _stepStarts[modelStepId] = Math.Min(
+                    _stepStarts.GetValueOrDefault(modelStepId, offset), offset);
+                _pendingResetStep = null;
+                _pendingResetOffset ??= offset;
+            }
+
             _stepStarts.TryAdd(modelStepId, _builder.Length);
             _builder.Append(text);
             _hasNewText = true;
@@ -52,9 +67,10 @@ public sealed class AgentReplyAccumulator
     }
 
     /// <summary>
-    /// Drops the text streamed by the retried model step. A model step retried
-    /// after a transient failure re-runs on a fresh socket, and its answer
-    /// replaces the partial one that had already been rendered.
+    /// Marks the text streamed by the retried model step for replacement. The
+    /// truncation is deferred until the replacement attempt actually emits text:
+    /// the user keeps seeing the previous partial answer instead of an empty
+    /// bubble while the provider reconnects.
     /// </summary>
     public bool TryReset(string runId, string modelStepId, long sequence)
     {
@@ -67,11 +83,10 @@ public sealed class AgentReplyAccumulator
             if (!_seenKeys.Add(key)) return false;
             _stepStarts.TryAdd(modelStepId, _builder.Length);
             var offset = _stepStarts[modelStepId];
-            _builder.Length = offset;
+            _pendingResetStep = modelStepId;
             _pendingResetOffset = Math.Min(_pendingResetOffset ?? offset, offset);
-            // Report the truncated snapshot so the view clears superseded text
-            // instead of leaving it on screen until the retry writes again.
-            _hasNewText = true;
+            // Deliberately no snapshot here: rendering an empty replacement is the
+            // flash this deferral removes.
             return true;
         }
     }
@@ -123,6 +138,8 @@ public sealed class AgentReplyAccumulator
             _generation++;
             _seenKeys.Clear();
             _stepStarts.Clear();
+            _pendingResetStep = null;
+            _pendingResetOffset = null;
         }
     }
 
@@ -134,6 +151,7 @@ public sealed class AgentReplyAccumulator
             _builder.Clear();
             _seenKeys.Clear();
             _stepStarts.Clear();
+            _pendingResetStep = null;
             _pendingResetOffset = null;
             _hasNewText = false;
             _sessionId = null;

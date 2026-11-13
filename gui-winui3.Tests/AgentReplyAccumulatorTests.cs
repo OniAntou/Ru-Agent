@@ -22,12 +22,14 @@ public sealed class AgentReplyAccumulatorTests
         Assert.Null(reply.TakeSnapshot());
 
         Assert.True(reply.TryReset("run", "step-a", 2));
-        var reset = reply.TakeSnapshot()!;
-        Assert.Equal("replayed prefix.\n", reset.Text);
-        Assert.Equal("replayed prefix.\n".Length, reset.ResetOffset);
+        // The UI keeps the previous partial text visible while the retry
+        // reconnects; no empty replacement is emitted.
+        Assert.Null(reply.TakeSnapshot());
 
         Assert.True(reply.TryAppend("run", "step-a", 3, "Replacement answer."));
-        Assert.Equal("replayed prefix.\nReplacement answer.", reply.TakeSnapshot()!.Text);
+        var reset = reply.TakeSnapshot()!;
+        Assert.Equal("replayed prefix.\nReplacement answer.", reset.Text);
+        Assert.Equal("replayed prefix.\n".Length, reset.ResetOffset);
         Assert.False(reply.TryReset("run", "step-a", 2));
         Assert.Null(reply.TakeSnapshot());
     }
@@ -143,13 +145,14 @@ public sealed class AgentReplyAccumulatorTests
         Assert.Equal("half an ans", partial!.Text);
 
         Assert.True(reply.TryReset("r1", "m1", 2));
-        var cleared = reply.TakeSnapshot();
-        Assert.NotNull(cleared);
-        Assert.Equal(string.Empty, cleared.Text);
+        // Keep the failed attempt on screen until the retry supplies text.
+        Assert.Null(reply.TakeSnapshot());
 
         // The retry continues after the reset sequence and replaces the text.
         Assert.True(reply.TryAppend("r1", "m1", 3, "the full answer"));
-        Assert.Equal("the full answer", reply.TakeSnapshot()!.Text);
+        var replacement = reply.TakeSnapshot()!;
+        Assert.Equal("the full answer", replacement.Text);
+        Assert.Equal(0, replacement.ResetOffset);
 
         // A replayed reset frame is ignored.
         Assert.False(reply.TryReset("r1", "m1", 2));

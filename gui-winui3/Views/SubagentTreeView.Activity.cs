@@ -24,10 +24,13 @@ public sealed partial class SubagentTreeView
     private string? _activityRunId;
     private string _activityFingerprint = "";
     private bool _readingActivity;
+    // The loaded attempt ended before it was read: its replay cannot change again.
+    private bool _activitySettled;
 
     private void ClearChildActivity()
     {
         _activityRunId = null;
+        _activitySettled = false;
         _activityFingerprint = "";
         ChildActivityList.Children.Clear();
         ChildActivityPanel.Visibility = Visibility.Collapsed;
@@ -36,7 +39,10 @@ public sealed partial class SubagentTreeView
     private async Task RefreshChildActivityAsync()
     {
         if (_disposed || _readingActivity || _client is null || _detailRead is null
-            || _model.Selected is not { } agent || agent.Attempts.LastOrDefault()?.RunId is not { Length: > 0 } runId) return;
+            || _model.Selected is not { } agent || ViewedAttempt(agent, _model.Result) is not { RunId: { Length: > 0 } runId } attempt
+            || (_activitySettled && runId == _activityRunId)) return;
+        // Decided before the read: an attempt that ends mid-read is read once more.
+        var settled = SubagentTreeModel.IsTerminal(attempt.Status);
         var client = _client;
         var ct = _detailRead.Token;
         var agentId = agent.AgentId;
@@ -44,10 +50,18 @@ public sealed partial class SubagentTreeView
         try
         {
             var replay = await client.ListChildActivityAsync(runId, ct);
-            if (ct.IsCancellationRequested || _model.SelectedAgentId != agentId) return;
+            if (ct.IsCancellationRequested || _model.Selected is not { } current || current.AgentId != agentId
+                || ViewedAttempt(current, _model.Result)?.RunId != runId) return;
             var lines = ChildActivityLines(replay);
+            var sameRun = runId == _activityRunId;
             var fingerprint = string.Join("\n", lines.Select(line => (line.IsNarration ? "n:" : line.Tone + ":") + line.Text));
-            if (runId == _activityRunId && fingerprint == _activityFingerprint) return;
+            if (sameRun && fingerprint == _activityFingerprint)
+            {
+                // Settled only once a read made after the attempt ended repeats the previous
+                // one, so a row written just after the terminal commit is still picked up.
+                _activitySettled = settled;
+                return;
+            }
             _activityRunId = runId;
             _activityFingerprint = fingerprint;
             ChildActivityList.Children.Clear();

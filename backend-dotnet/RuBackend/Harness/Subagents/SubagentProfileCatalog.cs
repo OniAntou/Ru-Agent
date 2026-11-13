@@ -16,6 +16,8 @@ public static class SubagentProfileCatalog
     public const int MaxDescriptionChars = 256;
     public const int MaxNameChars = 64;
     public const int MaxFileBytes = 64 * 1024;
+    // A workspace-writable file must not be able to inflate every list response.
+    public const int MaxInvalidDiagnosticsPerFile = 4;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     public sealed record Result(IReadOnlyList<SubagentProfile> Items, IReadOnlyList<string> Diagnostics);
@@ -25,8 +27,8 @@ public static class SubagentProfileCatalog
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         var profiles = new Dictionary<string, SubagentProfile>(StringComparer.OrdinalIgnoreCase);
         var diagnostics = new List<string>();
-        LoadFile(UserProfilePath(), profiles, diagnostics);
-        LoadFile(WorkspaceProfilePath(workspaceRoot), profiles, diagnostics);
+        LoadFile(UserProfilePath(), "user", profiles, diagnostics);
+        LoadFile(WorkspaceProfilePath(workspaceRoot), "workspace", profiles, diagnostics);
         var items = profiles.Values
             .OrderBy(profile => profile.Id, StringComparer.OrdinalIgnoreCase)
             .Take(MaxProfiles)
@@ -78,6 +80,7 @@ public static class SubagentProfileCatalog
 
     private static void LoadFile(
         string? path,
+        string scope,
         Dictionary<string, SubagentProfile> profiles,
         List<string> diagnostics)
     {
@@ -87,7 +90,7 @@ public static class SubagentProfileCatalog
             var info = new FileInfo(path);
             if (info.Length > MaxFileBytes)
             {
-                diagnostics.Add($"{Path.GetFileName(path)}: too large");
+                diagnostics.Add($"{scope} subagents.json: too large");
                 return;
             }
 
@@ -96,33 +99,43 @@ public static class SubagentProfileCatalog
                 || !document.RootElement.TryGetProperty("agents", out var agents)
                 || agents.ValueKind != JsonValueKind.Array)
             {
-                diagnostics.Add($"{Path.GetFileName(path)}: missing agents array");
+                diagnostics.Add($"{scope} subagents.json: missing agents array");
                 return;
             }
 
             var accepted = 0;
+            var index = 0;
+            var invalid = 0;
             foreach (var agent in agents.EnumerateArray())
             {
                 if (accepted >= MaxProfiles)
                 {
-                    diagnostics.Add($"{Path.GetFileName(path)}: profile limit reached");
+                    diagnostics.Add($"{scope} subagents.json: profile limit reached");
                     break;
                 }
 
+                index++;
                 if (ReadProfile(agent) is not { } profile)
                 {
-                    diagnostics.Add($"{Path.GetFileName(path)}: invalid profile");
+                    // Position only: the entry is untrusted text and is not echoed.
+                    if (++invalid <= MaxInvalidDiagnosticsPerFile)
+                        diagnostics.Add($"{scope} subagents.json: profile {index} is invalid and was ignored");
                     continue;
                 }
 
                 profiles[profile.Id] = profile;
                 accepted++;
             }
+
+            if (invalid > MaxInvalidDiagnosticsPerFile)
+            {
+                diagnostics.Add($"{scope} subagents.json: {invalid - MaxInvalidDiagnosticsPerFile} more invalid profiles were ignored");
+            }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException
             or DecoderFallbackException or ArgumentException or NotSupportedException)
         {
-            diagnostics.Add($"{Path.GetFileName(path)}: unreadable");
+            diagnostics.Add($"{scope} subagents.json: unreadable");
         }
     }
 

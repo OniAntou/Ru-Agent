@@ -17,7 +17,10 @@ public static class SubagentContextBuilder
             _ = utf8.GetByteCount(task);
             if (utf8.GetByteCount(selectedContext) > SubagentLimits.MaxContextBytes)
                 throw new SubagentConfigurationException("subagent_context_too_large");
-            if (utf8.GetByteCount(profileInstructions) > SubagentProfileCatalog.MaxInstructionsChars)
+            // Same unit as the catalog bound (UTF-16 chars): a non-ASCII profile the
+            // catalog accepted and listed in the prompt must not be refused at spawn.
+            _ = utf8.GetByteCount(profileInstructions);
+            if (profileInstructions.Length > SubagentProfileCatalog.MaxInstructionsChars)
                 throw new SubagentConfigurationException("subagent_profile_invalid");
         }
         catch (EncoderFallbackException) { throw new SubagentConfigurationException("subagent_context_invalid"); }

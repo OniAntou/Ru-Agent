@@ -19,12 +19,13 @@ public sealed partial class AgentSidePanelControl
     }
 
     public void BindSubagents(ISubagentClient? client, string? root) => SubagentBrowser.Bind(client, root);
+    public void NotifySubagentsChanged(string rootRunId) => SubagentBrowser.NotifyChanged(rootRunId);
     public void SetSubagentOverlay(bool overlay) => FullscreenButton.Visibility = overlay ? Visibility.Collapsed : Visibility.Visible;
 
     private void OnSubagentSnapshotChanged(object? sender, EventArgs e)
     {
         var agents = SubagentBrowser.Snapshot?.Agents;
-        var rows = agents?.Select(SubagentPresentation.Row).ToArray() ?? [];
+        var rows = agents?.Select(agent => SubagentPresentation.Row(agent)).ToArray() ?? [];
         SubagentSummary = SubagentPresentation.ObserverSummary(SubagentBrowser.Snapshot, SubagentBrowser.RefreshFailed);
         CardSubagentsSummary.Text = SubagentSummary;
         CardSubagentsDetail.Visibility = HasSubagents ? Visibility.Visible : Visibility.Collapsed;

@@ -1,45 +1,60 @@
-using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using RuAgent.Client;
 using RuAgent.Protocol.Subagents;
-using RuApp.Models;
 using RuApp.Services;
 
 namespace RuApp.Views;
 
+/// <summary>
+/// The read-only change review: per-file hunks with added/removed colouring and
+/// copyable patches. Nothing here applies, approves or writes; the main agent stays
+/// the only actor that can integrate a result.
+/// </summary>
 public sealed partial class SubagentTreeView
 {
+    internal const int MaxRenderedDiffLines = 400;
     private static readonly FontFamily DiffFont = new("Cascadia Code, Consolas");
+    private bool _reviewing;
 
     private async void OnReviewChanges(object sender, RoutedEventArgs e)
     {
-        if (_disposed || _client is null || _model.Selected is not { } agent || _model.Result is not { } result)
+        if (_disposed || _reviewing || _client is null || _model.Selected is not { } agent || _model.Result is not { } result)
         {
             return;
         }
 
+        _reviewing = true;
+        ReviewChangesButton.IsEnabled = false;
+        ReviewChangesLabel.Text = "Loading changes…";
         try
         {
             var changes = await _client.GetSubagentChangesAsync(
                 _root, agent.AgentId, result.ResultVersion, _lifetime.Token);
-            var content = new ScrollViewer
-            {
-                Content = BuildChangesPanel(changes),
-                MaxHeight = 520,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            };
+            ShowFeedback("");
+            // The diff is CPU work bounded by the Host's review caps; keep it off the UI thread.
+            var files = await Task.Run(() => changes.Files.Select(SubagentChangeReview.File).ToArray(), _lifetime.Token);
+            var width = Math.Clamp(XamlRoot.Size.Width - 160, 360, 860);
             var dialog = new ContentDialog
             {
                 Title = "Subagent changes",
-                Content = content,
+                Content = new ScrollViewer
+                {
+                    Content = BuildChangesPanel(files),
+                    Width = width,
+                    MaxHeight = 560,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                },
                 CloseButtonText = "Close",
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = XamlRoot,
             };
+            // The stock dialog caps at 548px, too narrow for a diff.
+            dialog.Resources["ContentDialogMaxWidth"] = width + 80;
             await ContentDialogGate.ShowAsync(dialog);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
@@ -50,188 +65,198 @@ public sealed partial class SubagentTreeView
                 : "Couldn't load the change preview. Try again.");
             GuiDiagnosticWriter.AppendTraceLine($"[Subagents] Changes read failed: {error.GetType().Name}");
         }
+        finally
+        {
+            _reviewing = false;
+            if (!_disposed)
+            {
+                ReviewChangesButton.IsEnabled = true;
+                ReviewChangesLabel.Text = "Review changes";
+            }
+        }
     }
 
-    private static StackPanel BuildChangesPanel(SubagentChangesResponse changes)
+    private static StackPanel BuildChangesPanel(IReadOnlyList<SubagentReviewFile> files)
     {
-        var panel = new StackPanel { Spacing = 12 };
+        var panel = new StackPanel { Spacing = 16 };
         panel.Children.Add(new TextBlock
         {
             Text = "Read-only preview. Ask the main agent to apply this result.",
             FontSize = 12,
-            Foreground = MutedBrush(),
+            Foreground = Brush("RuMutedBrush"),
             TextWrapping = TextWrapping.Wrap,
         });
-        if (changes.Files.Count == 0)
+        if (files.Count == 0)
         {
             panel.Children.Add(new TextBlock { Text = "No file changes were proposed.", FontSize = 13 });
             return panel;
         }
 
-        var allPatches = changes.Files
-            .Where(EligiblePatch)
-            .Select(file => SubagentPatchFormatter.Format(file.Path, file.BaseText, file.ProposedText))
-            .Where(patch => patch is not null)
-            .ToArray();
-        if (allPatches.Length > 0)
+        var summary = new Grid { ColumnSpacing = 12 };
+        summary.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        summary.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        summary.Children.Add(new TextBlock
         {
-            var copyAll = new Button
-            {
-                Content = "Copy all patches",
-                Tag = string.Join("\n", allPatches),
-                Padding = new Thickness(8, 4, 8, 4),
-                HorizontalAlignment = HorizontalAlignment.Left,
-            };
-            AutomationProperties.SetName(copyAll, "Copy all subagent patches");
-            ToolTipService.SetToolTip(copyAll, "Copy unified patches for the user's own Git/PR flow. Ru never applies them.");
-            copyAll.Click += OnCopyPatchClick;
-            panel.Children.Add(copyAll);
+            Text = SubagentChangeReview.Summary(files),
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        var patches = files.Select(file => file.Patch).OfType<string>().ToArray();
+        if (patches.Length > 0)
+        {
+            var copyAll = CopyButton(patches.Length == 1 ? "Copy patch" : "Copy all patches", string.Concat(patches),
+                "Copy all subagent patches", "Copy unified patches for your own Git/PR flow. Ru never applies them.");
+            Grid.SetColumn(copyAll, 1);
+            summary.Children.Add(copyAll);
         }
 
-        foreach (var file in changes.Files)
-        {
-            var block = new StackPanel { Spacing = 4 };
-            block.Children.Add(new TextBlock
-            {
-                Text = $"{file.Path} · {StatusLabel(file.Status)}",
-                FontSize = 13,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                TextWrapping = TextWrapping.Wrap,
-                IsTextSelectionEnabled = true,
-            });
-
-            string? body = null;
-            if (file.Binary)
-            {
-                body = "Binary file. Open it in the workspace to inspect the proposed bytes.";
-            }
-            else if (file.Truncated)
-            {
-                body = "Preview truncated by the review bound.";
-            }
-            else if (file.Status == "applied")
-            {
-                body = "Already integrated into the workspace.";
-            }
-            else if (file.Status == "deleted")
-            {
-                body = "The proposed result deletes this file.";
-            }
-            else if (file.Status == "diverged")
-            {
-                body = "The workspace file changed since the child captured its base; no clean diff is available.";
-            }
-            else if (file.ProposedText is { } proposed)
-            {
-                body = file.BaseText is { } @base && file.Status == "base"
-                    ? UnifiedDiff(@base, proposed)
-                    : proposed;
-            }
-
-            if (body is not null)
-            {
-                block.Children.Add(new ScrollViewer
-                {
-                    Content = new TextBlock
-                    {
-                        Text = body,
-                        FontFamily = DiffFont,
-                        FontSize = 11,
-                        TextWrapping = TextWrapping.NoWrap,
-                        IsTextSelectionEnabled = true,
-                    },
-                    MaxHeight = 260,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                });
-            }
-
-            if (EligiblePatch(file)
-                && SubagentPatchFormatter.Format(file.Path, file.BaseText, file.ProposedText) is { } patch)
-            {
-                var copyPatch = new Button
-                {
-                    Content = "Copy patch",
-                    Tag = patch,
-                    Padding = new Thickness(8, 4, 8, 4),
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                };
-                AutomationProperties.SetName(copyPatch, "Copy unified patch for " + file.Path);
-                ToolTipService.SetToolTip(copyPatch, "Copy a unified patch for git apply; Ru never applies it automatically.");
-                copyPatch.Click += OnCopyPatchClick;
-                block.Children.Add(copyPatch);
-            }
-
-            panel.Children.Add(block);
-        }
-
+        panel.Children.Add(summary);
+        foreach (var file in files) panel.Children.Add(BuildFileBlock(file, showCopy: patches.Length > 1));
         return panel;
     }
 
-    private static bool EligiblePatch(SubagentChangedFileResponse file) =>
-        file.Status is "base" or "created" or "deleted";
-
-    private static void OnCopyPatchClick(object sender, RoutedEventArgs e)
+    private static StackPanel BuildFileBlock(SubagentReviewFile file, bool showCopy)
     {
-        if (sender is not Button { Tag: string patch } || patch.Length == 0) return;
-        try
+        var block = new StackPanel { Spacing = 6 };
+        var header = new Grid { ColumnSpacing = 12 };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var title = new TextBlock { FontSize = 13, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, VerticalAlignment = VerticalAlignment.Center };
+        title.Inlines.Add(new Run { Text = file.Path, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        title.Inlines.Add(new Run { Text = "  " + file.StatusLabel, Foreground = Brush("RuMutedBrush") });
+        if (file.Diff is not null)
         {
-            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
-            package.SetText(patch);
-            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
-        }
-        catch (Exception error)
-        {
-            GuiDiagnosticWriter.AppendTraceLine($"[Subagents] Patch copy failed: {error.GetType().Name}");
-        }
-    }
-
-    private static string UnifiedDiff(string before, string after)
-    {
-        // DiffEngine is an LCS matrix; keep the preview bounded so a large file
-        // cannot turn review into a UI freeze. Longer files fall back to "after".
-        if (before.Length > 20_000 || after.Length > 20_000
-            || CountLines(before) > 800 || CountLines(after) > 800)
-        {
-            return after;
+            title.Inlines.Add(new Run { Text = $"  +{file.Added}", Foreground = Brush("RuSuccessBrush") });
+            title.Inlines.Add(new Run { Text = $" −{file.Removed}", Foreground = Brush("RuDangerBrush") });
         }
 
-        var lines = DiffEngine.Compute(before, after);
-        var builder = new StringBuilder();
-        foreach (var line in lines.Take(500))
+        header.Children.Add(title);
+        if (showCopy && file.Patch is { } patch)
         {
-            builder.Append(line.Kind switch
+            var copy = CopyButton("Copy patch", patch, "Copy unified patch for " + file.Path,
+                "Copy a unified patch for git apply. Ru never applies it automatically.");
+            Grid.SetColumn(copy, 1);
+            header.Children.Add(copy);
+        }
+
+        block.Children.Add(header);
+        if (file.Note is { } note)
+        {
+            block.Children.Add(new TextBlock { Text = note, FontSize = 12, Foreground = Brush("RuMutedBrush"), TextWrapping = TextWrapping.Wrap });
+        }
+
+        var body = file.Diff is { } diff ? DiffBody(diff) : file.Fallback is { } text ? PlainBody(text) : null;
+        if (body is not null)
+        {
+            block.Children.Add(new Border
             {
-                DiffKind.Added => "+ ",
-                DiffKind.Removed => "- ",
-                _ => "  ",
+                BorderBrush = Brush("RuLineBrush"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = UiCornerRadius.Control,
+                Padding = new Thickness(10, 8, 10, 8),
+                Child = new ScrollViewer
+                {
+                    Content = body,
+                    MaxHeight = 320,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                },
             });
-            builder.AppendLine(line.Text);
         }
 
-        if (lines.Count > 500)
-        {
-            builder.AppendLine("… diff truncated at 500 lines.");
-        }
-
-        return builder.ToString().TrimEnd();
+        return block;
     }
 
-    private static int CountLines(string text) => text.Count(character => character == '\n') + 1;
-
-    private static string StatusLabel(string status) => status switch
+    private static RichTextBlock DiffBody(SubagentFileDiff diff)
     {
-        "base" => "diff vs captured base",
-        "created" => "new file",
-        "applied" => "already integrated",
-        "deleted" => "deletion",
-        "missing" => "file missing",
-        "diverged" => "workspace changed",
-        _ => status,
-    };
+        var paragraph = new Paragraph();
+        int rendered = 0;
+        int total = diff.Hunks.Sum(hunk => hunk.Lines.Count);
+        foreach (var hunk in diff.Hunks)
+        {
+            if (rendered >= MaxRenderedDiffLines) break;
+            AddLine(paragraph, $"@@ -{hunk.OldStart},{hunk.OldCount} +{hunk.NewStart},{hunk.NewCount} @@", "RuInfoBrush");
+            foreach (var line in hunk.Lines)
+            {
+                if (rendered++ >= MaxRenderedDiffLines) break;
+                var (prefix, brush) = line.Op switch
+                {
+                    SubagentDiffOp.Added => ("+ ", "RuSuccessBrush"),
+                    SubagentDiffOp.Removed => ("- ", "RuDangerBrush"),
+                    _ => ("  ", "RuInkBrush"),
+                };
+                AddLine(paragraph, prefix + line.Text.TrimEnd('\r'), brush);
+            }
+        }
 
-    private static Brush MutedBrush() =>
-        Application.Current?.Resources.TryGetValue("RuMutedBrush", out var value) == true && value is Brush brush
-            ? brush
-            : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 148, 163, 184));
+        if (total > MaxRenderedDiffLines)
+        {
+            AddLine(paragraph, $"… {total - MaxRenderedDiffLines} more diff lines. Copy the patch to see all of them.", "RuMutedBrush");
+        }
+
+        return Mono(paragraph);
+    }
+
+    private static RichTextBlock PlainBody(string text)
+    {
+        var paragraph = new Paragraph();
+        var lines = text.Split('\n');
+        foreach (var line in lines.Take(MaxRenderedDiffLines)) AddLine(paragraph, line.TrimEnd('\r'), "RuInkBrush");
+        if (lines.Length > MaxRenderedDiffLines)
+        {
+            AddLine(paragraph, $"… {lines.Length - MaxRenderedDiffLines} more lines.", "RuMutedBrush");
+        }
+
+        return Mono(paragraph);
+    }
+
+    private static void AddLine(Paragraph paragraph, string text, string brushKey)
+    {
+        if (paragraph.Inlines.Count > 0) paragraph.Inlines.Add(new LineBreak());
+        // An empty Run collapses its line; keep the row so line positions stay honest.
+        var run = new Run { Text = text.Length == 0 ? " " : text };
+        if (Brush(brushKey) is { } brush) run.Foreground = brush;
+        paragraph.Inlines.Add(run);
+    }
+
+    private static RichTextBlock Mono(Paragraph paragraph)
+    {
+        var view = new RichTextBlock
+        {
+            FontFamily = DiffFont,
+            FontSize = 12,
+            TextWrapping = TextWrapping.NoWrap,
+            IsTextSelectionEnabled = true,
+        };
+        view.Blocks.Add(paragraph);
+        return view;
+    }
+
+    private static Button CopyButton(string label, string patch, string automationName, string toolTip)
+    {
+        var button = new Button { Content = label, Padding = new Thickness(8, 4, 8, 4), VerticalAlignment = VerticalAlignment.Center };
+        AutomationProperties.SetName(button, automationName);
+        ToolTipService.SetToolTip(button, toolTip);
+        button.Click += async (_, _) =>
+        {
+            try
+            {
+                var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                package.SetText(patch);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                button.Content = "Copied";
+            }
+            catch (Exception error)
+            {
+                button.Content = "Couldn't copy";
+                GuiDiagnosticWriter.AppendTraceLine($"[Subagents] Patch copy failed: {error.GetType().Name}");
+            }
+
+            // Confirmation is transient; the button stays usable for a second copy.
+            await Task.Delay(TimeSpan.FromSeconds(1.5));
+            button.Content = label;
+        };
+        return button;
+    }
 }

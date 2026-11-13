@@ -33,6 +33,14 @@ Profile instructions are configuration guidance, not authority: they cannot add 
 workspace or network boundaries, approve actions, select a provider/model, or change the
 child's role. A model override still requires the explicit root-prompt request described
 below. Invalid profiles are ignored with a catalog diagnostic rather than broadening a run.
+The diagnostic names the file scope and the entry's position (`workspace subagents.json:
+profile 2 is invalid and was ignored`), never the entry's text. While the root's workspace
+is live, the list response carries these lines as `profile_diagnostics` and the GUI task
+board and `/subagents` show them. The 8 KiB instruction bound counts characters in both the
+catalog and the child brief, so a non-ASCII profile the prompt lists also spawns. A brief
+the Host refuses (`subagent_profile_invalid`, `subagent_context_too_large`) is refused
+before any workspace or child exists and is an ordinary tool failure. The profile id a
+child was spawned with is reported as `profile` on the child.
 
 For another model, explicitly ask in the main conversation, for example: "Use Claude Opus
 4.5 for the review subagent." The parent passes the requested name in `agent_spawn.model`;
@@ -146,10 +154,21 @@ branch glyphs identify tasks without replacing their labels. The list groups Wor
 Needs attention and Finished; stopped attempts are explicitly Stopped, not Done.
 An attempt awaiting result publication stays Collecting result. Brief first-sentence
 labels open the original task brief, exact selected result's provider/model, Markdown
-output and result-version picker. The detail reader keeps task/model/status in a compact
+output and result-version picker. Each row and the detail header add what the read contract
+supplies: elapsed time (admission to end; live for a running attempt), model steps and
+reported tokens, and the profile id. The detail reader keeps task/model/status in a compact
 header and prioritizes Markdown. A single published result is a quiet version label;
 the picker appears only when multiple versions exist. The header's `…` menu contains
-the original task brief, run details and Export result.
+the original task brief, run details (including start/end times) and Export result.
+A coding result shows **Review changes** next to its status. The review lists each file
+with its status and `+added −removed` counts and draws hunks with three context lines;
+a change too large to diff shows the proposed content and says so. **Copy patch** is offered
+only when both sides are complete text and the workspace still matches the captured base
+(never for binary, truncated, already-applied or diverged files). The patch preserves the
+file's line endings and a missing final newline, and a deletion targets `/dev/null`, so it
+applies with `git apply` when saved byte-for-byte. A patch for a CRLF file has mixed line
+endings by design; an editor that normalizes them on paste breaks it. The activity timeline follows the attempt that produced the
+selected result and is not re-read once that attempt has ended.
 
 Narrow windows expose a compact Subagents button beside the composer; opening it
 uses the chat area as a reader. Expanded and narrow readers cover the composer,
@@ -158,13 +177,19 @@ list collapses the panel. Closing a tab or switching sessions does not stop chil
 One root-bound observer supplies both summary and browser, rejects stale responses,
 and retains the selected immutable version as newer results arrive. Markdown preview
 is capped at 256 KiB; Export saves the full selected result. No user send, stop, apply
-or child approval controls are exposed. Precise durations are omitted because the
-read contract does not supply timestamps.
+or child approval controls are exposed. The observer re-reads the snapshot when the root's
+`subagent.changed` hint arrives; otherwise it polls every 2 seconds while a child is
+working, collecting or preparing, every 10 seconds while the root can still delegate, and
+stops once the root and every attempt are terminal (Refresh still works).
 
 ## Read-only interfaces and recovery
 
-HTTP exposes only `GET /agent/v1/runs/{runId}/subagents` and
-`GET /agent/v1/runs/{runId}/subagents/{agentId}` (optional `result_version`, `offset`, `limit`).
+HTTP exposes only `GET /agent/v1/runs/{runId}/subagents`,
+`GET /agent/v1/runs/{runId}/subagents/{agentId}` (optional `result_version`, `offset`, `limit`)
+and the read-only `GET /agent/v1/runs/{runId}/subagents/{agentId}/changes?result_version=N`.
+Each attempt carries `created_at`, `admitted_at` and, once terminal, `ended_at`; these are
+fixed instants, so an idle snapshot keeps its `snapshot_id`. In a change review a deleted
+file has `proposed_text: null` (an empty string means an existing empty file).
 Generic run approval/input/cancel/continue/compact/command/reconcile/trust writes reject
 internal children with `subagent_read_only`, including marker-only attempts.
 RPC/SDK exposes `subagent.list` and `subagent.get`; CLI accepts

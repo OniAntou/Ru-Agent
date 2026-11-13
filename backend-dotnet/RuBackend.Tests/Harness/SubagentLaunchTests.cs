@@ -108,6 +108,35 @@ public sealed class SubagentLaunchTests
     [InlineData(true, false)]
     [InlineData(false, true)]
     public async Task Spawn_persists_fresh_child_once_without_registering_unadmitted_run(bool cancelFamily, bool corruptScope)
+        => await SpawnPersistsFreshChildOnceAsync(cancelFamily, corruptScope);
+
+    [Fact]
+    public async Task An_invalid_brief_is_a_known_refusal_before_selection_workspace_or_child()
+    {
+        await using var storage = await BackendHarnessTestFixture.CreateAsync();
+        var root = await storage.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + new string('a', 32), new string('a', 32), storage.RootPath);
+        var identity = await new WindowsWorkspaceIdentityResolver().ResolveAsync(storage.RootPath, default);
+        var policy = PolicySnapshotCanonicalizer.Create(1, root.Run.Preset, identity, [], BackendHarnessTestFixture.Timestamp);
+        var roots = new AgentRuntimeRootRegistry();
+        roots.Register(root.Run.RunId, storage.RootPath, policy);
+        var agents = new SqliteSubagentStore(storage.Options, storage.PayloadStore);
+        var models = new Selection();
+        var workspaces = new Workspaces();
+        using var factory = new SubagentRunFactory(storage.EventStore, agents, new SqliteAgentRunProviderSelectionStore(storage.Options),
+            storage.PayloadStore, new SqliteSubagentScopeStore(storage.Options, new WorkspaceJournalProtector(storage.KeyStore)),
+            roots, models, workspaces, new Clock(DateTimeOffset.UtcNow));
+
+        var refused = await Assert.ThrowsAsync<SubagentControlRejectedException>(() => factory.CreateAsync(root.Run.RunId,
+            "spawn_oversize", new("review", "Inspect parser", new string('é', SubagentLimits.MaxContextBytes)), default));
+
+        Assert.Equal("subagent_context_too_large", refused.Code);
+        Assert.Equal(0, models.Calls);
+        Assert.Equal(0, workspaces.Calls);
+        Assert.Empty(await agents.ListAsync(root.Run.RunId, default));
+    }
+
+    private static async Task SpawnPersistsFreshChildOnceAsync(bool cancelFamily, bool corruptScope)
     {
         await using var storage = await BackendHarnessTestFixture.CreateAsync();
         var root = await storage.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),

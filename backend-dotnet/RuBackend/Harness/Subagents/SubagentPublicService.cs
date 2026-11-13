@@ -12,7 +12,8 @@ namespace RuBackend.Harness.Subagents;
 
 public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots,
     SubagentFamilyUsageReader usage, SqliteSubagentUserApplyStore actions,
-    SqliteSubagentChangeSetStore changeSets, SubagentConcurrencyOptions concurrency)
+    SqliteSubagentChangeSetStore changeSets, SubagentConcurrencyOptions concurrency,
+    IAgentRuntimeRootRegistry? roots = null)
 {
     public async Task<SubagentListResponse> ListAsync(RunId root, CancellationToken ct)
     {
@@ -26,10 +27,25 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
             totals.OutputTokens, totals.TotalTokens, totals.IsComplete);
         var running = rows.Count(row => OccupiesRunnableSlot(row.Attempts.LastOrDefault()?.Status));
         var status = AgentV1Shared.MapRunState(snapshot.Root.Status);
+        var diagnostics = ProfileDiagnostics(root);
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
-            new { status, rows, preparations, snapshot.UnavailableAttempts, summary, concurrency.MaxRunnable, running })));
+            new { status, rows, preparations, snapshot.UnavailableAttempts, summary, concurrency.MaxRunnable, running, diagnostics })));
         return new(root.Value, status, fingerprint, rows, preparations, snapshot.UnavailableAttempts, summary,
-            concurrency.MaxRunnable, running);
+            concurrency.MaxRunnable, running, diagnostics);
+    }
+
+    /// <summary>
+    /// Why a profile was ignored, so a typo does not look like a missing feature. Only a
+    /// live root has a registered workspace; otherwise the field is absent, not empty.
+    /// </summary>
+    private IReadOnlyList<string>? ProfileDiagnostics(RunId root)
+    {
+        if (roots is null || !roots.TryGetRoot(root, out var workspace) || string.IsNullOrWhiteSpace(workspace))
+            return null;
+        try { return SubagentProfileCatalog.Load(workspace).Diagnostics; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException
+            or NotSupportedException or PathTooLongException)
+        { return ["profiles: unreadable"]; }
     }
 
     public async Task<SubagentDetailResponse> DetailAsync(RunId root, string agent, long? version, int offset, int limit, CancellationToken ct)
@@ -71,7 +87,7 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
         foreach (var file in changes.Files)
         {
             ct.ThrowIfCancellationRequested();
-            var current = ReadCurrentFile(changes.ParentRoot, file.RelativePath);
+            var current = await ReadCurrentFileAsync(changes.ParentRoot, file.RelativePath, ct).ConfigureAwait(false);
             string? currentHash = current.Bytes is null ? null : Hash(current.Bytes);
             bool exists = current.Exists;
             string status;
@@ -97,7 +113,10 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
             }
 
             bool includeBase = status is "base" or "deleted";
-            var proposed = Text(file.Content.Span, ref totalChars);
+            // A deletion proposes no content: null, not "", so a client cannot
+            // mistake it for "replace with an empty file".
+            bool deletion = file.ProposedHash == "missing";
+            var proposed = deletion ? new ReviewText(null, false, false) : Text(file.Content.Span, ref totalChars);
             ReviewText? baseReview = includeBase && current.Bytes is { } baseBytes
                 ? Text(baseBytes, ref totalChars)
                 : null;
@@ -122,7 +141,7 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
     private readonly record struct CurrentFile(bool Exists, byte[]? Bytes);
     private readonly record struct ReviewText(string? Text, bool Binary, bool Truncated);
 
-    private static CurrentFile ReadCurrentFile(string parentRoot, string relativePath)
+    private static async Task<CurrentFile> ReadCurrentFileAsync(string parentRoot, string relativePath, CancellationToken ct)
     {
         if (!TryResolve(parentRoot, relativePath, out var full) || !File.Exists(full))
         {
@@ -137,7 +156,7 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
                 return new(true, null);
             }
 
-            return new(true, File.ReadAllBytes(full));
+            return new(true, await File.ReadAllBytesAsync(full, ct).ConfigureAwait(false));
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -208,14 +227,16 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
     private static SubagentUserActionSummary MapAction(SubagentUserApply a) => new(a.Status, a.Revision, a.ApprovalId, a.Code);
     private static SubagentSummary Map(SubagentSnapshotEntry entry, IReadOnlyList<SubagentUserApply> actions, IReadOnlyDictionary<string, SubagentFamilyUsage> usage) => new(
         entry.Agent.AgentId, entry.Agent.Role.ToString().ToLowerInvariant(), entry.Task, entry.Agent.Canceled,
-        entry.Attempts.Select(a => new SubagentAttemptSummary(a.Attempt.Run.RunId.Value, a.Attempt.AttemptNumber,
+        Profile: entry.Profile, Attempts: entry.Attempts.Select(a => new SubagentAttemptSummary(a.Attempt.Run.RunId.Value, a.Attempt.AttemptNumber,
             AgentV1Shared.MapRunState(a.Attempt.Run.Status), a.Attempt.Run.Version,
             a.Model?.ProviderId, a.Model?.Model, a.Model?.Protocol, a.Attempt.DeadlineAt,
             a.Approval is { } approval ? new(approval.ApprovalId.Value, approval.ToolId, approval.Arguments, approval.ArgumentsTruncated) : null,
             usage.TryGetValue(a.Attempt.Run.RunId.Value, out var reported)
                 ? new(reported.ModelSteps, reported.ReportedSteps, reported.InputTokens, reported.OutputTokens, reported.TotalTokens, reported.IsComplete)
-                : new(0, 0, null, null, null, false))).ToArray(),
-        entry.Results.Select(r => new SubagentResultSummary(r.Result.Version, r.Result.RunId.Value,
+                : new(0, 0, null, null, null, false),
+            a.Attempt.CreatedAt, a.Attempt.AdmittedAt,
+            a.Attempt.Run.State.IsTerminal() ? a.Attempt.Run.TerminalAt ?? a.Attempt.Run.UpdatedAt : null)).ToArray(),
+        Results: entry.Results.Select(r => new SubagentResultSummary(r.Result.Version, r.Result.RunId.Value,
             AgentV1Shared.MapRunState(new(r.Result.State)), r.Result.Code, r.Apply?.Status.ToString().ToLowerInvariant(),
             r.Apply?.AppliedFiles, r.Acknowledged,
             actions.SingleOrDefault(a => a.AgentId == entry.Agent.AgentId && a.Version == r.Result.Version) is { } action ? MapAction(action) : null)).ToArray());

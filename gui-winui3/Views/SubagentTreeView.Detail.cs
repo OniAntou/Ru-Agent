@@ -72,18 +72,31 @@ public sealed partial class SubagentTreeView
         MoreButton.Visibility = PreviewNotice.Visibility = Visibility.Collapsed;
     }
 
+    /// <summary>The attempt on screen: the one that produced the selected result, else the newest.</summary>
+    private static RuAgent.Protocol.Subagents.SubagentAttemptSummary? ViewedAttempt(
+        RuAgent.Protocol.Subagents.SubagentSummary agent, RuAgent.Protocol.Subagents.SubagentResultSummary? result) =>
+        agent.Attempts.SingleOrDefault(a => a.RunId == result?.RunId) ?? agent.Attempts.LastOrDefault();
+
+    /// <summary>Role, state and live elapsed time; cheap enough to repeat on every tick.</summary>
+    private void RenderDetailStatus()
+    {
+        if (_model.Selected is not { } agent) return;
+        var row = SubagentPresentation.Row(agent, DateTimeOffset.UtcNow);
+        SelectedStatus.Text = row.Subtitle;
+        SelectedStatus.Foreground = (Brush)new SubagentStateBrushConverter().Convert(row.Tone, typeof(Brush), null!, "");
+    }
+
     private void RenderDetailHeader()
     {
         if (_model.Selected is not { } agent) return;
         var row = SubagentPresentation.Row(agent);
         var result = _model.Result;
-        var attempt = agent.Attempts.SingleOrDefault(a => a.RunId == result?.RunId) ?? agent.Attempts.LastOrDefault();
+        var attempt = ViewedAttempt(agent, result);
         SelectedTitle.Text = row.Title;
         ToolTipService.SetToolTip(SelectedTitle, agent.Task ?? row.Title);
         SelectedGlyph.AgentId = agent.AgentId;
         SelectedGlyph.Role = agent.Role;
-        SelectedStatus.Text = row.RoleLabel + " · " + row.Status;
-        SelectedStatus.Foreground = (Brush)new SubagentStateBrushConverter().Convert(row.Tone, typeof(Brush), null!, "");
+        RenderDetailStatus();
         SelectedModel.Text = attempt is null ? "Model unavailable" : $"{attempt.ProviderId ?? "Provider unavailable"} · {attempt.Model ?? "Model unavailable"}";
         ToolTipService.SetToolTip(SelectedModel, SelectedModel.Text);
         TaskBrief.Text = agent.Task ?? "No task brief is available.";
@@ -101,8 +114,9 @@ public sealed partial class SubagentTreeView
         }
         finally { _changingVersions = false; }
         ExportButton.IsEnabled = result is not null && !_exporting;
-        ReviewChangesButton.IsEnabled = result is not null && string.Equals(agent.Role, "coding", StringComparison.OrdinalIgnoreCase);
-        ReviewChangesButton.Visibility = agent.Role == "coding" ? Visibility.Visible : Visibility.Collapsed;
+        // Offered where the result is read, and only when there is a coding result to review.
+        ReviewChangesButton.IsEnabled = !_reviewing;
+        ReviewChangesButton.Visibility = result is not null && agent.Role == "coding" ? Visibility.Visible : Visibility.Collapsed;
         PendingResult.Visibility = result is null ? Visibility.Visible : Visibility.Collapsed;
         PendingResult.Text = row.Group == SubagentGroup.Working ? "Working on this task. The result will appear here."
             : "No result was published for this attempt.";
@@ -115,11 +129,25 @@ public sealed partial class SubagentTreeView
             _ => agent.Role == "coding" && result.Status == "completed" && result.Code is null ? "Result ready · not integrated" : $"Result {result.ResultVersion} · {result.Status}",
         };
         ResultStatus.Visibility = result is null ? Visibility.Collapsed : Visibility.Visible;
-        var viewed = agent.Attempts.SingleOrDefault(a => a.RunId == result?.RunId) ?? attempt;
+        var viewed = attempt;
         RunDetails.Text = $"{SubagentPresentation.Usage(viewed?.Usage)}\n"
             + $"{viewed?.Protocol ?? "Protocol unavailable"} · attempt {viewed?.AttemptNumber.ToString() ?? "unavailable"}"
+            + (viewed is null ? "" : Timing(viewed))
+            + (string.IsNullOrWhiteSpace(agent.Profile) ? "" : $"\nProfile: {agent.Profile}")
             + (result?.Code is { } code ? $"\nOutcome: {code}" : "")
             + $"\n{agent.AgentId}";
+    }
+
+    private static string Timing(RuAgent.Protocol.Subagents.SubagentAttemptSummary attempt)
+    {
+        static string Local(DateTimeOffset value) => value.ToLocalTime().ToString("g", System.Globalization.CultureInfo.CurrentCulture);
+        var lines = "";
+        if ((attempt.AdmittedAt ?? attempt.CreatedAt) is { } start)
+            lines += $"\n{(attempt.AdmittedAt is null ? "Queued" : "Started")} {Local(start)}";
+        if (attempt.EndedAt is { } end)
+            lines += $"\nEnded {Local(end)}" + (SubagentPresentation.Elapsed(attempt, null) is { } elapsed
+                ? $" · ran {SubagentPresentation.Duration(elapsed)}" : "");
+        return lines;
     }
 
     private async void OnResultVersionChanged(object sender, SelectionChangedEventArgs e)
@@ -128,6 +156,8 @@ public sealed partial class SubagentTreeView
         ResetDetailRead();
         ClearResult();
         RenderDetailHeader();
+        // Another result version can belong to another attempt, with its own timeline.
+        await RefreshChildActivityAsync();
         await ReadPageAsync(0);
     }
     private async void OnNextPage(object sender, RoutedEventArgs e) { if (_nextOffset is { } next) await ReadPageAsync(next); }

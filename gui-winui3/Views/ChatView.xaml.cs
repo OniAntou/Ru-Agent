@@ -396,6 +396,7 @@ namespace RuApp.Views
             _agentController?.ContextStepStarted += OnAgentContextStepStarted;
             _agentController?.ContextCompacted += OnAgentContextCompacted;
             if (_agentController is not null) _agentController.ContextEstimateReceived += OnContextEstimateReceived;
+            if (_agentController is not null) _agentController.SubagentsChanged += OnAgentSubagentsChanged;
             _agentController?.RunAdopted += OnAgentRunAdopted;
             ApprovalPanel.DecisionRequested += OnApprovalDecisionRequested;
             QuestionPanel.AnswerRequested += OnQuestionAnswerRequested;
@@ -452,6 +453,7 @@ namespace RuApp.Views
                 _agentController.ContextStepStarted -= OnAgentContextStepStarted;
                 _agentController.ContextCompacted -= OnAgentContextCompacted;
                 _agentController.ContextEstimateReceived -= OnContextEstimateReceived;
+                _agentController.SubagentsChanged -= OnAgentSubagentsChanged;
                 _agentController.RunAdopted -= OnAgentRunAdopted;
             }
 
@@ -473,6 +475,7 @@ namespace RuApp.Views
                 _agentController.ContextStepStarted += OnAgentContextStepStarted;
                 _agentController.ContextCompacted += OnAgentContextCompacted;
                 _agentController.ContextEstimateReceived += OnContextEstimateReceived;
+                _agentController.SubagentsChanged += OnAgentSubagentsChanged;
                 _agentController.RunAdopted += OnAgentRunAdopted;
             }
 

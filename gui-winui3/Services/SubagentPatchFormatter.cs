@@ -1,5 +1,4 @@
 using System.Text;
-using RuApp.Models;
 
 namespace RuApp.Services;
 
@@ -8,63 +7,52 @@ namespace RuApp.Services;
 /// save or feed to <c>git apply</c>. It never applies the patch and never fetches
 /// the base file; both sides must already be part of the bounded review response.
 /// </summary>
+/// <remarks>
+/// A null side means the file does not exist on that side (<c>/dev/null</c>); an
+/// empty string is an existing empty file. Line endings and a missing final newline
+/// are preserved, because a patch that normalizes them does not apply.
+/// </remarks>
 internal static class SubagentPatchFormatter
 {
-    internal const int MaxTextChars = 20_000;
-    internal const int MaxLines = 800;
+    // The Host bounds each side of a review at 64 KiB chars; anything larger was truncated.
+    internal const int MaxTextChars = 64 * 1024;
+    private const string NoNewlineMarker = "\\ No newline at end of file\n";
 
-    internal static string? Format(string path, string? before, string? after)
+    /// <param name="computed">The diff of the same two sides, when the caller already has it.</param>
+    internal static string? Format(string path, string? before, string? after, SubagentFileDiff? computed = null)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Contains('\0')
             || path.Contains('\r') || path.Contains('\n')
-            || before is null && after is null)
+            || before is null && after is null
+            || before?.Length > MaxTextChars || after?.Length > MaxTextChars)
         {
             return null;
         }
 
-        if (before is not null && (before.Length > MaxTextChars || CountLines(before) > MaxLines))
-        {
-            return null;
-        }
+        var diff = computed ?? SubagentDiff.Compute(before, after);
+        // No hunk also covers creating or deleting an empty file: this header form
+        // cannot express that, so offer no patch rather than a no-op.
+        if (diff is null || diff.Hunks.Count == 0) return null;
 
-        if (after is not null && (after.Length > MaxTextChars || CountLines(after) > MaxLines))
-        {
-            return null;
-        }
-
-        var normalizedBefore = Normalize(before);
-        var normalizedAfter = Normalize(after);
-        var lines = DiffEngine.Compute(normalizedBefore, normalizedAfter);
-        if (lines.Count == 0 || lines.All(line => line.Kind == DiffKind.Unchanged)) return null;
-
-        int oldCount = CountLines(normalizedBefore);
-        int newCount = CountLines(normalizedAfter);
         var builder = new StringBuilder();
         builder.Append(before is null ? "--- /dev/null\n" : $"--- a/{path}\n");
         builder.Append(after is null ? "+++ /dev/null\n" : $"+++ b/{path}\n");
-        builder.Append($"@@ -{(oldCount == 0 ? 0 : 1)},{oldCount} +{(newCount == 0 ? 0 : 1)},{newCount} @@\n");
-        foreach (var line in lines)
+        foreach (var hunk in diff.Hunks)
         {
-            builder.Append(line.Kind switch
+            builder.Append($"@@ -{hunk.OldStart},{hunk.OldCount} +{hunk.NewStart},{hunk.NewCount} @@\n");
+            foreach (var line in hunk.Lines)
             {
-                DiffKind.Added => '+',
-                DiffKind.Removed => '-',
-                _ => ' ',
-            });
-            builder.Append(line.Text).Append('\n');
+                builder.Append(line.Op switch
+                {
+                    SubagentDiffOp.Added => '+',
+                    SubagentDiffOp.Removed => '-',
+                    _ => ' ',
+                });
+                builder.Append(line.Text).Append('\n');
+                if (line.NoNewlineAtEnd) builder.Append(NoNewlineMarker);
+            }
         }
 
         return builder.ToString();
     }
-
-    private static int CountLines(string? text) => string.IsNullOrEmpty(text)
-        ? 0
-        : text.Split('\n').Length;
-
-    /// <summary>
-    /// A patch hunk counts file lines, not the empty segment after a final newline.
-    /// </summary>
-    private static string? Normalize(string? text) => string.IsNullOrEmpty(text)
-        ? null
-        : text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').TrimEnd('\n');
 }

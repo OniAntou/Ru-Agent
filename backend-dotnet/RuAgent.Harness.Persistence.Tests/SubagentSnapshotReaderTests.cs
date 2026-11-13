@@ -17,7 +17,7 @@ public sealed partial class SubagentSnapshotReaderTests
         await fixture.RegisterWorkspaceAsync(1);
         var root = fixture.NewRun(1, 1, 1);
         var bytes = ToolArgumentsCodec.Serialize("provider_spawn", "agent_spawn", "1.0.0",
-            JsonSerializer.SerializeToElement(new { role = "coding", task = "Implement Unicode paging", context = "PRIVATE_SELECTED_CONTEXT" }));
+            JsonSerializer.SerializeToElement(new { role = "coding", task = "Implement Unicode paging", context = "PRIVATE_SELECTED_CONTEXT", profile = "builder" }));
         var payload = new PayloadId("payload_" + new string('a', 32));
         var invocation = "call_" + new string('a', 32);
         var created = new NewAgentRun(root.Run,
@@ -36,6 +36,7 @@ public sealed partial class SubagentSnapshotReaderTests
         var agent = Assert.Single(snapshot.Agents);
         Assert.Equal("agent_one", agent.Agent.AgentId);
         Assert.Equal("Implement Unicode paging", agent.Task);
+        Assert.Equal("builder", agent.Profile);
         var attempt = Assert.Single(agent.Attempts);
         Assert.Equal("pinned-model", attempt.Model!.Model);
         Assert.Equal(child.Run.RunId, attempt.Attempt.Run.RunId);

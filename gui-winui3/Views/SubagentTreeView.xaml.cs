@@ -18,6 +18,7 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
     private ISubagentClient? _client;
     private string _root = "";
     private bool _refreshing;
+    private bool _refreshRequested;
     private bool _refreshFailed;
     private bool _disposed;
     private long _binding;
@@ -33,7 +34,7 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
     {
         InitializeComponent();
         _timer = DispatcherQueue.CreateTimer();
-        _timer.Interval = TimeSpan.FromSeconds(2);
+        _timer.Interval = SubagentPresentation.ActiveRefresh;
         _timer.Tick += OnTick;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -61,10 +62,31 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
         SnapshotChanged?.Invoke(this, EventArgs.Empty);
         if (client is not null && root.Length > 0)
         {
+            _timer.Interval = SubagentPresentation.ActiveRefresh;
             _timer.Start();
             _ = RefreshAsync();
         }
         else _timer.Stop();
+    }
+
+    /// <summary>
+    /// The root's transient <c>subagent.changed</c> hint: read the durable snapshot now
+    /// instead of waiting for the next tick. The hint itself carries no trusted state.
+    /// </summary>
+    public void NotifyChanged(string? rootRunId)
+    {
+        if (_disposed || _client is null || _root.Length == 0 || rootRunId != _root || _lifetime.IsCancellationRequested) return;
+        if (_refreshing) { _refreshRequested = true; return; }
+        _ = RefreshAsync();
+    }
+
+    /// <summary>Poll fast while work is live, slowly while the root may still delegate, not at all once settled.</summary>
+    private void ApplyRefreshCadence()
+    {
+        if (_disposed || _lifetime.IsCancellationRequested) return;
+        if (SubagentPresentation.RefreshInterval(_model.Snapshot) is not { } interval) { _timer.Stop(); return; }
+        if (_timer.Interval != interval) _timer.Interval = interval;
+        if (!_timer.IsRunning) _timer.Start();
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -100,7 +122,12 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
                 RenderSnapshot();
                 SnapshotChanged?.Invoke(this, EventArgs.Empty);
             }
-            if (!_model.Apply(ticket, snapshot)) return;
+            if (!_model.Apply(ticket, snapshot))
+            {
+                // Same snapshot: only a running attempt's elapsed time moved.
+                if (Working.Count > 0) { RenderSnapshot(); RenderDetailStatus(); }
+                return;
+            }
             ShowFeedback("");
             RenderSnapshot();
             SnapshotChanged?.Invoke(this, EventArgs.Empty);
@@ -120,7 +147,16 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
             if (!ct.IsCancellationRequested) ReportRefreshFailure();
             GuiDiagnosticWriter.AppendTraceLine($"[Subagents] Refresh failed: {e.GetType().Name}");
         }
-        finally { _refreshing = false; }
+        finally
+        {
+            _refreshing = false;
+            ApplyRefreshCadence();
+            if (_refreshRequested)
+            {
+                _refreshRequested = false;
+                _ = RefreshAsync();
+            }
+        }
     }
 
     private void ReportRefreshFailure()
@@ -135,7 +171,8 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
     private void RenderSnapshot()
     {
         var snapshot = _model.Snapshot;
-        var rows = snapshot?.Agents.Select(SubagentPresentation.Row).ToArray() ?? [];
+        var now = DateTimeOffset.UtcNow;
+        var rows = snapshot?.Agents.Select(agent => SubagentPresentation.Row(agent, now)).ToArray() ?? [];
         Reconcile(Working, rows.Where(r => r.Group == SubagentGroup.Working).ToArray());
         Reconcile(Attention, rows.Where(r => r.Group == SubagentGroup.Attention).ToArray());
         Reconcile(Finished, rows.Where(r => r.Group == SubagentGroup.Finished).ToArray());
@@ -155,6 +192,12 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
         var unavailable = snapshot?.UnavailableAttempts ?? 0;
         PreparationStatus.Text = (preparation > 0 ? $"Preparing {preparation} task(s). " : "")
             + (unavailable > 0 ? $"{unavailable} attempt(s) couldn't be loaded." : "");
+        PreparationStatus.Visibility = PreparationStatus.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var diagnostics = snapshot?.ProfileDiagnostics is { Count: > 0 } issues
+            ? "Subagent profiles need attention:\n" + string.Join("\n", issues.Take(8).Select(issue => "• " + issue))
+            : "";
+        ProfileIssues.Text = diagnostics;
+        ProfileIssues.Visibility = diagnostics.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ListBody.Visibility = _model.SelectedAgentId is null ? Visibility.Visible : Visibility.Collapsed;
         DetailBody.Visibility = _model.SelectedAgentId is null ? Visibility.Collapsed : Visibility.Visible;
     }
@@ -168,7 +211,8 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
             else
             {
                 if (existing.index != i) target.Move(existing.index, i);
-                if (target[i] != rows[i]) target[i] = rows[i];
+                if (target[i].SameState(rows[i])) target[i].Meta = rows[i].Meta;
+                else target[i] = rows[i];
             }
         }
         while (target.Count > rows.Length) target.RemoveAt(target.Count - 1);

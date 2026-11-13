@@ -34,8 +34,9 @@ public sealed partial class SqliteSubagentSnapshotReader(HarnessSqliteOptions op
         foreach (var (identity, invocation) in identities)
         {
             var attempts = await ReadAttemptsAsync(connection, transaction, identity, ct).ConfigureAwait(false);
-            agents.Add(new(identity, await ReadTaskAsync(connection, transaction, identity, invocation, ct).ConfigureAwait(false),
-                attempts, await ReadResultsAsync(connection, transaction, identity, ct).ConfigureAwait(false)));
+            var spawn = await ReadSpawnAsync(connection, transaction, identity, invocation, ct).ConfigureAwait(false);
+            agents.Add(new(identity, spawn.Task,
+                attempts, await ReadResultsAsync(connection, transaction, identity, ct).ConfigureAwait(false), spawn.Profile));
         }
         command.CommandText = "SELECT agent_id,stage FROM agent_subagent_workspace_allocations WHERE root_run_id=$root ORDER BY agent_id LIMIT 9";
         var preparations = new List<SubagentPreparationSnapshot>();

@@ -17,6 +17,10 @@ export interface SubagentAttempt {
   deadline_at: string | null;
   usage: SubagentList["usage"] | null;
   approval: { approval_id: string; tool_id: string; arguments: Record<string, unknown>; arguments_truncated: boolean } | null;
+  /** Fixed instants (ISO 8601); absent from an older Host. `ended_at` is set once the attempt is terminal. */
+  created_at?: string | null;
+  admitted_at?: string | null;
+  ended_at?: string | null;
 }
 export interface SubagentResult {
   result_version: number;
@@ -35,6 +39,8 @@ export interface SubagentSummary {
   canceled: boolean;
   attempts: SubagentAttempt[];
   results: SubagentResult[];
+  /** The `.ru/subagents.json` profile id the parent passed to `agent_spawn`, if any. */
+  profile?: string | null;
 }
 export interface SubagentList {
   root_run_id: string;
@@ -51,6 +57,10 @@ export interface SubagentList {
     total_tokens: number | null;
     is_complete: boolean;
   };
+  max_runnable?: number;
+  running?: number;
+  /** Why a profile file or entry was ignored; null when the root's workspace is not live. */
+  profile_diagnostics?: string[] | null;
 }
 export interface SubagentDetail {
   root_run_id: string;

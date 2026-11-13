@@ -47,7 +47,10 @@ public sealed partial class SqliteSubagentSnapshotReader
         return result.AsReadOnly();
     }
 
-    private async Task<string?> ReadTaskAsync(SqliteConnection connection, SqliteTransaction transaction,
+    /// <summary>The task brief and optional profile id the parent passed to <c>agent_spawn</c>.</summary>
+    private readonly record struct SpawnArguments(string? Task, string? Profile);
+
+    private async Task<SpawnArguments> ReadSpawnAsync(SqliteConnection connection, SqliteTransaction transaction,
         SubagentRecord agent, string invocation, CancellationToken ct)
     {
         using var command = connection.CreateCommand();
@@ -58,7 +61,7 @@ public sealed partial class SqliteSubagentSnapshotReader
         PayloadId id;
         using (var row = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
         {
-            if (!await row.ReadAsync(ct).ConfigureAwait(false) || row.IsDBNull(0)) return null;
+            if (!await row.ReadAsync(ct).ConfigureAwait(false) || row.IsDBNull(0)) return default;
             id = new(row.GetString(0));
             if (await row.ReadAsync(ct).ConfigureAwait(false)) Invalid();
         }
@@ -68,6 +71,8 @@ public sealed partial class SqliteSubagentSnapshotReader
         if (envelope.ToolId != "agent_spawn" || envelope.ToolVersion != "1.0.0"
             || !SubagentContractValidator.Validate("agent_spawn", envelope.Arguments).IsValid
             || envelope.Arguments.GetProperty("role").GetString() != agent.Role.ToString().ToLowerInvariant()) Invalid();
-        return envelope.Arguments.GetProperty("task").GetString();
+        var profile = envelope.Arguments.TryGetProperty("profile", out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString()?.Trim() : null;
+        return new(envelope.Arguments.GetProperty("task").GetString(), string.IsNullOrEmpty(profile) ? null : profile);
     }
 }

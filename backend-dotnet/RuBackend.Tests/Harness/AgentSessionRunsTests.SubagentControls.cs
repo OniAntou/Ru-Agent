@@ -41,7 +41,13 @@ public sealed partial class AgentSessionRunsTests
         }
         var list = await client.GetFromJsonAsync<SubagentListResponse>(path);
         Assert.Equal("agent_one", Assert.Single(list!.Agents).AgentId);
-        Assert.Null(Assert.Single(list.Agents[0].Attempts).Model);
+        var listed = Assert.Single(list.Agents[0].Attempts);
+        Assert.Null(listed.Model);
+        // A queued attempt has a creation instant and nothing else; no value here ticks.
+        Assert.NotNull(listed.CreatedAt);
+        Assert.Null(listed.AdmittedAt);
+        Assert.Null(listed.EndedAt);
+        Assert.Null(list.Agents[0].Profile);
         Assert.False(list.Usage.IsComplete);
         Assert.Equal(list.SnapshotId, (await client.GetFromJsonAsync<SubagentListResponse>(path))!.SnapshotId);
         foreach (var action in new[] { "messages", "cancel", "apply" })

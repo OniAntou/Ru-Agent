@@ -11,7 +11,9 @@ public sealed record SubagentListResponse(
     [property: JsonPropertyName("unavailable_attempts")] int UnavailableAttempts,
     [property: JsonPropertyName("usage")] SubagentUsageSummary Usage,
     [property: JsonPropertyName("max_runnable")] int MaxRunnable = 0,
-    [property: JsonPropertyName("running")] int Running = 0);
+    [property: JsonPropertyName("running")] int Running = 0,
+    // Why a profile file or entry was ignored; null when the root's workspace is not live.
+    [property: JsonPropertyName("profile_diagnostics")] IReadOnlyList<string>? ProfileDiagnostics = null);
 
 public sealed record SubagentSummary(
     [property: JsonPropertyName("agent_id")] string AgentId,
@@ -19,7 +21,8 @@ public sealed record SubagentSummary(
     [property: JsonPropertyName("task")] string? Task,
     [property: JsonPropertyName("canceled")] bool Canceled,
     [property: JsonPropertyName("attempts")] IReadOnlyList<SubagentAttemptSummary> Attempts,
-    [property: JsonPropertyName("results")] IReadOnlyList<SubagentResultSummary> Results);
+    [property: JsonPropertyName("results")] IReadOnlyList<SubagentResultSummary> Results,
+    [property: JsonPropertyName("profile")] string? Profile = null);
 
 public sealed record SubagentAttemptSummary(
     [property: JsonPropertyName("run_id")] string RunId,
@@ -31,7 +34,11 @@ public sealed record SubagentAttemptSummary(
     [property: JsonPropertyName("protocol")] string? Protocol,
     [property: JsonPropertyName("deadline_at")] DateTimeOffset? DeadlineAt,
     [property: JsonPropertyName("approval")] SubagentApprovalSummary? Approval = null,
-    [property: JsonPropertyName("usage")] SubagentUsageSummary? Usage = null);
+    [property: JsonPropertyName("usage")] SubagentUsageSummary? Usage = null,
+    // Fixed instants only (no ticking value), so an idle snapshot keeps its fingerprint.
+    [property: JsonPropertyName("created_at")] DateTimeOffset? CreatedAt = null,
+    [property: JsonPropertyName("admitted_at")] DateTimeOffset? AdmittedAt = null,
+    [property: JsonPropertyName("ended_at")] DateTimeOffset? EndedAt = null);
 
 public sealed record SubagentApprovalSummary(
     [property: JsonPropertyName("approval_id")] string ApprovalId,

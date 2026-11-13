@@ -13,12 +13,12 @@
             <Setter Property="UseSystemFocusVisuals" Value="True" />
         </Style>
         <DataTemplate x:Key="TaskRowTemplate" x:DataType="services:SubagentRow">
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" AutomationProperties.Name="{x:Bind AutomationLabel}">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" AutomationProperties.Name="{x:Bind AutomationLabel, Mode=OneWay}">
                 <controls:SubagentGlyph AgentId="{x:Bind AgentId}" Role="{x:Bind Role}" VerticalAlignment="Center" />
-                <StackPanel Grid.Column="1" Spacing="4" ToolTipService.ToolTip="{x:Bind AutomationLabel}">
+                <StackPanel Grid.Column="1" Spacing="4" ToolTipService.ToolTip="{x:Bind AutomationLabel, Mode=OneWay}">
                     <TextBlock Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13"
                                FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{x:Bind Subtitle}" FontSize="11" Foreground="{StaticResource RuMutedBrush}"
+                    <TextBlock Text="{x:Bind Subtitle, Mode=OneWay}" FontSize="11" Foreground="{StaticResource RuMutedBrush}"
                                TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <Ellipse Grid.Column="2" Width="5" Height="5" Margin="4,0" VerticalAlignment="Center"
@@ -73,6 +73,9 @@
                         </StackPanel>
                     </StackPanel>
                     <TextBlock x:Name="PreparationStatus" Margin="8,8" FontSize="12" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" />
+                    <!-- Why a .ru/subagents.json profile was ignored; read-only, from the Host. -->
+                    <TextBlock x:Name="ProfileIssues" Margin="8,0,8,8" FontSize="12" Foreground="{StaticResource RuWarningBrush}"
+                               TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
                 </StackPanel>
             </ScrollViewer>
             <Grid x:Name="DetailBody" Visibility="Collapsed" RowDefinitions="Auto,Auto,*">
@@ -122,14 +125,6 @@
                                             <TextBlock Text="Export result" FontSize="12" />
                                         </StackPanel>
                                     </Button>
-                                    <Button x:Name="ReviewChangesButton" Click="OnReviewChanges" HorizontalAlignment="Left"
-                                            Style="{StaticResource RuToolbarButtonStyle}" AutomationProperties.Name="Review subagent changes"
-                                            ToolTipService.ToolTip="Read-only preview of the files this coding result proposed">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <FontIcon Glyph="&#xE8A5;" FontSize="12" />
-                                            <TextBlock Text="Review changes" FontSize="12" />
-                                        </StackPanel>
-                                    </Button>
                                 </StackPanel>
                             </Flyout>
                         </Button.Flyout>
@@ -152,6 +147,15 @@
                               HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="8,18,8,32" MaxWidth="720" Spacing="12">
                         <TextBlock x:Name="ResultStatus" FontSize="11" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" />
+                        <!-- Read-only: the main agent remains the only actor that can apply a result. -->
+                        <Button x:Name="ReviewChangesButton" Click="OnReviewChanges" HorizontalAlignment="Left" Visibility="Collapsed"
+                                Style="{StaticResource RuToolbarButtonStyle}" AutomationProperties.Name="Review subagent changes"
+                                ToolTipService.ToolTip="Read-only preview of the files this coding result proposed">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE8A5;" FontSize="12" />
+                                <TextBlock x:Name="ReviewChangesLabel" Text="Review changes" FontSize="12" />
+                            </StackPanel>
+                        </Button>
                         <TextBlock x:Name="PendingResult" Text="Working on this task. The result will appear here."
                                    FontSize="13" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" />
                         <!-- Read-only: what the child is doing and saying, from its own run replay. -->

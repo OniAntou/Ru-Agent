@@ -58,8 +58,18 @@ public sealed class SubagentRunFactory(IHarnessEventStore events, SqliteSubagent
             }
 
             var profile = ResolveProfile(parentRoot, role, request.Profile);
-            var brief = Encoding.UTF8.GetBytes(SubagentContextBuilder.Build(
-                role, request.Task, request.Context, profile?.Instructions));
+            byte[] brief;
+            try
+            {
+                brief = Encoding.UTF8.GetBytes(SubagentContextBuilder.Build(
+                    role, request.Task, request.Context, profile?.Instructions));
+            }
+            catch (SubagentConfigurationException e)
+            {
+                // The brief is built before any workspace or durable child exists, so an
+                // invalid brief is a known refusal, like a selection refusal below.
+                throw new SubagentControlRejectedException(e.Code);
+            }
             AgentRunProviderSelection selection;
             try { selection = await models.ResolveAsync(rootId, role, ct, request.Model, request.ProviderId).ConfigureAwait(false); }
             catch (SubagentConfigurationException e)

@@ -1066,6 +1066,7 @@ namespace RuApp.Views
                 _agentController.ContextStepStarted -= OnAgentContextStepStarted;
                 _agentController.ContextCompacted -= OnAgentContextCompacted;
                 _agentController.ContextEstimateReceived -= OnContextEstimateReceived;
+                _agentController.SubagentsChanged -= OnAgentSubagentsChanged;
                 _agentController.RunAdopted -= OnAgentRunAdopted;
             }
             StopAllTextSweeps();

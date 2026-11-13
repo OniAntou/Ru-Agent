@@ -61,6 +61,12 @@ public sealed partial class AgentRunController
                         || !string.Equals(run.RunId, runId, StringComparison.Ordinal)) return;
                     ContextEstimateReceived?.Invoke(this, new AgentContextEstimateEventArgs(runId, run.SessionId, estimate));
                 });
+            else if (AgentSubagentChangeModel.TryParse(frame, out var change) && change is not null
+                && string.Equals(change.RootRunId, runId, StringComparison.Ordinal))
+                RunOnUi(() =>
+                {
+                    if (IsCurrentFeedOwner(runId, ownershipGeneration)) SubagentsChanged?.Invoke(this, runId);
+                });
             // Raw transient output is intentionally not part of the durable event
             // collection. AgentActivityModel travels through the separate callback.
             return;

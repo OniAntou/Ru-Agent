@@ -191,6 +191,8 @@ public sealed partial class AgentRunController : INotifyPropertyChanged, IDispos
     public event EventHandler<AgentUsageReceivedEventArgs>? UsageReceived;
     public event EventHandler<AgentModelStepStartedEventArgs>? ContextStepStarted;
     public event EventHandler<AgentContextEstimateEventArgs>? ContextEstimateReceived;
+    /// <summary>The root run id whose child set changed; a hint to re-read, never the state itself.</summary>
+    public event EventHandler<string>? SubagentsChanged;
 
     public event EventHandler<AgentRunContextCompactedEventArgs>? ContextCompacted;
     public event EventHandler<AgentRunAdoptedEventArgs>? RunAdopted;

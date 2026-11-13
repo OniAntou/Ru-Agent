@@ -12,6 +12,17 @@ public sealed partial class ChatView
 
     private void OnSubagentsChanged(object? sender, EventArgs e) => UpdateSubagentPeek();
 
+    /// <summary>The root's live hint: the observer re-reads its durable snapshot now.</summary>
+    private void OnAgentSubagentsChanged(object? sender, string rootRunId)
+    {
+        if (!DispatcherQueue.HasThreadAccess)
+        {
+            DispatcherQueue.TryEnqueue(() => OnAgentSubagentsChanged(sender, rootRunId));
+            return;
+        }
+        SidePanel.NotifySubagentsChanged(rootRunId);
+    }
+
     private void UpdateSubagentPeek()
     {
         if (SubagentPeekButton is null) return;

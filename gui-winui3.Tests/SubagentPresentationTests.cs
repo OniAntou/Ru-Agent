@@ -58,6 +58,69 @@ public sealed class SubagentPresentationTests
     }
 
     [Fact]
+    public void A_row_reports_elapsed_time_steps_tokens_and_profile_only_when_supplied()
+    {
+        var start = new DateTimeOffset(2026, 11, 13, 8, 0, 0, TimeSpan.Zero);
+        var running = Agent("running", publish: false) with
+        {
+            Profile = "builder",
+            Attempts = [new("run_child", 1, "running", 3, "provider", "model", "chat_completions", null, null,
+                new(12, 12, 30000, 4500, 34500, true), start.AddSeconds(-5), start)],
+        };
+
+        var live = SubagentPresentation.Row(running, start.AddSeconds(252));
+        Assert.Equal("Coding (builder) · Working · 4m 12s · 12 steps · 34.5k tokens", live.Subtitle);
+        // Without a clock a live row is stable, so an unchanged snapshot renders the same text.
+        Assert.Equal("Coding (builder) · Working · 12 steps · 34.5k tokens", SubagentPresentation.Row(running).Subtitle);
+
+        var done = Agent("completed") with
+        {
+            Attempts = [new("run_child", 1, "completed", 3, "provider", "model", "chat_completions", null, null, null,
+                start, start, start.AddHours(1).AddMinutes(5))],
+        };
+        Assert.Equal("Coding · Done · 1h 05m", SubagentPresentation.Row(done, start.AddDays(1)).Subtitle);
+        // An older Host sends no instants: the row falls back to role and state.
+        Assert.Equal("Coding · Done", SubagentPresentation.Row(Agent("completed")).Subtitle);
+    }
+
+    [Fact]
+    public void A_ticking_duration_updates_the_row_in_place()
+    {
+        var first = SubagentPresentation.Row(Agent("running", publish: false));
+        var second = SubagentPresentation.Row(Agent("running", publish: false));
+        var changed = new List<string?>();
+        first.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        Assert.True(first.SameState(second));
+        first.Meta = "5s";
+
+        Assert.Contains(nameof(SubagentRow.Subtitle), changed);
+        Assert.True(first.SameState(second));
+        Assert.False(first.SameState(SubagentPresentation.Row(Agent("failed"))));
+    }
+
+    [Fact]
+    public void Polling_is_fast_while_work_is_live_slow_while_the_root_may_delegate_and_stops_when_settled()
+    {
+        static SubagentListResponse Snapshot(string root, params SubagentSummary[] agents) =>
+            new("root", root, "snapshot", agents, [], 0, new(0, 0, null, null, null, false));
+
+        Assert.Equal(SubagentPresentation.ActiveRefresh, SubagentPresentation.RefreshInterval(null));
+        Assert.Equal(SubagentPresentation.ActiveRefresh, SubagentPresentation.RefreshInterval(Snapshot("running", Agent("running", publish: false))));
+        // A finished attempt whose result is not published yet is still changing.
+        Assert.Equal(SubagentPresentation.ActiveRefresh, SubagentPresentation.RefreshInterval(Snapshot("completed", Agent("completed", publish: false))));
+        Assert.Equal(SubagentPresentation.IdleRefresh, SubagentPresentation.RefreshInterval(Snapshot("running", Agent("completed"))));
+        Assert.Equal(SubagentPresentation.IdleRefresh, SubagentPresentation.RefreshInterval(Snapshot("completed", Agent("waiting_approval", publish: false))));
+        Assert.Null(SubagentPresentation.RefreshInterval(Snapshot("completed", Agent("completed"), Agent("failed", "provider_error"))));
+        Assert.Null(SubagentPresentation.RefreshInterval(Snapshot("cancelled")));
+        // A failed or cancelled attempt's result is published on a later Host tick.
+        Assert.Equal(SubagentPresentation.IdleRefresh, SubagentPresentation.RefreshInterval(Snapshot("cancelled", Agent("cancelled", publish: false))));
+        // An interrupted run can be recovered under the same run id.
+        Assert.Equal(SubagentPresentation.IdleRefresh, SubagentPresentation.RefreshInterval(Snapshot("interrupted", Agent("completed"))));
+        Assert.Equal(SubagentPresentation.IdleRefresh, SubagentPresentation.RefreshInterval(Snapshot("completed", Agent("interrupted"))));
+    }
+
+    [Fact]
     public void Summary_never_counts_stopped_as_success_or_incomplete_usage_as_a_total()
     {
         var rows = new[] { SubagentPresentation.Row(Agent("completed")),

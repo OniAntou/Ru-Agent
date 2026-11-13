@@ -13,7 +13,8 @@ public static class SubagentPresenter
         foreach (var agent in snapshot.Agents)
         {
             var attempt = agent.Attempts.LastOrDefault();
-            yield return $"  {agent.AgentId} · {agent.Role} · {attempt?.Status ?? "unavailable"} · {attempt?.Model ?? "model unavailable"}";
+            yield return $"  {agent.AgentId} · {agent.Role} · {attempt?.Status ?? "unavailable"} · {attempt?.Model ?? "model unavailable"}"
+                + (string.IsNullOrWhiteSpace(agent.Profile) ? "" : $" · profile {agent.Profile}");
             if (agent.Task is not null) yield return "    " + agent.Task;
             if (attempt?.Approval is { } approval)
                 yield return $"    Approval {approval.ApprovalId} · {approval.ToolId} · child run {attempt.RunId}";
@@ -23,6 +24,7 @@ public static class SubagentPresenter
         }
         foreach (var preparation in snapshot.Preparations) yield return $"  {preparation.AgentId} · preparing · {preparation.Stage}";
         if (snapshot.UnavailableAttempts > 0) yield return $"  Unavailable attempts: {snapshot.UnavailableAttempts}";
+        foreach (var issue in (snapshot.ProfileDiagnostics ?? []).Take(8)) yield return $"  Profile ignored: {issue}";
         yield return $"Family tokens: {snapshot.Usage.TotalTokens?.ToString() ?? "unavailable"}" + (snapshot.Usage.IsComplete ? "" : " · incomplete");
     }
 

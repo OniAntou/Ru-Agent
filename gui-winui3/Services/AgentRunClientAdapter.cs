@@ -187,7 +187,9 @@ public sealed partial class AgentRunClientAdapter : IAgentRunClient, IDisposable
     {
         if (frame.IsTransient)
         {
-            if (AgentUsageEstimateModel.TryParse(frame, out _))
+            // A subagent hint carries no durable state: the controller only uses it
+            // to tell the observer to re-read the snapshot.
+            if (AgentUsageEstimateModel.TryParse(frame, out _) || AgentSubagentChangeModel.TryParse(frame, out _))
             {
                 await DispatchAsync(() => onEvent(AgentEventModel.FromSseFrame(frame)), cancellationToken).ConfigureAwait(false);
                 return;

@@ -8,7 +8,8 @@ public sealed record SubagentSnapshot(AgentRun Root, bool Canceled,
     int UnavailableAttempts);
 
 public sealed record SubagentSnapshotEntry(SubagentRecord Agent, string? Task,
-    IReadOnlyList<SubagentAttemptSnapshot> Attempts, IReadOnlyList<SubagentResultSnapshot> Results);
+    IReadOnlyList<SubagentAttemptSnapshot> Attempts, IReadOnlyList<SubagentResultSnapshot> Results,
+    string? Profile = null);
 
 public sealed record SubagentAttemptSnapshot(SubagentAttempt Attempt, SubagentPinnedModel? Model, SubagentPendingApproval? Approval = null);
 public sealed record SubagentPendingApproval(ApprovalId ApprovalId, string ToolId, System.Text.Json.JsonElement Arguments, bool ArgumentsTruncated = false);

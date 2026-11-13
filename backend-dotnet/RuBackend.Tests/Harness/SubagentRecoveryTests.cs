@@ -134,8 +134,14 @@ public sealed class SubagentRecoveryTests
             Assert.False(roots.TryGetRoot(run.RunId, out _));
             return;
         }
-        Assert.Equal(scenario == "ambiguous" ? HarnessRunState.ReconciliationRequired
-            : scenario == "running" ? HarnessRunState.Running : HarnessRunState.Created, after.State);
+        if (scenario == "ambiguous")
+        {
+            Assert.Equal(HarnessRunState.Failed, after.State);
+            Assert.Equal("recovery_outcome_unknown", after.TerminalErrorCode);
+            Assert.False(roots.TryGetRoot(run.RunId, out _));
+            return;
+        }
+        Assert.Equal(scenario == "running" ? HarnessRunState.Running : HarnessRunState.Created, after.State);
         if (after.State == HarnessRunState.Created)
         {
             Assert.False(roots.TryGetRoot(run.RunId, out _));

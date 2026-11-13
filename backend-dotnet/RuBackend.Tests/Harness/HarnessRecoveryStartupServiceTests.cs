@@ -118,7 +118,6 @@ public sealed class HarnessRecoveryStartupServiceTests
     /// </summary>
     [Theory]
     [InlineData(HarnessRunState.WaitingUser)]
-    [InlineData(HarnessRunState.ReconciliationRequired)]
     public async Task Parked_runs_are_registered_for_resume_but_not_driven_until_continued(
         HarnessRunState parkedState)
     {

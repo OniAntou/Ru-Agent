@@ -345,8 +345,11 @@ resolution event commit atomically; missing proof or storage failure leaves the
 run parked. User assertions never rewrite apply status or create file receipts.
 After acknowledgment, later result collection uses only durable per-file receipts
 as integration bases; unreceipted writes keep the old base and may conflict with
-current parent files. Unknown Continue retains its read-inspection mutation gate.
-Duplicate apply still returns the saved uncertain outcome without replaying writes.
+current parent files. Unknown Continue retains its read-inspection mutation gate
+for legacy runs that have not yet been failed by startup recovery.
+Duplicates apply still returns the saved uncertain outcome without replaying writes.
+Startup fails any run left in `ReconciliationRequired` with
+`legacy_reconciliation_removed`; no new run can enter that state.
 Startup rehydrates children from their immutable delegation and model pin after
 parents; ambiguous mutations stay running and return the ordinary failed receipt.
 Internal children cannot use the Host's `ask_user` interception. The model-facing

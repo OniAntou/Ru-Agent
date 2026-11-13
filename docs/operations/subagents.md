@@ -19,8 +19,9 @@ Subagent controls do not use the generic `ReconciliationRequired` park. If a con
 outcome is uncertain (partial apply, cancel cleanup, workspace/IO failure), the model
 receives a failed receipt with `sideEffectsPossible=true` and decides whether to inspect,
 retry or report it; it does not wait for a user Continue. The generic tool pipeline also
-keeps unknown mutations running with the ordinary failed tool result; legacy reconciliation
-states remain resolvable.
+keeps unknown mutations running with the ordinary failed tool result. Legacy
+`ReconciliationRequired` runs are failed at startup with
+`legacy_reconciliation_removed`; there is no legacy Continue path.
 
 ## Model selection
 

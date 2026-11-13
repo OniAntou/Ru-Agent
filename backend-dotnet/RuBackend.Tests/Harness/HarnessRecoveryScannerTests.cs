@@ -1174,7 +1174,7 @@ public sealed class HarnessRecoveryScannerTests
     }
 
     [Fact]
-    public async Task Incomplete_mutation_execution_requires_reconciliation()
+    public async Task Incomplete_mutation_execution_fails_instead_of_requiring_reconciliation()
     {
         var fixture = await BackendHarnessTestFixture.CreateAsync();
         try
@@ -1187,11 +1187,12 @@ public sealed class HarnessRecoveryScannerTests
 
             var summary = Assert.Single(summaries);
             Assert.Equal(run.RunId, summary.RunId);
-            Assert.Equal("reconciliation_required", summary.Action);
+            Assert.Equal("failed_outcome_unknown", summary.Action);
             var after = await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None);
             Assert.NotNull(after);
-            Assert.Equal(HarnessRunState.ReconciliationRequired, after!.State);
-            Assert.Contains(
+            Assert.Equal(HarnessRunState.Failed, after!.State);
+            Assert.Equal("recovery_outcome_unknown", after.TerminalErrorCode);
+            Assert.DoesNotContain(
                 await ReadEventsAsync(fixture, run.RunId),
                 item => item.Event.Kind == "reconciliation.required");
         }

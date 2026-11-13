@@ -116,6 +116,15 @@ public sealed class HarnessRecoveryScanner(
             return null;
         }
 
+        if (run.State == HarnessRunState.ReconciliationRequired)
+        {
+            // Legacy reconciliation is removed. A run left in this state by an
+            // older build cannot be resumed interactively; fail it with a named
+            // code so its session ownership is released.
+            return await FailRunAsync(run, "legacy_reconciliation_removed", cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         if (run.PermissionProfileVersion != AgentPermissionPresetMapper.CurrentPermissionProfileVersion)
         {
             return await FailRunAsync(run, "permission_profile_changed", cancellationToken)
@@ -222,13 +231,13 @@ public sealed class HarnessRecoveryScanner(
 
         var transition = AgentRunStateMachine.TryTransition(
             run.Status,
-            HarnessRunTransition.RequireReconciliation);
+            HarnessRunTransition.Fail);
         if (!transition.Accepted)
         {
             return null;
         }
 
-        var next = Advance(run, transition.Next, 1, time.UtcNow);
+        var next = Advance(run, transition.Next, 1, time.UtcNow, "recovery_outcome_unknown");
         var result = await store.CommitAsync(
                 new HarnessCommit(
                     run.RunId,
@@ -238,19 +247,19 @@ public sealed class HarnessRecoveryScanner(
                     {
                         new HarnessEventIntent(
                             new RuAgent.Harness.Core.EventId($"evt_{Guid.NewGuid():N}"),
-                            HarnessEventKind.ReconciliationRequired,
+                            HarnessEventKind.RunFailed,
                             modelStepId: incomplete[0].ModelStepId,
                             toolCallId: incomplete[0].ToolCallId,
                             providerCallId: incomplete[0].ProviderCallId,
                             executionId: incomplete[0].ExecutionId,
-                            safeCode: "recovery_ambiguous"),
+                            safeCode: "recovery_outcome_unknown"),
                     },
                     Array.Empty<HarnessPayloadIntent>(),
                     Array.Empty<ConversationOutboxIntent>()),
                 cancellationToken)
             .ConfigureAwait(false);
         return result.Outcome == HarnessCommitOutcome.Committed
-            ? new RecoveredRunSummary(run.RunId, "reconciliation_required")
+            ? new RecoveredRunSummary(run.RunId, "failed_outcome_unknown")
             : null;
     }
 

@@ -2,6 +2,7 @@ using System.Text.Json;
 using RuAgent.Broker.Runtime;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Subagents;
 using RuAgent.Protocol.Subagents;
 
@@ -66,12 +67,13 @@ public sealed class SubagentControlDispatcher(IHarnessEventStore events, SqliteS
         {
             case "agent_spawn":
                 var request = intent.Arguments.Deserialize<SubagentSpawnRequest>()!;
-                var child = await children.CreateAsync(root.RunId, intent.InvocationId, request, ct).ConfigureAwait(false);
+                var child = await RetryIdempotentAsync(
+                    () => children.CreateAsync(root.RunId, intent.InvocationId, request, ct), ct).ConfigureAwait(false);
                 return Receipt("subagent_spawned", new { agent_id = child.AgentId, role = request.Role, accepted = true });
             case "agent_send":
                 var agent = intent.Arguments.GetProperty("agent_id").GetString()!;
-                await agents.AppendMessageAsync(root.RunId, agent, intent.InvocationId,
-                    intent.Arguments.GetProperty("message").GetString()!, ct).ConfigureAwait(false);
+                await RetryIdempotentAsync(() => agents.AppendMessageAsync(root.RunId, agent, intent.InvocationId,
+                    intent.Arguments.GetProperty("message").GetString()!, ct), ct).ConfigureAwait(false);
                 return Receipt("subagent_message_queued", new { agent_id = agent, accepted = true });
             case "agent_cancel":
                 var canceled = intent.Arguments.GetProperty("agent_id").GetString()!;
@@ -86,6 +88,46 @@ public sealed class SubagentControlDispatcher(IHarnessEventStore events, SqliteS
         ToolExecutionReceipt Receipt(string code, object output) => new(prepared.ExecutionId, prepared.ToolCallId,
             ToolExecutionOutcome.Succeeded, code, null, true, JsonSerializer.SerializeToUtf8Bytes(output),
             HarnessPayloadEncoding.Json, proposal.ProviderCallId);
+    }
+
+    /// <summary>
+    /// Spawn and send are idempotent by invocation/message id. A transient store or
+    /// provisioning failure can therefore be retried once inside the already-authorized
+    /// callback; a committed first attempt replays, and an uncommitted one creates the
+    /// one intended effect. Unknown/partial effects are not retried here.
+    /// </summary>
+    private static async Task<T> RetryIdempotentAsync<T>(Func<Task<T>> action, CancellationToken ct)
+    {
+        try
+        {
+            return await action().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (SubagentControlRejectedException) { throw; }
+        catch (HarnessStoreException error) when (SubagentControlFailures.IsDeterministic(error.Code)) { throw; }
+        catch (SubagentConfigurationException error) when (SubagentControlFailures.IsDeterministic(error.Code)) { throw; }
+        catch (Exception)
+        {
+            ct.ThrowIfCancellationRequested();
+            return await action().ConfigureAwait(false);
+        }
+    }
+
+    private static async Task RetryIdempotentAsync(Func<Task> action, CancellationToken ct)
+    {
+        try
+        {
+            await action().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (SubagentControlRejectedException) { throw; }
+        catch (HarnessStoreException error) when (SubagentControlFailures.IsDeterministic(error.Code)) { throw; }
+        catch (SubagentConfigurationException error) when (SubagentControlFailures.IsDeterministic(error.Code)) { throw; }
+        catch (Exception)
+        {
+            ct.ThrowIfCancellationRequested();
+            await action().ConfigureAwait(false);
+        }
     }
 }
 

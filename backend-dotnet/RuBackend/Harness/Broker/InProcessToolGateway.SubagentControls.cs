@@ -31,6 +31,22 @@ public sealed partial class InProcessToolGateway
                 return ToolProposalDecision.Deny(ToolAccessKind.Mutation, error.Code,
                     gatewayGeneration: lease.Generation);
             }
+            catch (ToolTransportException error)
+                when (error.Message is "subagent_apply_root_not_open" or "subagent_apply_unavailable")
+            {
+                // The root's gateway is gone or the apply adapter is unavailable.
+                // This is a refusal before the apply journal, so let the model see a
+                // failed tool result instead of turning a closed transport into a run
+                // failure.
+                return ToolProposalDecision.Deny(ToolAccessKind.Mutation, error.Message,
+                    gatewayGeneration: lease.Generation);
+            }
+            catch (AgentProtocolException error) when (error.Code is "subagent_apply_denied"
+                or "subagent_apply_root_not_open" or "subagent_apply_unavailable")
+            {
+                return ToolProposalDecision.Deny(ToolAccessKind.Mutation, error.Code,
+                    gatewayGeneration: lease.Generation);
+            }
         }
         try { await _subagents.Value.ValidateAsync(proposal, ct).ConfigureAwait(false); }
         catch (SubagentControlRejectedException error)
@@ -78,6 +94,21 @@ public sealed partial class InProcessToolGateway
         }
         catch (SubagentConfigurationException error)
             when (SubagentControlFailures.IsDeterministic(error.Code))
+        {
+            return BrokerGatewayContracts.FailedReceipt(execution, error.Code);
+        }
+        catch (ToolTransportException error)
+            when (pending.ToolId == "agent_apply"
+                && error.Message is "subagent_apply_root_not_open" or "subagent_apply_unavailable")
+        {
+            // The apply adapter refused before taking the journal; this is not an
+            // indeterminate write. Let the model report/retry through a clean tool
+            // failure rather than failing the root run.
+            return BrokerGatewayContracts.FailedReceipt(execution, error.Message);
+        }
+        catch (AgentProtocolException error)
+            when (pending.ToolId == "agent_apply"
+                && error.Code is "subagent_apply_denied" or "subagent_apply_root_not_open" or "subagent_apply_unavailable")
         {
             return BrokerGatewayContracts.FailedReceipt(execution, error.Code);
         }

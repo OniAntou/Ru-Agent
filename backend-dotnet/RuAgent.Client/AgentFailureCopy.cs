@@ -311,7 +311,7 @@ public static class AgentFailureCopy
         Add(table, ["approval_authorization_failed"],
             "Approval not authorized",
             "the approval was recorded but the execution authority did not authorize it",
-            "retry the approval; if it repeats, restart the backend");
+            "answer the new approval request if Ru asks again; if it repeats, restart the backend");
         Add(table, ["broker_gateway_unavailable"],
             "Execution authority unavailable",
             "the approval needs the broker gateway, which is not configured",

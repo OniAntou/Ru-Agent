@@ -20,7 +20,8 @@ public sealed class DesktopTokenMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         if (HttpMethods.IsOptions(context.Request.Method)
-            && !IsSensitiveRoute(context.Request.Path))
+            && !IsSensitiveRoute(context.Request.Path)
+            && IsOptionsOnlyEndpoint(context))
         {
             await _next(context);
             return;
@@ -52,6 +53,19 @@ public sealed class DesktopTokenMiddleware
             || path.StartsWithSegments("/agent", StringComparison.OrdinalIgnoreCase)
             || path.StartsWithSegments("/host", StringComparison.OrdinalIgnoreCase)
             || path.StartsWithSegments("/diagnostics", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// An unauthenticated OPTIONS request may reach only an endpoint that answers
+    /// OPTIONS and nothing else (today the bodiless catch-all). Routing has already
+    /// selected the endpoint here, so a later route mapped for every method, which
+    /// would also answer OPTIONS, keeps the bearer requirement instead of inheriting
+    /// the bypass by not being on the sensitive-prefix list.
+    /// </summary>
+    private static bool IsOptionsOnlyEndpoint(HttpContext context)
+    {
+        var methods = context.GetEndpoint()?.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods;
+        return methods is { Count: > 0 } && methods.All(HttpMethods.IsOptions);
     }
 
     private static bool TokensMatch(string candidate, string configuredToken)

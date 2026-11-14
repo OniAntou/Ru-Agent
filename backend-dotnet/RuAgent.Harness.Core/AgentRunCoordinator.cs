@@ -27,6 +27,7 @@ public sealed partial class AgentRunCoordinator
     private readonly IRetainedApprovalStash _retainedStash;
     private readonly Func<RunId, CancellationToken, Task>? _approvalResolutionRaceHook;
     private readonly bool _internalRun;
+    private readonly bool _recommendAdvisor;
     private readonly Subagents.IAgentFamilyBudget? _familyBudget;
     private readonly Subagents.ISubagentInbox? _subagentInbox;
 
@@ -50,7 +51,8 @@ public sealed partial class AgentRunCoordinator
         Func<RunId, CancellationToken, Task>? approvalResolutionRaceHook = null,
         bool internalRun = false,
         Subagents.IAgentFamilyBudget? familyBudget = null,
-        Subagents.ISubagentInbox? subagentInbox = null)
+        Subagents.ISubagentInbox? subagentInbox = null,
+        bool recommendAdvisor = false)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash(time);
@@ -86,6 +88,8 @@ public sealed partial class AgentRunCoordinator
             _retainedStash,
             allowUserInput: !internalRun,
             advisor: model as IAdvisorConsultant);
+        // Only a root run whose user selected an advisor is recommended to consult it (ADR 0047).
+        _recommendAdvisor = recommendAdvisor && !internalRun && model is IAdvisorConsultant;
         _lifecycle = new AgentRunLifecycle(
             _store,
             _ids,

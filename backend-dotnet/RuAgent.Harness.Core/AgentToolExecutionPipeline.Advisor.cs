@@ -34,7 +34,9 @@ internal sealed partial class AgentToolExecutionPipeline
             try
             {
                 result = await _advisor!.ConsultAsync(
-                        new AdvisorConsultationRequest(run.RunId, proposal.ModelStepId, batch.AdvisorSource!, model, effort),
+                        // The session travels too: some providers route every request by conversation.
+                        new AdvisorConsultationRequest(run.RunId, proposal.ModelStepId, batch.AdvisorSource!, model, effort,
+                            run.SessionId),
                         cancellationToken)
                     .ConfigureAwait(false)
                     ?? AdvisorConsultationResult.Failed(AdvisorCodes.ProviderFailed);
@@ -54,9 +56,12 @@ internal sealed partial class AgentToolExecutionPipeline
                 : result.ErrorCode;
         }
 
+        hint ??= AdvisorHint(code ?? string.Empty);
+        if (code is not null && result?.Detail is { Length: > 0 } detail)
+            hint = $"{hint} ({detail[..Math.Min(detail.Length, 200)]})";
         var execution = code is null
             ? CreateAdvisorExecution(proposal, result!)
-            : CreateDeniedExecution(proposal, _ids.NewExecutionId(), code, hint ?? AdvisorHint(code)) with
+            : CreateDeniedExecution(proposal, _ids.NewExecutionId(), code, hint) with
             {
                 RequestedSafeCode = "read_only",
             };
@@ -141,6 +146,25 @@ internal sealed partial class AgentToolExecutionPipeline
             payloadId,
             sideEffectsPossible: false,
             contentEncoding: HarnessPayloadEncoding.Json);
-        return new DeniedToolExecution(payload, receipt.WithProviderCallId(proposal.ProviderCallId), "read_only");
+        HarnessPayloadIntent? usagePayload = null;
+        if (result.Usage is { } usage)
+        {
+            // The adapter names the billed model; fall back to the advisor model the Host resolved.
+            var named = usage.Model is null && result.AdvisorModel is { } advisorModel
+                ? new ModelUsage(usage.InputTokens, usage.OutputTokens, usage.TotalTokens, usage.CacheReadInputTokens,
+                    usage.CacheWriteInputTokens, advisorModel, usage.InputTokensIncludeCache)
+                : usage;
+            var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+            using (var writer = new Utf8JsonWriter(buffer)) named.WriteTo(writer);
+            usagePayload = new HarnessPayloadIntent(
+                _ids.NewPayloadId(),
+                HarnessPayloadKind.ModelUsage,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                HarnessPayloadEncoding.Json,
+                buffer.WrittenCount,
+                buffer.WrittenMemory);
+        }
+
+        return new DeniedToolExecution(payload, receipt.WithProviderCallId(proposal.ProviderCallId), "read_only", usagePayload);
     }
 }

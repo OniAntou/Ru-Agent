@@ -11,6 +11,7 @@ public sealed partial class AgentCommands
     {
         /// <summary>Metadata attempts per run; two is enough for a window to resolve.</summary>
         private const int MaxContextMetadataAttempts = 2;
+        internal const string AdvisorUsageSafeCode = "advisor_usage";
         private readonly object contextMetadataGate = new();
         private string? contextMetadataRun;
         private int contextMetadataAttempts;
@@ -28,16 +29,19 @@ public sealed partial class AgentCommands
                 usage.BeginStep(envelope.ModelStepId, envelope.Sequence);
                 QueuePinnedContextMetadata(runId, ct);
             }
+            // An advisor consultation (ADR 0047) is billed with the run but reads its own,
+            // separate request: it says nothing about how full the run's context is.
+            var advisorUsage = envelope.EventType == "model.usage_recorded" && envelope.SafeSummary == AdvisorUsageSafeCode;
             if (envelope.TotalTokens is not null || envelope.InputTokens is not null || envelope.OutputTokens is not null)
             {
                 // A usage report supersedes the prepared request estimate /status context shows.
-                if (envelope.EventType == "model.usage_recorded" && preparedContext?.Run == envelope.RunId)
+                if (envelope.EventType == "model.usage_recorded" && !advisorUsage && preparedContext?.Run == envelope.RunId)
                     preparedContext = null;
                 usage.ApplyBilling(envelope.InputTokens, envelope.OutputTokens);
                 lastTotalTokens = envelope.TotalTokens ?? ((envelope.InputTokens ?? 0) + (envelope.OutputTokens ?? 0));
                 sessionRenderer.Status.SetTokens(lastTotalTokens);
             }
-            if (tgMode && envelope.EventType == "model.usage_recorded")
+            if (tgMode && envelope.EventType == "model.usage_recorded" && !advisorUsage)
             {
                 QueuePinnedContextMetadata(runId, ct);
                 if (!string.IsNullOrWhiteSpace(envelope.PayloadRef))

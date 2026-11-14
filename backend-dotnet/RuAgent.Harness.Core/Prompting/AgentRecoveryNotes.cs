@@ -19,6 +19,7 @@ public enum AgentRecoveryKind
     UnverifiedSourceEdit,
     OpenTodos,
     CompletionReview,
+    AdvisorRecommended,
 }
 
 /// <summary>
@@ -72,6 +73,10 @@ public static class AgentRecoveryNotes
     // One-time soft nudges from the completion checklist; like the source-edit nudge, they never fail a run.
     public const int MaximumOpenTodoNotes = 1;
     public const int MaximumCompletionReviewNotes = 1;
+
+    // ADR 0047: one recommendation per run to consult the selected advisor before finishing.
+    // It is advice; a repeated final reply completes the run.
+    public const int MaximumAdvisorRecommendedNotes = 1;
 
     private const int MaximumListedOpenTodos = 8;
     private const int MaximumOpenTodoLength = 120;
@@ -174,6 +179,18 @@ public static class AgentRecoveryNotes
         + "confirm the code meets it and a check exercised it. "
         + "Fix any gap and rerun the affected purpose=verification check; then give the final reply and name any requirement left unchecked.";
 
+    /// <summary>
+    /// The one-time recommendation held before a final reply when the user selected an advisor
+    /// and it has not seen the work since the last tool call (ADR 0047). It recommends; the
+    /// model decides whether to consult.
+    /// </summary>
+    public static string BuildAdvisorRecommendedNote() =>
+        $"{NotePrefix} {KindMarker(AgentRecoveryKind.AdvisorRecommended)} - the final reply was held once: "
+        + "the user selected an advisor for this run and it has not seen your work since your last tool call. "
+        + "Recommended: call the advisor tool, alone, so it can check the finished work against the user's request before you finish; "
+        + "weigh its advice against what you have verified and act on what holds up. "
+        + "This is a recommendation, not a requirement: if you choose not to consult, give your final reply again and the run completes.";
+
     private static string RecoveryAction(string code) => code switch
     {
         "file_exists" => "The creation call changed nothing: this path already exists. Read that same file, then use edit_file for a partial change or write_file with overwrite=true for an intentional full replacement. Do not repeat create-only writes or change the filename to evade the error.",
@@ -257,6 +274,7 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.UnverifiedSourceEdit => "unverified_source_edit",
         AgentRecoveryKind.OpenTodos => "open_todos",
         AgentRecoveryKind.CompletionReview => "completion_review",
+        AgentRecoveryKind.AdvisorRecommended => "advisor_recommended",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -271,6 +289,7 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.UnverifiedSourceEdit => MaximumUnverifiedSourceEditNotes,
         AgentRecoveryKind.OpenTodos => MaximumOpenTodoNotes,
         AgentRecoveryKind.CompletionReview => MaximumCompletionReviewNotes,
+        AgentRecoveryKind.AdvisorRecommended => MaximumAdvisorRecommendedNotes,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -288,7 +307,7 @@ public static class AgentRecoveryNotes
         var caseCount = kind == AgentRecoveryKind.OutputTruncated
             ? ConsecutiveNoteCount(context, kind)
             : kind is AgentRecoveryKind.UnverifiedSourceEdit or AgentRecoveryKind.OpenTodos
-                or AgentRecoveryKind.CompletionReview
+                or AgentRecoveryKind.CompletionReview or AgentRecoveryKind.AdvisorRecommended
                 ? NoteCount(context, kind)
                 : RecentNoteCount(context, kind);
         return RecentNoteCount(context, null) < MaximumNotesPerWindow && caseCount < MaximumNotes(kind);

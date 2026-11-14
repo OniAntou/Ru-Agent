@@ -102,6 +102,33 @@ public sealed partial class AgentProviderSnapshotTests
         Assert.Equal(code, error.Code);
     }
 
+    [Theory]
+    [InlineData("selected", true)]
+    [InlineData("unavailable", false)]
+    [InlineData("not_selected", false)]
+    public async Task Only_a_resolved_advisor_selection_is_recommended_while_every_marker_advertises_the_tool(
+        string pin, bool recommended)
+    {
+        await using var harness = await BackendHarnessTestFixture.CreateAsync();
+        var (_, selections, runId, factory) = await ResolverAsync(harness);
+        await using var _ = factory;
+        var marker = pin switch
+        {
+            "selected" => AdvisorPolicy.Marker(CustomPin("https://provider.invalid/v1", "b")),
+            "unavailable" => AdvisorPolicy.UnavailableMarker(),
+            _ => AdvisorPolicy.NotSelectedMarker(),
+        };
+        await selections.PinAsync(runId, CustomPin("https://provider.invalid/v1", "a") with
+        {
+            RequestOptionsJson = new JsonObject { ["ru_tool_profile"] = "coding_v2", [AdvisorPolicy.PinField] = marker }.ToJsonString(),
+        }, default);
+
+        var metadata = await new AgentRunModelMetadataResolver(factory, selections).ResolveAsync(runId, default);
+
+        Assert.True(metadata.Advisor);
+        Assert.Equal(recommended, metadata.AdvisorSelected);
+    }
+
     private async Task<(AdvisorTargetResolver Resolver, SqliteAgentRunProviderSelectionStore Selections,
         RuAgent.Harness.Core.RunId RunId, AgentProviderSnapshotFactory Factory)> ResolverAsync(BackendHarnessTestFixture harness)
     {

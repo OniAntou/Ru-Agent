@@ -15,17 +15,23 @@ public sealed record AdvisorConsultationRequest(
     ModelStepId ModelStepId,
     AdvisorConsultationSource Source,
     string? RequestedModel,
-    string? RequestedEffort);
+    string? RequestedEffort,
+    SessionId? SessionId = null);
 
-/// <summary>The advice, or the named reason there is none. Advice is untrusted model output.</summary>
+/// <summary>
+/// The advice, or the named reason there is none. Advice is untrusted model output.
+/// <paramref name="Detail"/> is a bounded, content-free diagnostic (a stage, a code or a
+/// token count) that makes a failure explainable from its receipt.
+/// </summary>
 public sealed record AdvisorConsultationResult(
     string? Advice,
     string? ErrorCode,
     string? AdvisorModel = null,
     bool HistoryShortened = false,
-    ModelUsage? Usage = null)
+    ModelUsage? Usage = null,
+    string? Detail = null)
 {
-    public static AdvisorConsultationResult Failed(string code) => new(null, code);
+    public static AdvisorConsultationResult Failed(string code, string? detail = null) => new(null, code, Detail: detail);
 }
 
 /// <summary>
@@ -42,6 +48,8 @@ public interface IAdvisorConsultant
 public static class AdvisorCodes
 {
     public const string ToolId = "advisor";
+    /// <summary>The safe code of a consultation's <c>model.usage_recorded</c> event.</summary>
+    public const string UsageSafeCode = "advisor_usage";
     public const string Prefix = "advisor_";
     public const string NotSelected = "advisor_not_selected";
     public const string Unavailable = "advisor_unavailable";

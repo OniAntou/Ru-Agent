@@ -22,15 +22,17 @@ public sealed partial class ChatUsageReaderTests
         internal int RunCount = 1;
         internal bool ForeignRun, ForeignEvent, Compact, Duplicate, MissingPayload, BadReport, NoRates, FailList;
         internal int ReportCount = 1;
+        internal int? AdvisorReport;
         internal Func<int, string>? ModelForRun;
         internal object Report = new { input_tokens = 1000, output_tokens = 100, total_tokens = 1100,
             cache_read_input_tokens = 400, cache_write_input_tokens = 0, input_tokens_include_cache = true,
             model = "synthetic-model", context_tokens = new ContextTokenBreakdown(100, 200, 700) };
         internal static HttpResponseMessage Json(object data, HttpStatusCode status = HttpStatusCode.OK) => new(status)
         { Content = new StringContent(JsonSerializer.Serialize(data), Encoding.UTF8, "application/json") };
-        internal static string Event(string run, long sequence, string type, string? payload = null, string owner = Owner) =>
+        internal static string Event(string run, long sequence, string type, string? payload = null, string owner = Owner,
+            string summary = "synthetic") =>
             "id: " + sequence + "\nevent: message\ndata: " + JsonSerializer.Serialize(new HarnessSafeEventEnvelope(1,
-                "evt_" + sequence.ToString("x32"), run, owner, sequence, type, "2026-11-01T00:00:00Z", "completed", "synthetic", payload)) + "\n\n";
+                "evt_" + sequence.ToString("x32"), run, owner, sequence, type, "2026-11-01T00:00:00Z", "completed", summary, payload)) + "\n\n";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
@@ -47,7 +49,8 @@ public sealed partial class ChatUsageReaderTests
                 var run = path.Split('/')[4];
                 var body = new StringBuilder();
                 for (var index = 1; index <= ReportCount; index++)
-                    body.Append(Event(run, index, "model.usage_recorded", Payload(Duplicate ? 1 : index), ForeignEvent ? "other_session" : Owner));
+                    body.Append(Event(run, index, "model.usage_recorded", Payload(Duplicate ? 1 : index), ForeignEvent ? "other_session" : Owner,
+                        index == AdvisorReport ? ChatUsageReader.AdvisorUsageSafeCode : "synthetic"));
                 if (Compact) body.Append(Event(run, ReportCount + 1, "context.compacted"));
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 { Content = new StringContent(body.ToString(), Encoding.UTF8, "text/event-stream") });
@@ -55,7 +58,10 @@ public sealed partial class ChatUsageReaderTests
             if (path.Contains("/payloads/")) return Task.FromResult(MissingPayload
                 ? Json(new { error_code = "payload_missing" }, HttpStatusCode.NotFound)
                 : Json(new { run_id = path.Split('/')[4], payload_id = path.Split('/')[6], kind = "model_usage", encoding = "json",
-                    content = BadReport ? "{\"input_tokens\":-1}" : ReportJson(path.Split('/')[4]) }));
+                    content = BadReport ? "{\"input_tokens\":-1}"
+                        : AdvisorReport is { } advisor && path.Split('/')[6] == Payload(advisor)
+                            ? "{\"input_tokens\":3000,\"output_tokens\":200,\"total_tokens\":3200,\"cache_read_input_tokens\":0,\"cache_write_input_tokens\":0,\"input_tokens_include_cache\":true,\"model\":\"advisor-model\"}"
+                            : ReportJson(path.Split('/')[4]) }));
             if (path.StartsWith("/agent/v1/runs/")) return Task.FromResult(Json(new {
                 run_id = path.Split('/')[4], session_id = ForeignRun ? "other_session" : Owner, workspace_id = "ws_usage",
                 status = "completed", preset = "standard", policy_snapshot_version = 1, policy_snapshot_sha256 = new string('a', 64),
@@ -210,6 +216,29 @@ public sealed partial class ChatUsageReaderTests
         });
         Assert.Equal(["model-1", "model-2"], lookedUp);
         Assert.Contains("Estimated cost: $0.002600", ChatUsagePresentation.Usage(result));
+    }
+
+    [Fact]
+    public async Task Advisor_reports_are_billed_at_the_advisor_rates_but_never_read_as_the_run_context()
+    {
+        // ADR 0047: a consultation is a separate request on another model.
+        using var host = new Host { ReportCount = 2, AdvisorReport = 2 };
+        var lookedUp = new List<string>();
+        var result = await Read(host, rates: (_, model, _) => {
+            lookedUp.Add(model);
+            return Task.FromResult<CatalogModelDetails?>(Rates with { InputCost = model == "advisor-model" ? 10 : 1 });
+        });
+        var row = Assert.Single(result.Runs);
+        Assert.Equal(["synthetic-model", "advisor-model"], lookedUp);
+        Assert.Equal(2, row.Reports.Count);
+        Assert.NotNull(row.Cost);
+        Assert.Equal(1000, row.LatestContext!.Input);
+        Assert.Contains("Billed tokens: 4,300", ChatUsagePresentation.Usage(result));
+
+        host.Requests.Clear();
+        var context = Assert.Single((await Read(host, context: true)).Runs);
+        Assert.Equal(1000, context.LatestContext!.Input);
+        Assert.DoesNotContain(host.Requests, request => request.Contains("/payloads/" + Payload(2)));
     }
 
     [Fact]

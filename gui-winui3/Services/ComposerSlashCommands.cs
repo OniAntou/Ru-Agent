@@ -42,6 +42,14 @@ public sealed record ComposerSlashSuggestion(
     public string GroupLabel => ComposerSlashCommands.GroupLabel(Source);
 }
 
+/// <summary>The forms of the composer's <c>/advisor</c> command.</summary>
+public enum ComposerAdvisorCommand
+{
+    Pick,
+    Off,
+    Usage,
+}
+
 /// <summary>One labelled section of the slash menu, for a grouped list view.</summary>
 public sealed class ComposerSlashGroup(string label, IEnumerable<ComposerSlashSuggestion> rows) : List<ComposerSlashSuggestion>(rows)
 {
@@ -59,12 +67,31 @@ public static partial class ComposerSlashCommands
     public const int MaxSuggestions = 8;
 
     /// <summary>Names the app or Host already handles; a template can never replace them.</summary>
-    private static readonly string[] Reserved = ["skill", "skills"];
+    private static readonly string[] Reserved = ["skill", "skills", "advisor"];
 
+    // Alphabetical, the order the menu lists them in.
     private static readonly ComposerSlashSuggestion[] BuiltIns =
     [
+        new("advisor", "Choose the model the agent consults in new runs; /advisor off turns it off", ComposerSlashSource.BuiltIn),
         new("skills", "Open Customize to browse and enable skills", ComposerSlashSource.BuiltIn),
     ];
+
+    /// <summary>
+    /// What a sent <c>/advisor</c> line asks for (ADR 0047), or null when the text is not
+    /// that command: the bare command opens the picker, <c>off</c> clears the advisor, and
+    /// anything else is answered with the usage line rather than sent to the agent.
+    /// </summary>
+    public static ComposerAdvisorCommand? ParseAdvisor(string? text)
+    {
+        var parts = (text ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0 || !parts[0].Equals("/advisor", StringComparison.OrdinalIgnoreCase)) return null;
+        return parts.Length switch
+        {
+            1 => ComposerAdvisorCommand.Pick,
+            2 when parts[1].Equals("off", StringComparison.OrdinalIgnoreCase) => ComposerAdvisorCommand.Off,
+            _ => ComposerAdvisorCommand.Usage,
+        };
+    }
 
     // A draft that is still only the command token; the menu closes at the first space.
     [GeneratedRegex("^/[a-z0-9_-]{0,64}$", RegexOptions.CultureInvariant)]

@@ -240,6 +240,16 @@ public sealed partial class ChatModelPickerViewModelTests
             ReasoningSaves.Add((effort, model, identity));
             return Task.FromResult(ReasoningSaveSucceeds);
         }
+
+        public bool AdvisorSaveSucceeds { get; set; } = true;
+
+        public List<(string? Backend, string? Model)> AdvisorSaves { get; } = new();
+
+        public Task<bool> SaveAdvisorAsync(string? backend, string? model)
+        {
+            AdvisorSaves.Add((backend, model));
+            return Task.FromResult(AdvisorSaveSucceeds);
+        }
     }
 
     private sealed class FakeCatalog : IProviderCatalogSession

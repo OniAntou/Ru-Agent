@@ -43,6 +43,28 @@ public sealed partial class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Advisor_tokens_are_recorded_as_a_usage_report_under_the_advisor_model()
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new(HarnessRunState.Running)));
+        var inner = new FakeModelStepRunner();
+        inner.Enqueue(AdvisorStep("{}"));
+        var model = new AdvisingModel(inner, _ => new AdvisorConsultationResult("advice", null, "advisor-model",
+            Usage: new ModelUsage(900, 120, 1020, null, null)));
+
+        await Coordinator(model, new FakeToolGateway(), store).RunOneStepAsync(RunId(), default);
+
+        var usageEvent = Assert.Single(store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.ModelUsageRecorded && item.SafeCode == AdvisorCodes.UsageSafeCode);
+        var payload = store.Commits.SelectMany(commit => commit.Payloads).Single(item => item.PayloadId == usageEvent.PayloadId);
+        var usage = JsonDocument.Parse(payload.Plaintext.ToArray()).RootElement;
+        Assert.Equal(900, usage.GetProperty("input_tokens").GetInt32());
+        Assert.Equal(120, usage.GetProperty("output_tokens").GetInt32());
+        // The report names the advisor so readers price it on the advisor's rates, not the run's.
+        Assert.Equal("advisor-model", usage.GetProperty("model").GetString());
+    }
+
+    [Fact]
     public async Task Advisor_passes_a_named_model_and_effort_to_the_consultant()
     {
         var store = new InMemoryHarnessEventStore();

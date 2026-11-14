@@ -15,6 +15,9 @@ internal interface IChatModelBackend
     Task<bool> SaveProviderModelSelectionAsync(string backend, string model);
 
     Task<bool> SaveReasoningSettingsAsync(string effort, string model, string identity);
+
+    /// <summary>Saves the advisor pair (ADR 0047); two nulls turn it off.</summary>
+    Task<bool> SaveAdvisorAsync(string? backend, string? model);
 }
 
 /// <summary>The per-provider catalogs behind the grouped model picker.</summary>
@@ -48,6 +51,8 @@ internal sealed class ApiChatModelBackend(ApiService api) : IChatModelBackend
 
     public Task<bool> SaveReasoningSettingsAsync(string effort, string model, string identity) =>
         api.SaveReasoningSettingsAsync(effort, model, identity);
+
+    public Task<bool> SaveAdvisorAsync(string? backend, string? model) => api.SaveAdvisorAsync(backend, model);
 }
 
 internal sealed class GroupedCatalogSession(GroupedProviderCatalogController controller) : IGroupedCatalogSession
@@ -280,7 +285,12 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
         if (_isPickerDirty && _grouped is not null) PublishPicker(_grouped.State);
     }
 
-    internal void OnPickerClosed() => IsPickerOpen = false;
+    internal void OnPickerClosed()
+    {
+        IsPickerOpen = false;
+        // The advisor pick lasts one opening; the toolbar button always picks the main model.
+        IsPickingAdvisor = false;
+    }
 
     private async Task RefreshGroupedAsync()
     {

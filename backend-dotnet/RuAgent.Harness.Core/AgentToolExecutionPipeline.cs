@@ -314,6 +314,23 @@ internal sealed partial class AgentToolExecutionPipeline
                         new[] { deniedExecution.Payload },
                         cancellationToken)
                     .ConfigureAwait(false);
+                if (deniedExecution.UsagePayload is { } usagePayload)
+                {
+                    // A consultation bills the advisor's model (ADR 0047); its report carries that
+                    // model's name so usage and cost readers do not price it as the run's model.
+                    run = await CommitSingleEventAsync(
+                            run,
+                            run.Status,
+                            new HarnessEventIntent(
+                                _ids.NewEventId(),
+                                HarnessEventKind.ModelUsageRecorded,
+                                modelStepId: modelStepId,
+                                payloadId: usagePayload.PayloadId,
+                                safeCode: AdvisorCodes.UsageSafeCode),
+                            new[] { usagePayload },
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
                 orderedReceipts.Add((modelOrder, deniedReceipt));
                 continue;
             }
@@ -559,7 +576,8 @@ internal sealed partial class AgentToolExecutionPipeline
     private sealed record DeniedToolExecution(
         HarnessPayloadIntent Payload,
         ToolExecutionReceipt Receipt,
-        string RequestedSafeCode = "policy_denied");
+        string RequestedSafeCode = "policy_denied",
+        HarnessPayloadIntent? UsagePayload = null);
 
     private async Task<AgentRun> CommitSingleEventAsync(
         AgentRun run,

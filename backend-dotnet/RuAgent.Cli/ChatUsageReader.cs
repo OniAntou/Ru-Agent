@@ -13,6 +13,7 @@ internal sealed class ChatUsageReader(AgentApiClient agents, AgentSseClient even
     Func<string?, string, CancellationToken, Task<CatalogModelDetails?>> rates)
 {
     internal const int MaxRuns = 8;
+    internal const string AdvisorUsageSafeCode = "advisor_usage";
     internal const int MaxReports = 256;
     internal const int MaxFrames = 8192;
     private const int MaxReplayCharacters = 8 * 1024 * 1024;
@@ -38,7 +39,7 @@ internal sealed class ChatUsageReader(AgentApiClient agents, AgentSseClient even
 
     private async Task<ChatRunUsage> ReadRunAsync(GetAgentRunResponse run, bool contextOnly, CancellationToken ct)
     {
-        var references = new List<(string Id, long Sequence)>();
+        var references = new List<(string Id, long Sequence, bool Advisor)>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var sequences = new Dictionary<long, string>();
         var frames = 0; long characters = 0; long boundary = 0; long lastSequence = 0;
@@ -73,32 +74,42 @@ internal sealed class ChatUsageReader(AgentApiClient agents, AgentSseClient even
                 if (!contextOnly) throw Limit();
                 references.RemoveAt(0);
             }
-            references.Add((reference, envelope.Sequence));
+            references.Add((reference, envelope.Sequence, envelope.SafeSummary == AdvisorUsageSafeCode));
         }
         var reports = new List<ChatTokenUsage>();
         ChatTokenUsage? latest = null;
-        // Context is the latest request, so historical billing payloads and catalog prices are unnecessary.
-        var requestedReports = contextOnly ? references.Where(reference => reference.Sequence > boundary).TakeLast(1) : references;
+        // Context is the latest request of the run's own model; an advisor consultation (ADR 0047)
+        // is a separate request and is billed, never read as the run's context.
+        var contextReferences = references.Where(reference => !reference.Advisor);
+        var requestedReports = contextOnly ? contextReferences.Where(reference => reference.Sequence > boundary).TakeLast(1) : references;
         foreach (var reference in requestedReports)
         {
             var payload = await agents.GetPayloadAsync(run.RunId, reference.Id, ct).ConfigureAwait(false);
             if ((characters += payload.Length) > MaxReplayCharacters) throw Limit();
             var report = ChatTokenUsage.Parse(payload);
             reports.Add(report);
-            if (reference.Sequence > boundary) latest = report;
+            if (reference.Sequence > boundary && !reference.Advisor) latest = report;
         }
         decimal? cost = null;
         var models = reports.Select(report => report.Model ?? run.ProviderModel).Distinct(StringComparer.Ordinal).ToArray();
-        if (!contextOnly && reports.Count > 0 && models.Length == 1 && !string.IsNullOrWhiteSpace(models[0]) && !string.IsNullOrWhiteSpace(run.ProviderBackend))
+        if (!contextOnly && reports.Count > 0 && models.All(model => !string.IsNullOrWhiteSpace(model))
+            && !string.IsNullOrWhiteSpace(run.ProviderBackend))
         {
-            CatalogModelDetails? rate = null;
-            using var priceDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            priceDeadline.CancelAfter(TimeSpan.FromSeconds(2));
-            try { rate = await rates(run.ProviderBackend, models[0]!, priceDeadline.Token).ConfigureAwait(false); }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
-            catch (AgentApiException) { }
-            catch (HttpRequestException) { }
-            var prices = reports.Select(report => report.Price(rate)).ToArray();
+            // Each model is priced on its own rates. An advisor on another provider is looked up in
+            // the run's provider catalog, finds no rate, and the cost stays unknown rather than wrong.
+            var rateByModel = new Dictionary<string, CatalogModelDetails?>(StringComparer.Ordinal);
+            foreach (var model in models)
+            {
+                CatalogModelDetails? rate = null;
+                using var priceDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                priceDeadline.CancelAfter(TimeSpan.FromSeconds(2));
+                try { rate = await rates(run.ProviderBackend, model!, priceDeadline.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
+                catch (AgentApiException) { }
+                catch (HttpRequestException) { }
+                rateByModel[model!] = rate;
+            }
+            var prices = reports.Select(report => report.Price(rateByModel[report.Model ?? run.ProviderModel!])).ToArray();
             if (prices.All(price => price is not null)) cost = prices.Sum(price => price!.Value);
         }
         var invalidated = boundary > 0 && latest is null;

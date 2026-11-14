@@ -1118,16 +1118,20 @@ what a granted application does with the input.
 
 The `advisor` tool lets the main model ask a second model for guidance while it works
 ([ADR 0047](../adr/0047-advisor-consultation.md)). The user picks the advisor with `/advisor`
-in the terminal UI or the Advisor card under **Settings → Models & Providers**; any
+in the terminal UI or in the desktop composer, where `/advisor` opens the model picker to choose
+it and `/advisor off` turns it off; any
 configured provider works, including one different from the main model's. A new root run
 pins the choice as `_ru_advisor_v1`, with the effort saved for that model by `/reasoning`
 (or the model's default). With no advisor selected the run still sees the tool, so the user
 can name one in their request.
 
 When the model calls `advisor`, the Host builds a quoted transcript from the run's portable
-history (the system prompt, user messages, the agent's text, tool calls and their bounded
-results, and compaction summaries), sends it in one tool-less request, and returns the
-advice as the tool result. Provider-native blocks (reasoning, encrypted content, provider
+history (the agent's model, preset, tool purposes, instructions and runtime references, then
+user messages, the agent's text, tool calls and their bounded results, runtime snapshots and
+compaction summaries), sends it in one tool-less request, and returns the advice as the tool
+result. Ru's base agent prompt is the request's system prompt, so it is not quoted twice. Each
+consultation's tokens are recorded as a usage report under the advisor's model: `/status usage`
+bills them on that model's rates and never counts them as the run's context. Provider-native blocks (reasoning, encrypted content, provider
 search blocks) and images never cross; each omitted image leaves a placeholder line. The
 advisor's provider therefore receives the file contents, terminal and MCP output the run has
 read: selecting an advisor is consent to that for new runs.
@@ -1150,8 +1154,21 @@ retry is allowed. Named results:
 `advisor_context_too_large`, `advisor_model_user_request_required`,
 `advisor_effort_user_request_required`, `advisor_model_unavailable`,
 `advisor_model_ambiguous`, `advisor_catalog_unavailable` and `advisor_effort_unsupported`.
-A failed consultation never fails the run, and finishing after one is not a failed tool.
+A failed consultation never fails the run, and finishing after one is not a failed tool. Its
+hint ends with a content-free detail in parentheses (a stage and code, such as
+`prepare_failed:provider_session_missing`, or the estimated and maximum token counts), so the
+receipt explains the failure. A request the provider cannot be prepared for is
+`advisor_provider_failed`; only a request that is too large is `advisor_context_too_large`. The
+consultation carries the run's session, so providers that route by conversation (OpenCode)
+accept it.
 Advice is untrusted model output: it grants nothing and is not verification evidence.
+
+The model decides when to consult; Ru recommends once. When a root run whose user selected an
+advisor (one that resolved when the run was pinned) is about to finish, and the latest tool step
+was not an `advisor` call, the final reply is held once with an `advisor_recommended` note
+recommending a consultation. The model may call `advisor` or give its final reply again, which
+completes the run. The Host never consults on the model's behalf, and children, runs without
+tool work and runs with no advisor selected are never held.
 
 ## Hooks
 

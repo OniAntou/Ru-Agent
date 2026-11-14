@@ -65,7 +65,8 @@ public sealed partial class ChatModelPickerViewModel
                 definitions = [.. definitions, new(selected.Backend, selected.Backend, name, definitions.Count)];
             }
         }
-        var projection = ProviderModelPickerProjection.Create(catalogs.Values, EffectiveBackend, EffectiveModel, state.SearchText, definitions);
+        var (markedBackend, markedModel) = IsPickingAdvisor ? AdvisorMark(catalogs.Keys) : (EffectiveBackend, EffectiveModel);
+        var projection = ProviderModelPickerProjection.Create(catalogs.Values, markedBackend, markedModel, state.SearchText, definitions);
         if (projection.Groups.Count == 0 && string.IsNullOrWhiteSpace(state.SearchText) && _catalogRefreshes > 0)
             projection = projection with { EmptyStateText = "Loading models…" };
         PickerProjectionReady?.Invoke(projection);

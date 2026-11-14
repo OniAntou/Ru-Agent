@@ -754,10 +754,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         if (_catalog is not null) _catalog.StateChanged -= OnCatalogStateChanged;
         _catalog = null;
         _backend = null;
-        // A new Host lists its own models; requests to the old one are already ignored.
-        _advisorModelsFor = null;
-        _advisorModelsRequest++;
-        _advisorSaveRequest++;
     }
 
     public void Dispose()

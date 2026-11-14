@@ -54,11 +54,23 @@ public sealed partial class AgentRunCoordinator
                         promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText)
                     .ConfigureAwait(false);
             case StepDecisionKind.Complete:
+            {
+                // ADR 0047: with an advisor selected, the model is recommended once to consult it.
+                if (RecommendAdvisor(invocation, context) is { } recommendation)
+                {
+                    invocation.RetractAssistantText();
+                    return await _steps.HandleHoldStepAsync(
+                            run, modelStepId, step, droppedCount, recommendation,
+                            promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText)
+                        .ConfigureAwait(false);
+                }
+
                 return await _steps.HandleFinalStepAsync(
                         run, modelStepId, step, droppedCount,
                         promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText,
                         invocation.ProviderContinuation)
                     .ConfigureAwait(false);
+            }
             default:
                 throw new InvalidOperationException("unknown_step_decision");
         }

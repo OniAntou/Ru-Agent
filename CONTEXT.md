@@ -194,7 +194,7 @@ Implementation: [ADR 0046](docs/adr/0046-self-evolution-runs.md).
 _Avoid_: a new execution authority, self-updating binaries, a benchmark score as proof of improvement, automatic merge
 
 **Advisor**:
-A second provider/model the user selects with `/advisor` or the desktop Advisor card and a new root run pins as `_ru_advisor_v1` (or as unavailable, or as none selected). The user may instead name a model or effort in their request, which the main model relays. The main model calls the parameterless, Host-intercepted `advisor` tool when it chooses; the Host sends the run's quoted active context, without provider-native blocks or images, to that model in one tool-less request and returns the advice as an ordinary tool result. Advice is untrusted input and grants nothing; children never consult.
+A second provider/model the user selects with `/advisor` in the TUI or the desktop composer and a new root run pins as `_ru_advisor_v1` (or as unavailable, or as none selected). The user may instead name a model or effort in their request, which the main model relays. The main model calls the Host-intercepted `advisor` tool when it chooses, and the Host recommends a consultation once before a root run finishes, never making one itself; the Host sends the run's quoted active context, without provider-native blocks or images, to that model in one tool-less request and returns the advice as an ordinary tool result. Advice is untrusted input and grants nothing; children never consult.
 Implementation: [agent tools](docs/operations/agent-tools.md#advisor), [ADR 0047](docs/adr/0047-advisor-consultation.md).
 _Avoid_: a Broker tool, a fallback model, verification evidence, or an approval source
 

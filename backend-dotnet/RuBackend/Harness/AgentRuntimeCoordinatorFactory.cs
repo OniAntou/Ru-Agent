@@ -153,6 +153,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
 
         var storedRun = await _store.GetRunAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
         var providerWebSearchPinned = false;
+        var advisorSelected = false;
         if (_runModelMetadataResolver is not null)
         {
             var metadata = await _runModelMetadataResolver.ResolveAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
@@ -161,6 +162,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
                 ToolProfile = metadata.ToolProfile, ComputerUseEnabled = metadata.ComputerUse, AdvisorEnabled = metadata.Advisor,
             };
             providerWebSearchPinned = metadata.ProviderWebSearch;
+            advisorSelected = metadata.AdvisorSelected;
         }
         var subagentStore = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(_sqliteOptions, _payloadStore);
         var internalRun = storedRun is not null && await subagentStore.IsInternalSessionAsync(storedRun.SessionId, cancellationToken).ConfigureAwait(false);
@@ -230,7 +232,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             retainedStash: _retainedStash,
             internalRun: internalRun,
             familyBudget: _familyBudget,
-            subagentInbox: _subagentInbox);
+            subagentInbox: _subagentInbox,
+            recommendAdvisor: advisorSelected);
     }
 
     /// <summary>

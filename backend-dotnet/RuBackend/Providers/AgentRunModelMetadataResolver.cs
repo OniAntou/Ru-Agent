@@ -14,7 +14,8 @@ public sealed record AgentRunModelMetadata(
     bool ComputerUse = false,
     bool ProviderWebSearch = false,
     bool ImageInputAccepted = false,
-    bool Advisor = false);
+    bool Advisor = false,
+    bool AdvisorSelected = false);
 
 public interface IAgentRunModelMetadataResolver
 {
@@ -36,6 +37,7 @@ public sealed class AgentRunModelMetadataResolver(
             var modelLabel = selection.ModelLabel
                 ?? throw new ProviderCatalogException("provider_selection_invalid");
             AgentRunCallingModeCodec.RequireNative(selection.CallingMode);
+            var advisor = AdvisorPolicy.ReadPinned(selection);
             return new AgentRunModelMetadata(
                 modelLabel,
                 selection.Protocol,
@@ -48,7 +50,9 @@ public sealed class AgentRunModelMetadataResolver(
                 ProviderWebSearchPolicy.IsPinned(selection),
                 bootstrap.AcceptsImageInput,
                 // Any marker, even "none selected": the user may still name a model (ADR 0047).
-                AdvisorPolicy.ReadPinned(selection) is not null);
+                advisor is not null,
+                // Only a resolved selection is recommended; an unavailable one would just fail.
+                advisor?.Selection is not null);
         }
         catch (HarnessStoreException error)
         {

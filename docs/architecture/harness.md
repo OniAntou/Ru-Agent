@@ -781,9 +781,14 @@ After the refresh, for a step without tool calls:
 - R7 `completion_review`: one hold after source edits in a run where a declared check failed at least
   once, when no declared check is outstanding or awaiting verification, the source-edit hold was not issued and the latest list is not fully completed.
 - R8 `empty_reply`: a blank final reply gets up to three notes, then fails as `empty_model_reply`.
-- R9 `complete`: the reply is accepted.
+- R9 `complete`: the reply is accepted, unless R10 holds it first.
+- R10 `advisor_recommended` ([ADR 0047](../adr/0047-advisor-consultation.md)): one hold on a
+  reply R9 would accept, in a root run whose user selected a resolvable advisor, when the step
+  advertised `advisor` and the latest tool step was not an `advisor` call. The note recommends a
+  consultation; the model may consult or repeat its reply, which completes the run. The Host never
+  consults on the model's behalf.
 
-R5 to R7 are one-time advice and never fail a run. The per-kind caps are listed under
+R5 to R7 and R10 are one-time advice and never fail a run. The per-kind caps are listed under
 [Recovery Note](#recovery-note).
 
 ## Recovery Note
@@ -794,10 +799,10 @@ failing the run; the same model takes the next step with that feedback in
 context. Bounds are per kind — 3 `unverified_after_tool_failure` notes (shared by tool-failure
 and verification holds), 4 `model_repairable` notes, 3 `empty_model_reply` notes and 3 consecutive
 `model_output_truncated` notes, plus 3 `model_commentary_only` notes, one
-`unverified_source_edit` note, one `open_todos` note and one `completion_review`
-note — under a cap of
+`unverified_source_edit` note, one `open_todos` note, one `completion_review`
+note and one `advisor_recommended` note — under a cap of
 24 notes within the recovery window (the last 512 durable events, about fifty steps), measured over the recovery notes visible in the assembled
-context. The per-case bounds count the same window, except the three one-time nudges, which stay once per run; a long run that meets the same failure far apart gets the same bounded recovery each time. A note is persisted with the system role and is therefore never folded
+context. The per-case bounds count the same window, except the four one-time nudges, which stay once per run; a long run that meets the same failure far apart gets the same bounded recovery each time. A note is persisted with the system role and is therefore never folded
 away by compaction, so it keeps its event sequence and leaves the count only when the
 run has moved past the window. Every note is
 same-model bounded self-correction, never provider/model/tool substitution.

@@ -142,7 +142,6 @@ public sealed partial class SettingsViewModel
         foreach (var row in rows.OrderBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase))
             ConfiguredProviders.Add(row);
         HasNoConfiguredProviders = ConfiguredProviders.Count == 0 && !IsLoading && !HasProviderOverviewMessage;
-        RefreshAdvisor();
     }
 }
 

@@ -8,11 +8,12 @@ date: 2026-11-14
 ## Status
 
 Proposed. Scope chosen by the owner on 2026-11-14: the main model decides when to
-consult, the advisor works with every signed-in provider, and Ru adds no
-advisor-specific limit. Phases 2 and 3 are implemented: selection and pin in the
+consult, with one Host recommendation before finishing (decision 4), the advisor
+works with every signed-in provider, and Ru adds no advisor-specific limit. Phases 2 and 3 are implemented: selection and pin in the
 TUI and the desktop app, and the `advisor` tool with user-named model and effort.
-Usage reporting (phase 4) is not. The status stays proposed until a real
-provider run confirms the consultation end to end.
+Usage reporting (phase 4) is not. A live run on 2026-11-14 confirmed the
+consultation end to end (main model `longcat-2.5-free` and advisor
+`deepseek-v4.1-flash`, both on OpenCode Go); accepting this ADR is the owner's call.
 
 ## Context
 
@@ -42,8 +43,8 @@ Existing decisions this touches:
 
 ## Decision
 
-1. **The user selects the advisor; a run pins it.** `/advisor` in the TUI and the
-   Advisor card under Models & Providers in the desktop app save the Host settings
+1. **The user selects the advisor; a run pins it.** `/advisor` in the TUI and in
+   the desktop composer (which opens the model picker; `/advisor off` clears it) save the Host settings
    `advisor_backend` and `advisor_model` as a pair; two nulls clear them, and a half
    is rejected.
    The advisor may be on a different provider from the main model, and may be the
@@ -93,10 +94,24 @@ Existing decisions this touches:
    tool from any run with a child role, and a child call is denied with
    `advisor_subagent_denied`, mirroring `subagent_ask_user_denied`.
 
-4. **The model decides when to consult.** The tool description tells the model to
-   consult before committing to an approach, when stuck, and before declaring the
-   task done, and to weigh the advice rather than obey it. Ru does not inject calls,
-   force a call, or require one before completion.
+4. **The model decides when to consult; Ru recommends once before finishing.** The
+   tool description tells the model to consult before committing to an approach,
+   when stuck, and before declaring the task done, and to weigh the advice rather
+   than obey it. Ru never makes a consultation on the model's behalf and never
+   requires one before completion.
+
+   Amended by the owner on 2026-11-14 after live evidence that a weak executor
+   never consults unprompted: the Host recommends, it does not force. A final reply
+   that would complete a root run is held once (completion policy R10,
+   `advisor_recommended`) when the user selected an advisor that resolved at pin
+   time, the step advertised `advisor`, and the latest tool step was not an
+   `advisor` call (answered or failed). The note recommends consulting before
+   finishing and says plainly that repeating the final reply completes the run.
+   The hold is once per run, like the other one-time completion nudges; children,
+   runs without tool work and runs whose user selected no advisor are never held.
+   A first design in which the Host itself sent the proposed final reply to the
+   advisor and held it on a `REVISE` verdict was rejected by the owner the same
+   day because it forced the consultation.
 
 5. **The call completes inline, not as a pause.** Unlike `ask_user`, an advisor call
    does not park the run. Harness.Core hands the call to a Host service behind a new
@@ -240,6 +255,15 @@ Existing decisions this touches:
   instructions are quoted in the transcript, and the advisor role is set by the
   directive in the request text. A dedicated advisor system prompt would need
   the model runner to accept one and is a possible follow-up.
+- The transcript quotes everything the agent's system prompt told it except Ru's
+  base contract, which is already the advisor request's own system prompt: the
+  agent's model and preset, each tool's one-line purpose, the user, workspace
+  and plugin instructions and the runtime references. Runtime snapshots stay in
+  the transcript. The directive asks for prioritized, complete advice with no
+  length cap; accuracy comes before token savings (owner, 2026-11-14).
+- A consultation is recorded as a `model.usage_recorded` event with safe code
+  `advisor_usage` and the advisor's model name. Usage readers bill it on that
+  model's rates and never read it as the run's context fill.
 - A user-named model goes through the child-model resolver (ADR 0022), so the
   same evidence rule and catalog match apply, and its codes are mapped to the
   advisor's.
@@ -249,8 +273,15 @@ Existing decisions this touches:
 - `context-management.md` mentions shared recovery and model-call budgets. Ru
   adds no advisor budget (decision 8); whether a future run-level model-call
   budget should count consultations is left to that budget's own decision.
-- Advisor token usage is returned with each consultation but not yet recorded in
-  run usage or shown in `/status` (phase 4).
+- Live evidence, 2026-11-14: told nothing about the advisor, `longcat-2.5-free`
+  never called it, so "the model decides" alone gave a weak executor almost no
+  benefit. The one-time recommendation (decision 4, as amended) is the owner's
+  answer. A live run the same night (same models, unprompted pricing fix) held
+  the final reply once with `advisor_recommended` after the fix; the next main
+  model step then failed with `provider_rate_limited` on the free main model, so
+  whether a weak model follows the recommendation is still to be measured.
+- Whether the owner's target ordering holds (weak < weak + advisor < strong <
+  strong + advisor) is unmeasured; it needs a four-arm benchmark cohort.
 
 ## Implementation phases
 
@@ -259,7 +290,8 @@ Each phase is built, tested and committed on its own.
 1. This ADR and the glossary entry.
 2. The setting, the `_ru_advisor_v1` pin, `/advisor [off | <model> | <provider> <model>]`
    in the TUI (with the `--json` `interactive_required` refusal for the bare form)
-   and the desktop Advisor card. No tool yet. Implemented.
+   and the desktop selection (first a Settings card, moved to the composer's `/advisor`
+   command on 2026-11-14). No tool yet. Implemented.
 3. The tool definition and descriptor row, projection gating, Host interception,
    batch rule, transcript rendering, the advisor call service, receipts, named
    failures and restart handling, with allowed and denied tests. Implemented,

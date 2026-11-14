@@ -43,8 +43,10 @@ public sealed class ComposerSlashCommandsTests : IDisposable
     {
         Write(_workspace, "skills", "hijacked");
         Write(_workspace, "skill", "hijacked");
+        Write(_workspace, "advisor", "hijacked");
 
         Assert.Null(ComposerSlashCommands.Expand("/skills", _workspace, _home));
+        Assert.Null(ComposerSlashCommands.Expand("/advisor off", _workspace, _home));
         Assert.Null(ComposerSlashCommands.Expand("/skill reviewer check this", _workspace, _home));
         var skills = Assert.Single(ComposerSlashCommands.Suggest("/sk", _workspace, _home));
         Assert.True(skills.IsBuiltIn);
@@ -59,7 +61,7 @@ public sealed class ComposerSlashCommandsTests : IDisposable
         Write(_home, "explain", "body");
 
         var all = ComposerSlashCommands.Suggest("/", _workspace, _home);
-        Assert.Equal(["/review", "/explain", "/refactor", "/skills"], all.Select(row => row.Command));
+        Assert.Equal(["/review", "/explain", "/refactor", "/advisor", "/skills"], all.Select(row => row.Command));
         Assert.Equal(["/review", "/refactor"], ComposerSlashCommands.Suggest("/re", _workspace, _home).Select(row => row.Command));
         Assert.Empty(ComposerSlashCommands.Suggest("/review ", _workspace, _home));
         Assert.Empty(ComposerSlashCommands.Suggest("review", _workspace, _home));
@@ -109,7 +111,7 @@ public sealed class ComposerSlashCommandsTests : IDisposable
 
         var groups = ComposerSlashCommands.Group(ComposerSlashCommands.Suggest("/", _workspace, _home));
         Assert.Equal(["Workspace", "Personal", "Ru"], groups.Select(group => group.Label));
-        Assert.Equal(["/review", "/explain", "/skills"], groups.SelectMany(group => group).Select(row => row.Command));
+        Assert.Equal(["/review", "/explain", "/advisor", "/skills"], groups.SelectMany(group => group).Select(row => row.Command));
 
         Assert.Single(ComposerSlashCommands.Group(ComposerSlashCommands.Suggest("/sk", _workspace, _home)));
     }

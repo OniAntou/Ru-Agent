@@ -612,6 +612,8 @@ namespace RuApp.Views
                     return;
                 }
 
+                if (TryHandleAdvisorCommand(text, attachments.Count)) return;
+
                 if (IsContinueResumeCommand(text, attachments) && _agentController?.CanContinue == true)
                 {
                     // Typed "Continue" resumes a resumable run instead of

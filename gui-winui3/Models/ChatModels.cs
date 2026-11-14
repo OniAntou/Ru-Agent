@@ -30,6 +30,7 @@ namespace RuApp.Models
         private string _role = "user";
         private string _content = string.Empty;
         private DateTime _timestamp = DateTime.Now;
+        private DateTime? _completedAt;
         private bool _isStreaming = false;
         private bool _isError = false;
         private string? _actionLabel;
@@ -83,6 +84,8 @@ namespace RuApp.Models
                 if (SetProperty(ref _timestamp, value))
                 {
                     OnPropertyChanged(nameof(TimeLabel));
+                    OnPropertyChanged(nameof(Duration));
+                    OnPropertyChanged(nameof(ProcessHeader));
                 }
             }
         }
@@ -94,6 +97,17 @@ namespace RuApp.Models
             {
                 if (SetProperty(ref _isStreaming, value))
                 {
+                    if (value)
+                    {
+                        _completedAt = null;
+                    }
+                    else
+                    {
+                        _completedAt ??= DateTime.Now;
+                    }
+
+                    OnPropertyChanged(nameof(Duration));
+                    OnPropertyChanged(nameof(ProcessHeader));
                     OnPropertyChanged(nameof(ShowTypingDots));
                     OnPropertyChanged(nameof(ShowContent));
                     if (!value)
@@ -199,6 +213,9 @@ namespace RuApp.Models
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasAgentActivities));
                 OnPropertyChanged(nameof(ShowLegacyActivityFeed));
+                OnPropertyChanged(nameof(HasProcess));
+                OnPropertyChanged(nameof(ShowProcessHeader));
+                OnPropertyChanged(nameof(ProcessHeader));
                 AutoCollapseCompletedTurn();
             }
         }
@@ -255,6 +272,9 @@ namespace RuApp.Models
         {
             UpdateCompactSegments(e);
             OnPropertyChanged(nameof(HasSegments));
+            OnPropertyChanged(nameof(HasProcess));
+            OnPropertyChanged(nameof(ShowProcessHeader));
+            OnPropertyChanged(nameof(ProcessHeader));
             OnPropertyChanged(nameof(ShowLegacyActivityFeed));
             OnPropertyChanged(nameof(ShowLegacyText));
         }
@@ -359,6 +379,9 @@ namespace RuApp.Models
         {
             OnPropertyChanged(nameof(HasAgentActivities));
             OnPropertyChanged(nameof(ShowLegacyActivityFeed));
+            OnPropertyChanged(nameof(HasProcess));
+            OnPropertyChanged(nameof(ShowProcessHeader));
+            OnPropertyChanged(nameof(ProcessHeader));
             AutoCollapseCompletedTurn();
         }
 

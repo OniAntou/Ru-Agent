@@ -33,6 +33,42 @@ public partial class ChatMessageItem
 
     public bool ActivityDetailsCollapsed => ShowActivitySummary && !IsActivityDetailsExpanded;
 
+    /// <summary>Whether the turn has process rows to fold behind the header.</summary>
+    public bool HasProcess =>
+        HasAgentActivities || Segments?.Any(segment => segment is ActivitySegment) == true;
+
+    public bool ShowProcessHeader => ShowActivitySummary && HasProcess;
+
+    public TimeSpan? Duration =>
+        _completedAt is { } end && end >= Timestamp ? end - Timestamp : null;
+
+    /// <summary>DSH-style disclosure title: Worked for / Took, with a named failure state.</summary>
+    public string ProcessHeader
+    {
+        get
+        {
+            if (!ShowProcessHeader) return string.Empty;
+            if (IsStreaming) return "Working…";
+            var duration = Duration;
+            if (IsError)
+            {
+                return duration is { } failed ? $"Took {FormatDuration(failed)} · failed" : "Failed";
+            }
+
+            return duration is { } completed ? $"Worked for {FormatDuration(completed)}" : "Worked";
+        }
+    }
+
+    internal static string FormatDuration(TimeSpan duration)
+    {
+        duration = duration < TimeSpan.Zero ? TimeSpan.Zero : duration;
+        if (duration.TotalHours >= 1)
+            return $"{(int)duration.TotalHours}h {duration.Minutes}m";
+        if (duration.TotalMinutes >= 1)
+            return $"{(int)duration.TotalMinutes}m {duration.Seconds}s";
+        return $"{Math.Max(1, (int)Math.Round(duration.TotalSeconds))}s";
+    }
+
     /// <summary>
     /// Whether this turn has a compact activity summary. Compact mode shows one from
     /// the start; verbose mode gets one only after a finished turn is auto-collapsed,
@@ -72,6 +108,9 @@ public partial class ChatMessageItem
     {
         OnPropertyChanged(nameof(ActivityDetailsCollapsed));
         OnPropertyChanged(nameof(ShowActivitySummary));
+        OnPropertyChanged(nameof(HasProcess));
+        OnPropertyChanged(nameof(ShowProcessHeader));
+        OnPropertyChanged(nameof(ProcessHeader));
         OnPropertyChanged(nameof(DisplayedSegments));
         OnPropertyChanged(nameof(ShowLegacyActivityFeed));
         UpdateActivityGaps();

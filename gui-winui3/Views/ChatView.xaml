@@ -347,23 +347,29 @@
                 <StackPanel MaxWidth="{Binding ContentWidth, Source={StaticResource ConversationWidthState}, Mode=OneWay}"
                             HorizontalAlignment="Stretch"
                             Spacing="16">
-                    <controls:AgentActivitySummaryControl Message="{x:Bind}" />
-                    <ItemsControl AutomationProperties.AutomationId="AgentActivitySegments"
-                                  AutomationProperties.Name="Agent Activity Timeline"
-                                  ItemsSource="{x:Bind DisplayedSegments, Mode=OneWay}"
-                                  ItemTemplateSelector="{StaticResource AssistantSegmentSelector}"
-                                  Visibility="{x:Bind HasSegments, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <!--
-                          A plain StackPanel: the transcript ListView already virtualizes rows,
-                          and a virtualizing panel nested inside one waits for the outer
-                          viewport before it realizes its slices, so the row measures late.
-                        -->
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Vertical" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                    </ItemsControl>
+                    <controls:TurnProcessDisclosure
+                        HeaderText="{x:Bind ProcessHeader, Mode=OneWay}"
+                        HeaderVisible="{x:Bind ShowProcessHeader, Mode=OneWay}"
+                        IsExpanded="{x:Bind IsActivityDetailsExpanded, Mode=TwoWay}">
+                        <controls:TurnProcessDisclosure.BodyContent>
+                            <ItemsControl AutomationProperties.AutomationId="AgentActivitySegments"
+                                          AutomationProperties.Name="Agent Activity Timeline"
+                                          ItemsSource="{x:Bind DisplayedSegments, Mode=OneWay}"
+                                          ItemTemplateSelector="{StaticResource AssistantSegmentSelector}"
+                                          Visibility="{x:Bind HasSegments, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <!--
+                                  A plain StackPanel: the transcript ListView already virtualizes rows,
+                                  and a virtualizing panel nested inside one waits for the outer
+                                  viewport before it realizes its slices, so the row measures late.
+                                -->
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Vertical" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </controls:TurnProcessDisclosure.BodyContent>
+                    </controls:TurnProcessDisclosure>
                     <!--
                       Tool traffic is a timeline, not prose: a hairline down its left edge
                       and a small indent group it, so a reply's own words are not read as

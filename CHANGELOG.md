@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Turn process disclosure now uses a DSH-style header — `Working…`, `Worked for 1m 5s`, `Took … · failed`, or `Worked` for history without an end time — and animates between the compact answer and the full process. A closed turn collapses automatically; the header reopens it, with height and clip measured after the content binding updates.
+
 - **feat(gui)**: The transcript reading column can be widened or narrowed by dragging either edge grip, matching DSH's conversation-width controls. The width is centered, bounded by the viewport, applied to assistant, user and attachment rows together, and persisted in `%LOCALAPPDATA%\Ru\conversation-width.json`; a cancel or lost pointer capture restores the saved width.
 
 - **feat(activity)**: Advisor consultations get their own activity row. A new `advisor` activity kind replaces the bare status line the call used to produce: the desktop feed reads "Consulting the advisor" / "Consulted the advisor" with its duration and a people glyph, and the TUI prints it as a tool row ("consulted the advisor"). The row names only a model or effort the user's request asked for; the transcript and the advice never enter it.

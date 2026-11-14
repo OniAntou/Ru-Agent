@@ -588,6 +588,11 @@ use the same 640 px floor, viewport-minus-edge budget, 680–920 px default and
 JSON preference file. A drag previews the width without writing it; release
 commits, while cancel or lost capture restores the saved value. The user bubble,
 attachments and assistant column all bind to the same width.
+`TurnProcessDisclosure` replaces the plain activity summary for segmented turns:
+its header reads `Working…`, `Worked for 1m 5s`, `Took 1m 5s · failed` or
+`Worked`, and its body animates between the compact answer and the full process.
+A closed turn auto-collapses, a click reopens it, and lost content height is
+re-measured after the binding changes so the fold never flashes an empty frame.
 The task shelf is a tab tucked under the composer: the composer surface with a
 hairline on its open sides, rounded on top, its bottom edge hidden beneath the
 composer. Its header is the disclosure: collapsed it is one quiet line with the

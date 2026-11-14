@@ -381,7 +381,7 @@ public sealed class CompactAgentActivityTests
         var code = GuiSource.Text("Views", "SettingsView.ActivityStyle.cs");
         Assert.Contains("ActivityFeedPreferences.Compact = style == \"compact\"", code);
         var chat = GuiSource.Xml("Views", "ChatView.xaml");
-        Assert.Contains(chat.Descendants(), node => node.Name.LocalName == "AgentActivitySummaryControl");
+        Assert.Contains(chat.Descendants(), node => node.Name.LocalName == "TurnProcessDisclosure");
         Assert.Contains("{x:Bind DisplayedSegments, Mode=OneWay}", GuiSource.AttributeValues(chat, "ItemsSource"));
         Assert.Contains("AgentActivityTemplate", GuiSource.NamedElements(chat).Keys.Concat(
             chat.Descendants().Attributes(GuiSource.Xaml + "Key").Select(attribute => attribute.Value)));

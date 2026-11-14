@@ -12,7 +12,14 @@ namespace RuApp.Views;
 /// </summary>
 public sealed partial class ChatView
 {
-    private const double SlashRowHeight = 44;
+    // Fixed sizes the menu's XAML uses, so the first frame already sits above the text box;
+    // OnSlashCardSizeChanged then snaps the offset to the measured card.
+    private const double SlashRowHeight = 34;
+    private const double SlashGroupHeaderHeight = 26;
+    private const double SlashFooterHeight = 30;
+    private const double SlashCardChrome = 2 + 6 + 4; // border plus the list's top and bottom padding
+    private const double SlashGapAboveComposer = 8;
+    private const double SlashMinWidth = 360;
     private long _slashQuery;
 
     private static string? SlashUserHome()
@@ -56,10 +63,16 @@ public sealed partial class ChatView
                 return;
             }
 
-            SlashCommandList.ItemsSource = matches;
+            // Group labels only earn their space when more than one source answered.
+            var groups = ComposerSlashCommands.Group(matches);
+            SlashCommandList.ItemsSource = groups.Count > 1
+                ? new Microsoft.UI.Xaml.Data.CollectionViewSource { Source = groups, IsSourceGrouped = true }.View
+                : matches;
             SlashCommandList.SelectedIndex = 0;
-            // The popup takes no layout space; lift it so it sits just above the text box.
-            SlashCommandPopup.VerticalOffset = -(matches.Count * SlashRowHeight + 20);
+            // The card shares the composer card's edges, so the two read as one control.
+            SlashCommandCard.Width = Math.Max(InputBorder.ActualWidth, SlashMinWidth);
+            var headers = groups.Count > 1 ? groups.Count : 0;
+            PlaceSlashCard(matches.Count * SlashRowHeight + headers * SlashGroupHeaderHeight + SlashFooterHeight + SlashCardChrome);
             bool opening = !SlashCommandPopup.IsOpen;
             SlashCommandPopup.IsOpen = true;
             // Once per opening: typing more letters narrows a menu that is already there.
@@ -70,6 +83,24 @@ public sealed partial class ChatView
             CloseSlashMenu();
             GuiDiagnosticWriter.AppendTraceLine($"[Composer] Slash menu failed: {error.GetType().Name}");
         }
+    }
+
+    /// <summary>
+    /// The popup is laid out at the text box's slot, inside the composer card's border,
+    /// padding and any queued-turn or attachment rows above it. Measure that inset so the
+    /// menu lines up with the composer's left edge and floats a fixed gap above its top.
+    /// </summary>
+    private void PlaceSlashCard(double cardHeight)
+    {
+        var inset = ChatInputTextBox.TransformToVisual(InputBorder).TransformPoint(new Windows.Foundation.Point(0, 0));
+        SlashCommandPopup.HorizontalOffset = -inset.X;
+        SlashCommandPopup.VerticalOffset = -(inset.Y + cardHeight + SlashGapAboveComposer);
+    }
+
+    /// <summary>The measured card wins over the estimate (text scaling, a theme's padding).</summary>
+    private void OnSlashCardSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.NewSize.Height > 0) PlaceSlashCard(e.NewSize.Height);
     }
 
     private void OnSlashComposerLostFocus(object sender, RoutedEventArgs e) => CloseSlashMenu();

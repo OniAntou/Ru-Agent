@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **style(gui)**: The composer's slash menu is redesigned in the command palette's family. It spans the composer card's exact width and floats just above it, with the card's radius and raised shadow. Each command is one dense line: a glyph for template or app command, the name in Cascadia Code with the typed part drawn stronger, the description beside it, and an `args` badge when the template takes `$ARGUMENTS`. Commands are grouped Workspace, Personal and Ru (labels appear only when more than one source answers, in the same order the arrow keys move), and a footer shows the keys that drive the menu.
+
 - **fix(broker)**: Outside-workspace approvals grant less. An allow rule now opens an external path only when the rule carries a path pattern: a path-less allow such as `{tool_id:"read"}` (or an empty matcher) stays a workspace rule instead of opening every file on the machine, and the external call asks as before. A folder grant, session-scoped or remembered with "Remember folder", now covers only the approved path's own folder and never climbs to the nearest existing ancestor; a target whose folder does not exist yet is allowed once and remembers nothing (ADR 0018 amended). The desktop approval card says the grant is that folder only, for reads and writes.
 
 - **fix(host)**: An unauthenticated `OPTIONS` request reaches only an endpoint that answers `OPTIONS` alone (the bodiless catch-all); a route mapped for every method keeps the bearer requirement. `approval_authorization_failed` now tells the user to answer the new approval request rather than retry one the run has already moved past.

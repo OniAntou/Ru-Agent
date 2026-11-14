@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,7 +9,6 @@ using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
@@ -185,7 +184,7 @@ public sealed class AgentRunCreationService
 
         // Session-backed preset ladder: plan / standard / full_access. Empty
         // means standard; the request string validates only and never elevates
-        // a run — the stored session selection (see below) decides the preset.
+        // a run â€” the stored session selection (see below) decides the preset.
         AgentPermissionPreset preset = AgentPermissionPreset.Standard;
         string requestedPresetWire = string.Empty;
         if (!string.IsNullOrWhiteSpace(request.Preset)

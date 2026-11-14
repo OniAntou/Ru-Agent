@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging.Abstractions;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
@@ -85,7 +85,6 @@ public sealed class SubagentSchedulingTests
         var factoryDeps = SubagentCoordinatorFactoryTestDependencies.Create(storage, execution.Factory, agents);
         var factory = new AgentRuntimeCoordinatorFactory(model,
             storage.EventStore, storage.Options, storage.PayloadStore,
-            inspectionGate: new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
             workspaceCoordinatorStore: new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(storage.Options),
             settings: new Settings(), time: new SystemTimeProvider(),
             contextLimit: new StaticModelContextLimitProvider(100000), brokerGateways: execution.Factory,

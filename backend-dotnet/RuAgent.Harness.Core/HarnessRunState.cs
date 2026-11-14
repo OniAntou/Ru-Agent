@@ -8,6 +8,8 @@ public enum HarnessRunState
     Running = 3,
     WaitingApproval = 4,
     WaitingUser = 5,
+    // Retired. Startup recovery fails any row that still carries this value; the
+    // number stays reserved so older databases deserialize before that migration.
     ReconciliationRequired = 6,
     Completed = 7,
     Failed = 8,

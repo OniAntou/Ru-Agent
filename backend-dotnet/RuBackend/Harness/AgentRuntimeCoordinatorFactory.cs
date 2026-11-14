@@ -2,7 +2,6 @@ using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Policy;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Privacy;
@@ -45,7 +44,6 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly HarnessSqliteOptions _sqliteOptions;
     private readonly HarnessPayloadStore _payloadStore;
     private readonly SessionWorkStateStore? _workStates;
-    private readonly ReconciliationInspectionGate _inspectionGate;
     private readonly ITransientContentRedactor? _transientRedactor;
     private readonly HarnessLiveEventHub? _liveEvents;
     private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
@@ -71,7 +69,6 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         IHarnessEventStore store,
         HarnessSqliteOptions sqliteOptions,
         HarnessPayloadStore payloadStore,
-        ReconciliationInspectionGate inspectionGate,
         WorkspaceCoordinatorStore workspaceCoordinatorStore,
         Broker.IToolGatewayFactory brokerGateways,
         Subagents.SubagentRuntimeBinder subagentBinder,
@@ -102,7 +99,6 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _sqliteOptions = sqliteOptions ?? throw new ArgumentNullException(nameof(sqliteOptions));
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
         _workStates = workStates;
-        _inspectionGate = inspectionGate ?? throw new ArgumentNullException(nameof(inspectionGate));
         _transientRedactor = transientRedactor ?? throw new ArgumentNullException(nameof(transientRedactor));
         _liveEvents = liveEvents;
         _summaryPublisher = summaryPublisher;
@@ -226,7 +222,6 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             frames,
             _transientRedactor,
             _contextLimit,
-            _inspectionGate,
             activitySink,
             internalRun ? null : _replyPolicy,
             internalRun ? null : _replyEffects,

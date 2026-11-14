@@ -1,6 +1,5 @@
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
-using RuAgent.Harness.Core.Reconciliation;
 
 namespace RuAgent.Harness.Core;
 
@@ -15,20 +14,17 @@ internal sealed class AgentRunLifecycle
     private readonly IHarnessEventStore _store;
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
-    private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly IToolRunCancellation? _cancellation;
 
     public AgentRunLifecycle(
         IHarnessEventStore store,
         IIdGenerator ids,
         ITimeProvider time,
-        ReconciliationInspectionGate? inspectionGate,
         IToolRunCancellation? cancellation)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
         _time = time ?? throw new ArgumentNullException(nameof(time));
-        _inspectionGate = inspectionGate;
         _cancellation = cancellation;
     }
 
@@ -194,98 +190,6 @@ internal sealed class AgentRunLifecycle
     public Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken) =>
         _cancellation?.CancelRunAsync(runId, cancellationToken) ?? Task.CompletedTask;
 
-    /// <summary>
-    /// Applies the typed user reconciliation decision to a run in the
-    /// ReconciliationRequired state. Applied/NotApplied resolve directly; UnknownContinue
-    /// resumes evaluation while the mutation gate denies non-read-only calls until one
-    /// durable read-only inspection receipt is committed.
-    /// </summary>
-    public async Task<AgentRun> ApplyReconciliationAsync(
-        RunId runId,
-        ReconciliationCommand command,
-        CancellationToken cancellationToken)
-    {
-        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        if (run.State != HarnessRunState.ReconciliationRequired)
-        {
-            throw new InvalidOperationException("invalid_run_state");
-        }
-
-        var resolutionTarget = await ReadResolutionTargetAsync(runId, cancellationToken)
-            .ConfigureAwait(false);
-        var stateChange = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.ApplyReconciliation);
-        if (!stateChange.Accepted)
-        {
-            throw new InvalidOperationException(stateChange.ErrorCode);
-        }
-
-        if (command.Kind == ReconciliationCommandKind.UnknownContinue)
-        {
-            _inspectionGate?.Activate(runId);
-        }
-
-        var next = run.Advance(
-            stateChange.Next,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            1,
-            _time.UtcNow);
-        return await CommitAsync(
-                run,
-                next,
-                new[]
-                {
-                    new HarnessEventIntent(
-                        _ids.NewEventId(),
-                        HarnessEventKind.ReconciliationResolved,
-                        modelStepId: resolutionTarget?.ModelStepId,
-                        toolCallId: resolutionTarget?.ToolCallId,
-                        executionId: resolutionTarget?.ExecutionId,
-                        safeCode: command.ToWireToken()),
-                },
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private async Task<ReconciliationResolutionTarget?> ReadResolutionTargetAsync(
-        RunId runId,
-        CancellationToken cancellationToken)
-    {
-        ReconciliationResolutionTarget? target = null;
-        await foreach (var envelope in _store
-            .ReadEventsAsync(runId, 0, cancellationToken)
-            .ConfigureAwait(false))
-        {
-            var item = envelope.Event;
-            if (!string.Equals(item.Kind, "reconciliation.required", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (item.ModelStepId is null && item.ToolCallId is null && item.ExecutionId is null)
-            {
-                target = null;
-                continue;
-            }
-
-            if (item.ModelStepId is not { } modelStepId
-                || item.ToolCallId is not { } toolCallId
-                || item.ExecutionId is not { } executionId)
-            {
-                throw new InvalidOperationException("reconciliation_resolution_target_invalid");
-            }
-
-            target = new ReconciliationResolutionTarget(modelStepId, toolCallId, executionId);
-        }
-
-        return target;
-    }
-
     private async Task<AgentRun> RequireRunAsync(
         RunId runId,
         CancellationToken cancellationToken) =>
@@ -320,11 +224,6 @@ internal sealed class AgentRunLifecycle
             _ => throw new InvalidOperationException("unknown_commit_outcome"),
         };
     }
-
-    private sealed record ReconciliationResolutionTarget(
-        ModelStepId ModelStepId,
-        ToolCallId ToolCallId,
-        ExecutionId ExecutionId);
 
     private static string StateCode(HarnessRunState state) => state switch
     {

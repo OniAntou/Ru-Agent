@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -27,7 +27,6 @@ using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Prompting;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
@@ -231,7 +230,6 @@ internal static class PublicHostServiceRegistration
                     && await workspaces.IsTrustedAsync(stored.Identity, run.Preset, cancellationToken).ConfigureAwait(false);
             }));
         services.AddSingleton<IAgentRuntimeRootRegistry, AgentRuntimeRootRegistry>();
-        services.AddSingleton<RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate>();
         services.AddSingleton<IAgentRuntimeCoordinatorFactory, AgentRuntimeCoordinatorFactory>();
         // The Host's execution authority is in-process: one runtime per process,
         // composed lazily by the authority so a host that never executes a tool

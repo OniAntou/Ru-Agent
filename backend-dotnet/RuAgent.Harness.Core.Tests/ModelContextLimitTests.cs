@@ -1,8 +1,7 @@
-using System.Text;
+﻿using System.Text;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Tests.Fakes;
 using Xunit;
 using RuAgent.Protocol.Harness;

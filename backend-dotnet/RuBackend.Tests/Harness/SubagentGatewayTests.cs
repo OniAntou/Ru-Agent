@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Persistence;
@@ -79,7 +79,6 @@ public sealed partial class SubagentGatewayTests
             budgetTime: new FixedTestClock(BackendHarnessTestFixture.Timestamp.AddSeconds(2)));
         var factory = new AgentRuntimeCoordinatorFactory(model,
             storage.EventStore, storage.Options, storage.PayloadStore,
-            inspectionGate: new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
             workspaceCoordinatorStore: new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(storage.Options),
             settings: new StubSettings(), time: new SystemTimeProvider(),
             contextLimit: new StaticModelContextLimitProvider(100000), brokerGateways: execution.Factory,

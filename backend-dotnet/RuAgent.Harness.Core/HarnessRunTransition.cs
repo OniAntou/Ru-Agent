@@ -13,8 +13,6 @@ public enum HarnessRunTransition
     ResolveInput,
     ExhaustBudget,
     Continue,
-    RequireReconciliation,
-    ApplyReconciliation,
     BeginFinalHistory,
     AcknowledgeFinalHistory,
     Cancel,

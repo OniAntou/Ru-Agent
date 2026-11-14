@@ -1,5 +1,4 @@
-using System.Text;
-using RuAgent.Harness.Core.Reconciliation;
+﻿using System.Text;
 
 namespace RuAgent.Harness.Core.Context;
 
@@ -8,7 +7,7 @@ public sealed record ContinuationSummary(string Text, int SourceEntryCount);
 /// <summary>
 /// Deterministic bounded continuation summary for a context that hit a true provider
 /// limit. Newest entries are summarized first so the most recent results survive; no
-/// entry is ever silently dropped — the header always reports the full source count.
+/// entry is ever silently dropped â€” the header always reports the full source count.
 /// </summary>
 public static class ContinuationSummaryBuilder
 {

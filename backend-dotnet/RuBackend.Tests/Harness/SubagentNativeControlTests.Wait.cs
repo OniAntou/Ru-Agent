@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Policy;
@@ -21,7 +21,6 @@ public sealed partial class SubagentNativeControlTests
         var model = new WaitModel(agentId);
         var factoryDeps = SubagentCoordinatorFactoryTestDependencies.Create(storage, execution.Factory);
         var factory = new AgentRuntimeCoordinatorFactory(model, storage.EventStore, storage.Options, storage.PayloadStore,
-            inspectionGate: new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
             workspaceCoordinatorStore: new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(storage.Options),
             settings: new NativeSettings(), time: new SystemTimeProvider(), contextLimit: new StaticModelContextLimitProvider(100000),
             brokerGateways: execution.Factory, subagentBinder: factoryDeps.Binder,

@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Persistence;
@@ -34,7 +34,6 @@ public sealed class HarnessRecoveryStartupServiceTests
                 new HarnessPolicySnapshotService(fixture.Options, fixture.KeyStore, new SystemTimeProvider()),
                 roots,
                 new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
-                new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
                 CreateSubagentRecovery(fixture, roots));
 
             await service.StartAsync(CancellationToken.None);
@@ -87,7 +86,6 @@ public sealed class HarnessRecoveryStartupServiceTests
                 new HarnessPolicySnapshotService(fixture.Options, fixture.KeyStore, new SystemTimeProvider()),
                 roots,
                 new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
-                new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
                 CreateSubagentRecovery(fixture, roots));
 
             await service.StartAsync(CancellationToken.None);
@@ -113,7 +111,7 @@ public sealed class HarnessRecoveryStartupServiceTests
     /// <summary>
     /// A parked run that outlived the host must be resumable: after the sweep its root
     /// and policy snapshot are registered, and while it stays parked the drive loop must
-    /// leave it alone. Only once Continue moves it to Running may the loop drive it —
+    /// leave it alone. Only once Continue moves it to Running may the loop drive it â€”
     /// that is what the registered root is for.
     /// </summary>
     [Theory]
@@ -144,7 +142,6 @@ public sealed class HarnessRecoveryStartupServiceTests
                 new HarnessPolicySnapshotService(fixture.Options, fixture.KeyStore, new SystemTimeProvider()),
                 roots,
                 new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
-                new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
                 CreateSubagentRecovery(fixture, roots));
 
             await service.StartAsync(CancellationToken.None);
@@ -225,13 +222,9 @@ public sealed class HarnessRecoveryStartupServiceTests
 
     private static async Task CommitResumeAsync(BackendHarnessTestFixture fixture, AgentRun run)
     {
-        var transition = run.State == HarnessRunState.ReconciliationRequired
-            ? AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ApplyReconciliation)
-            : AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Continue);
+        var transition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Continue);
         Assert.True(transition.Accepted);
-        var eventKind = run.State == HarnessRunState.ReconciliationRequired
-            ? HarnessEventKind.ReconciliationResolved
-            : HarnessEventKind.ContinueRequested;
+        var eventKind = HarnessEventKind.ContinueRequested;
         var next = new AgentRun(
             run.RunId,
             run.SessionId,

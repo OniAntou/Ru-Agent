@@ -1,9 +1,8 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Policy;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Privacy;
@@ -290,7 +289,7 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
             {
                 // The trust challenge is past its lifetime, so no client can resolve it
                 // any more. The startup sweep used to be the only path that noticed, which
-                // left the run parked — and its session's active-run slot held — for as
+                // left the run parked â€” and its session's active-run slot held â€” for as
                 // long as the host stayed up.
                 await ReleaseExpiredWorkspaceTrustAsync(runIdValue, run, cancellationToken)
                     .ConfigureAwait(false);

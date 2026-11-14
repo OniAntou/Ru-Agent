@@ -1,6 +1,5 @@
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
 using RuAgent.Harness.Persistence.Workspace;
@@ -65,7 +64,6 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
         var workspaceCoordinator = new WorkspaceCoordinatorStore(fixture.Options);
         var journalProtector = new WorkspaceJournalProtector(fixture.KeyStore);
         var policySnapshotService = new HarnessPolicySnapshotService(fixture.Options, fixture.KeyStore, time);
-        var inspectionGate = new ReconciliationInspectionGate();
         var gateway = new UnavailableToolGatewayFactory();
         var guard = new AgentV1SubagentGuard(fixture.Options, fixture.PayloadStore);
         var workspaceTrust = new AgentWorkspaceTrustService(fixture.EventStore,
@@ -75,7 +73,7 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
             Path.Combine(fixture.RootPath, "sessions"),
             Path.Combine(fixture.RootPath, "activity.log")));
         var commands = new AgentCommandsService(fixture.EventStore, ids, time, roots,
-            inspectionGate, gateway, guard);
+            gateway, guard);
         var workspaceAdmission = new AgentRunWorkspaceAdmissionService(
             resolver, trust, workspaces, workspaceCoordinator, policySnapshotService, ids, time);
         var creation = new AgentRunCreationService(fixture.EventStore, sessions, permissionStore,
@@ -85,7 +83,7 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
         var subagentStore = new SqliteSubagentStore(fixture.Options, fixture.PayloadStore);
         var subagentCancellation = _subagentCancellation ?? new RuBackend.Harness.Subagents.SubagentCancellationCoordinator(
             fixture.EventStore, subagentStore, new NoChildrenCleanup(), time);
-        var lifecycle = new AgentRunLifecycleService(_lifecycleStore ?? fixture.EventStore, roots, inspectionGate,
+        var lifecycle = new AgentRunLifecycleService(_lifecycleStore ?? fixture.EventStore, roots,
             ids, time, guard, commands, subagentCancellation);
 
         return new AgentV1ServiceTestBundle(

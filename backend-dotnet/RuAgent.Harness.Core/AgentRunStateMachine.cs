@@ -59,10 +59,6 @@ public static class AgentRunStateMachine
                 Status(HarnessRunState.WaitingUser),
             (HarnessRunState.WaitingUser, HarnessRunTransition.Continue) =>
                 Status(HarnessRunState.Running),
-            (HarnessRunState.Running, HarnessRunTransition.RequireReconciliation) =>
-                Status(HarnessRunState.ReconciliationRequired),
-            (HarnessRunState.ReconciliationRequired, HarnessRunTransition.ApplyReconciliation) =>
-                Status(HarnessRunState.Running),
             (HarnessRunState.ReconciliationRequired, HarnessRunTransition.Fail) =>
                 Status(HarnessRunState.Failed),
             (HarnessRunState.Running, HarnessRunTransition.BeginFinalHistory) =>

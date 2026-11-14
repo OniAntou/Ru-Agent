@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Approval;
@@ -6,7 +6,6 @@ using RuAgent.Harness.Core.Completion;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
-using RuAgent.Harness.Core.Reconciliation;
 
 // Generic preparation payload handling: PreparedPayloads with kind RecoveryOpaque are kept byte-exact
 // and encrypted as InternalOnly/Opaque via HarnessPayloadStore without file-specific branches.
@@ -42,7 +41,6 @@ public sealed partial class AgentRunCoordinator
         TransientFrameBuffer frames,
         ITransientContentRedactor? transientRedactor = null,
         IModelContextLimitProvider? contextLimit = null,
-        ReconciliationInspectionGate? inspectionGate = null,
         IAgentActivitySink? activitySink = null,
         IAgentReplyPolicy? replyPolicy = null,
         IAgentReplyEffectSink? replyEffects = null,
@@ -84,7 +82,6 @@ public sealed partial class AgentRunCoordinator
             scheduler ?? throw new ArgumentNullException(nameof(scheduler)),
             frames,
             transientRedactor ?? PassthroughTransientContentRedactor.Instance,
-            inspectionGate,
             activitySink,
             _retainedStash,
             allowUserInput: !internalRun,
@@ -93,7 +90,6 @@ public sealed partial class AgentRunCoordinator
             _store,
             _ids,
             _time,
-            inspectionGate,
             gateway as IToolRunCancellation);
         _steps = new AgentRunStepHandlers(
             _store,
@@ -648,18 +644,6 @@ public sealed partial class AgentRunCoordinator
     public Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken) =>
         _lifecycle.CancelRunningToolsAsync(runId, cancellationToken);
 
-    /// <summary>
-    /// Applies the typed user reconciliation decision to a run in the
-    /// ReconciliationRequired state. Applied/NotApplied resolve directly; UnknownContinue
-    /// resumes evaluation while the mutation gate denies non-read-only calls until one
-    /// durable read-only inspection receipt is committed.
-    /// </summary>
-    public Task<AgentRun> ApplyReconciliationAsync(
-        RunId runId,
-        ReconciliationCommand command,
-        CancellationToken cancellationToken) =>
-        _lifecycle.ApplyReconciliationAsync(runId, command, cancellationToken);
-
     private async Task<AgentRun> CommitContextLimitAsync(
         AgentRun run,
         ModelStepId modelStepId,
@@ -756,7 +740,7 @@ public sealed partial class AgentRunCoordinator
 
         // A committed resolution wins over the wall-clock expiry: the user did
         // decide before (or around) the deadline, and the durable approval_resolved
-        // event is the authority. Expiry only applies while no resolution exists —
+        // event is the authority. Expiry only applies while no resolution exists â€”
         // otherwise approving late in the approval window could fail the run
         // after the decision was already recorded.
         if (resolved)

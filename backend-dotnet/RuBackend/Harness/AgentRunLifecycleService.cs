@@ -1,6 +1,5 @@
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Protocol.Harness;
 using RuBackend.Harness.Subagents;
 using static RuBackend.Harness.AgentV1Shared;
@@ -11,7 +10,6 @@ public sealed class AgentRunLifecycleService
 {
     private readonly IHarnessEventStore _store;
     private readonly IAgentRuntimeRootRegistry _runtimeRoots;
-    private readonly ReconciliationInspectionGate _inspectionGate;
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
     private readonly AgentV1SubagentGuard _subagentGuard;
@@ -19,13 +17,11 @@ public sealed class AgentRunLifecycleService
     private readonly SubagentCancellationCoordinator _subagents;
 
     public AgentRunLifecycleService(IHarnessEventStore store, IAgentRuntimeRootRegistry runtimeRoots,
-        ReconciliationInspectionGate inspectionGate, IIdGenerator ids, ITimeProvider time,
-        AgentV1SubagentGuard subagentGuard, AgentCommandsService commands,
-        SubagentCancellationCoordinator subagents)
+        IIdGenerator ids, ITimeProvider time, AgentV1SubagentGuard subagentGuard,
+        AgentCommandsService commands, SubagentCancellationCoordinator subagents)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _runtimeRoots = runtimeRoots ?? throw new ArgumentNullException(nameof(runtimeRoots));
-        _inspectionGate = inspectionGate ?? throw new ArgumentNullException(nameof(inspectionGate));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _subagentGuard = subagentGuard ?? throw new ArgumentNullException(nameof(subagentGuard));

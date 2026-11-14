@@ -5,7 +5,6 @@ using RuAgent.Protocol.Harness;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Prompting;
-using RuAgent.Harness.Core.Reconciliation;
 
 namespace RuAgent.Harness.Core;
 
@@ -29,7 +28,6 @@ internal sealed partial class AgentToolExecutionPipeline
     private readonly ToolCallScheduler _scheduler;
     private readonly TransientFrameBuffer _frames;
     private readonly ITransientContentRedactor _transientRedactor;
-    private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly IAgentActivitySink? _activitySink;
     private readonly IRetainedApprovalStash _retainedStash;
     private readonly bool _allowUserInput;
@@ -43,7 +41,6 @@ internal sealed partial class AgentToolExecutionPipeline
         ToolCallScheduler scheduler,
         TransientFrameBuffer frames,
         ITransientContentRedactor transientRedactor,
-        ReconciliationInspectionGate? inspectionGate = null,
         IAgentActivitySink? activitySink = null,
         IRetainedApprovalStash? retainedStash = null,
         bool allowUserInput = true,
@@ -57,7 +54,6 @@ internal sealed partial class AgentToolExecutionPipeline
         _scheduler = scheduler;
         _frames = frames;
         _transientRedactor = transientRedactor;
-        _inspectionGate = inspectionGate;
         _activitySink = activitySink;
         _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash(time);
         _allowUserInput = allowUserInput;
@@ -191,33 +187,6 @@ internal sealed partial class AgentToolExecutionPipeline
             return decision;
         }
 
-        if (_inspectionGate is { } gate
-            && gate.IsMutationDenied(run.RunId)
-            && decision.AccessKind != ToolAccessKind.ReadOnly)
-        {
-            var gatedExecution = CreateDeniedExecution(
-                proposal,
-                _ids.NewExecutionId(),
-                "inspection_required");
-            denied.Add(proposal.ModelOrder, gatedExecution);
-            AgentActivityProjector.PublishSafe(
-                _activitySink,
-                run.RunId,
-                AgentActivityProjector.ProjectTool(
-                    proposal,
-                    AgentActivityState.Failed,
-                    gatedExecution.Receipt));
-            AgentActivityProjector.PublishSafe(
-                _activitySink,
-                run.RunId,
-                AgentActivityProjector.ProjectStatus(
-                    AgentActivityProjector.ActivityId(proposal.ToolCallId.Value) + "_inspection",
-                    AgentActivityState.Waiting,
-                    "inspection_required",
-                    "Run paused for inspection after an ambiguous outcome. Make one read-only inspection, or send Continue to override and resume mutations."));
-            return ToolProposalDecision.Deny(decision.AccessKind, "inspection_required");
-        }
-
         if (decision.Decision != PolicyDecision.Allow
             || decision.CanonicalIntentToken is null)
         {
@@ -247,11 +216,6 @@ internal sealed partial class AgentToolExecutionPipeline
         List<(int ModelOrder, ToolExecutionReceipt Receipt)> orderedReceipts,
         CancellationToken cancellationToken)
     {
-        var reconciliationRequired = false;
-        // Whether the gate was armed when this batch started. Cleared by the first
-        // succeeded read-only call so a second read-only call in the same batch
-        // cannot record the inspection twice.
-        var gateArmedBeforeThisCall = _inspectionGate?.IsMutationDenied(run.RunId) == true;
         foreach (var call in prepared.OrderBy(call => call.ModelOrder))
         {
             var preparationPayloads = call.PreparationPayloads
@@ -416,44 +380,11 @@ internal sealed partial class AgentToolExecutionPipeline
             }
 
             var nextStatus = run.Status;
-            var ambiguousSideEffects = receipt.SideEffectsPossible
-                && receipt.Outcome is ToolExecutionOutcome.Cancelled or ToolExecutionOutcome.TimedOut;
-            if ((receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown
-                    && call.AccessKind != ToolAccessKind.ReadOnly)
-                || ambiguousSideEffects)
-            {
-                // Match the ordinary coding-agent model: the failed/unknown receipt
-                // is the model-visible result. Do not add a durable recovery note,
-                // an inspection gate or a Continue state. The next model step decides
-                // whether to retry, inspect or report the uncertainty.
-            }
-            else if (gateArmedBeforeThisCall
-                     && call.AccessKind == ToolAccessKind.ReadOnly
-                     && receipt.Outcome == ToolExecutionOutcome.Succeeded)
-            {
-                // A durable read-only inspection receipt is what clears the
-                // UnknownContinue mutation gate. The clearing is recorded in the
-                // stream as well: the gate has to be reconstructable after a host
-                // restart, and only a durable event can carry that.
-                _inspectionGate?.RecordInspection(run.RunId);
-                gateArmedBeforeThisCall = false;
-                events.Add(new HarnessEventIntent(
-                    _ids.NewEventId(),
-                    HarnessEventKind.ReconciliationResolved,
-                    modelStepId: modelStepId,
-                    toolCallId: receipt.ToolCallId,
-                    providerCallId: receipt.ProviderCallId,
-                    executionId: receipt.ExecutionId,
-                    safeCode: ReconciliationGateProjection.InspectionRecordedCode));
-            }
-
             if (proposals.TryGetValue(call.ModelOrder, out var proposal))
             {
-                var activityState = nextStatus.State == HarnessRunState.ReconciliationRequired
-                    ? AgentActivityState.Waiting
-                    : receipt.Outcome == ToolExecutionOutcome.Succeeded
-                        ? AgentActivityState.Completed
-                        : AgentActivityState.Failed;
+                var activityState = receipt.Outcome == ToolExecutionOutcome.Succeeded
+                    ? AgentActivityState.Completed
+                    : AgentActivityState.Failed;
                 AgentActivityProjector.PublishSafe(
                     _activitySink,
                     run.RunId,
@@ -466,22 +397,6 @@ internal sealed partial class AgentToolExecutionPipeline
                             : null));
 
                 PublishTodoIfPresent(run.RunId, proposal, receipt);
-            }
-
-            if (reconciliationRequired)
-            {
-                // The tool row above only says the call ended ambiguously; without a
-                // reason row the user sees a paused run with no stated cause and no
-                // stated way out. Mirror the inspection gate's reason activity so every
-                // parked-on-reconciliation state carries its own explanation.
-                AgentActivityProjector.PublishSafe(
-                    _activitySink,
-                    run.RunId,
-                    AgentActivityProjector.ProjectStatus(
-                        AgentActivityProjector.ActivityId(receipt.ToolCallId.Value) + "_reconciliation",
-                        AgentActivityState.Waiting,
-                        "reconciliation_required",
-                        "Run paused: the last action was interrupted or timed out, so its side effects are unverified. Send Continue to resume with a read-only inspection, or stop the run."));
             }
 
             var next = run.Advance(

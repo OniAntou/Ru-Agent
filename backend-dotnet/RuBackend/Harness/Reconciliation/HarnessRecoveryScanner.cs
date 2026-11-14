@@ -1,8 +1,7 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Persistence;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
 using RuAgent.Harness.Persistence.Workspace;
@@ -32,7 +31,7 @@ public sealed record RecoverySweepResult(
 /// durable event stream against dispatch boundaries. A crash before any dispatch fails
 /// the run safely with no effects; an incomplete read-only execution fails safely; an
 /// incomplete side-effecting execution moves the run to ReconciliationRequired. No
-/// startup path ever re-issues an old mutation execution id — ambiguous outcomes are
+/// startup path ever re-issues an old mutation execution id Ã¢â‚¬â€ ambiguous outcomes are
 /// only ever resolved through the explicit reconcile endpoint.
 /// </summary>
 public sealed class HarnessRecoveryScanner(
@@ -468,7 +467,6 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
     private readonly HarnessPolicySnapshotService _policySnapshots;
     private readonly IAgentRuntimeRootRegistry _runtimeRoots;
     private readonly WorkspaceCoordinatorStore _workspaceCoordinatorStore;
-    private readonly ReconciliationInspectionGate _inspectionGate;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _registeredBySweep = new(StringComparer.Ordinal);
 
     public HarnessRecoveryStartupService(
@@ -480,7 +478,6 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
         HarnessPolicySnapshotService policySnapshots,
         IAgentRuntimeRootRegistry runtimeRoots,
         WorkspaceCoordinatorStore workspaceCoordinatorStore,
-        ReconciliationInspectionGate inspectionGate,
         Subagents.SubagentRecoveryCoordinator subagentRecovery)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -491,7 +488,6 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
         _policySnapshots = policySnapshots ?? throw new ArgumentNullException(nameof(policySnapshots));
         _runtimeRoots = runtimeRoots ?? throw new ArgumentNullException(nameof(runtimeRoots));
         _workspaceCoordinatorStore = workspaceCoordinatorStore ?? throw new ArgumentNullException(nameof(workspaceCoordinatorStore));
-        _inspectionGate = inspectionGate ?? throw new ArgumentNullException(nameof(inspectionGate));
         _subagentRecovery = subagentRecovery ?? throw new ArgumentNullException(nameof(subagentRecovery));
     }
 
@@ -557,11 +553,9 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
                 .ToArray();
             var (ordinary, children) = await PartitionSubagentRunsAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
             var scanned = await ScanRunsStageAsync(ordinary, stoppingToken).ConfigureAwait(false);
-            await RearmInspectionGatesAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
             var reconciled = await ReconcileMembershipsStageAsync(stoppingToken).ConfigureAwait(false);
             await RehydrateRuntimeRootsAsync(ordinary, stoppingToken).ConfigureAwait(false);
             var childrenRecovered = await RecoverSubagentsStageAsync(children, stoppingToken).ConfigureAwait(false);
-            if (children.Count != 0) await RearmInspectionGatesAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
             return scanned && reconciled && childrenRecovered;
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -609,70 +603,6 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
         }
     }
 
-    /// <summary>
-    /// Re-arms the mutation gate for every non-terminal run whose durable history
-    /// still says its mutations are gated. The gate is process-local, so without
-    /// this a host restart silently released a run the user had put under
-    /// inspection and let mutations through again.
-    /// </summary>
-    private async Task RearmInspectionGatesAsync(
-        IReadOnlyList<RunId> pendingRunIds,
-        CancellationToken stoppingToken)
-    {
-        if (pendingRunIds.Count == 0)
-        {
-            return;
-        }
-
-        var armed = new List<RunId>();
-        foreach (var runId in pendingRunIds)
-        {
-            try
-            {
-                var events = new List<RuAgent.Harness.Core.HarnessEvent>();
-                await foreach (var envelope in _store.ReadEventsAsync(runId, 0, stoppingToken).ConfigureAwait(false))
-                {
-                    events.Add(envelope.Event);
-                }
-
-                if (RuAgent.Harness.Core.Reconciliation.ReconciliationGateProjection
-                    .IsMutationDenied(events))
-                {
-                    armed.Add(runId);
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception error)
-            {
-                // An unreadable run must not abort re-arming the others. Fail closed:
-                // if the history cannot be read, keep the gate on rather than let a
-                // possibly-gated run mutate.
-                _logger.LogWarning(
-                    error,
-                    "could not rebuild the inspection gate for run {RunId}; keeping it armed",
-                    runId.Value);
-                armed.Add(runId);
-            }
-        }
-
-        if (armed.Count == 0)
-        {
-            return;
-        }
-
-        _inspectionGate.Seed(armed);
-        _logger.LogWarning(
-            "re-armed the mutation inspection gate for {Count} run(s) after restart",
-            armed.Count);
-    }
-
-    /// <summary>
-    /// Whether this process registered the run for driving other than through this
-    /// sweep: run creation and subagent scheduling register a run before it can run.
-    /// </summary>
     private bool IsLiveInThisProcess(RunId runId) =>
         _runtimeRoots.TryGetRoot(runId, out _) && !_registeredBySweep.ContainsKey(runId.Value);
 

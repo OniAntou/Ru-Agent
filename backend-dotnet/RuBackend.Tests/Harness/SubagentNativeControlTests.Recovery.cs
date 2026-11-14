@@ -3,7 +3,6 @@ using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Subagents;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Subagents;
@@ -32,11 +31,9 @@ public sealed partial class SubagentNativeControlTests
             : "CREATE TRIGGER fixture_fail_apply BEFORE UPDATE OF receipted ON agent_subagent_apply_files BEGIN SELECT RAISE(FAIL,'fixture_receipt_failure'); END";
         await failpoint.ExecuteNonQueryAsync();
         var journal = new SqliteSubagentApplyJournal(storage.Options, new WorkspaceJournalProtector(storage.KeyStore));
-        var gate = new ReconciliationInspectionGate();
         var model = new ApplyRecoveryModel(agent.AgentId);
         var factoryDeps = SubagentCoordinatorFactoryTestDependencies.Create(storage, execution.Factory);
         var coordinator = await new AgentRuntimeCoordinatorFactory(model, storage.EventStore, storage.Options, storage.PayloadStore,
-                inspectionGate: gate,
                 workspaceCoordinatorStore: new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(storage.Options),
                 settings: new NativeSettings(), time: new SystemTimeProvider(),
                 contextLimit: new StaticModelContextLimitProvider(100000), brokerGateways: execution.Factory,

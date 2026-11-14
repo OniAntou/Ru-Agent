@@ -3,7 +3,6 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Tests.Fakes;
 using Xunit;
 using RuAgent.Protocol.Harness;
@@ -397,28 +396,6 @@ public sealed class AgentActivityLifecycleTests
             AssistantFinishReason.ToolCalls,
             16);
 
-    [Fact]
-    public async Task Inspection_gate_deny_publishes_waiting_reason_activity()
-    {
-        var model = new FakeModelStepRunner();
-        model.Enqueue(MutationToolStep());
-        var gateway = new FakeToolGateway(ToolAccessKind.Mutation);
-        var store = new InMemoryHarnessEventStore();
-        store.Seed(Run());
-        var sink = new RecordingSink();
-        var gate = new ReconciliationInspectionGate();
-        gate.Activate(RunId());
-        var coordinator = Coordinator(model, gateway, store, sink, inspectionGate: gate);
-
-        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
-
-        var reason = Assert.Single(
-            sink.Items,
-            item => item.Activity.Kind == AgentActivityKind.Status
-                && item.Activity.State == AgentActivityState.Waiting);
-        Assert.Equal("inspection_required", reason.Activity.SafeCode);
-        Assert.Contains("Continue", reason.Activity.Detail, StringComparison.Ordinal);
-    }
 
     [Fact]
     public async Task Unknown_side_effecting_tool_continues_and_records_the_inspection_note()
@@ -452,7 +429,6 @@ public sealed class AgentActivityLifecycleTests
         FakeToolGateway gateway,
         InMemoryHarnessEventStore store,
         IAgentActivitySink sink,
-        ReconciliationInspectionGate? inspectionGate = null,
         TransientFrameBuffer? frames = null) =>
         new(
             model,
@@ -463,7 +439,6 @@ public sealed class AgentActivityLifecycleTests
             new IncrementingTimeProvider(Epoch),
             new ToolCallScheduler(),
             frames ?? new TransientFrameBuffer(32),
-            inspectionGate: inspectionGate,
             activitySink: sink,
             promptContextProvider: new FakeSystemPromptContextProvider());
 

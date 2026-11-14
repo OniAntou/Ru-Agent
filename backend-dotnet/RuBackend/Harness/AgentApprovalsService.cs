@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
@@ -6,7 +6,6 @@ using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
@@ -88,8 +87,8 @@ public sealed class AgentApprovalsService
             return BoundedError(400, "invalid_approval_id", "approval_id invalid.");
         }
 
-        // Parse command. Pi-style UX: exactly 3 commands — allow_once,
-        // allow_session_directory (external folders only), deny — plus
+        // Parse command. Pi-style UX: exactly 3 commands â€” allow_once,
+        // allow_session_directory (external folders only), deny â€” plus
         // allow_always, which authorizes once and remembers the exact intent
         // as a project-scope allow rule (Claude-style "yes, and remember").
         // run/project/global are rejected outright below. Any allow also

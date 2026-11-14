@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging.Abstractions;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
@@ -99,7 +99,6 @@ public sealed class SubagentRecoveryTests
                 new RuBackend.Harness.Policy.HarnessPolicySnapshotService(fixture.Options, fixture.KeyStore, new SystemTimeProvider()),
                 roots,
                 new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
-                new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
                 subagentRecovery: recovery);
             await startup.StartAsync(default);
             try

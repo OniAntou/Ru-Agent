@@ -49,7 +49,6 @@ public sealed partial class SubagentCancellationTests
             await services.Inputs.HandleInputAsync(child.RunId.Value, "input_fixture", null, default),
             await services.Commands.CompactAsync(child.RunId.Value, null, default),
             await services.Commands.DispatchCommandAsync(child.RunId.Value, null, default),
-            await services.Commands.ReconcileAsync(child.RunId.Value, null, null, default),
             await services.WorkspaceTrust.TrustAsync(child.RunId.Value, null!, default) })
         {
             Assert.Equal(409, blocked.StatusCode);

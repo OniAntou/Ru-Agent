@@ -10,7 +10,6 @@ using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
-using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
@@ -30,256 +29,27 @@ namespace RuBackend.Harness;
 
 public sealed partial class AgentCommandsService
 {
-    private static readonly ReconciliationCommand UnknownContinueCommand =
-        new(ReconciliationCommandKind.UnknownContinue);
     private readonly IHarnessEventStore _store;
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
     private readonly IAgentRuntimeRootRegistry _runtimeRoots;
-    private readonly ReconciliationInspectionGate _inspectionGate;
     private readonly Broker.IToolGatewayFactory _brokerGateways;
     private readonly AgentV1SubagentGuard _subagentGuard;
 
     public Func<bool> PythonAvailable { get; set; } = static () => PythonAvailability.IsAvailable;
 
     public AgentCommandsService(IHarnessEventStore store, IIdGenerator ids, ITimeProvider time,
-        IAgentRuntimeRootRegistry runtimeRoots,
-        ReconciliationInspectionGate inspectionGate, Broker.IToolGatewayFactory brokerGateways,
+        IAgentRuntimeRootRegistry runtimeRoots, Broker.IToolGatewayFactory brokerGateways,
         AgentV1SubagentGuard subagentGuard)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _runtimeRoots = runtimeRoots ?? throw new ArgumentNullException(nameof(runtimeRoots));
-        _inspectionGate = inspectionGate ?? throw new ArgumentNullException(nameof(inspectionGate));
         _brokerGateways = brokerGateways ?? throw new ArgumentNullException(nameof(brokerGateways));
         _subagentGuard = subagentGuard ?? throw new ArgumentNullException(nameof(subagentGuard));
     }
 
-    internal async Task<AgentServiceResult> ContinueReconciliationAsync(
-        AgentRun run,
-        CancellationToken cancellationToken)
-    {
-        var reconciliation = await ReadReconciliationContextAsync(run.RunId, cancellationToken)
-            .ConfigureAwait(false);
-        if (reconciliation.IsMalformed)
-        {
-            return BoundedError(409, "reconciliation_target_invalid", "Reconciliation target is invalid.");
-        }
-
-        return await ApplyReconciliationAsync(
-                run,
-                UnknownContinueCommand,
-                reconciliation.IntentCode,
-                reconciliation.Target,
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Applies the typed user reconciliation decision. The snapshot hash the client
-    /// presents must equal the hash of the durable reconciliation request, proving the
-    /// caller decided on that request; anything else fails closed with reconcile_stale
-    /// and leaves the run untouched. It does not describe the workspace files.
-    /// </summary>
-    public async Task<AgentServiceResult> ReconcileAsync(
-        string runIdRaw,
-        string? outcome,
-        string? snapshotHash,
-        CancellationToken cancellationToken)
-    {
-        if (!IsRunId(runIdRaw))
-        {
-            return BoundedError(400, "invalid_run_id", "run_id invalid.");
-        }
-
-        if (await _subagentGuard.IsInternalRunAsync(new RunId(runIdRaw), cancellationToken).ConfigureAwait(false))
-            return BoundedError(409, "subagent_read_only", "Subagents are controlled by the main agent. Send your request to the parent.");
-
-        if (!ReconciliationCommand.TryParse(outcome, out var command))
-        {
-            return BoundedError(400, "invalid_outcome", "outcome must be applied, not_applied, or unknown_continue.");
-        }
-
-        if (string.IsNullOrWhiteSpace(snapshotHash)
-            || snapshotHash.Length != 64
-            || !snapshotHash.All(char.IsAsciiHexDigit))
-        {
-            return BoundedError(400, "invalid_snapshot_hash", "snapshot_hash must be a sha-256 hex digest.");
-        }
-
-        // Hex digests are case-insensitive; the host computes and stores lowercase,
-        // so a client echoing uppercase must not be reported as stale.
-        var normalizedSnapshotHash = snapshotHash.ToLowerInvariant();
-
-        var runId = new RunId(runIdRaw);
-        var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        if (run is null)
-        {
-            return BoundedError(404, "run_not_found", "Run not found.");
-        }
-
-        if (run.State != HarnessRunState.ReconciliationRequired)
-        {
-            return BoundedError(409, "invalid_run_state", "Run is not awaiting reconciliation.");
-        }
-
-        var reconciliation = await ReadReconciliationContextAsync(runId, cancellationToken)
-            .ConfigureAwait(false);
-        if (reconciliation.IsMalformed)
-        {
-            return BoundedError(409, "reconciliation_target_invalid", "Reconciliation target is invalid.");
-        }
-
-        var intentCode = reconciliation.IntentCode;
-        var freshHash = ComputeReconciliationHash(runId, reconciliation);
-        if (freshHash is null || !string.Equals(freshHash, normalizedSnapshotHash, StringComparison.Ordinal))
-        {
-            return new AgentServiceResult(409, new
-            {
-                error_code = "reconcile_stale",
-                message = "Reconciliation request changed; re-read before deciding.",
-                snapshot_hash = freshHash,
-                intent_code = intentCode,
-            });
-        }
-
-        return await ApplyReconciliationAsync(
-                run,
-                command,
-                intentCode,
-                reconciliation.Target,
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Commits one accepted reconciliation decision. Shared by the strict
-    /// reconcile endpoint (which first proves the caller saw the current
-    /// reconciliation request) and by Continue on a parked run, where the user's
-    /// explicit continue is itself the decision and no snapshot proof is
-    /// required.
-    /// </summary>
-    private async Task<AgentServiceResult> ApplyReconciliationAsync(
-        AgentRun run,
-        ReconciliationCommand command,
-        string? intentCode,
-        ReconciliationResolutionTarget? target,
-        CancellationToken cancellationToken)
-    {
-        var runId = run.RunId;
-        var runIdRaw = runId.Value;
-        var transition = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.ApplyReconciliation);
-        if (!transition.Accepted)
-        {
-            return BoundedError(409, transition.ErrorCode ?? "invalid_transition", "Reconcile rejected.");
-        }
-
-        if (command.Kind == ReconciliationCommandKind.UnknownContinue)
-        {
-            _inspectionGate.Activate(runId);
-        }
-
-        var now = _time.UtcNow;
-        var nextRun = AdvanceRun(run, transition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, now);
-        var evt = new HarnessEventIntent(
-            _ids.NewEventId(),
-            HarnessEventKind.ReconciliationResolved,
-            modelStepId: target?.ModelStepId,
-            toolCallId: target?.ToolCallId,
-            executionId: target?.ExecutionId,
-            safeCode: command.ToWireToken());
-        var commit = new HarnessCommit(runId, run.Version, nextRun, new[] { evt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
-        var result = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
-        if (result.Outcome != HarnessCommitOutcome.Committed)
-        {
-            return BoundedError(409, "commit_conflict", "Commit conflict.");
-        }
-
-        return new AgentServiceResult(200, new
-        {
-            run_id = runIdRaw,
-            state = MapRunState(result.Run!.Status),
-            resolution = command.ToWireToken(),
-            intent_code = intentCode,
-        });
-    }
-
-    private async Task<ReconciliationContext> ReadReconciliationContextAsync(
-        RunId runId,
-        CancellationToken cancellationToken)
-    {
-        string? intentCode = null;
-        long? requestSequence = null;
-        ReconciliationResolutionTarget? target = null;
-        var isMalformed = false;
-        await foreach (var envelope in _store
-            .ReadEventsAsync(runId, 0, cancellationToken)
-            .ConfigureAwait(false))
-        {
-            var item = envelope.Event;
-            if (!string.Equals(item.Kind, "reconciliation.required", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            intentCode = item.SafeCode ?? intentCode;
-            requestSequence = item.Sequence;
-            if (item.ModelStepId is null && item.ToolCallId is null && item.ExecutionId is null)
-            {
-                target = null;
-                continue;
-            }
-
-            if (item.ModelStepId is not { } modelStepId
-                || item.ToolCallId is not { } toolCallId
-                || item.ExecutionId is not { } executionId)
-            {
-                isMalformed = true;
-                continue;
-            }
-
-            target = new ReconciliationResolutionTarget(modelStepId, toolCallId, executionId);
-        }
-
-        return new ReconciliationContext(intentCode, requestSequence, target, isMalformed);
-    }
-
-    /// <summary>
-    /// Hashes the durable reconciliation request, so the proof survives a host restart
-    /// and works for any workspace. Null without a request, which fails closed.
-    /// </summary>
-    private static string? ComputeReconciliationHash(RunId runId, ReconciliationContext reconciliation)
-    {
-        if (reconciliation.RequestSequence is not { } requestSequence)
-        {
-            return null;
-        }
-
-        var canonical = JsonSerializer.Serialize(new
-        {
-            run_id = runId.Value,
-            request_sequence = requestSequence,
-            intent_code = reconciliation.IntentCode,
-            model_step_id = reconciliation.Target?.ModelStepId.Value,
-            tool_call_id = reconciliation.Target?.ToolCallId.Value,
-            execution_id = reconciliation.Target?.ExecutionId.Value,
-        });
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
-    }
-
-    private sealed record ReconciliationResolutionTarget(
-        ModelStepId ModelStepId,
-        ToolCallId ToolCallId,
-        ExecutionId ExecutionId);
-
-    private sealed record ReconciliationContext(
-        string? IntentCode,
-        long? RequestSequence,
-        ReconciliationResolutionTarget? Target,
-        bool IsMalformed);
 
     public async Task<AgentServiceResult> CompactAsync(
         string runIdRaw,

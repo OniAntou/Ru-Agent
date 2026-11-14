@@ -707,6 +707,8 @@ public sealed partial class AgentActivityProjectorTests
     [InlineData("skill", "{\"name\":\"invoice-check\"}", AgentActivityKind.Skill, "Skill", "invoice-check")]
     [InlineData("skill", "{\"query\":\"pdf\"}", AgentActivityKind.Skill, "Skill", "search: pdf")]
     [InlineData("run_code", "{\"code\":\"return 1\"}", AgentActivityKind.Program, "Program", null)]
+    [InlineData("advisor", "{}", AgentActivityKind.Advisor, "Advisor", null)]
+    [InlineData("advisor", "{\"model\":\"claude-opus-5-5\",\"effort\":\"high\"}", AgentActivityKind.Advisor, "Advisor", "claude-opus-5-5 · high effort")]
     public void Tools_that_used_to_fall_to_a_status_line_get_their_own_kind(
         string toolId, string arguments, AgentActivityKind kind, string display, string? detail)
     {

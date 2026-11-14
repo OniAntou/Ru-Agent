@@ -262,6 +262,8 @@ public static class ActivityRowGlyphs
         AgentActivityKind.Computer => "\uE7F4",
         AgentActivityKind.Skill => "\uE945",
         AgentActivityKind.Program => "\uE943",
+        // Segoe Fluent "People": a second model's view on the work.
+        AgentActivityKind.Advisor => "\uE716",
         AgentActivityKind.Todo => "\uE9D5",
         AgentActivityKind.Compaction => "\uE73F",
         AgentActivityKind.Retry => "\uE72C",

@@ -17,6 +17,7 @@ public sealed class TuiToolVerbsTests
     [InlineData("Terminal", "running", "ran")]
     [InlineData("Bash", "running", "ran")]
     [InlineData("Skill", "loading", "loaded")]
+    [InlineData("Advisor", "consulting the advisor", "consulted the advisor")]
     public void NamedToolsBecomeVerbsAnOperatorWouldSay(string display, string present, string past)
     {
         Assert.Equal(present, TuiToolVerbs.Present(AgentActivityKind.Analyze, display));

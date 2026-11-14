@@ -54,6 +54,7 @@ public static class TuiToolVerbs
         ["web_fetch"] = ("fetching", "fetched"),
         ["fetch"] = ("fetching", "fetched"),
         ["skill"] = ("loading", "loaded"),
+        ["advisor"] = ("consulting the advisor", "consulted the advisor"),
         ["help"] = ("checking the docs", "checked the docs"),
         ["analyze"] = ("analyzing", "analyzed"),
         ["analyse"] = ("analyzing", "analyzed"),
@@ -76,6 +77,7 @@ public static class TuiToolVerbs
         [AgentActivityKind.Computer] = ("using the computer", "used the computer"),
         [AgentActivityKind.Skill] = ("loading", "loaded"),
         [AgentActivityKind.Program] = ("running a program", "ran a program"),
+        [AgentActivityKind.Advisor] = ("consulting the advisor", "consulted the advisor"),
     };
 
     /// <summary>Present-tense verb for the live row, e.g. <c>reading app.cs</c>.</summary>

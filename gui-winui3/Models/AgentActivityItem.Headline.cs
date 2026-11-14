@@ -72,6 +72,7 @@ public sealed partial class AgentActivityItem
                     ? (live ? "Searching skills" : "Searched skills")
                     : (live ? "Loading skill" : "Loaded skill"),
                 AgentActivityKind.Program => live ? "Running a program" : "Ran a program",
+                AgentActivityKind.Advisor => live ? "Consulting the advisor" : "Consulted the advisor",
                 AgentActivityKind.Todo => live ? "Updating the plan" : "Updated the plan",
                 AgentActivityKind.Compaction => live ? "Compacting context" : "Compacted context",
                 _ => DisplayText,
@@ -86,7 +87,8 @@ public sealed partial class AgentActivityItem
             ?? (Count is { } items && Kind == AgentActivityKind.Explore ? Plural(items, "item") : string.Empty),
         AgentActivityKind.Search => Symbol is { Length: > 0 } symbol ? $"\"{symbol}\"" : string.Empty,
         AgentActivityKind.Terminal => CommandLine(TerminalInputPreview),
-        AgentActivityKind.Web or AgentActivityKind.Mcp or AgentActivityKind.Computer => Detail?.Trim() ?? string.Empty,
+        AgentActivityKind.Web or AgentActivityKind.Mcp or AgentActivityKind.Computer
+            or AgentActivityKind.Advisor => Detail?.Trim() ?? string.Empty,
         AgentActivityKind.Skill => Detail is { } skill && skill.StartsWith("search: ", StringComparison.Ordinal)
             ? $"\"{skill["search: ".Length..]}\"" : Detail?.Trim() ?? string.Empty,
         AgentActivityKind.Todo => Todos is { Count: > 0 } todos ? TodoSubject(todos) : Count is { } planned ? Plural(planned, "task") : string.Empty,
@@ -114,7 +116,7 @@ public sealed partial class AgentActivityItem
             if (Kind == AgentActivityKind.Thinking && EffectiveDurationMs is { } thought && State != AgentActivityState.Started)
                 parts.Add(ShortDuration(thought));
             else if (Kind is AgentActivityKind.Terminal or AgentActivityKind.Program or AgentActivityKind.Web
-                     or AgentActivityKind.Mcp && DurationShortText is { } took)
+                     or AgentActivityKind.Mcp or AgentActivityKind.Advisor && DurationShortText is { } took)
                 parts.Add(took);
             return string.Join(" · ", parts);
         }

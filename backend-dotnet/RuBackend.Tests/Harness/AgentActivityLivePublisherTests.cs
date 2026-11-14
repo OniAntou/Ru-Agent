@@ -249,7 +249,7 @@ public sealed class AgentActivityLivePublisherTests
         Assert.Equal(
             // New kinds are only ever appended, so stored and in-flight tokens keep their meaning.
             new[] { "Thinking", "Explore", "Search", "Analyze", "Edit", "Terminal", "Compaction", "Retry", "Status", "Todo", "Narration",
-                "Web", "Mcp", "Computer", "Skill", "Program" },
+                "Web", "Mcp", "Computer", "Skill", "Program", "Advisor" },
             protocol);
     }
 

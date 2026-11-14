@@ -89,6 +89,7 @@ public static class AgentActivityProjector
             ("computer", _) => AgentActivityKind.Computer,
             ("skill", _) => AgentActivityKind.Skill,
             ("run_code", _) => AgentActivityKind.Program,
+            ("advisor", _) => AgentActivityKind.Advisor,
             ("write", _) or ("edit", _) or ("apply_patch", _) => AgentActivityKind.Edit,
             ("bash", _) => AgentActivityKind.Terminal,
             // Without this the tool fell to the default below and was reported as a bare
@@ -119,6 +120,8 @@ public static class AgentActivityProjector
                 ? ExtractComputerTarget(proposal)
             : proposal.ToolId == "skill"
                 ? ExtractSkillTarget(proposal)
+            : kind == AgentActivityKind.Advisor
+                ? ExtractAdvisorTarget(proposal)
             : state == AgentActivityState.Started && kind == AgentActivityKind.Edit
                 ? ExtractEditPreview(proposal)
                 : null;
@@ -157,6 +160,27 @@ public static class AgentActivityProjector
             : null;
         if (Text("name") is { Length: > 0 } name) return name;
         return Text("query") is { Length: > 0 } query ? "search: " + query : null;
+    }
+
+    /// <summary>
+    /// The model a consultation asked for, when the user's request named one; with no
+    /// arguments the row names no subject. The value is a bounded model id or effort.
+    /// </summary>
+    private static string? ExtractAdvisorTarget(ToolProposal proposal)
+    {
+        if (proposal.Arguments.ValueKind != JsonValueKind.Object) return null;
+        string? Text(string name) => proposal.Arguments.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? new string(value.GetString()!.Where(c => !char.IsControl(c)).Take(80).ToArray()).Trim()
+            : null;
+        var model = Text("model") is { Length: > 0 } named ? named : null;
+        var effort = Text("effort") is { Length: > 0 } level ? level : null;
+        return (model, effort) switch
+        {
+            (null, null) => null,
+            (_, null) => model,
+            (null, _) => effort + " effort",
+            _ => $"{model} · {effort} effort",
+        };
     }
 
     /// <summary>
@@ -574,6 +598,7 @@ public static class AgentActivityProjector
             ("computer", _) => "Computer",
             ("skill", _) => "Skill",
             ("run_code", _) => "Program",
+            ("advisor", _) => "Advisor",
             _ => null,
         };
 

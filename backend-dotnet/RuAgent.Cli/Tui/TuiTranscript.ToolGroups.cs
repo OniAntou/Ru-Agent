@@ -20,6 +20,7 @@ public sealed partial class TuiTranscript
             AgentActivityKind.Terminal => "ran",
             AgentActivityKind.Web => "browsed",
             AgentActivityKind.Skill => "loaded",
+            AgentActivityKind.Advisor => "consulted",
             AgentActivityKind.Todo => "plan updated",
             _ => "completed",
         },

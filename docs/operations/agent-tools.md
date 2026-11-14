@@ -840,11 +840,12 @@ basename, the last one equal to `file_name`. Rooted, drive, UNC and `..` paths g
 History replay re-derives it from the recorded proposal, so older sessions show it too. It does not advance the durable event
 cursor, append to the Harness event store, or enter session history.
 
-The feed projects fourteen kinds: `thinking`, `explore`, `search`, `analyze`, `edit`,
+The feed projects fifteen kinds: `thinking`, `explore`, `search`, `analyze`, `edit`,
 `terminal`, `compaction`, `retry`, `todo`, `web` (`web_search` query or `web_fetch`
 host), `mcp` ("server › tool"), `computer` (the action, never typed text), `skill`
 (a loaded skill's name or a catalog search), `program` (`run_code`, never its source),
-and a generic `status` fallback for unknown tools. `tool_display` tells apart
+`advisor` (a consultation, naming only a model or effort the user's request asked for;
+the transcript and the advice never cross), and a generic `status` fallback for unknown tools. `tool_display` tells apart
 listing from globbing (`List`, `Glob`), tool docs (`Docs`) and terminal follow-ups
 (`Output` for `terminal_read`, `Stop` for `terminal_stop`). `compaction`
 reports the bounded number of covered context entries and the elapsed time of a
@@ -871,7 +872,7 @@ user prompt and activity items use separate collections, so durable assistant
 history remains unchanged when the feed is cleared.
 
 The desktop surface renders every kind. The TUI prints the newer tool kinds
-(`web`, `mcp`, `computer`, `skill`, `program`) as tool rows. It renders `thinking` through the
+(`web`, `mcp`, `computer`, `skill`, `program`, `advisor`) as tool rows. It renders `thinking` through the
 live status row and `compaction`, `retry` and non-`frames_dropped` `status` kinds
 as transient status lines; tool kinds are settled by the durable tool events,
 which remain authoritative when transient frames are dropped. Because the

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(activity)**: Advisor consultations get their own activity row. A new `advisor` activity kind replaces the bare status line the call used to produce: the desktop feed reads "Consulting the advisor" / "Consulted the advisor" with its duration and a people glyph, and the TUI prints it as a tool row ("consulted the advisor"). The row names only a model or effort the user's request asked for; the transcript and the advice never enter it.
+
 - **feat(gui)**: The desktop advisor moves from Settings to the composer. Send `/advisor` (it is listed in the slash menu) to open the model picker and choose the advisor, with the current one marked; `/advisor off` turns it off. Neither line reaches the agent, and the Advisor card under Models & Providers is gone.
 
 - **feat(advisor)**: Ru recommends the advisor once before finishing. Weak models rarely consult on their own, so when a root run whose user selected an advisor is about to finish and the advisor has not seen the work since the last tool call, the final reply is held once with an `advisor_recommended` note (completion policy R10). The model decides: it may consult, or repeat its reply and the run completes. The Host never consults on the model's behalf; children, runs without tool work and runs with no advisor selected are never held.

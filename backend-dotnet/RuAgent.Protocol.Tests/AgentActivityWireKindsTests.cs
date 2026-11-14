@@ -13,6 +13,7 @@ public sealed class AgentActivityWireKindsTests
     [InlineData(AgentActivityKind.Computer, "computer")]
     [InlineData(AgentActivityKind.Skill, "skill")]
     [InlineData(AgentActivityKind.Program, "program")]
+    [InlineData(AgentActivityKind.Advisor, "advisor")]
     public void New_kinds_round_trip_as_camel_case_tokens(AgentActivityKind kind, string token)
     {
         var json = AgentActivityWireCodec.Serialize(new AgentActivityWire("act_kind1", kind, AgentActivityState.Completed));

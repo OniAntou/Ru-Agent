@@ -113,6 +113,7 @@ public sealed partial class TuiTranscript
             case AgentActivityKind.Computer:
             case AgentActivityKind.Skill:
             case AgentActivityKind.Program:
+            case AgentActivityKind.Advisor:
                 ApplyToolActivity(activity);
                 return;
 
@@ -267,7 +268,7 @@ public sealed partial class TuiTranscript
     {
         if ((activity.ToolDisplay is "Search" or "Fetch"
                 || activity.Kind is AgentActivityKind.Web or AgentActivityKind.Mcp
-                    or AgentActivityKind.Computer or AgentActivityKind.Skill)
+                    or AgentActivityKind.Computer or AgentActivityKind.Skill or AgentActivityKind.Advisor)
             && !string.IsNullOrWhiteSpace(activity.Detail))
             return ChatDisplayText.Sanitize(activity.Detail, 160);
         if (activity.Kind == AgentActivityKind.Terminal && !string.IsNullOrWhiteSpace(activity.Detail))

@@ -22,6 +22,8 @@ public enum AgentActivityKind
     Computer,
     Skill,
     Program,
+    // A consultation of the run's advisor model (ADR 0047).
+    Advisor,
 }
 
 public enum AgentActivityState

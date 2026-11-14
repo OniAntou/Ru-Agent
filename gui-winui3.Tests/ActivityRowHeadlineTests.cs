@@ -24,6 +24,8 @@ public sealed class ActivityRowHeadlineTests
     [InlineData(AgentActivityKind.Mcp, "MCP", AgentActivityState.Completed, "Called")]
     [InlineData(AgentActivityKind.Computer, "Computer", AgentActivityState.Started, "Using the computer")]
     [InlineData(AgentActivityKind.Program, "Program", AgentActivityState.Completed, "Ran a program")]
+    [InlineData(AgentActivityKind.Advisor, "Advisor", AgentActivityState.Started, "Consulting the advisor")]
+    [InlineData(AgentActivityKind.Advisor, "Advisor", AgentActivityState.Completed, "Consulted the advisor")]
     public void The_verb_follows_the_kind_tool_and_tense(AgentActivityKind kind, string tool, AgentActivityState state, string verb)
     {
         Assert.Equal(verb, Item(kind, state, toolDisplay: tool).RowVerb);
@@ -37,6 +39,7 @@ public sealed class ActivityRowHeadlineTests
         Assert.Equal("history_paging.py", Item(AgentActivityKind.Analyze, AgentActivityState.Completed, fileName: "history_paging.py").RowSubject);
         Assert.Equal("github › list_issues", Item(AgentActivityKind.Mcp, AgentActivityState.Completed, detail: "github › list_issues").RowSubject);
         Assert.Equal("invoice-check", Item(AgentActivityKind.Skill, AgentActivityState.Completed, detail: "invoice-check").RowSubject);
+        Assert.Equal("claude-opus-5-5", Item(AgentActivityKind.Advisor, AgentActivityState.Completed, detail: "claude-opus-5-5").RowSubject);
         var search = Item(AgentActivityKind.Skill, AgentActivityState.Completed, detail: "search: pdf");
         Assert.Equal("\"pdf\"", search.RowSubject);
         Assert.Equal("Searched skills", search.RowVerb);

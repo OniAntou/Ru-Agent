@@ -392,6 +392,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         AgentActivityKind.Retry => Count is { } attempt ? $"Retrying (attempt {attempt})" : "Retrying",
         AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
         AgentActivityKind.Status => StatusWaitingText(SafeCode),
+        AgentActivityKind.Advisor => "Consulting the advisor",
         _ => "Working…",
     };
 
@@ -434,6 +435,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
             : "Compacted context",
         AgentActivityKind.Retry => "Retried",
         AgentActivityKind.Status => StatusText(SafeCode),
+        AgentActivityKind.Advisor => "Consulted the advisor",
         _ => "Completed",
     };
 

@@ -84,6 +84,7 @@ public sealed partial class TuiTranscript
             && (activity.Kind is AgentActivityKind.Explore or AgentActivityKind.Search or AgentActivityKind.Analyze
                     or AgentActivityKind.Edit or AgentActivityKind.Terminal or AgentActivityKind.Web or AgentActivityKind.Mcp
                     or AgentActivityKind.Computer or AgentActivityKind.Skill or AgentActivityKind.Program
+                    or AgentActivityKind.Advisor
                 || activity.Kind is AgentActivityKind.Status or AgentActivityKind.Todo && !string.IsNullOrWhiteSpace(activity.ToolDisplay));
         if (!settles)
         {

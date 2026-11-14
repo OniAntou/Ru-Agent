@@ -70,18 +70,25 @@ public sealed partial class ChatView
 
     private void UpdateConversationWidthViewport()
     {
-        var width = ChatContentGrid.ActualWidth;
-        if (width > 0) _conversationWidth?.SetViewportWidth(width);
+        var hostWidth = ChatContentGrid.ActualWidth;
+        if (hostWidth <= 0 || ChatListView is null) return;
+        var available = Math.Max(0,
+            hostWidth - _sidePanelReserveWidth - ChatListView.Padding.Left - ChatListView.Padding.Right);
+        _conversationWidth?.SetViewportWidth(available + ConversationWidthState.EdgeBudget);
     }
 
-    private void OnChatContentSizeChanged(object sender, SizeChangedEventArgs e) =>
-        _conversationWidth?.SetViewportWidth(e.NewSize.Width);
+    private void OnChatContentSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateConversationWidthViewport();
+        UpdateConversationWidthLayerBounds(_conversationWidth?.ContentWidth ?? ConversationWidthState.DefaultWidth);
+    }
 
     private void OnConversationWidthHandlePointerPressed(object sender, PointerRoutedEventArgs e)
     {
         if (_conversationWidth is null || sender is not UIElement handle) return;
         var point = e.GetCurrentPoint(ChatContentGrid);
         if (!point.Properties.IsLeftButtonPressed) return;
+        _conversationWidth.BeginDrag();
         _conversationWidthDragging = true;
         _conversationWidthDragRight = ReferenceEquals(sender, ConversationWidthRightHandle);
         _conversationWidthDragOrigin = point.Position.X;
@@ -128,10 +135,9 @@ public sealed partial class ChatView
     {
         if (!_conversationWidthDragging) return;
         _conversationWidthDragging = false;
-        if (_conversationWidth is not null)
+        if (_conversationWidth is not null && !_conversationWidthMoved)
         {
-            if (_conversationWidthMoved) _conversationWidth.Commit();
-            else _conversationWidth.CancelDrag();
+            _conversationWidth.CancelDrag();
         }
 
         if (sender is UIElement handle) handle.ReleasePointerCapture(e.Pointer);

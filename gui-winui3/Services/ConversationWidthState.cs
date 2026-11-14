@@ -1,12 +1,12 @@
 using System.ComponentModel;
-using System.Text.Json;
 
 namespace RuApp.Services;
 
 /// <summary>
 /// The user-draggable width of the conversation column, ported from DSH's
-/// ConversationWidthControls. Two edge handles change the same bounded value;
-/// the width is centered and persisted across restarts.
+/// ConversationWidthControls. It is intentionally session-local: a restart
+/// starts at the default width, and a narrower window clamps the rendered width
+/// without losing the reader's preferred width for when the window grows again.
 /// </summary>
 public sealed class ConversationWidthState : INotifyPropertyChanged
 {
@@ -14,27 +14,22 @@ public sealed class ConversationWidthState : INotifyPropertyChanged
     public static ConversationWidthState Instance { get; } = new();
 
     public const double MinimumWidth = 640;
-    public const double EdgeBudget = 176;
-    public const double DefaultWidth = 720;
     public const double MaximumWidth = 920;
+    public const double DefaultWidth = 720;
+    /// <summary>Room left for the two transparent grab strips and their margin.</summary>
+    public const double EdgeBudget = 80;
     /// <summary>Width of the transparent grab strip outside each content edge.</summary>
     public const double HandleOutset = 32;
     /// <summary>The composer keeps a 16px gutter on both sides of the transcript.</summary>
     public const double ComposerGutter = 32;
 
-    private readonly ConversationWidthStore _store;
-    private double? _preference;
-    private double? _savedPreference;
     private double _viewportWidth = 1200;
+    private double _preferredWidth = DefaultWidth;
+    private double _dragStartWidth = DefaultWidth;
     private double _contentWidth = DefaultWidth;
 
-    public ConversationWidthState() : this(null) { }
-
-    public ConversationWidthState(ConversationWidthStore? store)
+    public ConversationWidthState()
     {
-        _store = store ?? new ConversationWidthStore();
-        _savedPreference = _store.Load();
-        _preference = _savedPreference;
         Recompute();
     }
 
@@ -52,7 +47,7 @@ public sealed class ConversationWidthState : INotifyPropertyChanged
         }
     }
 
-    /// <summary>The transparent handle layer, with a grab strip outside each content edge.</summary>
+    /// <summary>The readable column, bounded by the window and the hard 920px cap.</summary>
     public double HandleLayerWidth => ContentWidth + HandleOutset * 2;
 
     /// <summary>The composer and approval overlay follow the transcript width.</summary>
@@ -62,6 +57,7 @@ public sealed class ConversationWidthState : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>Updates the available width; a later grow restores the preferred width.</summary>
     public void SetViewportWidth(double width)
     {
         if (!double.IsFinite(width) || width <= 0) return;
@@ -69,105 +65,31 @@ public sealed class ConversationWidthState : INotifyPropertyChanged
         Recompute();
     }
 
-    /// <summary>Live pointer preview; does not write the preference file.</summary>
+    /// <summary>Captures the preferred width before a pointer drag starts.</summary>
+    public void BeginDrag() => _dragStartWidth = _preferredWidth;
+
+    /// <summary>Live pointer preview; the effective width is clamped to the window.</summary>
     public void PreviewWidth(double width)
     {
         if (!double.IsFinite(width)) return;
-        _preference = Clamp(width);
+        _preferredWidth = Math.Clamp(width, MinimumWidth, MaximumWidth);
         Recompute();
     }
 
-    /// <summary>Persists the current drag result; a press-only gesture keeps the old value.</summary>
-    public void Commit()
-    {
-        if (_preference is not { } preference) return;
-        _savedPreference = preference;
-        _store.TrySave(preference);
-    }
-
+    /// <summary>Restores the width from before the current drag.</summary>
     public void CancelDrag()
     {
-        _preference = _savedPreference;
+        _preferredWidth = _dragStartWidth;
         Recompute();
     }
 
     private void Recompute()
     {
-        var maximum = Math.Max(MinimumWidth, _viewportWidth - EdgeBudget);
-        var width = _preference is { } preference
-            ? Clamp(preference)
-            : Math.Max(680, Math.Min(_viewportWidth * 0.64, MaximumWidth));
-        ContentWidth = Math.Min(width, maximum);
-    }
-
-    private double Clamp(double width)
-    {
-        var maximum = Math.Max(MinimumWidth, _viewportWidth - EdgeBudget);
-        return Math.Min(Math.Max(width, MinimumWidth), maximum);
+        var viewportMaximum = Math.Max(MinimumWidth, _viewportWidth - EdgeBudget);
+        var effective = Math.Min(_preferredWidth, Math.Min(MaximumWidth, viewportMaximum));
+        ContentWidth = Math.Max(MinimumWidth, effective);
     }
 
     private void OnPropertyChanged(string name) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-}
-
-/// <summary>Bounded local preference file for the conversation width, in pixels.</summary>
-public sealed class ConversationWidthStore
-{
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private readonly string _filePath;
-
-    public ConversationWidthStore(string? filePath = null)
-    {
-        _filePath = filePath ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Ru",
-            "conversation-width.json");
-    }
-
-    public double? Load()
-    {
-        try
-        {
-            if (!File.Exists(_filePath)) return null;
-            var bytes = PreferenceFile.ReadOrNull(_filePath);
-            if (bytes is null) return null;
-            var preferences = JsonSerializer.Deserialize<ConversationWidthPreference>(bytes, JsonOptions);
-            return preferences?.Width is { } width && double.IsFinite(width) && width > 0 ? width : null;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException
-            or InvalidDataException or NotSupportedException or ArgumentException)
-        {
-            return null;
-        }
-    }
-
-    public bool TrySave(double width)
-    {
-        if (!double.IsFinite(width) || width <= 0) return false;
-        var directory = Path.GetDirectoryName(_filePath);
-        if (string.IsNullOrWhiteSpace(directory)) return false;
-        var temporaryPath = $"{_filePath}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            Directory.CreateDirectory(directory);
-            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(
-                new ConversationWidthPreference(width), JsonOptions));
-            File.Move(temporaryPath, _filePath, overwrite: true);
-            return true;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException
-            or NotSupportedException or ArgumentException)
-        {
-            return false;
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath))
-            {
-                try { File.Delete(temporaryPath); } catch { }
-            }
-        }
-    }
-
-    private sealed record ConversationWidthPreference(double? Width);
 }

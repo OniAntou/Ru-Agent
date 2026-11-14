@@ -5,59 +5,54 @@ namespace RuApp.Tests;
 
 public sealed class ConversationWidthStateTests
 {
-    private static string TempPath() =>
-        Path.Combine(Path.GetTempPath(), "ru-width", Guid.NewGuid().ToString("N") + ".json");
-
     [Theory]
-    [InlineData(1200, 768)]
-    [InlineData(2000, 920)]
-    [InlineData(900, 680)]
+    [InlineData(1200, 720)]
+    [InlineData(2000, 720)]
+    [InlineData(800, 720)]
     [InlineData(700, 640)]
-    public void Default_width_follows_the_column_without_exceeding_the_edge_budget(
-        double viewport, double expected)
+    public void Default_width_is_720_and_clamps_to_the_window(double viewport, double expected)
     {
-        var state = new ConversationWidthState(new ConversationWidthStore(TempPath()));
+        var state = new ConversationWidthState();
         state.SetViewportWidth(viewport);
         Assert.Equal(expected, state.ContentWidth);
     }
 
     [Fact]
-    public void A_dragged_width_is_bounded_and_survives_a_new_state_instance()
+    public void Dragging_is_capped_at_920_and_shrinking_the_window_clamps_it_temporarily()
     {
-        var path = TempPath();
-        try
-        {
-            var first = new ConversationWidthState(new ConversationWidthStore(path));
-            first.SetViewportWidth(1200);
-            first.PreviewWidth(900);
-            Assert.Equal(900, first.ContentWidth);
-            Assert.Equal(900 + ConversationWidthState.HandleOutset * 2, first.HandleLayerWidth);
-            Assert.Equal(900 + ConversationWidthState.ComposerGutter, first.ComposerWidth);
-            first.Commit();
+        var state = new ConversationWidthState();
+        state.SetViewportWidth(2000);
+        state.BeginDrag();
+        state.PreviewWidth(2000);
+        Assert.Equal(920, state.ContentWidth);
+        Assert.Equal(920 + ConversationWidthState.HandleOutset * 2, state.HandleLayerWidth);
+        Assert.Equal(920 + ConversationWidthState.ComposerGutter, state.ComposerWidth);
 
-            var second = new ConversationWidthState(new ConversationWidthStore(path));
-            second.SetViewportWidth(1200);
-            Assert.Equal(900, second.ContentWidth);
+        state.SetViewportWidth(800);
+        Assert.Equal(720, state.ContentWidth);
 
-            second.SetViewportWidth(700);
-            Assert.Equal(640, second.ContentWidth);
-            second.PreviewWidth(2000);
-            Assert.Equal(640, second.ContentWidth);
-        }
-        finally
-        {
-            if (File.Exists(path)) File.Delete(path);
-        }
+        state.SetViewportWidth(2000);
+        Assert.Equal(920, state.ContentWidth);
     }
 
     [Fact]
-    public void Cancel_restores_the_saved_width()
+    public void Cancel_restores_the_width_from_before_the_drag()
     {
-        var state = new ConversationWidthState(new ConversationWidthStore(TempPath()));
+        var state = new ConversationWidthState();
         state.SetViewportWidth(1200);
-        var saved = state.ContentWidth;
+        state.BeginDrag();
         state.PreviewWidth(900);
         state.CancelDrag();
-        Assert.Equal(saved, state.ContentWidth);
+        Assert.Equal(720, state.ContentWidth);
+    }
+
+    [Fact]
+    public void Minimum_is_640()
+    {
+        var state = new ConversationWidthState();
+        state.SetViewportWidth(700);
+        state.BeginDrag();
+        state.PreviewWidth(2000);
+        Assert.Equal(640, state.ContentWidth);
     }
 }

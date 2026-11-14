@@ -14,6 +14,8 @@ public sealed class ConversationWidthState : INotifyPropertyChanged
     public const double EdgeBudget = 176;
     public const double DefaultWidth = 720;
     public const double MaximumWidth = 920;
+    /// <summary>Distance from the content edge to the start of the grab strip.</summary>
+    public const double HandleOutset = 34;
 
     private readonly ConversationWidthStore _store;
     private double? _preference;
@@ -40,8 +42,12 @@ public sealed class ConversationWidthState : INotifyPropertyChanged
             if (Math.Abs(clamped - _contentWidth) < 0.5) return;
             _contentWidth = clamped;
             OnPropertyChanged(nameof(ContentWidth));
+            OnPropertyChanged(nameof(HandleLayerWidth));
         }
     }
+
+    /// <summary>The transparent handle layer, with 34 px of room outside each content edge.</summary>
+    public double HandleLayerWidth => ContentWidth + HandleOutset * 2;
 
     public double ViewportWidth => _viewportWidth;
 

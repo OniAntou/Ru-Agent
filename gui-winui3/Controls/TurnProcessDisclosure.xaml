@@ -10,21 +10,21 @@
                 HorizontalAlignment="Left"
                 HorizontalContentAlignment="Left"
                 Background="Transparent"
-                BorderBrush="{StaticResource RuLineBrush}"
-                BorderThickness="0,0,0,1"
-                Padding="0,4,0,6"
-                MinHeight="28"
+                BorderThickness="0"
+                Padding="0,2,0,4"
+                MinHeight="26"
                 AutomationProperties.Name="Toggle turn process">
-            <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="6">
+            <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="5">
                 <TextBlock x:Name="HeaderTextBlock"
                            FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="12.5"
+                           FontSize="12"
                            Foreground="{StaticResource RuMutedBrush}"
                            TextWrapping="NoWrap"
                            VerticalAlignment="Center" />
                 <FontIcon x:Name="ChevronIcon" Grid.Column="1"
                           Glyph="&#xE70D;"
-                          FontSize="10"
+                          FontSize="9"
+                          Opacity="0.8"
                           Foreground="{StaticResource RuMutedBrush}"
                           VerticalAlignment="Center" />
             </Grid>

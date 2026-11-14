@@ -742,50 +742,61 @@
                                              Margin="4,0,0,0"
                                              Visibility="Collapsed" />
 
-                <!-- DSH-style conversation width handles: the layer tracks the
-                     centered content width, so both grips sit exactly at its edges. -->
+                <!-- DSH-style conversation width handles: transparent strips 24 px
+                     outside the centered content, with a short grip only while hovered
+                     or dragged. At rest there is no line crossing the transcript. -->
                 <Grid x:Name="ConversationWidthLayer"
                       HorizontalAlignment="Center"
                       VerticalAlignment="Stretch"
                       Margin="0,20,0,20"
-                      Width="{Binding ContentWidth, Source={StaticResource ConversationWidthState}, Mode=OneWay}">
+                      Width="{Binding HandleLayerWidth, Source={StaticResource ConversationWidthState}, Mode=OneWay}">
                     <Grid x:Name="ConversationWidthLeftHandle"
-                          Width="16"
+                          Width="10"
                           HorizontalAlignment="Left"
                           Background="Transparent"
                           ToolTipService.ToolTip="Drag to resize the chat"
                           AutomationProperties.Name="Resize chat from the left"
+                          PointerEntered="OnConversationWidthHandlePointerEntered"
+                          PointerExited="OnConversationWidthHandlePointerExited"
                           PointerPressed="OnConversationWidthHandlePointerPressed"
                           PointerMoved="OnConversationWidthHandlePointerMoved"
                           PointerReleased="OnConversationWidthHandlePointerReleased"
                           PointerCanceled="OnConversationWidthHandlePointerCanceled"
                           PointerCaptureLost="OnConversationWidthHandlePointerCaptureLost">
-                        <Border Width="2"
-                                Height="56"
-                                HorizontalAlignment="Center"
+                        <Border x:Name="ConversationWidthLeftGrip"
+                                Width="2"
+                                Height="64"
+                                Margin="0,0,2,0"
+                                HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
                                 CornerRadius="{StaticResource AppControlCornerRadius}"
                                 Background="{StaticResource RuLineBrush}"
-                                Opacity="0.55" />
+                                Opacity="0"
+                                IsHitTestVisible="False" />
                     </Grid>
                     <Grid x:Name="ConversationWidthRightHandle"
-                          Width="16"
+                          Width="10"
                           HorizontalAlignment="Right"
                           Background="Transparent"
                           ToolTipService.ToolTip="Drag to resize the chat"
                           AutomationProperties.Name="Resize chat from the right"
+                          PointerEntered="OnConversationWidthHandlePointerEntered"
+                          PointerExited="OnConversationWidthHandlePointerExited"
                           PointerPressed="OnConversationWidthHandlePointerPressed"
                           PointerMoved="OnConversationWidthHandlePointerMoved"
                           PointerReleased="OnConversationWidthHandlePointerReleased"
                           PointerCanceled="OnConversationWidthHandlePointerCanceled"
                           PointerCaptureLost="OnConversationWidthHandlePointerCaptureLost">
-                        <Border Width="2"
-                                Height="56"
-                                HorizontalAlignment="Center"
+                        <Border x:Name="ConversationWidthRightGrip"
+                                Width="2"
+                                Height="64"
+                                Margin="2,0,0,0"
+                                HorizontalAlignment="Left"
                                 VerticalAlignment="Center"
                                 CornerRadius="{StaticResource AppControlCornerRadius}"
                                 Background="{StaticResource RuLineBrush}"
-                                Opacity="0.55" />
+                                Opacity="0"
+                                IsHitTestVisible="False" />
                     </Grid>
                 </Grid>
             </Grid>

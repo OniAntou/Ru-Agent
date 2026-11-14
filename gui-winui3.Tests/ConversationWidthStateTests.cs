@@ -31,6 +31,7 @@ public sealed class ConversationWidthStateTests
             first.SetViewportWidth(1200);
             first.PreviewWidth(900);
             Assert.Equal(900, first.ContentWidth);
+            Assert.Equal(900 + ConversationWidthState.HandleOutset * 2, first.HandleLayerWidth);
             first.Commit();
 
             var second = new ConversationWidthState(new ConversationWidthStore(path));

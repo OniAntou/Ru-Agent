@@ -583,11 +583,12 @@ Activity labels share transcript typography across plain and detail-toggle
 headers, including transitions that reveal reasoning or terminal output. Expanded
 reasoning stretches across the available reading column instead of a fixed
 left-aligned width.
-`ConversationWidthState` owns the centered reading-column width: both edge grips
-use the same 640 px floor, viewport-minus-edge budget, 680–920 px default and
-JSON preference file. A drag previews the width without writing it; release
-commits, while cancel or lost capture restores the saved value. The user bubble,
-attachments and assistant column all bind to the same width.
+`ConversationWidthState` owns the centered reading-column width: two transparent
+grab strips sit 24 px outside its edges, showing only a short grip on hover or
+drag; both use the same 640 px floor, viewport-minus-edge budget, 680–920 px
+default and JSON preference file. A drag previews the width without writing it;
+release commits, while cancel or lost capture restores the saved value. The user
+bubble, attachments and assistant column all bind to the same width.
 `TurnProcessDisclosure` replaces the plain activity summary for segmented turns:
 its header reads `Working…`, `Worked for 1m 5s`, `Took 1m 5s · failed` or
 `Worked`, and its body animates between the compact answer and the full process.

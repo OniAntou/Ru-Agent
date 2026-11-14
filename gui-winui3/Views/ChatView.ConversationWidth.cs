@@ -42,8 +42,25 @@ public sealed partial class ChatView
         _conversationWidthDragOrigin = point.Position.X;
         _conversationWidthDragStart = _conversationWidth.ContentWidth;
         _conversationWidthMoved = false;
+        SetConversationWidthGripVisible(sender, true);
         handle.CapturePointer(e.Pointer);
         e.Handled = true;
+    }
+
+    private void OnConversationWidthHandlePointerEntered(object sender, PointerRoutedEventArgs e) =>
+        SetConversationWidthGripVisible(sender, true);
+
+    private void OnConversationWidthHandlePointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_conversationWidthDragging) SetConversationWidthGripVisible(sender, false);
+    }
+
+    private void SetConversationWidthGripVisible(object sender, bool visible)
+    {
+        if (ReferenceEquals(sender, ConversationWidthLeftHandle))
+            ConversationWidthLeftGrip.Opacity = visible ? 1 : 0;
+        else if (ReferenceEquals(sender, ConversationWidthRightHandle))
+            ConversationWidthRightGrip.Opacity = visible ? 1 : 0;
     }
 
     private void OnConversationWidthHandlePointerMoved(object sender, PointerRoutedEventArgs e)
@@ -73,6 +90,7 @@ public sealed partial class ChatView
         }
 
         if (sender is UIElement handle) handle.ReleasePointerCapture(e.Pointer);
+        if (sender is UIElement released) SetConversationWidthGripVisible(released, false);
         e.Handled = true;
     }
 
@@ -88,5 +106,6 @@ public sealed partial class ChatView
         _conversationWidthDragging = false;
         _conversationWidth?.CancelDrag();
         if (sender is UIElement handle) handle.ReleasePointerCapture(e.Pointer);
+        if (sender is UIElement released) SetConversationWidthGripVisible(released, false);
     }
 }

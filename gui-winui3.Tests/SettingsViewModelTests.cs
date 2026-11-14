@@ -444,6 +444,21 @@ public sealed partial class SettingsViewModelTests
             return Task.FromResult(true);
         }
 
+        public List<(string? Backend, string? Model)> AdvisorSaves { get; } = new();
+
+        public bool AdvisorSaveResult { get; set; } = true;
+
+        public Dictionary<string, IReadOnlyList<string>?> Models { get; } = new(StringComparer.Ordinal);
+
+        public Task<bool> SaveAdvisorAsync(string? backend, string? model)
+        {
+            AdvisorSaves.Add((backend, model));
+            return Task.FromResult(AdvisorSaveResult);
+        }
+
+        public Task<IReadOnlyList<string>?> GetModelsAsync(string backend) =>
+            Task.FromResult(Models.TryGetValue(backend, out var models) ? models : null);
+
         public async Task WaitForSaveAsync()
         {
             await _saved.Task.WaitAsync(TimeSpan.FromSeconds(5));

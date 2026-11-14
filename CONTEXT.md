@@ -118,7 +118,7 @@ _Avoid_: complete memory, verified success inferred from model prose, inherited 
 
 
 **Execution Authority**:
-The single path through `IToolGateway` to `BrokerExecutionRuntime` that can perform model-visible file, terminal and network actions. Host orchestration intercepts `ask_user` without dispatching it to that authority.
+The single path through `IToolGateway` to `BrokerExecutionRuntime` that can perform model-visible file, terminal and network actions. Host orchestration intercepts `ask_user` and `advisor` without dispatching them to that authority.
 Implementation: [broker](docs/architecture/broker.md#execution-authority).
 _Avoid_: dual execution paths, HarnessToolGateway
 
@@ -192,6 +192,11 @@ _Avoid_: a new execution authority, a user conversation, or an OS sandbox
 An ordinary `standard` run, off by default, that works in a private worktree of one user-named Ru source checkout and ends in an Evolution Candidate: a local `evolve/<id>` branch with an evidence report. A deterministic scope guard and a receipt-based fitness gate decide whether the candidate is kept; the owner reviews and merges it. It never merges, pushes, updates an installed product or writes the checkout's working tree.
 Implementation: [ADR 0046](docs/adr/0046-self-evolution-runs.md).
 _Avoid_: a new execution authority, self-updating binaries, a benchmark score as proof of improvement, automatic merge
+
+**Advisor**:
+A second provider/model the user selects with `/advisor` or the desktop Advisor card and a new root run pins as `_ru_advisor_v1` (or as unavailable, or as none selected). The user may instead name a model or effort in their request, which the main model relays. The main model calls the parameterless, Host-intercepted `advisor` tool when it chooses; the Host sends the run's quoted active context, without provider-native blocks or images, to that model in one tool-less request and returns the advice as an ordinary tool result. Advice is untrusted input and grants nothing; children never consult.
+Implementation: [agent tools](docs/operations/agent-tools.md#advisor), [ADR 0047](docs/adr/0047-advisor-consultation.md).
+_Avoid_: a Broker tool, a fallback model, verification evidence, or an approval source
 
 
 **Markdown Skill**:

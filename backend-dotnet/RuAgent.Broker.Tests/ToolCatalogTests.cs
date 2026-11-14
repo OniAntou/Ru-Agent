@@ -98,7 +98,7 @@ public sealed class ToolCatalogTests
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
 
         var capabilities = catalog.Registry.ListCapabilities();
-        Assert.Equal(AgentToolDefinitionCatalog.Get().Where(d => d.ToolId != "ask_user")
+        Assert.Equal(AgentToolDefinitionCatalog.Get().Where(d => RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find(d.ToolId)!.IsBrokerBound)
             .Select(d => d.ToolId).OrderBy(id => id, StringComparer.Ordinal),
             capabilities.Select(c => c.ToolId).OrderBy(id => id, StringComparer.Ordinal));
         Assert.DoesNotContain(capabilities, item => item.ToolId == "app.open");

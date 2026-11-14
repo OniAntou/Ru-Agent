@@ -300,7 +300,8 @@ internal sealed class AgentModelInvocation
             modelDroppedCount,
             assistantStream.Retract,
             modelResult.ReasoningText,
-            modelResult.ProviderContinuation);
+            modelResult.ProviderContinuation,
+            request.PromptContext);
     }
 
     /// <summary>
@@ -572,7 +573,8 @@ internal sealed class AgentModelInvocation
         int ModelDroppedCount,
         Action RetractAssistantText,
         string? ReasoningText = null,
-        ProviderContinuation? ProviderContinuation = null);
+        ProviderContinuation? ProviderContinuation = null,
+        Prompting.SystemPromptContext? PromptContext = null);
 }
 
 internal sealed class ModelStepPreparationException(string code, Exception innerException)

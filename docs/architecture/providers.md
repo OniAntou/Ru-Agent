@@ -304,6 +304,20 @@ settings cannot substitute a different provider or model. A legacy run without
 the selection fails closed. Credential values never enter this record.
 _Avoid_: current settings as restart fallback
 
+A new root pin also records the advisor ([ADR 0047](../adr/0047-advisor-consultation.md)).
+With no advisor set the marker is `{"selected":false}`, so the run can still consult a
+model the user names. When `advisor_backend` and `advisor_model` are set, the advisor is described
+exactly like a selection, with `requireCatalogModel`, and stored as the
+`_ru_advisor_v1` request-option marker (backend, alias, protocol, base URI,
+model, credential account name, the advisor's own reasoning options without Ru
+markers, context window and output reserve). An advisor that cannot be resolved
+at pin time (signed out, catalog unavailable, model not listed) is pinned as
+`{"unavailable":"advisor_unavailable"}`; the run still starts on its own
+selection. The marker is removed before options reach the provider, a malformed
+marker fails closed as `provider_selection_invalid`, and children inherit it
+with the parent's selection but never consult. Settings saves carry the two
+fields together: two strings select, two nulls clear, a half is rejected.
+
 ## Provider Continuation
 
 The bounded, typed, encrypted `InternalOnly` payload holding exact provider

@@ -223,6 +223,12 @@ public static partial class AgentToolDefinitionCatalog
         ["question"],
         ("question", StringSchema(maxLength: 2048, minLength: 1)),
         ("options", ArraySchema(maxItems: 8, itemMaxLength: 512)));
+    internal static JsonObject AdvisorSchema() => ObjectSchema(
+        [],
+        ("model", WithDescription(StringSchema(maxLength: 256, minLength: 1),
+            "Only a model the user named in their request; omit to use the advisor the user selected.")),
+        ("effort", WithDescription(StringSchema(maxLength: 32, minLength: 1),
+            "Only a reasoning effort the user named in their request; omit to use the saved effort.")));
 
     private static JsonObject ObjectSchema(string[]? required = null, params (string Name, JsonObject Schema)[] properties)
     {

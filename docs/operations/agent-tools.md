@@ -121,9 +121,9 @@ Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`,
 `powershell`, `run_process`, `terminal_read`, `terminal_stop`,
 `web_search` and `web_fetch`. Profile and availability filters apply below.
 
-The Protocol catalog contains 28 definitions; the Broker has 27 executable
-bindings because `ask_user` is intercepted by the Host. Run-pinned inventories
-contain 28 definitions in `coding_v3` and 26 in `coding_v2`,
+The Protocol catalog contains 29 definitions; the Broker has 27 executable
+bindings because `ask_user` and `advisor` are intercepted by the Host. Run-pinned inventories
+contain 29 definitions in `coding_v3` and 27 in `coding_v2`,
 before availability/role filtering. There is no selectable
 legacy profile. The model-facing file mutation and terminal tools are
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `powershell`,
@@ -274,6 +274,7 @@ they do not make a retired public identity executable.
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | `ask_user` | always advertised (`user.input`) | Host-intercepted: the Broker never receives the call. Parks the run in `WaitingUser` with a durable `input.requested` event; the client answers through `POST /agent/v1/runs/{runId}/inputs/{inputId}`, a replayed or foreign id fails as `input_stale`, and the answer completes the parked call durably before the run resumes |
+| `advisor` (optional `model`, `effort`) | advertised only to a root run pinned with the advisor marker; never to subagents | Host-intercepted: the Broker never receives the call. One tool-less request to the pinned advisor model with the run quoted as a transcript; the advice is an ordinary read-only receipt, and every failure is a named `advisor_*` result the run continues past. See [Advisor](#advisor) |
 | `mcp` (`op=list_servers`, `list_tools`, `call`) | advertised while `~/.ru/mcp.json` declares an enabled server; never to subagents | `list_servers` reads the user's file and is automatic; `list_tools` and `call` start or call a server and take the `ExternalTerminal` decision: `plan` deny, `standard` ask (`mcp_call_requires_approval`), `full_access` automatic; "Always allow" remembers one server and op/tool (`call` with its tool name, or `list_tools`), never a whole server or another op; the card names the server and tool. See [MCP servers](#mcp-servers) |
 | `computer` (`action=list`, `request_access`, `focus`, `screenshot`, `inspect`, `click`, `move`, `drag`, `scroll`, `type`, `key`, `wait`) | advertised only to a root run that pinned the computer-use opt-in with image input; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `request_access` takes the `ExternalTerminal` decision: `standard` ask (`computer_access_requires_approval`), `full_access` automatic; other actions are allowed by policy and checked against the session's app grants when they run. Protected apps are refused in every preset (`computer_app_protected`). See [Computer use](#computer-use) |
 | connector libraries | not advertised | experimental/unwired |
@@ -1112,6 +1113,45 @@ model never to do that, but this is guidance, not confinement (see ADR 0031, ame
 cancels the controlling run. Observation actions report no side effects and may repeat;
 input actions are not structured source edits and do not change verification (ADR 0039). Ru does not confine
 what a granted application does with the input.
+
+## Advisor
+
+The `advisor` tool lets the main model ask a second model for guidance while it works
+([ADR 0047](../adr/0047-advisor-consultation.md)). The user picks the advisor with `/advisor`
+in the terminal UI or the Advisor card under **Settings → Models & Providers**; any
+configured provider works, including one different from the main model's. A new root run
+pins the choice as `_ru_advisor_v1`, with the effort saved for that model by `/reasoning`
+(or the model's default). With no advisor selected the run still sees the tool, so the user
+can name one in their request.
+
+When the model calls `advisor`, the Host builds a quoted transcript from the run's portable
+history (the system prompt, user messages, the agent's text, tool calls and their bounded
+results, and compaction summaries), sends it in one tool-less request, and returns the
+advice as the tool result. Provider-native blocks (reasoning, encrypted content, provider
+search blocks) and images never cross; each omitted image leaves a placeholder line. The
+advisor's provider therefore receives the file contents, terminal and MCP output the run has
+read: selecting an advisor is consent to that for new runs.
+
+Ru sets no cap on consultations or advice length. The remaining bounds are the advisor
+model's context window (older entries between the task and the newest stretch are dropped
+first, the user's latest request is always kept, and the result says `history_shortened`),
+the 1,000,000-character prompt bound,
+run Stop, the provider timeout and three attempts for transient failures on the same model.
+
+`model` and `effort` are accepted only when the run's own user prompt names them, the rule
+child models use; a model resolves only to an exact catalog id of a signed-in provider.
+The call must be alone in its step. Children never consult. The Host never re-sends a
+consultation: a run restarted mid-consultation goes through ordinary run recovery, and an
+advisor call in a resumed batch returns `advisor_interrupted`, after which one identical
+retry is allowed. Named results:
+`advisor_not_selected`, `advisor_unavailable`, `advisor_subagent_denied`,
+`advisor_must_be_alone`, `advisor_interrupted`, `advisor_arguments_invalid`,
+`advisor_provider_failed`, `advisor_refused`, `advisor_incomplete`,
+`advisor_context_too_large`, `advisor_model_user_request_required`,
+`advisor_effort_user_request_required`, `advisor_model_unavailable`,
+`advisor_model_ambiguous`, `advisor_catalog_unavailable` and `advisor_effort_unsupported`.
+A failed consultation never fails the run, and finishing after one is not a failed tool.
+Advice is untrusted model output: it grants nothing and is not verification evidence.
 
 ## Hooks
 

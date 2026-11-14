@@ -127,7 +127,7 @@ public sealed class BrokerSessionTests
         Assert.Null(error);
         Assert.NotNull(session.ActiveRunLease);
         Assert.Equal(
-            AgentToolDefinitionCatalog.Get().Where(d => d.ToolId != "ask_user")
+            AgentToolDefinitionCatalog.Get().Where(d => RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find(d.ToolId)!.IsBrokerBound)
                 .Select(d => d.ToolId).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
@@ -203,7 +203,7 @@ public sealed class BrokerSessionTests
             Path.GetTempPath(),
             LeaseTestSnapshots.StandardEmpty());
         Assert.Equal(
-            AgentToolDefinitionCatalog.Get().Where(d => d.ToolId != "ask_user")
+            AgentToolDefinitionCatalog.Get().Where(d => RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find(d.ToolId)!.IsBrokerBound)
                 .Select(d => d.ToolId).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }

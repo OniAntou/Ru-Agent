@@ -47,6 +47,9 @@ public static class FailedToolCompletionGuard
         {
             var receipt = context.Entries[i].ToolReceipt;
             if (receipt is not null && context.VerificationEvidence.IsExpectedFailure(receipt)) continue;
+            // A failed consultation changed nothing and only tells the model it gets no advice;
+            // finishing without advice is a legitimate answer to it (ADR 0047).
+            if (receipt is not null && !receipt.SideEffectsPossible && AdvisorCodes.IsAdvisorFailure(receipt.Code)) continue;
             if (receipt is null || receipt.Outcome != ToolExecutionOutcome.Succeeded)
             {
                 if (receipt is not null && IsOrdinaryOptionalFetchFailure(receipt))

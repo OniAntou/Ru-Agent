@@ -400,6 +400,46 @@ public sealed partial class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task Advisor_selection_saves_as_a_pair_reads_back_clears_and_rejects_a_half()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(data.Paths.SettingsFile, "{\"backend\":\"openai\",\"openai_model\":\"gpt-4o\"}");
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using (var before = await client.GetAsync("/settings"))
+        {
+            var body = (await before.Content.ReadFromJsonAsync<JsonObject>())!;
+            Assert.True(body.ContainsKey("advisor_backend"));
+            Assert.Null(body["advisor_backend"]);
+            Assert.Null(body["advisor_model"]);
+        }
+
+        using (var saved = await client.PostAsJsonAsync("/settings", new { advisor_backend = "anthropic", advisor_model = "claude-opus-5-5" }))
+            Assert.Equal("success", (await saved.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
+        using (var after = await client.GetAsync("/settings"))
+        {
+            var body = (await after.Content.ReadFromJsonAsync<JsonObject>())!;
+            Assert.Equal("Anthropic", body["advisor_backend"]!.GetValue<string>());
+            Assert.Equal("claude-opus-5-5", body["advisor_model"]!.GetValue<string>());
+            Assert.Equal("gpt-4o", body["openai_model"]!.GetValue<string>());
+        }
+
+        using (var rejected = await client.PostAsJsonAsync("/settings", new { advisor_model = "gpt-5" }))
+            Assert.Equal("error", (await rejected.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
+        using (var unknown = await client.PostAsJsonAsync("/settings", new { advisor_backend = "nowhere", advisor_model = "m" }))
+            Assert.Equal("error", (await unknown.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
+        using (var unchanged = await client.GetAsync("/settings"))
+            Assert.Equal("claude-opus-5-5", (await unchanged.Content.ReadFromJsonAsync<JsonObject>())!["advisor_model"]!.GetValue<string>());
+
+        using (var cleared = await client.PostAsync("/settings", JsonContent.Create(
+            new JsonObject { ["advisor_backend"] = null, ["advisor_model"] = null })))
+            Assert.Equal("success", (await cleared.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
+        using (var off = await client.GetAsync("/settings"))
+            Assert.Null((await off.Content.ReadFromJsonAsync<JsonObject>())!["advisor_model"]);
+    }
+
+    [Fact]
     public async Task PostSettings_selected_model_saves_one_atomic_candidate()
     {
         using var data = TemporaryBusinessData.Create();

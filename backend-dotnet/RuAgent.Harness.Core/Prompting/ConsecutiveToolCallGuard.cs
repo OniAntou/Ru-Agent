@@ -33,6 +33,8 @@ public static class ConsecutiveToolCallGuard
         "decision_stale",
         "transport_failure",
         "not_executed_after_unknown",
+        // An advisor consultation cut short by a pause or restart never ran (ADR 0047).
+        AdvisorCodes.Interrupted,
     };
 
     /// <summary>

@@ -72,6 +72,27 @@ namespace RuApp.Services
             }
         }
 
+        /// <summary>
+        /// Saves the advisor (ADR 0047): both fields together, two nulls turn it off. It
+        /// applies to new runs. Not a provider change, so <see cref="SettingsSaved"/> stays quiet.
+        /// </summary>
+        public async Task<bool> SaveAdvisorAsync(string? backend, string? model)
+        {
+            try
+            {
+                var payload = new System.Text.Json.Nodes.JsonObject { ["advisor_backend"] = backend, ["advisor_model"] = model };
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
+                bool ok = await HasOkEnvelopeAsync(response);
+                if (!ok) GuiDiagnosticWriter.WriteGuiError("advisor_save", await RejectionCodeAsync(response));
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("SaveAdvisorAsync", ex);
+                return false;
+            }
+        }
+
         public async Task<bool> SaveReasoningSettingsAsync(
             string effort,
             string model,

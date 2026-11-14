@@ -105,6 +105,7 @@ public sealed class ToolManifestGoldenLockTests
         new("run_process", "terminal.execute"),
         new("terminal_read", "terminal.execute"),
         new("terminal_stop", "terminal.execute"),
+        new("advisor", ""),
         new("future_tool", ""),
     ];
 
@@ -161,7 +162,7 @@ public sealed class ToolManifestGoldenLockTests
             .ToArray();
         var expected = AgentToolDefinitionCatalog.Get()
             .Select(definition => definition.ToolId)
-            .Where(id => id != "ask_user")
+            .Where(id => RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find(id)!.IsBrokerBound)
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
 
@@ -195,7 +196,7 @@ public sealed class ToolManifestGoldenLockTests
     {
         var advertised = AgentToolDefinitionCatalog.Get()
             .Select(definition => definition.ToolId)
-            .Where(id => id != "ask_user")
+            .Where(id => RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find(id)!.IsBrokerBound)
             .ToArray();
 
         Assert.Equal(SessionUnionLock, GrantUnion(advertised).OrderBy(scope => scope, StringComparer.Ordinal).ToArray());

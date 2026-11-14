@@ -651,6 +651,39 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
+                        <!-- Advisor (ADR 0047): a second model the agent may consult; the Host pins it into new runs. -->
+                        <Border x:Name="AdvisorCard" Style="{StaticResource FluentCardStyle}">
+                            <StackPanel Spacing="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock x:Name="AdvisorLabel" Text="Advisor" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="A second model the agent can ask for advice while it works. It receives the run's conversation, including file contents the agent has read. Applies to new runs."
+                                               Style="{StaticResource SettingDescStyle}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                    <ComboBox x:Name="AdvisorProviderBox" HorizontalAlignment="Stretch" MinHeight="36"
+                                              ItemsSource="{x:Bind ViewModel.AdvisorProviders}"
+                                              SelectedItem="{x:Bind ViewModel.AdvisorProvider, Mode=OneWay}"
+                                              DisplayMemberPath="DisplayName"
+                                              IsEnabled="{x:Bind ViewModel.IsAdvisorEnabled, Mode=OneWay}"
+                                              SelectionChanged="OnAdvisorProviderSelectionChanged"
+                                              CornerRadius="{StaticResource AppControlCornerRadius}"
+                                              AutomationProperties.Name="Advisor provider" />
+                                    <ComboBox x:Name="AdvisorModelBox" Grid.Column="1" HorizontalAlignment="Stretch" MinHeight="36"
+                                              IsEditable="True" PlaceholderText="Model"
+                                              ItemsSource="{x:Bind ViewModel.AdvisorModels}"
+                                              Text="{x:Bind ViewModel.AdvisorModel, Mode=OneWay}"
+                                              Visibility="{x:Bind ViewModel.IsAdvisorModelVisible, Mode=OneWay}"
+                                              IsEnabled="{x:Bind ViewModel.IsAdvisorEnabled, Mode=OneWay}"
+                                              SelectionChanged="OnAdvisorModelSelectionChanged"
+                                              TextSubmitted="OnAdvisorModelTextSubmitted"
+                                              CornerRadius="{StaticResource AppControlCornerRadius}"
+                                              AutomationProperties.Name="Advisor model" />
+                                </Grid>
+                                <TextBlock x:Name="AdvisorStatusText" Text="{x:Bind ViewModel.AdvisorStatus, Mode=OneWay}"
+                                           Style="{StaticResource SettingDescStyle}" TextWrapping="Wrap"
+                                           AutomationProperties.LiveSetting="Polite" />
+                            </StackPanel>
+                        </Border>
                         <TextBlock Text="Keys stay in Windows Credential Manager. Choose a model from the chat composer after connecting."
                                    Style="{StaticResource SettingDescStyle}" />
                     </StackPanel>

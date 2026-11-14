@@ -17,7 +17,7 @@ namespace RuApp.Views
 
         private static readonly (SettingsTab Tab, string Keywords)[] PageKeywords =
         [
-            (SettingsTab.Models, "models providers provider api key credential connect catalog custom endpoint"),
+            (SettingsTab.Models, "models providers provider api key credential connect catalog custom endpoint advisor"),
             (SettingsTab.Shortcuts, "keyboard shortcuts keys hotkeys command palette"),
             (SettingsTab.About, "about updates update version release channel build github install"),
         ];

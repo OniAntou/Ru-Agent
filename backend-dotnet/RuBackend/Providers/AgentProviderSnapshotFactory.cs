@@ -132,9 +132,42 @@ public sealed class AgentProviderSnapshotFactory(
         current = ProviderIntentSettings.Apply(current,
             await selectionStore.GetIntentAsync(runId, ct).ConfigureAwait(false));
         var proposed = await DescribeSelectionAsync(current, ct).ConfigureAwait(false);
+        proposed = await WithAdvisorAsync(proposed, current, ct).ConfigureAwait(false);
         var stored = await selectionStore.PinAsync(runId, proposed, ct).ConfigureAwait(false);
         var pin = stored.Selection ?? throw new ProviderCatalogException("provider_selection_invalid");
         return await BuildPinnedSnapshotAsync(pin, current, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Adds the advisor marker to a new root pin (ADR 0047). An advisor that cannot be
+    /// resolved now (signed out, catalog unavailable, model not listed) is pinned as
+    /// unavailable: the run starts on its own selection, and a consultation reports
+    /// <c>advisor_unavailable</c> instead of substituting another model.
+    /// </summary>
+    private async Task<AgentRunProviderSelection> WithAdvisorAsync(
+        AgentRunProviderSelection proposed, SettingsSnapshot current, CancellationToken ct)
+    {
+        JsonObject marker;
+        if (AdvisorPolicy.Read(current) is not { } advisor) marker = AdvisorPolicy.NotSelectedMarker();
+        else try
+        {
+            var described = await DescribeSelectionAsync(
+                AdvisorPolicy.CandidateFor(current, advisor.Backend, advisor.Model), ct, requireCatalogModel: true)
+                .ConfigureAwait(false);
+            marker = AdvisorPolicy.Marker(described);
+        }
+        catch (Exception error) when (error is ProviderCatalogException or ArgumentException or HttpRequestException
+            or IOException or UnknownProviderAliasException
+            || (error is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            // A slow or failing advisor provider must not stop the run from starting.
+            marker = AdvisorPolicy.UnavailableMarker();
+        }
+
+        var options = JsonNode.Parse(proposed.RequestOptionsJson) as JsonObject
+            ?? throw new ProviderCatalogException("provider_selection_invalid");
+        options[AdvisorPolicy.PinField] = marker;
+        return proposed with { RequestOptionsJson = options.ToJsonString() };
     }
 
     public async Task<AgentRunProviderSelection> DescribeSelectionAsync(
@@ -227,6 +260,7 @@ public sealed class AgentProviderSnapshotFactory(
         var acceptsImageInput = ImageInputPolicy.TakePinnedCapability(options);
         _ = ComputerUsePolicy.TakePinnedCapability(options);
         _ = ProviderWebSearchPolicy.TakePinnedCapability(options);
+        _ = AdvisorPolicy.TakePinnedCapability(options);
         AgentToolProfilePin.ValidateAndRemove(options);
         var key = await ReadCredentialAsync(selected, ct).ConfigureAwait(false);
         var models = await catalog.GetAsync(selected, current, false, ct).ConfigureAwait(false);
@@ -240,6 +274,52 @@ public sealed class AgentProviderSnapshotFactory(
             reducedEffortRequestOptions: ProviderReasoningPreferences.LowestEffortOptions(models, selected.Model, options),
             replayChatReasoning: replayChatReasoning,
             acceptsImageInput: acceptsImageInput,
+            sessionHeaderName: ProviderOverrides.SessionHeaderName(selected.Alias));
+    }
+
+    /// <summary>
+    /// The credential snapshot for one advisor consultation (ADR 0047). The advisor's pinned
+    /// options carry no Ru markers; any that a user-named model's description added are dropped.
+    /// A user-named effort replaces the saved one only when the model publishes it.
+    /// </summary>
+    internal async Task<ProviderBootstrapData> BuildAdvisorSnapshotAsync(
+        AgentRunProviderSelection advisor, string? effort, CancellationToken ct)
+    {
+        var current = await settings.ReadAsync(ct).ConfigureAwait(false);
+        var selected = ReadSelection(advisor);
+        AgentRunCallingModeCodec.RequireNative(advisor.CallingMode);
+        JsonObject options;
+        try
+        {
+            options = JsonNode.Parse(advisor.RequestOptionsJson) as JsonObject
+                ?? throw new ProviderCatalogException("provider_selection_invalid");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new ProviderCatalogException("provider_selection_invalid");
+        }
+
+        foreach (var marker in options.Select(entry => entry.Key)
+                     .Where(name => name.StartsWith("_ru_", StringComparison.Ordinal)
+                         || name == RuAgent.Protocol.AgentToolProfiles.PinField)
+                     .ToArray())
+            options.Remove(marker);
+        var key = await ReadCredentialAsync(selected, ct).ConfigureAwait(false);
+        var models = await catalog.GetAsync(selected, current, false, ct).ConfigureAwait(false);
+        ValidateCredentialRevision(key, models);
+        if (effort is not null)
+        {
+            if (models.Stale || models.Status != "ok")
+                throw new AdvisorResolutionException(RuAgent.Harness.Core.AdvisorCodes.CatalogUnavailable);
+            try { options = ProviderReasoningPreferences.Resolve(models, selected.Model, effort); }
+            catch (ProviderCatalogException) { throw new AdvisorResolutionException(RuAgent.Harness.Core.AdvisorCodes.EffortUnsupported); }
+        }
+
+        return CreateSnapshot(selected, key, options, advisor.MaximumOutputTokens ?? advisor.OutputTokenReserve,
+            useMaxCompletionTokens: selected.Alias == "openai" && selected.Protocol == ProviderProtocols.ChatCompletions,
+            contextWindowTokens: advisor.ContextWindowTokens,
+            outputTokenReserve: advisor.OutputTokenReserve,
+            acceptsImageInput: false,
             sessionHeaderName: ProviderOverrides.SessionHeaderName(selected.Alias));
     }
 

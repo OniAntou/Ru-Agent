@@ -10,6 +10,7 @@ public static class ChatCommandCatalog
         new("/model", "Switch or show the active model", "/model [name]"),
         new("/provider", "Choose a provider, then enter its API key", "/provider [name] | /provider remove <name>"),
         new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
+        new("/advisor", "Choose a model the agent may consult in new runs", "/advisor [off | <model> | <provider> <model>]"),
         new("/computer", "Show or set computer use for new turns", "/computer [on|off]"),
         new("/status", "Inspect status, context and token usage", "/status [overview|context|usage]"),
         new("/preset", "Choose permissions or manage remembered rules", "/preset [plan|standard|full_access|rules]"),

@@ -36,7 +36,7 @@ public sealed class ToolBindingRegistryTests
             .Select(binding => binding.Manifest.Id)
             .ToHashSet(StringComparer.Ordinal);
         var canonical = AgentToolDefinitionCatalog.Get()
-            .Where(definition => definition.ToolId is not "ask_user")
+            .Where(definition => RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find(definition.ToolId)!.IsBrokerBound)
             .Select(definition => definition.ToolId)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -44,7 +44,7 @@ public sealed class ToolBindingRegistryTests
 
         // Named per tool so a missing binding reports which tool, not just a count.
         foreach (var definition in AgentToolDefinitionCatalog.Get()
-            .Where(definition => definition.ToolId is not "ask_user"))
+            .Where(definition => RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find(definition.ToolId)!.IsBrokerBound))
         {
             Assert.True(
                 bound.Contains(definition.ToolId),

@@ -293,9 +293,15 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
         Providers.ComputerUsePolicy.Apply(payload, raw);
         Providers.ProviderWebSearchPolicy.Apply(payload, raw);
         CustomProviders.Apply(payload, raw);
+        Providers.AdvisorPolicy.Apply(payload, raw, NormalizeBackend);
         // Selecting a named custom provider requires its definition in the same settings.
         if (backendValue is not null && CustomProviders.IsCustomBackend(backend)
             && CustomProviders.Find(current with { Raw = raw }, backend) is null)
+            throw new SettingsPayloadException();
+        if (payload.ContainsKey(Providers.AdvisorPolicy.BackendField)
+            && Providers.AdvisorPolicy.Read(current with { Raw = raw }) is { } advisor
+            && CustomProviders.IsCustomBackend(advisor.Backend)
+            && CustomProviders.Find(current with { Raw = raw }, advisor.Backend) is null)
             throw new SettingsPayloadException();
         if (payload.ContainsKey("subagents")) throw new SettingsPayloadException();
         raw.Remove("subagents");

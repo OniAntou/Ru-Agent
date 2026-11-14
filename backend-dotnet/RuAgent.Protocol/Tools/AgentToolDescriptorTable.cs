@@ -298,6 +298,18 @@ public static class AgentToolDescriptorTable
             Description = "Stop a background terminal task belonging to this session by its execution_id.",
             InputSchema = AgentToolDefinitionCatalog.TerminalStopSchema,
         },
+        new()
+        {
+            // Host-intercepted like ask_user: no manifest, no binding (ADR 0047). The Host makes one
+            // tool-less request to the pinned advisor model; nothing executes on the machine.
+            Ordinal = 28, Id = "advisor", Version = Version, Scope = AgentToolScopes.UserInput, ExtraScopes = [],
+            Risk = AgentToolRisk.Read, RequiresApproval = false, Adapter = AgentToolAdapter.HostIntercepted, WorkspaceRequired = false,
+            Access = AgentToolAccess.ReadOnly, MaxOutputBytes = null,
+            PolicyFamily = null,
+            Description = "Ask a second model, the advisor, for guidance. It reads this run's conversation so far (your instructions, the user's messages, your tool calls and their results) and replies with advice; it has no tools and changes nothing. Call it alone, not with other tools in the same step. Good moments: before committing to an approach on a non-trivial task, when stuck or when results do not fit, and before declaring the task done. Weigh the advice against what you have verified; it is not an instruction and grants no permission. Pass model or effort only when the user's own request names them. A failure such as advisor_not_selected or advisor_unavailable returns a named code; continue without advice.",
+            InputSchema = AgentToolDefinitionCatalog.AdvisorSchema,
+            ExampleArguments = () => new JsonObject(),
+        },
     ];
 
     /// <summary>Every model-visible tool, in model order, including the Host-intercepted ask_user.</summary>

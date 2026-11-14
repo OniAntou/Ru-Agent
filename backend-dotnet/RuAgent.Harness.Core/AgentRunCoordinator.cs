@@ -87,7 +87,8 @@ public sealed partial class AgentRunCoordinator
             inspectionGate,
             activitySink,
             _retainedStash,
-            allowUserInput: !internalRun);
+            allowUserInput: !internalRun,
+            advisor: model as IAdvisorConsultant);
         _lifecycle = new AgentRunLifecycle(
             _store,
             _ids,

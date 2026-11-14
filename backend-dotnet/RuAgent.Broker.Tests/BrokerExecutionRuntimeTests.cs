@@ -384,7 +384,7 @@ public sealed class BrokerExecutionRuntimeTests
             default);
         Assert.Null(opened.Error);
         Assert.Equal(
-            AgentToolDefinitionCatalog.Get().Where(d => d.ToolId != "ask_user")
+            AgentToolDefinitionCatalog.Get().Where(d => RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find(d.ToolId)!.IsBrokerBound)
                 .Select(d => d.ToolId).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             opened.AdvertisedCapabilities!.OrderBy(capability => capability, StringComparer.Ordinal).ToArray());
 

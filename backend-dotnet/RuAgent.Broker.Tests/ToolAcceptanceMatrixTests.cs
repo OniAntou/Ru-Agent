@@ -31,7 +31,7 @@ public sealed class ToolAcceptanceMatrixTests
         var expectedIds = AgentToolDefinitionCatalog.Get()
             // ask_user is Host-intercepted and deliberately has no Broker binding;
             // the Broker's execution surface is all non-intercepted definitions.
-            .Where(definition => definition.ToolId is not "ask_user")
+            .Where(definition => RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find(definition.ToolId)!.IsBrokerBound)
             .Select(definition => definition.ToolId)
             .OrderBy(id => id, StringComparer.Ordinal);
         Assert.Equal(expectedIds, bindings.Select(binding => binding.Manifest.Id));

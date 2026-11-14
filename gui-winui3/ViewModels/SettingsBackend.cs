@@ -20,6 +20,12 @@ internal interface ISettingsBackend
     Task<ProviderKeyProbeResult> ValidateAndSaveModelsDevKeyAsync(string providerId, string key, CancellationToken cancellationToken);
 
     Task<bool> RemoveProviderAsync(string backendChoice);
+
+    /// <summary>Saves the advisor pair (ADR 0047); two nulls turn it off.</summary>
+    Task<bool> SaveAdvisorAsync(string? backend, string? model);
+
+    /// <summary>The model ids a provider lists, or null when its catalog is unavailable.</summary>
+    Task<IReadOnlyList<string>?> GetModelsAsync(string backend);
 }
 
 /// <summary>The provider catalog state the settings editor reads and refreshes.</summary>
@@ -50,6 +56,10 @@ internal sealed class ApiSettingsBackend(ApiService api) : ISettingsBackend
         api.ValidateAndSaveModelsDevKeyAsync(providerId, key, cancellationToken);
 
     public Task<bool> RemoveProviderAsync(string backendChoice) => api.RemoveProviderAsync(backendChoice);
+
+    public Task<bool> SaveAdvisorAsync(string? backend, string? model) => api.SaveAdvisorAsync(backend, model);
+
+    public async Task<IReadOnlyList<string>?> GetModelsAsync(string backend) => await api.GetModelsAsync(backend);
 }
 
 internal sealed class ProviderCatalogSession(ProviderCatalogController controller) : IProviderCatalogSession

@@ -36,6 +36,7 @@ public sealed class AgentToolDefinitionCatalogTests
         "run_process",
         "terminal_read",
         "terminal_stop",
+        "advisor",
     ];
 
     private static readonly string[] RetiredIds =
@@ -81,7 +82,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(28, definitions.Count);
+        Assert.Equal(29, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }
@@ -342,6 +343,22 @@ public sealed class AgentToolDefinitionCatalogTests
         Assert.True(properties.ContainsKey("query"));
         Assert.Contains("allowed-tools", skill.Description, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("never grants", skill.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Advisor_definition_is_host_intercepted_with_only_optional_bounded_strings()
+    {
+        var advisor = AgentToolDefinitionCatalog.Find("advisor", "1.0.0")!;
+        var row = RuAgent.Protocol.Tools.AgentToolDescriptorTable.Find("advisor")!;
+
+        Assert.Equal(RuAgent.Protocol.Tools.AgentToolAdapter.HostIntercepted, row.Adapter);
+        Assert.False(row.IsBrokerBound);
+        Assert.False(advisor.InputSchema.ContainsKey("required"));
+        var properties = Properties("advisor");
+        Assert.Equal(["effort", "model"], properties.Select(item => item.Key).Order());
+        Assert.Equal(256, properties["model"]!["maxLength"]!.GetValue<int>());
+        Assert.Equal(32, properties["effort"]!["maxLength"]!.GetValue<int>());
+        Assert.True(AgentToolProfiles.Includes(AgentToolProfiles.Current, "advisor"));
     }
 
     [Fact]

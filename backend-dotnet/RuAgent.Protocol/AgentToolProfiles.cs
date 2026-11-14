@@ -15,8 +15,10 @@ public static class AgentToolProfiles
 
     // A versioned profile is an explicit inventory: future catalog additions must
     // not silently appear in an already-pinned run after an application update.
+    // advisor is in the inventory but, like computer, is advertised only to a run that
+    // pinned its marker (ADR 0047), so runs pinned before it never see it.
     private static readonly IReadOnlySet<string> Common = new HashSet<string>(
-        ["read", "list", "help", "todo_write", "grep", "glob", "web_search", "web_fetch", "skill", "ask_user", "mcp", "computer",
+        ["read", "list", "help", "todo_write", "grep", "glob", "web_search", "web_fetch", "skill", "ask_user", "advisor", "mcp", "computer",
          "agent_spawn", "agent_send", "agent_wait", "agent_cancel", "agent_apply"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> Coding = new HashSet<string>(
         ["read_file", "write_file", "edit_file", "file_delete", "file_restore", "powershell", "run_process", "terminal_read", "terminal_stop"], StringComparer.Ordinal);

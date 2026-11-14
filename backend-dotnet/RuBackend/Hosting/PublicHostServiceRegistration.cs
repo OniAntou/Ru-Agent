@@ -350,6 +350,7 @@ internal static class PublicHostServiceRegistration
                 var run = await services.GetRequiredService<IHarnessEventStore>().GetRunAsync(runId, ct);
                 return run is null || run.TerminalAt.HasValue;
             }));
+        services.AddSingleton<AdvisorTargetResolver>();
         services.AddSingleton(services => new SqliteProviderContinuationReader(
             services.GetRequiredService<HarnessSqliteOptions>(),
             services.GetRequiredService<HarnessPayloadStore>()));
@@ -358,6 +359,9 @@ internal static class PublicHostServiceRegistration
             {
                 CreateProviderBootstrapAsync = (runId, ct) =>
                     services.GetRequiredService<AgentProviderSnapshotFactory>().GetAsync(runId, ct),
+                // ADR 0047: one consultation's snapshot, from the run's pin or a user-named model.
+                ResolveAdvisorAsync = (runId, model, effort, ct) =>
+                    services.GetRequiredService<AdvisorTargetResolver>().ResolveAsync(runId, model, effort, ct),
                 LoadRunImagesAsync = async (runId, ct) =>
                 {
                     var store = services.GetRequiredService<HarnessPayloadStore>();

@@ -111,6 +111,10 @@ public sealed partial class AgentRunCoordinator
                 .ConfigureAwait(false);
         }
 
+        // The advisor reads what the model just read, plus the text it wrote before calling.
+        var advisorSource = invocation.PromptContext is { } promptContext
+            ? new AdvisorConsultationSource(context, promptContext, step.Text)
+            : null;
         return await _steps.HandleToolStepAsync(
                 run,
                 modelStepId,
@@ -120,7 +124,8 @@ public sealed partial class AgentRunCoordinator
                 invocation.PromptComposedEvent,
                 cancellationToken,
                 invocation.ReasoningText,
-                invocation.ProviderContinuation)
+                invocation.ProviderContinuation,
+                advisorSource)
             .ConfigureAwait(false);
     }
 }

@@ -10,7 +10,8 @@ public readonly record struct AgentToolRuntimeAvailability(
     bool McpEnabled = false,
     string ToolProfile = AgentToolProfiles.Current,
     bool ComputerUseEnabled = false,
-    bool ProviderWebSearch = false);
+    bool ProviderWebSearch = false,
+    bool AdvisorEnabled = false);
 
 public static class AgentToolRuntimeProjection
 {
@@ -31,6 +32,8 @@ public static class AgentToolRuntimeProjection
                 "mcp" => availability.McpEnabled,
                 // Advertised only for a run that pinned the opt-in with image input (ADR 0031).
                 "computer" => availability.ComputerUseEnabled && availability.ChildRole is null,
+                // Advertised only for a root run that pinned the advisor marker (ADR 0047).
+                "advisor" => availability.AdvisorEnabled && availability.ChildRole is null,
                 _ => true,
             })
             .ToArray();

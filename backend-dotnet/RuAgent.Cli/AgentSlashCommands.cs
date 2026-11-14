@@ -105,6 +105,12 @@ public sealed partial class AgentSlashCommands
             return true;
         }
 
+        if (slashCmd is "/advisor")
+        {
+            await HandleAdvisorAsync(arg, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
         if (slashCmd is "/computer")
         {
             await HandleComputerUseAsync(arg, cancellationToken).ConfigureAwait(false);
@@ -431,18 +437,7 @@ public sealed partial class AgentSlashCommands
 
         try
         {
-            var trimmed = arg.Trim();
-            var targetBackend = trimmed.ToLowerInvariant() switch
-            {
-                "openai" or "openai api" => "OpenAI",
-                "anthropic" or "anthropic claude" or "claude" => "Anthropic",
-                "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
-                "openrouter" => "models.dev:openrouter",
-                _ when trimmed.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase)
-                    => "models.dev:" + trimmed["models.dev:".Length..].Trim().ToLowerInvariant(),
-                _ => trimmed,
-            };
-
+            var targetBackend = NormalizeBackendArgument(arg);
             var saveBody = new JsonObject { ["backend"] = targetBackend };
             await _settingsClient.UpdateAsync(saveBody, cancellationToken).ConfigureAwait(false);
             await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Switched backend to: {targetBackend}")).ConfigureAwait(false);
@@ -457,6 +452,22 @@ public sealed partial class AgentSlashCommands
         }
 
         await _humanOut.FlushAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>The backend name a typed provider argument stands for; the Host validates the result.</summary>
+    private static string NormalizeBackendArgument(string arg)
+    {
+        var trimmed = arg.Trim();
+        return trimmed.ToLowerInvariant() switch
+        {
+            "openai" or "openai api" => "OpenAI",
+            "anthropic" or "anthropic claude" or "claude" => "Anthropic",
+            "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
+            "openrouter" => "models.dev:openrouter",
+            _ when trimmed.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase)
+                => "models.dev:" + trimmed["models.dev:".Length..].Trim().ToLowerInvariant(),
+            _ => trimmed,
+        };
     }
 
     private async Task<JsonElement?> TryReadSettingsAsync(CancellationToken cancellationToken)

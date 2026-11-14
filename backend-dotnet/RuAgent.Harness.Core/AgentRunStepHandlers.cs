@@ -570,7 +570,8 @@ internal sealed partial class AgentRunStepHandlers
         HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken,
         string? reasoningText = null,
-        ProviderContinuation? providerContinuation = null)
+        ProviderContinuation? providerContinuation = null,
+        AdvisorConsultationSource? advisorSource = null)
     {
         var reservation = _internalRun ? Subagents.SubagentBudgetPolicy.ReserveToolCalls(run, step.ToolCalls.Count, _time.UtcNow)
             : AgentBudgetPolicy.ReserveToolCalls(run, step.ToolCalls.Count, _time.UtcNow, allowAutomaticWindow: true);
@@ -669,7 +670,8 @@ internal sealed partial class AgentRunStepHandlers
                 modelStepId,
                 step.ToolCalls,
                 modelDroppedCount,
-                cancellationToken)
+                cancellationToken,
+                advisorSource)
             .ConfigureAwait(false);
         return new AgentRunStepResult(result.Run, result.Receipts, result.ErrorCode);
     }

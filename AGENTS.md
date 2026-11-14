@@ -28,7 +28,8 @@ Use CONTEXT.md's domain language and update it when concepts change.
 - **One execution authority.** File, terminal and network tools execute
   in-process through `IToolGateway` against the single `BrokerExecutionRuntime`
   composed behind `IToolGatewayFactory`. The Host owns orchestration and the
-  existing `ask_user` interception, which never dispatches to the authority.
+  existing `ask_user` and `advisor` interceptions, which never dispatch to the
+  authority.
   Keep execution policy and side-effecting tool adapters out of the Host.
 - **No silent substitution.** Provider, model, protocol and tool identities
   stay pinned for a run; failures produce bounded, named codes. Bounded retries
@@ -40,6 +41,10 @@ Use CONTEXT.md's domain language and update it when concepts change.
   The second exception, provider-hosted search (ADR 0033), runs at a pinned
   first-party Anthropic or OpenAI provider, only where the Broker would allow
   `web_search` without an approval; `web_fetch` always stays in the Broker.
+  A run may also pin an advisor model (ADR 0047): a second, separately pinned
+  selection the main model consults through the Host-intercepted `advisor`
+  tool. Neither selection substitutes for the other, and advisor failures are
+  named results, never a fallback.
 - **Scoped permissions.** Permissions are session-scoped; approval tokens are
   single-use, bound to exact canonical arguments and lost on restart.
   Structured file tools deny harness key/database files, runtime descriptors

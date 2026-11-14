@@ -33,6 +33,7 @@ internal sealed partial class AgentToolExecutionPipeline
     private readonly IAgentActivitySink? _activitySink;
     private readonly IRetainedApprovalStash _retainedStash;
     private readonly bool _allowUserInput;
+    private readonly IAdvisorConsultant? _advisor;
 
     internal AgentToolExecutionPipeline(
         IToolGateway gateway,
@@ -45,8 +46,10 @@ internal sealed partial class AgentToolExecutionPipeline
         ReconciliationInspectionGate? inspectionGate = null,
         IAgentActivitySink? activitySink = null,
         IRetainedApprovalStash? retainedStash = null,
-        bool allowUserInput = true)
+        bool allowUserInput = true,
+        IAdvisorConsultant? advisor = null)
     {
+        _advisor = advisor;
         _gateway = gateway;
         _store = store;
         _ids = ids;
@@ -65,7 +68,8 @@ internal sealed partial class AgentToolExecutionPipeline
         ModelStepId modelStepId,
         IReadOnlyList<ModelToolCall> modelCalls,
         int modelDroppedCount,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AdvisorConsultationSource? advisorSource = null)
     {
         if (modelDroppedCount > 0)
         {
@@ -83,7 +87,11 @@ internal sealed partial class AgentToolExecutionPipeline
         }
 
         var batch = new ProposalBatch(modelCalls.Count)
-        { RejectWaitBatch = modelCalls.Count > 1 && modelCalls.Any(call => call.ToolId == "agent_wait") };
+        {
+            RejectWaitBatch = modelCalls.Count > 1 && modelCalls.Any(call => call.ToolId == "agent_wait"),
+            CallCount = modelCalls.Count,
+            AdvisorSource = advisorSource,
+        };
         try
         {
             for (var index = 0; index < modelCalls.Count; index++)
@@ -321,7 +329,7 @@ internal sealed partial class AgentToolExecutionPipeline
                             toolCallId: deniedReceipt.ToolCallId,
                             providerCallId: deniedReceipt.ProviderCallId,
                             executionId: deniedReceipt.ExecutionId,
-                            safeCode: "policy_denied"),
+                            safeCode: deniedExecution.RequestedSafeCode),
                         Array.Empty<HarnessPayloadIntent>(),
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -629,9 +637,14 @@ internal sealed partial class AgentToolExecutionPipeline
         string Question,
         IReadOnlyList<string> Options);
 
+    /// <summary>
+    /// A call the pipeline settles without the gateway: a policy denial, or a Host-answered
+    /// call such as the advisor, whose requested event says it was read-only.
+    /// </summary>
     private sealed record DeniedToolExecution(
         HarnessPayloadIntent Payload,
-        ToolExecutionReceipt Receipt);
+        ToolExecutionReceipt Receipt,
+        string RequestedSafeCode = "policy_denied");
 
     private async Task<AgentRun> CommitSingleEventAsync(
         AgentRun run,

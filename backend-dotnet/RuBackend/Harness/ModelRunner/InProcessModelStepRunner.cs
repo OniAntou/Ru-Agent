@@ -626,6 +626,10 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         return (currentPrompt, messages);
     }
 
+    /// <summary>The portable conversation an advisor transcript is rendered from (ADR 0047).</summary>
+    internal static (string Prompt, JsonArray? Turns, IReadOnlyList<ModelTurn>? Messages) AdvisorConversation(
+        ModelContextSnapshot context) => BuildConversation(context, hasImages: false);
+
     internal static (string Prompt, JsonArray? Turns, IReadOnlyList<ModelTurn>? Messages) BuildConversationForTests(
         ModelContextSnapshot context,
         bool hasImages = false) => BuildConversation(context, hasImages);

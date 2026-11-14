@@ -13,7 +13,8 @@ public sealed record AgentRunModelMetadata(
     string ToolProfile = RuAgent.Protocol.AgentToolProfiles.Current,
     bool ComputerUse = false,
     bool ProviderWebSearch = false,
-    bool ImageInputAccepted = false);
+    bool ImageInputAccepted = false,
+    bool Advisor = false);
 
 public interface IAgentRunModelMetadataResolver
 {
@@ -45,7 +46,9 @@ public sealed class AgentRunModelMetadataResolver(
                 RuAgent.Protocol.AgentToolProfiles.ReadPin(System.Text.Json.Nodes.JsonNode.Parse(selection.RequestOptionsJson)!.AsObject()),
                 ComputerUsePolicy.IsPinned(selection),
                 ProviderWebSearchPolicy.IsPinned(selection),
-                bootstrap.AcceptsImageInput);
+                bootstrap.AcceptsImageInput,
+                // Any marker, even "none selected": the user may still name a model (ADR 0047).
+                AdvisorPolicy.ReadPinned(selection) is not null);
         }
         catch (HarnessStoreException error)
         {

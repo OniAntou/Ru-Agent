@@ -17,6 +17,10 @@ internal sealed partial class AgentToolExecutionPipeline
         {
             foreach (var proposal in proposals) Proposals.Add(proposal.ModelOrder, proposal);
             RejectWaitBatch = proposals.Count > 1 && proposals.Any(proposal => proposal.ToolId == "agent_wait");
+            CallCount = proposals.Count;
+            // A retained batch resumes after a pause or restart: an advisor call in it was
+            // never answered, and replaying it would bill the user again (ADR 0047).
+            Resuming = true;
         }
 
         internal Dictionary<int, ToolProposal> Proposals { get; }
@@ -25,6 +29,9 @@ internal sealed partial class AgentToolExecutionPipeline
         internal List<AskDecision> Approvals { get; }
         internal List<InputAsk> Questions { get; } = new();
         internal bool RejectWaitBatch { get; init; }
+        internal int CallCount { get; init; }
+        internal bool Resuming { get; init; }
+        internal AdvisorConsultationSource? AdvisorSource { get; init; }
     }
 
     private async Task EvaluateBatchProposalAsync(
@@ -34,6 +41,11 @@ internal sealed partial class AgentToolExecutionPipeline
         {
             batch.Denied.Add(proposal.ModelOrder, CreateDeniedExecution(proposal, _ids.NewExecutionId(),
                 "subagent_wait_must_be_alone", "Call agent_wait alone in a tool batch."));
+            return;
+        }
+        if (proposal.ToolId is AdvisorCodes.ToolId)
+        {
+            await HandleAdvisorProposalAsync(run, proposal, batch, cancellationToken).ConfigureAwait(false);
             return;
         }
         if (proposal.ToolId is AskUserToolId)

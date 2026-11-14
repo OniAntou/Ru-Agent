@@ -46,6 +46,7 @@ Type `/` to see suggestions, or press `Ctrl+P`.
 | `/model [name]` | Switch or show the active model |
 | `/provider [name]` | Choose a provider, then enter its API key |
 | `/reasoning [effort]` | Show or set the active model's reasoning effort |
+| `/advisor [off\|<model>\|<provider> <model>]` | Choose a model the agent may consult in new runs |
 | `/computer [on\|off]` | Show or set computer use for new turns |
 | `/status [overview\|context\|usage]` | Inspect status, context and token usage |
 | `/preset [plan\|standard\|full_access\|rules]` | Choose permissions or manage remembered rules |

@@ -40,6 +40,7 @@ public sealed class ApprovalRememberPolicyTests
     [InlineData("web_fetch")]
     [InlineData("skill")]
     [InlineData("ask_user")]
+    [InlineData("advisor")]
     [InlineData("agent_spawn")]
     [InlineData("agent_send")]
     [InlineData("agent_wait")]

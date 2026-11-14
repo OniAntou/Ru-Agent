@@ -167,6 +167,11 @@ public sealed partial class TurnProcessDisclosure : UserControl
     {
         HeaderButton.Visibility = HeaderVisible ? Visibility.Visible : Visibility.Collapsed;
         HeaderTextBlock.Text = HeaderText;
+        // Set explicitly as well as in XAML: the shared instance is the same source
+        // the activity rows use, and an unresolved x:Bind must not leave the
+        // disclosure one step smaller than the rows it folds.
+        HeaderTextBlock.FontSize = Typography.ActivityFontSize;
+        MetaText.FontSize = Typography.ActivityFontSize;
         MetaText.Text = string.IsNullOrEmpty(HeaderMeta) ? string.Empty : $"· {HeaderMeta}";
         MetaText.Visibility = string.IsNullOrEmpty(HeaderMeta) ? Visibility.Collapsed : Visibility.Visible;
         LeadingIcon.Glyph = string.IsNullOrEmpty(HeaderGlyph) ? "\uE945" : HeaderGlyph;
@@ -195,7 +200,9 @@ public sealed partial class TurnProcessDisclosure : UserControl
         var brush = (Brush)Application.Current.Resources[key];
         LeadingIcon.Foreground = brush;
         ChevronIcon.Foreground = brush;
-        HeaderTextBlock.Foreground = brush;
+        // The activity row itself stays ink; only its meta tail is muted.
+        HeaderTextBlock.Foreground = HeaderIsFailed || HeaderIsWaiting
+            ? brush : (Brush)Application.Current.Resources["RuInkBrush"];
         MetaText.Foreground = HeaderIsFailed || HeaderIsWaiting
             ? brush : (Brush)Application.Current.Resources["RuMutedBrush"];
     }

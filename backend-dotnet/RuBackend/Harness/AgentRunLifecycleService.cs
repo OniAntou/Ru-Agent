@@ -125,42 +125,20 @@ public sealed class AgentRunLifecycleService
         }
 
 
-        if (run.State == HarnessRunState.ReconciliationRequired)
-        {
-            // A run parked on an ambiguous tool outcome has exactly one way out:
-            // a reconciliation decision. The desktop client has no reconcile
-            // endpoint of its own, and Continue is the only affordance it offers
-            // here, so Continue *is* that decision — resolve it as a continue with
-            // inspection rather than bouncing the user with invalid_run_transition.
-            return await _commands.ContinueReconciliationAsync(run, cancellationToken).ConfigureAwait(false);
-        }
-
         var transition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Continue);
         if (!transition.Accepted)
         {
             return BoundedError(409, transition.ErrorCode ?? "invalid_transition", "Continue rejected.");
         }
 
-        // An explicit user Continue overrides the inspection gate: the user has
-        // seen the ambiguous outcome and chosen to proceed. The override is
-        // audited beside the continue request and is applied only after the
-        // durable commit succeeds, so a commit conflict cannot leave the
-        // in-memory gate open while the durable state still says otherwise.
-        var gateCleared = _inspectionGate.IsMutationDenied(runId);
-
         var now = _time.UtcNow;
-        var (nextRun, commitEvents) = PlanContinueCommit(run, transition.Next, gateCleared, _ids, now);
+        var (nextRun, commitEvents) = PlanContinueCommit(run, transition.Next, false, _ids, now);
 
         var commit = new HarnessCommit(runId, run.Version, nextRun, commitEvents, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
         var result = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
         if (result.Outcome != HarnessCommitOutcome.Committed)
         {
             return BoundedError(409, "commit_conflict", "Commit conflict.");
-        }
-
-        if (gateCleared)
-        {
-            _inspectionGate.RecordInspection(runId);
         }
 
         return new AgentServiceResult(200, AgentRunQueryService.MapRun(result.Run!));

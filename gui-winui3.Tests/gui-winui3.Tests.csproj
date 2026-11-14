@@ -9,13 +9,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="Markdig.Signed" />
-    <!-- RuAgent.Cli (terminal TUI) pulls Terminal.Gui, which in turn pulls the unsigned
-         Markdig 1.3.2. These tests already reference Markdig.Signed 0.44.0 for the GUI
-         markdown engine, so the duplicate Markdig namespace made compilation ambiguous
-         (CS0433). The test project never exercises Terminal.Gui; exclude the unsigned
-         package's assets so Markdig.Signed stays the only Markdig in the graph. -->
-    <PackageReference Include="Markdig" ExcludeAssets="all" />
+    <!-- One Markdig in the graph: the GUI engine and Terminal.Gui (via RuAgent.Cli)
+         both use the unsigned Markdig package at the central version. -->
+    <PackageReference Include="Markdig" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>

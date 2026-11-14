@@ -70,6 +70,31 @@ public sealed partial class AgentSidePanelControl
     /// </summary>
     private const double ChangeRowActionsWidth = 28;
 
+    // Rows beyond this count are below the fold of a typical panel; staggering them
+    // would only delay what the reader scrolls to.
+    private const int StaggeredChangeRows = 14;
+    private const double ChangeRowStaggerMilliseconds = 18;
+
+    /// <summary>
+    /// When the Changes tab opens, its rows arrive one after another from the top. It runs
+    /// on a tab change only, never on a refresh, so a list that updates during a run stays still.
+    /// </summary>
+    private void StaggerChangeRows()
+    {
+        if (!UiTiming.AnimationsEnabled) return;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_mode != AgentSidePanelMode.Panel || _activeTab != SidePanelTabKind.Changes) return;
+            ChangesList.UpdateLayout();
+            int count = Math.Min(Changes.Count, StaggeredChangeRows);
+            for (int index = 0; index < count; index++)
+            {
+                if (ChangesList.ContainerFromIndex(index) is FrameworkElement container)
+                    UiMotion.Enter(container, index * ChangeRowStaggerMilliseconds);
+            }
+        });
+    }
+
     private static void SetChangeRowActive(object sender, bool active)
     {
         if (sender is not Microsoft.UI.Xaml.Controls.Grid { Children.Count: > 1 } row
@@ -123,7 +148,24 @@ public sealed partial class AgentSidePanelControl
 
     private void OnChangeRowCountsTapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: ChangesTabRow row }) row.IsExpanded = !row.IsExpanded;
+        if (sender is not FrameworkElement { Tag: ChangesTabRow row } source) return;
+        row.IsExpanded = !row.IsExpanded;
+        PlayChangeRowExpansion(source, row.IsExpanded);
+    }
+
+    /// <summary>
+    /// The edits of a row that just opened fade and lift into place. Closing stays
+    /// immediate: the list below should move up at once, not wait for an exit.
+    /// </summary>
+    private static void PlayChangeRowExpansion(FrameworkElement source, bool expanded)
+    {
+        if (!expanded) return;
+        // source -> the row's line (Grid) -> the row's StackPanel, whose second child lists the edits.
+        if (source.Parent is FrameworkElement { Parent: Microsoft.UI.Xaml.Controls.StackPanel { Children.Count: > 1 } stack }
+            && stack.Children[1] is FrameworkElement edits)
+        {
+            UiMotion.Enter(edits);
+        }
     }
 
     private void OnShowScratchClick(object sender, RoutedEventArgs e)

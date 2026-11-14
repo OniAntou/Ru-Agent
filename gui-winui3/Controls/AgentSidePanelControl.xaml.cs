@@ -164,6 +164,10 @@ namespace RuApp.Controls
                 {
                     RevealTerminal();
                 }
+                else if (activeTab == SidePanelTabKind.Changes)
+                {
+                    StaggerChangeRows();
+                }
             }
             else if (showPanel && activeTab == SidePanelTabKind.Terminal)
             {
@@ -245,9 +249,10 @@ namespace RuApp.Controls
 
         private void OnChangeRowToggleClick(object sender, RoutedEventArgs e)
         {
-            if (sender is FrameworkElement { Tag: ChangesTabRow row })
+            if (sender is FrameworkElement { Tag: ChangesTabRow row } source)
             {
                 row.IsExpanded = !row.IsExpanded;
+                PlayChangeRowExpansion(source, row.IsExpanded);
             }
         }
 

@@ -63,7 +63,7 @@ public sealed partial class AgentSidePanelControl
         host.Opacity = fromOpacity;
         slide.X = fromX;
         var animation = new Storyboard();
-        var duration = TimeSpan.FromMilliseconds(exiting ? 140 : 180);
+        var duration = TimeSpan.FromMilliseconds(exiting ? UiMotion.ExitMilliseconds : UiMotion.SlideMilliseconds);
         var fade = new DoubleAnimation { To = exiting ? 0 : 1, Duration = duration };
         Storyboard.SetTarget(fade, host);
         Storyboard.SetTargetProperty(fade, "Opacity");
@@ -94,11 +94,18 @@ public sealed partial class AgentSidePanelControl
         animation.Begin();
     }
 
+    private const double BodySwapDistance = 10;
+
     private void CancelBodyTransition()
     {
         _bodyAnimation?.Stop();
         _bodyAnimation = null;
-        if (_bodyHost is { } host) host.Opacity = 1;
+        if (_bodyHost is { } host)
+        {
+            host.Opacity = 1;
+            UiMotion.SlideX(host, 0, animate: false);
+        }
+
         _bodyHost = null;
     }
 
@@ -108,7 +115,11 @@ public sealed partial class AgentSidePanelControl
         if (!UiTiming.AnimationsEnabled) return;
         // Keep the incoming content readable immediately; stale clocks must never
         // leave a previously hidden terminal or preview translucent on return.
-        var fade = new DoubleAnimation { From = 0.72, To = 1, Duration = TimeSpan.FromMilliseconds(120) };
+        var fade = new DoubleAnimation { From = 0.72, To = 1, Duration = TimeSpan.FromMilliseconds(UiMotion.SwapInMilliseconds) };
+        // The fade stays shallow so the content is readable at once; a short glide from
+        // the panel's own entry side is what says "this is a different tab".
+        UiMotion.SlideX(body, BodySwapDistance, animate: false);
+        UiMotion.SlideX(body, 0);
         Storyboard.SetTarget(fade, body);
         Storyboard.SetTargetProperty(fade, "Opacity");
         var animation = new Storyboard();

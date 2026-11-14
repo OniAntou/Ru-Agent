@@ -60,7 +60,10 @@ public sealed partial class ChatView
             SlashCommandList.SelectedIndex = 0;
             // The popup takes no layout space; lift it so it sits just above the text box.
             SlashCommandPopup.VerticalOffset = -(matches.Count * SlashRowHeight + 20);
+            bool opening = !SlashCommandPopup.IsOpen;
             SlashCommandPopup.IsOpen = true;
+            // Once per opening: typing more letters narrows a menu that is already there.
+            if (opening) UiMotion.Enter(SlashCommandList);
         }
         catch (Exception error)
         {

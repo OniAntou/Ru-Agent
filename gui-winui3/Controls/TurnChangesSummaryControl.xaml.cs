@@ -131,5 +131,27 @@ public sealed partial class TurnChangesSummaryControl : UserControl
     {
         _expanded = !_expanded;
         RenderFiles();
+        if (_expanded) StaggerRevealedFiles();
+    }
+
+    private const int StaggeredFiles = 14;
+    private const double FileStaggerMilliseconds = 18;
+
+    /// <summary>The files "Show all" just revealed arrive one after another; the ones already shown stay still.</summary>
+    private void StaggerRevealedFiles()
+    {
+        if (!RuApp.Services.UiTiming.AnimationsEnabled) return;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_expanded) return;
+            FilesList.UpdateLayout();
+            int first = RuApp.Services.TurnChangesProjection.PreviewFileCount;
+            int last = Math.Min(_summary.Files.Count, first + StaggeredFiles);
+            for (int index = first; index < last; index++)
+            {
+                if (FilesList.ContainerFromIndex(index) is FrameworkElement container)
+                    RuApp.Services.UiMotion.Enter(container, (index - first) * FileStaggerMilliseconds);
+            }
+        });
     }
 }

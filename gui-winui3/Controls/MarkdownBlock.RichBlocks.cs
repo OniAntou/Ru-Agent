@@ -157,6 +157,7 @@ namespace RuApp.Controls
                         var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
                         package.SetText(text);
                         Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                        ConfirmCopy((Button)sender);
                     }
                     catch (Exception error)
                     {
@@ -180,6 +181,32 @@ namespace RuApp.Controls
                 button.GotFocus += (_, _) => Show(pointerOver || button.FocusState == FocusState.Keyboard);
                 button.LostFocus += (_, _) => Show(pointerOver);
             }
+
+            /// <summary>
+            /// The copy glyph turns into a check for a moment, so a copy that worked says so
+            /// where the pointer already is. A second click during that moment still copies.
+            /// </summary>
+            private static async void ConfirmCopy(Button button)
+            {
+                if (button.Content is not FontIcon icon || icon.Glyph == CopiedGlyph) return;
+                string original = icon.Glyph;
+                var originalBrush = icon.Foreground;
+                icon.Glyph = CopiedGlyph;
+                icon.Foreground = ThemeBrush("RuSuccessBrush", 52, 211, 153);
+                Services.UiMotion.Enter(icon);
+                try
+                {
+                    await System.Threading.Tasks.Task.Delay(CopiedHoldMilliseconds);
+                }
+                finally
+                {
+                    icon.Glyph = original;
+                    icon.Foreground = originalBrush;
+                }
+            }
+
+            private const string CopiedGlyph = "\uE73E";
+            private const int CopiedHoldMilliseconds = 1200;
 
             private static SolidColorBrush ThemeBrush(string key, byte r, byte g, byte b) =>
                 Application.Current?.Resources.TryGetValue(key, out object? value) == true && value is SolidColorBrush brush

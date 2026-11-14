@@ -167,7 +167,16 @@ def export_swe(output, include_oracle):
     return {"exported": len(records), "oracle_included": include_oracle, "output": str(output)}
 
 
-def run_live(selected, destination, executable, allow_live, attempts, trust_workspace=False, tool_profile=None):
+def run_live(
+    selected,
+    destination,
+    executable,
+    allow_live,
+    attempts,
+    trust_workspace=False,
+    tool_profile=None,
+    allow_stale_host=False,
+):
     if not allow_live:
         raise ValueError("live execution requires --allow-live")
     if not trust_workspace:
@@ -175,8 +184,16 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
     if not 1 <= attempts <= 5:
         raise ValueError("live attempts must be between one and five")
     from ru_trial import build_agent_command, run_ru
+    from runtime_identity import describe_runtime
 
     build_agent_command(executable)
+    runtime = describe_runtime(executable)
+    if runtime["host_stale"] and not allow_stale_host:
+        raise ValueError(
+            "host_publish_stale: RuBackend.exe is older than RuAgent.Cli.exe by "
+            f"{runtime['host_stale_seconds']}s; use the flat build.bat publish or republish "
+            "the Host, or pass --allow-stale-host for a historical comparison"
+        )
     for task in selected:
         toolchain = {"csharp": "dotnet", "typescript": "node"}.get(task.language)
         if toolchain is not None and shutil.which(toolchain) is None:
@@ -187,9 +204,18 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
         for attempt in range(attempts):
             trial_dir = destination / f"{task.id}-{attempt + 1}"
             trial = prepare(task, trial_dir)
+            trial["runtime"] = runtime
+            write_json(trial_dir / "trial.json", trial)
             execution = run_ru(executable, task, Path(trial["workspace"]), trial_dir, trust_workspace=trust_workspace, tool_profile=tool_profile)
             result = grade(task, Path(trial["workspace"]))
-            result.update({"agent": execution, "attempt": attempt + 1, "base_commit": trial["base_commit"]})
+            result.update(
+                {
+                    "agent": execution,
+                    "attempt": attempt + 1,
+                    "base_commit": trial["base_commit"],
+                    "runtime": runtime,
+                }
+            )
             if task.suite == "skills":
                 result["skill_eval"] = {
                     "scenario": task.skill_scenario,
@@ -209,6 +235,7 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
             write_json(trial_dir / "result.json", result)
             results.append(result)
     return {"kind": "live_native_trials", "environment": "native-local", "attempts": attempts,
+            "runtime": runtime,
             "success_rate": sum(result["reward"] == 1 for result in results) / len(results) if results else None,
             "cost": None, "runs": results}
 
@@ -233,6 +260,7 @@ def main():
     parser.add_argument("--include-oracle", action="store_true")
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--trust-workspace", action="store_true")
+    parser.add_argument("--allow-stale-host", action="store_true")
     parser.add_argument("--ru-executable", type=Path)
     parser.add_argument("--tool-profile", choices=["coding_v2", "coding_v3"])
     args = parser.parse_args()
@@ -327,7 +355,16 @@ def main():
                 legacy_track = {"matched-model": "harness", "native-product": "product"}.get(args.track, args.track)
                 result = compare_cohorts(entries, legacy_track)
         else:
-            result = run_live(selected, args.destination, args.ru_executable, args.allow_live, args.attempts, args.trust_workspace, args.tool_profile)
+            result = run_live(
+                selected,
+                args.destination,
+                args.ru_executable,
+                args.allow_live,
+                args.attempts,
+                args.trust_workspace,
+                args.tool_profile,
+                args.allow_stale_host,
+            )
         if args.report is not None and args.command != "export-swe":
             write_json(args.report, result)
         print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -164,6 +164,21 @@ def test_unknown_task_and_live_call_without_authorization_are_rejected(tmp_path)
         benchmark.run_live(None, tmp_path, None, True, 1)
 
 
+def test_live_trial_refuses_a_stale_host(monkeypatch, tmp_path):
+    import runtime_identity
+
+    cli = tmp_path / "RuAgent.Cli.exe"
+    cli.write_bytes(b"cli")
+    monkeypatch.setattr(
+        runtime_identity,
+        "describe_runtime",
+        lambda executable: {"host_stale": True, "host_stale_seconds": 10},
+    )
+
+    with pytest.raises(ValueError, match="host_publish_stale"):
+        benchmark.run_live(None, tmp_path, cli, True, 1, True)
+
+
 def test_private_task_root_reuses_prepare_and_trusted_grader_without_copying_oracle(tmp_path):
     import shutil
     task = next(task for task in benchmark.tasks("swe") if task.language == "python")

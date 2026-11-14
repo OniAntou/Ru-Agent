@@ -200,7 +200,7 @@ task into a selection/adherence score. Provider trials require explicit
 `--allow-live --trust-workspace`, for example:
 
 ```powershell
-.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py run-live --suite skills --task explicit-currency-rounding --destination artifacts/skill-live-explicit --ru-executable backend-dotnet/RuAgent.Cli/bin/Debug/net10.0-windows/RuAgent.Cli.dll --allow-live --trust-workspace --report artifacts/skill-live-explicit/report.json
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py run-live --suite skills --task explicit-currency-rounding --destination artifacts/skill-live-explicit --ru-executable gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuAgent.Cli.exe --allow-live --trust-workspace --tool-profile coding_v3 --report artifacts/skill-live-explicit/report.json
 ```
 
 This command is documentation for a future controlled cohort; no live skill
@@ -221,7 +221,7 @@ cannot be compared as though they were total nested tool usage. `coding_v3`
 advertising `run_code` does not prove that the model used it.
 
 ```powershell
-.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py run-live --suite terminal --task cs-single-flight-cache --attempts 3 --destination artifacts/ru-cache-live --ru-executable backend-dotnet/RuAgent.Cli/bin/Debug/net10.0-windows/RuAgent.Cli.dll --allow-live --trust-workspace --report artifacts/ru-cache-live/report.json
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py run-live --suite terminal --task cs-single-flight-cache --attempts 3 --destination artifacts/ru-cache-live --ru-executable gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuAgent.Cli.exe --allow-live --trust-workspace --tool-profile coding_v3 --report artifacts/ru-cache-live/report.json
 ```
 
 Each attempt starts in a fresh workspace and session. An approval/user wait
@@ -274,7 +274,25 @@ not establish a causal effect of the fixes.
 
 ## Running live trials correctly
 
-`run-live` starts the Host from the **published** tree (`backend-dotnet/RuBackend/bin/Release/net10.0/win-x64/publish`), not from `dotnet build` output. After changing Host or Broker code run `dotnet publish backend-dotnet/RuBackend/RuBackend.csproj -c Release -r win-x64 --self-contained true` first; otherwise the trial silently measures the old binary. Check that the DLL timestamp in that folder is newer than your change.
+`run-live` starts the CLI, which resolves the Host exactly like the app: a flat
+distribution uses the sibling `RuBackend.exe`; a repository CLI uses the
+published Host under `backend-dotnet/RuBackend/bin/Release/net10.0/win-x64/publish`.
+Use the flat publish produced by `build.bat`
+(`gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuAgent.Cli.exe`);
+the current build's `RuBackend.exe` sits beside it. A repository CLI needs a fresh
+Host publish after Host/Broker changes.
+
+The report and every `trial.json` record `runtime.cli` and `runtime.host`
+(`path`, `sha256`, `bytes`, `modified_utc`), `host_layout` (`flat` or
+`repository`) and `host_stale`. A missing Host fails with
+`host_executable_missing`; a Host older than the CLI fails with
+`host_publish_stale` unless `--allow-stale-host` is passed for a deliberately
+historical comparison. A Debug DLL pointed at an old Host publish is therefore
+refused instead of silently measuring old code.
+
+The CLI still keeps its start-or-attach behavior: a Host already running for the
+same profile is reused, and that process may not be the file recorded above.
+Stop it or use a dedicated data root when the trial must prove the current build.
 
 Set `RU_REASONING_EFFORT` (for example `low`) in the environment of the benchmark command to pick the reasoning effort for the whole trial without editing saved settings; `request_options_json` in the run's pinned provider selection records what was applied. Set `RU_DRIVE_FAILURE_DIAGNOSTIC` to a file path to capture the full exception when a run ends with `runtime_drive_failed`.
 

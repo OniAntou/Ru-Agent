@@ -592,8 +592,11 @@ bubble, attachments and assistant column all bind to the same width.
 `TurnProcessDisclosure` replaces the plain activity summary for segmented turns:
 its header reads `Working…`, `Worked for 1m 5s`, `Took 1m 5s · failed` or
 `Worked`, and its body animates between the compact answer and the full process.
-A closed turn auto-collapses, a click reopens it, and lost content height is
-re-measured after the binding changes so the fold never flashes an empty frame.
+The header uses the compact activity row's visual language — kind glyph, activity
+type size and a `· N steps` meta tail — with the glyph turning into the chevron
+on hover, focus or while open. A closed turn auto-collapses, a click reopens it,
+and lost content height is re-measured after the binding changes so the fold
+never flashes an empty frame.
 The task shelf is a tab tucked under the composer: the composer surface with a
 hairline on its open sides, rounded on top, its bottom edge hidden beneath the
 composer. Its header is the disclosure: collapsed it is one quiet line with the

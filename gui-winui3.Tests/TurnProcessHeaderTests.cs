@@ -25,6 +25,9 @@ public sealed class TurnProcessHeaderTests
         Assert.True(message.ShowProcessHeader);
         Assert.StartsWith("Worked for 1m ", message.ProcessHeader);
         Assert.Contains("s", message.ProcessHeader);
+        Assert.Equal("1 step", message.ProcessMeta);
+        Assert.Equal("\uE8A5", message.ProcessGlyph);
+        Assert.False(message.ProcessIsFailed);
     }
 
     [Fact]

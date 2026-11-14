@@ -4,6 +4,11 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     IsTabStop="False">
     <StackPanel>
+        <!--
+          Same quiet line as the compact agent activity row: a kind glyph that
+          becomes the chevron on hover/focus/open, a sentence title and a short
+          meta tail. No surface, no rule.
+        -->
         <Button x:Name="HeaderButton"
                 Click="OnHeaderClick"
                 Visibility="Collapsed"
@@ -11,22 +16,40 @@
                 HorizontalContentAlignment="Left"
                 Background="Transparent"
                 BorderThickness="0"
-                Padding="0,2,0,4"
-                MinHeight="26"
+                Padding="2,4"
+                MinHeight="28"
+                CornerRadius="{StaticResource AppControlCornerRadius}"
+                PointerEntered="OnHeaderPointerEntered"
+                PointerExited="OnHeaderPointerExited"
+                GotFocus="OnHeaderGotFocus"
+                LostFocus="OnHeaderLostFocus"
                 AutomationProperties.Name="Toggle turn process">
-            <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="5">
-                <TextBlock x:Name="HeaderTextBlock"
+            <Button.Resources>
+                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="Transparent" />
+                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="Transparent" />
+                <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+            </Button.Resources>
+            <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="8">
+                <Grid Width="16" Height="16" VerticalAlignment="Center">
+                    <FontIcon x:Name="LeadingIcon" FontSize="13"
+                              Foreground="{StaticResource RuMutedBrush}"
+                              AutomationProperties.AccessibilityView="Raw" />
+                    <FontIcon x:Name="ChevronIcon" Glyph="&#xE70D;" FontSize="10" Opacity="0"
+                              Foreground="{StaticResource RuMutedBrush}"
+                              AutomationProperties.AccessibilityView="Raw" />
+                </Grid>
+                <TextBlock x:Name="HeaderTextBlock" Grid.Column="1"
                            FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="12"
+                           FontSize="{x:Bind Typography.ActivityFontSize, Mode=OneWay}"
                            Foreground="{StaticResource RuMutedBrush}"
-                           TextWrapping="NoWrap"
+                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxLines="1"
                            VerticalAlignment="Center" />
-                <FontIcon x:Name="ChevronIcon" Grid.Column="1"
-                          Glyph="&#xE70D;"
-                          FontSize="9"
-                          Opacity="0.8"
-                          Foreground="{StaticResource RuMutedBrush}"
-                          VerticalAlignment="Center" />
+                <TextBlock x:Name="MetaText" Grid.Column="2"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="{x:Bind Typography.ActivityFontSize, Mode=OneWay}"
+                           Foreground="{StaticResource RuMutedBrush}"
+                           TextWrapping="NoWrap" VerticalAlignment="Center" Visibility="Collapsed" />
             </Grid>
         </Button>
         <Grid x:Name="BodyHost" VerticalAlignment="Top" SizeChanged="OnBodySizeChanged">

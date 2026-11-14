@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Linq;
+using RuAgent.Protocol.Harness;
 
 namespace RuApp.Models;
 
@@ -38,6 +39,50 @@ public partial class ChatMessageItem
         HasAgentActivities || Segments?.Any(segment => segment is ActivitySegment) == true;
 
     public bool ShowProcessHeader => ShowActivitySummary && HasProcess;
+
+    private IEnumerable<AgentActivityItem> ProcessSteps
+    {
+        get
+        {
+            var segmented = Segments?.OfType<ActivitySegment>()
+                .Select(segment => segment.Item).ToList();
+            if (segmented is { Count: > 0 }) return segmented;
+            return AgentActivities ?? Enumerable.Empty<AgentActivityItem>();
+        }
+    }
+
+    public string ProcessGlyph => KindGlyph(ProcessSteps.LastOrDefault()?.Kind);
+
+    public bool ProcessIsFailed => ProcessSteps.Any(item => item.IsFailed);
+
+    public bool ProcessIsWaiting => ProcessSteps.Any(item => item.IsWaiting);
+
+    public string ProcessMeta
+    {
+        get
+        {
+            var count = ProcessSteps.Count(item => item.Kind != AgentActivityKind.Narration);
+            return count switch
+            {
+                0 => string.Empty,
+                1 => "1 step",
+                _ => $"{count} steps",
+            };
+        }
+    }
+
+    private static string KindGlyph(AgentActivityKind? kind) => kind switch
+    {
+        AgentActivityKind.Explore => "\uE8A5",
+        AgentActivityKind.Search => "\uE721",
+        AgentActivityKind.Edit => "\uE70F",
+        AgentActivityKind.Terminal => "\uE756",
+        AgentActivityKind.Todo => "\uE9D5",
+        AgentActivityKind.Compaction => "\uE73F",
+        AgentActivityKind.Retry => "\uE72C",
+        AgentActivityKind.Thinking => "\uE82F",
+        _ => "\uE945",
+    };
 
     public TimeSpan? Duration =>
         _completedAt is { } end && end >= Timestamp ? end - Timestamp : null;
@@ -111,6 +156,10 @@ public partial class ChatMessageItem
         OnPropertyChanged(nameof(HasProcess));
         OnPropertyChanged(nameof(ShowProcessHeader));
         OnPropertyChanged(nameof(ProcessHeader));
+        OnPropertyChanged(nameof(ProcessGlyph));
+        OnPropertyChanged(nameof(ProcessMeta));
+        OnPropertyChanged(nameof(ProcessIsFailed));
+        OnPropertyChanged(nameof(ProcessIsWaiting));
         OnPropertyChanged(nameof(DisplayedSegments));
         OnPropertyChanged(nameof(ShowLegacyActivityFeed));
         UpdateActivityGaps();

@@ -275,6 +275,10 @@ namespace RuApp.Models
             OnPropertyChanged(nameof(HasProcess));
             OnPropertyChanged(nameof(ShowProcessHeader));
             OnPropertyChanged(nameof(ProcessHeader));
+            OnPropertyChanged(nameof(ProcessGlyph));
+            OnPropertyChanged(nameof(ProcessMeta));
+            OnPropertyChanged(nameof(ProcessIsFailed));
+            OnPropertyChanged(nameof(ProcessIsWaiting));
             OnPropertyChanged(nameof(ShowLegacyActivityFeed));
             OnPropertyChanged(nameof(ShowLegacyText));
         }
@@ -382,6 +386,10 @@ namespace RuApp.Models
             OnPropertyChanged(nameof(HasProcess));
             OnPropertyChanged(nameof(ShowProcessHeader));
             OnPropertyChanged(nameof(ProcessHeader));
+            OnPropertyChanged(nameof(ProcessGlyph));
+            OnPropertyChanged(nameof(ProcessMeta));
+            OnPropertyChanged(nameof(ProcessIsFailed));
+            OnPropertyChanged(nameof(ProcessIsWaiting));
             AutoCollapseCompletedTurn();
         }
 

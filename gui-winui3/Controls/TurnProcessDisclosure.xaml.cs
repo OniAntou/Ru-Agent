@@ -1,8 +1,10 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using RuApp.Services;
 using Windows.UI.ViewManagement;
 
 namespace RuApp.Controls;
@@ -20,11 +22,27 @@ public sealed partial class TurnProcessDisclosure : UserControl
 
     public static readonly DependencyProperty HeaderTextProperty = DependencyProperty.Register(
         nameof(HeaderText), typeof(string), typeof(TurnProcessDisclosure),
-        new PropertyMetadata(string.Empty, OnHeaderChanged));
+        new PropertyMetadata(string.Empty, OnHeaderTextChanged));
+
+    public static readonly DependencyProperty HeaderMetaProperty = DependencyProperty.Register(
+        nameof(HeaderMeta), typeof(string), typeof(TurnProcessDisclosure),
+        new PropertyMetadata(string.Empty, OnHeaderChromeChanged));
+
+    public static readonly DependencyProperty HeaderGlyphProperty = DependencyProperty.Register(
+        nameof(HeaderGlyph), typeof(string), typeof(TurnProcessDisclosure),
+        new PropertyMetadata(string.Empty, OnHeaderChromeChanged));
+
+    public static readonly DependencyProperty HeaderIsFailedProperty = DependencyProperty.Register(
+        nameof(HeaderIsFailed), typeof(bool), typeof(TurnProcessDisclosure),
+        new PropertyMetadata(false, OnHeaderChromeChanged));
+
+    public static readonly DependencyProperty HeaderIsWaitingProperty = DependencyProperty.Register(
+        nameof(HeaderIsWaiting), typeof(bool), typeof(TurnProcessDisclosure),
+        new PropertyMetadata(false, OnHeaderChromeChanged));
 
     public static readonly DependencyProperty HeaderVisibleProperty = DependencyProperty.Register(
         nameof(HeaderVisible), typeof(bool), typeof(TurnProcessDisclosure),
-        new PropertyMetadata(false, OnHeaderChanged));
+        new PropertyMetadata(false, OnHeaderVisibleChanged));
 
     public static readonly DependencyProperty IsExpandedProperty = DependencyProperty.Register(
         nameof(IsExpanded), typeof(bool), typeof(TurnProcessDisclosure),
@@ -32,6 +50,8 @@ public sealed partial class TurnProcessDisclosure : UserControl
 
     private bool _loaded;
     private bool _animating;
+    private bool _pointerOver;
+    private bool _focused;
     private double _pendingFrom;
     private Storyboard? _storyboard;
     private static readonly UISettings UiSettings = new();
@@ -48,6 +68,8 @@ public sealed partial class TurnProcessDisclosure : UserControl
         Unloaded += (_, _) => StopAnimation();
     }
 
+    public TranscriptTypography Typography => TranscriptTypography.Instance;
+
     public object? BodyContent
     {
         get => GetValue(BodyContentProperty);
@@ -58,6 +80,30 @@ public sealed partial class TurnProcessDisclosure : UserControl
     {
         get => (string)GetValue(HeaderTextProperty);
         set => SetValue(HeaderTextProperty, value);
+    }
+
+    public string HeaderMeta
+    {
+        get => (string)GetValue(HeaderMetaProperty);
+        set => SetValue(HeaderMetaProperty, value);
+    }
+
+    public string HeaderGlyph
+    {
+        get => (string)GetValue(HeaderGlyphProperty);
+        set => SetValue(HeaderGlyphProperty, value);
+    }
+
+    public bool HeaderIsFailed
+    {
+        get => (bool)GetValue(HeaderIsFailedProperty);
+        set => SetValue(HeaderIsFailedProperty, value);
+    }
+
+    public bool HeaderIsWaiting
+    {
+        get => (bool)GetValue(HeaderIsWaitingProperty);
+        set => SetValue(HeaderIsWaitingProperty, value);
     }
 
     public bool HeaderVisible
@@ -78,7 +124,19 @@ public sealed partial class TurnProcessDisclosure : UserControl
             disclosure.SetBodyAutoHeight();
     }
 
-    private static void OnHeaderChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    private static void OnHeaderTextChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        if (sender is TurnProcessDisclosure disclosure)
+            disclosure.UpdateHeader();
+    }
+
+    private static void OnHeaderChromeChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        if (sender is TurnProcessDisclosure disclosure)
+            disclosure.UpdateHeader();
+    }
+
+    private static void OnHeaderVisibleChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
     {
         if (sender is TurnProcessDisclosure disclosure)
             disclosure.UpdateHeaderAndAnimate();
@@ -109,8 +167,57 @@ public sealed partial class TurnProcessDisclosure : UserControl
     {
         HeaderButton.Visibility = HeaderVisible ? Visibility.Visible : Visibility.Collapsed;
         HeaderTextBlock.Text = HeaderText;
+        MetaText.Text = string.IsNullOrEmpty(HeaderMeta) ? string.Empty : $"· {HeaderMeta}";
+        MetaText.Visibility = string.IsNullOrEmpty(HeaderMeta) ? Visibility.Collapsed : Visibility.Visible;
+        LeadingIcon.Glyph = string.IsNullOrEmpty(HeaderGlyph) ? "\uE945" : HeaderGlyph;
         ChevronIcon.Glyph = IsExpanded ? "\uE70E" : "\uE70D";
-        AutomationProperties.SetName(HeaderButton, $"{HeaderText}. Toggle turn process.");
+        ApplyLeadingState();
+        ApplyTone();
+        var action = IsExpanded ? "Hide turn process" : "Show turn process";
+        AutomationProperties.SetName(HeaderButton, $"{HeaderText}. {action}");
+        AutomationProperties.SetItemStatus(HeaderButton, IsExpanded ? "Expanded" : "Collapsed");
+        ToolTipService.SetToolTip(HeaderButton, $"{HeaderText}\n{action}");
+    }
+
+    /// <summary>The kind glyph gives way to the chevron on hover, focus or while open.</summary>
+    private void ApplyLeadingState()
+    {
+        var chevron = IsExpanded || _pointerOver || _focused;
+        LeadingIcon.Opacity = chevron ? 0 : 1;
+        ChevronIcon.Opacity = chevron ? 1 : 0;
+    }
+
+    private void ApplyTone()
+    {
+        var key = HeaderIsFailed ? "RuDangerBrush"
+            : HeaderIsWaiting ? "RuWarningBrush"
+            : _pointerOver || _focused ? "RuInkBrush" : "RuMutedBrush";
+        var brush = (Brush)Application.Current.Resources[key];
+        LeadingIcon.Foreground = brush;
+        ChevronIcon.Foreground = brush;
+        HeaderTextBlock.Foreground = brush;
+        MetaText.Foreground = HeaderIsFailed || HeaderIsWaiting
+            ? brush : (Brush)Application.Current.Resources["RuMutedBrush"];
+    }
+
+    private void OnHeaderPointerEntered(object sender, PointerRoutedEventArgs e) =>
+        SetHover(pointer: true, focus: _focused);
+
+    private void OnHeaderPointerExited(object sender, PointerRoutedEventArgs e) =>
+        SetHover(pointer: false, focus: _focused);
+
+    private void OnHeaderGotFocus(object sender, RoutedEventArgs e) =>
+        SetHover(pointer: _pointerOver, focus: HeaderButton.FocusState == FocusState.Keyboard);
+
+    private void OnHeaderLostFocus(object sender, RoutedEventArgs e) =>
+        SetHover(pointer: _pointerOver, focus: false);
+
+    private void SetHover(bool pointer, bool focus)
+    {
+        _pointerOver = pointer;
+        _focused = focus;
+        ApplyLeadingState();
+        ApplyTone();
     }
 
     private void BeginTransition()

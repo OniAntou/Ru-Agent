@@ -139,7 +139,7 @@
             <TextBlock x:Name="SessionScopeHint"
                        Grid.Row="4"
                        Visibility="Collapsed"
-                       Text="This folder stays open for this chat session only."
+                       Text="Opens only this path's folder (not its parents) for reading and writing, for this chat session."
                        TextWrapping="Wrap"
                        FontFamily="{StaticResource RuUiFontFamily}"
                        FontSize="11"

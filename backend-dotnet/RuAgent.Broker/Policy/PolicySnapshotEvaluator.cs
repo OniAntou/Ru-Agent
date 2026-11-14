@@ -63,8 +63,7 @@ public sealed record PolicyRequestInvariants(
 public sealed record PolicyEvaluation(
     string Decision,
     string ReasonCode,
-    string? MatchedRuleId,
-    bool AnalyzerRiskPending = false);
+    string? MatchedRuleId);
 
 /// <summary>
 /// Authoritative decision point: non-overridable protocol invariants first, then ordered
@@ -170,11 +169,19 @@ public sealed class PolicySnapshotEvaluator
         // as a bounded folder grant whose matcher must carry the path pattern.
         string? matchedDecision = null;
         string? matchedRuleId = null;
+        string? externalGrantRuleId = null;
         foreach (var rule in snapshot.OrderedRules)
         {
             if (!PolicyRuleMatcher.Matches(rule, context, now))
             {
                 continue;
+            }
+
+            if (externalGrantRuleId is null
+                && string.Equals(rule.Decision, "allow", StringComparison.Ordinal)
+                && rule.Matcher.CanonicalPathPattern is not null)
+            {
+                externalGrantRuleId = rule.RuleId;
             }
 
             if (string.Equals(rule.Decision, "deny", StringComparison.Ordinal))
@@ -221,11 +228,15 @@ public sealed class PolicySnapshotEvaluator
             // a durable project rule saved by allow_always (or a remembered
             // session pattern) turns an approved folder into standing access
             // bounded by the rule's own matcher. Deny rules and ask rules were
-            // resolved above, the plan read-only gate still applied, and the
-            // approval flow is still the only way such a rule can exist.
-            if (string.Equals(matchedDecision, "allow", StringComparison.Ordinal))
+            // resolved above and the plan read-only gate still applied. Only an
+            // allow that names a path pattern is a folder grant: an allow with no
+            // path (for example {tool_id:"read"}) is a workspace rule and would
+            // otherwise open every path on the machine, so it leaves the external
+            // target to the profile decision below.
+            if (string.Equals(matchedDecision, "allow", StringComparison.Ordinal)
+                && externalGrantRuleId is not null)
             {
-                return new PolicyEvaluation("allow", "external_directory_rule_allow", matchedRuleId);
+                return new PolicyEvaluation("allow", "external_directory_rule_allow", externalGrantRuleId);
             }
 
             var external = ProfileDecision(
@@ -339,8 +350,7 @@ public sealed class PolicySnapshotEvaluator
     private static PolicyEvaluation ProfileDecision(
         BoundPolicySnapshot snapshot,
         AgentPolicySubject subject,
-        string reasonCode,
-        bool AnalyzerRiskPending = false)
+        string reasonCode)
     {
         var decision = AgentPolicyProfileCatalog.Get(snapshot.Preset).DecisionFor(subject);
         var wireDecision = decision switch
@@ -357,8 +367,7 @@ public sealed class PolicySnapshotEvaluator
         return new PolicyEvaluation(
             wireDecision,
             effectiveReason,
-            MatchedRuleId: null,
-            AnalyzerRiskPending: AnalyzerRiskPending && wireDecision == BrokerPolicyContracts.AllowWireValue);
+            MatchedRuleId: null);
     }
 
     private static PolicyEvaluation Allow(string reasonCode) =>

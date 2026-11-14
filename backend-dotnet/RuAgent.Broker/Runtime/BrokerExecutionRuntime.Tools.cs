@@ -274,7 +274,6 @@ public sealed partial class BrokerExecutionRuntime
                 },
                 Decision: evaluation.Decision,
                 ReasonCode: evaluation.ReasonCode,
-                AnalyzerRiskPending: evaluation.AnalyzerRiskPending,
                 SafeSummary: safeSummary,
                 MatchedRuleId: evaluation.MatchedRuleId,
                 MatchedRuleIdExplicit: false,
@@ -387,7 +386,6 @@ public sealed partial class BrokerExecutionRuntime
             Status: decision == "deny" ? ToolResultStatuses.Denied : ToolResultStatuses.Succeeded,
             Decision: decision,
             ReasonCode: reasonCode,
-            AnalyzerRiskPending: false,
             SafeSummary: summary ?? decision switch
             {
                 "allow" => "policy allowed the call",
@@ -398,9 +396,11 @@ public sealed partial class BrokerExecutionRuntime
             MatchedRuleIdExplicit: true);
 
     /// <summary>
-    /// Nearest existing ancestor directory of the evaluation boundary.
-    /// File targets grant their parent; external cwds grant themselves.
-    /// Returns null when nothing usable exists (fail closed, no grant).
+    /// The folder a session grant for the evaluation boundary may cover, with the
+    /// same rule as the remembered folder pattern: file targets grant their parent
+    /// and external cwds grant themselves, only when that folder exists. It never
+    /// climbs to a further ancestor. Returns null when nothing usable exists (fail
+    /// closed: the approval can still be answered once).
     /// </summary>
     private static string? DeriveGrantDirectory(PolicyContext context)
     {
@@ -414,14 +414,7 @@ public sealed partial class BrokerExecutionRuntime
 
         try
         {
-            var current = Directory.Exists(raw)
-                ? Path.GetFullPath(raw)
-                : Path.GetDirectoryName(Path.GetFullPath(raw));
-            while (!string.IsNullOrEmpty(current) && !Directory.Exists(current))
-            {
-                current = Path.GetDirectoryName(current);
-            }
-
+            var current = ApprovalRememberPolicy.ExistingGrantFolder(Path.GetFullPath(raw));
             if (string.IsNullOrEmpty(current) || current.Length > 4096)
             {
                 return null;

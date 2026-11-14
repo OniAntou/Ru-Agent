@@ -1080,6 +1080,62 @@ public sealed partial class PolicyEvaluationTests
         Assert.Equal("rule_denied", evaluation.ReasonCode);
     }
 
+    [Theory]
+    [InlineData("read", "read", @"C:\Users\Someone\.ssh\id_ed25519")]
+    [InlineData(null, "write_file", @"C:\Windows\Temp\dropped.txt")]
+    public void Allow_rule_without_a_path_pattern_does_not_grant_an_external_path(
+        string? ruleToolId,
+        string requestToolId,
+        string externalPath)
+    {
+        // An allow with no path pattern is a workspace rule. Honoring it outside
+        // the workspace would turn {tool_id:"read"} (or an empty matcher) into
+        // standing access to every file on the machine, so the external target
+        // still takes the profile's external-directory decision.
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule(
+                "r-allow-pathless",
+                "allow",
+                PolicyEvalSnapshots.Matcher(toolId: ruleToolId))));
+        var arguments = new JsonObject { ["path"] = externalPath };
+        if (requestToolId == "write_file")
+        {
+            arguments["content"] = "x";
+        }
+
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create(requestToolId, "1.0.0", arguments),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("ask", evaluation.Decision);
+        Assert.Equal("external_directory_required", evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void External_grant_names_the_path_bounded_rule_when_a_pathless_allow_also_matches()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule(
+                "r-allow-pathless",
+                "allow",
+                PolicyEvalSnapshots.Matcher(toolId: "read")),
+            PolicyEvalSnapshots.Rule(
+                "r-allow-folder",
+                "allow",
+                PolicyEvalSnapshots.Matcher(pathPattern: @"C:\SharedWork\**"))));
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create("read", "1.0.0", new JsonObject { ["path"] = @"C:\SharedWork\notes.txt" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("allow", evaluation.Decision);
+        Assert.Equal("external_directory_rule_allow", evaluation.ReasonCode);
+        Assert.Equal("r-allow-folder", evaluation.MatchedRuleId);
+    }
+
     [Fact]
     public void Malformed_calls_carry_a_repair_hint()
     {
@@ -1274,22 +1330,18 @@ public sealed partial class PolicyEvaluationTests
         var rg = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "rg", "pattern", "."), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", rg.Decision);
         Assert.Equal("workspace_terminal_allow", rg.ReasonCode);
-        Assert.False(rg.AnalyzerRiskPending);
 
         var gitStatus = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "status"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", gitStatus.Decision);
-        Assert.False(gitStatus.AnalyzerRiskPending);
 
         var gitCommit = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "commit"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", gitCommit.Decision);
 
         var dotnetTest = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "dotnet", "test"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", dotnetTest.Decision);
-        Assert.False(dotnetTest.AnalyzerRiskPending);
 
         var pytest = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "-m", "pytest"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", pytest.Decision);
-        Assert.False(pytest.AnalyzerRiskPending);
 
         var unknown = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "frobnicate.exe"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", unknown.Decision);
@@ -1312,7 +1364,6 @@ public sealed partial class PolicyEvaluationTests
 
         var ruffCheck = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "ruff", "check", "."), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", ruffCheck.Decision);
-        Assert.False(ruffCheck.AnalyzerRiskPending);
 
         var pipInstall = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "-m", "pip", "install", "requests"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", pipInstall.Decision);

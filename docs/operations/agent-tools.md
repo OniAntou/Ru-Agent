@@ -438,8 +438,8 @@ cleanup remain. API keys stay in credential storage. See
 An explicit absolute structured-file path outside the trusted root asks for
 `external_directory_required` under `standard`. Any approval of that request, including a one-time
 allow, records a session-scoped `CanonicalDirectoryIdentity` for structured descendants, because the
-Host sends `allow_session_directory` for any outside-folder approval. Approving with `allow_always` additionally saves the nearest existing
-folder of the approved path as a durable project-scope path pattern (`<folder>\**`) that covers the same
+Host sends `allow_session_directory` for any outside-folder approval. Approving with `allow_always` additionally saves
+the approved path's own folder (the path itself when it is a folder, otherwise its parent, and only when that folder exists) as a durable project-scope path pattern (`<folder>\**`) that covers the same
 structured tools and survives restarts and later sessions of the same workspace identity. A drive,
 volume or share root is never saved; its approval is only a one-time token with no folder grant. The evaluator honors a matched allow rule for external
 targets (`external_directory_rule_allow`); deny and ask rules keep precedence,
@@ -936,11 +936,12 @@ Broker reply carries the matcher preview plus one `authorization_token`
 remembered, as the Broker builds it ([Remembered Approval](../architecture/broker.md#remembered-approval)):
 a terminal run call stores the resolved executable plus at most two leading non-flag argv tokens with
 the exact launch directory (flag-first and shell-mode calls stay exact), an external-directory ask on a
-file stores the nearest existing folder as a path pattern (a drive or share root stores nothing), and
+file stores the target's own folder as a path pattern (a missing folder or a drive or share root stores
+nothing), and
 `rule_asks` / `terminal_protected_path_requires_approval` never become a reusable rule.
 
 Per tool, "Always allow" and session memory remember: for file tools, the canonical path, and for an
-outside folder, the nearest existing folder as a durable pattern; for `run_process` and `powershell`,
+outside folder, the target's own folder as a durable pattern; for `run_process` and `powershell`,
 the resolved executable, argv and canonical cwd (a `powershell` script exactly); for MCP `call` or
 `list_tools`, the server and tool (a remembered listing never covers a call); for computer use, the exact
 app list, so a request that names other apps is not covered.

@@ -191,9 +191,11 @@ public sealed partial class BrokerExecutionRuntime
 #endif
 
         // A drive, volume or share root is never a session folder grant: its subtree is the whole volume.
-        // Such an approval degrades to a one-time token, as its remember plan does.
+        // An approval with no grantable folder (the target's own folder does not exist) has nothing to
+        // grant either. Both degrade to a one-time token, as their remember plans do.
         if (command == ApprovalCommandV2.AllowSessionDirectory
-            && ApprovalRememberPolicy.IsRootBoundary(pending.Binding.BoundaryDirectory))
+            && (pending.Binding.BoundaryDirectory is null
+                || ApprovalRememberPolicy.IsRootBoundary(pending.Binding.BoundaryDirectory)))
         {
             command = ApprovalCommandV2.AllowOnce;
         }

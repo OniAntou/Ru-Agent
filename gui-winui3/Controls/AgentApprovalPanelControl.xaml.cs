@@ -114,12 +114,14 @@ namespace RuApp.Controls
 
             if (allowSessionDirectory && allowRememberAlways)
             {
-                SessionScopeHint.Text = "This folder can stay open for this chat session, or be remembered for this project.";
+                // The Broker grants only the target's own folder (never a parent), and the grant covers
+                // every file tool in it, reads and writes alike; say both so the scope is not a surprise.
+                SessionScopeHint.Text = "Opens only this path's folder (not its parents) for reading and writing, for this chat session or remembered for this project.";
                 SessionScopeHint.Visibility = Visibility.Visible;
             }
             else if (allowSessionDirectory)
             {
-                SessionScopeHint.Text = "This folder stays open for this chat session only.";
+                SessionScopeHint.Text = "Opens only this path's folder (not its parents) for reading and writing, for this chat session.";
                 SessionScopeHint.Visibility = Visibility.Visible;
             }
             else if (allowRememberAlways)

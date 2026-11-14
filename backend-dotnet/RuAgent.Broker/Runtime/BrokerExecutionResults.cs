@@ -60,7 +60,6 @@ public sealed record ToolDecisionResult(
     string Status,
     string Decision,
     string ReasonCode,
-    bool AnalyzerRiskPending,
     string SafeSummary,
     string? MatchedRuleId,
     bool MatchedRuleIdExplicit,

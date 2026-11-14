@@ -234,14 +234,14 @@ public sealed class ApprovalRememberPolicyTests
     }
 
     [Fact]
-    public void External_directory_approval_remembers_only_the_nearest_existing_folder()
+    public void External_directory_approval_remembers_only_the_target_folder()
     {
         var external = Path.Combine(Path.GetTempPath(), "ru-remember-ext-" + Guid.NewGuid().ToString("N"));
         var sub = Path.Combine(external, "sub");
         Directory.CreateDirectory(sub);
         try
         {
-            var context = Context("read_file", new JsonObject { ["path"] = Path.Combine(sub, "missing", "file.txt") });
+            var context = Context("read_file", new JsonObject { ["path"] = Path.Combine(sub, "file.txt") });
             var plan = ApprovalRememberPolicy.Build(context, "read_file", "1.0.0", "external_directory_required", externalDirectoryRequested: true);
             var durable = plan.DurableMatcher;
 
@@ -253,6 +253,45 @@ public sealed class ApprovalRememberPolicyTests
             Assert.True(Matches(durable, context));
             Assert.True(Matches(durable, Context("write_file", new JsonObject { ["path"] = Path.Combine(sub, "other.txt"), ["content"] = "x" })));
             Assert.False(Matches(durable, Context("read_file", new JsonObject { ["path"] = Path.Combine(external, "elsewhere.txt") })));
+        }
+        finally
+        {
+            Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void External_approval_under_a_missing_folder_does_not_climb_to_an_ancestor()
+    {
+        // The target's folder does not exist yet. The old nearest-existing-ancestor rule turned this into a
+        // grant on the parent ("ext\**"), wider than the path the user was shown; now nothing is remembered.
+        var external = Path.Combine(Path.GetTempPath(), "ru-remember-ext-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        try
+        {
+            var context = Context("read_file", new JsonObject { ["path"] = Path.Combine(external, "missing", "file.txt") });
+
+            Assert.Null(ApprovalRememberPolicy.ExternalDirectoryPattern(context.Target!.CanonicalPath));
+            var plan = ApprovalRememberPolicy.Build(context, "read_file", "1.0.0", "external_directory_required", externalDirectoryRequested: true);
+            Assert.Null(plan.DurableMatcher);
+            Assert.False(plan.IsRememberable);
+        }
+        finally
+        {
+            Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Grant_folder_is_the_existing_folder_itself_or_the_target_parent_only()
+    {
+        var external = Path.Combine(Path.GetTempPath(), "ru-grant-folder-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        try
+        {
+            Assert.Equal(external, ApprovalRememberPolicy.ExistingGrantFolder(external));
+            Assert.Equal(external, ApprovalRememberPolicy.ExistingGrantFolder(Path.Combine(external, "new.txt")));
+            Assert.Null(ApprovalRememberPolicy.ExistingGrantFolder(Path.Combine(external, "missing", "new.txt")));
         }
         finally
         {

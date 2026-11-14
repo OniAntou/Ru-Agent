@@ -219,9 +219,9 @@ public static class ApprovalRememberPolicy
     }
 
     /// <summary>
-    /// The nearest existing folder of an approved path as a subtree pattern. The candidate is already the
-    /// canonical path the evaluator compares, so its existing ancestors are canonical prefixes of it and the
-    /// pattern matches that candidate. A root folder (drive, volume or share) yields no pattern.
+    /// The approved path's own folder as a subtree pattern. The candidate is already the canonical path the
+    /// evaluator compares, so its folder is a canonical prefix of it and the pattern matches that candidate.
+    /// A root folder (drive, volume or share) or a folder that does not exist yields no pattern.
     /// </summary>
     internal static string? ExternalDirectoryPattern(string candidate)
     {
@@ -232,12 +232,7 @@ public static class ApprovalRememberPolicy
 
         try
         {
-            string? current = candidate;
-            while (!string.IsNullOrEmpty(current) && !Directory.Exists(current))
-            {
-                current = Path.GetDirectoryName(current);
-            }
-
+            var current = ExistingGrantFolder(candidate);
             if (string.IsNullOrEmpty(current))
             {
                 return null;
@@ -261,6 +256,23 @@ public static class ApprovalRememberPolicy
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The folder a folder grant for <paramref name="path"/> may cover: the path itself when it is an existing
+    /// folder, otherwise its parent when that folder exists. It never climbs further. Walking up to the nearest
+    /// existing ancestor let an approval for a path under a missing folder (C:\Users\me\new\a.txt) grant
+    /// C:\Users\me\** for every structured tool, a far wider scope than the path the user was shown.
+    /// </summary>
+    internal static string? ExistingGrantFolder(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            return path;
+        }
+
+        var parent = Path.GetDirectoryName(path);
+        return !string.IsNullOrEmpty(parent) && Directory.Exists(parent) ? parent : null;
     }
 
     /// <summary>

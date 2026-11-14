@@ -158,56 +158,60 @@ public static class PolicyRuleMatcher
         return GlobMatchCore(normalizedPattern.AsSpan(), normalizedCandidate.AsSpan());
     }
 
+    // Wildcard tokens sit outside the char range, so no literal pattern character can alias them.
+    private const int AnySegmentToken = -1;
+    private const int AnyPathToken = -2;
+
+    /// <summary>
+    /// Dynamic-programming glob match, O(pattern × candidate). The previous recursive
+    /// backtracking was exponential in the number of wildcards ("**a**a**a…" against a
+    /// long path), and rule patterns run on every evaluated call. Tokens are read left to
+    /// right as before, so "**" is one subtree token and "***" is "**" then "*".
+    /// </summary>
     private static bool GlobMatchCore(ReadOnlySpan<char> pattern, ReadOnlySpan<char> candidate)
     {
-        while (true)
+        var tokens = new List<int>(pattern.Length);
+        for (var i = 0; i < pattern.Length; i++)
         {
-            if (pattern.IsEmpty)
+            if (pattern[i] != '*')
             {
-                return candidate.IsEmpty;
+                tokens.Add(char.ToLowerInvariant(pattern[i]));
             }
-
-            if (pattern.Length >= 2 && pattern[0] == '*' && pattern[1] == '*')
+            else if (i + 1 < pattern.Length && pattern[i + 1] == '*')
             {
-                var rest = pattern[2..];
-                for (var i = 0; i <= candidate.Length; i++)
-                {
-                    if (GlobMatchCore(rest, candidate[i..]))
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
+                tokens.Add(AnyPathToken);
+                i++;
             }
-
-            if (pattern[0] == '*')
+            else
             {
-                var rest = pattern[1..];
-                for (var i = 0; i <= candidate.Length; i++)
-                {
-                    if (i > 0 && IsSeparator(candidate[i - 1]))
-                    {
-                        break;
-                    }
-
-                    if (GlobMatchCore(rest, candidate[i..]))
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
+                tokens.Add(AnySegmentToken);
             }
-
-            if (candidate.IsEmpty || !char.ToLowerInvariant(pattern[0]).Equals(char.ToLowerInvariant(candidate[0])))
-            {
-                return false;
-            }
-
-            pattern = pattern[1..];
-            candidate = candidate[1..];
         }
+
+        // next[j]: tokens[t + 1..] match candidate[j..]; current[j]: tokens[t..] match candidate[j..].
+        var next = new bool[candidate.Length + 1];
+        var current = new bool[candidate.Length + 1];
+        next[candidate.Length] = true;
+        for (var t = tokens.Count - 1; t >= 0; t--)
+        {
+            var token = tokens[t];
+            for (var j = candidate.Length; j >= 0; j--)
+            {
+                var atEnd = j == candidate.Length;
+                current[j] = token switch
+                {
+                    // Zero characters, or this character and the token again.
+                    AnyPathToken => next[j] || (!atEnd && current[j + 1]),
+                    // Same, but never across a separator.
+                    AnySegmentToken => next[j] || (!atEnd && !IsSeparator(candidate[j]) && current[j + 1]),
+                    _ => !atEnd && char.ToLowerInvariant(candidate[j]) == token && next[j + 1],
+                };
+            }
+
+            (next, current) = (current, next);
+        }
+
+        return next[0];
     }
 
     private static bool IsSeparator(char c) => c is '/' or '\\';

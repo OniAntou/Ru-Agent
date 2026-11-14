@@ -13,6 +13,15 @@ amended_by: ADR-0021 full access is literally full
 > `full_access` is literally full, so the statements below that the structured
 > protected path "still deny at every preset" or that a remembered pattern
 > remains subject to "protected paths" apply to `plan` and `standard` only.
+>
+> Amended on 2026-11-14 (review remediation): a folder grant, durable or
+> session-scoped, covers only the approved target's own folder and never climbs
+> to the nearest existing ancestor. Climbing let an approval for a path under a
+> missing folder (`C:\Users\me\new\a.txt`) grant `C:\Users\me\**` for every
+> structured tool. A target whose folder does not exist is answered once and
+> remembers nothing. The evaluator also honors an allow rule outside the
+> workspace only when the rule carries a path pattern, so a path-less allow
+> (`{tool_id:"read"}`) no longer opens every external path.
 
 ## Context
 
@@ -38,8 +47,8 @@ never wider than the reviewed shape:
   `mode=shell` scripts stay exact: a prefix of arbitrary shell text is not a
   safe pattern, and the runtime keeps the same fail-closed habit that made
   Claude Code repair its compound-command handling instead of copying it.
-- An external-directory ask stores the nearest existing ancestor folder of the
-  approved target (a file grants its parent), canonicalized through the final
+- An external-directory ask stores the approved target's own folder (a file grants
+  its parent, only when that folder exists; see the 2026-11-14 amendment), canonicalized through the final
   path and represented as the path pattern `<folder>\**`. The pattern covers
   the folder's subtree for every structured tool, matching what the
   session-scoped Broker grant already covers. The Broker session grant is

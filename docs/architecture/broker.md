@@ -131,7 +131,8 @@ reconciliation surfaces from Phase 3:
   - repository cleanliness and prompt text are never fallback inputs.
   - Standard external structured access uses session-scoped `CanonicalDirectoryIdentity` grants or,
     when the user clicked "always", a durable project allow rule whose canonical path pattern
-    (`<folder>\**`) the evaluator honors for external targets (`external_directory_rule_allow`);
+    (`<folder>\**`) the evaluator honors for external targets (`external_directory_rule_allow`). An
+    allow rule without a path pattern is a workspace rule and never grants an external target;
     deny and ask still outrank it and the plan read-only gate still applies.
   - Full Access selects an ephemeral per-call external root and never creates a reusable folder
     grant.
@@ -472,7 +473,7 @@ restart, and a session allow still passes every protected-path denial (in
 `plan` and `standard`) and Broker evaluation. The explicit `allow_always` decision additionally saves the durable matcher the Broker built for
 that approval ([Remembered Approval](#remembered-approval)): for a terminal launch, the resolved
 executable, at most two leading non-flag argv tokens and the exact launch directory, with flag-first
-and shell-mode invocations kept exact; for an outside file target, the nearest existing folder as a
+and shell-mode invocations kept exact; for an outside file target, the target's own folder as a
 subtree pattern that survives restarts and later sessions of the workspace. `rule_asks` and
 `terminal_protected_path_requires_approval` keep only the session matcher, so no durable rule is
 saved and the approval degrades to `allow_once`; `allow_once` and session directory grants create no
@@ -506,8 +507,9 @@ matchers it receives and derives none ([Host approval flow](host.md#approval-flo
   path, not the name the model typed.
 - Asks: `rule_asks` and `terminal_protected_path_requires_approval` keep only the session matcher.
 - Outside folders: no session matcher, because the Broker's session directory grant already covers the
-  later calls. The durable matcher is the subtree pattern of the nearest existing folder of the
-  approved path, for file targets only. A drive, volume or share root yields no pattern, and such an
+  later calls. The durable matcher is the subtree pattern of the approved path's own folder (the
+  path itself when it is a folder, otherwise its parent, only when that folder exists), for file
+  targets only; it never climbs to a further ancestor. A missing folder or a drive, volume or share root yields no pattern, and such an
   approval is downgraded to `allow_once`, which registers no folder grant. Every allow of an
   outside-folder approval is bridged as `allow_session_directory`, so a one-time allow still registers
   the session folder grant.

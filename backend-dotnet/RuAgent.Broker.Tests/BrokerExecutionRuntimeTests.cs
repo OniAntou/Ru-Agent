@@ -125,7 +125,6 @@ public sealed class BrokerExecutionRuntimeTests
         Assert.Equal("allow", decision.Decision!.Decision);
         Assert.Equal("workspace_terminal_allow", decision.Decision.ReasonCode);
         Assert.Null(decision.Decision.ApprovalId);
-        Assert.False(decision.Decision.AnalyzerRiskPending);
         var execution = await fixture.Runtime.ExecuteAuthorizedAsync(
             Execute("execute-autonomy", sessionId, runId, toolId, decision.Decision.AuthorizationToken!, arguments), default);
         Assert.Equal(ToolResultStatuses.Succeeded, execution.Receipt!.Status);

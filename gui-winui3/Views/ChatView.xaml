@@ -55,7 +55,8 @@
         </Style>
 
         <DataTemplate x:Key="UserMessageTemplate" x:DataType="models:ChatMessageItem">
-            <Grid Margin="0,16" HorizontalAlignment="Stretch">
+            <!-- More air above than below: the gap marks where a new turn begins. -->
+            <Grid Margin="0,28,0,16" HorizontalAlignment="Stretch">
                 <Grid x:Name="MessageColumn"
                       HorizontalAlignment="Center"
                       Loaded="OnMessageColumnLoaded">
@@ -342,7 +343,7 @@
                 <Grid x:Name="MessageColumn"
                       HorizontalAlignment="Center"
                       Loaded="OnMessageColumnLoaded">
-                <StackPanel MaxWidth="820"
+                <StackPanel MaxWidth="720"
                             HorizontalAlignment="Stretch"
                             Spacing="16">
                     <controls:AgentActivitySummaryControl Message="{x:Bind}" />
@@ -591,7 +592,7 @@
               HorizontalAlignment="Stretch"
               Background="Transparent">
             <StackPanel x:Name="WelcomeHeroPanel"
-                        MaxWidth="820"
+                        MaxWidth="752"
                         HorizontalAlignment="Stretch"
                          VerticalAlignment="Center"
                          Spacing="16"
@@ -784,7 +785,7 @@
               Grid.Row="2"
               VerticalAlignment="Bottom"
               HorizontalAlignment="Stretch"
-              MaxWidth="820"
+              MaxWidth="752"
               Margin="16,0,16,24"
               Canvas.ZIndex="20">
             <controls:AgentApprovalPanelControl x:Name="ApprovalPanel" />
@@ -795,7 +796,7 @@
             <Grid x:Name="InputContainer"
               Grid.Row="2"
               RowDefinitions="Auto,Auto,Auto,Auto"
-              MaxWidth="820"
+              MaxWidth="752"
               Margin="16,0"
               Background="Transparent"
               Padding="0,8,0,24"

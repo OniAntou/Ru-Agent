@@ -92,8 +92,13 @@ namespace RuApp.Views
 
     public sealed partial class ChatView : UserControl, IDisposable, IMarkdownLinkHost
     {
-                private const double ReadingColumnMaxWidth = 820;
-        private const double MessageColumnMaxWidth = 820;
+        // The composer and welcome column. It is the message column plus the composer's
+        // own text inset on each side, so typed text and transcript text share an edge.
+        private const double ReadingColumnMaxWidth = MessageColumnMaxWidth + 2 * ComposerTextInset;
+        private const double ComposerTextInset = 16;
+        // About 100 characters of body text: wide enough for tables and code, short
+        // enough that the eye finds the next line.
+        private const double MessageColumnMaxWidth = 720;
         private const double NarrowWidthThreshold = 900;
         private const double MediumWidthThreshold = 1280;
         // Cover both 16px composer margins even at the narrow breakpoint.

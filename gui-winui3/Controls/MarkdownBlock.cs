@@ -533,9 +533,11 @@ namespace RuApp.Controls
                 {
                     Margin = heading.Level switch
                     {
-                        1 => new Thickness(0, 18, 0, 8),
-                        2 => new Thickness(0, 16, 0, 6),
-                        _ => new Thickness(0, 14, 0, 6),
+                        // Clearly more space above than below, so a heading reads as the
+                        // start of what follows and not the end of what came before.
+                        1 => new Thickness(0, 28, 0, 8),
+                        2 => new Thickness(0, 24, 0, 8),
+                        _ => new Thickness(0, 20, 0, 6),
                     },
                     // Wrapped headings need room for their larger glyphs without
                     // changing the reading rhythm of ordinary paragraphs.
@@ -663,10 +665,13 @@ namespace RuApp.Controls
                 }
             }
 
+            /// <summary>The info colour: a link differs from the ink around it by hue and by its underline.</summary>
+            private static Brush LinkBrush() => ThemeBrush("RuInfoBrush", 56, 189, 248);
+
             private void AddAutolink(InlineCollection target, AutolinkInline auto, double size, FontWeight? weight, FontFamily fontFamily)
             {
                 string targetUrl = auto.Url ?? string.Empty;
-                var hyperlink = new Hyperlink();
+                var hyperlink = new Hyperlink { Foreground = LinkBrush() };
                 if (Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri)
                     && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
                 {
@@ -710,7 +715,7 @@ namespace RuApp.Controls
                         && Uri.TryCreate(link.Url, UriKind.Absolute, out var targetUri)
                         && (targetUri.Scheme == Uri.UriSchemeHttp || targetUri.Scheme == Uri.UriSchemeHttps))
                     {
-                        var imageLink = new Hyperlink { NavigateUri = targetUri };
+                        var imageLink = new Hyperlink { NavigateUri = targetUri, Foreground = LinkBrush() };
                         imageLink.Inlines.Add(new Run { Text = label, FontSize = size, FontFamily = fontFamily });
                         target.Add(imageLink);
                     }
@@ -719,7 +724,7 @@ namespace RuApp.Controls
                     {
                         // A workspace image is not loaded automatically either;
                         // the reader chooses by opening it in the preview.
-                        var imageLink = new Hyperlink();
+                        var imageLink = new Hyperlink { Foreground = LinkBrush() };
                         imageLink.Inlines.Add(new Run { Text = label, FontSize = size, FontFamily = fontFamily });
                         AttachLocalNavigation(imageLink, link.Url);
                         target.Add(imageLink);
@@ -738,7 +743,7 @@ namespace RuApp.Controls
                     labelText = link.Url;
                 }
 
-                var hyperlink = new Hyperlink();
+                var hyperlink = new Hyperlink { Foreground = LinkBrush() };
                 string? destination = !string.IsNullOrEmpty(link.Url) ? link.Url : labelText;
                 if (Uri.TryCreate(destination, UriKind.Absolute, out var uri)
                     && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
@@ -823,7 +828,7 @@ namespace RuApp.Controls
                         continue;
                     }
 
-                    var link = new Hyperlink();
+                    var link = new Hyperlink { Foreground = LinkBrush() };
                     if (Uri.TryCreate(segment.LinkUrl, UriKind.Absolute, out var uri)
                         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
                     {

@@ -96,6 +96,7 @@ namespace RuApp.Controls
                     CornerRadius = Services.UiCornerRadius.Inset,
                     Child = frame,
                 };
+                RevealOnHover(outer, copy);
                 fitBlock(outer, indent * 20);
                 var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 6, 0, 14) };
                 paragraph.Inlines.Add(new InlineUIContainer { Child = outer });
@@ -162,6 +163,22 @@ namespace RuApp.Controls
                         Services.GuiDiagnosticWriter.AppendTraceLine($"[MarkdownBlock] Copy failed: {error.Message}");
                     }
                 }
+            }
+
+            /// <summary>
+            /// Draws a block's copy button only while the pointer is over the block or the
+            /// keyboard is on the button. It stays in the tab order and the automation tree.
+            /// </summary>
+            private static void RevealOnHover(FrameworkElement block, Button button)
+            {
+                button.Opacity = 0;
+                bool pointerOver = false;
+                void Show(bool visible) => Services.UiMotion.FadeOpacity(button, visible ? 1 : 0);
+                block.PointerEntered += (_, _) => { pointerOver = true; Show(true); };
+                block.PointerExited += (_, _) => { pointerOver = false; Show(button.FocusState == FocusState.Keyboard); };
+                block.PointerCanceled += (_, _) => { pointerOver = false; Show(false); };
+                button.GotFocus += (_, _) => Show(pointerOver || button.FocusState == FocusState.Keyboard);
+                button.LostFocus += (_, _) => Show(pointerOver);
             }
 
             private static SolidColorBrush ThemeBrush(string key, byte r, byte g, byte b) =>
@@ -311,24 +328,15 @@ namespace RuApp.Controls
                 ToolTipService.SetToolTip(copy, "Copy table");
                 copy.SetValue(AutomationProperties.NameProperty, "Copy table");
                 copy.Click += OnCopyCodeClick;
-                var tableHeader = new Grid { Margin = new Thickness(12, 8, 12, 0) };
-                tableHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                tableHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var tableLabel = new TextBlock
-                {
-                    Text = "Table",
-                    FontFamily = MonoFont,
-                    FontSize = 11,
-                    Foreground = MutedOrDefault(),
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                Grid.SetColumn(tableLabel, 0);
-                Grid.SetColumn(copy, 1);
-                tableHeader.Children.Add(tableLabel);
-                tableHeader.Children.Add(copy);
+                // A table needs no caption saying it is a table. The copy button sits over
+                // the header row's far corner on the row's own surface, so it never adds
+                // a strip above the data.
+                copy.HorizontalAlignment = HorizontalAlignment.Right;
+                copy.VerticalAlignment = VerticalAlignment.Top;
+                copy.Margin = new Thickness(0, 5, 6, 0);
+                copy.Background = (Brush?)Application.Current?.Resources["RuSurfaceBrush"];
 
-                var tableFrame = new StackPanel();
-                tableFrame.Children.Add(tableHeader);
+                var tableFrame = new Grid();
                 tableFrame.Children.Add(new ScrollViewer
                 {
                     Content = grid,
@@ -343,9 +351,12 @@ namespace RuApp.Controls
                 {
                     BorderBrush = line,
                     BorderThickness = new Thickness(1),
-                    CornerRadius = Services.UiCornerRadius.Control,
+                    // Same frame as a code card: the two block kinds read as one family.
+                    CornerRadius = Services.UiCornerRadius.Inset,
                     Child = tableFrame,
                 };
+                tableFrame.Children.Add(copy);
+                RevealOnHover(outer, copy);
                 fitBlock(outer, indent * 20);
                 var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 6, 0, 14) };
                 paragraph.Inlines.Add(new InlineUIContainer { Child = outer });

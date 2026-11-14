@@ -852,8 +852,9 @@ namespace RuApp.Views
             }
 
             // The transcript scroll host stays full-width so its scrollbar docks
-            // at the window edge; each message root centers its own 820 column.
+            // at the window edge; each message root centers its own reading column.
             LayoutRealizedMessageColumns();
+            UpdateMessageRailVisibility();
         }
 
         private void OnMessageColumnLoaded(object sender, RoutedEventArgs e)

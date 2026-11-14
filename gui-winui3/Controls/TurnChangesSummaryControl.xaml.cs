@@ -108,6 +108,10 @@ public sealed partial class TurnChangesSummaryControl : UserControl
         SummaryTitle.Text = _summary.Title;
         AddedTotal.Text = _summary.AddedText;
         RemovedTotal.Text = _summary.RemovedText;
+        // A total appears only when it says something: unknown counts and "nothing removed"
+        // leave the header to the title.
+        AddedTotal.Visibility = _summary.HasAddedTotal ? Visibility.Visible : Visibility.Collapsed;
+        RemovedTotal.Visibility = _summary.HasRemovedTotal ? Visibility.Visible : Visibility.Collapsed;
         ToolTipService.SetToolTip(AddedTotal, _summary.Added is null ? "Added line count unavailable" : "Lines added in this turn");
         ToolTipService.SetToolTip(RemovedTotal, _summary.Removed is null ? "Removed line count unavailable" : "Lines removed in this turn");
         RenderFiles();

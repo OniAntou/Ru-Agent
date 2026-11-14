@@ -24,9 +24,9 @@
                                FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"
                                VerticalAlignment="Center" Foreground="{StaticResource RuInkBrush}" />
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <TextBlock x:Name="AddedTotal" FontSize="11" FontFamily="{StaticResource RuMonoFontFamily}"
+                        <TextBlock x:Name="AddedTotal" FontSize="12" FontFamily="{StaticResource RuMonoFontFamily}"
                                    Foreground="{StaticResource RuSuccessBrush}" />
-                        <TextBlock x:Name="RemovedTotal" FontSize="11" FontFamily="{StaticResource RuMonoFontFamily}"
+                        <TextBlock x:Name="RemovedTotal" FontSize="12" FontFamily="{StaticResource RuMonoFontFamily}"
                                    Foreground="{StaticResource RuDangerBrush}" />
                     </StackPanel>
                 </Grid>
@@ -54,17 +54,23 @@
                                 HorizontalContentAlignment="Stretch" MinHeight="32"
                                 AutomationProperties.Name="{x:Bind AccessibleName}"
                                 ToolTipService.ToolTip="{x:Bind Path}">
+                            <!-- The same row as the Changes tab: the name, its folder after it, and
+                                 counts only where there is something to count. -->
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                <TextBlock FontFamily="{StaticResource RuMonoFontFamily}"
-                                           FontSize="12" TextTrimming="CharacterEllipsis" MaxLines="1"
-                                           Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center">
-                                    <Run Text="{x:Bind Directory}" Foreground="{StaticResource RuMutedBrush}" /><Run Text="{x:Bind FileName}" />
+                                <TextBlock TextTrimming="CharacterEllipsis" MaxLines="1" TextWrapping="NoWrap"
+                                           VerticalAlignment="Center">
+                                    <Run Text="{x:Bind FileName}" FontFamily="{StaticResource RuMonoFontFamily}"
+                                         FontSize="12" Foreground="{StaticResource RuInkBrush}" /><Run Text="{x:Bind FolderSuffix}"
+                                         FontFamily="{StaticResource RuUiFontFamily}" FontSize="11"
+                                         Foreground="{StaticResource RuMutedBrush}" />
                                 </TextBlock>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                     <TextBlock Text="{x:Bind AddedText}" FontFamily="{StaticResource RuMonoFontFamily}"
-                                               FontSize="11" Foreground="{StaticResource RuSuccessBrush}" />
+                                               Visibility="{x:Bind HasAddedColumn}"
+                                               FontSize="12" Foreground="{StaticResource RuSuccessBrush}" />
                                     <TextBlock Text="{x:Bind RemovedText}" FontFamily="{StaticResource RuMonoFontFamily}"
-                                               FontSize="11" Foreground="{StaticResource RuDangerBrush}" />
+                                               Visibility="{x:Bind HasRemovedColumn}"
+                                               FontSize="12" Foreground="{StaticResource RuDangerBrush}" />
                                 </StackPanel>
                             </Grid>
                         </Button>

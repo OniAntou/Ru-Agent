@@ -18,12 +18,23 @@ public sealed record TurnChangedFile(string Path, long? Added, long? Removed, IR
     public string AddedText => TurnChangesProjection.FormatCount(Added, "+");
     public string RemovedText => TurnChangesProjection.FormatCount(Removed, "−");
     public string AccessibleName => $"{Path}, added {AddedText}, removed {RemovedText}. View changes";
+
+    // What the row draws: a count only when there is one to read. An unknown count and
+    // "nothing removed" both leave the cell empty instead of a dash; the accessible name
+    // above still states the recorded values.
+    public bool HasAddedColumn => Added is not null;
+    public bool HasRemovedColumn => Removed is > 0;
+
+    /// <summary>The folder as it follows the file name, matching the Changes tab's rows.</summary>
+    public string FolderSuffix => Directory.Length == 0 ? string.Empty : "  " + Directory.TrimEnd('/');
 }
 
 public sealed record TurnChangeSummary(IReadOnlyList<TurnChangedFile> Files, long? Added, long? Removed)
 {
     public static TurnChangeSummary Empty { get; } = new(Array.Empty<TurnChangedFile>(), 0, 0);
     public string Title => Files.Count == 1 ? "Edited 1 file" : $"Edited {Files.Count} files";
+    public bool HasAddedTotal => Added is not null;
+    public bool HasRemovedTotal => Removed is > 0;
     public string AddedText => TurnChangesProjection.FormatCount(Added, "+");
     public string RemovedText => TurnChangesProjection.FormatCount(Removed, "−");
 }

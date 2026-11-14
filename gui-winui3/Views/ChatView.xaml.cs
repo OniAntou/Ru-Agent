@@ -224,6 +224,9 @@ namespace RuApp.Views
             // NewItems: every message then needs the preference, not none of them.
             if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) RefreshActivityDisplay();
             else ApplyActivityDisplayPreference(e.NewItems);
+            ApplyConversationWidth(e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset
+                ? Messages
+                : e.NewItems?.Cast<Models.ChatMessageItem>());
             _transcriptRevision++;
             UpdateViewMode();
         }

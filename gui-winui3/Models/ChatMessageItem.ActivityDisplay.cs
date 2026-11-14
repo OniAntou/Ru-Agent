@@ -10,7 +10,15 @@ public partial class ChatMessageItem
     private bool _compactAgentActivity;
     private bool _autoCollapseCompleted;
     private bool _isActivityDetailsExpanded;
+    private double _contentWidth = 720;
     private ObservableCollection<AssistantSegment> _compactTextSegments = new();
+
+    /// <summary>Reading-column width applied to this row; cheap to update on every drag.</summary>
+    public double ContentWidth
+    {
+        get => _contentWidth;
+        set => SetProperty(ref _contentWidth, value);
+    }
 
     /// <summary>Local presentation preference; never changes stored activity or text.</summary>
     public bool CompactAgentActivity

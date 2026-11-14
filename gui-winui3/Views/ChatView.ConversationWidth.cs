@@ -6,6 +6,9 @@ namespace RuApp.Views;
 
 public sealed partial class ChatView
 {
+    /// <summary>The same singleton the root and message templates bind to.</summary>
+    public ConversationWidthState WidthState => ConversationWidthState.Instance;
+
     private ConversationWidthState? _conversationWidth;
     private bool _conversationWidthDragging;
     private bool _conversationWidthDragRight;
@@ -15,12 +18,30 @@ public sealed partial class ChatView
 
     private void InitializeConversationWidth()
     {
-        _conversationWidth = Resources.TryGetValue("ConversationWidthState", out var resource)
-            ? resource as ConversationWidthState
-            : null;
-        if (_conversationWidth is null) return;
+        _conversationWidth = ConversationWidthState.Instance;
+        _conversationWidth.PropertyChanged += OnConversationWidthChanged;
+        ApplyConversationWidth(Messages);
         Loaded += (_, _) => UpdateConversationWidthViewport();
         UpdateConversationWidthViewport();
+    }
+
+    private void OnConversationWidthChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not nameof(ConversationWidthState.ContentWidth)) return;
+        ApplyConversationWidth(Messages);
+    }
+
+    private void ApplyConversationWidth(System.Collections.Generic.IEnumerable<Models.ChatMessageItem>? messages)
+    {
+        var width = _conversationWidth?.ContentWidth ?? ConversationWidthState.DefaultWidth;
+        ConversationWidthLayer.Width = width + ConversationWidthState.HandleOutset * 2;
+        InputContainer.MaxWidth = width + ConversationWidthState.ComposerGutter;
+        ApprovalHostGrid.MaxWidth = width + ConversationWidthState.ComposerGutter;
+        WelcomeHeroPanel.MaxWidth = width + ConversationWidthState.ComposerGutter;
+        if (messages is not null)
+        {
+            foreach (var message in messages) message.ContentWidth = width;
+        }
     }
 
     private void UpdateConversationWidthViewport()

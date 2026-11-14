@@ -10,12 +10,17 @@ namespace RuApp.Services;
 /// </summary>
 public sealed class ConversationWidthState : INotifyPropertyChanged
 {
+    /// <summary>The single width shared by the transcript handles, messages and composer.</summary>
+    public static ConversationWidthState Instance { get; } = new();
+
     public const double MinimumWidth = 640;
     public const double EdgeBudget = 176;
     public const double DefaultWidth = 720;
     public const double MaximumWidth = 920;
-    /// <summary>Distance from the content edge to the start of the grab strip.</summary>
-    public const double HandleOutset = 34;
+    /// <summary>Width of the transparent grab strip outside each content edge.</summary>
+    public const double HandleOutset = 32;
+    /// <summary>The composer keeps a 16px gutter on both sides of the transcript.</summary>
+    public const double ComposerGutter = 32;
 
     private readonly ConversationWidthStore _store;
     private double? _preference;
@@ -43,11 +48,15 @@ public sealed class ConversationWidthState : INotifyPropertyChanged
             _contentWidth = clamped;
             OnPropertyChanged(nameof(ContentWidth));
             OnPropertyChanged(nameof(HandleLayerWidth));
+            OnPropertyChanged(nameof(ComposerWidth));
         }
     }
 
-    /// <summary>The transparent handle layer, with 34 px of room outside each content edge.</summary>
+    /// <summary>The transparent handle layer, with a grab strip outside each content edge.</summary>
     public double HandleLayerWidth => ContentWidth + HandleOutset * 2;
+
+    /// <summary>The composer and approval overlay follow the transcript width.</summary>
+    public double ComposerWidth => ContentWidth + ComposerGutter;
 
     public double ViewportWidth => _viewportWidth;
 

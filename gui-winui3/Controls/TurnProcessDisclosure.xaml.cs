@@ -59,6 +59,7 @@ public sealed partial class TurnProcessDisclosure : UserControl
     public TurnProcessDisclosure()
     {
         InitializeComponent();
+        Typography.PropertyChanged += (_, _) => UpdateHeader();
         Loaded += (_, _) =>
         {
             _loaded = true;

@@ -583,6 +583,11 @@ Activity labels share transcript typography across plain and detail-toggle
 headers, including transitions that reveal reasoning or terminal output. Expanded
 reasoning stretches across the available reading column instead of a fixed
 left-aligned width.
+`ConversationWidthState` owns the centered reading-column width: both edge grips
+use the same 640 px floor, viewport-minus-edge budget, 680–920 px default and
+JSON preference file. A drag previews the width without writing it; release
+commits, while cancel or lost capture restores the saved value. The user bubble,
+attachments and assistant column all bind to the same width.
 The task shelf is a tab tucked under the composer: the composer surface with a
 hairline on its open sides, rounded on top, its bottom edge hidden beneath the
 composer. Its header is the disclosure: collapsed it is one quiet line with the

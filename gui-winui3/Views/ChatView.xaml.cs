@@ -179,6 +179,7 @@ namespace RuApp.Views
             Presets = new SessionPresetViewModel(new HostSessionPresetBackend(() => _apiService, () => _agentController));
             Composer.TextReplaced += OnComposerTextReplaced;
             this.InitializeComponent();
+            InitializeConversationWidth();
             RunPanel.PropertyChanged += OnRunPanelPropertyChanged;
             RunPanel.ApprovalArrived += OnRunPanelApprovalArrived;
             RunPanel.QuestionArrived += OnRunPanelQuestionArrived;

@@ -35,19 +35,18 @@
                     <FontIcon x:Name="LeadingIcon" FontSize="13"
                               Foreground="{StaticResource RuMutedBrush}"
                               AutomationProperties.AccessibilityView="Raw" />
-                    <FontIcon x:Name="ChevronIcon" Glyph="&#xE70D;" FontSize="10" Opacity="0"
+                    <FontIcon x:Name="ChevronIcon" Glyph="&#xE70D;" FontSize="12" Opacity="0"
+                              FontFamily="Segoe MDL2 Assets"
                               Foreground="{StaticResource RuMutedBrush}"
                               AutomationProperties.AccessibilityView="Raw" />
                 </Grid>
                 <TextBlock x:Name="HeaderTextBlock" Grid.Column="1"
                            FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="{x:Bind Typography.ActivityFontSize, Mode=OneWay}"
                            Foreground="{StaticResource RuMutedBrush}"
                            TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxLines="1"
                            VerticalAlignment="Center" />
                 <TextBlock x:Name="MetaText" Grid.Column="2"
                            FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="{x:Bind Typography.ActivityFontSize, Mode=OneWay}"
                            Foreground="{StaticResource RuMutedBrush}"
                            TextWrapping="NoWrap" VerticalAlignment="Center" Visibility="Collapsed" />
             </Grid>

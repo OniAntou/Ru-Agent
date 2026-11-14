@@ -30,9 +30,9 @@ public sealed record RecoverySweepResult(
 /// Startup reconciliation: for every non-terminal run this host may own, compare the
 /// durable event stream against dispatch boundaries. A crash before any dispatch fails
 /// the run safely with no effects; an incomplete read-only execution fails safely; an
-/// incomplete side-effecting execution moves the run to ReconciliationRequired. No
+/// incomplete side-effecting execution fails as recovery_outcome_unknown. No
 /// startup path ever re-issues an old mutation execution id — ambiguous outcomes are
-/// only ever resolved through the explicit reconcile endpoint.
+/// never replayed.
 /// </summary>
 public sealed class HarnessRecoveryScanner(
     IHarnessEventStore store,

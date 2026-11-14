@@ -188,6 +188,12 @@ Implementation: [harness](docs/architecture/harness.md#subagent).
 _Avoid_: a new execution authority, a user conversation, or an OS sandbox
 
 
+**Evolution Run** (proposed, not implemented):
+An ordinary `standard` run, off by default, that works in a private worktree of one user-named Ru source checkout and ends in an Evolution Candidate: a local `evolve/<id>` branch with an evidence report. A deterministic scope guard and a receipt-based fitness gate decide whether the candidate is kept; the owner reviews and merges it. It never merges, pushes, updates an installed product or writes the checkout's working tree.
+Implementation: [ADR 0046](docs/adr/0046-self-evolution-runs.md).
+_Avoid_: a new execution authority, self-updating binaries, a benchmark score as proof of improvement, automatic merge
+
+
 **Markdown Skill**:
 A discovered `SKILL.md` package identified by its canonical directory ID, with metadata advertised separately from its on-demand workflow body. Explicit chat invocation captures a bounded, versioned workflow snapshot for that run; successful skill receipts can restore the same snapshot after compaction or restart. Metadata and referenced files never grant execution authority or run automatically. Built-in skills ship with Ru in `skills-builtin` next to the Host and have the lowest precedence, below plugin skills.
 Implementation: [harness](docs/architecture/harness.md#markdown-skill).

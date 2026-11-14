@@ -70,7 +70,7 @@ namespace RuApp.Views
             // The side card or panel takes its reserve from the column's right, which
             // moves the column left: the gutter is what remains without that reserve.
             => MessageRail.Visibility = MessageRailPolicy.HasRoom(
-                    ChatContentGrid.ActualWidth - _sidePanelReserveWidth, MessageColumnMaxWidth, MessageRail.MessageCount)
+                    ChatContentGrid.ActualWidth - _sidePanelReserveWidth, ConversationWidthState.Instance.ContentWidth, MessageRail.MessageCount)
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 

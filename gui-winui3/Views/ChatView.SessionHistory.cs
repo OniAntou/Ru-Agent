@@ -833,7 +833,7 @@ namespace RuApp.Views
             double availableWidth = Math.Max(
                 MinAvailableInputWidth,
                 RootGrid.ActualWidth - horizontalInset - _sidePanelReserveWidth);
-            double targetWidth = Math.Min(ReadingColumnMaxWidth, availableWidth);
+            double targetWidth = Math.Min(ConversationWidthState.Instance.ComposerWidth, availableWidth);
 
             if (WelcomeHeroPanel != null)
             {
@@ -854,6 +854,7 @@ namespace RuApp.Views
             // The transcript scroll host stays full-width so its scrollbar docks
             // at the window edge; each message root centers its own reading column.
             LayoutRealizedMessageColumns();
+            UpdateConversationWidthLayerBounds(ConversationWidthState.Instance.ContentWidth);
             UpdateMessageRailVisibility();
         }
 
@@ -920,7 +921,7 @@ namespace RuApp.Views
             double viewport = Math.Max(
                 0,
                 ChatListView.ActualWidth - ChatListView.Padding.Left - ChatListView.Padding.Right - _sidePanelReserveWidth);
-            column.Width = Math.Min(MessageColumnMaxWidth, viewport);
+            column.Width = Math.Min(ConversationWidthState.Instance.ContentWidth, viewport);
             column.Margin = new Thickness(0, 0, _sidePanelReserveWidth, 0);
         }
 

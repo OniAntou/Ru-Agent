@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using RuApp.Services;
 
@@ -34,14 +35,37 @@ public sealed partial class ChatView
     private void ApplyConversationWidth(System.Collections.Generic.IEnumerable<Models.ChatMessageItem>? messages)
     {
         var width = _conversationWidth?.ContentWidth ?? ConversationWidthState.DefaultWidth;
-        ConversationWidthLayer.Width = width + ConversationWidthState.HandleOutset * 2;
-        InputContainer.MaxWidth = width + ConversationWidthState.ComposerGutter;
-        ApprovalHostGrid.MaxWidth = width + ConversationWidthState.ComposerGutter;
-        WelcomeHeroPanel.MaxWidth = width + ConversationWidthState.ComposerGutter;
+        UpdateConversationWidthLayerBounds(width);
         if (messages is not null)
         {
             foreach (var message in messages) message.ContentWidth = width;
         }
+
+        if (RootGrid is not null && RootGrid.ActualWidth > 0) ApplyInputWidth();
+    }
+
+    /// <summary>Keeps the invisible grab layer on the actual reading column, including side-panel reserve.</summary>
+    private void UpdateConversationWidthLayerBounds(double width)
+    {
+        if (ChatListView is null) return;
+        double left;
+        double currentWidth = width;
+        if (ChatListView.ContainerFromIndex(0) is ListViewItem container
+            && FindMessageColumn(container) is { ActualWidth: > 0 } column)
+        {
+            var point = column.TransformToVisual(ChatContentGrid)
+                .TransformPoint(new Windows.Foundation.Point(0, 0));
+            left = point.X;
+            currentWidth = column.ActualWidth;
+        }
+        else
+        {
+            left = Math.Max(0, (ChatContentGrid.ActualWidth - width) / 2);
+        }
+
+        ConversationWidthLayer.HorizontalAlignment = HorizontalAlignment.Left;
+        ConversationWidthLayer.Margin = new Thickness(left - ConversationWidthState.HandleOutset, 20, 0, 20);
+        ConversationWidthLayer.Width = currentWidth + ConversationWidthState.HandleOutset * 2;
     }
 
     private void UpdateConversationWidthViewport()

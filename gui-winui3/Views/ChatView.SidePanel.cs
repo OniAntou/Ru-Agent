@@ -230,7 +230,7 @@ public sealed partial class ChatView
 
         double panelReserve = hostWidth + SidePanelMargin;
         double fullColumn = Math.Min(
-            ReadingColumnMaxWidth,
+            ConversationWidthState.Instance.ComposerWidth,
             RootGrid.ActualWidth - HorizontalInsetFor(RootGrid.ActualWidth));
         double columnRight = (RootGrid.ActualWidth + fullColumn) / 2;
         double panelLeft = RootGrid.ActualWidth - panelReserve;

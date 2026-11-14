@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Persistence;
@@ -31,7 +31,7 @@ public sealed record RecoverySweepResult(
 /// durable event stream against dispatch boundaries. A crash before any dispatch fails
 /// the run safely with no effects; an incomplete read-only execution fails safely; an
 /// incomplete side-effecting execution moves the run to ReconciliationRequired. No
-/// startup path ever re-issues an old mutation execution id Ã¢â‚¬â€ ambiguous outcomes are
+/// startup path ever re-issues an old mutation execution id — ambiguous outcomes are
 /// only ever resolved through the explicit reconcile endpoint.
 /// </summary>
 public sealed class HarnessRecoveryScanner(

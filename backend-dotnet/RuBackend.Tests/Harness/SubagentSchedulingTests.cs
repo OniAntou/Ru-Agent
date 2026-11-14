@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Nodes;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging.Abstractions;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;

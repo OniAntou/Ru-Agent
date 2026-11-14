@@ -1,4 +1,4 @@
-﻿
+
 namespace RuAgent.Harness.Core.Context;
 
 public interface IModelContextLimitProvider

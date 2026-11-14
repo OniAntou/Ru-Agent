@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Approval;
@@ -740,7 +740,7 @@ public sealed partial class AgentRunCoordinator
 
         // A committed resolution wins over the wall-clock expiry: the user did
         // decide before (or around) the deadline, and the durable approval_resolved
-        // event is the authority. Expiry only applies while no resolution exists â€”
+        // event is the authority. Expiry only applies while no resolution exists —
         // otherwise approving late in the approval window could fail the run
         // after the decision was already recorded.
         if (resolved)

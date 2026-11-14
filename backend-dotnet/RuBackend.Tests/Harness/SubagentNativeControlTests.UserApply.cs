@@ -1,4 +1,4 @@
-﻿using RuAgent.Harness.Core;
+using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Context;
 using RuBackend.Harness;

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Persistence;
@@ -111,7 +111,7 @@ public sealed class HarnessRecoveryStartupServiceTests
     /// <summary>
     /// A parked run that outlived the host must be resumable: after the sweep its root
     /// and policy snapshot are registered, and while it stays parked the drive loop must
-    /// leave it alone. Only once Continue moves it to Running may the loop drive it â€”
+    /// leave it alone. Only once Continue moves it to Running may the loop drive it —
     /// that is what the registered root is for.
     /// </summary>
     [Theory]

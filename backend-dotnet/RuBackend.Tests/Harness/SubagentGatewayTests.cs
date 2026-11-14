@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Persistence;

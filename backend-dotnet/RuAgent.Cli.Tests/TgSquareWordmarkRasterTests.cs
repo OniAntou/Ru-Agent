@@ -63,6 +63,15 @@ public sealed class TgSquareWordmarkRasterTests
         var other = raster.Render(3.2);
         Assert.Same(quiet, other);
         Assert.Same(other, raster.Render(3.21));
+        // Warm up past the tiered-JIT call-count threshold first. Under a full suite the
+        // runtime's tier-up bookkeeping could land on this thread mid-measurement (one
+        // ~5 KB allocation on a frame that only returned a cached buffer), which is not
+        // the renderer allocating.
+        for (var i = 0; i < 300; i++)
+        {
+            _ = raster.Render(i * .1);
+        }
+
         var perFrame = new long[300];
         var collections = GC.CollectionCount(0);
         var before = GC.GetAllocatedBytesForCurrentThread();

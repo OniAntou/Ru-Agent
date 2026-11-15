@@ -50,7 +50,7 @@ public sealed class RuAppComposition : IDisposable
 
     public static RuAppComposition FromArguments(string? arguments)
     {
-        if (string.IsNullOrWhiteSpace(arguments))
+        if (!HarnessSessionDescriptor.IsHarnessArgument(arguments))
         {
             return Production();
         }

@@ -168,4 +168,14 @@ public sealed class MarkdownEngineTests
 
         Assert.Equal("a\tb\t\n1\tx y\t", tsv);
     }
+
+    [Fact]
+    public void External_link_destinations_are_shown_before_a_click()
+    {
+        // Model output picks both the label and the target, so every external
+        // destination goes through the helper that sets the address tooltip.
+        var code = GuiSource.Text("Controls", "MarkdownBlock.cs");
+        Assert.Contains("ToolTipService.SetToolTip(hyperlink, uri.AbsoluteUri)", code, StringComparison.Ordinal);
+        Assert.Equal(1, code.Split("NavigateUri = ").Length - 1);
+    }
 }

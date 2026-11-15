@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
 <title>Ru Terminal</title>
 <link rel="stylesheet" href="xterm.css" />
 <style>
@@ -25,6 +26,17 @@
     var term = new Terminal({
         cursorBlink: true,
         scrollback: 5000,
+        // Terminal output chooses OSC 8 link targets. This page never navigates or
+        // opens a window itself: after the user confirms the full address, the app
+        // hands an http(s) link to the default browser.
+        linkHandler: {
+            allowNonHttpProtocols: false,
+            activate: function (event, uri) {
+                if (window.confirm('Open this link in your browser?\n\n' + uri)) {
+                    post({ type: 'link', uri: uri });
+                }
+            }
+        },
         fontFamily: 'Cascadia Mono, Consolas, monospace',
         fontSize: 12.5,
         theme: {

@@ -58,10 +58,17 @@ public static class InstructionFileStore
 
     public static int ByteCount(string text) => Utf8NoBom.GetByteCount(NormalizeNewlines(text));
 
+    /// <summary>
+    /// The editor loads at most this much. A larger file is already skipped by the Host,
+    /// and loading a fragment of it would let a later save truncate the user's file.
+    /// </summary>
+    public const int MaxReadBytes = 1024 * 1024;
+
     public static InstructionFileSnapshot Read(string path)
     {
         var info = new FileInfo(path);
         if (!info.Exists) return new InstructionFileSnapshot(path, string.Empty, false, null, null);
+        if (info.Length > MaxReadBytes) throw new IOException("instruction_file_too_large");
         var text = File.ReadAllText(path, Encoding.UTF8);
         return new InstructionFileSnapshot(path, text, true, info.LastWriteTimeUtc, info.Length);
     }

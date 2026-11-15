@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **fix(harness)**: A hand-written tool call no longer has its arguments rewritten. The repair for mangled envelope delimiters (`<(` for `{`, `}>` for `}`) replaced them across the whole text, string content included, so a salvaged `diff <(git show HEAD:a.txt) a.txt` ran as `diff {git show HEAD:a.txt) a.txt`; and because each repair shortened the text, a `<(` in the prose before `<tool_call>` shifted the scan past the envelope and dropped a valid call. The repair now keeps the text length (`<(` becomes ` {`), starts after the opener and skips JSON string literals. The desktop display check uses the same rule.
 
+- **fix(gui)**: The interactive terminal page can no longer navigate or open windows. It now has a Content-Security-Policy, the web view cancels any navigation away from the vendored page and every new-window request, ignores messages from any other origin, clamps resize dimensions and turns DevTools off in Release. An OSC 8 link printed by a program used xterm.js's default handler, which opened an unmanaged WebView2 popup; it now asks with the full address and opens only http(s) links in the default browser.
+
+- **fix(gui)**: Hovering an external link in chat shows its full address. Model output chooses both a link's label and its destination, so the label alone could hide where a click goes.
+
+- **fix(gui)**: An unexpected launch argument no longer stops the desktop app at startup. Only `--ru-harness-session` selects acceptance-harness mode; any other argument starts the normal app instead of throwing in `OnLaunched`.
+
+- **fix(gui)**: The instruction editor refuses to load an instruction file over 1 MiB instead of reading it whole. The Host already skips such a file, and loading part of one could let a later save truncate it.
+
 - **fix(gui)**: Clearing the Settings search no longer leaves cards ignoring the mouse. Cards the search brought back ran the composition entrance, which (like the tab entrance fixed below) moved each card's hit-test bounds off the drawn card; they now fade back with a plain opacity animation.
 
 - **fix(gui)**: Layout-driven geometry no longer crashes the app. `TransformToVisual` throws E_INVALIDARG when two elements are not in one connected tree (a recycled transcript row, a view leaving the window), and from a `SizeChanged`/`LayoutUpdated` handler that throw fails the process fast. Since 12 November it had crashed Ru about fifty times with the same `STOWED_EXCEPTION_80070057` signature. The segmented-control thumbs, transcript follow and anchors, slash menu placement, chat-width handles, side-panel tab strip, document preview and title-bar regions now measure through `VisualTransforms`, which skips that layout pass instead. The exact throwing handler was not reproduced, so the next item makes any recurrence name itself.

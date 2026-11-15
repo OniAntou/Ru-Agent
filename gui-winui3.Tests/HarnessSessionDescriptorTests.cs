@@ -22,6 +22,16 @@ public sealed class HarnessSessionDescriptorTests
     }
 
     [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("--unknown-switch", false)]
+    [InlineData("C:\\work\\notes.md", false)]
+    [InlineData("--ru-harness-session \"C:\\h\\session.json\"", true)]
+    [InlineData("  --ru-harness-session x", true)]
+    public void Only_the_harness_flag_selects_harness_mode(string? arguments, bool expected) =>
+        Assert.Equal(expected, HarnessSessionDescriptor.IsHarnessArgument(arguments));
+
+    [Theory]
     [InlineData("https://example.com")]
     [InlineData("http://192.168.1.10:8000")]
     public void Harness_descriptor_rejects_non_loopback_edge(string baseUrl)

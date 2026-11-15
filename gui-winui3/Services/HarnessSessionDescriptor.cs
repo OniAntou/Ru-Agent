@@ -46,6 +46,17 @@ public sealed record HarnessSessionDescriptor(
         };
     }
 
+    /// <summary>
+    /// True only for the acceptance harness's own launch argument. Any other launch
+    /// argument (a shortcut, a stray switch) starts the normal product instead of
+    /// failing startup.
+    /// </summary>
+    public static bool IsHarnessArgument([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? arguments) =>
+        !string.IsNullOrWhiteSpace(arguments)
+        && arguments.TrimStart().StartsWith(HarnessFlag, StringComparison.Ordinal);
+
+    private const string HarnessFlag = "--ru-harness-session";
+
     public static HarnessSessionDescriptor LoadFromArgument(string arguments)
     {
         var path = ParseDescriptorPath(arguments);

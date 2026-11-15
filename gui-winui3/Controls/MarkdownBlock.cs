@@ -675,7 +675,7 @@ namespace RuApp.Controls
                 if (Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri)
                     && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
                 {
-                    hyperlink.NavigateUri = uri;
+                    SetExternalDestination(hyperlink, uri);
                 }
 
                 hyperlink.Inlines.Add(new Run { Text = targetUrl, FontSize = size, FontFamily = fontFamily });
@@ -715,7 +715,8 @@ namespace RuApp.Controls
                         && Uri.TryCreate(link.Url, UriKind.Absolute, out var targetUri)
                         && (targetUri.Scheme == Uri.UriSchemeHttp || targetUri.Scheme == Uri.UriSchemeHttps))
                     {
-                        var imageLink = new Hyperlink { NavigateUri = targetUri, Foreground = LinkBrush() };
+                        var imageLink = new Hyperlink { Foreground = LinkBrush() };
+                        SetExternalDestination(imageLink, targetUri);
                         imageLink.Inlines.Add(new Run { Text = label, FontSize = size, FontFamily = fontFamily });
                         target.Add(imageLink);
                     }
@@ -748,7 +749,7 @@ namespace RuApp.Controls
                 if (Uri.TryCreate(destination, UriKind.Absolute, out var uri)
                     && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
                 {
-                    hyperlink.NavigateUri = uri;
+                    SetExternalDestination(hyperlink, uri);
                 }
                 else if (hyperlink.NavigateUri is null)
                 {
@@ -778,6 +779,16 @@ namespace RuApp.Controls
 
                 hyperlink.Click += (_, _) => openLocalLink(destination!);
                 ToolTipService.SetToolTip(hyperlink, "Open in preview");
+            }
+
+            /// <summary>
+            /// Model output picks both a link's label and its destination, so the label
+            /// alone can disguise where a click goes: hovering shows the full address.
+            /// </summary>
+            private static void SetExternalDestination(Hyperlink hyperlink, Uri uri)
+            {
+                hyperlink.NavigateUri = uri;
+                ToolTipService.SetToolTip(hyperlink, uri.AbsoluteUri);
             }
 
             private static string LinkLabel(LinkInline link) => link.Label ?? string.Empty;
@@ -832,7 +843,7 @@ namespace RuApp.Controls
                     if (Uri.TryCreate(segment.LinkUrl, UriKind.Absolute, out var uri)
                         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
                     {
-                        link.NavigateUri = uri;
+                        SetExternalDestination(link, uri);
                     }
 
                     int? group = segment.LinkGroup;

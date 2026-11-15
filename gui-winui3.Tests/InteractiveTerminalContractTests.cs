@@ -40,4 +40,32 @@ public sealed class InteractiveTerminalContractTests
         Assert.Contains("terminal.html", code, StringComparison.Ordinal);
         Assert.Contains("powershell.exe", code, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Terminal_output_cannot_navigate_or_open_windows()
+    {
+        var html = File.ReadAllText(Path.Combine(GuiSource.Path("Assets", "terminal"), "terminal.html"));
+        Assert.Contains("Content-Security-Policy", html, StringComparison.Ordinal);
+        Assert.Contains("linkHandler", html, StringComparison.Ordinal);
+        Assert.Contains("allowNonHttpProtocols: false", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("window.open", html, StringComparison.Ordinal);
+
+        var code = GuiSource.Text("Controls", "InteractiveTerminalControl.xaml.cs");
+        Assert.Contains("NavigationStarting += OnNavigationStarting", code, StringComparison.Ordinal);
+        Assert.Contains("NewWindowRequested += OnNewWindowRequested", code, StringComparison.Ordinal);
+        Assert.Contains("IsTerminalPage(args.Source)", code, StringComparison.Ordinal);
+        Assert.Contains("AreDevToolsEnabled = false", code, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/a?b=c", true)]
+    [InlineData("http://example.com", true)]
+    [InlineData("file:///C:/Windows/notepad.exe", false)]
+    [InlineData("javascript:alert(1)", false)]
+    [InlineData("ms-settings:privacy", false)]
+    [InlineData("https://user:pass@example.com", false)]
+    [InlineData("relative/path", false)]
+    [InlineData("", false)]
+    public void Only_http_links_leave_the_terminal(string value, bool expected) =>
+        Assert.Equal(expected, RuApp.Controls.InteractiveTerminalControl.TryGetExternalLink(value, out _));
 }

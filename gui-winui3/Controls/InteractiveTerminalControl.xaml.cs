@@ -24,7 +24,10 @@ namespace RuApp.Controls
     public sealed partial class InteractiveTerminalControl : UserControl
     {
         private const string TerminalHostName = "ru-terminal.local";
-        private const string TerminalPageUrl = "https://ru-terminal.local/terminal.html";
+        private const string TerminalOrigin = "https://ru-terminal.local/";
+        private const string TerminalPageUrl = TerminalOrigin + "terminal.html";
+        private const int MaxLinkChars = 2048;
+        private const int MaxTerminalDimension = 1000;
         private const string ShellCommandLine = "powershell.exe -NoLogo";
         private const short DefaultColumns = 80;
         private const short DefaultRows = 24;
@@ -95,13 +98,21 @@ namespace RuApp.Controls
                 if (!_isWebInitialized)
                 {
                     await TerminalWebView.EnsureCoreWebView2Async();
+                    var core = TerminalWebView.CoreWebView2;
                     string assetsPath = Path.Combine(AppContext.BaseDirectory, "Assets", "terminal");
-                    TerminalWebView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                    core.SetVirtualHostNameToFolderMapping(
                         TerminalHostName,
                         assetsPath,
                         CoreWebView2HostResourceAccessKind.DenyCors);
-                    TerminalWebView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-                    TerminalWebView.CoreWebView2.Navigate(TerminalPageUrl);
+#if !DEBUG
+                    core.Settings.AreDevToolsEnabled = false;
+#endif
+                    // Shell output is untrusted: the web view stays on the vendored page
+                    // and never opens a window of its own.
+                    core.NavigationStarting += OnNavigationStarting;
+                    core.NewWindowRequested += OnNewWindowRequested;
+                    core.WebMessageReceived += OnWebMessageReceived;
+                    core.Navigate(TerminalPageUrl);
                     _isWebInitialized = true;
                 }
 
@@ -121,8 +132,27 @@ namespace RuApp.Controls
             }
         }
 
+        private static bool IsTerminalPage(string? uri) =>
+            uri is not null && uri.StartsWith(TerminalOrigin, StringComparison.OrdinalIgnoreCase);
+
+        private void OnNavigationStarting(CoreWebView2 sender, CoreWebView2NavigationStartingEventArgs args)
+        {
+            if (!IsTerminalPage(args.Uri))
+            {
+                args.Cancel = true;
+            }
+        }
+
+        private void OnNewWindowRequested(CoreWebView2 sender, CoreWebView2NewWindowRequestedEventArgs args) =>
+            args.Handled = true;
+
         private void OnWebMessageReceived(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs args)
         {
+            if (!IsTerminalPage(args.Source))
+            {
+                return;
+            }
+
             try
             {
                 using var document = JsonDocument.Parse(args.WebMessageAsJson);
@@ -149,13 +179,50 @@ namespace RuApp.Controls
 
                         break;
                     case "resize" when root.TryGetProperty("cols", out var columns) && root.TryGetProperty("rows", out var rows):
-                        _session?.Resize((short)columns.GetInt32(), (short)rows.GetInt32());
+                        _session?.Resize(ClampDimension(columns.GetInt32()), ClampDimension(rows.GetInt32()));
+                        break;
+                    case "link" when root.TryGetProperty("uri", out var link):
+                        if (TryGetExternalLink(link.GetString(), out var uri))
+                        {
+                            _ = OpenExternalLinkAsync(uri);
+                        }
+
                         break;
                 }
             }
             catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException)
             {
                 // A malformed bridge message is dropped; the terminal stays usable.
+            }
+        }
+
+        private static short ClampDimension(int value) => (short)Math.Clamp(value, 1, MaxTerminalDimension);
+
+        /// <summary>Only an absolute http(s) address of bounded length leaves the terminal.</summary>
+        internal static bool TryGetExternalLink(string? value, out Uri uri)
+        {
+            uri = null!;
+            if (string.IsNullOrWhiteSpace(value) || value.Length > MaxLinkChars
+                || !Uri.TryCreate(value, UriKind.Absolute, out var parsed)
+                || (parsed.Scheme != Uri.UriSchemeHttps && parsed.Scheme != Uri.UriSchemeHttp)
+                || parsed.UserInfo.Length != 0)
+            {
+                return false;
+            }
+
+            uri = parsed;
+            return true;
+        }
+
+        private static async Task OpenExternalLinkAsync(Uri uri)
+        {
+            try
+            {
+                await Windows.System.Launcher.LaunchUriAsync(uri);
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[Terminal] Opening a link failed: {ex.GetType().Name}");
             }
         }
 

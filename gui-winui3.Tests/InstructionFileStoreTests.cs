@@ -43,6 +43,19 @@ public sealed class InstructionFileStoreTests : IDisposable
     }
 
     [Fact]
+    public void An_oversized_file_is_refused_instead_of_loaded()
+    {
+        var path = InstructionFileStore.GlobalPath(_root);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using (var stream = File.Create(path))
+        {
+            stream.SetLength(InstructionFileStore.MaxReadBytes + 1L);
+        }
+
+        Assert.Throws<IOException>(() => InstructionFileStore.Read(path));
+    }
+
+    [Fact]
     public void An_edit_made_outside_ru_is_not_overwritten_unless_asked()
     {
         var path = InstructionFileStore.WorkspacePath(_root)!;

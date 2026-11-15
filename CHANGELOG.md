@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: The chat-width handles sit on the reading column's edges again. Their position came from measuring the first realized message row right after a width change, before layout ran, so a long conversation or a fresh session left them stranded inside the text (one live case put them at 279 px wide in the middle of a 720 px column) and the real edges did nothing. Rows and handles now share one layout formula (`ConversationColumnBounds`).
+
 - **feat(gui)**: Turn process disclosure now uses a DSH-style header — `Working…`, `Worked for 1m 5s`, `Took … · failed`, or `Worked` for history without an end time — and animates between the compact answer and the full process. The header keeps the existing activity-line language: a kind glyph that becomes the chevron on hover/focus/open, the activity type size, and a `· 7 steps` meta tail. A closed turn collapses automatically; the header reopens it, with height and clip measured after the content binding updates.
 
 - **feat(gui)**: The transcript reading column can be widened or narrowed by dragging either edge grip, matching DSH's conversation-width controls. The grips are invisible at rest and show only a short bar on hover or drag, 32 px outside the content. The width is centered, bounded by the viewport, applied to assistant, user and attachment rows together; the composer and approval overlay follow the same width with a 16 px gutter on each side. The width is session-local: app restart returns to the 720 px default, the drag is capped at 920 px, and narrowing the window clamps the rendered column until it grows again; a cancel or lost pointer capture restores the width from before the drag.

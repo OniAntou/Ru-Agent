@@ -44,28 +44,30 @@ public sealed partial class ChatView
         if (RootGrid is not null && RootGrid.ActualWidth > 0) ApplyInputWidth();
     }
 
-    /// <summary>Keeps the invisible grab layer on the actual reading column, including side-panel reserve.</summary>
+    /// <summary>
+    /// Keeps the invisible grab layer on the reading column's edges, including the
+    /// side-panel reserve. The bounds come from the same arithmetic that sizes every
+    /// message column (<see cref="LayoutMessageColumn"/>), not from measuring a realized
+    /// row: this runs right after a width change, before the next layout pass, so a
+    /// measured row still had its old (or first-measure) width. That left the handles
+    /// stranded inside the text and the real edges unresponsive until a resize.
+    /// </summary>
     private void UpdateConversationWidthLayerBounds(double width)
     {
-        if (ChatListView is null) return;
-        double left;
-        double currentWidth = width;
-        if (ChatListView.ContainerFromIndex(0) is ListViewItem container
-            && FindMessageColumn(container) is { ActualWidth: > 0 } column)
-        {
-            var point = column.TransformToVisual(ChatContentGrid)
-                .TransformPoint(new Windows.Foundation.Point(0, 0));
-            left = point.X;
-            currentWidth = column.ActualWidth;
-        }
-        else
-        {
-            left = Math.Max(0, (ChatContentGrid.ActualWidth - width) / 2);
-        }
+        if (ChatListView is null || ChatContentGrid is null) return;
+        var bounds = ConversationColumnBounds.For(
+            hostWidth: ChatListView.ActualWidth > 0 ? ChatListView.ActualWidth : ChatContentGrid.ActualWidth,
+            hostLeft: ChatListView.ActualWidth > 0
+                ? ChatListView.TransformToVisual(ChatContentGrid).TransformPoint(new Windows.Foundation.Point(0, 0)).X
+                : 0,
+            paddingLeft: ChatListView.Padding.Left,
+            paddingRight: ChatListView.Padding.Right,
+            sidePanelReserve: _sidePanelReserveWidth,
+            contentWidth: width);
 
         ConversationWidthLayer.HorizontalAlignment = HorizontalAlignment.Left;
-        ConversationWidthLayer.Margin = new Thickness(left - ConversationWidthState.HandleOutset, 20, 0, 20);
-        ConversationWidthLayer.Width = currentWidth + ConversationWidthState.HandleOutset * 2;
+        ConversationWidthLayer.Margin = new Thickness(bounds.Left - ConversationWidthState.HandleOutset, 20, 0, 20);
+        ConversationWidthLayer.Width = bounds.Width + ConversationWidthState.HandleOutset * 2;
     }
 
     private void UpdateConversationWidthViewport()

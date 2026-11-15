@@ -918,9 +918,9 @@ namespace RuApp.Views
                 return;
             }
 
-            double viewport = Math.Max(
-                0,
-                ChatListView.ActualWidth - ChatListView.Padding.Left - ChatListView.Padding.Right - _sidePanelReserveWidth);
+            // Same slot the width handles are placed against (ConversationColumnBounds).
+            double viewport = ConversationColumnBounds.SlotWidth(
+                ChatListView.ActualWidth, ChatListView.Padding.Left, ChatListView.Padding.Right, _sidePanelReserveWidth);
             column.Width = Math.Min(ConversationWidthState.Instance.ContentWidth, viewport);
             column.Margin = new Thickness(0, 0, _sidePanelReserveWidth, 0);
         }

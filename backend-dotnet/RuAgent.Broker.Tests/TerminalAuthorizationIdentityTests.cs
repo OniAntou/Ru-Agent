@@ -1,3 +1,4 @@
+using RuAgent.Broker.Tests.Support;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
@@ -60,7 +61,7 @@ public sealed class TerminalAuthorizationIdentityTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -101,7 +102,7 @@ public sealed class TerminalAuthorizationIdentityTests
         finally
         {
             if (Directory.Exists(link)) Directory.Delete(link);
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -154,7 +155,7 @@ public sealed class TerminalAuthorizationIdentityTests
         finally
         {
             if (Directory.Exists(link)) Directory.Delete(link);
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 

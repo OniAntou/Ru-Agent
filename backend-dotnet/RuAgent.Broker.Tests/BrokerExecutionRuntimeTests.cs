@@ -1,3 +1,4 @@
+using RuAgent.Broker.Tests.Support;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -1575,7 +1576,7 @@ public sealed class BrokerExecutionRuntimeTests
                     }
                 }
 
-                Directory.Delete(root, recursive: true);
+                TemporaryDirectories.DeleteEventually(root);
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {

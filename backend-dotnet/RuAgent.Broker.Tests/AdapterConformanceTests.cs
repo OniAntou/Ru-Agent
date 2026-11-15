@@ -77,7 +77,8 @@ public sealed class AdapterConformanceTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            // The timed-out ping tree is killed, but Windows may still hold its cwd briefly.
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using RuAgent.Broker.Policy;
+using RuAgent.Broker.Tests.Support;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Git;
 using RuAgent.Broker.Tools.Terminal;
@@ -29,7 +30,7 @@ public sealed class TerminalAdapterTests
             Assert.Equal(TerminalOperationClass.WorkspaceScript,
                 adapter.CanonicalizeRun(Request(executable, [Path.Combine(Path.GetTempPath(), "outside.py")])).OperationClass);
         }
-        finally { Directory.Delete(root, recursive: true); }
+        finally { TemporaryDirectories.DeleteEventually(root); }
     }
 
     [Fact]
@@ -47,7 +48,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -84,7 +85,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -108,7 +109,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -206,7 +207,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -225,7 +226,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -245,7 +246,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -290,7 +291,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -310,7 +311,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -364,7 +365,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            DeleteDirectoryEventually(root);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -393,7 +394,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            DeleteDirectoryEventually(root);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -420,7 +421,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            DeleteDirectoryEventually(root);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -497,7 +498,7 @@ public sealed class TerminalAdapterTests
 
             try
             {
-                DeleteDirectoryEventually(root);
+                TemporaryDirectories.DeleteEventually(root);
             }
             catch (Exception error)
             {
@@ -531,7 +532,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -581,7 +582,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -606,7 +607,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -627,7 +628,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -655,7 +656,7 @@ public sealed class TerminalAdapterTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TemporaryDirectories.DeleteEventually(root);
         }
     }
 
@@ -780,7 +781,7 @@ public sealed class TerminalAdapterTests
             File.SetAttributes(path, FileAttributes.Normal);
         }
 
-        Directory.Delete(root, recursive: true);
+        TemporaryDirectories.DeleteEventually(root);
     }
 
     private static void CreateJunction(string junction, string target)
@@ -915,28 +916,6 @@ public sealed class TerminalAdapterTests
         }
         catch (ArgumentException)
         {
-        }
-    }
-
-    private static void DeleteDirectoryEventually(string path)
-    {
-        Exception? lastError = null;
-        for (var attempt = 0; attempt < 20 && Directory.Exists(path); attempt++)
-        {
-            try
-            {
-                Directory.Delete(path, recursive: true);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            {
-                lastError = error;
-                Thread.Sleep(100);
-            }
-        }
-
-        if (Directory.Exists(path))
-        {
-            throw new IOException("temporary_directory_cleanup_failed", lastError);
         }
     }
 

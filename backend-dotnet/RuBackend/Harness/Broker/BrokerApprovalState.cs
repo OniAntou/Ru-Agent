@@ -15,8 +15,6 @@ public sealed record BrokerRunLeaseIdentity(
     long PolicyVersion,
     string PolicySha256,
     string LeaseId,
-    string BrokerUrl,
-    string AuthTokenSha256,
     long Generation = 0);
 
 public sealed class BrokerApprovalState
@@ -268,9 +266,7 @@ public sealed class BrokerApprovalState
         && string.Equals(left.CanonicalRoot, right.CanonicalRoot, StringComparison.Ordinal)
         && left.PolicyVersion == right.PolicyVersion
         && string.Equals(left.PolicySha256, right.PolicySha256, StringComparison.Ordinal)
-        && string.Equals(left.LeaseId, right.LeaseId, StringComparison.Ordinal)
-        && string.Equals(left.BrokerUrl, right.BrokerUrl, StringComparison.Ordinal)
-        && string.Equals(left.AuthTokenSha256, right.AuthTokenSha256, StringComparison.Ordinal);
+        && string.Equals(left.LeaseId, right.LeaseId, StringComparison.Ordinal);
 
     private static void ValidateRunLease(string runId, BrokerRunLeaseIdentity lease)
     {
@@ -283,14 +279,6 @@ public sealed class BrokerApprovalState
 
         ArgumentException.ThrowIfNullOrWhiteSpace(lease.LeaseId);
         ArgumentException.ThrowIfNullOrWhiteSpace(lease.PolicySha256);
-        ArgumentException.ThrowIfNullOrWhiteSpace(lease.BrokerUrl);
-        if ((lease.AuthTokenSha256.Length != 64)
-            || !lease.AuthTokenSha256.All(Uri.IsHexDigit)
-            || !Uri.TryCreate(lease.BrokerUrl, UriKind.Absolute, out var brokerUri)
-            || brokerUri.Scheme is not ("ws" or "wss"))
-        {
-            throw new ArgumentException("The Broker descriptor identity is invalid.", nameof(lease));
-        }
     }
 
     private RunState Run(string runId)

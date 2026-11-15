@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Runtime;
 using RuAgent.Harness.Core;
@@ -18,17 +16,6 @@ namespace RuBackend.Harness.Broker;
 /// </summary>
 public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
 {
-    /// <summary>
-    /// The wire-only identity fields <see cref="BrokerApprovalState"/> validates
-    /// leases against. In-process there is no socket, so the identity is a
-    /// process-stable inert loopback URL and the digest of the empty bearer.
-    /// </summary>
-    private static readonly string InertBrokerUrl =
-        new Uri("ws://127.0.0.1:0/agent").AbsoluteUri;
-
-    private static readonly string InertAuthTokenSha256 =
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Empty))).ToLowerInvariant();
-
     private readonly Lazy<BrokerExecutionRuntime> _runtime;
     private readonly BrokerApprovalState _approvals = new();
     private readonly ConcurrentDictionary<string, InProcessToolGateway> _gateways =
@@ -137,9 +124,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
             canonicalRoot,
             policySnapshot.Version,
             policySnapshot.Sha256,
-            string.Empty,
-            BrokerUrl: InertBrokerUrl,
-            AuthTokenSha256: InertAuthTokenSha256);
+            string.Empty);
 
         // Same-scope replacement create/rebind cycles serialize exactly like
         // the old lock did; only the open await leaves the lock now, so a

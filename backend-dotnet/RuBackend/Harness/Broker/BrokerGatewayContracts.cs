@@ -279,7 +279,5 @@ internal static class BrokerGatewayContracts
         && string.Equals(left.WorkspaceId, right.WorkspaceId, StringComparison.Ordinal)
         && string.Equals(left.CanonicalRoot, right.CanonicalRoot, StringComparison.Ordinal)
         && left.PolicyVersion == right.PolicyVersion
-        && string.Equals(left.PolicySha256, right.PolicySha256, StringComparison.Ordinal)
-        && string.Equals(left.BrokerUrl, right.BrokerUrl, StringComparison.Ordinal)
-        && string.Equals(left.AuthTokenSha256, right.AuthTokenSha256, StringComparison.Ordinal);
+        && string.Equals(left.PolicySha256, right.PolicySha256, StringComparison.Ordinal);
 }

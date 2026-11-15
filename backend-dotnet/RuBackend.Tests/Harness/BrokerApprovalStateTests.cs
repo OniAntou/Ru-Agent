@@ -18,8 +18,6 @@ public sealed class BrokerApprovalStateTests
     [InlineData("generation")]
     [InlineData("session")]
     [InlineData("root")]
-    [InlineData("url")]
-    [InlineData("auth")]
     public void Cached_authorization_token_is_bound_to_the_current_run_lease(string changedField)
     {
         var state = new global::RuBackend.Harness.Broker.BrokerApprovalState();
@@ -31,9 +29,7 @@ public sealed class BrokerApprovalStateTests
             "C:\\workspace",
             4,
             new string('a', 64),
-            "lease-a",
-            BrokerUrl: "ws://127.0.0.1:41001/agent",
-            AuthTokenSha256: new string('b', 64));
+            "lease-a");
         state.ActivateLease(lease);
         state.StoreAuthorizationToken(
             runId,
@@ -48,8 +44,6 @@ public sealed class BrokerApprovalStateTests
             "hash" => lease with { PolicySha256 = new string('b', 64) },
             "generation" => lease with { Generation = 2 },
             "session" => lease with { SessionId = "session-b" },
-            "url" => lease with { BrokerUrl = "ws://127.0.0.1:41002/agent" },
-            "auth" => lease with { AuthTokenSha256 = new string('c', 64) },
             _ => lease with { CanonicalRoot = "C:\\workspace-b" },
         };
 
@@ -84,9 +78,7 @@ public sealed class BrokerApprovalStateTests
             "C:\\workspace",
             4,
             new string('a', 64),
-            "lease-a",
-            "ws://127.0.0.1:41001/agent",
-            new string('b', 64));
+            "lease-a");
         var newLease = oldLease with { LeaseId = "lease-b" };
         const string argsKey = "read|{}";
         state.ActivateLease(oldLease);
@@ -123,9 +115,7 @@ public sealed class BrokerApprovalStateTests
             "C:\\workspace",
             4,
             new string('a', 64),
-            "lease-a",
-            "ws://127.0.0.1:41001/agent",
-            new string('b', 64));
+            "lease-a");
         var second = first with { Generation = 1 };
         const string argsKey = "read|{\"path\":\"README.md\"}";
         state.ActivateLease(first);

@@ -63,19 +63,63 @@ public static class ModelToolSelectionParser
 
     /// <summary>
     /// Same-length repair of mangled envelope delimiters weak models invent
-    /// ("&lt;(" for "{", "}&gt;" for "}"). Length preservation keeps repaired
-    /// coordinates valid against the original text.
+    /// ("&lt;(" for "{", "}&gt;" for "}"), scanning from <paramref name="startIndex"/>.
+    /// Only structural positions are repaired: text inside JSON string literals is
+    /// argument content (a shell's <c>diff &lt;(cmd)</c>, a JSX <c>{x}&gt;</c>) and is
+    /// never touched. Each two-character delimiter becomes a brace plus a space, so
+    /// indexes into the repaired text stay valid against the original.
     /// </summary>
-    public static string RepairDelimiters(string text)
+    public static string RepairDelimiters(string text, int startIndex = 0)
     {
-        if (string.IsNullOrEmpty(text))
+        if (string.IsNullOrEmpty(text) || (uint)startIndex >= (uint)text.Length)
         {
             return text;
         }
 
-        return text
-            .Replace("<(", "{", StringComparison.Ordinal)
-            .Replace("}>", "}", StringComparison.Ordinal);
+        char[]? repaired = null;
+        var inString = false;
+        var escape = false;
+        for (var i = startIndex; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (inString)
+            {
+                if (escape)
+                {
+                    escape = false;
+                }
+                else if (c == '\\')
+                {
+                    escape = true;
+                }
+                else if (c == '"')
+                {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            if (c == '"')
+            {
+                inString = true;
+            }
+            else if (c == '<' && i + 1 < text.Length && text[i + 1] == '(')
+            {
+                repaired ??= text.ToCharArray();
+                repaired[i] = ' ';
+                repaired[i + 1] = '{';
+                i++;
+            }
+            else if (c == '}' && i + 1 < text.Length && text[i + 1] == '>')
+            {
+                repaired ??= text.ToCharArray();
+                repaired[i + 1] = ' ';
+                i++;
+            }
+        }
+
+        return repaired is null ? text : new string(repaired);
     }
 
     /// <summary>
@@ -161,7 +205,7 @@ public static class ModelToolSelectionParser
         var openIndex = trimmed.IndexOf(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase);
         if (openIndex >= 0)
         {
-            var repaired = RepairDelimiters(trimmed);
+            var repaired = RepairDelimiters(trimmed, openIndex + ToolCallOpenTag.Length);
             return TryFindFirstJsonObject(repaired, openIndex + ToolCallOpenTag.Length, out var found, out _)
                 && HasToolKeys(found);
         }
@@ -191,7 +235,8 @@ public static class ModelToolSelectionParser
             return false;
         }
 
-        var repaired = RepairDelimiters(text);
+        // Prose before the opener is never rewritten; only the envelope after it is.
+        var repaired = RepairDelimiters(text, openIndex + ToolCallOpenTag.Length);
         if (!TryFindFirstJsonObject(repaired, openIndex + ToolCallOpenTag.Length, out var found, out var foundAt)
             || !HasToolKeys(found))
         {

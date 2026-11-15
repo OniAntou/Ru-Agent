@@ -9,6 +9,8 @@ public sealed class AgentActivityDisplayPolicyTests
     [InlineData("<tool_call>\n{\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}\n</tool_call>")]
     [InlineData("Xin chào!<tool_call>\n<(\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}\n}>")]
     [InlineData("```json\n{\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}\n```")]
+    [InlineData("<(\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}>")]
+    [InlineData("Uses <(cmd) syntax.<tool_call>{\"tool_id\":\"bash\",\"tool_version\":\"1.0.0\",\"arguments\":{\"command\":\"diff <(a) b\"}}")]
     public void Tool_selection_envelopes_are_not_displayable(string text) =>
         Assert.True(AgentActivityDisplayPolicy.LooksLikeToolSelection(text));
 

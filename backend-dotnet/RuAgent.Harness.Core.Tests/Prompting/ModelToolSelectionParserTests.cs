@@ -150,4 +150,39 @@ public sealed class ModelToolSelectionParserTests
         Assert.StartsWith("{", envelope, StringComparison.Ordinal);
         Assert.DoesNotContain("<(", envelope, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void TryExtractCallCandidate_keeps_delimiter_lookalikes_inside_argument_strings()
+    {
+        const string command = "diff <(git show HEAD:a.txt) a.txt; echo \"{x}>\"";
+        var text = "Comparing files.<tool_call>{\"tool_id\":\"bash\",\"tool_version\":\"1.0.0\",\"arguments\":{\"command\":"
+            + System.Text.Json.JsonSerializer.Serialize(command) + "}}";
+
+        Assert.True(ModelToolSelectionParser.TryExtractCallCandidate(text, out var prose, out var envelope));
+        Assert.Equal("Comparing files.", prose);
+        using var document = System.Text.Json.JsonDocument.Parse(envelope);
+        Assert.Equal(command, document.RootElement.GetProperty("arguments").GetProperty("command").GetString());
+    }
+
+    [Fact]
+    public void TryExtractCallCandidate_finds_the_call_when_prose_contains_a_delimiter_lookalike()
+    {
+        const string prose = "Bash process substitution looks like <(cmd) and JSX like {x}>.";
+        const string text = prose + "<tool_call>{\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"a\"}}";
+
+        Assert.True(ModelToolSelectionParser.TryExtractCallCandidate(text, out var extractedProse, out var envelope));
+        Assert.Equal(prose, extractedProse);
+        Assert.Equal("{\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"a\"}}", envelope);
+    }
+
+    [Fact]
+    public void RepairDelimiters_preserves_length_and_string_content()
+    {
+        const string text = "<(\"a\":\"<(x)}>\",\"b\":{}}>";
+
+        var repaired = ModelToolSelectionParser.RepairDelimiters(text);
+
+        Assert.Equal(text.Length, repaired.Length);
+        Assert.Equal(" {\"a\":\"<(x)}>\",\"b\":{}} ", repaired);
+    }
 }

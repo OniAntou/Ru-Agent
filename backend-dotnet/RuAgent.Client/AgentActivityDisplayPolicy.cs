@@ -24,8 +24,8 @@ public static class AgentActivityDisplayPolicy
             return true;
         }
 
-        var repaired = RepairDelimiters(candidate);
-        var openIndex = repaired.IndexOf(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase);
+        var openIndex = candidate.IndexOf(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase);
+        var repaired = RepairDelimiters(candidate, openIndex >= 0 ? openIndex + ToolCallOpenTag.Length : 0);
         if (openIndex >= 0)
         {
             var jsonStart = repaired.IndexOf('{', openIndex + ToolCallOpenTag.Length);
@@ -34,7 +34,8 @@ public static class AgentActivityDisplayPolicy
                 && HasToolKeys(json);
         }
 
-        candidate = StripJsonFence(repaired);
+        // A repaired leading "<(" is now " {": trim before the shape check.
+        candidate = StripJsonFence(repaired.TrimStart());
         return candidate.StartsWith('{') && HasToolKeys(candidate);
     }
 
@@ -54,9 +55,64 @@ public static class AgentActivityDisplayPolicy
         return candidate;
     }
 
-    private static string RepairDelimiters(string candidate) =>
-        candidate.Replace("<(", "{", StringComparison.Ordinal)
-            .Replace("}>", "}", StringComparison.Ordinal);
+    /// <summary>
+    /// Same-length repair of "&lt;(" and "}&gt;" at structural positions from
+    /// <paramref name="startIndex"/>; JSON string content is left as written,
+    /// matching the Harness parser.
+    /// </summary>
+    private static string RepairDelimiters(string candidate, int startIndex)
+    {
+        if ((uint)startIndex >= (uint)candidate.Length)
+        {
+            return candidate;
+        }
+
+        char[]? repaired = null;
+        var inString = false;
+        var escaped = false;
+        for (var index = startIndex; index < candidate.Length; index++)
+        {
+            var current = candidate[index];
+            if (inString)
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                }
+                else if (current == '\\')
+                {
+                    escaped = true;
+                }
+                else if (current == '"')
+                {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            var next = index + 1 < candidate.Length ? candidate[index + 1] : '\0';
+            if (current == '"')
+            {
+                inString = true;
+            }
+            else if (current == '<' && next == '(')
+            {
+                repaired ??= candidate.ToCharArray();
+                repaired[index] = ' ';
+                repaired[index + 1] = '{';
+                index++;
+            }
+            else if (current == '}' && next == '>')
+            {
+                repaired ??= candidate.ToCharArray();
+                repaired[index + 1] = ' ';
+                index++;
+            }
+        }
+
+        return repaired is null ? candidate : new string(repaired);
+    }
 
     private static string StripJsonFence(string candidate)
     {

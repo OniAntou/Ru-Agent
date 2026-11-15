@@ -468,6 +468,10 @@ call and takes the same scheduler and Broker policy path. An unadvertised tool o
 version fails retryably as `model_tool_call_unavailable`, like a native call;
 markup that cannot be read as a call fails retryably as `invalid_selection`, or is
 stripped when prose remains. Raw call markup never reaches the transcript.
+Mangled delimiters (`<(` for `{`, `}>` for `}`) are repaired only at structural
+positions after the `<tool_call>` opener: argument strings such as a shell's
+`diff <(cmd)` reach the tool exactly as the model wrote them, and prose before
+the opener is never rewritten.
 
 The runtime evaluates a complete batch before executing any call. If any
 non-denied call asks, prepared authorization is discarded and the whole retained

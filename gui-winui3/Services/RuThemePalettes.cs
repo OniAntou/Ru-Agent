@@ -94,14 +94,19 @@ public static class RuThemePalettes
     /// RequestedTheme around this call so ThemeResource bindings re-resolve even
     /// when the base (Light/Dark) did not change.
     /// </summary>
-    public static void Apply(UiTheme theme)
+    public static void Apply(UiTheme theme) => Apply(theme, PaletteFor(theme));
+
+    /// <summary>
+    /// Writes <paramref name="p"/> (a theme pack, or one adjusted by the user's
+    /// appearance overrides) into the theme's base dictionary.
+    /// </summary>
+    public static void Apply(UiTheme theme, ThemePalette p)
     {
         if (Application.Current?.Resources.ThemeDictionaries[BaseKey(theme)] is not ResourceDictionary dict)
         {
             return;
         }
 
-        var p = PaletteFor(theme);
         var hover = theme == UiTheme.Dark ? p.Surface : p.Canvas;
         SetColor(dict, "RuCanvasColor", p.Canvas);
         SetColor(dict, "RuSidebarColor", p.Sidebar);

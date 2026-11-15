@@ -233,6 +233,11 @@
 
             <SolidColorBrush x:Key="RuCanvasBrush" Color="{ThemeResource RuCanvasColor}" />
             <SolidColorBrush x:Key="RuSidebarBrush" Color="{ThemeResource RuSidebarColor}" />
+            <!-- The canvases a custom background shows through. Separate from the
+                 brushes above so popups, menus and inputs stay opaque; the shell
+                 lowers only these two (AppearanceBackdrop draws the scrim). -->
+            <SolidColorBrush x:Key="RuBackdropCanvasBrush" Color="{ThemeResource RuCanvasColor}" />
+            <SolidColorBrush x:Key="RuBackdropSidebarBrush" Color="{ThemeResource RuSidebarColor}" />
             <SolidColorBrush x:Key="RuSurfaceBrush" Color="{ThemeResource RuSurfaceColor}" />
             <SolidColorBrush x:Key="RuInkBrush" Color="{ThemeResource RuInkColor}" />
             <SolidColorBrush x:Key="RuMutedBrush" Color="{ThemeResource RuMutedColor}" />

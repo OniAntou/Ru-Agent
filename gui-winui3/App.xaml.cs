@@ -81,6 +81,19 @@ public partial class App : Application
             return;
         }
 
+        // Fonts and corner radii are StaticResource lookups, so the user's choices
+        // must be in the resources before the first view is built.
+        // A preference that cannot be applied must not keep Ru from starting: the stock
+        // look is the recovery, and Settings can still change or reset it.
+        try
+        {
+            AppearanceResources.ApplyAtStartup(Resources, AppearanceState.Instance.StartupPreferences);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException
+                                       or ArgumentException or System.Runtime.InteropServices.COMException)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[Appearance] Startup fonts/corners not applied: {ex.GetType().Name}");
+        }
         _window = new MainWindow(composition);
         _window.Closed += (_, _) =>
         {

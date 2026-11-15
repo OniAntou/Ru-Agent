@@ -26,6 +26,9 @@ namespace RuApp.Controls
         }
         public event EventHandler<double>? WidthRequested;
 
+        /// <summary>True when the sidebar sits on the right edge, so the arrow keys swap meaning.</summary>
+        public bool IsOnRight { get; set; }
+
         public SidebarResizerControl()
         {
             ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
@@ -34,10 +37,13 @@ namespace RuApp.Controls
         protected override void OnKeyDown(KeyRoutedEventArgs e)
         {
             if (e.Handled) return;
+            // The sidebar edge follows the arrow on either side: toward the window edge narrows it.
+            var narrow = IsOnRight ? VirtualKey.Right : VirtualKey.Left;
+            var widen = IsOnRight ? VirtualKey.Left : VirtualKey.Right;
             double? width = e.Key switch
             {
-                VirtualKey.Left or VirtualKey.Up => SidebarWidth - 16,
-                VirtualKey.Right or VirtualKey.Down => SidebarWidth + 16,
+                _ when e.Key == narrow || e.Key == VirtualKey.Up => SidebarWidth - 16,
+                _ when e.Key == widen || e.Key == VirtualKey.Down => SidebarWidth + 16,
                 VirtualKey.Home => ResponsiveLayoutPolicy.MinimumSidebarWidth,
                 VirtualKey.End => ResponsiveLayoutPolicy.MaximumSidebarWidth,
                 _ => null,

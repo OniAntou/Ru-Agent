@@ -117,6 +117,7 @@ namespace RuApp
                 }
 
                 ApplyTheme(Shell.Theme);
+                InitializeAppearance();
                 InitializeSidebarHoverEffects();
                 InitializeSidePanelToggle();
                 InitializeNotifications();
@@ -219,7 +220,7 @@ namespace RuApp
             {
                 ShellRoot.RequestedTheme = isDark ? ElementTheme.Light : ElementTheme.Dark;
             }
-            RuApp.Services.RuThemePalettes.Apply(theme);
+            RuApp.Services.RuThemePalettes.Apply(theme, AppearancePaletteFor(theme));
             ShellRoot.RequestedTheme = target;
 
             // The label changes with the palette inside the fade, so it is set

@@ -41,6 +41,7 @@ namespace RuApp.Views
             foreach (var (tab, panel) in new[]
                      {
                          (SettingsTab.General, PanelGeneralScrollViewer),
+                         (SettingsTab.Appearance, PanelAppearanceScrollViewer),
                          (SettingsTab.Permissions, PanelRulesScrollViewer),
                      })
             {
@@ -90,13 +91,14 @@ namespace RuApp.Views
 
             bool Shown(SettingsTab tab) => !filtering || tabMatches.GetValueOrDefault(tab);
             SetNavVisible(NavGeneralBtn, Shown(SettingsTab.General));
+            SetNavVisible(NavAppearanceBtn, Shown(SettingsTab.Appearance));
             SetNavVisible(NavModelsBtn, Shown(SettingsTab.Models));
             SetNavVisible(NavRulesBtn, Shown(SettingsTab.Permissions));
             SetNavVisible(NavShortcutsBtn, Shown(SettingsTab.Shortcuts));
             SetNavVisible(NavAboutBtn, Shown(SettingsTab.About));
             UpdateRuHeadingVisibility();
 
-            var first = new[] { SettingsTab.General, SettingsTab.Models, SettingsTab.Permissions, SettingsTab.Shortcuts, SettingsTab.About }
+            var first = new[] { SettingsTab.General, SettingsTab.Appearance, SettingsTab.Models, SettingsTab.Permissions, SettingsTab.Shortcuts, SettingsTab.About }
                 .Cast<SettingsTab?>()
                 .FirstOrDefault(tab => Shown(tab!.Value));
             bool noResults = filtering && first is null;
@@ -124,7 +126,7 @@ namespace RuApp.Views
         }
 
         private ScrollViewer[] AllPanels =>
-            [PanelGeneralScrollViewer, PanelModelsScrollViewer, PanelRulesScrollViewer, PanelShortcutsScrollViewer, PanelAboutScrollViewer];
+            [PanelGeneralScrollViewer, PanelAppearanceScrollViewer, PanelModelsScrollViewer, PanelRulesScrollViewer, PanelShortcutsScrollViewer, PanelAboutScrollViewer];
 
         private static void SetNavVisible(Button button, bool visible) =>
             button.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
@@ -141,6 +143,7 @@ namespace RuApp.Views
             switch (tab)
             {
                 case SettingsTab.General: OnNavGeneralClick(this, new RoutedEventArgs()); break;
+                case SettingsTab.Appearance: OnNavAppearanceClick(this, new RoutedEventArgs()); break;
                 case SettingsTab.Models: OnNavModelsClick(this, new RoutedEventArgs()); break;
                 case SettingsTab.Permissions: OnNavRulesClick(this, new RoutedEventArgs()); break;
                 case SettingsTab.Shortcuts: OnNavShortcutsClick(this, new RoutedEventArgs()); break;

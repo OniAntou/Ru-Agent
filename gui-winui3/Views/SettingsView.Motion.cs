@@ -72,6 +72,7 @@ namespace RuApp.Views
             ScrollViewer panel = tab switch
             {
                 SettingsTab.General => PanelGeneralScrollViewer,
+                SettingsTab.Appearance => PanelAppearanceScrollViewer,
                 SettingsTab.Models => PanelModelsScrollViewer,
                 SettingsTab.Permissions => PanelRulesScrollViewer,
                 SettingsTab.Shortcuts => PanelShortcutsScrollViewer,

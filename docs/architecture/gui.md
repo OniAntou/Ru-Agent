@@ -359,6 +359,51 @@ notifications on calls `AppNotificationManager.Register()`, which registers the
 unpackaged app for the current user; turning them off calls `Unregister()`. The
 installer does not unregister on uninstall.
 
+## Appearance customization
+
+Settings > Appearance holds the user's look-and-feel choices. They are local GUI
+preferences in `%LOCALAPPDATA%\Ru\appearance.json` (`AppearancePreferenceStore`), kept
+apart from `ui-preferences.json` because that store rewrites its file with the theme
+alone. Nothing here reaches the Host or the Broker. `AppearanceState` is the single live
+copy: Settings writes through it, every change is saved at once, and `MainWindow`
+repaints on its `Changed` event. `AppearancePreferences.Sanitized` is the one gate for
+loaded and imported values: unknown enum values, malformed colors, font names that look
+like paths or URIs, and background names Ru did not generate fall back to defaults.
+
+- **Background.** A picked image or video is copied by `AppearanceMediaFiles` into
+  `%LOCALAPPDATA%\Ru\backgrounds` under a generated name (32 hex digits plus the
+  extension); the preferences store only that name, never the source path. Images are
+  capped at 40 MB and videos at 300 MB. `AppearanceBackdrop` sits under the whole shell
+  with a scrim of the theme canvas at the chosen panel opacity (30-100 %). Only the two
+  root canvases (`RuBackdropCanvasBrush` on the chat root, `RuBackdropSidebarBrush` on
+  the sidebar) become transparent; popups, menus and inputs keep their opaque brushes.
+  A video plays muted and looped, pauses while the window is hidden, and holds still
+  when Windows animations are off. A file that fails to decode clears the background.
+- **Colors.** Overrides are stored per base theme (`lightColors`, `darkColors`; Dark and
+  Meteor Shower share the dark set) as `#RRGGBB`. `AppearancePalette.Build` lays them over
+  the theme pack, derives the colors the user did not pick, and applies a contrast floor:
+  text at 4.5:1 against canvas, cards and sidebar, secondary text and accent at 3:1 against
+  the canvas. The result is written through `RuThemePalettes.Apply(theme, palette)`, so the
+  theme toggle, title bar and Meteor backdrop still key off the `UiTheme` enum.
+- **Fonts and corners.** `AppearanceResources.ApplyAtStartup` replaces `RuUiFontFamily`,
+  `RuDisplayFontFamily`, `RuMonoFontFamily` and the corner tokens before the first window
+  is built, because XAML reads them with `StaticResource`. App.xaml styles that already
+  resolved a stock value are swapped for derived styles (`BasedOn`) rather than edited,
+  since a sealed setter throws inside the XAML runtime. These two apply on the next
+  launch; Settings says so while a restart is pending. A failure here is logged and Ru
+  starts with the stock look.
+- **Layout.** The sidebar can sit on either edge: `MainWindow.ApplySidebarSide` reorders
+  the shell columns and mirrors the sidebar's asymmetric radius. The sidebar edge then
+  follows the input on either side: pointer drags, the splitter's arrow keys and
+  Ctrl+Left/Right all flip with it. It applies live.
+- **Theme files and reset.** Export writes colors, fonts and layout to JSON without the
+  background. Import treats the file as untrusted: size-capped, sanitized, and it never
+  changes the background or panel opacity. Reset (Settings, or "Reset appearance" in the
+  command palette) returns to the stock look and prunes stored background files.
+
+Elements that paint with brushes looked up in code-behind keep the colors they resolved
+to until they repaint; the Settings rail re-highlights on every appearance change.
+
 ## Custom model API editor
 
 Settings › Providers › "Add custom model API" opens `CustomProviderEditorView`

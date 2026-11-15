@@ -77,6 +77,10 @@ public sealed partial class MainWindow
                 shortcut: KeyboardShortcutCatalog.KeysFor(KeyboardShortcutCatalog.ShowShortcuts), glyph: ""),
             new("theme", Shell.Theme == UiTheme.Dark ? "Switch to light theme" : "Switch to dark theme", "General",
                 Shell.ToggleTheme, glyph: ""),
+            // Always reachable, so a background or colors that make Settings hard to
+            // read can still be undone from the keyboard (Ctrl+K).
+            new("appearance-reset", "Reset appearance", "General",
+                () => AppearanceState.Instance.Reset(), glyph: ""),
         };
 
         // Permission changes take the same path as the Settings dropdown. Full Access

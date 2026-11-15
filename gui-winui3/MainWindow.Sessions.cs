@@ -264,12 +264,12 @@ namespace RuApp
             else if (e.Key == Windows.System.VirtualKey.Left)
             {
                 e.Handled = true;
-                NudgeSidebarWidth(-40);
+                NudgeSidebarWidth(-40 * SidebarDragDirection);
             }
             else if (e.Key == Windows.System.VirtualKey.Right)
             {
                 e.Handled = true;
-                NudgeSidebarWidth(40);
+                NudgeSidebarWidth(40 * SidebarDragDirection);
             }
         }
 

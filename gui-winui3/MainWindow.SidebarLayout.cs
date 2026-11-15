@@ -70,14 +70,14 @@ public sealed partial class MainWindow
         if (_sidebarResizePointerId != e.Pointer.PointerId) return;
         var point = e.GetCurrentPoint(RootLayoutGrid);
         if (!point.Properties.IsLeftButtonPressed) { EndSidebarResize(); return; }
-        SetSidebarWidth(_sidebarResizeStartWidth + point.Position.X - _sidebarResizeStartX);
+        SetSidebarWidth(_sidebarResizeStartWidth + (point.Position.X - _sidebarResizeStartX) * SidebarDragDirection);
         e.Handled = true;
     }
 
     private void Resizer_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
         if (_sidebarResizePointerId != e.Pointer.PointerId) return;
-        SetSidebarWidth(_sidebarResizeStartWidth + e.GetCurrentPoint(RootLayoutGrid).Position.X - _sidebarResizeStartX);
+        SetSidebarWidth(_sidebarResizeStartWidth + (e.GetCurrentPoint(RootLayoutGrid).Position.X - _sidebarResizeStartX) * SidebarDragDirection);
         EndSidebarResize();
         e.Handled = true;
     }

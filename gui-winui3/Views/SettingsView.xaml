@@ -128,6 +128,11 @@
                                 AutomationProperties.Name="General settings"
                                 Click="OnNavGeneralClick"
                                 Style="{StaticResource SidebarNavButtonStyle}" />
+                        <Button x:Name="NavAppearanceBtn"
+                                Content="Appearance"
+                                AutomationProperties.Name="Appearance settings"
+                                Click="OnNavAppearanceClick"
+                                Style="{StaticResource SidebarNavButtonStyle}" />
                         <!-- Models / AI Providers Tab Button -->
                         <Button x:Name="NavModelsBtn"
                                 Content="Models &amp; Providers"
@@ -398,6 +403,169 @@
                         </StackPanel>
                     </Border>
 
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Appearance Panel: background, colors, fonts, layout and theme files.
+                 Local GUI preferences only (appearance.json); see AppearanceState. -->
+            <ScrollViewer x:Name="PanelAppearanceScrollViewer"
+                          Grid.Row="1"
+                          Padding="28,20,28,32"
+                          Background="Transparent"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto"
+                          Visibility="Collapsed">
+                <StackPanel Spacing="16">
+                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
+                        <StackPanel Spacing="12">
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Background" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="AppearanceBackgroundStatus"
+                                               Text="A picture or a muted, looping video behind the whole window"
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <Button x:Name="AppearanceChooseBackgroundButton" Content="Choose image or video"
+                                            Click="OnAppearanceChooseBackgroundClick"
+                                            AutomationProperties.Name="Choose a background image or video" />
+                                    <Button x:Name="AppearanceRemoveBackgroundButton" Content="Remove"
+                                            Click="OnAppearanceRemoveBackgroundClick"
+                                            AutomationProperties.Name="Remove the background" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock x:Name="AppearanceBackgroundError" Visibility="Collapsed" TextWrapping="Wrap"
+                                       Foreground="{StaticResource RuDangerBrush}" Style="{StaticResource SettingDescStyle}"
+                                       AutomationProperties.LiveSetting="Assertive" />
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock x:Name="AppearanceFitLabel" Text="Fit" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="How the background fills the window" Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <ComboBox x:Name="AppearanceFitBox" Grid.Column="1" Width="200" VerticalAlignment="Center"
+                                          SelectionChanged="OnAppearanceFitChanged"
+                                          AutomationProperties.LabeledBy="{Binding ElementName=AppearanceFitLabel}">
+                                    <ComboBoxItem Content="Fill" Tag="Fill" />
+                                    <ComboBoxItem Content="Fit" Tag="Fit" />
+                                    <ComboBoxItem Content="Stretch" Tag="Stretch" />
+                                    <ComboBoxItem Content="Center" Tag="Center" />
+                                </ComboBox>
+                            </Grid>
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock x:Name="AppearanceOpacityLabel" Text="Panel opacity" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="How much of the theme covers the background. Higher reads more easily."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <Slider x:Name="AppearanceOpacitySlider" Grid.Column="1" Width="200" VerticalAlignment="Center"
+                                        Minimum="30" Maximum="100" StepFrequency="1" TickFrequency="10"
+                                        ValueChanged="OnAppearanceOpacityChanged"
+                                        AutomationProperties.LabeledBy="{Binding ElementName=AppearanceOpacityLabel}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock x:Name="AppearanceColorsTitle" Text="Colors" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Override the current theme's colors. Text is kept readable against the backgrounds you pick."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="Use theme colors" VerticalAlignment="Center"
+                                        Click="OnAppearanceResetColorsClick"
+                                        AutomationProperties.Name="Use the theme's own colors" />
+                            </Grid>
+                            <Grid x:Name="AppearanceColorRows" ColumnDefinitions="*,*" ColumnSpacing="16" RowSpacing="8" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
+                        <StackPanel Spacing="12">
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock x:Name="AppearanceUiFontLabel" Text="Interface font" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Any installed font family. Takes effect the next time Ru starts."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <ComboBox x:Name="AppearanceUiFontBox" Grid.Column="1" Width="200" VerticalAlignment="Center"
+                                          IsEditable="True" PlaceholderText="Inter (default)"
+                                          TextSubmitted="OnAppearanceFontSubmitted"
+                                          SelectionChanged="OnAppearanceFontSelectionChanged"
+                                          AutomationProperties.LabeledBy="{Binding ElementName=AppearanceUiFontLabel}" />
+                            </Grid>
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock x:Name="AppearanceCodeFontLabel" Text="Code font" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Used for code, paths and terminal output. Takes effect the next time Ru starts."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <ComboBox x:Name="AppearanceCodeFontBox" Grid.Column="1" Width="200" VerticalAlignment="Center"
+                                          IsEditable="True" PlaceholderText="Cascadia Code (default)"
+                                          TextSubmitted="OnAppearanceFontSubmitted"
+                                          SelectionChanged="OnAppearanceFontSelectionChanged"
+                                          AutomationProperties.LabeledBy="{Binding ElementName=AppearanceCodeFontLabel}" />
+                            </Grid>
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock x:Name="AppearanceCornersLabel" Text="Corners" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Square, the default radii, or rounder. Takes effect the next time Ru starts."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <ComboBox x:Name="AppearanceCornersBox" Grid.Column="1" Width="200" VerticalAlignment="Center"
+                                          SelectionChanged="OnAppearanceCornersChanged"
+                                          AutomationProperties.LabeledBy="{Binding ElementName=AppearanceCornersLabel}">
+                                    <ComboBoxItem Content="Default" Tag="Default" />
+                                    <ComboBoxItem Content="Square" Tag="Square" />
+                                    <ComboBoxItem Content="Round" Tag="Round" />
+                                </ComboBox>
+                            </Grid>
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock x:Name="AppearanceSidebarLabel" Text="Sidebar position" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Which edge of the window the workspace sidebar sits on" Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <ComboBox x:Name="AppearanceSidebarBox" Grid.Column="1" Width="200" VerticalAlignment="Center"
+                                          SelectionChanged="OnAppearanceSidebarChanged"
+                                          AutomationProperties.LabeledBy="{Binding ElementName=AppearanceSidebarLabel}">
+                                    <ComboBoxItem Content="Left" Tag="Left" />
+                                    <ComboBoxItem Content="Right" Tag="Right" />
+                                </ComboBox>
+                            </Grid>
+                            <TextBlock x:Name="AppearanceRestartNote" Visibility="Collapsed" TextWrapping="Wrap"
+                                       Text="Restart Ru to apply the new fonts or corners."
+                                       Foreground="{StaticResource RuWarningBrush}" Style="{StaticResource SettingDescStyle}"
+                                       AutomationProperties.LiveSetting="Polite" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
+                        <StackPanel Spacing="12">
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Theme file" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Save your colors, fonts and layout to a file, or load one. The background stays on this PC."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <Button Content="Export" Click="OnAppearanceExportClick" AutomationProperties.Name="Export theme file" />
+                                    <Button Content="Import" Click="OnAppearanceImportClick" AutomationProperties.Name="Import theme file" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Reset appearance" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Back to the stock look: no background, theme colors, default fonts and layout. Also in the command palette."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="Reset" VerticalAlignment="Center"
+                                        Click="OnAppearanceResetClick" AutomationProperties.Name="Reset appearance" />
+                            </Grid>
+                            <TextBlock x:Name="AppearanceFileStatus" Visibility="Collapsed" TextWrapping="Wrap"
+                                       Style="{StaticResource SettingDescStyle}" AutomationProperties.LiveSetting="Polite" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 

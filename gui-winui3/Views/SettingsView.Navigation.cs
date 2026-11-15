@@ -21,6 +21,12 @@ namespace RuApp.Views
             SelectTab(SettingsTab.General);
         }
 
+        private void OnNavAppearanceClick(object sender, RoutedEventArgs e)
+        {
+            RefreshAppearanceControls();
+            SelectTab(SettingsTab.Appearance);
+        }
+
         private void OnNavModelsClick(object sender, RoutedEventArgs e)
         {
             SelectTab(SettingsTab.Models);
@@ -40,7 +46,7 @@ namespace RuApp.Views
             OnNavModelsClick(this, new RoutedEventArgs());
         }
 
-        private enum SettingsTab { General, Models, Permissions, Shortcuts, About }
+        private enum SettingsTab { General, Appearance, Models, Permissions, Shortcuts, About }
 
         private void OnNavRulesClick(object sender, RoutedEventArgs e)
         {
@@ -76,13 +82,15 @@ namespace RuApp.Views
             bool animate = _shownTab is { } previous && previous != tab && IsLoaded;
             _shownTab = tab;
             PanelGeneralScrollViewer.Visibility = tab == SettingsTab.General ? Visibility.Visible : Visibility.Collapsed;
+            PanelAppearanceScrollViewer.Visibility = tab == SettingsTab.Appearance ? Visibility.Visible : Visibility.Collapsed;
             PanelModelsScrollViewer.Visibility = tab == SettingsTab.Models ? Visibility.Visible : Visibility.Collapsed;
             PanelRulesScrollViewer.Visibility = tab == SettingsTab.Permissions ? Visibility.Visible : Visibility.Collapsed;
             PanelShortcutsScrollViewer.Visibility = tab == SettingsTab.Shortcuts ? Visibility.Visible : Visibility.Collapsed;
             PanelAboutScrollViewer.Visibility = tab == SettingsTab.About ? Visibility.Visible : Visibility.Collapsed;
             var (title, subtitle, active) = tab switch
             {
-                SettingsTab.General => ("General", "Appearance, reading size, and notifications.", NavGeneralBtn),
+                SettingsTab.General => ("General", "Theme, reading size, and notifications.", NavGeneralBtn),
+                SettingsTab.Appearance => ("Appearance", "Background, colors, fonts, and layout.", NavAppearanceBtn),
                 SettingsTab.Models => ("Models", "Connect providers and manage access to their models.", NavModelsBtn),
                 SettingsTab.Permissions => ("Permissions", "What Ru can do without asking, and the approvals it remembers.", NavRulesBtn),
                 SettingsTab.Shortcuts => ("Keyboard shortcuts", "Every shortcut Ru binds. Ctrl+K opens the command palette.", NavShortcutsBtn),
@@ -90,7 +98,7 @@ namespace RuApp.Views
             };
             CategoryTitleText.Text = title;
             CategorySubtitleText.Text = subtitle;
-            foreach (var button in new[] { NavGeneralBtn, NavModelsBtn, NavRulesBtn, NavShortcutsBtn, NavAboutBtn })
+            foreach (var button in new[] { NavGeneralBtn, NavAppearanceBtn, NavModelsBtn, NavRulesBtn, NavShortcutsBtn, NavAboutBtn })
                 HighlightNavButton(button, button == active, animate);
             if (animate) PlayTabEntrance(tab);
         }

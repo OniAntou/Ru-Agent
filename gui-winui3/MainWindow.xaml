@@ -60,6 +60,9 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
+        <!-- The user's background picture or video, under everything (Settings > Appearance). -->
+        <controls:AppearanceBackdrop x:Name="AppearanceBackdrop" Grid.Row="0" Grid.RowSpan="2" />
+
         <!-- Custom App TitleBar (Clean draggable titlebar) -->
         <Grid x:Name="AppTitleBar" Grid.Row="0" Height="40" Background="Transparent">
             <Grid.Resources>
@@ -212,13 +215,13 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="SidebarColumn" Width="250" MinWidth="220" MaxWidth="360"/>
                 <ColumnDefinition x:Name="SidebarDividerColumn" Width="10"/>
-                <ColumnDefinition Width="*"/>
+                <ColumnDefinition x:Name="ContentColumn" Width="*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Navigation Sidebar. Asymmetric on purpose: the left edge is the
                  window edge, so only the two corners that meet the content get
                  the control radius. -->
-            <Border x:Name="NavigationSidebar" Grid.Column="0" Background="{StaticResource RuSidebarBrush}" BorderThickness="0" CornerRadius="0,6,6,0">
+            <Border x:Name="NavigationSidebar" Grid.Column="0" Background="{StaticResource RuBackdropSidebarBrush}" BorderThickness="0" CornerRadius="0,6,6,0">
                 <Border.Resources>
         <DataTemplate x:Key="WorkspaceSessionTemplate" x:DataType="models:SessionInfo">
             <Grid Margin="{x:Bind ItemMargin, Mode=OneTime}" ToolTipService.ToolTip="{x:Bind TooltipText, Mode=OneWay}"

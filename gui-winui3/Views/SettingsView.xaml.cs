@@ -72,6 +72,7 @@ namespace RuApp.Views
             InitTranscriptSizeOptions();
             InitializeActivityStyleChoice();
             InitializeSettingsHoverEffects();
+            InitializeAppearanceSettings();
             ViewModel.PropertyChanged += OnViewModelPropertyChanged;
             ViewModel.ProviderPickerCommitted += OnProviderPickerCommitted;
             if (ProviderButton?.Flyout is Flyout providerFlyout)
@@ -80,7 +81,11 @@ namespace RuApp.Views
             }
         }
 
-        public void SetCurrentTheme(UiTheme theme) => ViewModel.SetCurrentTheme(theme);
+        public void SetCurrentTheme(UiTheme theme)
+        {
+            ViewModel.SetCurrentTheme(theme);
+            SetAppearanceTheme(theme);
+        }
 
         public void SetCurrentPreset(AgentPermissionPreset preset) => ViewModel.SetCurrentPreset(preset);
 

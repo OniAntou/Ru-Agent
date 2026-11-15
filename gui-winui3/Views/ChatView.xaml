@@ -450,7 +450,7 @@
                                            AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
     </UserControl.Resources>
 
-    <Grid x:Name="RootGrid" RowDefinitions="Auto,*,Auto" Background="{StaticResource RuCanvasBrush}">
+    <Grid x:Name="RootGrid" RowDefinitions="Auto,*,Auto" Background="{StaticResource RuBackdropCanvasBrush}">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="ResponsiveStates">
                 <VisualState x:Name="Wide">

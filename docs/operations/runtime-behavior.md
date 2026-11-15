@@ -321,7 +321,11 @@ active theme on the shell root so default controls follow the same contrast.
 The appearance action in the sidebar footer switches Light and Dark
 synchronously. The selected appearance is UI-only state stored at
 `%LOCALAPPDATA%\Ru\ui-preferences.json`; it is not an ASP.NET setting or model
-configuration. Switching remains presentation-only for application behavior:
+configuration. Background media, color overrides, fonts, sidebar side and corner
+style from Settings > Appearance live beside it in `appearance.json`, with copied
+background files under `%LOCALAPPDATA%\Ru\backgrounds`; "Reset appearance" in the
+command palette restores the stock look (see docs/architecture/gui.md, Appearance
+customization). Switching remains presentation-only for application behavior:
 it does not recreate message or session sources, call the backend during
 layout, or alter event-stream ordering. Automated source/XAML contracts and the WinUI build cover
 structural correctness. Visual resizing remains a

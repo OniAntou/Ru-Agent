@@ -371,16 +371,8 @@ public sealed class ScriptedModelStepRunnerTests
     public void No_script_in_the_environment_means_no_runner()
     {
         // The normal path. Nothing about this feature may engage on its own.
-        string? previous = Environment.GetEnvironmentVariable(ScriptedModelStepRunner.EnvironmentVariable);
-        try
-        {
-            Environment.SetEnvironmentVariable(ScriptedModelStepRunner.EnvironmentVariable, null);
-            Assert.Null(ScriptedModelStepRunner.FromEnvironment());
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(ScriptedModelStepRunner.EnvironmentVariable, previous);
-        }
+        Assert.Null(ScriptedModelStepRunner.FromPath(null));
+        Assert.Null(ScriptedModelStepRunner.FromPath("  "));
     }
 
     [Fact]
@@ -388,20 +380,9 @@ public sealed class ScriptedModelStepRunnerTests
     {
         // Fail closed and loudly: a typo in the path must not start an app that looks
         // scripted but is talking to a real provider.
-        string? previous = Environment.GetEnvironmentVariable(ScriptedModelStepRunner.EnvironmentVariable);
-        try
-        {
-            Environment.SetEnvironmentVariable(
-                ScriptedModelStepRunner.EnvironmentVariable,
-                Path.Combine(Path.GetTempPath(), "ru-no-such-script-" + Guid.NewGuid().ToString("N") + ".json"));
-
-            var error = Assert.Throws<InvalidOperationException>(
-                () => ScriptedModelStepRunner.FromEnvironment());
-            Assert.Contains(ScriptedModelStepRunner.EnvironmentVariable, error.Message, StringComparison.Ordinal);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(ScriptedModelStepRunner.EnvironmentVariable, previous);
-        }
+        // Setting the real variable here would leak into any Host a parallel test starts.
+        var missing = Path.Combine(Path.GetTempPath(), "ru-no-such-script-" + Guid.NewGuid().ToString("N") + ".json");
+        var error = Assert.Throws<InvalidOperationException>(() => ScriptedModelStepRunner.FromPath(missing));
+        Assert.Contains(ScriptedModelStepRunner.EnvironmentVariable, error.Message, StringComparison.Ordinal);
     }
 }

@@ -39,9 +39,16 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
     /// <summary>
     /// Builds a runner from the environment, or returns null when it is not requested.
     /// </summary>
-    public static ScriptedModelStepRunner? FromEnvironment()
+    public static ScriptedModelStepRunner? FromEnvironment() =>
+        FromPath(Environment.GetEnvironmentVariable(EnvironmentVariable));
+
+    /// <summary>
+    /// Builds a runner from a configured script path; null or blank means not requested.
+    /// Tests call this directly instead of changing the process-wide environment, which a
+    /// Host starting in a parallel test would otherwise read.
+    /// </summary>
+    internal static ScriptedModelStepRunner? FromPath(string? path)
     {
-        string? path = Environment.GetEnvironmentVariable(EnvironmentVariable);
         if (string.IsNullOrWhiteSpace(path))
         {
             return null;

@@ -53,21 +53,18 @@ public sealed class AgentApprovalsService
     // Entries are only a retry guard; the durable approval event/run state remains
     // authoritative. Expire old entries so a host that processes many approvals
     // cannot retain an unbounded amount of memory until restart.
-    // Static: the ledger guards concurrent HTTP races across all service instances
-    // in this process, and tests clear it via ClearHostApprovalsForTests.
-    private static readonly ConcurrentDictionary<string, DateTimeOffset> HostApprovalLedger = new(StringComparer.Ordinal);
+    // The service is a Host singleton, so one ledger serves every request in this Host.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _hostApprovalLedger = new(StringComparer.Ordinal);
     private static readonly TimeSpan HostApprovalLedgerTtl = ApprovalState.DefaultLifetime;
 
-    internal static void ClearHostApprovalsForTests() => HostApprovalLedger.Clear();
-
-    private static void PruneHostApprovalLedger(DateTimeOffset now)
+    private void PruneHostApprovalLedger(DateTimeOffset now)
     {
         var cutoff = now - HostApprovalLedgerTtl;
-        foreach (var entry in HostApprovalLedger)
+        foreach (var entry in _hostApprovalLedger)
         {
             if (entry.Value <= cutoff)
             {
-                HostApprovalLedger.TryRemove(new KeyValuePair<string, DateTimeOffset>(entry.Key, entry.Value));
+                _hostApprovalLedger.TryRemove(new KeyValuePair<string, DateTimeOffset>(entry.Key, entry.Value));
             }
         }
     }
@@ -153,7 +150,7 @@ public sealed class AgentApprovalsService
         // The approval ID must correspond to a persisted approval.requested event for this
         // run while it is actually waiting; fabricated or mismatched IDs are rejected as
         // approval_stale. This check is authoritative and survives process restarts because
-        // the event stream is durable. HostApprovalLedger below is only the atomic
+        // the event stream is durable. the host approval ledger below is only the atomic
         // first-writer-wins guard for HTTP retries.
         ApprovalId? latestPendingId = null;
         HarnessEvent? pendingApprovalEvent = null;
@@ -212,7 +209,7 @@ public sealed class AgentApprovalsService
         var key = $"{runIdRaw}|{approvalIdRaw}";
         var ledgerNow = _time.UtcNow;
         PruneHostApprovalLedger(ledgerNow);
-        if (!HostApprovalLedger.TryAdd(key, ledgerNow))
+        if (!_hostApprovalLedger.TryAdd(key, ledgerNow))
         {
             return BoundedError(409, "approval_stale", "approval already consumed");
         }
@@ -222,7 +219,7 @@ public sealed class AgentApprovalsService
             var denyTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Fail);
             if (!denyTransition.Accepted)
             {
-                HostApprovalLedger.TryRemove(key, out _);
+                _hostApprovalLedger.TryRemove(key, out _);
                 return BoundedError(409, denyTransition.ErrorCode ?? "invalid_transition", "Approval resolve rejected.");
             }
 
@@ -248,12 +245,12 @@ public sealed class AgentApprovalsService
             }
             catch (OperationCanceledException)
             {
-                HostApprovalLedger.TryRemove(key, out _);
+                _hostApprovalLedger.TryRemove(key, out _);
                 throw;
             }
             if (denyResult.Outcome != HarnessCommitOutcome.Committed)
             {
-                HostApprovalLedger.TryRemove(key, out _);
+                _hostApprovalLedger.TryRemove(key, out _);
                 return BoundedError(409, "commit_conflict", "Commit conflict.");
             }
 
@@ -294,7 +291,7 @@ public sealed class AgentApprovalsService
             // With no authority to ask, there is nothing to authorize and the call
             // cannot run, so the Host must say so. Answering "authorized" with a token
             // it invented would report a permission that nothing issued.
-            HostApprovalLedger.TryRemove(key, out _);
+            _hostApprovalLedger.TryRemove(key, out _);
             return BoundedError(
                 503,
                 "broker_gateway_unavailable",
@@ -307,7 +304,7 @@ public sealed class AgentApprovalsService
         var allowTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
         if (!allowTransition.Accepted)
         {
-            HostApprovalLedger.TryRemove(key, out _);
+            _hostApprovalLedger.TryRemove(key, out _);
             return BoundedError(409, allowTransition.ErrorCode ?? "invalid_transition", "Approval resolve rejected.");
         }
 
@@ -322,12 +319,12 @@ public sealed class AgentApprovalsService
         }
         catch (OperationCanceledException)
         {
-            HostApprovalLedger.TryRemove(key, out _);
+            _hostApprovalLedger.TryRemove(key, out _);
             throw;
         }
         if (commitResult.Outcome != HarnessCommitOutcome.Committed)
         {
-            HostApprovalLedger.TryRemove(key, out _);
+            _hostApprovalLedger.TryRemove(key, out _);
             return BoundedError(409, "commit_conflict", "Commit conflict.");
         }
 
@@ -357,7 +354,7 @@ public sealed class AgentApprovalsService
 
         if (!bridged || string.IsNullOrWhiteSpace(brokerAuthorizationToken))
         {
-            HostApprovalLedger.TryRemove(key, out _);
+            _hostApprovalLedger.TryRemove(key, out _);
             return BoundedError(
                 502,
                 "approval_authorization_failed",

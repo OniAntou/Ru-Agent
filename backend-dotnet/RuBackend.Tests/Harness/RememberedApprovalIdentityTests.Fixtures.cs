@@ -215,7 +215,6 @@ public sealed partial class RememberedApprovalIdentityTests
 
         public async Task<HttpResponseMessage> DecideAsync(string runId, string approvalId, string command)
         {
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             return await Client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { command });
         }
 

@@ -48,7 +48,6 @@ public sealed class AgentInputEndpointTests
             Assert.DoesNotContain(eventsBefore, item => item.GetProperty("event_type").GetString() == "tool.execution_completed");
             Assert.DoesNotContain(eventsBefore, item => item.GetProperty("event_type").GetString() == "tool.execution_requested");
 
-            RuBackend.Harness.AgentV1Service.ClearHostInputsForTests();
             using var answerResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/inputs/{inputId}",
                 new { answer = "staging" });
@@ -163,7 +162,6 @@ public sealed class AgentInputEndpointTests
             Assert.Equal(HttpStatusCode.BadRequest, emptyAnswer.StatusCode);
             Assert.Equal("invalid_answer", (await emptyAnswer.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error_code").GetString());
 
-            RuBackend.Harness.AgentV1Service.ClearHostInputsForTests();
             using var answer = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/inputs/{inputId}",
                 new { answer = "a" });
@@ -213,7 +211,6 @@ public sealed class AgentInputEndpointTests
             // must work from durable state alone.
             restarted = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var restartedClient = restarted.CreateAuthenticatedClient();
-            RuBackend.Harness.AgentV1Service.ClearHostInputsForTests();
             using var answer = await restartedClient.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/inputs/{inputId}",
                 new { answer = "staging" });

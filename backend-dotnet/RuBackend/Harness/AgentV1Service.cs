@@ -24,10 +24,6 @@ public static class AgentV1Service
     internal static string MapRunState(HarnessRunStatus status, bool isWaitingInput) =>
         AgentV1Shared.MapRunState(status, isWaitingInput);
 
-    internal static void ClearHostApprovalsForTests() => AgentApprovalsService.ClearHostApprovalsForTests();
-
-    internal static void ClearHostInputsForTests() => AgentInputsService.ClearHostInputsForTests();
-
     internal static (AgentRun NextRun, HarnessEventIntent[] Events) PlanContinueCommit(
         AgentRun run,
         HarnessRunStatus nextStatus,

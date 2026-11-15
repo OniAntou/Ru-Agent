@@ -127,7 +127,6 @@ public sealed partial class AgentApprovalEndpointTests
         {
             var (fact, client, runId, approvalId) = await StartWaitingApprovalRunAsync(wsPath, dataPaths);
             factory = fact;
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
 
             using var resp1 = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { scope = "once", decision = "allow" });
             Assert.Equal(HttpStatusCode.OK, resp1.StatusCode);
@@ -156,7 +155,6 @@ public sealed partial class AgentApprovalEndpointTests
         {
             var (fact, client, runId, approvalId) = await StartWaitingApprovalRunAsync(wsPath, dataPaths);
             factory = fact;
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
 
             using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { command = "allow_run" });
             Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
@@ -180,7 +178,6 @@ public sealed partial class AgentApprovalEndpointTests
         {
             var (fact, client, runId, approvalId) = await StartWaitingApprovalRunAsync(wsPath, dataPaths);
             factory = fact;
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
 
             using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { decision = "deny", scope = "once" });
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
@@ -211,7 +208,6 @@ public sealed partial class AgentApprovalEndpointTests
         {
             var (fact, client, runId, approvalId) = await StartWaitingApprovalRunAsync(wsPath, dataPaths);
             factory = fact;
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
 
             using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { command = "allow_project" });
             Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
@@ -258,7 +254,6 @@ public sealed partial class AgentApprovalEndpointTests
             var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { scope = "once", decision = "allow" });
@@ -308,7 +303,6 @@ public sealed partial class AgentApprovalEndpointTests
             var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { scope = "once", decision = "allow" });
@@ -362,7 +356,6 @@ public sealed partial class AgentApprovalEndpointTests
             var runId = created.GetProperty("run_id").GetString()!;
             var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { scope = "once", decision = "allow" });
@@ -376,7 +369,6 @@ public sealed partial class AgentApprovalEndpointTests
             var otherRunId = otherCreated.GetProperty("run_id").GetString()!;
             var otherApprovalId = await WaitForApprovalIdAsync(client, otherRunId, StateDeadline);
             Assert.NotNull(otherApprovalId);
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var otherApprovalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{otherRunId}/approvals/{otherApprovalId}",
                 new { scope = "once", decision = "allow" });
@@ -419,7 +411,6 @@ public sealed partial class AgentApprovalEndpointTests
                 await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
                 "run never reached waiting_approval");
             var approvalId = await ReadLatestApprovalIdAsync(client, runId);
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { scope = "once", decision = "allow" });
@@ -568,7 +559,6 @@ public sealed partial class AgentApprovalEndpointTests
                 "terminal_external_cwd_requires_approval",
                 requestedBefore[0].GetProperty("safe_summary").GetString());
 
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { scope = "once", decision = "allow" });
@@ -610,7 +600,6 @@ public sealed partial class AgentApprovalEndpointTests
         {
             var (fact, client, runId, approvalId) = await StartWaitingApprovalRunAsync(wsPath, dataPaths);
             factory = fact;
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
 
             using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { scope = "once", decision = "allow" });
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
@@ -718,7 +707,6 @@ public sealed partial class AgentApprovalEndpointTests
             var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { command = "allow_always" });
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
@@ -779,7 +767,6 @@ public sealed partial class AgentApprovalEndpointTests
             var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { command = "allow_once" });
@@ -831,7 +818,6 @@ public sealed partial class AgentApprovalEndpointTests
             var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { command = decision });
@@ -885,7 +871,6 @@ public sealed partial class AgentApprovalEndpointTests
             var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { command = "allow_once" });
@@ -931,7 +916,6 @@ public sealed partial class AgentApprovalEndpointTests
             var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { command = "allow_once" });
@@ -981,7 +965,6 @@ public sealed partial class AgentApprovalEndpointTests
             var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { command = "allow_once" });
@@ -1032,7 +1015,6 @@ public sealed partial class AgentApprovalEndpointTests
             var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
-            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
                 new { command = "allow_always" });

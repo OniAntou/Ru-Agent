@@ -15,9 +15,9 @@ public sealed partial class AgentWorkspaceService
     private const long MaxRestoreSizeBytes = 16 * 1024 * 1024; // 16MB cap per restore
     private static readonly string MissingFileSha256 = new('0', 64);
     private static readonly TimeSpan MinRestoreInterval = TimeSpan.FromSeconds(1); // Rate limit: max 1 restore/sec per workspace
-    private static readonly ConcurrentDictionary<string, DateTimeOffset> _lastRestoreTime = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastRestoreTime = new(StringComparer.Ordinal);
 
-    private static bool TryReserveRestoreSlot(string workspaceId, DateTimeOffset now)
+    private bool TryReserveRestoreSlot(string workspaceId, DateTimeOffset now)
     {
         while (true)
         {

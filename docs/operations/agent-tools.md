@@ -928,8 +928,8 @@ by creating a replacement session and retrying at most once before a run exists.
 External-folder and dangerous-terminal requests use a short-lived approval bound to
 session, request, tool version, canonical path/executable/argv/cwd/operation/
 network, snapshot version, and intent hash with 30-min expiry. Consumption is
-first-writer-wins `approval_stale` (including `PendingApprovalStore` and Host
-`HostApprovalLedger`). A first deny keeps the run alive with a repair hint so
+first-writer-wins `approval_stale` (including `PendingApprovalStore` and the Host
+approval ledger). A first deny keeps the run alive with a repair hint so
 the model can adjust; only a repeated identical deny terminates the current
 run with `approval_denied`,
 so the model cannot immediately request the same permission again. Changed

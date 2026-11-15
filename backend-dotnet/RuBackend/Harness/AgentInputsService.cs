@@ -35,19 +35,18 @@ public sealed class AgentInputsService
     // Entries are only a retry guard; the durable input.requested event and the
     // run state remain authoritative. Expire old entries so a host that answers
     // many requests cannot retain an unbounded amount of memory until restart.
-    private static readonly ConcurrentDictionary<string, DateTimeOffset> HostInputLedger = new(StringComparer.Ordinal);
+    // The service is a Host singleton, so one ledger serves every request in this Host.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _hostInputLedger = new(StringComparer.Ordinal);
     private static readonly TimeSpan HostInputLedgerTtl = RuAgent.Protocol.Harness.ApprovalLimits.PendingApprovalLifetime;
 
-    internal static void ClearHostInputsForTests() => HostInputLedger.Clear();
-
-    private static void PruneHostInputLedger(DateTimeOffset now)
+    private void PruneHostInputLedger(DateTimeOffset now)
     {
         var cutoff = now - HostInputLedgerTtl;
-        foreach (var entry in HostInputLedger)
+        foreach (var entry in _hostInputLedger)
         {
             if (entry.Value <= cutoff)
             {
-                HostInputLedger.TryRemove(new KeyValuePair<string, DateTimeOffset>(entry.Key, entry.Value));
+                _hostInputLedger.TryRemove(new KeyValuePair<string, DateTimeOffset>(entry.Key, entry.Value));
             }
         }
     }
@@ -143,7 +142,7 @@ public sealed class AgentInputsService
         var key = $"{runIdRaw}|{inputIdRaw}";
         var ledgerNow = _time.UtcNow;
         PruneHostInputLedger(ledgerNow);
-        if (!HostInputLedger.TryAdd(key, ledgerNow))
+        if (!_hostInputLedger.TryAdd(key, ledgerNow))
         {
             return BoundedError(409, "input_stale", "input already answered");
         }
@@ -151,7 +150,7 @@ public sealed class AgentInputsService
         var transition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveInput);
         if (!transition.Accepted)
         {
-            HostInputLedger.TryRemove(key, out _);
+            _hostInputLedger.TryRemove(key, out _);
             return BoundedError(409, transition.ErrorCode ?? "invalid_transition", "Input resolve rejected.");
         }
 
@@ -213,13 +212,13 @@ public sealed class AgentInputsService
         }
         catch (OperationCanceledException)
         {
-            HostInputLedger.TryRemove(key, out _);
+            _hostInputLedger.TryRemove(key, out _);
             throw;
         }
 
         if (commitResult.Outcome != HarnessCommitOutcome.Committed)
         {
-            HostInputLedger.TryRemove(key, out _);
+            _hostInputLedger.TryRemove(key, out _);
             return BoundedError(409, "commit_conflict", "Commit conflict.");
         }
 

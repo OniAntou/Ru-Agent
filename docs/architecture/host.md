@@ -150,7 +150,7 @@ _Avoid_: Edge, proxy, FastAPI backend
 ## Public Contract
 
 The stable authenticated surface of HTTP method/path pairs with no WebSocket
-route (23 non-Agent plus 29 additive `/agent/v1/*`; Agent v2 is
+route (23 non-Agent plus 32 `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC

@@ -52,7 +52,9 @@ namespace RuApp.Views
                 return;
             }
 
-            var offset = selected.TransformToVisual(track).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
+            // Runs from track.SizeChanged: a throw here would fail the process fast.
+            if (!VisualTransforms.TryTransformPoint(selected, track, new Windows.Foundation.Point(0, 0), out var origin)) return;
+            var offset = origin.X;
             thumb.Width = selected.ActualWidth;
             thumb.Height = selected.ActualHeight;
             thumb.Opacity = 1;

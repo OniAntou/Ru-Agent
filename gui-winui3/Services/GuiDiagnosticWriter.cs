@@ -152,13 +152,63 @@ public sealed class GuiDiagnosticWriter : IDisposable
         try
         {
             using var writer = new GuiDiagnosticWriter(logRoot, capacity: 1);
-            return writer.TryEnqueueCrash(exception)
+            bool written = writer.TryEnqueueCrash(exception)
                 && writer.Flush(TimeSpan.FromMilliseconds(500));
+            // The event stays content-free; the trace names what threw. It is written
+            // synchronously because a fail-fast crash ends the process before the
+            // background trace queue can flush.
+            AppendTraceLineNow(DescribeCrash(exception), logRoot);
+            return written;
         }
         catch
         {
             // Diagnostics must never replace the original crash path.
             return false;
+        }
+    }
+
+    private const int MaxCrashFrames = 16;
+
+    /// <summary>
+    /// One trace line for a crash: the exception type, its HRESULT and the code frames
+    /// it passed through, innermost first. Never the message, which can carry paths,
+    /// prompts or tool output; type and method names are code identifiers.
+    /// </summary>
+    public static string DescribeCrash(Exception? exception)
+    {
+        if (exception is null) return "[Crash] no exception object";
+        var line = new System.Text.StringBuilder("[Crash] ")
+            .Append(exception.GetType().FullName)
+            .Append(" hresult=0x").Append(exception.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture));
+        int frames = 0;
+        foreach (var frame in new System.Diagnostics.StackTrace(exception, fNeedFileInfo: false).GetFrames())
+        {
+            if (frame.GetMethod() is not { } method) continue;
+            line.Append(" | ").Append(method.DeclaringType?.FullName ?? "?").Append('.').Append(method.Name);
+            if (++frames >= MaxCrashFrames) break;
+        }
+
+        for (var inner = exception.InnerException; inner is not null; inner = inner.InnerException)
+        {
+            line.Append(" <- ").Append(inner.GetType().FullName);
+        }
+
+        return line.ToString();
+    }
+
+    private static void AppendTraceLineNow(string line, string? logRoot)
+    {
+        try
+        {
+            string root = ResolveLogRoot(logRoot);
+            Directory.CreateDirectory(root);
+            File.AppendAllText(
+                Path.Combine(root, TraceFileName),
+                (line.Length > MaxTraceLineChars ? line[..MaxTraceLineChars] : line) + Environment.NewLine);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Interlocked.Increment(ref _traceWriteFailureCount);
         }
     }
 
@@ -485,6 +535,8 @@ public sealed class GuiDiagnosticWriter : IDisposable
             OperationCanceledException => "cancellation",
             TimeoutException => "timeout",
             UnauthorizedAccessException => "permission",
+            // E_INVALIDARG from XAML surfaces as this (a layout handler's bad argument).
+            ArgumentException => "argument",
             IOException => "io",
             InvalidCastException => "invalid_cast",
             System.Runtime.InteropServices.COMException => "com",

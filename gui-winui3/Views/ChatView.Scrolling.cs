@@ -28,7 +28,9 @@ namespace RuApp.Views
             var index = panel.FirstVisibleIndex;
             if (index < 0 || ChatListView.ContainerFromIndex(index) is not FrameworkElement row)
                 return null;
-            return new TranscriptAnchor(index, row.TransformToVisual(scroller).TransformPoint(new Windows.Foundation.Point()).Y);
+            return VisualTransforms.TryTransformPoint(row, scroller, new Windows.Foundation.Point(), out var origin)
+                ? new TranscriptAnchor(index, origin.Y)
+                : null;
         }
 
         private void RestoreTranscriptAnchor(TranscriptAnchor? anchor, double fallbackOffset)
@@ -37,9 +39,10 @@ namespace RuApp.Views
             {
                 ChatListView.ScrollIntoView(Messages[saved.Index], ScrollIntoViewAlignment.Leading);
                 ChatListView.UpdateLayout();
-                if (ChatScrollViewer is { } scroller && ChatListView.ContainerFromIndex(saved.Index) is FrameworkElement row)
+                if (ChatScrollViewer is { } scroller && ChatListView.ContainerFromIndex(saved.Index) is FrameworkElement row
+                    && VisualTransforms.TryTransformPoint(row, scroller, new Windows.Foundation.Point(), out var origin))
                 {
-                    var y = row.TransformToVisual(scroller).TransformPoint(new Windows.Foundation.Point()).Y;
+                    var y = origin.Y;
                     var target = ChatScrollPolicy.RestoreAnchorOffset(scroller.VerticalOffset, y, saved.ViewportY, scroller.ScrollableHeight);
                     scroller.ChangeView(null, target, null, disableAnimation: true);
                     return;
@@ -285,8 +288,11 @@ namespace RuApp.Views
                 }
 
                 if (scroller.ScrollableHeight <= 0) return;
-                double bottom = tail.TransformToVisual(scroller)
-                    .TransformPoint(new Windows.Foundation.Point(0, tail.ActualHeight)).Y;
+                // A LayoutUpdated handler: the tail container can be mid-recycle, and a
+                // throw here would fail the process fast.
+                if (!VisualTransforms.TryTransformPoint(
+                        tail, scroller, new Windows.Foundation.Point(0, tail.ActualHeight), out var tailBottom)) return;
+                double bottom = tailBottom.Y;
                 double targetY = scroller.ViewportHeight - ChatListView.Padding.Bottom;
                 if (!double.IsFinite(bottom) || Math.Abs(bottom - targetY) <= 1) return;
                 double target = ChatScrollPolicy.RestoreAnchorOffset(

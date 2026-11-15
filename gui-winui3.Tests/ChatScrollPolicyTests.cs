@@ -53,7 +53,9 @@ public sealed class ChatScrollPolicyTests
         var layout = GuiSource.MethodBody(code, "OnTranscriptLayoutUpdated");
         Assert.Contains("!_followOutput", layout);
         Assert.Contains("_handlingTranscriptLayout", layout);
-        Assert.Contains("TransformToVisual", layout);
+        // Real tail geometry, through the guard: a recycled tail container makes a raw
+        // TransformToVisual throw, which fails the process fast from LayoutUpdated.
+        Assert.Contains("VisualTransforms.TryTransformPoint(", layout);
         Assert.Contains("RestoreAnchorOffset", layout);
         Assert.Contains("disableAnimation: true", layout);
         Assert.DoesNotContain("UpdateLayout()", layout);

@@ -58,7 +58,8 @@ public sealed partial class ChatView
         var bounds = ConversationColumnBounds.For(
             hostWidth: ChatListView.ActualWidth > 0 ? ChatListView.ActualWidth : ChatContentGrid.ActualWidth,
             hostLeft: ChatListView.ActualWidth > 0
-                ? ChatListView.TransformToVisual(ChatContentGrid).TransformPoint(new Windows.Foundation.Point(0, 0)).X
+                      && VisualTransforms.TryTransformPoint(ChatListView, ChatContentGrid, new Windows.Foundation.Point(0, 0), out var listOrigin)
+                ? listOrigin.X
                 : 0,
             paddingLeft: ChatListView.Padding.Left,
             paddingRight: ChatListView.Padding.Right,

@@ -93,10 +93,16 @@ public sealed class SettingsMotionContractTests
     }
 
     [Fact]
-    public void Search_filters_cards_and_lets_filtered_cards_return_with_the_entrance()
+    public void Search_filters_cards_and_lets_filtered_cards_fade_back_without_the_composition_entrance()
     {
+        // The composition entrance on a card (XAML Translation for its shadow) moved its
+        // hit-test bounds: after a search was cleared, cards 2+ stopped taking clicks.
         var apply = GuiSource.MethodBody(Code, "ApplySettingsSearch");
-        Assert.Contains("UiMotion.SetVisible(entry.Card", apply, StringComparison.Ordinal);
+        Assert.Contains("SetSearchCardVisible(entry.Card", apply, StringComparison.Ordinal);
+        Assert.DoesNotContain("UiMotion.SetVisible(entry.Card", apply, StringComparison.Ordinal);
+        var show = GuiSource.MethodBody(Code, "SetSearchCardVisible");
+        Assert.Contains("UiMotion.FadeOpacity(card, 1)", show, StringComparison.Ordinal);
+        Assert.DoesNotContain("UiMotion.Enter", show, StringComparison.Ordinal);
         Assert.Contains("SettingsSearch.Matches", apply, StringComparison.Ordinal);
         Assert.Contains("NavigateTo(first!.Value)", apply, StringComparison.Ordinal);
         Assert.Contains("UiMotion.SetVisible(SettingsNoResultsText", apply, StringComparison.Ordinal);

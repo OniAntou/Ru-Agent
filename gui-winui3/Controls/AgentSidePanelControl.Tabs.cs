@@ -53,8 +53,8 @@ public sealed partial class AgentSidePanelControl
                 && content.Children.LastOrDefault() is TextBlock label)
                 label.MaxWidth = Math.Clamp(TabStripScroll.ViewportWidth - 80, 32, 112);
             TabStripScroll.UpdateLayout();
-            var bounds = chip.TransformToVisual(ChipStrip).TransformBounds(
-                new Windows.Foundation.Rect(0, 0, chip.ActualWidth, chip.ActualHeight));
+            if (!VisualTransforms.TryTransformBounds(
+                    chip, ChipStrip, new Windows.Foundation.Rect(0, 0, chip.ActualWidth, chip.ActualHeight), out var bounds)) return;
             double offset = TabStripScroll.HorizontalOffset;
             if (bounds.Left < offset) offset = bounds.Left;
             else if (bounds.Right > offset + TabStripScroll.ViewportWidth)
@@ -277,8 +277,8 @@ public sealed partial class AgentSidePanelControl
                 continue;
             }
 
-            var bounds = chip.TransformToVisual(ChipStrip).TransformBounds(
-                new Windows.Foundation.Rect(0, 0, chip.ActualWidth, chip.ActualHeight));
+            if (!VisualTransforms.TryTransformBounds(
+                    chip, ChipStrip, new Windows.Foundation.Rect(0, 0, chip.ActualWidth, chip.ActualHeight), out var bounds)) continue;
             if (x > bounds.X + (bounds.Width / 2))
             {
                 insertion++;

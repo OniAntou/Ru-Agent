@@ -107,8 +107,8 @@ namespace RuApp
             Windows.Graphics.RectInt32? RegionFor(FrameworkElement element)
             {
                 if (element.ActualWidth <= 0 || element.ActualHeight <= 0) return null;
-                var bounds = element.TransformToVisual(null).TransformBounds(new Windows.Foundation.Rect(
-                    0, 0, element.ActualWidth, element.ActualHeight));
+                if (!VisualTransforms.TryTransformBounds(element, null, new Windows.Foundation.Rect(
+                        0, 0, element.ActualWidth, element.ActualHeight), out var bounds)) return null;
                 return TitleBarLayout.ToPhysicalRect(bounds, scale);
             }
         }

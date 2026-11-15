@@ -92,7 +92,8 @@ public sealed partial class ChatView
     /// </summary>
     private void PlaceSlashCard(double cardHeight)
     {
-        var inset = ChatInputTextBox.TransformToVisual(InputBorder).TransformPoint(new Windows.Foundation.Point(0, 0));
+        // Also runs from the card's SizeChanged, where a throw fails the process fast.
+        if (!VisualTransforms.TryTransformPoint(ChatInputTextBox, InputBorder, new Windows.Foundation.Point(0, 0), out var inset)) return;
         SlashCommandPopup.HorizontalOffset = -inset.X;
         SlashCommandPopup.VerticalOffset = -(inset.Y + cardHeight + SlashGapAboveComposer);
     }

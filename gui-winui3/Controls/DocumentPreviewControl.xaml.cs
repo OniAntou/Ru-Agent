@@ -171,7 +171,8 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
         visible &= IsOccluded?.Invoke() != true;
         for (DependencyObject? ancestor = this; ancestor is not null; ancestor = VisualTreeHelper.GetParent(ancestor))
             if (ancestor is FrameworkElement { Visibility: Visibility.Collapsed }) visible = false;
-        var point = PreviewArea.TransformToVisual(root).TransformPoint(new(0, 0));
+        // Runs from LayoutUpdated and a timer, also while the control leaves the tree.
+        if (!VisualTransforms.TryTransformPoint(PreviewArea, root, new(0, 0), out var point)) return;
         double scale = XamlRoot.RasterizationScale;
         _office.Position((int)Math.Round(point.X * scale), (int)Math.Round(point.Y * scale),
             (int)Math.Round(PreviewArea.ActualWidth * scale), (int)Math.Round(PreviewArea.ActualHeight * scale), visible);

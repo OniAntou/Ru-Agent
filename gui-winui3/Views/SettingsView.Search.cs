@@ -85,7 +85,7 @@ namespace RuApp.Views
             foreach (var entry in _searchIndex)
             {
                 bool matches = SettingsSearch.Matches(query, entry.Text);
-                if (entry.Card is not null) UiMotion.SetVisible(entry.Card, matches);
+                if (entry.Card is not null) SetSearchCardVisible(entry.Card, matches);
                 tabMatches[entry.Tab] = tabMatches.GetValueOrDefault(entry.Tab) || matches;
             }
 
@@ -127,6 +127,26 @@ namespace RuApp.Views
 
         private ScrollViewer[] AllPanels =>
             [PanelGeneralScrollViewer, PanelAppearanceScrollViewer, PanelModelsScrollViewer, PanelRulesScrollViewer, PanelShortcutsScrollViewer, PanelAboutScrollViewer];
+
+        /// <summary>
+        /// A card the search brings back fades in with a XAML opacity storyboard only.
+        /// <see cref="UiMotion.SetVisible"/> would run the composition entrance, which on
+        /// a card (it carries a XAML Translation for its shadow) moves the hit-test
+        /// bounds off the drawn card, so every card but the first stopped taking clicks.
+        /// </summary>
+        private static void SetSearchCardVisible(FrameworkElement card, bool visible)
+        {
+            if (!visible)
+            {
+                card.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            if (card.Visibility == Visibility.Visible) return;
+            card.Opacity = 0;
+            card.Visibility = Visibility.Visible;
+            UiMotion.FadeOpacity(card, 1);
+        }
 
         private static void SetNavVisible(Button button, bool visible) =>
             button.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;

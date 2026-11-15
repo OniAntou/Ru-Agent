@@ -7,12 +7,6 @@ using System.Runtime.CompilerServices;
 
 namespace RuApp.Models
 {
-    public readonly record struct RectPx(int X, int Y, int Width, int Height)
-    {
-        public int Right => X + Width;
-        public int Bottom => Y + Height;
-    }
-
     public partial class ChatMessageItem : INotifyPropertyChanged
     {
         // Durable run ownership for history/replay reconciliation, not display.

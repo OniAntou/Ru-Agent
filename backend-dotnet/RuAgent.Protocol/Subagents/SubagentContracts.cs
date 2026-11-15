@@ -38,20 +38,6 @@ public sealed record SubagentSpawnRequest(
     [property: JsonPropertyName("provider_id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ProviderId = null,
     [property: JsonPropertyName("profile"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Profile = null);
 
-public sealed record SubagentSendRequest(
-    [property: JsonPropertyName("agent_id")] string AgentId,
-    [property: JsonPropertyName("message")] string Message);
-
-public sealed record SubagentWaitRequest(
-    [property: JsonPropertyName("agent_ids")] IReadOnlyList<string> AgentIds,
-    [property: JsonPropertyName("timeout_ms")] int TimeoutMs = 30_000);
-
-public sealed record SubagentCancelRequest([property: JsonPropertyName("agent_id")] string AgentId);
-
-public sealed record SubagentApplyRequest(
-    [property: JsonPropertyName("agent_id")] string AgentId,
-    [property: JsonPropertyName("result_version")] long ResultVersion);
-
 public readonly record struct SubagentValidationResult(bool IsValid, string? ErrorCode)
 {
     public static SubagentValidationResult Valid => new(true, null);

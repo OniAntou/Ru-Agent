@@ -20,9 +20,12 @@ public sealed class SettingsMotionContractTests
         Assert.Contains("PlayTabEntrance(tab)", select, StringComparison.Ordinal);
         Assert.Contains("previous != tab", select, StringComparison.Ordinal);
 
+        // The page enters whole. Entering each card enabled composition translation on
+        // elements that already carry a XAML Translation, which moved their hit-test
+        // bounds: after a tab switch every card but the first stopped taking clicks.
         var entrance = GuiSource.MethodBody(Code, "PlayTabEntrance");
-        Assert.Contains("UiMotion.Enter(card,", entrance, StringComparison.Ordinal);
-        Assert.Contains("CardStaggerMilliseconds", entrance, StringComparison.Ordinal);
+        Assert.Contains("UiMotion.Enter(page)", entrance, StringComparison.Ordinal);
+        Assert.DoesNotContain("UiMotion.Enter(card", entrance, StringComparison.Ordinal);
         Assert.Contains("UiMotion.FadeOpacity", entrance, StringComparison.Ordinal);
     }
 

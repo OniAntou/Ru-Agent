@@ -12,9 +12,6 @@ namespace RuApp.Views
     /// </summary>
     public sealed partial class SettingsView
     {
-        /// <summary>Gap between one card's entrance and the next, so a page arrives top to bottom.</summary>
-        private const double CardStaggerMilliseconds = 40;
-
         /// <summary>The thumbs that have been placed once; only those glide afterwards.</summary>
         private readonly HashSet<Border> _placedThumbs = [];
 
@@ -64,9 +61,15 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// A page arrives card by card; a page that is not a stack of cards (the
-        /// shortcut list) arrives whole. The heading fades in beside it.
+        /// A page arrives whole, and the heading fades in beside it.
         /// </summary>
+        /// <remarks>
+        /// Never animate the cards one by one: they carry a XAML <c>Translation</c> for
+        /// their shadow, and enabling composition translation on them through
+        /// <see cref="UiMotion.Enter"/> moved their hit-test bounds away from where they
+        /// draw. After a tab switch every card but the first stopped taking clicks.
+        /// The page's own panel has no XAML translation, so it is safe to move.
+        /// </remarks>
         private void PlayTabEntrance(SettingsTab tab)
         {
             ScrollViewer panel = tab switch
@@ -79,18 +82,9 @@ namespace RuApp.Views
                 _ => PanelAboutScrollViewer,
             };
 
-            if (panel.Content is Panel cards)
+            if (panel.Content is FrameworkElement page)
             {
-                int index = 0;
-                foreach (var card in cards.Children.OfType<FrameworkElement>())
-                {
-                    if (card.Visibility != Visibility.Visible) continue;
-                    UiMotion.Enter(card, index++ * CardStaggerMilliseconds);
-                }
-            }
-            else if (panel.Content is FrameworkElement whole)
-            {
-                UiMotion.Enter(whole);
+                UiMotion.Enter(page);
             }
 
             foreach (var heading in new FrameworkElement[] { CategoryTitleText, CategorySubtitleText })

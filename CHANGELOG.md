@@ -429,7 +429,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`Missing required argument executable.`), lời dặn về dấu ngoặc chỉ dành cho giá trị sai
   kiểu; hint vượt giới hạn được cắt ở ranh giới từ kèm `…`. Nội dung `tool_denied` gửi model
   cũng dùng escape JSON gọn.
-=======
+
 - **feat(prompt)**: Guide concise Markdown emphasis for key decisions and warnings,
   with inline code for commands/paths and explicit exceptions for strict output formats.
 

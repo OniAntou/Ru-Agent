@@ -42,6 +42,9 @@ try
     var health = await HarnessSqliteSchema.InitializeAsync(options, default);
     if (!health.IsAvailable) throw new Exception(health.ErrorCode);
     var keys = new WindowsDpapiKeyStore(Path.Combine(root, "synthetic-key.dat"), options.DatabasePath);
+    // The fixture seeds a placeholder workspace ciphertext below. Mint the key while the
+    // database is still empty: a missing key beside encrypted rows is refused as a lost key.
+    System.Security.Cryptography.CryptographicOperations.ZeroMemory(await keys.GetOrCreateKeyAsync(default));
     var payloads = new HarnessPayloadStore(options, new HarnessPayloadCryptography(keys), KnownSecretRedactor.Empty);
     var stats = new Timings();
     var workStates = new SessionWorkStateStore(options, new SessionWorkStateCryptography(keys));

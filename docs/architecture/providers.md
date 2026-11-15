@@ -240,6 +240,14 @@ clear marker. Requests after tool results omit the synthetic continuation prompt
 The preceding user/snapshot/assistant/tool sequence can therefore remain intact
 on subsequent steps. Immutable run handoff keeps its existing position.
 
+Each snapshot supersedes the ones before it. A superseded snapshot is left out of a
+request only when a newer snapshot replaced it after at most one model step: it was
+then the tail of the previous request, so dropping it costs no cached prefix. A
+snapshot that stayed current across more steps sits inside the provider's cached
+prefix, and dropping it would invalidate every later message, so it keeps its
+position (`RuntimeContextSnapshot.Sent`). The choice reads only fixed positions, so
+later requests repeat it. The agent performance gate exercises the second case.
+
 Admission commits the model-only encrypted `RuntimeContextSnapshot` payload
 (kind 17) atomically with `model.step_started`, using a `run.note_added` event
 with safe code `runtime_context_snapshot`. Source identities use

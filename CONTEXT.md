@@ -321,7 +321,7 @@ _Avoid_: treating progress text as a final answer or adding phase to user messag
 
 
 **Runtime Context Snapshot**:
-A bounded, encrypted model-only record of current runtime and workflow context, admitted before a prepared native text model step. Retained snapshots stay durable at their historical position, but only the newest one is sent to the model; new or cleared state is appended and never grants authority.
+A bounded, encrypted model-only record of current runtime and workflow context, admitted before a prepared native text model step. Retained snapshots stay durable at their historical position. A superseded snapshot is dropped from a request only when a newer one replaced it after at most one model step; one that stayed current longer keeps its position so the cached request prefix holds. New or cleared state is appended and never grants authority.
 Implementation: [providers](docs/architecture/providers.md#runtime-context-snapshots).
 _Avoid_: mutable context rewritten ahead of retained history or historical observations treated as current permissions
 

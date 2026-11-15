@@ -30,6 +30,40 @@ public static class RuntimeContextSnapshot
 
     public static bool Fits(string? text) => text is null || Encoding.UTF8.GetByteCount(text) <= MaximumBytes;
 
+    /// <summary>
+    /// The retained snapshots a request sends, at their historical positions. Each snapshot
+    /// supersedes the ones before it, but providers cache the request prefix: dropping a
+    /// superseded snapshot is free only while it was the tail of the previous request, that
+    /// is, when a newer snapshot replaced it after at most one model step. One that stayed
+    /// current across more steps sits inside an already cached prefix, and dropping it would
+    /// invalidate every message after it, so it is kept. The rule reads only positions that
+    /// never change, so every later request makes the same choice.
+    /// </summary>
+    /// <param name="replacedAtEnd">True when this request appends a new snapshot after the retained entries.</param>
+    public static IReadOnlySet<ModelContextEntry> Sent(IReadOnlyList<ModelContextEntry> entries, bool replacedAtEnd)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        var sent = new HashSet<ModelContextEntry>(ReferenceEqualityComparer.Instance);
+        ModelContextEntry? previous = null;
+        var stepsSince = 0;
+        foreach (var entry in entries)
+        {
+            if (IsSnapshot(entry))
+            {
+                if (previous is not null && stepsSince > 1) sent.Add(previous);
+                previous = entry;
+                stepsSince = 0;
+            }
+            else if (entry.Kind == ModelContextEntryKind.AssistantStep)
+            {
+                stepsSince++;
+            }
+        }
+
+        if (previous is not null && (!replacedAtEnd || stepsSince > 1)) sent.Add(previous);
+        return sent;
+    }
+
     public static string? Pending(ModelContextSnapshot context, string? current, IReadOnlySet<string>? visibleSnapshotTexts = null)
     {
         var retainedEntry = context.Entries.LastOrDefault(entry => IsSnapshot(entry)

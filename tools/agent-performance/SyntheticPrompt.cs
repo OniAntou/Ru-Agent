@@ -17,8 +17,12 @@ sealed class SyntheticPrompt : ISystemPromptContextProvider
             AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema), null, "enabled");
         return Task.FromResult(new SystemPromptContext(SystemPromptContext.PromptContextSchemaVersion, "ru-agent", "standard",
             new PromptEnvironment("synthetic-model", "windows", "en-US", "UTC", "2026-10-21", "synthetic"), [], [capability],
+            // Runtime state changes now and then, not on every step (receipt-only changes are
+            // not resent). Every ten retained entries is about every five steps, so a sample
+            // replaces a snapshot that stayed current across several steps: the case that
+            // must keep the provider's cached prefix intact.
             new PromptRuntimeContext([new PromptReference("benchmark_state", "synthetic observations",
-                "Retained entries: " + snapshot.Entries.Count)])));
+                "Retained entries (tens): " + snapshot.Entries.Count / 10)])));
     }
 }
 

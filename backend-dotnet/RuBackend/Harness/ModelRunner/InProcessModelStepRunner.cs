@@ -520,13 +520,9 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         var providerIdsByToolCall = new Dictionary<string, string>(StringComparer.Ordinal);
         var protectedContextBlocks = new List<string>();
         var workflowTurns = new List<ModelTurn>();
-        // Each snapshot supersedes the ones before it, so only the newest reaches the model. A
-        // snapshot is admitted as the last message of its step: the request before it ended
-        // there, so dropping it leaves the provider's cached prefix intact while a long run
-        // stops carrying one full copy of its runtime state per step.
-        var currentSnapshot = pendingSnapshot is null
-            ? context.Entries.LastOrDefault(RuntimeContextSnapshot.IsSnapshot)
-            : null;
+        // A superseded snapshot is dropped only while doing so cannot break the provider's
+        // cached prefix; see RuntimeContextSnapshot.Sent.
+        var sentSnapshots = RuntimeContextSnapshot.Sent(context.Entries, replacedAtEnd: pendingSnapshot is not null);
         foreach (var entry in context.Entries)
         {
             if (entry.Kind == ModelContextEntryKind.Text && entry.Role == ModelContextRole.System)
@@ -548,7 +544,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                     if (promptInHistory && entry.SourceId == SessionWorkState.ContextSourceId) continue;
                     if (RuntimeContextSnapshot.IsSnapshot(entry))
                     {
-                        if (!ReferenceEquals(entry, currentSnapshot)) continue;
+                        if (!sentSnapshots.Contains(entry)) continue;
                         AddPendingUserBlocks(units, pendingUserBlocks);
                         units.Add([new ModelTurn("user", entry.Content)]);
                         continue;

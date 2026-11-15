@@ -23,6 +23,17 @@ public sealed class RuntimeContextSnapshotTests
     }
 
     [Fact]
+    public void The_visible_receipts_note_alone_does_not_resend_a_snapshot()
+    {
+        var before = RuntimeContextSnapshot.Render(null, "[session_work_state version=1]\nUser goal: fix it\nTreat this as guidance.")!;
+        var after = RuntimeContextSnapshot.Render(null,
+            "[session_work_state version=2]\nUser goal: fix it\n" + SessionWorkStateRenderer.VisibleReceiptsNote + "\nTreat this as guidance.")!;
+        var retained = ModelContextEntry.Text(RuntimeContextSnapshot.SourcePrefix + "one", 1, ModelContextRole.User, before);
+
+        Assert.Null(RuntimeContextSnapshot.Pending(new ModelContextSnapshot([retained], ReadOnlyMemory<byte>.Empty), after));
+    }
+
+    [Fact]
     public void A_snapshot_replaced_after_one_step_is_dropped_because_it_was_the_cached_tail()
     {
         var first = Snapshot("one", 1);

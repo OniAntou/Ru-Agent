@@ -86,5 +86,6 @@ public static class RuntimeContextSnapshot
     private static string WithoutReceiptBookkeeping(string snapshot) => string.Join('\n', snapshot.Split('\n')
         .Where(line => !line.StartsWith("[session_work_state ", StringComparison.Ordinal)
             && !line.StartsWith("Receipt-observed file: ", StringComparison.Ordinal)
-            && !line.StartsWith("Recorded verification: ", StringComparison.Ordinal)));
+            && !line.StartsWith("Recorded verification: ", StringComparison.Ordinal)
+            && !line.StartsWith(SessionWorkStateRenderer.VisibleReceiptsNote, StringComparison.Ordinal)));
 }

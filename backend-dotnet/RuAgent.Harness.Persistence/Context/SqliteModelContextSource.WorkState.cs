@@ -10,6 +10,7 @@ public sealed partial class SqliteModelContextSource
         SqliteConnection connection, SqliteTransaction transaction,
         RunId runId,
         List<ModelContextEntry> sessionBase,
+        IReadOnlySet<string> visibleReceiptEventIds,
         CancellationToken cancellationToken)
     {
         if (_workStates is null) return;
@@ -23,8 +24,21 @@ public sealed partial class SqliteModelContextSource
         sessionBase.Add(ModelContextEntry.Text(
             SessionWorkState.ContextSourceId, sequence, ModelContextRole.User,
             SessionWorkStateRenderer.Render(snapshot.State, snapshot.HasUnrepresentedReceipts,
-                await VisibleIntentRunsAsync(connection, transaction, run, snapshot.State, cancellationToken).ConfigureAwait(false))));
+                await VisibleIntentRunsAsync(connection, transaction, run, snapshot.State, cancellationToken).ConfigureAwait(false),
+                visibleReceiptEventIds)));
     }
+
+    /// <summary>
+    /// Receipt events whose tool results the model sees in this context, after compactions
+    /// are applied. A tool result's context source ID is <c>event:</c> plus its receipt event ID.
+    /// </summary>
+    internal static IReadOnlySet<string> VisibleReceiptEventIds(IEnumerable<ModelContextEntry> entries) =>
+        entries.Where(entry => entry.Kind == ModelContextEntryKind.ToolResult
+                && entry.SourceId.StartsWith(ReceiptSourcePrefix, StringComparison.Ordinal))
+            .Select(entry => entry.SourceId[ReceiptSourcePrefix.Length..])
+            .ToHashSet(StringComparer.Ordinal);
+
+    private const string ReceiptSourcePrefix = "event:";
 
 
     private static async Task<IReadOnlySet<string>?> VisibleIntentRunsAsync(SqliteConnection connection,

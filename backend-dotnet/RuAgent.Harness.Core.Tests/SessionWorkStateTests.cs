@@ -240,6 +240,37 @@ public sealed class SessionWorkStateTests
     }
 
     [Fact]
+    public void Receipts_the_model_already_sees_are_not_repeated_in_the_work_state()
+    {
+        var visible = new HashSet<string>(StringComparer.Ordinal) { "evt_44444444444444444444444444444444" };
+
+        var rendered = SessionWorkStateRenderer.Render(Sample, visibleReceiptEventIds: visible);
+
+        Assert.DoesNotContain("Inspect the call site", rendered);
+        Assert.DoesNotContain("Receipt-observed file:", rendered);
+        Assert.DoesNotContain("Recorded verification:", rendered);
+        Assert.Contains(SessionWorkStateRenderer.VisibleReceiptsNote, rendered);
+        // Intent, blocker and next action are not receipts and stay.
+        Assert.Contains(Sample.UserGoal.Text, rendered);
+        Assert.Contains("ParserTests still fail", rendered);
+        Assert.Contains("Inspect the failing assertion", rendered);
+    }
+
+    [Fact]
+    public void Receipts_outside_the_current_context_are_still_rendered()
+    {
+        // Compacted or earlier-run receipts are absent from the visible set.
+        var rendered = SessionWorkStateRenderer.Render(Sample,
+            visibleReceiptEventIds: new HashSet<string>(StringComparer.Ordinal) { "evt_ffffffffffffffffffffffffffffffff" });
+
+        Assert.Contains("Inspect the call site", rendered);
+        Assert.Contains("Receipt-observed file: src/parser.cs", rendered);
+        Assert.Contains("Recorded verification: command=dotnet test ParserTests", rendered);
+        Assert.DoesNotContain(SessionWorkStateRenderer.VisibleReceiptsNote, rendered);
+        Assert.Equal(SessionWorkStateRenderer.Render(Sample), rendered);
+    }
+
+    [Fact]
     public void Run_reducer_bounds_multibyte_intent_history_and_marks_omissions()
     {
         var state = Sample;

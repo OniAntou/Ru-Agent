@@ -580,6 +580,13 @@ and file observations and verification records require receipt provenance. It
 is context guidance only: it carries no approvals, grants, credentials, raw
 terminal output, or execution authority, and a workspace identity change makes
 the state unavailable. A new session stays independent.
+
+When the state is rendered into model context, tasks, file observations and
+verifications whose receipt tool result is still in that context are left out,
+with one note saying so: the model already sees the `todo_write` call or tool
+result itself, and repeating it made every task update resend a list that grows
+with each tool call. A receipt that compaction folded into a summary, or that
+came from an earlier run, is not in the context and is still rendered.
 _Avoid_: global memory, cross-session authority, model prose as proof, or work
 state as permission
 

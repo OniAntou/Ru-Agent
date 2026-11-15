@@ -78,7 +78,8 @@ public sealed partial class SqliteModelContextSource
         if (activeSkills.OmissionEntry is not null) runLocal.Add(activeSkills.OmissionEntry);
         await AttachToolImagesAsync(connection, transaction, runId, runLocal, ct).ConfigureAwait(false);
         var inheritedPaths = await InheritSubagentContextAsync(connection, transaction, runId, sessionBase, depth, ct).ConfigureAwait(false);
-        await AppendSessionWorkStateAsync(connection, transaction, runId, sessionBase, ct).ConfigureAwait(false);
+        await AppendSessionWorkStateAsync(connection, transaction, runId, sessionBase,
+            VisibleReceiptEventIds(sessionBase.Concat(runLocal)), ct).ConfigureAwait(false);
         await transaction.CommitAsync(ct).ConfigureAwait(false);
         return new ModelContextSourceSnapshot(sessionBase.Where(e => e.SourceId != SessionScopeHints.SourceId
                 && !ActiveSkillSnapshots.IsReservedSourceId(e.SourceId)).ToArray(),

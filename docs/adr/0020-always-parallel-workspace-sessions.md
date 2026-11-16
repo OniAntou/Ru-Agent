@@ -37,3 +37,19 @@ per-path locks, automatic merge or OS confinement. Those need separate designs.
 An opt-in GUI toggle was rejected: parallel sessions are normal product behavior.
 Unlimited execution was also rejected because the scheduler must retain bounded
 provider, process and memory usage.
+
+## Amendment (2026-11-16): no execution ceiling
+
+At the owner's request the "unlimited execution was rejected" decision above is
+reversed. The runtime loop no longer has a drive-worker limit (formerly sixteen), the
+provider-step bound has no default (formerly four; `RU_MAX_CONCURRENT_MODEL_STEPS` remains
+as an opt-in cap, for example 1 for a single-slot local runtime), and a workspace has no
+membership cap by default (formerly 32). The concurrency API accepts shared mode with
+`max_concurrent_runs` of 0 (no cap, the default) or any cap of two or more; schema v37
+rebuilds `workspace_coordinators` for that and moves rows at the old 32 ceiling to no cap
+while keeping smaller user caps. Exclusive mode and single-slot caps stay rejected.
+
+The trade-off the original text named is accepted: provider, process and memory use are
+no longer bounded by the scheduler. Provider rate limits, the machine's resources, the
+per-run step and terminal bounds, and an optional cap are what remain. Session admission,
+trust, permissions and execution authority are unchanged.

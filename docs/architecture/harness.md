@@ -283,8 +283,8 @@ The schema retains scope evidence with the
 owned run after relation loss, without restoring execution authority. A
 root-bound preparation journal records reservation before filesystem creation,
 physical snapshot evidence precedes bulk copying, and Git registration is bracketed
-by durable checkpoints. Reservations and completed child identities share the
-eight-identity family limit. Minimal encrypted evidence is bounded to 64 KiB per
+by durable checkpoints. Reservations and completed child identities are listed together;
+a family has no identity limit (ADR 0022 amendment). Minimal encrypted evidence is bounded to 64 KiB per
 allocation and excludes file contents. Session deletion discovers allocations
 even without a child run or scope and reclaims only proved physical identities.
 Unproven or replaced identities fail closed; cleanup does not scan for orphans
@@ -468,10 +468,11 @@ selects an isolated root. Schema v18 adds settings, conversation sessions and
 Activity Timeline records alongside runs, events, workspaces and work state.
 The v18-to-v29 upgrade converts exclusive/single-slot workspace coordinators to shared
 coordination without changing runs, trust or permission snapshots. Runtime
-membership defaults to 32 slots; the existing concurrency API accepts shared
-mode with 2–32 slots and cannot disable parallel sessions. Extra runnable work
-waits for available membership/worker capacity; one session still owns at most
-one active run. GUI and CLI use the same admission policy.
+membership has no cap by default (schema v37); the existing concurrency API accepts
+shared mode with no cap (0) or a cap of two or more, and cannot disable parallel
+sessions. Runnable work beyond a cap waits for a lease. The runtime loop drives every
+registered run at once, and provider steps are unbounded unless
+`RU_MAX_CONCURRENT_MODEL_STEPS` sets a cap. One session still owns at most one active run. GUI and CLI use the same admission policy.
 Since schema v30, messages live in `business_session_messages` with absolute per-session
 indices, source fingerprints in `business_session_source_receipts`, and small
 metadata/summary rows in `business_sessions`. FTS5 is a transactional message-search

@@ -8,8 +8,8 @@ public static class SubagentLimits
     public const int MaxContextBytes = 64 * 1024;
     public const int MaxInlineResultBytes = 32 * 1024;
     public const int MaxApprovalPreviewBytes = 8 * 1024;
-    public const int MaxIdentities = 8;
-    public const int MaxRunnable = 3;
+    // A family has no ceiling on how many children it spawns or admits, and the Host
+    // drives every run at once; each provider's rate limits are what push back.
     public const int MaxAttempts = 3;
     // Ten minutes, so a root waiting on long children parks instead of spending a
     // model step on every check-in.

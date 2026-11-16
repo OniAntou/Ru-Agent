@@ -3,17 +3,18 @@ using System.Globalization;
 namespace RuAgent.Protocol.Subagents;
 
 /// <summary>
-/// How many admitted child attempts one root family may run at once. The Host
-/// reads this once at startup; invalid or out-of-range values fail closed to the
-/// protocol default rather than granting more concurrency by typo.
+/// How many admitted child attempts one root family may run at once. There is no
+/// limit by default. A user who wants one (for example to stay under a provider's
+/// rate limit) sets a positive integer; the Host reads it once at startup, and an
+/// invalid value keeps the default rather than imposing a cap the user did not mean.
 /// </summary>
 public sealed class SubagentConcurrencyOptions
 {
     public const string EnvironmentVariableName = "RU_MAX_RUNNABLE_SUBAGENTS";
     public const int Minimum = 1;
-    public const int Maximum = SubagentLimits.MaxIdentities;
 
-    public int MaxRunnable { get; init; } = SubagentLimits.MaxRunnable;
+    /// <summary>The admitted-child cap, or null for no limit.</summary>
+    public int? MaxRunnable { get; init; }
 
     public static SubagentConcurrencyOptions FromEnvironment(Func<string, string?> environment)
     {
@@ -21,7 +22,7 @@ public sealed class SubagentConcurrencyOptions
         var raw = environment(EnvironmentVariableName);
         if (!string.IsNullOrWhiteSpace(raw)
             && int.TryParse(raw.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var value)
-            && value is >= Minimum and <= Maximum)
+            && value >= Minimum)
         {
             return new SubagentConcurrencyOptions { MaxRunnable = value };
         }

@@ -22,7 +22,7 @@ public sealed class WorkspaceCoordinatorStoreTests
         var secondSequence = await AppendChangeSequenceAsync(store, identity.WorkspaceId, protector, "chg_41_b", "src/b.cs");
 
         Assert.Equal("shared", first.Mode);
-        Assert.Equal(32, first.MaxConcurrentRuns);
+        Assert.Equal(0, first.MaxConcurrentRuns); // no cap
         Assert.Equal(first, second);
         Assert.Equal(1, firstSequence);
         Assert.Equal(2, secondSequence);
@@ -50,6 +50,18 @@ public sealed class WorkspaceCoordinatorStoreTests
         Assert.Equal(4, updated.MaxConcurrentRuns);
         Assert.Equal(45, updated.LeaseTtlSeconds);
         Assert.Equal(current.Version + 1, updated.Version);
+
+        // A cap past the old 32 ceiling is stored, and 0 goes back to no cap.
+        var large = await store.UpdatePolicyAsync(identity.WorkspaceId, updated.Version, "shared", 64, 45,
+            mergeTextConflicts: true, externalWriterDetection: true, CancellationToken.None);
+        Assert.Equal(64, large.MaxConcurrentRuns);
+        var uncapped = await store.UpdatePolicyAsync(identity.WorkspaceId, large.Version, "shared", 0, 45,
+            mergeTextConflicts: true, externalWriterDetection: true, CancellationToken.None);
+        Assert.Equal(0, uncapped.MaxConcurrentRuns);
+        var invalid = await Assert.ThrowsAsync<HarnessStoreException>(() => store.UpdatePolicyAsync(
+            identity.WorkspaceId, uncapped.Version, "shared", 1, 45,
+            mergeTextConflicts: true, externalWriterDetection: true, CancellationToken.None));
+        Assert.Equal("invalid_workspace_concurrency_policy", invalid.Code);
     }
 
     [Fact]

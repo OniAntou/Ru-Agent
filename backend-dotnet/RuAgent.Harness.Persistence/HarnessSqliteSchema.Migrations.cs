@@ -74,6 +74,7 @@ public static partial class HarnessSqliteSchema
                 """),
             new(34, 35, SubagentFamilyBudgetMigration),
             new(35, 36, SubagentFamilyBudgetUnboundedMigration),
+            new(36, 37, WorkspaceConcurrencyUnboundedMigration),
         ];
     }
 }

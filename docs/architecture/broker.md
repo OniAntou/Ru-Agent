@@ -209,7 +209,8 @@ reconciliation surfaces from Phase 3:
   runs. The terminal adapter likewise refuses a launch without Broker
   authorization, whatever its analyzer class (`terminal_command_not_allowed`,
   `terminal_shell_approval_invalid`).
-  `RU_MAX_CONCURRENT_MODEL_STEPS` still bounds concurrent provider generation.
+  Concurrent provider generation is unbounded unless `RU_MAX_CONCURRENT_MODEL_STEPS`
+  sets a cap (for example 1 for a local single-slot runtime).
 - Managed Web: `web_search` resolves the configured engine against a fixed set
   of public HTML engines and returns the first usable result after an
   accent-insensitive query-term and explicit `site:` sanity check, rather than

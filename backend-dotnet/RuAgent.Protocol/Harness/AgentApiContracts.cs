@@ -127,7 +127,8 @@ public sealed record WorkspaceChangesResponse(
 
 public sealed record WorkspaceConcurrencyUpdateRequest(
     [property: JsonPropertyName("mode")] string Mode,
-    [property: JsonPropertyName("max_concurrent_runs")] int MaxConcurrentRuns = 32,
+    // 0 (the default) means no cap; a cap is at least two.
+    [property: JsonPropertyName("max_concurrent_runs")] int MaxConcurrentRuns = 0,
     [property: JsonPropertyName("lease_ttl_seconds")] int LeaseTtlSeconds = 30,
     [property: JsonPropertyName("merge_text_conflicts")] bool MergeTextConflicts = true,
     [property: JsonPropertyName("external_writer_detection")] bool ExternalWriterDetection = true);

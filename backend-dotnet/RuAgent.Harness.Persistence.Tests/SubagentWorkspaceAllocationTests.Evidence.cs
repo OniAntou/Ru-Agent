@@ -47,18 +47,20 @@ public sealed partial class SubagentWorkspaceAllocationTests
     }
 
     [Fact]
-    public async Task Logical_identity_limit_includes_uncommitted_workspace_reservations()
+    public async Task Outstanding_workspace_reservations_do_not_block_another_child()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
         var root = fixture.NewRun(1, 1, 1);
         await fixture.CreateEventStore().TryCreateRunAsync(root, default);
         var store = new SqliteSubagentWorkspaceAllocationStore(fixture.Options, new(new FakeHarnessKeyStore()));
-        for (var n = 0; n < SubagentLimits.MaxIdentities; n++)
+        // Twelve uncommitted reservations used to exhaust the eight-identity family ceiling.
+        for (var n = 0; n < 12; n++)
             await store.ReserveAsync(root.Run.RunId, "agent_" + n, default);
         var agents = new SqliteSubagentStore(fixture.Options, fixture.PayloadStore);
-        var error = await Assert.ThrowsAsync<HarnessStoreException>(() => agents.CreateAsync(
-            new("agent_ninth", root.Run.RunId, "spawn_ninth", SubagentRole.Review, fixture.NewRun(2, 2, 1)), default));
-        Assert.Equal("subagent_identity_limit", error.Code);
+        var created = await agents.CreateAsync(
+            new("agent_extra", root.Run.RunId, "spawn_extra", SubagentRole.Review, fixture.NewRun(2, 2, 1)), default);
+        Assert.Equal("agent_extra", created.AgentId);
+        Assert.Single(await agents.ListAsync(root.Run.RunId, default));
     }
 }

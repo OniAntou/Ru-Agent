@@ -81,13 +81,19 @@ a missing credential fails the pinned run instead of switching providers.
 ## Execution and permissions
 
 Children run under the Host's global drive workers, so spawning one does not occupy the
-parent's model worker; `agent_wait` is a deferred wait. The family runs at most three admitted
-children at once by default. A ninth identity is refused as a normal verified
-`subagent_identity_limit` tool failure; it does not pause the root run or leave an
-unknown side effect. Set `RU_MAX_RUNNABLE_SUBAGENTS` to an integer from 1 to 8 to tune
-the admitted-child limit; an invalid or out-of-range value keeps the default rather than
-widening concurrency by typo. The GUI task board reads the current limit and shows
-`active N/limit` while children are admitted.
+parent's model worker; `agent_wait` is a deferred wait. A family has no limit on how many
+children it spawns or runs at once: every queued child is admitted, and the Host drives
+every run at once with no runtime slot limit and no default cap on model calls. What
+pushes back is the provider's own rate limits (a burst of children can draw 429s, which
+the run retries within its bounded budget) and the machine itself: every child's terminal
+commands, builds and model streams run concurrently. Each coding child still gets its own
+snapshot/worktree, so a large family uses proportionally more disk.
+`RU_MAX_CONCURRENT_MODEL_STEPS` caps concurrent model calls across the Host when that is
+needed.
+To cap admitted children (for example to stay under a provider's rate limit), set
+`RU_MAX_RUNNABLE_SUBAGENTS` to a positive integer; children beyond the cap wait queued. An
+unset or invalid value means no cap. The GUI task board shows `active N`, or `active N/cap`
+when a cap is set.
 
 Use `role=review` for research, web searches (including current prices), analysis and
 code review. It uses the parent's workspace read-only and does not require Git.
@@ -111,8 +117,7 @@ uncertain-write reconciliation; an interrupted run or a reserved journal row alo
 is never proof that nothing changed. Already paused runs retain their recovery state.
 
 The parent alone uses `agent_spawn`, `agent_send`, `agent_wait`, `agent_cancel` and
-`agent_apply`. Depth is one, with at most three runnable children/eight identities and
-three attempts each. Child role, immutable parent policy ceiling, budgets, deadlines and
+`agent_apply`. Depth is one, with any number of children and three attempts each. Child role, immutable parent policy ceiling, budgets, deadlines and
 Broker lease lifetime intersect; none grant additional permissions.
 Each child attempt has four hours to be admitted and, once running, no work limit (its row is reclaimed as stale after 30 days), and is not bounded by its own counters: like a root, a
 child opens budget windows as it works, so only a real failure, its parent's cancel or

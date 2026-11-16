@@ -137,8 +137,9 @@ still requires the live owner and attempt. Schema v26 reserves a root-bound
 allocation before filesystem creation, persists physical snapshot evidence before
 bulk copying, and checkpoints both sides of Git registration. Minimal encrypted
 evidence supports cleanup after restart without a child run or execution scope;
-it never reconstructs execution authority. Reserved identities count towards the
-same eight-identity family limit. In-process capture/provision
+it never reconstructs execution authority. Reserved identities are listed with the
+family's spawned children (the original eight-identity family limit was removed; see
+the amendment below). In-process capture/provision
 failures reclaim only allocations with captured physical identities, under a
 separate bounded cleanup deadline. An unproven directory and interrupted Git
 registration before identity capture remain pending with named errors. An explicit
@@ -202,3 +203,17 @@ occur in the original authenticated root prompt; the main agent is responsible f
 interpreting explicit user intent, and workspace/tool output cannot opt in. Ambiguity
 and catalog failures produce named errors rather than model or provider substitution.
 Existing child attempts and continuations retain their original pins.
+
+## Amendment (2026-11-16): no family ceiling
+
+At the owner's request the family no longer has an identity ceiling (formerly eight)
+or a default admitted-child ceiling (formerly three, tunable 1–8). Every queued child is
+admitted; `subagent_identity_limit` is no longer produced, and `agent_wait.agent_ids` has
+no `maxItems`. `RU_MAX_RUNNABLE_SUBAGENTS` remains as an opt-in cap of any positive size.
+The Host-wide limits were removed with it: the runtime loop drives every registered run
+at once (formerly 16 slots), provider steps are unbounded unless
+`RU_MAX_CONCURRENT_MODEL_STEPS` sets a cap (formerly a default of 4), and a workspace has
+no run cap unless one is set (schema v37; formerly 32). What pushes back is each
+provider's rate limits and the machine's own resources. Each coding child still owns a
+snapshot/worktree, so disk use grows with the family. Depth (one), attempts per child (three), deadlines, budgets and every
+authority boundary above are unchanged; this removes a resource bound, not a permission.

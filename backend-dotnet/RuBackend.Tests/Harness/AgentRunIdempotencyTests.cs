@@ -269,7 +269,7 @@ public sealed partial class AgentRunIdempotencyTests
         string policyUrl = $"/agent/v1/workspaces/{workspaceId}/concurrency";
         var policy = await client.GetFromJsonAsync<WorkspaceConcurrencyResponse>(policyUrl);
         Assert.Equal("shared", policy!.Policy.Mode);
-        Assert.Equal(32, policy.Policy.MaxConcurrentRuns);
+        Assert.Equal(0, policy.Policy.MaxConcurrentRuns); // no cap by default
         using var disable = await client.PutAsJsonAsync(policyUrl, new WorkspaceConcurrencyUpdateRequest("exclusive", 1));
         Assert.Equal(HttpStatusCode.Conflict, disable.StatusCode);
         using var singleSlot = await client.PutAsJsonAsync(policyUrl, new WorkspaceConcurrencyUpdateRequest("shared", 1));

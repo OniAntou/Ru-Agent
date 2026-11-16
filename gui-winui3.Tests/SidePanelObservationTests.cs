@@ -52,6 +52,10 @@ public sealed class SidePanelObservationTests
         Assert.Contains("1 done", text);
         var running = snapshot with { Running = 1, MaxRunnable = 3 };
         Assert.Contains("active 1/3", SubagentPresentation.ObserverSummary(running, false));
+        // No configured cap (MaxRunnable 0) shows a bare count rather than "1/0".
+        var uncapped = SubagentPresentation.ObserverSummary(snapshot with { Running = 12, MaxRunnable = 0 }, false);
+        Assert.Contains("active 12", uncapped);
+        Assert.DoesNotContain("active 12/", uncapped);
         Assert.StartsWith("Refresh unavailable", SubagentPresentation.ObserverSummary(snapshot, true));
         Assert.DoesNotContain("Refresh unavailable", SubagentPresentation.ObserverSummary(snapshot, false));
         Assert.Equal("Refresh unavailable", SubagentPresentation.ObserverSummary(null, true));

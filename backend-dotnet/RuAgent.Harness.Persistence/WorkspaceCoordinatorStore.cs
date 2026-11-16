@@ -86,7 +86,7 @@ public sealed partial class WorkspaceCoordinatorStore
             var policyJson = JsonSerializer.Serialize(new
             {
                 mode = "shared",
-                max_concurrent_runs = 32,
+                max_concurrent_runs = 0,
                 lease_ttl_seconds = 30,
                 merge_text_conflicts = true,
                 external_writer_detection = true,
@@ -99,7 +99,7 @@ public sealed partial class WorkspaceCoordinatorStore
                     merge_text_conflicts, external_writer_detection, commit_sequence,
                     policy_json, version, created_at_utc, updated_at_utc)
                 VALUES(
-                    $workspace_id, 'shared', 32, 30, 1, 1, 0,
+                    $workspace_id, 'shared', 0, 30, 1, 1, 0,
                     $policy_json, 1, $created_at, $updated_at)
                 """;
             insert.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
@@ -111,7 +111,7 @@ public sealed partial class WorkspaceCoordinatorStore
             return new WorkspaceCoordinatorRecord(
                 workspaceId.Value,
                 "shared",
-                32,
+                0,
                 30,
                 true,
                 true,
@@ -147,7 +147,7 @@ public sealed partial class WorkspaceCoordinatorStore
     {
         _ = workspaceId.Value;
         if (mode != "shared"
-            || maxConcurrentRuns is < 2 or > 32
+            || maxConcurrentRuns is not 0 and < 2
             || leaseTtlSeconds is < 5 or > 600
             || expectedVersion < 1)
         {

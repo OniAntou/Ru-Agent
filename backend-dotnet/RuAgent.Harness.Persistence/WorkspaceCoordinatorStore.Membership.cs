@@ -53,8 +53,10 @@ public sealed partial class WorkspaceCoordinatorStore
                 return existing with { WriterKind = writerKind, HeartbeatAtUtc = nowUtc, LeaseExpiresAtUtc = expiresAt };
             }
 
-            await using (var count = connection.CreateCommand())
+            // 0 means the workspace has no cap; only a user-chosen cap can make it busy.
+            if (coordinator.MaxConcurrentRuns > 0)
             {
+                await using var count = connection.CreateCommand();
                 count.Transaction = transaction;
                 count.CommandText = "SELECT COUNT(*) FROM workspace_run_members WHERE workspace_id = $workspace_id AND state = 'active'";
                 count.Parameters.AddWithValue("$workspace_id", workspaceId.Value);

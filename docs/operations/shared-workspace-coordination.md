@@ -75,8 +75,9 @@ Terminal requests may carry additive `read_only` and `write_set` metadata.
 Malformed paths and a non-empty write set on a read-only request are rejected.
 The runtime acquires the per-run membership lease before the pass, renews it by
 heartbeat, and releases it when the pass stops. `write_set` paths are validated
-but not claimed: membership leases and `max_concurrent_runs` bound simultaneous
-execution rather than acquiring per-path claims. Sessions share the same real
+but not claimed: membership leases (and `max_concurrent_runs`, when a cap is set; 0 is
+the default and means no cap) bound simultaneous execution rather than acquiring
+per-path claims. Sessions share the same real
 files. Hash guards and external-change notices do not provide worktree isolation
 or automatic merging of competing terminal writes.
 

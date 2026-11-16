@@ -45,6 +45,17 @@ public sealed class SubagentContractTests
     }
 
     [Fact]
+    public void One_wait_may_name_any_number_of_children()
+    {
+        // A family has no identity ceiling, so a wait is not capped at the old eight ids.
+        var ids = Enumerable.Range(0, 20).Select(n => "agent_" + n).ToArray();
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(new { agent_ids = ids }));
+        Assert.True(SubagentContractValidator.Validate("agent_wait", document.RootElement).IsValid);
+        var schema = AgentToolDefinitionCatalog.Find("agent_wait", "1.0.0")!.InputSchema;
+        Assert.False(schema["properties"]!["agent_ids"]!.AsObject().ContainsKey("maxItems"));
+    }
+
+    [Fact]
     public void A_bounded_profile_id_is_valid_wire_arguments()
     {
         using var document = JsonDocument.Parse(

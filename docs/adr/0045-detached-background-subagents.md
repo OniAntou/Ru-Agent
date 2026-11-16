@@ -60,7 +60,7 @@ network authority and repository history outside the model path.
   gateway composition.
 - Detached children do not survive a Host process exit; durable recovery extends to
   the next Host start, not to cloud execution.
-- Existing per-family limits (concurrency, identities, attempts, workspace/snapshot
+- Existing per-family limits (any configured concurrency cap, attempts, workspace/snapshot
   bounds) apply to detached families too; the session setting only removes the
   parent-terminal cancellation rule.
 - A detached child cannot escalate to `full_access`, choose another provider/model,

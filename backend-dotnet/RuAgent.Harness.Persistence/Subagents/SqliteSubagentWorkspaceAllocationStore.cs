@@ -27,13 +27,6 @@ public sealed partial class SqliteSubagentWorkspaceAllocationStore(HarnessSqlite
             """;
         if ((long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0)
             throw new HarnessStoreException("subagent_preparation_incomplete");
-        command.CommandText = """
-            SELECT count(*) FROM (
-                SELECT agent_id FROM agent_subagents WHERE root_run_id=$root
-                UNION SELECT agent_id FROM agent_subagent_workspace_allocations WHERE root_run_id=$root)
-            """;
-        if ((long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) >= SubagentLimits.MaxIdentities)
-            throw new HarnessStoreException("subagent_identity_limit");
         var reservation = new SubagentWorkspaceAllocation(rootId.Value, agentId, "snapshot_" + Guid.NewGuid().ToString("N"),
             SubagentWorkspaceAllocationStage.Reserved);
         command.CommandText = """

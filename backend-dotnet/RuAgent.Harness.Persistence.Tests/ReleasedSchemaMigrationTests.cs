@@ -71,6 +71,56 @@ public sealed class ReleasedSchemaMigrationTests
         Assert.Equal(1L, await fixture.ScalarAsync("SELECT count(*) FROM business_session_message_search WHERE business_session_message_search MATCH 'legacy';"));
     }
 
+    [Theory]
+    [InlineData(32, 0)] // the old ceiling and default becomes no cap
+    [InlineData(4, 4)] // a smaller cap the user chose is kept
+    public async Task V36_to_v37_lifts_the_workspace_run_ceiling(int stored, int expected)
+    {
+        await using var fixture = await ReleasedSchemaFixture.CreateAsync();
+        var initialized = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+        Assert.True(initialized.IsAvailable, initialized.ErrorCode);
+        // Recreate the v36 table, whose CHECK still capped the value at 32.
+        await fixture.ExecuteAsync($"""
+            PRAGMA foreign_keys=OFF;
+            CREATE TABLE workspace_coordinators_v36 (
+                workspace_id TEXT PRIMARY KEY REFERENCES agent_workspaces(workspace_id) ON DELETE CASCADE,
+                mode TEXT NOT NULL CHECK(mode IN ('exclusive', 'shared')),
+                max_concurrent_runs INTEGER NOT NULL CHECK(max_concurrent_runs BETWEEN 1 AND 32),
+                lease_ttl_seconds INTEGER NOT NULL CHECK(lease_ttl_seconds BETWEEN 5 AND 600),
+                merge_text_conflicts INTEGER NOT NULL CHECK(merge_text_conflicts IN (0, 1)),
+                external_writer_detection INTEGER NOT NULL CHECK(external_writer_detection IN (0, 1)),
+                commit_sequence INTEGER NOT NULL CHECK(commit_sequence >= 0),
+                policy_json TEXT NOT NULL CHECK(length(policy_json) BETWEEN 2 AND 16384),
+                version INTEGER NOT NULL CHECK(version > 0),
+                created_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL
+            );
+            INSERT INTO workspace_coordinators_v36 SELECT workspace_id, mode, {stored}, lease_ttl_seconds,
+                merge_text_conflicts, external_writer_detection, commit_sequence,
+                json_set(policy_json, '$.max_concurrent_runs', {stored}), 5, created_at_utc, updated_at_utc
+                FROM workspace_coordinators;
+            DROP TABLE workspace_coordinators;
+            ALTER TABLE workspace_coordinators_v36 RENAME TO workspace_coordinators;
+            PRAGMA user_version=36;
+            PRAGMA foreign_keys=ON;
+            """);
+        await using (var pooled = await fixture.Options.OpenConnectionAsync(default))
+            SqliteConnection.ClearPool(pooled);
+
+        var upgraded = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+
+        Assert.True(upgraded.IsAvailable, upgraded.ErrorCode);
+        Assert.Equal($"{expected}:{expected}", await fixture.ScalarAsync(
+            "SELECT max_concurrent_runs || ':' || json_extract(policy_json, '$.max_concurrent_runs') FROM workspace_coordinators"));
+        // Only a row that changed gets a new policy version.
+        Assert.Equal(expected == stored ? 5L : 6L, await fixture.ScalarAsync("SELECT version FROM workspace_coordinators"));
+        // The rebuild leaves every row that references the coordinator intact.
+        Assert.Null(await fixture.ScalarAsync("PRAGMA foreign_key_check;"));
+        Assert.Equal((long)HarnessSqliteSchema.CurrentVersion, await fixture.ScalarAsync("PRAGMA user_version;"));
+        // A cap past the old ceiling is now accepted by the table itself.
+        await fixture.ExecuteAsync("UPDATE workspace_coordinators SET max_concurrent_runs=500;");
+    }
+
     [Fact]
     public async Task V33_to_v34_backfills_image_facts_for_existing_nested_fork_messages()
     {
@@ -252,8 +302,9 @@ public sealed class ReleasedSchemaMigrationTests
             Assert.True(first.ExitCode == 0, await first.StandardOutput.ReadToEndAsync() + await first.StandardError.ReadToEndAsync());
             Assert.True(second.ExitCode == 0, await second.StandardOutput.ReadToEndAsync() + await second.StandardError.ReadToEndAsync());
             Assert.Equal((long)HarnessSqliteSchema.CurrentVersion, await fixture.ScalarAsync("PRAGMA user_version"));
-            // The parallel-policy migration increments 7 -> 8 exactly once.
-            Assert.Equal(8L, await fixture.ScalarAsync("SELECT version FROM workspace_coordinators"));
+            // The parallel-policy migration (v19, 7 -> 8) and the no-cap migration (v37,
+            // 8 -> 9) each increment the policy version exactly once.
+            Assert.Equal(9L, await fixture.ScalarAsync("SELECT version FROM workspace_coordinators"));
             await AssertRecordsPreservedAsync(fixture);
         }
         finally
@@ -287,6 +338,7 @@ public sealed class ReleasedSchemaMigrationTests
         Assert.Equal("recorded", await fixture.ScalarAsync("SELECT safe_code FROM agent_events"));
         Assert.Equal("010203", await fixture.ScalarAsync("SELECT hex(document) FROM business_sessions"));
         Assert.Equal("explicit:1", await fixture.ScalarAsync("SELECT trust_source || ':' || trust_decision FROM agent_workspaces"));
-        Assert.Equal("shared:32", await fixture.ScalarAsync("SELECT mode || ':' || max_concurrent_runs FROM workspace_coordinators"));
+        // v19 lifted the old exclusive single slot to 32; v37 turns that ceiling into no cap (0).
+        Assert.Equal("shared:0", await fixture.ScalarAsync("SELECT mode || ':' || max_concurrent_runs FROM workspace_coordinators"));
     }
 }

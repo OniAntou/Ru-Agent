@@ -928,8 +928,8 @@ scratch workspace; backend startup still uses the application root.
 Explicit selections, restored sessions and harness workspaces retain their paths.
 Different sessions can always run in the same workspace in GUI and CLI; one
 session still owns at most one non-terminal run. Workspace coordination uses
-shared membership leases (32 slots by default, configurable from 2 to 32 through
-the existing API), with excess runnable work waiting for runtime capacity.
+shared membership leases with no cap by default; the existing API can set a cap of two
+or more, and runnable work beyond a cap waits for a lease.
 The v18-to-v29 upgrade converts legacy exclusive/single-slot coordinators in place while
 preserving active runs, approvals and workspace trust. Parallel mode cannot be
 disabled through workspace policy updates. Sessions share real files: this is

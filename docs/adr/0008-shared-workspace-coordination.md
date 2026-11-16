@@ -12,9 +12,10 @@ amended_by: ADR-0020 always allow parallel sessions in one workspace
 > Amended by [ADR 0020](0020-always-parallel-workspace-sessions.md) on
 > 2026-10-16: workspace coordination is always shared, so the "exclusive mode
 > remains the default / shared mode is opt-in" wording in the Decision section
-> below is historical. Policy validation accepts only shared mode with a
-> capacity from 2 to 32, and schema v19 rewrites legacy exclusive/single-slot
-> rows at startup. The durable coordinator, membership leases, snapshots and
+> below is historical. Policy validation accepts only shared mode, and schema v19
+> rewrites legacy exclusive/single-slot rows at startup. Since ADR 0020's
+> 2026-11-16 amendment (schema v37) a workspace has no run cap by default, and a
+> cap a user sets is two or more with no upper bound. The durable coordinator, membership leases, snapshots and
 > change journal described here remain in force.
 
 ## Decision

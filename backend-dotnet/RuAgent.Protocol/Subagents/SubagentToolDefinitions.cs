@@ -18,7 +18,7 @@ public static class SubagentToolDefinitions
 
     internal static JsonObject SendSchema() => Object(["agent_id", "message"], ("agent_id", Text(128)), ("message", Text(SubagentLimits.MaxTaskCharacters)));
 
-    internal static JsonObject WaitSchema() => Object(["agent_ids"], ("agent_ids", new JsonObject { ["type"] = "array", ["items"] = Text(128), ["minItems"] = 1, ["maxItems"] = SubagentLimits.MaxIdentities }),
+    internal static JsonObject WaitSchema() => Object(["agent_ids"], ("agent_ids", new JsonObject { ["type"] = "array", ["items"] = Text(128), ["minItems"] = 1 }),
         ("timeout_ms", Integer(0, SubagentLimits.MaxWaitMilliseconds)));
 
     internal static JsonObject CancelSchema() => Object(["agent_id"], ("agent_id", Text(128)));

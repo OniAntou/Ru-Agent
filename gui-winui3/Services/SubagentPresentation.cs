@@ -172,8 +172,11 @@ public static class SubagentPresentation
         var rows = snapshot?.Agents.Select(agent => Row(agent)).ToArray() ?? [];
         if (snapshot?.Preparations.Count is > 0) parts.Add($"{snapshot.Preparations.Count} preparing");
         if (snapshot?.UnavailableAttempts is > 0) parts.Add($"{snapshot.UnavailableAttempts} unavailable");
-        if (snapshot is { Running: > 0, MaxRunnable: > 0 })
-            parts.Add($"active {snapshot.Running}/{snapshot.MaxRunnable}");
+        // MaxRunnable is 0 unless the user set a cap, so most families show a bare count.
+        if (snapshot is { Running: > 0 })
+            parts.Add(snapshot.MaxRunnable > 0
+                ? $"active {snapshot.Running}/{snapshot.MaxRunnable}"
+                : $"active {snapshot.Running}");
         if (rows.Length > 0) parts.Add(CompactSummary(rows));
         return parts.Count > 0 ? string.Join(" · ", parts) : "No subagents yet";
     }

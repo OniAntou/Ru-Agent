@@ -10,6 +10,7 @@ public sealed record SubagentListResponse(
     [property: JsonPropertyName("preparations")] IReadOnlyList<SubagentPreparationSummary> Preparations,
     [property: JsonPropertyName("unavailable_attempts")] int UnavailableAttempts,
     [property: JsonPropertyName("usage")] SubagentUsageSummary Usage,
+    // The admitted-child cap the user configured; 0 means no limit.
     [property: JsonPropertyName("max_runnable")] int MaxRunnable = 0,
     [property: JsonPropertyName("running")] int Running = 0,
     // Why a profile file or entry was ignored; null when the root's workspace is not live.

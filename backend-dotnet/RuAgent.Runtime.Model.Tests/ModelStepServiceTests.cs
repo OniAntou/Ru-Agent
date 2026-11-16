@@ -1174,11 +1174,26 @@ public sealed partial class ModelStepServiceTests
     }
 
     [Fact]
+    public async Task With_no_configured_cap_every_provider_step_overlaps()
+    {
+        // No cap is the default: a regression back to a fixed gate would quietly
+        // serialize every run's model steps behind it.
+        // Twice the four steps the old default allowed.
+        const int concurrentSteps = 8;
+        var provider = new ConcurrencyProbeProvider();
+        var service = new ModelStepService(provider);
+        var request = Request(bootstrap: Bootstrap(ProviderProtocols.ChatCompletions));
+
+        await Task.WhenAll(Enumerable.Range(0, concurrentSteps)
+            .Select(_ => service.RunAsync(request, CancellationToken.None)));
+
+        Assert.Equal(concurrentSteps, provider.PeakConcurrency);
+    }
+
+    [Fact]
     public async Task The_provider_step_bound_actually_lets_that_many_steps_overlap()
     {
-        // The bound is what makes the runtime loop's four-run concurrency real for
-        // model steps. Nothing measured that before, so a regression back to (1,1)
-        // would pass the whole suite silently.
+        // A configured cap must still allow exactly that much overlap.
         const int concurrentSteps = 3;
         var provider = new ConcurrencyProbeProvider();
         var service = new ModelStepService(provider, concurrentSteps);
@@ -1205,23 +1220,18 @@ public sealed partial class ModelStepServiceTests
     }
 
     [Fact]
-    public void The_bound_variable_falls_back_to_the_default_when_it_is_unusable()
+    public void The_bound_variable_means_no_cap_when_it_is_unset_or_unusable()
     {
-        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
-            ModelStepService.ResolveMaxConcurrentProviderSteps(null));
-        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
-            ModelStepService.ResolveMaxConcurrentProviderSteps(""));
-        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
-            ModelStepService.ResolveMaxConcurrentProviderSteps("   "));
-        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
-            ModelStepService.ResolveMaxConcurrentProviderSteps("not-a-number"));
-        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
-            ModelStepService.ResolveMaxConcurrentProviderSteps("0"));
-        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
-            ModelStepService.ResolveMaxConcurrentProviderSteps("-4"));
+        Assert.Null(ModelStepService.ResolveMaxConcurrentProviderSteps(null));
+        Assert.Null(ModelStepService.ResolveMaxConcurrentProviderSteps(""));
+        Assert.Null(ModelStepService.ResolveMaxConcurrentProviderSteps("   "));
+        Assert.Null(ModelStepService.ResolveMaxConcurrentProviderSteps("not-a-number"));
+        Assert.Null(ModelStepService.ResolveMaxConcurrentProviderSteps("0"));
+        Assert.Null(ModelStepService.ResolveMaxConcurrentProviderSteps("-4"));
 
         Assert.Equal(1, ModelStepService.ResolveMaxConcurrentProviderSteps("1"));
         Assert.Equal(7, ModelStepService.ResolveMaxConcurrentProviderSteps("7"));
+        Assert.Equal(500, ModelStepService.ResolveMaxConcurrentProviderSteps("500"));
     }
 
     [Fact]

@@ -28,10 +28,12 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
         var running = rows.Count(row => OccupiesRunnableSlot(row.Attempts.LastOrDefault()?.Status));
         var status = AgentV1Shared.MapRunState(snapshot.Root.Status);
         var diagnostics = ProfileDiagnostics(root);
+        // 0 on the wire means no admitted-child limit.
+        var maxRunnable = concurrency.MaxRunnable ?? 0;
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
-            new { status, rows, preparations, snapshot.UnavailableAttempts, summary, concurrency.MaxRunnable, running, diagnostics })));
+            new { status, rows, preparations, snapshot.UnavailableAttempts, summary, MaxRunnable = maxRunnable, running, diagnostics })));
         return new(root.Value, status, fingerprint, rows, preparations, snapshot.UnavailableAttempts, summary,
-            concurrency.MaxRunnable, running, diagnostics);
+            maxRunnable, running, diagnostics);
     }
 
     /// <summary>

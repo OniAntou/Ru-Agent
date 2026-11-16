@@ -12,10 +12,10 @@ public sealed partial class SqliteSubagentStore(
     HarnessPayloadStore payloads,
     SubagentConcurrencyOptions? concurrency = null) : ISubagentStore
 {
-    private readonly int _maxRunnable = Math.Clamp(
-        concurrency?.MaxRunnable ?? SubagentLimits.MaxRunnable,
-        SubagentConcurrencyOptions.Minimum,
-        SubagentConcurrencyOptions.Maximum);
+    // Null admits every queued child; a configured cap is never below one.
+    private readonly int? _maxRunnable = concurrency?.MaxRunnable is { } cap
+        ? Math.Max(cap, SubagentConcurrencyOptions.Minimum)
+        : null;
     private HarnessSqliteOptions Options => options;
     private HarnessPayloadStore Payloads => payloads;
     public async Task<SubagentRecord> CreateAsync(SubagentCreateCommand request, CancellationToken ct)
@@ -54,13 +54,6 @@ public sealed partial class SqliteSubagentStore(
         if (root.Preset == AgentPermissionPreset.Plan && request.Role == SubagentRole.Coding
             || root.Preset != request.ChildRun.Run.Preset) throw new HarnessStoreException("subagent_role_denied");
         command.Parameters.AddWithValue("$agent", request.AgentId);
-        command.CommandText = """
-            SELECT count(*) FROM (
-                SELECT agent_id FROM agent_subagents WHERE root_run_id=$root
-                UNION SELECT agent_id FROM agent_subagent_workspace_allocations WHERE root_run_id=$root AND agent_id<>$agent)
-            """;
-        if ((long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) >= SubagentLimits.MaxIdentities)
-            throw new HarnessStoreException("subagent_identity_limit");
         if (await HarnessSqliteQueries.SessionDeletedAsync(connection, transaction, root.SessionId, ct).ConfigureAwait(false)
             || await HarnessSqliteQueries.SessionDeletedAsync(connection, transaction, request.ChildRun.Run.SessionId, ct).ConfigureAwait(false))
             throw new HarnessStoreException("session_deleted");
@@ -92,38 +85,6 @@ public sealed partial class SqliteSubagentStore(
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         await transaction.CommitAsync(ct).ConfigureAwait(false);
         return new(request.AgentId, request.RootRunId, request.ChildRun.Run.SessionId, request.Role, false);
-    }
-
-    /// <summary>
-    /// Identities include uncommitted workspace reservations, matching the limit
-    /// enforced by both the allocation store and <see cref="CreateAsync"/>.
-    /// </summary>
-    public async Task<int> CountIdentitiesAsync(RunId rootRunId, CancellationToken ct)
-    {
-        await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT count(*) FROM (
-                SELECT agent_id FROM agent_subagents WHERE root_run_id=$root
-                UNION SELECT agent_id FROM agent_subagent_workspace_allocations WHERE root_run_id=$root)
-            """;
-        command.Parameters.AddWithValue("$root", rootRunId.Value);
-        var count = (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
-        return count > int.MaxValue ? int.MaxValue : (int)count;
-    }
-
-    /// <summary>
-    /// True when this tool call already created an identity. A replay at the
-    /// identity ceiling must still reach the idempotent factory path.
-    /// </summary>
-    public async Task<bool> HasSpawnInvocationAsync(RunId rootRunId, string invocationId, CancellationToken ct)
-    {
-        await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_subagents WHERE root_run_id=$root AND invocation_id=$invocation)";
-        command.Parameters.AddWithValue("$root", rootRunId.Value);
-        command.Parameters.AddWithValue("$invocation", invocationId);
-        return (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0;
     }
 
     public async Task<IReadOnlyList<SubagentRecord>> ListAsync(RunId rootRunId, CancellationToken ct)

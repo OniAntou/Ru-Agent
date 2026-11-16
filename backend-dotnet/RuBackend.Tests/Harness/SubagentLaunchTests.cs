@@ -103,12 +103,16 @@ public sealed class SubagentLaunchTests
         Assert.Equal(1, workspaces.Calls);
     }
 
+    // A configured cap of three leaves the fourth child queued; with no cap (the
+    // default) every queued child is admitted on the same tick.
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public async Task Spawn_persists_fresh_child_once_without_registering_unadmitted_run(bool cancelFamily, bool corruptScope)
-        => await SpawnPersistsFreshChildOnceAsync(cancelFamily, corruptScope);
+    [InlineData(false, false, 3)]
+    [InlineData(true, false, 3)]
+    [InlineData(false, true, 3)]
+    [InlineData(false, false, null)]
+    [InlineData(false, true, null)]
+    public async Task Spawn_persists_fresh_child_once_without_registering_unadmitted_run(bool cancelFamily, bool corruptScope, int? maxRunnable)
+        => await SpawnPersistsFreshChildOnceAsync(cancelFamily, corruptScope, maxRunnable);
 
     [Fact]
     public async Task An_invalid_brief_is_a_known_refusal_before_selection_workspace_or_child()
@@ -136,7 +140,7 @@ public sealed class SubagentLaunchTests
         Assert.Empty(await agents.ListAsync(root.Run.RunId, default));
     }
 
-    private static async Task SpawnPersistsFreshChildOnceAsync(bool cancelFamily, bool corruptScope)
+    private static async Task SpawnPersistsFreshChildOnceAsync(bool cancelFamily, bool corruptScope, int? maxRunnable)
     {
         await using var storage = await BackendHarnessTestFixture.CreateAsync();
         var root = await storage.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
@@ -145,7 +149,8 @@ public sealed class SubagentLaunchTests
         var policy = PolicySnapshotCanonicalizer.Create(1, root.Run.Preset, identity, [], BackendHarnessTestFixture.Timestamp);
         var roots = new AgentRuntimeRootRegistry();
         roots.Register(root.Run.RunId, storage.RootPath, policy);
-        var agents = new SqliteSubagentStore(storage.Options, storage.PayloadStore);
+        var agents = new SqliteSubagentStore(storage.Options, storage.PayloadStore,
+            new SubagentConcurrencyOptions { MaxRunnable = maxRunnable });
         var scopes = new SqliteSubagentScopeStore(storage.Options, new WorkspaceJournalProtector(storage.KeyStore));
         var pins = new SqliteAgentRunProviderSelectionStore(storage.Options);
         var models = new Selection();
@@ -180,12 +185,15 @@ public sealed class SubagentLaunchTests
         using var scheduler = new SubagentScheduler(storage.EventStore, agents, scopes, roots, clock);
         var cleanup = new Cleanup(roots);
         await scheduler.TickAsync(cleanup, default);
-        Assert.Equal(4, roots.Snapshot().Count); // parent plus three admitted children
+        // Four children; a corrupt scope fails one before admission.
+        var admissible = corruptScope ? 3 : 4;
+        var admitted = Math.Min(admissible, maxRunnable ?? int.MaxValue);
+        Assert.Equal(1 + admitted, roots.Snapshot().Count); // parent plus admitted children
         var states = new List<HarnessRunState>();
         foreach (var agent in await agents.ListAsync(root.Run.RunId, default))
             states.Add((await agents.GetLatestAttemptAsync(root.Run.RunId, agent.AgentId, default))!.Run.State);
-        Assert.Equal(3, states.Count(state => state == HarnessRunState.Running));
-        Assert.Equal(corruptScope ? 0 : 1, states.Count(state => state == HarnessRunState.Created));
+        Assert.Equal(admitted, states.Count(state => state == HarnessRunState.Running));
+        Assert.Equal(admissible - admitted, states.Count(state => state == HarnessRunState.Created));
         if (cancelFamily) await agents.CancelFamilyAsync(root.Run.RunId, default);
         else clock.UtcNow = clock.UtcNow.Add(RuAgent.Protocol.Subagents.SubagentLimits.AttemptRunTimeout + TimeSpan.FromMinutes(1));
         await scheduler.TickAsync(cleanup, default);

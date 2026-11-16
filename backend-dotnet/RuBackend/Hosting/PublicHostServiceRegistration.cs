@@ -331,8 +331,8 @@ internal static class PublicHostServiceRegistration
                 ["anthropic_messages"] = new AnthropicMessagesModelProvider(modelHttpClient),
             });
         });
-        // Local single-slot runtimes (llama.cpp, vLLM, Ollama) accept one request
-        // at a time; the operator lowers the bound for those with the env var.
+        // Provider steps are unbounded unless the env var sets a cap; local
+        // single-slot runtimes (llama.cpp, vLLM, Ollama) need it set to 1.
         services.AddSingleton(services => new ModelStepService(
             services.GetRequiredService<IModelProviderResolver>(),
             ModelStepService.ResolveMaxConcurrentProviderSteps(

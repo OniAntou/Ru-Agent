@@ -24,7 +24,6 @@ internal static class SubagentControlFailures
         "subagent_context_invalid",
         "subagent_context_too_large",
         "subagent_control_binding_invalid",
-        "subagent_identity_limit",
         "subagent_message_invalid",
         "subagent_message_queue_full",
         "subagent_not_found",

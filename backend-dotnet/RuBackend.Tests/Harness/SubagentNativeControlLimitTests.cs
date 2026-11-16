@@ -16,7 +16,7 @@ namespace RuBackend.Tests.Harness;
 public sealed partial class SubagentNativeControlTests
 {
     [Fact]
-    public async Task Ninth_spawn_is_denied_by_the_identity_limit_before_an_unknown_outcome()
+    public async Task Spawns_have_no_family_ceiling_and_a_replay_stays_idempotent()
     {
         await using var storage = await BackendHarnessTestFixture.CreateAsync();
         var repo = Path.Combine(storage.RootPath, "repo");
@@ -67,23 +67,19 @@ public sealed partial class SubagentNativeControlTests
             return await gateway.ExecuteAsync(prepared, _ => ValueTask.CompletedTask, default);
         }
 
-        for (var index = 0; index < SubagentLimits.MaxIdentities; index++)
+        // Twelve is past the eight-identity ceiling this family used to enforce.
+        const int spawns = 12;
+        for (var index = 0; index < spawns; index++)
         {
             var spawned = await Execute(Proposal(index));
             Assert.Equal(ToolExecutionOutcome.Succeeded, spawned.Outcome);
         }
 
-        Assert.Equal(SubagentLimits.MaxIdentities, (await agents.ListAsync(root.RunId, default)).Count);
-        var replay = await gateway.EvaluateAsync(Proposal(SubagentLimits.MaxIdentities - 1), default);
+        Assert.Equal(spawns, (await agents.ListAsync(root.RunId, default)).Count);
+        var replay = await gateway.EvaluateAsync(Proposal(spawns - 1), default);
         Assert.Equal(PolicyDecision.Allow, replay.Decision);
-        Assert.Equal(ToolExecutionOutcome.Succeeded, (await Execute(Proposal(SubagentLimits.MaxIdentities - 1))).Outcome);
-        Assert.Equal(SubagentLimits.MaxIdentities, (await agents.ListAsync(root.RunId, default)).Count);
-        var ninth = Proposal(SubagentLimits.MaxIdentities);
-        var denied = await gateway.EvaluateAsync(ninth, default);
-
-        Assert.Equal(PolicyDecision.Deny, denied.Decision);
-        Assert.Equal("subagent_identity_limit", denied.SafeCode);
-        Assert.Equal(SubagentLimits.MaxIdentities, (await agents.ListAsync(root.RunId, default)).Count);
+        Assert.Equal(ToolExecutionOutcome.Succeeded, (await Execute(Proposal(spawns - 1))).Outcome);
+        Assert.Equal(spawns, (await agents.ListAsync(root.RunId, default)).Count);
 
         var applyProposal = new ToolProposal(root.RunId,
             new("step_" + new string('d', 32)), new("call_" + new string('e', 32)), "provider_e",

@@ -43,5 +43,7 @@ from a provider you are signed in to, Ru tells you and does not substitute anoth
 
 ## Limits
 
-Subagents cannot start subagents of their own. How the delegation, approvals and results work in detail
+Subagents cannot start subagents of their own. There is no limit on how many the main agent
+starts or runs at once; to cap how many run together (for example to stay under your provider's
+rate limit), set the `RU_MAX_RUNNABLE_SUBAGENTS` environment variable to a number. How the delegation, approvals and results work in detail
 is in [Subagents](../operations/subagents.md) under Reference.

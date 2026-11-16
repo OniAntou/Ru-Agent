@@ -84,7 +84,7 @@ public static class SubagentContractValidator
     private static bool Wait(JsonElement arguments)
     {
         if (!arguments.TryGetProperty("agent_ids", out var ids) || ids.ValueKind != JsonValueKind.Array
-            || ids.GetArrayLength() is < 1 or > SubagentLimits.MaxIdentities) return false;
+            || ids.GetArrayLength() < 1) return false;
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var id in ids.EnumerateArray())
         {

@@ -45,15 +45,6 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
     /// </summary>
     private static readonly TimeSpan IdlePollInterval = TimeSpan.FromMilliseconds(1000);
 
-    /// <summary>
-    /// Runs driven at once. A slot is held for a whole drive pass, including a long
-    /// terminal command, so four slots let four builds stall every other session and
-    /// the subagents of a parent. Model calls keep their own, smaller bound
-    /// (<c>RU_MAX_CONCURRENT_MODEL_STEPS</c>); this bound only stops a burst of runs from
-    /// exhausting the host.
-    /// </summary>
-    internal const int MaxConcurrentRuns = 16;
-
     private readonly AgentConversationOutboxDispatcher _dispatcher;
     private readonly IHarnessEventStore _store;
     private readonly IAgentRuntimeCoordinatorFactory _coordinatorFactory;
@@ -64,7 +55,6 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
     private readonly WorkspaceCoordinatorStore _workspaceCoordinatorStore;
     private readonly WorkspaceJournalProtector _workspaceJournalProtector;
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
-    private readonly SemaphoreSlim _workerGate = new(MaxConcurrentRuns, MaxConcurrentRuns);
     private readonly Dictionary<string, Task> _workers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CancellationTokenSource> _workerCancellation = new(StringComparer.Ordinal);
     private readonly object _workerLock = new();
@@ -193,9 +183,9 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
         // Published for the managed host's idle-shutdown policy: a registered run (even
         // parked) keeps the host alive so a detached turn keeps progressing.
         ActiveWorkCount = registrations.Count;
-        // A long-running terminal command must not stall every other run. Keep a
-        // bounded degree of concurrency so a burst of runs cannot exhaust the host
-        // with model/process work while still allowing independent runs to progress.
+        // Every registered run gets its own worker at once, so a long-running terminal
+        // command never stalls another run. There is no Host-wide slot limit; an operator
+        // who needs one caps model calls with RU_MAX_CONCURRENT_MODEL_STEPS.
         var tasks = new List<Task>();
         lock (_workerLock)
         {
@@ -216,24 +206,12 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
                     {
                         try
                         {
-                            if (!_workerGate.Wait(0, CancellationToken.None))
-                            {
-                                _logger.LogInformation(
-                                    "run {RunId} is waiting for one of {Slots} runtime slots",
-                                    registration.RunId,
-                                    MaxConcurrentRuns);
-                                await _workerGate.WaitAsync(workerToken).ConfigureAwait(false);
-                            }
-                            try
-                            {
-                                var runId = new RunId(registration.RunId);
-                                // A queued run may have been removed while another worker held the slot.
-                                if (!_roots.TryGetRoot(runId, out _)) return;
-                                _roots.TryGetPolicySnapshot(runId, out var policySnapshot);
-                                await DriveRunIfRunningAsync(registration.RunId, registration.WorkspaceRoot,
-                                    policySnapshot, workerToken).ConfigureAwait(false);
-                            }
-                            finally { _workerGate.Release(); }
+                            var runId = new RunId(registration.RunId);
+                            // The run may have been removed after this snapshot was taken.
+                            if (!_roots.TryGetRoot(runId, out _)) return;
+                            _roots.TryGetPolicySnapshot(runId, out var policySnapshot);
+                            await DriveRunIfRunningAsync(registration.RunId, registration.WorkspaceRoot,
+                                policySnapshot, workerToken).ConfigureAwait(false);
                         }
                         catch (OperationCanceledException) when (workerToken.IsCancellationRequested) { }
                         catch (Exception error) { _logger.LogWarning(error, "agent run worker failed for {RunId}", registration.RunId); }

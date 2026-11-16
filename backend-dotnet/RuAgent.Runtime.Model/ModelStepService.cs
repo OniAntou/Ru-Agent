@@ -13,18 +13,11 @@ namespace RuAgent.Runtime.Model;
 public sealed partial class ModelStepService
 {
     /// <summary>
-    /// Environment variable that lowers the provider-step bound for a local
-    /// single-slot runtime. Absent, blank, non-numeric or below one falls back
-    /// to <see cref="DefaultMaxConcurrentProviderSteps"/>.
+    /// Environment variable that caps concurrent provider steps, for example at 1 for a
+    /// local single-slot runtime (llama.cpp, vLLM, Ollama). Absent, blank, non-numeric
+    /// or below one leaves provider steps unbounded.
     /// </summary>
     public const string MaxConcurrentProviderStepsVariable = "RU_MAX_CONCURRENT_MODEL_STEPS";
-
-    /// <summary>
-    /// Matches the runtime loop's own run concurrency, so a burst of runs in
-    /// different workspaces can all reach the model instead of queueing behind
-    /// one serialized generation. Lower it to 1 for llama.cpp / vLLM / Ollama.
-    /// </summary>
-    public const int DefaultMaxConcurrentProviderSteps = 4;
 
     /// <summary>Tail-kept provider reasoning per step. The projector clamps
     /// further for the activity wire; this cap bounds in-process memory.</summary>
@@ -38,45 +31,41 @@ public sealed partial class ModelStepService
     // surrounding module no longer says "worker".
     private const string DirectModelStepId = "worker";
     private readonly IModelProviderResolver _providers;
-    private readonly SemaphoreSlim _providerGate;
+    // Null when no cap is configured: every step reaches its provider at once.
+    private readonly SemaphoreSlim? _providerGate;
     private readonly RequestTokenAnchor _tokenAnchors = new();
 
     private static readonly IReadOnlyDictionary<string, string> NoProviderHeaders =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Bounds how many provider generations may be in flight at once.
+    /// Optionally bounds how many provider generations may be in flight at once.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This exists for the server, not for this class: a local single-slot runtime
-    /// (llama.cpp, vLLM, Ollama) accepts one request at a time and rejects the rest,
-    /// so the bound must be lowerable to 1. It does not protect shared state — every
-    /// field here is either immutable after construction or local to one call, and
-    /// the provider adapters hold only an injected thread-safe <c>HttpClient</c>.
-    /// </para>
-    /// <para>
-    /// The runtime loop already drives up to four runs concurrently. With a bound of
-    /// one, that concurrency was decorative for model steps: every other run blocked
-    /// on this gate, and a generation that hung held the gate for as long as the run
-    /// lived. The bound is therefore configurable and defaults to the runtime's own
-    /// run concurrency.
+    /// There is no bound by default: the runtime drives every run concurrently, and a
+    /// hosted provider's own rate limits are what push back. The cap exists for the
+    /// server, not for this class: a local single-slot runtime (llama.cpp, vLLM, Ollama)
+    /// accepts one request at a time and rejects the rest, so it can be set to 1. It does
+    /// not protect shared state — every field here is either immutable after construction
+    /// or local to one call, and the provider adapters hold only an injected thread-safe
+    /// <c>HttpClient</c>.
     /// </para>
     /// </remarks>
     public ModelStepService(
         IModelProviderResolver providers,
-        int maxConcurrentProviderSteps = DefaultMaxConcurrentProviderSteps)
+        int? maxConcurrentProviderSteps = null)
         : this(null, providers, maxConcurrentProviderSteps) { }
 
     public ModelStepService(
         IModelProvider provider,
-        int maxConcurrentProviderSteps = DefaultMaxConcurrentProviderSteps)
+        int? maxConcurrentProviderSteps = null)
         : this(provider, null, maxConcurrentProviderSteps) { }
 
     private ModelStepService(
         IModelProvider? singleProvider,
         IModelProviderResolver? providers,
-        int maxConcurrentProviderSteps)
+        int? maxConcurrentProviderSteps)
     {
         if (maxConcurrentProviderSteps < 1)
         {
@@ -91,18 +80,15 @@ public sealed partial class ModelStepService
             ["openai_responses"] = singleProvider,
             ["anthropic_messages"] = singleProvider,
         }) : throw new ArgumentNullException(nameof(providers)));
-        _providerGate = new SemaphoreSlim(maxConcurrentProviderSteps, maxConcurrentProviderSteps);
+        _providerGate = maxConcurrentProviderSteps is { } cap ? new SemaphoreSlim(cap, cap) : null;
     }
 
     /// <summary>
-    /// Reads <c>RU_MAX_CONCURRENT_MODEL_STEPS</c>, falling back to
-    /// <see cref="DefaultMaxConcurrentProviderSteps"/> when it is absent, blank,
-    /// not an integer, or below one.
+    /// Reads <c>RU_MAX_CONCURRENT_MODEL_STEPS</c>: a cap when it is an integer of at
+    /// least one, otherwise null (no cap).
     /// </summary>
-    public static int ResolveMaxConcurrentProviderSteps(string? configured) =>
-        int.TryParse(configured, out var parsed) && parsed >= 1
-            ? parsed
-            : DefaultMaxConcurrentProviderSteps;
+    public static int? ResolveMaxConcurrentProviderSteps(string? configured) =>
+        int.TryParse(configured, out var parsed) && parsed >= 1 ? parsed : null;
 
     public async Task<ModelStepServiceResult> RunAsync(ModelGenerationRequest request, CancellationToken cancellationToken)
         => await RunAsync(request, null, cancellationToken).ConfigureAwait(false);
@@ -253,9 +239,12 @@ public sealed partial class ModelStepService
         var providerGateEntered = false;
         try
         {
-            using (HarnessPerformance.Measure(HarnessPhase.ProviderGate))
-                await _providerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            providerGateEntered = true;
+            if (_providerGate is not null)
+            {
+                using (HarnessPerformance.Measure(HarnessPhase.ProviderGate))
+                    await _providerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                providerGateEntered = true;
+            }
             var text = new StringBuilder();
             var reasoning = new StringBuilder();
             var replayReasoning = modelRequest.ReplayChatReasoning ? new StringBuilder() : null;
@@ -441,7 +430,7 @@ public sealed partial class ModelStepService
         {
             if (providerGateEntered)
             {
-                _providerGate.Release();
+                _providerGate!.Release();
             }
         }
     }

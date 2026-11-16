@@ -113,7 +113,7 @@ public sealed partial class AgentWorkspaceService
         return new WorkspaceCoordinatorRecord(
             workspaceId.Value,
             "shared",
-            32,
+            0, // no cap
             30,
             true,
             true,

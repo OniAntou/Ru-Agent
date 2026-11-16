@@ -71,24 +71,26 @@ public sealed class AgentRuntimeSchedulingTests
             var second = await fixture.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running), "run_" + Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
             roots.Register(second.Run.RunId, fixture.RootPath);
             await Task.WhenAny(factory.SecondEntered.Task, Task.Delay(2000));
-            Assert.True(factory.SecondEntered.Task.IsCompleted, "There are three free slots, but the new run never gets scheduled.");
+            Assert.True(factory.SecondEntered.Task.IsCompleted, "A blocked run must not hold back a new registration, but the new run never gets scheduled.");
         }
         finally { await loop.StopAsync(CancellationToken.None); }
         Assert.Equal(1, factory.Cancelled);
     }
 
     [Fact]
-    public async Task Worker_limit_and_shutdown_cover_queued_runs()
+    public async Task Every_registered_run_is_driven_at_once_and_shutdown_cancels_them_all()
     {
+        // Eighteen is past the sixteen runtime slots the loop used to allow.
+        const int runCount = 18;
         await using var fixture = await BackendHarnessTestFixture.CreateAsync();
         var roots = new AgentRuntimeRootRegistry();
-        for (var i = 0; i < AgentRuntimeLoopService.MaxConcurrentRuns + 2; i++)
+        for (var i = 0; i < runCount; i++)
         {
             var run = await fixture.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
                 "run_" + Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
             roots.Register(run.Run.RunId, fixture.RootPath);
         }
-        var factory = new BlockingFactory(null);
+        var factory = new BlockingFactory(null, limit: runCount);
         var sessions = new SessionStore(new DataPaths(Path.Combine(fixture.RootPath, "settings.json"),
             Path.Combine(fixture.RootPath, "sessions"), Path.Combine(fixture.RootPath, "activity.log")), TimeProvider.System);
         var dispatcher = new AgentConversationOutboxDispatcher(new HarnessOutboxStore(fixture.Options), fixture.PayloadStore,
@@ -99,16 +101,17 @@ public sealed class AgentRuntimeSchedulingTests
         await loop.StartAsync(CancellationToken.None);
         try
         {
+            // Every run is blocked inside its drive pass at the same moment.
             await factory.LimitEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             await loop.StepOnceAsync(CancellationToken.None, waitForWorkers: false);
-            Assert.Equal(AgentRuntimeLoopService.MaxConcurrentRuns, factory.Calls);
+            Assert.Equal(runCount, factory.Calls);
         }
         finally { await loop.StopAsync(CancellationToken.None); }
-        Assert.Equal(AgentRuntimeLoopService.MaxConcurrentRuns, factory.Calls);
-        Assert.Equal(AgentRuntimeLoopService.MaxConcurrentRuns, factory.Cancelled);
+        Assert.Equal(runCount, factory.Calls);
+        Assert.Equal(runCount, factory.Cancelled);
     }
 
-    private sealed class BlockingFactory(RunId? first) : IAgentRuntimeCoordinatorFactory
+    private sealed class BlockingFactory(RunId? first, int limit = int.MaxValue) : IAgentRuntimeCoordinatorFactory
     {
         public int Calls;
         public int Cancelled;
@@ -118,7 +121,7 @@ public sealed class AgentRuntimeSchedulingTests
         public TaskCompletionSource<bool> SecondEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public async Task<AgentRunCoordinator> CreateAsync(string workspaceRoot, PolicySnapshot? policySnapshot = null, RunId? runId = null, string? agentSessionId = null, CancellationToken cancellationToken = default)        {
             int count = Interlocked.Increment(ref Calls);
-            if (count == AgentRuntimeLoopService.MaxConcurrentRuns) LimitEntered.TrySetResult(true);
+            if (count == limit) LimitEntered.TrySetResult(true);
             if (count == 2) TwoEntered.TrySetResult(true);
             if (first is null || runId == first)
             {

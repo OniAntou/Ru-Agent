@@ -22,15 +22,13 @@ public sealed partial class SqliteSubagentWorkspaceAllocationStore
         command.Transaction = transaction;
         command.CommandText = """
             SELECT agent_id,snapshot_id,stage,protection_version,nonce,ciphertext,authentication_tag
-            FROM agent_subagent_workspace_allocations WHERE root_run_id=$root ORDER BY agent_id LIMIT $limit
+            FROM agent_subagent_workspace_allocations WHERE root_run_id=$root ORDER BY agent_id
             """;
         command.Parameters.AddWithValue("$root", root.RunId.Value);
-        command.Parameters.AddWithValue("$limit", SubagentLimits.MaxIdentities + 1);
         using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         var rows = new List<SubagentWorkspaceAllocation>();
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            if (rows.Count >= SubagentLimits.MaxIdentities) throw new HarnessStoreException("subagent_allocation_invalid");
             var agent = reader.GetString(0);
             var snapshot = reader.GetString(1);
             var stage = (SubagentWorkspaceAllocationStage)reader.GetInt32(2);

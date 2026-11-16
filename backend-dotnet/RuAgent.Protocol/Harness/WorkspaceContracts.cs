@@ -27,9 +27,14 @@ public static class WorkspaceWriterKind
     public const string UnknownExternal = "unknown_external";
 }
 
+/// <summary>
+/// A workspace's run-coordination policy. <see cref="MaxConcurrentRuns"/> is 0 for no
+/// cap (the default); a cap a user sets is at least two, since parallel sessions cannot
+/// be disabled.
+/// </summary>
 public sealed record WorkspaceConcurrencyPolicy(
     [property: JsonPropertyName("mode")] string Mode,
-    [property: JsonPropertyName("max_concurrent_runs")] int MaxConcurrentRuns = 32,
+    [property: JsonPropertyName("max_concurrent_runs")] int MaxConcurrentRuns = 0,
     [property: JsonPropertyName("lease_ttl_seconds")] int LeaseTtlSeconds = 30,
     [property: JsonPropertyName("merge_text_conflicts")] bool MergeTextConflicts = true,
     [property: JsonPropertyName("external_writer_detection")] bool ExternalWriterDetection = true)
@@ -41,7 +46,7 @@ public sealed record WorkspaceConcurrencyPolicy(
             throw new AgentProtocolException("invalid_workspace_concurrency_mode");
         }
 
-        if (MaxConcurrentRuns is < 2 or > 32 || LeaseTtlSeconds is < 5 or > 600)
+        if (MaxConcurrentRuns is not 0 and < 2 || LeaseTtlSeconds is < 5 or > 600)
         {
             throw new AgentProtocolException("invalid_workspace_concurrency_policy");
         }

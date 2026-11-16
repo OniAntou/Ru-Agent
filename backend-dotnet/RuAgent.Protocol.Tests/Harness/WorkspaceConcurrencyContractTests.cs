@@ -9,10 +9,27 @@ public sealed class WorkspaceConcurrencyContractTests
     [Theory]
     [InlineData("exclusive", 32)]
     [InlineData("shared", 1)]
-    [InlineData("shared", 33)]
+    [InlineData("shared", -1)]
     public void Parallel_mode_cannot_be_disabled_by_policy(string mode, int capacity)
     {
         Assert.Throws<AgentProtocolException>(() => new WorkspaceConcurrencyPolicy(mode, capacity).Validate());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(33)]
+    [InlineData(500)]
+    public void No_cap_or_a_cap_of_any_size_from_two_is_valid(int capacity)
+    {
+        new WorkspaceConcurrencyPolicy(WorkspaceConcurrencyMode.Shared, capacity).Validate();
+    }
+
+    [Fact]
+    public void A_workspace_has_no_cap_by_default()
+    {
+        Assert.Equal(0, new WorkspaceConcurrencyPolicy(WorkspaceConcurrencyMode.Shared).MaxConcurrentRuns);
+        Assert.Equal(0, new WorkspaceConcurrencyUpdateRequest(WorkspaceConcurrencyMode.Shared).MaxConcurrentRuns);
     }
 
     [Fact]

@@ -18,7 +18,7 @@ public sealed partial class SqliteSubagentSnapshotReader(HarnessSqliteOptions op
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.Parameters.AddWithValue("$root", root.Value);
-        command.CommandText = "SELECT agent_id,internal_session_id,role,canceled,invocation_id FROM agent_subagents WHERE root_run_id=$root ORDER BY agent_id LIMIT 9";
+        command.CommandText = "SELECT agent_id,internal_session_id,role,canceled,invocation_id FROM agent_subagents WHERE root_run_id=$root ORDER BY agent_id";
         var identities = new List<(SubagentRecord Agent, string Invocation)>();
         using (var rows = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
         {
@@ -29,7 +29,6 @@ public sealed partial class SqliteSubagentSnapshotReader(HarnessSqliteOptions op
                 identities.Add((new(rows.GetString(0), root, new(rows.GetString(1)), role, rows.GetInt32(3) != 0), rows.GetString(4)));
             }
         }
-        if (identities.Count > SubagentLimits.MaxIdentities) Invalid();
         var agents = new List<SubagentSnapshotEntry>();
         foreach (var (identity, invocation) in identities)
         {
@@ -38,28 +37,25 @@ public sealed partial class SqliteSubagentSnapshotReader(HarnessSqliteOptions op
             agents.Add(new(identity, spawn.Task,
                 attempts, await ReadResultsAsync(connection, transaction, identity, ct).ConfigureAwait(false), spawn.Profile));
         }
-        command.CommandText = "SELECT agent_id,stage FROM agent_subagent_workspace_allocations WHERE root_run_id=$root ORDER BY agent_id LIMIT 9";
+        command.CommandText = "SELECT agent_id,stage FROM agent_subagent_workspace_allocations WHERE root_run_id=$root ORDER BY agent_id";
         var preparations = new List<SubagentPreparationSnapshot>();
         var allIds = identities.Select(i => i.Agent.AgentId).ToHashSet(StringComparer.Ordinal);
         using (var rows = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
         {
-            var count = 0;
             while (await rows.ReadAsync(ct).ConfigureAwait(false))
             {
                 var id = rows.GetString(0);
                 var stage = (SubagentWorkspaceAllocationStage)rows.GetInt32(1);
-                if (++count > SubagentLimits.MaxIdentities || !SubagentContractValidator.IsValidId(id) || !Enum.IsDefined(stage)) Invalid();
+                if (!SubagentContractValidator.IsValidId(id) || !Enum.IsDefined(stage)) Invalid();
                 if (allIds.Add(id)) preparations.Add(new(id, stage));
             }
         }
-        if (allIds.Count > SubagentLimits.MaxIdentities) Invalid();
         command.CommandText = """
             SELECT count(*) FROM agent_internal_runs i LEFT JOIN agent_subagent_attempts a ON a.run_id=i.run_id
             LEFT JOIN agent_subagents s ON s.agent_id=a.agent_id
             WHERE i.root_run_id=$root AND (s.agent_id IS NULL OR s.root_run_id<>$root)
             """;
         var unavailable = checked((int)(long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L));
-        if (unavailable > SubagentLimits.MaxIdentities * SubagentLimits.MaxAttempts) Invalid();
         command.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_subagent_families WHERE root_run_id=$root AND canceled=1)";
         var canceled = (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0;
         return new(parent, canceled, agents.AsReadOnly(), preparations.AsReadOnly(), unavailable);

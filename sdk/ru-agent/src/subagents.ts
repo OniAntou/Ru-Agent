@@ -57,6 +57,7 @@ export interface SubagentList {
     total_tokens: number | null;
     is_complete: boolean;
   };
+  /** The admitted-child cap the user configured; 0 means no limit. */
   max_runnable?: number;
   running?: number;
   /** Why a profile file or entry was ignored; null when the root's workspace is not live. */

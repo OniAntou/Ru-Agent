@@ -8,13 +8,17 @@ internal sealed class ModelsDevCatalogSource(HttpClient http, TimeProvider clock
 {
     private const int MaximumModelsDevBytes = 8 * 1024 * 1024;
     private const string ModelsDevUrl = "https://models.dev/api.json";
-    private static readonly TimeSpan ModelsDevCacheTtl = TimeSpan.FromHours(24);
+    // The published catalog changes during a working day (a new model can appear within
+    // hours). Six hours keeps a long-running desktop session current with at most four
+    // fetches a day, instead of holding an update for a whole day; the fetch is lazy, so
+    // a Host that is idle or closed pays nothing until the next catalog read.
+    private static readonly TimeSpan ModelsDevCacheTtl = TimeSpan.FromHours(6);
 
     // The live catalog holds 200+ providers. A smaller payload means a truncated
     // or proxied response: served in-memory for this call only, and only cached
     // when it still carries a credible provider count. A two-entry response can
     // always be produced by a proxy that whitelists exactly what the caller asks
-    // for, so it must never overwrite 24h of good data.
+    // for, so it must never overwrite the cached list.
     private const int MinimumModelsDevProviders = 50;
 
     internal string CacheFile { get; } = modelsDevCacheFile
@@ -31,7 +35,7 @@ internal sealed class ModelsDevCatalogSource(HttpClient http, TimeProvider clock
     private DateTimeOffset _modelsDevParsedAt;
 
     /// <summary>
-    /// Models.dev provider list (75+ providers). Fresh cache under 24h wins;
+    /// Models.dev provider list (75+ providers). A cache under six hours wins;
     /// offline falls back to the stale cache; no cache fails closed to empty.
     /// </summary>
     internal async Task<IReadOnlyList<ModelsDevProvider>> GetAsync(CancellationToken ct)
@@ -120,7 +124,7 @@ internal sealed class ModelsDevCatalogSource(HttpClient http, TimeProvider clock
         {
             // A suspiciously small catalog is served in-memory only: keep the
             // stale cache when one exists instead of letting the small payload
-            // overwrite 24h of good data on the next successful-shaped fetch.
+            // overwrite a good cache on the next successful-shaped fetch.
             if (error is ProviderCatalogException suspicious
                 && string.Equals(suspicious.Code, "catalog_suspicious", StringComparison.Ordinal)
                 && hasCache)

@@ -206,11 +206,30 @@ internal sealed partial class AgentRunCompaction
                         EstimateInputTokens(context, preparedRequest),
                         limitTokens,
                         ContextCompactionStrategy.Normal);
-                    // Large retained histories can need several range/token-bounded
-                    // checkpoints. Every pass must shrink and consumes normal budget.
-                    for (var pass = 0; pass < 16 && decision.NeedsCompaction; pass++)
+                    // Required passes: the request does not fit, and large retained histories can
+                    // need several range/token-bounded checkpoints. Once a pass makes the request
+                    // fit, this loop stops. A fitting request gets at most one proactive pass
+                    // (below), because the 80% trigger is headroom, not a hard requirement: fixed
+                    // prompt overhead (system prompt + tool declarations) can put the target out
+                    // of reach, and looping on it compacted the previous summary until a checkpoint
+                    // was truncated and the run failed with checkpoint_incomplete.
+                    for (var pass = 0; pass < 16; pass++)
                     {
-                        var beforePass = EstimateInputTokens(context, preparedRequest);
+                        var estimate = EstimateInputTokens(context, preparedRequest);
+                        var fits = estimate <= decision.UsablePromptTokens;
+                        if (!decision.NeedsCompaction || (pass > 0 && fits))
+                        {
+                            break;
+                        }
+
+                        var overhead = FixedPromptOverhead(context, preparedRequest);
+                        if (pass == 0 && fits && overhead >= decision.TargetTokens)
+                        {
+                            break;
+                        }
+
+                        var beforePass = estimate;
+                        var optional = fits;
                         var compaction = await CompactSnapshotLockedAsync(
                                 run,
                                 context,
@@ -219,8 +238,10 @@ internal sealed partial class AgentRunCompaction
                                 ContextCompactionReason.Automatic,
                                 cancellationToken,
                                 outputReserveAlreadyAccounted: true,
-                                estimatedTokensOverride: EstimateInputTokens(context, preparedRequest),
-                                replayedTokens: ReplayedTokens(context, preparedRequest))
+                                estimatedTokensOverride: estimate,
+                                replayedTokens: ReplayedTokens(context, preparedRequest),
+                                fixedOverheadTokens: overhead,
+                                optional: optional)
                             .ConfigureAwait(false);
                         if (compaction.Outcome == ContextCompactionOutcome.Committed)
                         {
@@ -242,14 +263,24 @@ internal sealed partial class AgentRunCompaction
                         }
                         else if (compaction.Outcome is ContextCompactionOutcome.CommitConflict
                             or ContextCompactionOutcome.RunNotFound
-                            || compaction.ErrorCode is not null && compaction.ErrorCode != "compact_not_available")
+                            || (compaction.ErrorCode is not null
+                                && compaction.ErrorCode != "compact_not_available"
+                                && !optional))
                         {
                             return new ContextPreflightResult(
                                 compaction.Run ?? run,
                                 null,
                                 compaction.ErrorCode ?? "commit_conflict");
                         }
-                        else break;
+                        else
+                        {
+                            // An optional compaction that could not be committed leaves the
+                            // run working with the history it has, like the history-window one.
+                            // Its admitted checkpoint calls still moved the run version, so the
+                            // caller must continue from the returned run.
+                            run = compaction.Run ?? run;
+                            break;
+                        }
                     }
 
                     // The runner keeps history inside a fixed message/byte window by dropping
@@ -274,6 +305,7 @@ internal sealed partial class AgentRunCompaction
                                 forcedTargetTokens: Math.Max(1, beforePass / 2),
                                 replayedTokens: ReplayedTokens(context, preparedRequest),
                                 retainRecentTokensOverride: beforePass / 4,
+                                fixedOverheadTokens: FixedPromptOverhead(context, preparedRequest),
                                 optional: true)
                             .ConfigureAwait(false);
                         if (compaction.Outcome != ContextCompactionOutcome.Committed)
@@ -328,6 +360,25 @@ internal sealed partial class AgentRunCompaction
             ? Math.Max(0, breakdown.Messages - ModelContextSizeEstimator.EstimateTokens(context))
             : 0;
 
+    /// <summary>
+    /// The request partitions compaction cannot rewrite: system instructions and tool
+    /// declarations. The planner subtracts them from the target so it stops covering
+    /// history it could never shrink the request below the trigger with.
+    /// </summary>
+    private static long FixedPromptOverhead(ModelContextSnapshot context, ModelStepRequest? preparedRequest)
+    {
+        if (preparedRequest?.Preparation?.ContextTokens is { } breakdown)
+        {
+            return Math.Max(0, (long)breakdown.SystemPrompt + breakdown.ToolDefinitions);
+        }
+
+        // A preparation without a breakdown still reports its estimate; whatever exceeds the
+        // entry and replayed measures is fixed overhead for planning purposes.
+        var estimated = preparedRequest?.Preparation?.EstimatedInputTokens ?? 0;
+        return Math.Max(0, estimated - ModelContextSizeEstimator.EstimateTokens(context)
+            - ReplayedTokens(context, preparedRequest));
+    }
+
     private static long EstimateInputTokens(
         ModelContextSnapshot context,
         ModelStepRequest? preparedRequest) =>
@@ -346,6 +397,7 @@ internal sealed partial class AgentRunCompaction
         long? forcedTargetTokens = null,
         long replayedTokens = 0,
         long? retainRecentTokensOverride = null,
+        long fixedOverheadTokens = 0,
         bool optional = false)
     {
         var startedAt = _time.UtcNow;
@@ -368,7 +420,8 @@ internal sealed partial class AgentRunCompaction
                     ? Math.Min(retain, (long)(decision.UsablePromptTokens * 0.16))
                     : (long)(decision.UsablePromptTokens * 0.16),
             maximumCoveredTokens: budget,
-            replayedTokens: replayedTokens);
+            replayedTokens: replayedTokens,
+            fixedOverheadTokens: fixedOverheadTokens);
         var plan = PlanAt(coveredBudget);
         if (plan is null)
         {

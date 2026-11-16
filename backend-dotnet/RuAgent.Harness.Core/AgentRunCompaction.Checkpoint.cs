@@ -31,6 +31,7 @@ internal sealed partial class AgentRunCompaction
         var snapshot = new ModelContextSnapshot(entries, ModelContextSnapshot.Canonicalize(entries),
             verificationEvidence: plan.VerificationEvidence);
         string? lastInvalidCandidate = null;
+        var retryWithShorterCheckpoint = false;
         var admittedCalls = 0;
         for (var call = 0; call < maximumCalls; call++)
         {
@@ -53,7 +54,9 @@ internal sealed partial class AgentRunCompaction
             {
                 var requestContext = call == 0
                     ? snapshot
-                    : ContextCheckpoint.WithRepairDirective(snapshot, lastInvalidCandidate);
+                    : retryWithShorterCheckpoint
+                        ? ContextCheckpoint.WithTruncatedDirective(snapshot)
+                        : ContextCheckpoint.WithRepairDirective(snapshot, lastInvalidCandidate);
                 var taskPrompt = await _promptContextProvider!.BuildAsync(run, requestContext, ct).ConfigureAwait(false);
                 // Keep definitions referenced by native call/result history while
                 // omitting unrelated schemas and duplicated outputs. Returned
@@ -76,6 +79,17 @@ internal sealed partial class AgentRunCompaction
                     if (result.ErrorCode == "checkpoint_invalid" && call + 1 < maximumCalls)
                     {
                         lastInvalidCandidate = result.Text;
+                        retryWithShorterCheckpoint = false;
+                        continue;
+                    }
+                    // A completion cut by the output limit is a transient shape, not a
+                    // permanent checkpoint failure: retry once asking for a shorter summary.
+                    // The old code retried only format-invalid output, so one verbose
+                    // reasoning response killed a required compaction (and the run).
+                    if (result.ErrorCode == "checkpoint_incomplete" && call + 1 < maximumCalls)
+                    {
+                        retryWithShorterCheckpoint = true;
+                        lastInvalidCandidate = null;
                         continue;
                     }
                     if (result.ErrorCode is "checkpoint_timeout" or "checkpoint_provider_transient")

@@ -3,6 +3,7 @@ using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Tests.Fakes;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Harness.Core.Tests;
@@ -75,7 +76,9 @@ public sealed partial class ContextCompactionCoordinatorTests
         var model = new CheckpointModel(store) { ErrorCode = code };
         var result = await CheckpointCoordinator(model, store).CompactAsync(RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
         Assert.Equal(code, result.ErrorCode);
-        var calls = code == "checkpoint_invalid" ? 2 : 1;
+        // A truncated checkpoint is retried once with a shorter directive; every other
+        // permanent failure stays a single call (format-invalid already retries above).
+        var calls = code is "checkpoint_invalid" or "checkpoint_incomplete" ? 2 : 1;
         Assert.Equal(calls, result.Run!.ModelStepsInWindow);
         Assert.Equal(calls, model.Calls);
         Assert.DoesNotContain(store.Commits, commit => commit.ContextCompaction is not null);
@@ -135,7 +138,7 @@ public sealed partial class ContextCompactionCoordinatorTests
     }
 
     [Fact]
-    public async Task Automatic_checkpoint_failure_stops_the_run_instead_of_repeating_calls()
+    public async Task Automatic_checkpoint_failure_stops_the_run_after_one_shorter_retry()
     {
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run());
@@ -143,7 +146,74 @@ public sealed partial class ContextCompactionCoordinatorTests
         var result = await CheckpointCoordinator(model, store).RunOneStepAsync(RunId(), default);
         Assert.Equal(HarnessRunState.Failed, result.Run.State);
         Assert.Equal("checkpoint_incomplete", result.ErrorCode);
-        Assert.Equal(1, model.Calls);
+        Assert.Equal(2, model.Calls);
+        Assert.Contains(ContextCheckpoint.TruncatedInstruction,
+            string.Join("\n", model.Requests[1].Context.Entries.Select(entry => entry.Content)));
+        Assert.DoesNotContain(store.Commits, commit => commit.ContextCompaction is not null);
+    }
+
+    [Fact]
+    public async Task Truncated_checkpoint_is_retried_with_a_shorter_directive_and_commits()
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var codes = new Queue<string?>();
+        codes.Enqueue("checkpoint_incomplete");
+        codes.Enqueue(null);
+        var model = new CheckpointModel(store) { ErrorCodes = codes };
+
+        var result = await CheckpointCoordinator(model, store).CompactAsync(
+            RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
+
+        Assert.Equal(ContextCompactionOutcome.Committed, result.Outcome);
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(2, model.Calls);
+        Assert.Equal(2, result.Run!.ModelStepsInWindow);
+        Assert.Contains(ContextCheckpoint.TruncatedInstruction,
+            string.Join("\n", model.Requests[1].Context.Entries.Select(entry => entry.Content)));
+        Assert.Contains(store.Commits, commit => commit.ContextCompaction is not null);
+    }
+
+    [Fact]
+    public async Task A_fitting_request_keeps_working_when_its_proactive_checkpoint_fails()
+    {
+        // 3,200 estimated tokens fits a 4,000 limit (usable 3,936) but is over the 80%
+        // trigger. The fixed prompt overhead is 2,000, below the 2,440 target, so one
+        // proactive checkpoint is attempted; it fails as truncated and retried, then the
+        // step runs with the history it has instead of failing the run.
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var model = new FittingPromptModel(3_200, new ContextTokenBreakdown(2_000, 0, 1_200),
+            checkpointError: "checkpoint_incomplete");
+        var coordinator = FittingCoordinator(model, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), default);
+
+        Assert.Null(result.ErrorCode);
+        Assert.NotEqual(HarnessRunState.Failed, result.Run!.State);
+        Assert.Equal(2, model.CheckpointCalls);
+        Assert.Equal(1, model.Dispatches);
+        Assert.DoesNotContain(store.Commits, commit => commit.ContextCompaction is not null);
+        Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events),
+            evt => evt.Kind == HarnessEventKind.RunFailed);
+    }
+
+    [Fact]
+    public async Task Fixed_overhead_above_the_target_skips_the_proactive_checkpoint()
+    {
+        // 3,200 tokens fits, but the system prompt alone (3,000) already exceeds the
+        // 2,440 target: no amount of history compaction can reach the trigger, so the
+        // preflight must not dispatch a checkpoint it can never satisfy.
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var model = new FittingPromptModel(3_200, new ContextTokenBreakdown(3_000, 0, 200));
+        var coordinator = FittingCoordinator(model, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), default);
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(0, model.CheckpointCalls);
+        Assert.Equal(1, model.Dispatches);
         Assert.DoesNotContain(store.Commits, commit => commit.ContextCompaction is not null);
     }
 
@@ -280,4 +350,60 @@ public sealed partial class ContextCompactionCoordinatorTests
         public Task<ModelStepResult> RunStepAsync(ModelStepRequest request, Func<AssistantDelta, ValueTask> delta, CancellationToken ct) =>
             throw new InvalidOperationException("Compaction must not invoke the execution loop.");
     }
+
+    /// <summary>
+    /// A provider-like step runner whose prepared request reports a fixed prompt overhead:
+    /// enough entries to compact, an estimate that fits but sits over the trigger.
+    /// </summary>
+    private sealed class FittingPromptModel(
+        long estimatedInputTokens,
+        ContextTokenBreakdown breakdown,
+        string? checkpointError = null)
+        : IModelStepRunner, IModelStepRequestPreparer, IContextCheckpointSummarizer
+    {
+        public int CheckpointCalls { get; private set; }
+        public int Dispatches { get; private set; }
+
+        public Task<IPreparedModelStep> PrepareAsync(ModelStepRequest request, CancellationToken ct) =>
+            Task.FromResult<IPreparedModelStep>(
+                new FittingPreparedStep(estimatedInputTokens, 4_000, breakdown));
+
+        public Task<ContextCheckpointResult> SummarizeAsync(ModelStepRequest request, CancellationToken ct)
+        {
+            CheckpointCalls++;
+            var text = string.Join("\n", ContextCheckpoint.Sections.Select(section => section + "\n- keep work"));
+            return Task.FromResult(new ContextCheckpointResult(
+                text, new ModelUsage(100, 50, 150, null, null), checkpointError));
+        }
+
+        public Task<ModelStepResult> RunStepAsync(
+            ModelStepRequest request, Func<AssistantDelta, ValueTask> publishDelta, CancellationToken ct)
+        {
+            Dispatches++;
+            var receipt = SystemPromptComposer.Compose(request.PromptContext).Receipt;
+            return Task.FromResult(new ModelStepResult(
+                new AssistantStep("done", Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 0), receipt));
+        }
+
+        private sealed record FittingPreparedStep(
+            long EstimatedInputTokens,
+            long MaxPromptTokens,
+            ContextTokenBreakdown ContextTokens) : IPreparedModelStep;
+    }
+
+    private static AgentRunCoordinator FittingCoordinator(
+        FittingPromptModel model, InMemoryHarnessEventStore store) =>
+        new(model, new FakeToolGateway(), store, new AgentContextAssembler(new ReloadingSource(
+                Snapshot(
+                    ModelContextEntry.Text("h1", 1, ModelContextRole.User, new string('a', 2_400)),
+                    ModelContextEntry.Text("h2", 2, ModelContextRole.User, new string('b', 2_400)),
+                    ModelContextEntry.Text("current", 3, ModelContextRole.User, "current request")),
+                Snapshot(
+                    ModelContextEntry.Text("h1", 1, ModelContextRole.User, new string('a', 2_400)),
+                    ModelContextEntry.Text("h2", 2, ModelContextRole.User, new string('b', 2_400)),
+                    ModelContextEntry.Text("current", 3, ModelContextRole.User, "current request")))),
+            new SequenceIdGenerator(), new IncrementingTimeProvider(Epoch), new ToolCallScheduler(),
+            new TransientFrameBuffer(32),
+            contextLimit: new StaticModelContextLimitProvider(4_000),
+            promptContextProvider: new FakeSystemPromptContextProvider());
 }

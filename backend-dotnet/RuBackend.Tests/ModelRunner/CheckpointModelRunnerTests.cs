@@ -26,7 +26,7 @@ public sealed partial class InProcessModelStepRunnerTests
         Assert.Equal(1, provider.Calls);
         var sent = Assert.Single(provider.Requests);
         Assert.Equal(Bootstrap().Model, sent.Model);
-        Assert.InRange(sent.MaximumOutputTokens!.Value, 1, 4096);
+        Assert.InRange(sent.MaximumOutputTokens!.Value, 1, 8192);
         Assert.Contains(ContextCheckpoint.Instruction, string.Join("\n", sent.Turns.Select(turn => turn.Content)));
     }
 

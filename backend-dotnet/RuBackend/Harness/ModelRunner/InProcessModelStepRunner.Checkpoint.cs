@@ -21,7 +21,13 @@ public sealed partial class InProcessModelStepRunner
                 sessionId: request.SessionId),
                 null, timeout.Token, preparingSnapshot: true).ConfigureAwait(false);
             var bootstrap = source.ProviderBootstrap.WithReducedEffort();
-            var cap = Math.Min(4096, bootstrap.MaximumOutputTokens ?? 4096);
+            // Reasoning tokens draw from the same completion budget on every protocol, and
+            // this model may ignore the reduced-effort request. A 4,096 cap truncated the
+            // checkpoint mid-summary on a verbose model (finish_reason=length), which ended
+            // the run as checkpoint_incomplete; the summary is supposed to be at most 8,000
+            // characters, so the cap only bounds a runaway completion. Raise it to the pinned
+            // reserve when that is larger, still bounded by the released 8,192 default.
+            var cap = Math.Min(8_192, bootstrap.MaximumOutputTokens ?? 8_192);
             var summaryBootstrap = new ProviderBootstrapData(bootstrap.Backend, bootstrap.Protocol,
                 bootstrap.Endpoint, bootstrap.Model, bootstrap.Credential, bootstrap.RequestOptions, cap,
                 useMaxCompletionTokens: bootstrap.UseMaxCompletionTokens,

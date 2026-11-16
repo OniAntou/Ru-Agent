@@ -31,7 +31,7 @@ public sealed class DynamicModelContextLimitProviderTests
     }
 
     [Fact]
-    public async Task Uses_explicit_conservative_cap_when_the_pinned_window_is_unknown()
+    public async Task Uses_the_assumed_window_when_the_pinned_window_is_unknown()
     {
         var provider = new DynamicModelContextLimitProvider(new FixedMetadataResolver(new AgentRunModelMetadata(
             "custom-model",
@@ -71,7 +71,7 @@ public sealed class DynamicModelContextLimitProviderTests
     [InlineData("gemini-2.0-flash", 1_000_000)]
     [InlineData("deepseek-r1", 65_536)]
     [InlineData("qwen-2.5-coder", 65_536)]
-    [InlineData("llama-3-8b", 32_768)]
+    [InlineData("llama-3-8b", DynamicModelContextLimitProvider.ConservativeUnknownContextWindowTokens)]
     public void ResolveLimitForModel_ReturnsExpectedLimits(string model, long expected)
     {
         var limit = DynamicModelContextLimitProvider.ResolveLimitForModel(model);

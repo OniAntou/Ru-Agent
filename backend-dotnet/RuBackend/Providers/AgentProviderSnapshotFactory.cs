@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
+using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 using RuBackend.Business.Settings;
@@ -187,15 +188,23 @@ public sealed class AgentProviderSnapshotFactory(
         int? maximumOutput = null;
         var modelMetadata = models.Catalog.FirstOrDefault(model =>
             string.Equals(model.Id, selected.Model, StringComparison.OrdinalIgnoreCase));
-        var contextWindowTokens = modelMetadata?.ContextLength;
-        var contextWindowSource = contextWindowTokens is null
-            ? "unknown"
+        // A catalog that publishes no limit (a live gateway model absent from Models.dev, or
+        // a custom endpoint without lengths) assumes the shared current-model window. The
+        // source says "assumed" so the pin records the assumption; a provider that serves
+        // less rejects the oversized request with its own bounded context error, and the
+        // run compacts under the same pin. Recording the assumption on the pin also gives
+        // the GUI a real capacity instead of "unknown" for every new gateway model.
+        var contextWindowTokens = modelMetadata?.ContextLength is { } published
+            ? published
+            : ContextWindowDefaults.UnknownContextWindowTokens;
+        var contextWindowSource = modelMetadata?.ContextLength is null
+            ? "assumed"
             : selected.Backend.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase)
                 ? "models.dev"
                 // A named custom provider's catalog is the user's own list (ADR 0034).
                 : selected.IsCustomProvider ? "user_setting" : "provider_catalog";
-        var contextWindowVersion = contextWindowTokens is null
-            ? "unknown-v1"
+        var contextWindowVersion = modelMetadata?.ContextLength is null
+            ? "assumed-v1"
             : models.LastSuccessUtc?.ToString("O") ?? "catalog-v1";
         // Runs always use native tool calling: every supported protocol defines it
         // (chat completions through function calls, Responses through function-call items,

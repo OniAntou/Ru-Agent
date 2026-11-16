@@ -84,6 +84,37 @@ public sealed class ContextCompactionPlannerTests
     }
 
     [Fact]
+    public async Task Fixed_prompt_overhead_counts_against_the_target()
+    {
+        // System instructions and tool declarations are not in the context snapshot but are
+        // in the request, so the planner must leave room for them: the same snapshot needs a
+        // deeper plan with 600 fixed tokens than without them.
+        var entries = new List<ModelContextEntry>();
+        for (var index = 1; index <= 4; index++)
+        {
+            entries.Add(ModelContextEntry.Text(
+                $"old-{index}", index, ModelContextRole.User, new string((char)('a' + index), 2_400)));
+        }
+
+        entries.Add(ModelContextEntry.Text("current", 5, ModelContextRole.User, "current request"));
+        var snapshot = await AssembleAsync(entries.ToArray());
+        var decision = new ContextBudgetPolicy(new ContextBudgetPolicyOptions(0, 0))
+            .Evaluate(ModelContextSizeEstimator.EstimateTokens(snapshot), 1_800, ContextCompactionStrategy.Normal);
+
+        var withoutOverhead = ContextCompactionPlanner.Plan(
+            snapshot, decision, "compact-55555555555555555555555555555555", ContextCompactionReason.Manual);
+        var withOverhead = ContextCompactionPlanner.Plan(
+            snapshot, decision, "compact-55555555555555555555555555555555", ContextCompactionReason.Manual,
+            fixedOverheadTokens: 600);
+
+        Assert.NotNull(withoutOverhead);
+        Assert.NotNull(withOverhead);
+        Assert.Equal(3, withoutOverhead.CoveredEntries.Count);
+        Assert.Equal(4, withOverhead.CoveredEntries.Count);
+        Assert.DoesNotContain(withOverhead.CoveredEntries, entry => entry.SourceId == "current");
+    }
+
+    [Fact]
     public async Task Planner_returns_no_plan_when_context_is_at_or_below_target()
     {
         var snapshot = await AssembleAsync(

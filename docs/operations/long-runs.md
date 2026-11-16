@@ -20,7 +20,7 @@ request reaching the history window.
 | Pending approval | 24 h | The run fails as `approval_expired` | `ApprovalLimits.PendingApprovalLifetimeMinutes` (Protocol), shared by the Host and the Broker |
 | Remembered session approval | 24 h, 64 per session | The same intent asks again | `SessionApprovalLedger.EntryLifetime` (follows `ApprovalLimits`) |
 | Workspace trust challenge | 24 h (the approval lifetime) | The pending run is cancelled; trust again | `HarnessRecoveryScanner.WorkspaceTrustTimeout`, `WorkspaceTrustService` |
-| Model context | the pinned model's window | Automatic compaction at 80%; `context_limit_reached` only if compaction cannot shrink it | `ContextBudgetPolicyOptions` |
+| Model context | the pinned model's window (assumed 1,048,576 when the catalog publishes none) | Automatic compaction at 80% while the request would not fit, plus at most one proactive pass; `context_limit_reached` only if compaction cannot shrink a non-fitting request | `ContextBudgetPolicyOptions`, `ContextWindowDefaults` |
 
 For an unattended long run, use Standard (workspace edits and terminal run without asking)
 or Full Access (no approval prompts at all; explicit deny rules, timeouts and process-tree

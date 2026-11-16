@@ -100,7 +100,7 @@ reaches a terminal state.
 ## Models.dev provider list
 
 The Host fetches `https://models.dev/api.json` (75+ providers) with a
-15-second timeout and an 8 MiB response limit, cached locally for 24 hours
+15-second timeout and an 8 MiB response limit, cached locally for six hours
 (`models-dev.json` under the data root). Offline reads keep the stale cache,
 and no cache fails closed to an empty list. A `models.dev:<provider-id>`
 backend resolves its base URL from that list over `chat_completions`;
@@ -110,6 +110,13 @@ model fields are retired and must be re-entered. `GET
 /settings/models-dev-keys` lists the ids with a stored `<id>_api_key` so the
 Settings provider dropdown can mark signed-in rows and pin them above the
 groups; it probes each catalog id once per Settings load.
+
+Provider halves merge by model id: the live `GET /models` list supplies ids, and
+the Models.dev entry supplies reasoning options, price, context window and output
+limit. A live id that differs from the published id only by a `vendor/` prefix or
+a `:free`/`-free` marker resolves through the base id, so a gateway's free variant
+inherits a published window (exact id wins; an ambiguous normalized match stays
+unpublished, and a paid base's price is never attached to a free variant).
 
 Cloudflare Workers AI (`models.dev:cloudflare-workers-ai`) is the single
 override the generic path cannot serve: its catalog `api` is a template
@@ -173,7 +180,8 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
   fixed endpoint `https://api.anthropic.com/v1/models` / `https://api.anthropic.com/v1/messages`,
   credential `anthropic_api_key`, `x-api-key` + `anthropic-version: 2023-06-01`,
   `max_tokens` from `ModelOutputBudget` (min of the documented limit, 128,000 and a
-  quarter of a known context window; 8,192 when either is unknown; the same budget
+  quarter of a declared context window; the documented limit when the window is
+  assumed; 8,192 when no output limit is published; the same budget
   applies to chat-completions and Responses pins with a published Models.dev limit), registry `claude-fable-5`/
   `claude-opus-5`/`claude-opus-4-8`/`claude-sonnet-5` (`low`/`medium`/`high`/`xhigh`/`max`,
   adaptive, 128000), `claude-sonnet-4-6` (`low`/`medium`/`high`/`max`, 64000),

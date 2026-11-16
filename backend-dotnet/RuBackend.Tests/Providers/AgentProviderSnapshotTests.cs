@@ -5,6 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
+using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuBackend.Business;
 using RuBackend.Business.Settings;
@@ -443,7 +444,8 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
             Assert.Equal("https://provider-a.invalid/v1/chat/completions", resumed.Endpoint.AbsoluteUri);
             Assert.Equal("deepseek-v4-flash-free", resumed.Model);
             Assert.Equal("deepseek-v4-flash-free", resumedMetadata.ModelLabel);
-            Assert.Null(resumedMetadata.ContextWindowTokens);
+            Assert.Equal(ContextWindowDefaults.UnknownContextWindowTokens, resumedMetadata.ContextWindowTokens);
+            Assert.Equal("assumed", resumedMetadata.ContextWindowSource);
             await using (var connection = new SqliteConnection($"Data Source={paths.AgentHarnessDatabase};Pooling=False"))
             {
                 await connection.OpenAsync();

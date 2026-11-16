@@ -18,7 +18,8 @@ public static partial class ContextCompactionPlanner
         long? estimatedTokensOverride = null,
         long retainRecentTokens = 0,
         long maximumCoveredTokens = long.MaxValue,
-        long replayedTokens = 0)
+        long replayedTokens = 0,
+        long fixedOverheadTokens = 0)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(decision);
@@ -29,7 +30,14 @@ public static partial class ContextCompactionPlanner
         }
 
         ArgumentOutOfRangeException.ThrowIfLessThan(maxSummaryChars, 128);
-        var beforeTokens = estimatedTokensOverride ?? ModelContextSizeEstimator.EstimateTokens(snapshot);
+        ArgumentOutOfRangeException.ThrowIfNegative(fixedOverheadTokens);
+        var entriesBeforeTokens = ModelContextSizeEstimator.EstimateTokens(snapshot);
+        // The request carries partitions compaction cannot touch: the system prompt and the
+        // tool declarations. They count against the target too, otherwise the planner believes
+        // it can reach a target that the fixed prompt overhead already exceeds and keeps
+        // committing compactions that shrink nothing that matters.
+        var beforeTokens = estimatedTokensOverride
+            ?? (entriesBeforeTokens + replayedTokens + fixedOverheadTokens);
         if (beforeTokens <= decision.TargetTokens)
         {
             return null;
@@ -127,7 +135,8 @@ public static partial class ContextCompactionPlanner
             remainingEntryCount -= unit.Entries.Count;
             remainingImageCount -= unit.ImageCount;
             remainingReplayTokens -= unit.ReplayTokens;
-            if (EstimateTokens(totalObjectBytes, remainingEntryCount, remainingImageCount) + remainingReplayTokens
+            if (EstimateTokens(totalObjectBytes, remainingEntryCount, remainingImageCount)
+                    + remainingReplayTokens + fixedOverheadTokens
                 <= decision.TargetTokens)
             {
                 break;
@@ -141,7 +150,7 @@ public static partial class ContextCompactionPlanner
 
         var covered = entries.Where(coveredSet.Contains).ToArray();
         return BuildPlan(snapshot, decision, compactionId, reason, covered, maxSummaryChars, beforeTokens,
-            ModelContextSizeEstimator.EstimateTokens(snapshot));
+            entriesBeforeTokens);
     }
 
     /// <param name="beforeTokens">The caller's figure for the request before compaction, reported on the plan.</param>

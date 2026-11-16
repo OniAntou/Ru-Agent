@@ -5,6 +5,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Diagnostics;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 
@@ -23,7 +24,8 @@ public sealed partial class ModelStepService
     /// further for the activity wire; this cap bounds in-process memory.</summary>
     private const int MaximumReasoningChars = 8_000;
     private const int ImageInputTokenAllowance = RequestContextEstimator.ImageInputTokenAllowance;
-    private const long UnknownContextWindowTokens = 32_768;
+    /// <summary>Shared with the Host's compaction budget; see <see cref="ContextWindowDefaults"/>.</summary>
+    private const long UnknownContextWindowTokens = ContextWindowDefaults.UnknownContextWindowTokens;
     // Legacy literal: the direct (non-provider) step id is folded into the
     // synthetic provider call id as "ru_call_<step>_1", and that id is durable —
     // it lands in agent_events with the tool proposal. Renaming it would orphan

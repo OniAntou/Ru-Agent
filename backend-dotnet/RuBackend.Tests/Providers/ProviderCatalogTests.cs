@@ -83,6 +83,7 @@ public sealed class ProviderCatalogTests : IDisposable
                 "kilo":{"api":"https://kilo.example/v1","models":{
                   "dots-studio/dots-3-note-preview:free":{"attachment":true,"modalities":{"input":["text","image"]}},
                   "vendor/vision-only":{"modalities":{"input":["image"]}},
+                  "vendor/vision-base":{"modalities":{"input":["image"]}},
                   "vendor/text-only":{"modalities":{"input":["text"]}}
                 }}
                 """);
@@ -91,6 +92,8 @@ public sealed class ProviderCatalogTests : IDisposable
 
         Assert.True(await service.DeclaresVisionAsync("models.dev:kilo", "dots-studio/dots-3-note-preview:free", CancellationToken.None));
         Assert.True(await service.DeclaresVisionAsync("models.dev:kilo", "vendor/vision-only", CancellationToken.None));
+        // A gateway decoration on the id still reaches the published declaration.
+        Assert.True(await service.DeclaresVisionAsync("models.dev:kilo", "vendor/vision-base:free", CancellationToken.None));
         // Undeclared is not a denial: it must stay null so the caller's weaker
         // signal decides, rather than silently reading as "not vision".
         Assert.Null(await service.DeclaresVisionAsync("models.dev:kilo", "vendor/text-only", CancellationToken.None));
@@ -132,6 +135,31 @@ public sealed class ProviderCatalogTests : IDisposable
         Assert.Contains("prov059", cacheText);
     }
 
+    [Fact]
+    public async Task ModelsDev_cache_refreshes_after_six_hours_but_is_fresh_before()
+    {
+        // The published catalog can change within a working day, so the durable cache is
+        // six hours: fresh before that (no HTTP), refetched lazily after it.
+        Directory.CreateDirectory(_root);
+        var cacheFile = Path.Combine(_root, "models-dev.json");
+        var fetched = _clock.GetUtcNow();
+        await File.WriteAllTextAsync(cacheFile,
+            $"{{\"fetched_at\":\"{fetched:O}\",\"payload\":{ManyProviderJson(60)}}}");
+        var service = new ProviderCatalogService(
+            new HttpClient(_handler), _credentials, _clock, cacheFile);
+
+        Assert.Equal(60, (await service.GetModelsDevAsync(default)).Count);
+        Assert.Equal(0, _handler.Count);
+
+        _clock.Advance(TimeSpan.FromHours(5));
+        Assert.Equal(60, (await service.GetModelsDevAsync(default)).Count);
+        Assert.Equal(0, _handler.Count);
+
+        _handler.Json = ManyProviderJson(61);
+        _clock.Advance(TimeSpan.FromHours(1) + TimeSpan.FromSeconds(1));
+        Assert.Equal(61, (await service.GetModelsDevAsync(default)).Count);
+        Assert.Equal(1, _handler.Count);
+    }
     [Fact]
     public async Task ModelsDev_catalog_lists_generic_provider()
     {

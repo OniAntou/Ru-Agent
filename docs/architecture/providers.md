@@ -120,11 +120,12 @@ lifetime,
 30-second refresh throttle and provider/endpoint/credential-revision identity.
 OpenAI uses `Authorization: Bearer` plus `store:false`; Anthropic uses
 `x-api-key` and pinned `anthropic-version: 2023-06-01`. A new pin on any protocol
-reserves its output cap (`max_tokens` / `max_completion_tokens`) = min(model limit,
- a quarter of the context window, the Messages ceiling of 128,000) when both the model's output limit (registry or
- Models.dev `limit.output`) and its context window are known, and the earlier 8,192
- otherwise (`ModelOutputBudget`); the value travels in `output_token_reserve`,
- so existing pins keep theirs. Custom uses only its canonical key. The live catalog is
+reserves its output cap (`max_tokens` / `max_completion_tokens`) =
+`min(published output limit, 128,000, max(quarter of a declared context window,
+min(published output limit, 8,192)))`; an assumed window never lowers the
+published limit, and a model with no published output limit keeps the earlier
+8,192 (`ModelOutputBudget`). The value travels in `output_token_reserve`,
+so existing pins keep theirs. Custom uses only its canonical key. The live catalog is
 intersected with a source-dated (`2026-09-01`) exact capability registry; unknown
 IDs are retained as unsupported and never selected. The response adds per-model
 protocol/reasoning metadata, stale/error state and last-success time. See
@@ -132,7 +133,7 @@ protocol/reasoning metadata, stale/error state and last-success time. See
 
 `ProviderCatalogService` owns the credential-scoped provider catalogs and their
 metadata merge. Its `ModelsDevCatalogSource` separately owns public Models.dev
-HTTP fetches, single-flight refresh, the 24-hour durable cache and parsed-cache
+HTTP fetches, single-flight refresh, the six-hour durable cache and parsed-cache
 invalidation. `ModelsDevCatalogParser` reads published declarations without
 I/O. The source never reads credentials or selects a generation provider;
 candidate-key checks retain separate credential-scoped catalog state. The
@@ -153,9 +154,17 @@ The first validated selection also pins a typed model label, protocol, calling
 mode, catalog context window and source/version, and output-token reserve. The
 prompt label and compaction budget resolve through that same durable row, so a
 settings change or host restart cannot change an active run description or
-budget. A valid model with no context-window capability remains explicitly
-unknown and uses a conservative 32,768-token window before the pinned output
-reserve; production does not infer a window from a model name. Provider/catalog
+budget. A valid model whose catalog publishes no window is pinned to the shared
+assumed 1,048,576-token window with source `assumed`: current chat models serve
+about a million tokens, a provider that serves less rejects the oversized request
+with its own bounded context error, and the run compacts under the same pin; a
+named custom provider can declare an exact window per model instead (ADR 0034).
+Production never infers a window from a model name. A live gateway id that differs
+from the Models.dev id only by a provider prefix (`vendor/`) or a free marker
+(`:free`, `-free`) resolves the published window, output limit, reasoning and
+vision metadata through the base id; only a model with no published entry at all
+falls back to the assumed window, and a price is inherited only from a free base.
+Provider/catalog
 resolution failure before the first model call becomes a bounded durable run
 failure. Scripted offline runs do not register this resolver and do not access
 provider catalogs or credentials.
@@ -164,7 +173,7 @@ Before each provider-backed model step, the selected adapter serializes the full
 request body once. Preflight measures that same bounded JSON body, including
 system instructions, tool declarations, typed history, current prompt, images,
 and native continuation items; dispatch reuses the prepared serialization. The
-pinned output reserve is subtracted once from the exact or conservative window,
+pinned output reserve is subtracted once from the exact or assumed window,
 with the context policy's safety margin applied afterward. Admission estimates
 text conservatively at one token per four UTF-8 bytes and assigns a fixed
 4,096-token allowance per image; this is a bounded estimate, not provider-tokenizer

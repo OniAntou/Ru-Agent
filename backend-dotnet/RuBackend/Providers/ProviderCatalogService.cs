@@ -125,7 +125,7 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
         var providers = await GetModelsDevAsync(ct).ConfigureAwait(false);
         var provider = providers.FirstOrDefault(p =>
             string.Equals(p.Id, backend[prefix.Length..], StringComparison.OrdinalIgnoreCase));
-        return provider?.ReasoningContentReplay?.Contains(model) == true;
+        return provider?.ReasoningContentReplay is { } replay && DeclaresForModel(replay, model);
     }
 
     public async Task<bool?> DeclaresVisionAsync(
@@ -144,7 +144,7 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
         var providers = await GetModelsDevAsync(ct).ConfigureAwait(false);
         var provider = providers.FirstOrDefault(p =>
             string.Equals(p.Id, backend[prefix.Length..], StringComparison.OrdinalIgnoreCase));
-        if (provider?.Vision is null || !provider.Vision.TryGetValue(model, out var declared))
+        if (provider?.Vision is null || !TryResolveMetadata(provider.Vision, model, out var declared))
         {
             return null;
         }
@@ -214,8 +214,7 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
             var model = models[i];
             if (string.Equals(model.Reasoning.State, CatalogReasoningStates.Unknown, StringComparison.Ordinal)
                 && model.Supported
-                && reasoning is not null
-                && reasoning.TryGetValue(model.Id, out var published)
+                && TryResolveMetadata(reasoning, model.Id, out var published)
                 && published.Options.Count > 0)
             {
                 model = model with
@@ -229,21 +228,30 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
             // host cannot call is never billed, and a price attached only to the
             // supported ones would make the missing case indistinguishable from a model
             // nobody has heard of.
-            if (model.Cost is null && costs is not null && costs.TryGetValue(model.Id, out var cost))
+            if (model.Cost is null && costs is not null)
             {
-                model = model with { Cost = cost };
+                if (costs.TryGetValue(model.Id, out var exactCost))
+                {
+                    model = model with { Cost = exactCost };
+                }
+                else if (TryResolveMetadata(costs, model.Id, out var inheritedCost)
+                    && inheritedCost.Input is 0 && inheritedCost.Output is 0)
+                {
+                    // A free decoration on a free base model is still free; a paid base's
+                    // rate must not be attached to its free variant (that would price a
+                    // free run as billed). A free variant with no exact entry stays unpriced.
+                    model = model with { Cost = inheritedCost };
+                }
             }
 
             if (model.ContextLength is null
-                && contexts is not null
-                && contexts.TryGetValue(model.Id, out var contextLength))
+                && TryResolveMetadata(contexts, model.Id, out var contextLength))
             {
                 model = model with { ContextLength = contextLength };
             }
 
             if (model.MaxOutputTokens is null
-                && outputLimits is not null
-                && outputLimits.TryGetValue(model.Id, out var outputLimit))
+                && TryResolveMetadata(outputLimits, model.Id, out var outputLimit))
             {
                 model = model with { MaxOutputTokens = outputLimit };
             }
@@ -252,6 +260,118 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
         }
 
         return rewritten;
+    }
+
+    /// <summary>
+    /// Resolves Models.dev metadata for a live model id that differs from the published id
+    /// only by a gateway decoration: a provider prefix (<c>vendor/</c>) or a free marker
+    /// (<c>:free</c>, <c>-free</c>). An exact id always wins; a decorated id is stripped in
+    /// bounded steps, so a gateway's free variant still inherits the base model's published
+    /// window, output limit and capabilities instead of being assumed.
+    /// </summary>
+    private static bool TryResolveMetadata<T>(
+        IReadOnlyDictionary<string, T>? metadata,
+        string modelId,
+        out T value)
+    {
+        value = default!;
+        if (metadata is null || metadata.Count == 0 || string.IsNullOrWhiteSpace(modelId))
+        {
+            return false;
+        }
+
+        foreach (var candidate in ModelIdCandidates(modelId))
+        {
+            if (metadata.TryGetValue(candidate, out value!))
+            {
+                return true;
+            }
+        }
+
+        // A provider can also publish the id with a vendor prefix the live gateway omits
+        // (`tencent/hy4-flash` beside `hy4-flash-free`). Match the normalized last segment
+        // only when exactly one published key answers it; two candidates are ambiguous.
+        var normalized = NormalizeModelKey(modelId);
+        var match = default(T);
+        var matches = 0;
+        foreach (var pair in metadata)
+        {
+            if (!string.Equals(NormalizeModelKey(pair.Key), normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            match = pair.Value;
+            matches++;
+            if (matches > 1) return false;
+        }
+
+        if (matches == 1)
+        {
+            value = match!;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool DeclaresForModel(IEnumerable<string>? ids, string modelId)
+    {
+        if (ids is null) return false;
+        var normalized = NormalizeModelKey(modelId);
+        return ids.Any(id =>
+            string.Equals(id, modelId, StringComparison.OrdinalIgnoreCase)
+            || ModelIdCandidates(modelId).Contains(id, StringComparer.OrdinalIgnoreCase)
+            || string.Equals(NormalizeModelKey(id), normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The model id without a vendor prefix and a free marker, for key matching.</summary>
+    private static string NormalizeModelKey(string modelId)
+    {
+        var slash = modelId.LastIndexOf('/');
+        var last = slash >= 0 && slash < modelId.Length - 1 ? modelId[(slash + 1)..] : modelId;
+        if (last.EndsWith(":free", StringComparison.OrdinalIgnoreCase)
+            || last.EndsWith("-free", StringComparison.OrdinalIgnoreCase))
+        {
+            last = last[..^5];
+        }
+
+        return last;
+    }
+
+    /// <summary>The given id first, then the same id with at most one free marker and one
+    /// provider prefix removed, in both orders.</summary>
+    private static IEnumerable<string> ModelIdCandidates(string modelId)
+    {
+        yield return modelId;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { modelId };
+        var pending = new Queue<string>();
+        pending.Enqueue(modelId);
+        while (pending.Count > 0 && seen.Count <= 8)
+        {
+            var current = pending.Dequeue();
+            if (current.EndsWith(":free", StringComparison.OrdinalIgnoreCase)
+                || current.EndsWith("-free", StringComparison.OrdinalIgnoreCase))
+            {
+                var stripped = current[..^5];
+                if (stripped.Length > 0 && seen.Add(stripped))
+                {
+                    yield return stripped;
+                    pending.Enqueue(stripped);
+                }
+            }
+
+            var slash = current.IndexOf('/');
+            if (slash > 0 && slash < current.Length - 1)
+            {
+                var unqualified = current[(slash + 1)..];
+                if (seen.Add(unqualified))
+                {
+                    yield return unqualified;
+                    pending.Enqueue(unqualified);
+                }
+            }
+        }
     }
 
     /// <summary>

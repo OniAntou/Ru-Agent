@@ -110,6 +110,106 @@ public sealed class CatalogCostTests : IDisposable
     }
 
     [Fact]
+    public async Task A_free_variant_inherits_the_base_models_published_limits()
+    {
+        // A gateway can name a Models.dev model differently (`hy4-flash-free` for
+        // `hy4-flash`). An exact match fails, so the free decoration is stripped and the
+        // published window and output limit still reach the run instead of being assumed.
+        var snapshot = await ReadAsync(
+            modelsDev: """
+                "hy4-flash": {
+                  "limit": { "context": 1048576, "output": 65536 },
+                  "cost": { "input": 1, "output": 2 }
+                }
+                """,
+            providerModels: """{"id":"hy4-flash-free"}""",
+            backend: "opencode-go");
+
+        var model = Assert.Single(snapshot.Catalog);
+        Assert.Equal(1_048_576, model.ContextLength);
+        Assert.Equal(65_536, model.MaxOutputTokens);
+        // The base is paid; a free variant must not inherit that price.
+        Assert.Null(model.Cost);
+    }
+
+    [Fact]
+    public async Task A_vendor_prefixed_free_variant_resolves_through_both_decorations()
+    {
+        var snapshot = await ReadAsync(
+            modelsDev: """ "hy4-flash": { "limit": { "context": 1048576, "output": 65536 } } """,
+            providerModels: """{"id":"tencent/hy4-flash-free"}""",
+            backend: "opencode-go");
+
+        var model = Assert.Single(snapshot.Catalog);
+        Assert.Equal(1_048_576, model.ContextLength);
+        Assert.Equal(65_536, model.MaxOutputTokens);
+    }
+
+    [Fact]
+    public async Task A_free_variant_inherits_zero_rates_from_a_free_base()
+    {
+        var snapshot = await ReadAsync(
+            modelsDev: """ "hy4-flash": { "cost": { "input": 0, "output": 0 } } """,
+            providerModels: """{"id":"hy4-flash-free"}""",
+            backend: "opencode-go");
+
+        var cost = Assert.Single(snapshot.Catalog).Cost;
+        Assert.NotNull(cost);
+        Assert.Equal(0, cost!.Input);
+        Assert.Equal(0, cost.Output);
+    }
+
+    [Fact]
+    public async Task An_exact_free_entry_wins_over_the_base_variant()
+    {
+        // When Models.dev does publish the decorated id, its own limits and rates win:
+        // the variant lookup is a fallback, never an override.
+        var snapshot = await ReadAsync(
+            modelsDev: """
+                "hy4-flash": { "limit": { "context": 1048576 }, "cost": { "input": 1, "output": 2 } },
+                "hy4-flash-free": { "limit": { "context": 32768 }, "cost": { "input": 0, "output": 0 } }
+                """,
+            providerModels: """{"id":"hy4-flash-free"}""",
+            backend: "opencode-go");
+
+        var model = Assert.Single(snapshot.Catalog);
+        Assert.Equal(32_768, model.ContextLength);
+        Assert.NotNull(model.Cost);
+        Assert.Equal(0, model.Cost!.Input);
+    }
+
+    [Fact]
+    public async Task A_vendor_prefixed_catalog_key_resolves_from_an_unqualified_variant()
+    {
+        // Some providers publish the vendor-qualified id while the gateway lists the bare
+        // free one; the normalized last segment resolves it when exactly one key answers.
+        var snapshot = await ReadAsync(
+            modelsDev: """ "tencent/hy4-flash": { "limit": { "context": 1048576, "output": 65536 } } """,
+            providerModels: """{"id":"hy4-flash-free"}""",
+            backend: "opencode-go");
+
+        var model = Assert.Single(snapshot.Catalog);
+        Assert.Equal(1_048_576, model.ContextLength);
+        Assert.Equal(65_536, model.MaxOutputTokens);
+    }
+
+    [Fact]
+    public async Task An_ambiguous_normalized_key_is_not_guessed()
+    {
+        var snapshot = await ReadAsync(
+            modelsDev: """
+                "vendor-a/hy4-flash": { "limit": { "context": 1048576 } },
+                "vendor-b/hy4-flash": { "limit": { "context": 65536 } }
+                """,
+            providerModels: """{"id":"hy4-flash-free"}""",
+            backend: "opencode-go");
+
+        var model = Assert.Single(snapshot.Catalog);
+        Assert.Null(model.ContextLength);
+        Assert.Null(model.MaxOutputTokens);
+    }
+
+    [Fact]
     public async Task A_published_output_limit_lands_on_the_model()
     {
         var snapshot = await ReadAsync(

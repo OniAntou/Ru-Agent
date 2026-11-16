@@ -1,5 +1,6 @@
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Protocol.Harness;
 using RuBackend.Business.Settings;
 using RuBackend.Providers;
 
@@ -10,7 +11,13 @@ public sealed partial class DynamicModelContextLimitProvider : IModelContextLimi
     [System.Text.RegularExpressions.GeneratedRegex("(^|[^a-z0-9])o[134]([^a-z0-9]|$)")]
     private static partial System.Text.RegularExpressions.Regex ReasoningSeriesPattern();
 
-    public const long ConservativeUnknownContextWindowTokens = 32_768;
+    /// <summary>
+    /// The window assumed when the pinned selection carries none. Current models serve
+    /// about a million tokens, so a conservative small window is the larger error: it
+    /// makes the prompt budget unworkable and compacts repeatedly. The source is pinned
+    /// as <c>assumed</c> on new runs; older pins resolve through this constant.
+    /// </summary>
+    public const long ConservativeUnknownContextWindowTokens = ContextWindowDefaults.UnknownContextWindowTokens;
 
     private readonly ISettingsStore? _settings;
     private readonly IAgentRunModelMetadataResolver? _metadataResolver;

@@ -122,7 +122,7 @@ public static partial class BusinessEndpoints
     /// <summary>
     /// Models.dev provider ids with a stored key (`&lt;id&gt;_api_key`). The
     /// credential store has no enumeration, so each catalog id is probed; the
-    /// catalog itself is cached for 24h, keeping this a single cheap call the
+    /// catalog itself is cached for six hours, keeping this a single cheap call the
     /// GUI makes when Settings loads rather than per keystroke. The known-key
     /// list is bounded so a poisoned catalog cannot turn this into an
     /// unbounded vault-probe fan-out.

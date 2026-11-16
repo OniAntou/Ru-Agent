@@ -45,7 +45,11 @@ reserved. Reported usage is stored through `ModelUsageRecorded` even when the
 returned checkpoint text later fails validation. Prompt-composition receipts retain private block digests
 and never expose raw instruction or prompt text. A crash after admission keeps
 the spent reservation; it cannot make a dispatched call free. A failed summary
-does not replace original history. An exhausted format repair or permanent checkpoint
+does not replace original history. The checkpoint completion cap is up to 8,192 tokens:
+reasoning tokens draw from the same completion budget, and a summary cut off by a
+4,096 cap used to fail the compaction as `checkpoint_incomplete`. A truncated
+response is retried once with a shorter directive; only a second truncation is a
+permanent `checkpoint_incomplete`. An exhausted format repair or permanent checkpoint
 failure stops the run with its named error. Transient provider failures, operator-repairable account limits and the
 checkpoint deadline also fail the run, root or child, with their code; there is no
 Continue gate (ADR 0048) and nothing loops automatically. A run that cannot fit its
@@ -60,7 +64,10 @@ compaction transaction. Concurrent run changes cause a commit conflict rather
 than landing stale text. Full receipts remain available in durable storage.
 Automatic compaction targets a recent tail priced at 16% of available prompt
 tokens, extending protection to whole call/result groups while leaving at least
-one eligible old unit available to compact. System instructions, non-dialogue
+one eligible old unit available to compact. The target is the whole prepared
+request: system instructions and tool declarations are counted as fixed prompt
+overhead the planner cannot rewrite, so it does not keep covering history a
+target it can never reach. System instructions, non-dialogue
 base context,
 the latest actual user request, unresolved calls and the latest Host instruction-scope
 snapshot are protected. Complete historical `base:turn:*` user/assistant exchanges
@@ -75,8 +82,14 @@ Planning prices units once and constructs one final plan, capped at 256 distinct
 source ranges before checkpoint dispatch. Provider-backed selection targets a
 source span around half the available prompt budget; an indivisible larger unit
 still faces exact request preflight. Automatic preflight may commit at most 16
-shrinking compactions, reassembling and remeasuring after each. Unavailable or
-nonshrinking plans stop the loop; irreducible input fails by name.
+shrinking compactions while the request would not fit, reassembling and
+remeasuring after each. Once the request fits, the loop stops: a fitting request
+gets at most one proactive pass, and that pass is skipped when fixed prompt
+overhead alone exceeds the compaction target. A checkpoint failure in that
+proactive pass is optional and leaves the run working, because the request already
+fits; only a compaction required to make the request fit can fail the run with
+its code. Unavailable or nonshrinking plans stop the loop; irreducible input
+fails by name.
 
 Recognized HTTP/SSE provider context errors carry `context_window_exceeded`.
 Invocation retracts partial text, the compaction owner reduces context and a new

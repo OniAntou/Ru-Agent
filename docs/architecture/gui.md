@@ -157,8 +157,10 @@ prompt usage when available, so category sums need not equal the provider total.
 The existing transient usage-estimate frame supplies categories during a run;
 optional metadata on durable model usage restores them when a chat is reopened.
 Restoration reads the originating run's pinned identity and context capacity.
-Missing legacy metadata shows `—` for System prompt and Tool definitions, with
-only a visible-message estimate available. Unknown capacity is stated explicitly.
+A model whose catalog publishes no window is pinned with the assumed 1,048,576-token
+window (`assumed`), so the popup names that capacity instead of refusing to show
+a fill. Missing legacy metadata shows `—` for System prompt and Tool definitions, with
+only a visible-message estimate available. Unknown capacity on an older run is stated explicitly.
 When the last request failed before reporting provider usage, the same numbers are
 labelled as an estimate for the next request and the note says the last request
 failed; the popup never calls those tokens "used".

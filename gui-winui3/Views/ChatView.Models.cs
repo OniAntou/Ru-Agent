@@ -188,6 +188,7 @@ namespace RuApp.Views
                 _reasoningEfforts.Add(option.Value);
             }
 
+            ReasoningOptionsContainer.Width = ReasoningContentWidth(_reasoningLabels);
             segments.SizeChanged += OnReasoningSegmentsSizeChanged;
             ReasoningOptionsContainer.Children.Add(new Border
             {
@@ -221,6 +222,35 @@ namespace RuApp.Views
 
             UiMotion.Enter(ReasoningOptionsContainer);
             ReasoningOptionsContainer.Focus(FocusState.Programmatic);
+        }
+
+        // The flyout's content width at its 300px minimum (12px padding and a 1px border
+        // each side), the track's border and padding, and the room each label keeps from
+        // the edges of the pill.
+        private const double ReasoningMinimumContentWidth = 274;
+        private const double ReasoningTrackChrome = 8;
+        private const double ReasoningSegmentInset = 12;
+
+        /// <summary>
+        /// The segments share the width equally (the pill is one segment wide), so every
+        /// segment must fit the widest label at the SemiBold weight the cursor gives it.
+        /// The label is measured rather than assumed because the user picks the UI font.
+        /// The width is fixed so the header and description wrap instead of widening the flyout.
+        /// </summary>
+        private static double ReasoningContentWidth(IReadOnlyList<TextBlock> labels)
+        {
+            double widest = 0;
+            foreach (var label in labels)
+            {
+                var weight = label.FontWeight;
+                label.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+                label.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+                widest = Math.Max(widest, label.DesiredSize.Width);
+                label.FontWeight = weight;
+            }
+
+            double segments = labels.Count * (Math.Ceiling(widest) + ReasoningSegmentInset) + ReasoningTrackChrome;
+            return Math.Max(ReasoningMinimumContentWidth, segments);
         }
 
         private static string CapitalizeEffort(string label) =>

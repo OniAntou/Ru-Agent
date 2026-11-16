@@ -185,7 +185,9 @@ search rebuild keeps the reader's scroll offset (a new search starts at the top)
 jumps while it is open. The first open after launch can only do this once the catalog has arrived, so
 that open starts at the top. The marked row is painted instantly (a fade there read as lag); the search well's focus
 border fades (`UiMotion.FadeBrush`); a changed list fades in, and both panels enter with `UiMotion.Enter`.
-The reasoning panel is one segmented choice. A pill (`UiMotion.SlideX`) marks the segment under
+The reasoning panel is one segmented choice. The segments are equal, each as wide as the widest
+label measured in SemiBold and the user's UI font, and the panel widens past its 300 px minimum
+to fit them. A pill (`UiMotion.SlideX`) marks the segment under
 the pointer or the keys (Left/Right or Up/Down), and the sentence below it, from
 `ReasoningEffortDescriptions`, fades when it changes. Click or Enter commits and closes; leaving
 changes nothing. The sentences say what a level asks of the model, not how a provider behaves,

@@ -72,7 +72,7 @@ public sealed partial class AgentSidePanelControl
         chip.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         bool raised = isActive || isHovered;
         chip.Background = raised
-            ? (Brush)Application.Current.Resources["RuSurfaceBrush"]
+            ? (Brush)Application.Current.Resources["RuBackdropSurfaceBrush"]
             : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         chip.BorderBrush = isActive
             ? (Brush)Application.Current.Resources["RuLineBrush"]

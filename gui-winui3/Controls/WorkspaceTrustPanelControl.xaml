@@ -15,7 +15,7 @@
     -->
     <Border x:Name="Panel"
             Visibility="Collapsed"
-            Background="{StaticResource RuSurfaceBrush}"
+            Background="{StaticResource RuBackdropSurfaceBrush}"
             BorderBrush="{StaticResource RuLineBrush}"
             BorderThickness="1"
             CornerRadius="{StaticResource AppCardCornerRadius}"
@@ -49,7 +49,7 @@
                            LineHeight="19"
                            Foreground="{StaticResource RuMutedBrush}" />
 
-                <Border Background="{StaticResource RuCanvasBrush}"
+                <Border Background="{StaticResource RuBackdropInsetBrush}"
                         BorderBrush="{StaticResource RuLineBrush}"
                         BorderThickness="1"
                         CornerRadius="{StaticResource AppInsetCornerRadius}"

@@ -64,7 +64,10 @@ public sealed record AppearancePreferences
 
     public AppearanceBackgroundFit BackgroundFit { get; init; } = AppearanceBackgroundFit.Fill;
 
-    /// <summary>How much of the theme canvas covers the background, so text stays readable.</summary>
+    /// <summary>
+    /// How much of the theme covers the background, so text stays readable: the canvas
+    /// scrim and the surfaces floating on it (composer, task shelf, side card) alike.
+    /// </summary>
     public double PanelOpacity { get; init; } = DefaultPanelOpacity;
 
     public AppearanceColorSet LightColors { get; init; } = AppearanceColorSet.Empty;

@@ -454,7 +454,7 @@
                             <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock x:Name="AppearanceOpacityLabel" Text="Panel opacity" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="How much of the theme covers the background. Higher reads more easily."
+                                    <TextBlock Text="How much of the theme covers the background, including the message box and side panels. Higher reads more easily."
                                                Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
                                 <Slider x:Name="AppearanceOpacitySlider" Grid.Column="1" Width="200" VerticalAlignment="Center"

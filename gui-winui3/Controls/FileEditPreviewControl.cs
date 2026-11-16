@@ -117,7 +117,7 @@ namespace RuApp.Controls
                 CornerRadius = UiCornerRadius.Card,
                 BorderThickness = new Thickness(1),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                Background = GetThemeBrush("RuSidebarBrush", FallbackSurfaceBrush),
+                Background = GetThemeBrush("RuBackdropCodeBrush", FallbackSurfaceBrush),
                 BorderBrush = GetThemeBrush("RuLineBrush", FallbackLineBrush),
                 Child = scrollViewer
             };

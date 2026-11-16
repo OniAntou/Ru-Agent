@@ -12,7 +12,7 @@
 
     <Border x:Name="Panel"
             Visibility="Collapsed"
-            Background="{StaticResource RuSurfaceBrush}"
+            Background="{StaticResource RuBackdropSurfaceBrush}"
             BorderThickness="0"
             CornerRadius="{StaticResource AppCardCornerRadius}"
             Padding="16,14"
@@ -78,7 +78,7 @@
                                     MinHeight="40"
                                     Padding="0"
                                     AutomationProperties.Name="{Binding}"
-                                    Background="{StaticResource RuCanvasBrush}"
+                                    Background="{StaticResource RuBackdropInsetBrush}"
                                     Foreground="{StaticResource RuInkBrush}"
                                     BorderThickness="0"
                                     CornerRadius="{StaticResource AppInsetCornerRadius}">

@@ -377,8 +377,15 @@ like paths or URIs, and background names Ru did not generate fall back to defaul
   extension); the preferences store only that name, never the source path. Images are
   capped at 40 MB and videos at 300 MB. `AppearanceBackdrop` sits under the whole shell
   with a scrim of the theme canvas at the chosen panel opacity (30-100 %). Only the two
-  root canvases (`RuBackdropCanvasBrush` on the chat root, `RuBackdropSidebarBrush` on
-  the sidebar) become transparent; popups, menus and inputs keep their opaque brushes.
+  root canvases (`RuBackdropCanvasBrush` on the chat root and the docked side panel,
+  `RuBackdropSidebarBrush` on the sidebar) become transparent, and the same panel opacity
+  lowers the fills that sit on them: `RuBackdropSurfaceBrush` (composer, task shelf, side
+  summary card and tabs, message bubbles, terminal and changes cards, approval, question
+  and trust prompts, markdown code blocks and table headers), `RuBackdropInsetBrush` (the
+  canvas-toned insets inside those) and `RuBackdropCodeBrush` (file edit previews). The side panel keeps the opaque
+  canvas when it is fullscreen or overlays the chat in a narrow window, since it covers
+  the transcript there. Popups, menus and other cards keep their opaque brushes, and
+  without a background everything is opaque.
   A video plays muted and looped, pauses while the window is hidden, and holds still
   when Windows animations are off. A file that fails to decode clears the background.
 - **Colors.** Overrides are stored per base theme (`lightColors`, `darkColors`; Dark and

@@ -238,6 +238,14 @@
                  lowers only these two (AppearanceBackdrop draws the scrim). -->
             <SolidColorBrush x:Key="RuBackdropCanvasBrush" Color="{ThemeResource RuCanvasColor}" />
             <SolidColorBrush x:Key="RuBackdropSidebarBrush" Color="{ThemeResource RuSidebarColor}" />
+            <!-- The fills that sit on the chat canvas and the docked side panel: surfaces
+                 (composer, task shelf, side card, message bubbles, transcript cards, tabs),
+                 canvas-toned insets inside them, and code. Over a background the shell
+                 lowers all three to the panel opacity. They are their own brushes so
+                 flyouts, menus and popups on the stock brushes stay opaque. -->
+            <SolidColorBrush x:Key="RuBackdropSurfaceBrush" Color="{ThemeResource RuSurfaceColor}" />
+            <SolidColorBrush x:Key="RuBackdropInsetBrush" Color="{ThemeResource RuCanvasColor}" />
+            <SolidColorBrush x:Key="RuBackdropCodeBrush" Color="{ThemeResource RuSidebarColor}" />
             <SolidColorBrush x:Key="RuSurfaceBrush" Color="{ThemeResource RuSurfaceColor}" />
             <SolidColorBrush x:Key="RuInkBrush" Color="{ThemeResource RuInkColor}" />
             <SolidColorBrush x:Key="RuMutedBrush" Color="{ThemeResource RuMutedColor}" />

@@ -34,7 +34,7 @@
                                     <VisualState x:Name="Normal" />
                                     <VisualState x:Name="PointerOver">
                                         <VisualState.Setters>
-                                            <Setter Target="Root.Background" Value="{StaticResource RuSurfaceBrush}" />
+                                            <Setter Target="Root.Background" Value="{StaticResource RuBackdropSurfaceBrush}" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="Pressed">
@@ -157,7 +157,7 @@
                                     <VisualState x:Name="Normal" />
                                     <VisualState x:Name="PointerOver">
                                         <VisualState.Setters>
-                                            <Setter Target="Root.Background" Value="{StaticResource RuCanvasBrush}" />
+                                            <Setter Target="Root.Background" Value="{StaticResource RuBackdropInsetBrush}" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="Pressed">
@@ -194,7 +194,7 @@
                 Margin="0,16,16,0"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Top"
-                Background="{StaticResource RuSurfaceBrush}"
+                Background="{StaticResource RuBackdropSurfaceBrush}"
                 BorderBrush="{StaticResource RuLineBrush}"
                 BorderThickness="1"
                 CornerRadius="{StaticResource AppCardCornerRadius}"

@@ -116,7 +116,7 @@ namespace RuApp.Controls
             {
                 Width = CardWidth,
                 Padding = new Thickness(12, 10, 12, 10),
-                Background = Brush("RuSurfaceBrush", FallbackSurfaceBrush),
+                Background = Brush("RuBackdropSurfaceBrush", FallbackSurfaceBrush),
                 BorderBrush = Brush("RuLineBrush", FallbackLineBrush),
                 BorderThickness = new Thickness(1),
                 CornerRadius = UiCornerRadius.Card,

@@ -7,13 +7,13 @@
     <UserControl.Resources>
         <SolidColorBrush x:Key="SummaryOutlineBrush" Color="{ThemeResource RuLineColor}" Opacity="0.65" />
     </UserControl.Resources>
-    <Border Background="{StaticResource RuSurfaceBrush}"
+    <Border Background="{StaticResource RuBackdropSurfaceBrush}"
             BorderBrush="{StaticResource SummaryOutlineBrush}" BorderThickness="1"
             CornerRadius="{StaticResource AppCardCornerRadius}">
         <StackPanel>
             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Padding="12,8"
                   BorderBrush="{StaticResource SummaryOutlineBrush}" BorderThickness="0,0,0,1">
-                <Border Width="28" Height="28" CornerRadius="6" Background="{StaticResource RuCanvasBrush}"
+                <Border Width="28" Height="28" CornerRadius="6" Background="{StaticResource RuBackdropInsetBrush}"
                         VerticalAlignment="Center">
                     <FontIcon Glyph="&#xE943;" FontSize="14" Foreground="{StaticResource RuMutedBrush}"
                               AutomationProperties.AccessibilityView="Raw" />

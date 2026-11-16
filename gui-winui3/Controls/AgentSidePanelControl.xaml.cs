@@ -176,6 +176,10 @@ namespace RuApp.Controls
 
             bool push = showPanel && !fullscreen;
             PanelHost.HorizontalAlignment = push ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+            // Docked beside the chat column, the panel is canvas like the chat and lets
+            // the user's background show through. Fullscreen or as a narrow-window overlay
+            // it covers the transcript, so it keeps the opaque canvas.
+            PanelHost.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources[push ? "RuBackdropCanvasBrush" : "RuCanvasBrush"];
             if (push)
             {
                 PanelHost.Width = AgentSidePanelPolicy.ClampWidth(panelWidth);

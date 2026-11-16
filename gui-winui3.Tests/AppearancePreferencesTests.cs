@@ -233,4 +233,57 @@ public sealed class AppearancePreferencesTests : IDisposable
         Assert.Contains("x:Name=\"PanelAppearanceScrollViewer\"", settings, StringComparison.Ordinal);
         Assert.Contains("OnAppearanceResetClick", settings, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void One_panel_opacity_lowers_the_canvas_and_the_floating_surfaces_only_over_a_background()
+    {
+        var shell = GuiSource.Text("MainWindow.Appearance.cs");
+        Assert.Contains("double surfaceOpacity = showing ? preferences.PanelOpacity : 1;", shell, StringComparison.Ordinal);
+        Assert.Contains("foreach (var key in BackdropSurfaceBrushKeys) SetBrushOpacity(key, surfaceOpacity);", shell, StringComparison.Ordinal);
+        var app = GuiSource.Text("App.xaml");
+        foreach (var key in new[] { "RuBackdropSurfaceBrush", "RuBackdropInsetBrush", "RuBackdropCodeBrush" })
+        {
+            Assert.Contains($"\"{key}\"", shell, StringComparison.Ordinal);
+            Assert.Contains($"x:Key=\"{key}\"", app, StringComparison.Ordinal);
+        }
+
+        var chat = GuiSource.Xml("Views", "ChatView.xaml");
+        var card = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        foreach (var surface in new[]
+                 {
+                     GuiSource.Require(chat, "InputBorder"),
+                     GuiSource.Require(chat, "TodoPanel"),
+                     GuiSource.Require(chat, "UserTextBubble"),
+                     GuiSource.Require(card, "CardHost"),
+                 })
+        {
+            Assert.Equal("{StaticResource RuBackdropSurfaceBrush}", GuiSource.AttributeValue(surface, "Background"));
+        }
+
+        // Transcript cards, prompts, code blocks and the side panel's tabs follow too.
+        foreach (var (file, key) in new[]
+                 {
+                     (new[] { "Controls", "TerminalActivityCard.xaml" }, "RuBackdropSurfaceBrush"),
+                     (new[] { "Controls", "TurnChangesSummaryControl.xaml" }, "RuBackdropSurfaceBrush"),
+                     (new[] { "Controls", "AgentApprovalPanelControl.xaml" }, "RuBackdropSurfaceBrush"),
+                     (new[] { "Controls", "AgentQuestionPanelControl.xaml" }, "RuBackdropSurfaceBrush"),
+                     (new[] { "Controls", "WorkspaceTrustPanelControl.xaml" }, "RuBackdropSurfaceBrush"),
+                     (new[] { "Controls", "MarkdownBlock.RichBlocks.cs" }, "RuBackdropSurfaceBrush"),
+                     (new[] { "Controls", "FileEditPreviewControl.cs" }, "RuBackdropCodeBrush"),
+                     (new[] { "Controls", "AgentSidePanelControl.Tabs.cs" }, "RuBackdropSurfaceBrush"),
+                 })
+        {
+            var source = GuiSource.Text(file);
+            Assert.Contains(key, source, StringComparison.Ordinal);
+            // Fills only: RuSurfaceBrush still paints text on accent buttons, which stays opaque.
+            Assert.DoesNotContain("Background=\"{StaticResource RuSurfaceBrush}\"", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("Resources[\"RuSurfaceBrush\"]", source, StringComparison.Ordinal);
+        }
+
+        // The docked panel shows the background; fullscreen or overlaid on the chat it stays opaque.
+        Assert.Contains(
+            "push ? \"RuBackdropCanvasBrush\" : \"RuCanvasBrush\"",
+            GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs"),
+            StringComparison.Ordinal);
+    }
 }

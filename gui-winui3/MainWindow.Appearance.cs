@@ -14,6 +14,10 @@ public sealed partial class MainWindow
     /// <summary>The sidebar keeps some of its own tint over a background so the two areas stay distinct.</summary>
     private const double SidebarOpacityOverBackground = 0.55;
 
+    /// <summary>The fills on the chat and docked side panel that follow the panel opacity over a background.</summary>
+    private static readonly string[] BackdropSurfaceBrushKeys =
+        ["RuBackdropSurfaceBrush", "RuBackdropInsetBrush", "RuBackdropCodeBrush"];
+
     private static AppearanceState Appearance => AppearanceState.Instance;
 
     private AppearanceSidebarSide _appliedSidebarSide = AppearanceSidebarSide.Left;
@@ -62,6 +66,8 @@ public sealed partial class MainWindow
         bool showing = AppearanceBackdrop.IsShowing;
         SetBrushOpacity("RuBackdropCanvasBrush", showing ? 0 : 1);
         SetBrushOpacity("RuBackdropSidebarBrush", showing ? SidebarOpacityOverBackground : 1);
+        double surfaceOpacity = showing ? preferences.PanelOpacity : 1;
+        foreach (var key in BackdropSurfaceBrushKeys) SetBrushOpacity(key, surfaceOpacity);
         ApplySidebarSide(preferences.SidebarSide);
     }
 

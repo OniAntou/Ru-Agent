@@ -131,19 +131,23 @@ public sealed class TodoChecklistTests
     }
 
     [Fact]
-    public void The_shelf_is_a_tab_tucked_under_the_composer()
+    public void The_shelf_is_a_tab_standing_on_the_composer()
     {
         // Redesigned by owner request: a free-floating line with a hairline read as a
-        // stray underline. The shelf now shares the composer's surface, is rounded on
-        // top only, and tucks its open bottom edge under the composer.
+        // stray underline. The shelf shares the composer's surface brush, is rounded on
+        // top only, and rests its open bottom edge on the composer. It no longer tucks
+        // under it: with a background both are translucent and the overlap showed as a
+        // dark band.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var panel = GuiSource.Require(document, "TodoPanel");
+        var composer = GuiSource.Require(document, "InputBorder");
 
         Assert.Equal("Border", panel.Name.LocalName);
         Assert.Equal("1,1,1,0", GuiSource.AttributeValue(panel, "BorderThickness"));
         Assert.Equal("12,12,0,0", GuiSource.AttributeValue(panel, "CornerRadius"));
-        Assert.Contains("RuSurfaceBrush", GuiSource.AttributeValue(panel, "Background"), StringComparison.Ordinal);
-        Assert.StartsWith("14,0,14,-", GuiSource.AttributeValue(panel, "Margin"), StringComparison.Ordinal);
+        Assert.Equal(GuiSource.AttributeValue(composer, "Background"), GuiSource.AttributeValue(panel, "Background"));
+        Assert.Contains("RuBackdropSurfaceBrush", GuiSource.AttributeValue(panel, "Background"), StringComparison.Ordinal);
+        Assert.Equal("14,0,14,0", GuiSource.AttributeValue(panel, "Margin"));
 
         var toggle = GuiSource.Require(document, "TodoPanelToggle");
         foreach (var name in new[] { "TodoPanelMark", "TodoPanelHeader", "TodoPanelNext", "TodoPanelSegments", "TodoPanelBar", "TodoPanelCount", "TodoPanelToggleIcon" })

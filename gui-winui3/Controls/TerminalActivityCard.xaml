@@ -2,7 +2,7 @@
     x:Class="RuApp.Controls.TerminalActivityCard"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Border Background="{StaticResource RuSurfaceBrush}"
+    <Border Background="{StaticResource RuBackdropSurfaceBrush}"
             BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
             CornerRadius="{StaticResource AppCardCornerRadius}"
             HorizontalAlignment="Stretch" AutomationProperties.Name="Terminal command and output">

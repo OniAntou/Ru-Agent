@@ -90,7 +90,7 @@ namespace RuApp.Controls
                 });
                 var outer = new Border
                 {
-                    Background = (Brush?)Application.Current?.Resources["RuSurfaceBrush"],
+                    Background = (Brush?)Application.Current?.Resources["RuBackdropSurfaceBrush"],
                     BorderBrush = ThemeBrush("RuLineBrush", 203, 213, 225),
                     BorderThickness = new Thickness(1),
                     CornerRadius = Services.UiCornerRadius.Inset,
@@ -335,7 +335,7 @@ namespace RuApp.Controls
                         {
                             BorderBrush = line,
                             BorderThickness = new Thickness(0, 0, 0, rowIndex < rows.Count - 1 ? 1 : 0),
-                            Background = header ? (Brush?)Application.Current?.Resources["RuSurfaceBrush"] : null,
+                            Background = header ? (Brush?)Application.Current?.Resources["RuBackdropSurfaceBrush"] : null,
                             Padding = new Thickness(12, 9, 12, 9),
                             Child = text,
                         };
@@ -361,7 +361,7 @@ namespace RuApp.Controls
                 copy.HorizontalAlignment = HorizontalAlignment.Right;
                 copy.VerticalAlignment = VerticalAlignment.Top;
                 copy.Margin = new Thickness(0, 5, 6, 0);
-                copy.Background = (Brush?)Application.Current?.Resources["RuSurfaceBrush"];
+                copy.Background = (Brush?)Application.Current?.Resources["RuBackdropSurfaceBrush"];
 
                 var tableFrame = new Grid();
                 tableFrame.Children.Add(new ScrollViewer

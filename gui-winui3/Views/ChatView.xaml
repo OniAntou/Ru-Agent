@@ -108,7 +108,7 @@
                                             <!-- Document / Code File Pill Badge -->
                                             <Border Visibility="{x:Bind IsDocument, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                                     CornerRadius="{StaticResource AppControlCornerRadius}"
-                                                    Background="{StaticResource RuCanvasBrush}"
+                                                    Background="{StaticResource RuBackdropInsetBrush}"
                                                     BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
                                                     Padding="10,6">
                                                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -126,7 +126,7 @@
                         </ScrollViewer>
                         <Border x:Name="UserTextBubble" MaxWidth="{x:Bind ContentWidth, Mode=OneWay}"
                                 HorizontalAlignment="Right"
-                                Background="{StaticResource RuSurfaceBrush}"
+                                Background="{StaticResource RuBackdropSurfaceBrush}"
                                 BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
                                 CornerRadius="14,14,4,14" Padding="16,12"
                                 Visibility="{x:Bind HasText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
@@ -283,7 +283,7 @@
                 -->
                 <Border Grid.Row="1"
                         Visibility="{x:Bind ShowThinkingDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                        Background="{StaticResource RuCanvasBrush}"
+                        Background="{StaticResource RuBackdropInsetBrush}"
                         CornerRadius="{StaticResource AppCardCornerRadius}"
                         Padding="12,10"
                         Margin="0,6,0,0"
@@ -414,7 +414,7 @@
                             Click="OnMessageActionClick"
                             Margin="0,4,0,0"
                             HorizontalAlignment="Left"
-                            Background="{StaticResource RuSurfaceBrush}"
+                            Background="{StaticResource RuBackdropSurfaceBrush}"
                             BorderBrush="{StaticResource RuLineBrush}"
                             BorderThickness="1"
                             Foreground="{StaticResource RuInkBrush}"
@@ -872,9 +872,11 @@
               VerticalAlignment="Bottom"
               HorizontalAlignment="Stretch">
             <!--
-              The task shelf is a tab tucked under the composer: same surface, a hairline
-              on its open sides, rounded on top, and its bottom edge hidden beneath the
-              composer, so it reads as part of the input rather than a stray line above it.
+              The task shelf is a tab standing on the composer: same surface, a hairline
+              on its open sides, rounded on top, its open bottom edge resting on the
+              composer's top border, so it reads as part of the input rather than a stray
+              line above it. It ends at that border instead of tucking under it: over a
+              background both surfaces are translucent and an overlap shows as a dark band.
               Collapsed, it is one quiet line: a small mark, the current task, one segment
               per task and the count. Expanded, the header adds the remaining count and the
               next task above the scrolling list. One segment per task shows the plan's
@@ -884,9 +886,8 @@
             <Border x:Name="TodoPanel"
                     Grid.Row="2"
                     Visibility="Collapsed"
-                    Margin="14,0,14,-12"
-                    Padding="0,0,0,12"
-                    Background="{StaticResource RuSurfaceBrush}"
+                    Margin="14,0,14,0"
+                    Background="{StaticResource RuBackdropSurfaceBrush}"
                     BorderBrush="{StaticResource RuLineBrush}"
                     BorderThickness="1,1,1,0"
                     CornerRadius="12,12,0,0"
@@ -1065,7 +1066,7 @@
 
             <Border x:Name="InputBorder"
                     Grid.Row="3"
-                    Background="{StaticResource RuSurfaceBrush}"
+                    Background="{StaticResource RuBackdropSurfaceBrush}"
                     BorderBrush="{StaticResource RuLineBrush}"
                     BorderThickness="1"
                     CornerRadius="{StaticResource AppCardCornerRadius}"
@@ -1168,7 +1169,7 @@
                                         <!-- Image Thumbnail Box -->
                                          <Grid Visibility="{x:Bind IsImage, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Width="60" Height="60"
                                               ToolTipService.ToolTip="{x:Bind FormattedSize, Mode=OneWay}">
-                                             <Border CornerRadius="{StaticResource AppControlCornerRadius}" Background="{StaticResource RuCanvasBrush}"
+                                             <Border CornerRadius="{StaticResource AppControlCornerRadius}" Background="{StaticResource RuBackdropInsetBrush}"
                                                      BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1">
                                                  <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}"/>
                                              </Border>
@@ -1185,7 +1186,7 @@
                                         <!-- Document / Code File Pill Badge -->
                                          <Grid Visibility="{x:Bind IsDocument, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Height="34">
                                             <Border CornerRadius="{StaticResource AppControlCornerRadius}"
-                                                    Background="{StaticResource RuCanvasBrush}"
+                                                    Background="{StaticResource RuBackdropInsetBrush}"
                                                     BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
                                                     Padding="8,4,4,4">
                                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

@@ -63,8 +63,8 @@ public sealed partial class ChatView
 
         ApplyTodoListState(listOpen);
 
-        // An approval or question card floats over the composer and the shelf; the shelf
-        // yields while one is up instead of showing its header above the card's edge.
+        // An approval or question card takes the prompt slot above the composer; the
+        // shelf yields while one is up so the two surfaces do not stack.
         UiMotion.SetVisible(TodoPanel, !IsPromptCardShown);
     }
 

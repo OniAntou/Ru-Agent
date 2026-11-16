@@ -145,6 +145,28 @@ public sealed class AgentApprovalUiContractTests
     }
 
     [Fact]
+    public void The_prompt_card_is_bounded_so_it_cannot_grow_the_input_block()
+    {
+        // The card now sits above the composer inside the input column, so its
+        // height is layout the window has to afford: a long summary, command or
+        // scope hint must not push the composer down or the transcript away.
+        var named = GuiSource.NamedElements(GuiSource.Xml("Controls", "AgentApprovalPanelControl.xaml"));
+
+        Assert.Equal(3, GuiSource.IntAttribute(named["SummaryText"], "MaxLines"));
+        Assert.Equal(2, GuiSource.IntAttribute(named["SessionScopeHint"], "MaxLines"));
+
+        var commandScroll = named["CommandContainer"]
+            .Descendants()
+            .Single(element => element.Name.LocalName == "ScrollViewer");
+        Assert.InRange(GuiSource.IntAttribute(commandScroll, "MaxHeight"), 1, 120);
+
+        // The card is the composer column's width, not the window's.
+        var chat = GuiSource.Xml("Views", "ChatView.xaml");
+        var panel = GuiSource.Require(chat, "ApprovalPanel");
+        Assert.True(GuiSource.IsDescendantOf(panel, GuiSource.Require(chat, "InputContainer")));
+    }
+
+    [Fact]
     public void The_approval_decisions_name_their_exact_scope()
     {
         // Each decision button says what its command actually does: a session-remembered

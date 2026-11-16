@@ -845,23 +845,6 @@
                                         Grid.Row="1"
                                         Grid.RowSpan="2" />
 
-        <!-- Approval overlay: declared before the input (XAML parse fails when
-          it trails the composer) and raised above it with a ZIndex, so a
-          pending decision floats over the todo panel and the input instead
-          of shoving them upward. The question card shares the host: a run is
-          either waiting for approval or waiting for an answer, never both. -->
-        <Grid x:Name="ApprovalHostGrid"
-              Grid.Row="2"
-              VerticalAlignment="Bottom"
-              HorizontalAlignment="Stretch"
-
-              Margin="16,0,16,24"
-              Canvas.ZIndex="20">
-            <controls:AgentApprovalPanelControl x:Name="ApprovalPanel" />
-            <controls:AgentQuestionPanelControl x:Name="QuestionPanel" />
-            <controls:WorkspaceTrustPanelControl x:Name="TrustPanel" />
-        </Grid>
-
             <Grid x:Name="InputContainer"
               Grid.Row="2"
               RowDefinitions="Auto,Auto,Auto,Auto"
@@ -871,6 +854,22 @@
               Padding="0,8,0,24"
               VerticalAlignment="Bottom"
               HorizontalAlignment="Stretch">
+            <!--
+              Prompt slot: the approval, question and trust cards sit above the
+              composer instead of floating over it. The card is inside the input
+              column, so it follows the composer's conversation width and the
+              side panel's reserve; a translucent card over the composer used to
+              show the input row and the Send/Stop button through it. A run waits
+              on one prompt at a time, so the three cards share this row.
+            -->
+            <Grid x:Name="ApprovalHostGrid"
+                  Grid.Row="0"
+                  HorizontalAlignment="Stretch"
+                  Margin="0,0,0,2">
+                <controls:AgentApprovalPanelControl x:Name="ApprovalPanel" />
+                <controls:AgentQuestionPanelControl x:Name="QuestionPanel" />
+                <controls:WorkspaceTrustPanelControl x:Name="TrustPanel" />
+            </Grid>
             <!--
               The task shelf is a tab standing on the composer: same surface, a hairline
               on its open sides, rounded on top, its open bottom edge resting on the

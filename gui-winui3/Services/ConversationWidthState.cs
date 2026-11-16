@@ -50,7 +50,7 @@ public sealed class ConversationWidthState : INotifyPropertyChanged
     /// <summary>The readable column, bounded by the window and the hard 920px cap.</summary>
     public double HandleLayerWidth => ContentWidth + HandleOutset * 2;
 
-    /// <summary>The composer and approval overlay follow the transcript width.</summary>
+    /// <summary>The composer, and the prompt slot above it, follow the transcript width.</summary>
     public double ComposerWidth => ContentWidth + ComposerGutter;
 
     public double ViewportWidth => _viewportWidth;

@@ -198,8 +198,8 @@ when Windows animations are off.
 ## Workspace trust card
 
 The first run in a folder the user chose waits for explicit workspace trust. The prompt is a
-card in the chat flow (`WorkspaceTrustPanelControl`), in the same floating slot as the approval
-and question cards, not a modal dialog. It shows the policy copy, the folder in a mono inset and,
+card above the composer (`WorkspaceTrustPanelControl`), in the prompt slot shared with the
+approval and question cards, not a modal dialog. It shows the policy copy, the folder in a mono inset and,
 for a drive root or the user profile, a scope warning. Focus lands on Cancel, Escape cancels, and
 nothing approves by default; Approve and Cancel are the only paths to `TrustAsync`, and the decision
 stays the Host's. Because the card does not block the window it can go away unanswered: a session
@@ -208,6 +208,21 @@ with no decision (`DismissWorkspaceTrustCard`), the run stays parked, and the pr
 session is shown again. A declined send still returns to the composer. Chat Escape does not stop
 the run while the card is showing, and the native preview hides under it like under approvals.
 A Host-confirmed scratch workspace is still approved silently and never shows the card.
+
+## Prompt slot above the composer
+
+The approval, question and trust cards share one slot in the input column, in its
+free first row: above the composer and its status line, not over them. A card used
+to float over the composer from the root grid; when the prompt fills became
+translucent over a background, the composer's text box, placeholder and Send/Stop
+button showed through the card and the card's scope hint mixed with the composer
+footer. The slot is inside `InputContainer`, so it inherits the composer's
+conversation width and the side panel's reserved margin, and the composer stays
+whole underneath. The cards are mutually exclusive because a run waits on one
+prompt at a time. Showing a card grows the input block and shrinks the transcript
+row instead of moving the composer. The approval card is bounded so a long prompt
+cannot take the window: the summary caps at three lines, the command block scrolls
+past 96 px and the scope hint at two lines.
 
 ## Session usage panel
 
@@ -643,7 +658,7 @@ drag. The width is session-local: 720 px by default, a 640 px floor and a
 920 px hard cap. Shrinking the window clamps the rendered width; growing it
 restores the reader's preferred width up to the cap. Restarting the app returns
 to 720 px. The user bubble, attachments and assistant column all bind to the
-same width; the composer, approval overlay and welcome hero follow it with a
+same width; the composer, the prompt cards above it and the welcome hero follow it with a
 16 px gutter on each side.
 `TurnProcessDisclosure` replaces the plain activity summary for segmented turns:
 its header reads `Working…`, `Worked for 1m 5s`, `Took 1m 5s · failed` or
@@ -1109,7 +1124,7 @@ admission. A Focus preview action enters the installed document control; native
 images/PDFs have a Fit action in addition to page navigation and scroll/zoom.
 An owned borderless native host tracks the preview rectangle and hides for
 inactive tabs, closed surfaces, other foreground apps, XAML menus/dialogs and
-the main approval/question overlay. It has its own DWM surface because
+the prompt slot above the composer. It has its own DWM surface because
 PowerPoint's DirectComposition rendering does not paint correctly in a child
 of WinUI's no-redirection HWND. A cached 100 ms visibility observer runs only
 while an Office surface is selected; it restores the preview after popup closure

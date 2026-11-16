@@ -13,11 +13,11 @@
             BorderBrush="{StaticResource RuLineBrush}"
             BorderThickness="1"
             CornerRadius="{StaticResource AppCardCornerRadius}"
-            Padding="14,12"
+            Padding="12,10"
             Margin="0,0,0,4"
             KeyDown="OnPanelKeyDown"
             AutomationProperties.AutomationId="AgentApprovalPanel">
-        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xE7BA;" FontSize="13" Foreground="{StaticResource RuWarningBrush}" VerticalAlignment="Center" />
                 <TextBlock Text="PERMISSION REQUIRED"
@@ -31,6 +31,7 @@
             <TextBlock x:Name="SummaryText"
                        Grid.Row="1"
                        TextWrapping="Wrap"
+                       MaxLines="3"
                        FontFamily="{StaticResource RuUiFontFamily}"
                        FontSize="13"
                        LineHeight="18"
@@ -44,7 +45,7 @@
                     BorderBrush="{StaticResource RuLineBrush}"
                     BorderThickness="1"
                     CornerRadius="{StaticResource AppInsetCornerRadius}"
-                    Padding="10,8">
+                    Padding="8,6">
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                     <TextBlock Grid.Column="0"
                                Text="$"
@@ -54,7 +55,7 @@
                                Foreground="{StaticResource RuAccentBrush}"
                                VerticalAlignment="Top" />
                     <ScrollViewer Grid.Column="1"
-                                  MaxHeight="120"
+                                  MaxHeight="96"
                                   HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto">
                         <TextBlock x:Name="CommandText"
@@ -69,7 +70,7 @@
                     </ScrollViewer>
                 </Grid>
             </Border>
-            <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
+            <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0">
                 <Button x:Name="ApproveButton"
                         Click="OnApproveClick"
                         AutomationProperties.AutomationId="AgentApproveButton"
@@ -78,8 +79,8 @@
                         Foreground="{StaticResource RuSurfaceBrush}"
                         BorderThickness="0"
                         CornerRadius="{StaticResource AppControlCornerRadius}"
-                        Padding="14,6"
-                        Height="32">
+                        Padding="12,5"
+                        Height="30">
                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                         <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{StaticResource RuSurfaceBrush}" />
                         <TextBlock x:Name="ApproveButtonLabel"
@@ -101,8 +102,8 @@
                          BorderBrush="{StaticResource RuLineBrush}"
                          BorderThickness="1"
                          CornerRadius="{StaticResource AppControlCornerRadius}"
-                         Padding="14,6"
-                         Height="32">
+                         Padding="12,5"
+                         Height="30">
                      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                          <FontIcon Glyph="&#xE73E;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
                          <TextBlock x:Name="RememberButtonLabel"
@@ -123,8 +124,8 @@
                         BorderBrush="{StaticResource RuLineBrush}"
                         BorderThickness="1"
                         CornerRadius="{StaticResource AppControlCornerRadius}"
-                        Padding="14,6"
-                        Height="32">
+                        Padding="12,5"
+                        Height="30">
                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                         <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
                         <TextBlock Text="Deny"
@@ -141,8 +142,10 @@
                        Visibility="Collapsed"
                        Text="Opens only this path's folder (not its parents) for reading and writing, for this chat session."
                        TextWrapping="Wrap"
+                       MaxLines="2"
                        FontFamily="{StaticResource RuUiFontFamily}"
-                       FontSize="11"
+                       FontSize="10.5"
+                       LineHeight="14"
                        Foreground="{StaticResource RuMutedBrush}"
                        AutomationProperties.AutomationId="AgentApprovalScopeHint" />
         </Grid>

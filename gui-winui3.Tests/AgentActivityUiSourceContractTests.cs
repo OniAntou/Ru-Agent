@@ -334,24 +334,28 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
-    public void The_approval_panel_floats_above_the_composer_instead_of_pushing_it()
+    public void The_approval_panel_sits_above_the_composer_instead_of_overlapping_it()
     {
-        // The approval card overlays the composer: showing it must not shove
-        // the todo panel and the input upward. The wrapper sits in the root
-        // grid (declared before the input, raised with a ZIndex); the panel
-        // itself stays out of the input container's flow.
+        // Owner request: the prompt sits above the composer instead of floating
+        // over it. A translucent card over the input row showed the composer's
+        // text box and Send/Stop button through the card. The slot is inside the
+        // input container, in its free first row, so it follows the composer's
+        // conversation width and the side panel's reserve.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var panel = GuiSource.Require(document, "ApprovalPanel");
-        var root = GuiSource.Require(document, "RootGrid");
+        var host = GuiSource.Require(document, "ApprovalHostGrid");
         var inputContainer = GuiSource.Require(document, "InputContainer");
+        var composer = GuiSource.Require(document, "InputBorder");
 
-        Assert.False(GuiSource.IsDescendantOf(panel, inputContainer));
-
-        var wrapper = Assert.IsType<System.Xml.Linq.XElement>(panel.Parent);
-        Assert.Equal(root, wrapper.Parent);
-        Assert.Equal(GuiSource.AttributeValue(inputContainer, "Row"), GuiSource.AttributeValue(wrapper, "Row"));
-        Assert.Equal("Bottom", GuiSource.AttributeValue(wrapper, "VerticalAlignment"));
-        Assert.Equal("20", GuiSource.AttributeValue(wrapper, "ZIndex"));
+        Assert.True(GuiSource.IsDescendantOf(panel, inputContainer));
+        Assert.Equal(inputContainer, host.Parent);
+        Assert.Equal(0, GuiSource.IntAttribute(host, "Row"));
+        Assert.Equal(3, GuiSource.IntAttribute(composer, "Row"));
+        Assert.True(GuiSource.IntAttribute(host, "Row") < GuiSource.IntAttribute(composer, "Row"));
+        Assert.Null(GuiSource.AttributeValue(host, "ZIndex"));
+        // The side panel no longer moves the slot itself: the input container
+        // already carries the reserved right margin.
+        Assert.DoesNotContain("ApprovalHostGrid.Margin", GuiSource.ViewText("ChatView"), StringComparison.Ordinal);
     }
 
     [Fact]

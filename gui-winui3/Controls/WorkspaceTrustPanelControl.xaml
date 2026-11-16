@@ -8,10 +8,11 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
 
     <!--
-      The workspace trust gate, in the chat flow instead of a modal dialog: the same
-      floating slot as the approval and question cards. It does not block the window,
-      so the owner resolves it whenever the run stops needing trust. Focus lands on
-      Cancel, Escape cancels, and nothing here approves by default.
+      The workspace trust gate, in the chat flow instead of a modal dialog: the
+      prompt slot above the composer, shared with the approval and question cards.
+      It does not block the window, so the owner resolves it whenever the run stops
+      needing trust. Focus lands on Cancel, Escape cancels, and nothing here approves
+      by default.
     -->
     <Border x:Name="Panel"
             Visibility="Collapsed"

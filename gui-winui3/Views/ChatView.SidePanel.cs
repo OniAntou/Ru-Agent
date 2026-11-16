@@ -191,10 +191,6 @@ public sealed partial class ChatView
         _sidePanelReserveWidth = isVisible
             ? ReserveFor(mode)
             : SidePanel.Visibility == Visibility.Visible ? ReserveFor(SidePanel.CurrentMode) : 0;
-        if (ApprovalHostGrid is not null)
-        {
-            ApprovalHostGrid.Margin = new Thickness(16, 0, 16 + _sidePanelReserveWidth, 24);
-        }
 
         bool canToggle = canShow || _changesPanelExplicitlyOpened;
         MainWindow.Instance?.UpdateSidePanelToggleState(canToggle, mode == AgentSidePanelMode.Hidden);

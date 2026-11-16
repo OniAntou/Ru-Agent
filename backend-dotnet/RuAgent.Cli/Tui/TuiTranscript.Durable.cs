@@ -149,17 +149,22 @@ public sealed partial class TuiTranscript
         || string.Equals(status, "reconciliation_required", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The one parked-run line: the human reason with its safe code plus both resume
-    /// paths. Static so the session-open adoption prints the exact same copy a live
+    /// A park now only appears when replaying a run an older build parked: Continue was
+    /// removed, so the next step is a new message, which starts a fresh run.
+    /// </summary>
+    private const string NewMessageAdvice = "send a new message to keep going";
+
+    /// <summary>
+    /// The one parked-run line: the human reason with its safe code plus the next step. Static so the session-open adoption prints the exact same copy a live
     /// park does instead of a near-duplicate that only looks right.
     /// </summary>
     public static string FormatParkedNotice(string runId, string? summary = null, bool repeated = false)
     {
         var reason = ParkReasonCode(summary);
         if (repeated)
-            return $"run parked again · {ParkLabel(reason) ?? "reason pending"} · the run is still blocked after Continue · cancel the run from CLI to abandon";
+            return $"run parked again · {ParkLabel(reason) ?? "reason pending"} · {NewMessageAdvice}";
         return reason is null
-            ? $"run parked · resume with Continue (or 'ru agent continue {runId}') · cancel the run from CLI to abandon"
+            ? $"run parked · {NewMessageAdvice}"
             : $"run parked · {ParkLabel(reason)} · {ParkAction(runId, reason)}";
     }
 
@@ -183,13 +188,13 @@ public sealed partial class TuiTranscript
     {
         if (repeated)
         {
-            return "the run is still blocked after Continue · cancel the run from CLI to abandon";
+            return NewMessageAdvice;
         }
 
         var advice = AgentParkReasonCopy.TryGet(reason, out var copy) && copy is not null
             ? copy.Advice + " · "
             : string.Empty;
-        return advice + $"resume with Continue (or 'ru agent continue {runId}') · cancel the run from CLI to abandon";
+        return advice + NewMessageAdvice;
     }
 
     /// <summary>
@@ -219,7 +224,7 @@ public sealed partial class TuiTranscript
         {
             _lastParkReason = reason;
             Notice(reason is null && previousReason is not null
-                ? $"run parked again · reason pending · cancel the run from CLI to abandon"
+                ? $"run parked again · reason pending · {NewMessageAdvice}"
                 : FormatParkedNotice(envelope.RunId, reason, _repeatedPark), TuiToken.Warn);
         }
         else if (reason is not null && reason != _lastParkReason)
@@ -232,7 +237,7 @@ public sealed partial class TuiTranscript
             _parkReasons[envelope.RunId] = reason;
         }
         _status.SetState(TuiRunState.Paused);
-        _status.SetDetail(_lastParkReason is null ? "waiting to continue"
+        _status.SetDetail(_lastParkReason is null ? "parked"
             : ParkLabel(_lastParkReason) + " · " + ParkAction(envelope.RunId, _lastParkReason, _repeatedPark));
     }
 

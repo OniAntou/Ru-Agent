@@ -174,7 +174,6 @@ public sealed class AgentRunPanelViewModelTests
                 HasPendingApproval: approval is not null,
                 HasPendingInput: question is not null,
                 NeedsWorkspaceTrust: needsTrust,
-                CanContinue: false,
                 KeepTerminalFailureVisible: false,
                 RunPending: false,
                 StatusText: string.Empty,

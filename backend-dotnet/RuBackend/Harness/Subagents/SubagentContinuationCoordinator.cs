@@ -22,7 +22,7 @@ public sealed class SubagentContinuationCoordinator(SqliteSubagentStore agents, 
                 try { await factory.ContinueAsync(candidate.RootRunId, candidate.AgentId, ct).ConfigureAwait(false); }
                 catch (HarnessStoreException error)
                 {
-                    // Exhaustion waits for the parent's explicit Continue. Other
+                    // Exhaustion waits for the parent's next action. Other
                     // named failures belong to the message, so a bad child cannot
                     // block peers or retry a permanent error on every loop tick.
                     if (error.Code is not ("subagent_family_budget_exhausted" or "subagent_root_inactive" or "subagent_result_pending"))

@@ -58,7 +58,6 @@ public sealed class PartialWebEvidenceGuardTests
     [InlineData("write", "1.0.0", ToolExecutionOutcome.Failed, "web_content_empty", false, true, true)]
     [InlineData("web_fetch", "2.0.0", ToolExecutionOutcome.Failed, "web_content_empty", false, true, true)]
     [InlineData("web_fetch", "1.0.0", ToolExecutionOutcome.Failed, "rule_denied", false, true, true)]
-    [InlineData("web_fetch", "1.0.0", ToolExecutionOutcome.Failed, "approval_denied", false, true, true)]
     [InlineData("web_fetch", "1.0.0", ToolExecutionOutcome.Failed, "web_uri_not_allowed", false, true, true)]
     [InlineData("web_fetch", "1.0.0", ToolExecutionOutcome.Failed, "web_private_host", false, true, true)]
     [InlineData("web_fetch", "1.0.0", ToolExecutionOutcome.Failed, "web_offset_invalid", false, true, true)]

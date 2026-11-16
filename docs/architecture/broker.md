@@ -92,11 +92,9 @@ reconciliation surfaces from Phase 3:
     execution ordering, and explicit rules deny before ask before allow.
   - `reconcile` is active on the Agent v2 headless path (Phase 3).
   - Different sessions always share a workspace;
-  - a non-terminal parked run (`waiting_user`, `reconciliation_required`) retains its session
-    ownership until the client continues or reconciles it, without blocking other sessions;
-  - after restart the startup recovery sweep re-registers `ReconciliationRequired` runtime roots so
-    a later Continue actually resumes the run (the drive loop starts `Running` runs and rehydrates
-    `WaitingApproval` ones).
+  - a run waiting on the user (an approval or an `ask_user` answer) retains its session ownership
+    until it is answered, without blocking other sessions; there is no Continue gate (ADR 0048),
+    and startup recovery fails a run an older build parked for Continue with its park code.
   - Exact consecutive tool calls terminate as `repeated_tool_call` before another Broker dispatch.
   - Ordinary assistant prose immediately following any failed or unverified tool receipt is
     suppressed from conversation outbox, recorded internally for audit as an `InternalOnly` payload,
@@ -119,9 +117,8 @@ reconciliation surfaces from Phase 3:
     (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is answered the
     same way up to 4 notes before failing with the original code, while a provider-transient code
     whose bounded retries were spent (`provider_rate_limited`, `provider_timeout`,
-    `provider_server_error`, `provider_transport_error`) parks the run in `waiting_user` with a
-    `ContinueRequested` naming the provider code so an explicit Continue retries a fresh step, and
-    the remaining provider/prompt/history/image codes still fail immediately.
+    `provider_server_error`, `provider_transport_error`) fails the run with that provider code,
+    and the remaining provider/prompt/history/image codes still fail immediately.
   - Subsequent different recovery tool calls remain allowed.
 - Broker v2:
   - immutable `PolicySnapshot` and `BrokerRunLease` bind the run, session, canonical workspace
@@ -444,10 +441,10 @@ bounded, named
 code, never a retry on a different backend. Bounded self-correction is not
 substitution: a `[HARNESS RECOVERY]` note is durable feedback returned to the
 same model, provider, and tool, and spent bounds fall back to the original
-fail-closed code; an exhausted transient provider parks the run in
-`WaitingUser` for an explicit Continue that retries the same provider. The explicit
-account-limit code, `provider_quota_exhausted`, parks without automatic retries;
-the operator must restore credits or limits before Continue. HTTP 429 without
+fail-closed code; an exhausted transient provider fails the run with the
+provider's code. The explicit account-limit code, `provider_quota_exhausted`, fails
+without automatic retries; the operator restores credits or limits and sends a new
+message. HTTP 429 without
 an explicit quota code remains a transient throttle. The substitution exception is that
 `web_search` races its configured engine against a fixed set of public HTML
 engines inside the same tool decision, every request still passing `WebPolicy`.
@@ -600,8 +597,8 @@ launches from a workspace cwd; external cwd and explicit ask rules prompt.
 filesystem or network confinement, including outside the workspace. The terminal tool schema has no sandbox selector
 and rejects obsolete sandbox arguments. Structured protected-path denial does
 not confine terminal commands, and clean/dirty repository state does not change
-a decision. An ambiguous mutation outcome pauses for inspection until explicit
-Continue. API keys remain in credential storage and are redacted from
+a decision. An ambiguous mutation outcome reaches the model as a failed result
+with `sideEffectsPossible`, which it inspects before acting again. API keys remain in credential storage and are redacted from
 diagnostics.
 
 Shell launches run `powershell.exe -NoProfile -NonInteractive -Command <script>`.

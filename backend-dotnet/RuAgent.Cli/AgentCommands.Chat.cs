@@ -109,7 +109,7 @@ public sealed partial class AgentCommands
         markBusy?.Invoke(blockingRunId, status);
         await writeLineAsync(_err, Tui.TuiPalette.Err($"workspace_busy: run {blockingRunId} ({status}) still owns this session.")).ConfigureAwait(false);
         var hint = IsParkedRunStatus(status)
-            ? $"  answer it with 'ru agent attach {blockingRunId}', continue it with 'ru agent continue {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'."
+            ? $"  answer it with 'ru agent attach {blockingRunId}' or release it with 'ru agent cancel {blockingRunId}'."
             : $"  answer it with 'ru agent attach {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'.";
         await writeLineAsync(_err, Tui.TuiPalette.DimPaint(hint)).ConfigureAwait(false);
         await _err.FlushAsync().ConfigureAwait(false);

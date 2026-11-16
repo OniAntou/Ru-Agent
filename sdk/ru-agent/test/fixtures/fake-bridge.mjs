@@ -16,7 +16,6 @@ const METHODS = [
   "run.trust",
   "run.approve",
   "run.cancel",
-  "run.continue",
   "run.status",
   "run.command",
   "run.reconcile",

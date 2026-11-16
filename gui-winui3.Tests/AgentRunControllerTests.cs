@@ -256,22 +256,6 @@ public sealed partial class AgentRunControllerTests
             TransientSequence: null,
             TransientData: null);
 
-    private static AgentEventModel ContinueRequestedEvent(long seq, string status, string summary = "continue") =>
-        new(
-            EventId: "e" + seq,
-            RunId: RunId,
-            SessionId: "sess_1",
-            EventType: "continue.requested",
-            OccurredAt: "2026",
-            Status: status,
-            SafeSummary: summary,
-            PayloadRef: null,
-            ApprovalId: null,
-            Sequence: seq,
-            IsTransient: false,
-            TransientSequence: null,
-            TransientData: null);
-
     private static AgentEventModel SafeEvent(long sequence, string eventType, string? payloadRef = null) =>
         AgentEventModel.FromSseFrame(new SseFrame(
             sequence,
@@ -308,7 +292,6 @@ public sealed partial class AgentRunControllerTests
         public List<AgentAssistantDeltaModel> AssistantDeltaStream { get; } = new();
         public List<AgentToolOutputModel> ToolOutputStream { get; } = new();
         public bool CancelCalled;
-        public bool ContinueCalled;
         public bool TrustCalled;
         public List<(string RunId, TrustAgentRunRequest Request)> TrustRequests { get; } = new();
         public bool PresetCalled;
@@ -436,12 +419,6 @@ public sealed partial class AgentRunControllerTests
         {
             CancelCalled = true;
             CancelledRunIds.Add(runId);
-            return Task.CompletedTask;
-        }
-
-        public Task ContinueAsync(string runId, CancellationToken ct = default)
-        {
-            ContinueCalled = true;
             return Task.CompletedTask;
         }
 
@@ -1119,18 +1096,6 @@ public sealed partial class AgentRunControllerTests
     }
 
     [Fact]
-    public async Task Continue_calls_client()
-    {
-        var fake = new FakeClient { Run = MakeRun() };
-        var controller = new AgentRunController(fake);
-        await controller.CreateAndRunAsync(new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-1"));
-
-        await controller.ContinueAsync();
-
-        Assert.True(fake.ContinueCalled);
-    }
-
-    [Fact]
     public async Task TrustAsync_approve_sends_the_pending_request_once()
     {
         var fake = new FakeClient { Run = MakeWorkspaceTrustRun() };
@@ -1641,147 +1606,11 @@ public sealed partial class AgentRunControllerTests
     }
 
     [Fact]
-    public async Task Continue_stays_available_when_the_run_parks_for_the_repetition_guard()
+    public async Task Adopt_sets_status_for_waiting_user()
     {
-        var fake = new FakeClient
-        {
-            Run = new AgentRunModel(
-                RunId,
-                "sess_1",
-                "ws_1",
-                "waiting_user",
-                "waiting_user",
-                "standard",
-                2026,
-                "2026",
-                1,
-                5,
-                "2026",
-                "2026",
-                null,
-                null,
-                null,
-                null),
-        };
-        var controller = new AgentRunController(fake);
-
-        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
-            "sess_1", "C:\\work", "do it", "standard", null, "idem-waiting-user"));
-
-        Assert.True(controller.CanContinue);
-        Assert.Contains("Waiting to continue", controller.StatusText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Continue_is_not_offered_for_retired_reconciliation_status()
-    {
-        var fake = new FakeClient
-        {
-            Run = new AgentRunModel(
-                RunId,
-                "sess_1",
-                "ws_1",
-                "reconciliation_required",
-                null,
-                "standard",
-                2026,
-                "2026",
-                1,
-                5,
-                "2026",
-                "2026",
-                null,
-                null,
-                null,
-                null),
-        };
-        var controller = new AgentRunController(fake);
-
-        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
-            "sess_1", "C:\\work", "do it", "standard", null, "idem-reconciliation"));
-
-        Assert.False(controller.CanContinue);
-    }
-
-    [Fact]
-    public async Task Continue_requested_with_running_status_does_not_park_the_run()
-    {
-        // The backend commits the continue twice: the park frame (waiting_user) and
-        // the "continued" commit that flips the run back to running. Keying every
-        // frame to waiting_user left a live run looking parked until the monitor
-        // refreshed -- Continue earned a 409 and a session switch detached a run
-        // nobody followed. The refresh is forced to fail so the assertions read the
-        // event handling, not the follow-up status read.
-        var run = MakeRunWith("running", lastSequence: 3);
-        var fake = new FakeClient { Run = run, ThrowOnGetRun = true };
-        fake.Stream.Add(ContinueRequestedEvent(1, "waiting_user"));
-        fake.Stream.Add(ContinueRequestedEvent(2, "running"));
-        var controller = new AgentRunController(fake);
-
-        await controller.AdoptRunAsync(run);
-
-        await WaitForAdoptSettleAsync(controller);
-        Assert.False(controller.CanContinue);
-        Assert.False(controller.IsCurrentRunParked);
-        Assert.True(controller.CanCancel);
-    }
-
-    [Fact]
-    public async Task Continue_requested_with_waiting_user_status_parks_the_run()
-    {
-        var run = MakeRunWith("running", lastSequence: 3);
-        var fake = new FakeClient { Run = run, ThrowOnGetRun = true };
-        fake.Stream.Add(ContinueRequestedEvent(1, "waiting_user"));
-        var controller = new AgentRunController(fake);
-
-        await controller.AdoptRunAsync(run);
-
-        await WaitForAdoptSettleAsync(controller);
-        Assert.True(controller.CanContinue);
-        Assert.True(controller.IsCurrentRunParked);
-    }
-
-    [Fact]
-    public async Task Network_park_says_the_connection_failed_instead_of_showing_the_code()
-    {
-        // The park reason is a machine token. The status line is the one place a
-        // desktop user reads why the run stopped, so it must name the failure.
-        var run = MakeRunWith("running", lastSequence: 3);
-        var fake = new FakeClient { Run = run, ThrowOnGetRun = true };
-        fake.Stream.Add(ContinueRequestedEvent(1, "waiting_user", "provider_transport_error"));
-        var controller = new AgentRunController(fake);
-        var seenStatuses = new List<string?>();
-        controller.PropertyChanged += (_, e) =>
-        {
-            if (string.Equals(e.PropertyName, nameof(AgentRunController.StatusText), StringComparison.Ordinal))
-            {
-                seenStatuses.Add(controller.StatusText);
-            }
-        };
-
-        await controller.AdoptRunAsync(run);
-
-        await WaitForAdoptSettleAsync(controller);
-        Assert.True(controller.CanContinue);
-        // The park frame set the sentence directly; the raw code never reached
-        // the status line, not even as a transient value.
-        Assert.Contains(
-            seenStatuses,
-            status => status is not null
-                && status.Contains("Network connection to the provider failed", StringComparison.Ordinal)
-                && status.Contains("Check your network", StringComparison.Ordinal));
-        Assert.DoesNotContain(
-            seenStatuses,
-            status => status is not null
-                && status.Contains("provider_transport_error", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task Adopt_sets_status_and_continue_for_waiting_user()
-    {
-        // After a host restart the frame that parked the run is already behind its
-        // cursor, so the durable status is the only signal that Continue is the way
-        // out. The run carries no history wait kind, like the wire response.
+        // After a host restart the frame that started the wait is already behind its
+        // cursor, so the durable status is the only signal. The run carries no
+        // history wait kind, like the wire response.
         var run = MakeRunWith("waiting_user", lastSequence: 5);
         var fake = new FakeClient { Run = run };
         var controller = new AgentRunController(fake);
@@ -1789,8 +1618,8 @@ public sealed partial class AgentRunControllerTests
         await controller.AdoptRunAsync(run);
 
         Assert.Equal(RunId, controller.CurrentRun?.RunId);
-        Assert.True(controller.CanContinue);
-        Assert.Contains("Waiting to continue", controller.StatusText, StringComparison.Ordinal);
+        Assert.True(controller.IsCurrentRunParked);
+        Assert.Contains("Waiting for your answer", controller.StatusText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1852,18 +1681,6 @@ public sealed partial class AgentRunControllerTests
         Assert.True(controller.CanCancel);
         Assert.False(controller.IsBusy);
         Assert.Contains("Stop", controller.StatusText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Adopt_reconciliation_does_not_offer_continue()
-    {
-        var run = MakeRunWith("reconciliation_required", lastSequence: 9);
-        var fake = new FakeClient { Run = run };
-        var controller = new AgentRunController(fake);
-
-        await controller.AdoptRunAsync(run);
-
-        Assert.False(controller.CanContinue);
     }
 
     [Fact]
@@ -1941,22 +1758,22 @@ public sealed partial class AgentRunControllerTests
         Assert.Equal(RunId, fake.SubscribeRunId);
         Assert.Null(controller.CurrentRun);
         Assert.False(controller.IsBusy);
-        Assert.False(controller.CanContinue);
+        Assert.False(controller.IsCurrentRunParked);
     }
 
     [Fact]
     public async Task CreateAndRun_reads_waiting_user_from_the_status_when_history_kind_is_none()
     {
         // The backend maps a WaitingUser run's history_wait_kind to "none". The
-        // durable status is what keeps Continue available, on the create path too.
+        // durable status is what marks the wait, on the create path too.
         var fake = new FakeClient { Run = MakeRunWith("waiting_user", historyWaitKind: "none") };
         var controller = new AgentRunController(fake);
 
         await controller.CreateAndRunAsync(new CreateAgentRunRequest(
             "sess_1", "C:\\work", "do it", "standard", null, "idem-waiting-none"));
 
-        Assert.True(controller.CanContinue);
-        Assert.Contains("Waiting to continue", controller.StatusText, StringComparison.Ordinal);
+        Assert.True(controller.IsCurrentRunParked);
+        Assert.Contains("Waiting for your answer", controller.StatusText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1966,7 +1783,7 @@ public sealed partial class AgentRunControllerTests
         var controller = new AgentRunController(fake);
         await controller.CreateAndRunAsync(new CreateAgentRunRequest(
             "sess_1", "C:\\work", "do it", "standard", null, "idem-switch-parked"));
-        Assert.True(controller.CanContinue);
+        Assert.True(controller.IsCurrentRunParked);
 
         await controller.StopForSessionSwitchAsync();
 
@@ -1975,7 +1792,7 @@ public sealed partial class AgentRunControllerTests
         Assert.False(fake.CancelCalled);
         Assert.Null(controller.CurrentRun);
         Assert.False(controller.CanCancel);
-        Assert.False(controller.CanContinue);
+        Assert.False(controller.IsCurrentRunParked);
         Assert.False(controller.IsBusy);
     }
 

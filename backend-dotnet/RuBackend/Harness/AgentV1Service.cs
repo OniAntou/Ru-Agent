@@ -23,11 +23,4 @@ public static class AgentV1Service
 
     internal static string MapRunState(HarnessRunStatus status, bool isWaitingInput) =>
         AgentV1Shared.MapRunState(status, isWaitingInput);
-
-    internal static (AgentRun NextRun, HarnessEventIntent[] Events) PlanContinueCommit(
-        AgentRun run,
-        HarnessRunStatus nextStatus,
-        bool clearGate,
-        IIdGenerator ids,
-        DateTimeOffset now) => AgentRunLifecycleService.PlanContinueCommit(run, nextStatus, clearGate, ids, now);
 }

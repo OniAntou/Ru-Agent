@@ -271,9 +271,6 @@ export class Run {
     await this.transport.request("run.cancel", { runId: this.runId });
   }
 
-  async continue(): Promise<void> {
-    await this.transport.request("run.continue", { runId: this.runId });
-  }
 
   /** Answers a pending workspace-trust challenge. The default denies, matching the bridge. */
   async trust(approve = false): Promise<RunTrustResult> {

@@ -328,60 +328,6 @@ internal sealed partial class AgentRunStepHandlers
     }
 
     /// <summary>
-    /// Parks a run whose provider kept failing transiently until the runner's
-    /// bounded retries were spent. Unlike a failure, the provider may recover
-    /// while the user waits, so the run moves to WaitingUser with a
-    /// ContinueRequested naming the provider code; an explicit Continue opens a
-    /// fresh budget window and the loop retries a fresh model step. The runner
-    /// threw before producing a step, so the park is the whole commit.
-    /// </summary>
-    public async Task<AgentRunStepResult> HandleProviderTransientPauseStepAsync(
-        AgentRun run,
-        ModelStepId modelStepId,
-        HarnessRunStatus waitingStatus,
-        string errorCode,
-        CancellationToken cancellationToken)
-    {
-        const string parkCode = "waiting_user";
-        var events = new List<HarnessEventIntent>
-        {
-            new(
-                _ids.NewEventId(),
-                HarnessEventKind.RunStateChanged,
-                safeCode: parkCode),
-            new(
-                _ids.NewEventId(),
-                HarnessEventKind.ContinueRequested,
-                modelStepId: modelStepId,
-                safeCode: errorCode),
-        };
-        var next = run.Advance(
-            waitingStatus,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            events.Count,
-            _time.UtcNow);
-        var committed = await CommitAsync(
-                run,
-                next,
-                events,
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-        AgentActivityProjector.PublishSafe(
-            _activitySink,
-            run.RunId,
-            AgentActivityProjector.ProjectStatus(
-                AgentActivityProjector.ActivityId(modelStepId.Value) + "_provider_paused",
-                AgentActivityState.Waiting,
-                errorCode,
-                "Run paused: the provider kept failing transiently after retries. Send Continue to retry the model step."));
-        return AgentRunStepResult.Blocked(committed, errorCode);
-    }
-
-    /// <summary>
     /// Answers a detected repetition with one corrective note instead of ending
     /// the run: the note lands in the model context as a system entry and the run
     /// keeps stepping, so a weak model can change its arguments. Bounded by
@@ -474,10 +420,8 @@ internal sealed partial class AgentRunStepHandlers
     }
 
     /// <summary>
-    /// The repetition survived the repair notes, so the run parks in WaitingUser
-    /// with a bounded continue code instead of failing: the user can resume with
-    /// an explicit Continue, exactly like a budget stop. A state that cannot park
-    /// falls back to the previous fail-closed behavior.
+    /// The repetition survived the repair notes the model was given to change course,
+    /// so the run ends with <c>repeated_tool_call</c>.
     /// </summary>
     public async Task<AgentRunStepResult> HandleRepeatedToolStepAsync(
         AgentRun run,
@@ -491,17 +435,10 @@ internal sealed partial class AgentRunStepHandlers
         const string errorCode = "repeated_tool_call";
         var transition = AgentRunStateMachine.TryTransition(
             run.Status,
-            HarnessRunTransition.ExhaustBudget);
-        var failing = !transition.Accepted;
-        if (failing)
+            HarnessRunTransition.Fail);
+        if (!transition.Accepted)
         {
-            transition = AgentRunStateMachine.TryTransition(
-                run.Status,
-                HarnessRunTransition.Fail);
-            if (!transition.Accepted)
-            {
-                throw new InvalidOperationException(transition.ErrorCode);
-            }
+            throw new InvalidOperationException(transition.ErrorCode);
         }
 
         var assistantPayloadId = _ids.NewPayloadId();
@@ -524,15 +461,10 @@ internal sealed partial class AgentRunStepHandlers
                 payloadId: assistantPayloadId,
                 safeCount: step.ToolCalls.Count,
                 safeCode: errorCode),
-            failing
-                ? new HarnessEventIntent(
-                    _ids.NewEventId(),
-                    HarnessEventKind.RunFailed,
-                    safeCode: errorCode)
-                : new HarnessEventIntent(
-                    _ids.NewEventId(),
-                    HarnessEventKind.ContinueRequested,
-                    safeCode: errorCode),
+            new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.RunFailed,
+                safeCode: errorCode),
         };
         var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
         var commitPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, assistantPayload };
@@ -549,7 +481,7 @@ internal sealed partial class AgentRunStepHandlers
             run.ToolCallsInWindow,
             events.Count,
             _time.UtcNow,
-            failing ? errorCode : null);
+            errorCode);
         var committed = await CommitAsync(
                 run,
                 next,
@@ -577,7 +509,7 @@ internal sealed partial class AgentRunStepHandlers
             : AgentBudgetPolicy.ReserveToolCalls(run, step.ToolCalls.Count, _time.UtcNow, allowAutomaticWindow: true);
         if (reservation.Granted && _familyBudget is not null
             && !await _familyBudget.ReserveToolsAsync(run, modelStepId, step.ToolCalls.Count, cancellationToken).ConfigureAwait(false))
-            reservation = Subagents.SubagentBudgetPolicy.Reject(run, _internalRun, "subagent_family_budget_exhausted", _time.UtcNow);
+            reservation = Subagents.SubagentBudgetPolicy.Reject(run, "subagent_family_budget_exhausted", _time.UtcNow);
         if (!string.IsNullOrWhiteSpace(step.Text))
         {
             // The model said something before it reached for the tool. That sentence gets a
@@ -593,7 +525,7 @@ internal sealed partial class AgentRunStepHandlers
         var modelPayload = new HarnessPayloadIntent(
             assistantPayloadId,
             HarnessPayloadKind.AssistantStep,
-            !reservation.Granted && _internalRun ? HarnessPayloadAudience.InternalOnly
+            !reservation.Granted ? HarnessPayloadAudience.InternalOnly
                 : HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
             HarnessPayloadEncoding.Json,
             Math.Max(assistantBytes.Length, 1),
@@ -603,18 +535,18 @@ internal sealed partial class AgentRunStepHandlers
         // receipt is persisted beside the model completion, so advance the same
         // counters with the complete write set below (two events, three when the
         // step recorded reasoning).
+        // A refused reservation has already failed the run: the step is audit-only and the
+        // run ends with the reservation's code, as it does for a child.
         var stepCompletedEvent = new HarnessEventIntent(
             _ids.NewEventId(),
-            reservation.Granted || _internalRun
-                ? HarnessEventKind.ModelStepCompleted
-                : HarnessEventKind.ContinueRequested,
+            HarnessEventKind.ModelStepCompleted,
             modelStepId: modelStepId,
             payloadId: assistantPayloadId,
             safeCount: step.ToolCalls.Count,
             safeCode: reservation.ErrorCode);
         var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
         var stepEvents = new List<HarnessEventIntent> { promptComposedEvent, stepCompletedEvent };
-        if (!reservation.Granted && _internalRun)
+        if (!reservation.Granted)
             stepEvents.Add(new(_ids.NewEventId(), HarnessEventKind.RunFailed, safeCode: reservation.ErrorCode));
         var stepPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, modelPayload };
         if (reservation.Granted) AddProviderContinuation(stepEvents, stepPayloads, modelStepId, providerContinuation);

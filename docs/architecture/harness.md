@@ -261,7 +261,7 @@ fails that child by name, budget admission denies it, and Stop/session deletion
 still reach its run. Internal attempt cleanup closes the authority session and
 drains its background terminal processes before releasing registration; the
 stable internal session ID, encrypted history and worktree remain available for
-continuation, while transient authority resources are recreated. Generic Continue cannot reset a child attempt's budget.
+continuation, while transient authority resources are recreated. Generic run routes cannot reset a child attempt's budget.
 On explicit session deletion, Host cancels the family and waits for runtime cleanup
 before asking Broker to reclaim prepared coding artifacts. Broker checks captured
 physical identities, removes only the owned snapshot/worktree and its per-worktree
@@ -345,8 +345,7 @@ resolution event commit atomically; missing proof or storage failure leaves the
 run parked. User assertions never rewrite apply status or create file receipts.
 After acknowledgment, later result collection uses only durable per-file receipts
 as integration bases; unreceipted writes keep the old base and may conflict with
-current parent files. Unknown Continue retains its read-inspection mutation gate
-for legacy runs that have not yet been failed by startup recovery.
+current parent files.
 Duplicates apply still returns the saved uncertain outcome without replaying writes.
 Startup fails any run left in `ReconciliationRequired` with
 `legacy_reconciliation_removed`; no new run can enter that state.
@@ -384,7 +383,7 @@ failure produces an unknown outcome; loss of final durable reporting raises an
 explicit reconciliation exception. Duplicate commands return the saved outcome
 without writing again. The internal prepared-execution receipt bridge preserves
 native call IDs and maps partial/unknown or lost final reporting to the existing
-Core reconciliation state; ordinary Continue cannot replay it. Internal native
+Core reconciliation state; no client action can replay it. Internal native
 spawn/send/wait/cancel dispatch now runs inside a live Broker authorization callback,
 bound to the committed native tool-call ID and arguments. It expires on return
 and rechecks parent cancellation/policy after the callback. Host validates durable
@@ -671,11 +670,11 @@ Git registration without captured identity stays pending with a named error;
 the journal never restores execution authority. Public
 root creation and ordinary session-run listing reject internal sessions, including
 marker-only ownership. `waiting_subagents` remains active in session activity and
-has an exact public run/SSE status; clients accept it without requiring Continue.
+has an exact public run/SSE status; clients treat it as an ordinary waiting state.
 The internal family usage reader sums only durable provider usage receipts across
 the root and owned attempts. Missing/corrupt reports or partial token fields leave
-the snapshot incomplete; token totals do not imply a monetary cost estimate. Generic
-Continue cannot reset an internal attempt's budget. Execution completion and result
+the snapshot incomplete; token totals do not imply a monetary cost estimate. Generic run
+routes cannot reset an internal attempt's budget. Execution completion and result
 collection have distinct outcomes: a completed child may yield a durable failed
 result if its artifact cannot be collected. Coding followups wait until the prior
 result is sealed before reusing the worktree. Internal apply loads an exact frozen
@@ -688,8 +687,8 @@ and receipts separately. A hash matching the proposal never creates a receipt or
 resolves an uncertain apply. The schema projects an explicit user reconciliation
 decision into the apply journal in the same transaction as the targeted native
 resolution event. Later coding results use only actual per-file receipts as bases;
-unknown/pending outcomes and unreceipted writes remain unchanged. Unknown Continue
-retains the existing inspection gate, and duplicate apply never replays the batch. Internal
+unknown/pending outcomes and unreceipted writes remain unchanged, and duplicate apply
+never replays the batch. Internal
 native control dispatch requires an exact call-bound Broker callback permission that
 expires when dispatch returns; metadata validation alone grants no authority.
 The root catalog exposes `agent_spawn`, `agent_send`, `agent_wait`, `agent_cancel`
@@ -824,9 +823,9 @@ as failed with the receipt code (or `model_reported_blocker` without a failed
 receipt), never verified success. This report does not spend further recovery
 notes. Its durable outbox remains deliverable after runtime cleanup. An exhausted
 provider-transient step is failed with its provider code; it does not park for
-Continue. An approval-decision deny never enters recovery: a
-user deny keeps its fail-closed rule and an ambiguous mutation stays running
-with its ordinary failed result. A repeated `policy_denied` tool receipt followed
+Continue. A user's deny settles the asked call with an `approval_denied` receipt
+and the run resumes (ADR 0048); that receipt never draws unverified-failure notes,
+and an ambiguous mutation stays running with its ordinary failed result. A repeated `policy_denied` tool receipt followed
 by prose is a tool outcome, not an approval decision, so it may still take the
 bounded `unverified_after_tool_failure` notes with the denial code as the
 terminal code. The note states the reason from the failed receipt: an expected-exit
@@ -966,7 +965,7 @@ expand execution authority.
 
 Identical calls and short failed-call cycles are suppressed before duplicate
 dispatch. Up to two `[REPETITION GUARD]` notes ask the same model to change its
-arguments; exhaustion parks for explicit Continue. Suppressed assistant steps
+arguments; exhaustion fails the run as `repeated_tool_call`. Suppressed assistant steps
 remain audit-only, because they have no tool receipts to pair in native model
 history. Trailing guard notes preserve the failed receipt for both repetition
 checks and the final-answer verification guard. A note cannot make a failed verification verified: once its holds are

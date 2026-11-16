@@ -460,23 +460,15 @@ public sealed class AgentCliParserTests
         Assert.Equal("missing_run_id", res.ErrorCode);
     }
 
-    [Fact]
-    public void ParseContinue_Succeeds()
+    [Theory]
+    [InlineData]
+    [InlineData("--json")]
+    public void Continue_is_removed_with_a_named_error(params string[] extra)
     {
-        var args = new[] { "agent", "continue", ValidRunId };
-        var res = AgentCliParser.Parse(args);
-        Assert.True(res.Success);
-        var cmd = Assert.IsType<ContinueCommand>(res.Command);
-        Assert.Equal(ValidRunId, cmd.RunId);
-    }
-
-    [Fact]
-    public void ParseContinue_RejectsUnknownSwitch()
-    {
-        var args = new[] { "agent", "continue", ValidRunId, "--json" };
-        var res = AgentCliParser.Parse(args);
+        // Runs no longer park for a Continue; the old command names its removal.
+        var res = AgentCliParser.Parse(["agent", "continue", ValidRunId, .. extra]);
         Assert.False(res.Success);
-        Assert.Equal("unknown_switch", res.ErrorCode);
+        Assert.Equal("continue_removed", res.ErrorCode);
     }
 
     [Fact]

@@ -16,14 +16,14 @@ Find the message you see, then follow the fix. Messages in code font are the cod
 | You see | What it means | What to do |
 | --- | --- | --- |
 | `model_not_in_catalog: <id>` | The provider's catalog does not list that model, but the run continues | If it fails with a 404, choose another with `/model` |
-| `provider_quota_exhausted` | The provider reports your quota or credit is used up | Restore credit or limits at the provider, then `/continue` |
-| `provider_payment_required` | The provider needs billing or credit | Fix billing with the provider, then `/continue` |
+| `provider_quota_exhausted` | The provider reports your quota or credit is used up | Restore credit or limits at the provider, then send your message again |
+| `provider_payment_required` | The provider needs billing or credit | Fix billing with the provider, then send your message again |
 | `no text arrived from the model` | The run finished but no reply reached the terminal | Retry, or switch model with `/model` |
 | The provider list is short or the model picker is empty | The catalog could not be loaded | The picker says why; check your connection and key, then reopen it |
 
-A run that stops on a quota or billing problem **pauses** instead of failing. Nothing is retried for you,
-and your provider and model stay as you chose them. Use `/continue` after you fix it, or `/release` to
-cancel it.
+A run that stops on a quota or billing problem **ends** with that error; nothing is retried for you.
+After you fix it, send a new message in the same session: the new run carries a summary of what the
+stopped one did, and your provider and model stay as you chose them.
 
 ## The terminal UI looks wrong
 

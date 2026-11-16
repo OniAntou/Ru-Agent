@@ -191,15 +191,13 @@ public sealed partial class AgentRunCoordinator
         run = preflight.Run ?? run;
         if (preflight.ErrorCode is not null)
         {
-            if (preflight.ErrorCode == "context_limit_reached")
+            // Compaction could not make the context fit. The run ends with the named code;
+            // a new message starts a fresh run that carries the session's handoff (ADR 0023).
+            if (preflight.ErrorCode == "context_limit_reached" && run.State == HarnessRunState.Running)
             {
-                var limitModelStepId = _ids.NewModelStepId();
-                run = await CommitContextLimitAsync(
-                        run,
-                        limitModelStepId,
-                        cancellationToken)
+                var failed = await _lifecycle.FailAsync(run.RunId, "context_limit_reached", cancellationToken)
                     .ConfigureAwait(false);
-                return AgentRunStepResult.Blocked(run, "context_limit_reached");
+                return AgentRunStepResult.Blocked(failed, "context_limit_reached");
             }
 
             return AgentRunStepResult.Blocked(
@@ -215,12 +213,11 @@ public sealed partial class AgentRunCoordinator
             : AgentBudgetPolicy.ReserveModelStep(run, _time.UtcNow, allowAutomaticWindow: true);
         if (reservation.Granted && _familyBudget is not null
             && !await _familyBudget.ReserveModelAsync(run, modelStepId, cancellationToken).ConfigureAwait(false))
-            reservation = Subagents.SubagentBudgetPolicy.Reject(run, _internalRun, "subagent_family_budget_exhausted", _time.UtcNow);
+            reservation = Subagents.SubagentBudgetPolicy.Reject(run, "subagent_family_budget_exhausted", _time.UtcNow);
+        // A refused reservation has already failed the run; there is no parked state.
         var startEvent = new HarnessEventIntent(
             _ids.NewEventId(),
-            reservation.Granted
-                ? HarnessEventKind.ModelStepStarted
-                : reservation.NextRun.State == HarnessRunState.Failed ? HarnessEventKind.RunFailed : HarnessEventKind.ContinueRequested,
+            reservation.Granted ? HarnessEventKind.ModelStepStarted : HarnessEventKind.RunFailed,
             modelStepId: modelStepId,
             safeCode: reservation.ErrorCode);
         var startEvents = new List<HarnessEventIntent> { startEvent };
@@ -350,11 +347,6 @@ public sealed partial class AgentRunCoordinator
         CancellationToken cancellationToken) =>
         _lifecycle.FailAsync(runId, errorCode, cancellationToken);
 
-    public Task<AgentRun> ContinueAsync(
-        RunId runId,
-        CancellationToken cancellationToken) =>
-        _lifecycle.ContinueAsync(runId, cancellationToken);
-
     public Task<ContextCompactionResult> CompactAsync(
         RunId runId,
         ContextCompactionStrategy strategy,
@@ -389,8 +381,11 @@ public sealed partial class AgentRunCoordinator
             throw new InvalidOperationException("retained_approval_run_mismatch");
         }
 
+        // The durable record may be a subset of the stash once a denied ask has its
+        // receipt; that narrower set is the authority. Any other difference is a mismatch.
         if (_retainedStash.TryPeek(runId, out var existing)
-            && !SameRetainedApproval(existing!, step))
+            && !SameRetainedApproval(existing!, step)
+            && !IsSettledSubset(existing!, step))
         {
             throw new InvalidOperationException("retained_approval_stash_mismatch");
         }
@@ -449,6 +444,21 @@ public sealed partial class AgentRunCoordinator
             if (!_retainedStash.TryTake(runId, retained.ApprovalId, out var claimed) || claimed is null)
             {
                 return null;
+            }
+
+            // A denied ask was settled by the approval route with its own receipt; only the
+            // calls still without one resume. With none left the next model step reads it.
+            var settled = await ReadSettledToolCallsAsync(runId, claimed.ModelStepId, cancellationToken)
+                .ConfigureAwait(false);
+            var remaining = claimed.Proposals.Where(proposal => !settled.Contains(proposal.ToolCallId)).ToArray();
+            if (remaining.Length == 0)
+            {
+                return null;
+            }
+
+            if (remaining.Length != claimed.Proposals.Count)
+            {
+                claimed = claimed with { Proposals = remaining };
             }
 
             var result = await _tools.ResumeRetainedAsync(activeRun, claimed, cancellationToken)
@@ -648,45 +658,31 @@ public sealed partial class AgentRunCoordinator
     public Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken) =>
         _lifecycle.CancelRunningToolsAsync(runId, cancellationToken);
 
-    private async Task<AgentRun> CommitContextLimitAsync(
-        AgentRun run,
-        ModelStepId modelStepId,
-        CancellationToken cancellationToken)
-    {
-        var transition = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.ExhaustBudget);
-        if (!transition.Accepted)
-        {
-            throw new InvalidOperationException(transition.ErrorCode);
-        }
-
-        var next = run.Advance(
-            transition.Next,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            appendedEventCount: 1,
-            updatedAt: _time.UtcNow);
-        return await CommitAsync(
-                run,
-                next,
-                [new HarnessEventIntent(
-                    _ids.NewEventId(),
-                    HarnessEventKind.ModelStepStarted,
-                    modelStepId: modelStepId,
-                    safeCode: "context_limit_reached")],
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
     private async Task<AgentRun> RequireRunAsync(
         RunId runId,
         CancellationToken cancellationToken) =>
         await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false)
         ?? throw new KeyNotFoundException("run_not_found");
+
+    private async Task<HashSet<ToolCallId>> ReadSettledToolCallsAsync(
+        RunId runId,
+        ModelStepId modelStepId,
+        CancellationToken cancellationToken)
+    {
+        var settled = new HashSet<ToolCallId>();
+        await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
+        {
+            var item = envelope.Event;
+            if (string.Equals(item.Kind, "tool.execution_completed", StringComparison.Ordinal)
+                && item.ModelStepId == modelStepId
+                && item.ToolCallId is { } toolCallId)
+            {
+                settled.Add(toolCallId);
+            }
+        }
+
+        return settled;
+    }
 
     private async Task<ApprovalResolutionState> GetApprovalResolutionAsync(
         RunId runId,
@@ -756,6 +752,19 @@ public sealed partial class AgentRunCoordinator
             ? ApprovalResolutionState.Expired
             : ApprovalResolutionState.Pending;
     }
+
+    private static bool IsSettledSubset(RetainedApprovalStep stashed, RetainedApprovalStep durable) =>
+        stashed.ApprovalId == durable.ApprovalId
+        && stashed.ModelStepId == durable.ModelStepId
+        && durable.Proposals.Count < stashed.Proposals.Count
+        && SameRetainedApproval(
+            stashed with
+            {
+                Proposals = stashed.Proposals
+                    .Where(proposal => durable.Proposals.Any(kept => kept.ToolCallId == proposal.ToolCallId))
+                    .ToArray(),
+            },
+            durable);
 
     private static bool SameRetainedApproval(
         RetainedApprovalStep left,

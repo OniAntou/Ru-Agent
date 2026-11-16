@@ -4,6 +4,9 @@ namespace RuAgent.Harness.Core.Prompting;
 
 public static class FailedToolCompletionGuard
 {
+    /// <summary>The receipt code the approval route writes for a call the user denied.</summary>
+    public const string ApprovalDeniedCode = "approval_denied";
+
     public static bool TryGetFailure(ModelContextSnapshot context, out string errorCode)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -50,6 +53,9 @@ public static class FailedToolCompletionGuard
             // A failed consultation changed nothing and only tells the model it gets no advice;
             // finishing without advice is a legitimate answer to it (ADR 0047).
             if (receipt is not null && !receipt.SideEffectsPossible && AdvisorCodes.IsAdvisorFailure(receipt.Code)) continue;
+            // The user's own deny changed nothing and is the user's decision, not a tool
+            // fault: replying to it (or stopping that line of work) is a legitimate finish.
+            if (receipt is { Outcome: ToolExecutionOutcome.Failed, SideEffectsPossible: false, Code: ApprovalDeniedCode }) continue;
             if (receipt is null || receipt.Outcome != ToolExecutionOutcome.Succeeded)
             {
                 if (receipt is not null && IsOrdinaryOptionalFetchFailure(receipt))

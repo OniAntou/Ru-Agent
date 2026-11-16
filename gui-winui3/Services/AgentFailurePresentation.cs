@@ -138,14 +138,8 @@ internal static class AgentFailurePresentation
         if (string.Equals(code, "workspace_busy", StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(blockingRunId))
         {
-            // A parked run has no pending prompt beyond the regular Continue.
             var status = string.IsNullOrWhiteSpace(blockingStatus) ? "active" : blockingStatus.Trim();
             string runId = blockingRunId.Trim();
-            if (string.Equals(status, "waiting_user", StringComparison.Ordinal))
-            {
-                return $"Run {runId} is waiting to continue. Send Continue to resume it, then try again.";
-            }
-
             return $"Run {runId} ({status}) still owns this session. Answer its pending prompt, or cancel it and try again.";
         }
 

@@ -109,7 +109,6 @@ public static class Program
                 AttachCommand attach => await commands.AttachAsync(attach, cts.Token).ConfigureAwait(false),
                 TrustCommand trust => await commands.TrustAsync(trust, cts.Token).ConfigureAwait(false),
                 CancelCommand cancel => await commands.CancelAsync(cancel, cts.Token).ConfigureAwait(false),
-                ContinueCommand cont => await commands.ContinueAsync(cont, cts.Token).ConfigureAwait(false),
                 StatusCommand status => await commands.StatusAsync(status, cts.Token).ConfigureAwait(false),
                 ApproveCommand approve => await commands.ApproveAsync(approve, cts.Token).ConfigureAwait(false),
                 DenyCommand deny => await commands.DenyAsync(deny, cts.Token).ConfigureAwait(false),
@@ -206,7 +205,6 @@ public static class Program
         Console.Error.WriteLine("  agent deny <run-id> <approval-id>");
         Console.Error.WriteLine("  agent answer <run-id> <input-id> [answer] [--json]");
         Console.Error.WriteLine("  agent cancel <run-id>");
-        Console.Error.WriteLine("  agent continue <run-id>");
         Console.Error.WriteLine("  agent status <run-id> [--json]");
         Console.Error.WriteLine("  agent output <run-id> <payload-id> [--json]");
         Console.Error.WriteLine("  agent policy list [--global] [--json]");

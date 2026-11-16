@@ -252,7 +252,7 @@ and submit a new request in the same conversation. The new run receives recent
 completed dialogue, Session Work State and a bounded Session Run Handoff from
 earlier terminal roots in that session/workspace, including recorded tool results
 from a stopped run with no final reply. This also works between ordinary turns
-without a model change. Continue on the old run still uses its original model.
+without a model change. A stopped run is never resumed; the new run carries its handoff.
 The handoff is historical evidence, not a replay of pending tool calls or a transfer
 of approvals. Older/large details may be omitted with an explicit notice; the new
 model must check current files and unverified effects before continuing.

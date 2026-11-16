@@ -282,7 +282,7 @@ _Avoid_: embedded fallback persona
 
 
 **Approval Token**:
-A short-lived single-use authorization bound to exact canonical arguments and policy identity. Retained proposals are re-evaluated before execution; a token never transfers to a new request or run.
+A short-lived single-use authorization bound to exact canonical arguments and policy identity. Retained proposals are re-evaluated before execution; a token never transfers to a new request or run. A deny issues no token: it settles only the asked call with an `approval_denied` receipt, and the run resumes ([ADR 0048](docs/adr/0048-no-continue-gate.md)).
 Implementation: [broker](docs/architecture/broker.md#approval-token).
 _Avoid_: reusable confirmation flag or approval-time reissue
 

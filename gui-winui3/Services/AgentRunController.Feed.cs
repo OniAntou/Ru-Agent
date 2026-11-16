@@ -122,47 +122,16 @@ public sealed partial class AgentRunController
                     this,
                     new AgentRunContextCompactedEventArgs(model.RunId, model.SessionId, model.Sequence, ownershipGeneration));
             }
-            // A pause reason is a machine token, and a bare state token
-            // ("waiting_user") is not a reason either. Resolve the shared park copy
-            // before the generic summary-to-status assignment, so the line never
-            // flickers through the raw code on its way to the sentence.
-            var pauseText = model.EventType == "continue.requested"
-                && string.Equals(model.Status, "waiting_user", StringComparison.Ordinal)
-                    ? AgentParkReasonCopy.Compose(model.SafeSummary)
-                    : string.Empty;
+            // A bare state token ("waiting_user") is not a reason to show.
             var summaryIsStateToken = model.EventType == "run.state_changed"
                 && model.SafeSummary is "waiting_user";
             if (!string.IsNullOrEmpty(model.SafeSummary)
-                && pauseText.Length == 0
                 && !summaryIsStateToken
                 && !IsApprovalRequestWithPanel(model)
                 && !IsInputRequestEvent(model))
             {
                 _statusText = model.SafeSummary;
             }
-            if (pauseText.Length > 0)
-            {
-                _statusText = pauseText;
-            }
-
-            if (!model.IsTransient
-                && model.EventType == "continue.requested")
-            {
-                // The frame's status decides, exactly like the TUI: the park commit
-                // carries waiting_user, while the "continued" commit flips the run
-                // back to running. Keying every frame to waiting_user left a live run
-                // parked in the client until the monitor's next refresh -- Continue
-                // earned a 409, and a session switch detached a run nobody followed.
-                if (string.Equals(model.Status, "waiting_user", StringComparison.Ordinal))
-                {
-                    _waitKind = "waiting_user";
-                }
-                else if (string.Equals(model.Status, "running", StringComparison.Ordinal))
-                {
-                    _waitKind = null;
-                }
-            }
-
             if (!model.IsTransient
                 && model.EventType == "approval.requested"
                 && !string.IsNullOrWhiteSpace(model.ApprovalId))
@@ -516,7 +485,7 @@ public sealed partial class AgentRunController
             {
                 _statusText = _waitKind switch
                 {
-                    "waiting_user" => "Waiting to continue. Type Continue to resume.",
+                    "waiting_user" => "Waiting for your answer.",
                     _ => "Event stream ended before run completed.",
                 };
             }

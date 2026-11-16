@@ -11,7 +11,7 @@ public sealed class SubagentWaitStateTests
         Assert.True(wait.Accepted);
         Assert.Equal(HarnessRunState.WaitingSubagents, wait.Next.State);
         Assert.False(wait.Next.State.IsTerminal());
-        Assert.False(AgentRunStateMachine.TryTransition(wait.Next, HarnessRunTransition.Continue).Accepted);
+        Assert.False(AgentRunStateMachine.TryTransition(wait.Next, HarnessRunTransition.ResolveInput).Accepted);
         var ready = AgentRunStateMachine.TryTransition(wait.Next, HarnessRunTransition.SubagentsReady);
         Assert.True(ready.Accepted);
         Assert.Equal(HarnessRunState.Running, ready.Next.State);

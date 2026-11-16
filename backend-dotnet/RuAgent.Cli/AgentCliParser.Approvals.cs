@@ -318,24 +318,6 @@ public static partial class AgentCliParser
         return Success(new CancelCommand(runId));
     }
 
-    private static AgentCliParseResult ParseContinue(string[] args)
-    {
-        string? runId = null;
-        for (int i = 2; i < args.Length; i++)
-        {
-            var token = args[i];
-            if (token.StartsWith("-", StringComparison.Ordinal))
-                return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent continue' (no switches allowed).");
-            if (runId is not null)
-                return Fail("too_many_arguments", "Too many positional arguments for 'agent continue'.");
-            var validation = ValidateRunId(token);
-            if (validation is not null) return validation;
-            runId = token;
-        }
-        if (runId is null)
-            return Fail("missing_run_id", "Missing required <run-id> for 'agent continue'.");
-        return Success(new ContinueCommand(runId));
-    }
 
     private static AgentCliParseResult ParseStatus(string[] args)
     {

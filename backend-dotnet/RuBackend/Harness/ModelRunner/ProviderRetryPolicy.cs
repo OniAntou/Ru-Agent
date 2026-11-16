@@ -2,7 +2,7 @@ namespace RuBackend.Harness.ModelRunner;
 
 /// <summary>
 /// One bounded retry policy for a logical provider step; selection never changes. The budget
-/// rides out a provider outage of about twelve minutes before the step parks for Continue: it
+/// rides out a provider outage of about twelve minutes before the run fails with the provider's code: it
 /// used to give up after about 37 seconds, so an unattended long run stopped on a short blip.
 /// </summary>
 internal static class ProviderRetryPolicy

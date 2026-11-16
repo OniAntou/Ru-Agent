@@ -75,7 +75,7 @@ public sealed partial class AgentRunCoordinatorTests
     [InlineData(false, true)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public async Task Family_budget_is_reserved_before_dispatch_and_only_root_can_wait_for_continue(bool child, bool modelGate)
+    public async Task Family_budget_is_reserved_before_dispatch_and_a_refusal_fails_root_or_child(bool child, bool modelGate)
     {
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run(new(HarnessRunState.Running)));
@@ -84,7 +84,8 @@ public sealed partial class AgentRunCoordinatorTests
         var gateway = new FakeToolGateway();
         var coordinator = Coordinator(model, gateway, store, internalRun: child, familyBudget: new RejectingBudget(modelGate));
         var result = await coordinator.RunOneStepAsync(RunId(), default);
-        Assert.Equal(child ? HarnessRunState.Failed : HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
+        Assert.Equal("subagent_family_budget_exhausted", result.Run.TerminalErrorCode);
         Assert.Equal("subagent_family_budget_exhausted", result.ErrorCode);
         Assert.Equal(modelGate ? 0 : 1, model.Requests.Count);
         Assert.Empty(gateway.ExecuteAttempts);

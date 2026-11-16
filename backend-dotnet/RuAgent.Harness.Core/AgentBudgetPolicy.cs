@@ -104,26 +104,11 @@ public static class AgentBudgetPolicy
         return AdvanceTransition(run, HarnessRunTransition.ResolveInput, updatedAt);
     }
 
-    public static AgentRun Continue(AgentRun run, DateTimeOffset updatedAt)
-    {
-        RequireState(run, HarnessRunState.WaitingUser);
-        var transition = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.Continue);
-        if (!transition.Accepted)
-        {
-            throw new InvalidOperationException(transition.ErrorCode);
-        }
-
-        return run.Advance(
-            transition.Next,
-            checked(run.BudgetWindow + 1),
-            0,
-            0,
-            1,
-            updatedAt);
-    }
-
+    /// <summary>
+    /// A reservation that cannot be granted ends the run with its named code: there is
+    /// no parked state for a user to continue. A root only reaches this without an
+    /// automatic window, which its coordinator never asks for.
+    /// </summary>
     private static AgentBudgetReservation Exhaust(
         AgentRun run,
         DateTimeOffset updatedAt,
@@ -131,7 +116,7 @@ public static class AgentBudgetPolicy
     {
         var transition = AgentRunStateMachine.TryTransition(
             run.Status,
-            HarnessRunTransition.ExhaustBudget);
+            HarnessRunTransition.Fail);
         if (!transition.Accepted)
         {
             throw new InvalidOperationException(transition.ErrorCode);
@@ -143,7 +128,8 @@ public static class AgentBudgetPolicy
             run.ModelStepsInWindow,
             run.ToolCallsInWindow,
             1,
-            updatedAt);
+            updatedAt,
+            errorCode);
         return AgentBudgetReservation.Reject(next, errorCode);
     }
 

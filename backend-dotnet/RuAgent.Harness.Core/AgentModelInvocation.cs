@@ -154,14 +154,13 @@ internal sealed class AgentModelInvocation
                 assistantStream.Complete();
                 throw new ContextOverflowStepException(error);
             }
-            if (ProviderTransientPauseException.RequiresExplicitContinue(code))
+            if (ProviderTransientPauseException.EndsRunWithProviderCode(code))
             {
-                // Exhausted transient retries can recover after a wait; an account
-                // limit needs operator action without retries. Both retain this run
-                // for an explicit Continue with the same pinned selection.
+                // Exhausted transient retries, or an account limit that needs operator
+                // action: the coordinator ends the run with the provider's code.
                 // The attempts before the throw may have streamed partial text, so
-                // reset the stream before it completes: the Continue retry must
-                // start on a clean turn instead of appending to the superseded text.
+                // reset the stream before it completes: that superseded text must not
+                // reach the transcript as if it were the reply.
                 assistantStream.Reset();
                 assistantStream.Complete();
                 throw new ProviderTransientPauseException(code, error);

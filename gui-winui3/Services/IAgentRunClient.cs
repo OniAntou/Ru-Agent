@@ -19,7 +19,6 @@ public interface IAgentRunClient
         bool interactive,
         CancellationToken cancellationToken = default);
     Task CancelAsync(string runId, CancellationToken cancellationToken = default);
-    Task ContinueAsync(string runId, CancellationToken cancellationToken = default);
     Task<DispatchAgentCommandResponse> DispatchCommandAsync(
         string runId,
         string text,

@@ -126,7 +126,6 @@ public sealed partial class AgentRunController : INotifyPropertyChanged, IDispos
     private void RefreshCommands()
     {
         OnPropertyChanged(nameof(CanCancel));
-        OnPropertyChanged(nameof(CanContinue));
     }
 
     /// <summary>
@@ -197,10 +196,8 @@ public sealed partial class AgentRunController : INotifyPropertyChanged, IDispos
         "completed" or "failed" or "cancelled" or "interrupted";
 
     /// <summary>
-    /// Derives the wait kind the command surface acts on from a durable run. A run
-    /// parked on reconciliation is as resumable as one parked on WaitingUser, but
-    /// it carries no HistoryWaitKind, and a WaitingUser run may report no history
-    /// kind either, so both are read from the status string; everything else falls
+    /// Derives the wait kind from a durable run. A WaitingUser run may report no
+    /// history kind, so it is read from the status string; everything else falls
     /// back to the outbox wait kind.
     /// </summary>
     private static string? WaitKindFor(AgentRunModel? run) =>
@@ -211,14 +208,14 @@ public sealed partial class AgentRunController : INotifyPropertyChanged, IDispos
                 : run.HistoryWaitKind;
 
     /// <summary>
-    /// The composer line for an adopted run: a parked run gets its resume copy, a
-    /// live one the same running line a created run shows.
+    /// The composer line for an adopted run: a waiting run says what it waits on,
+    /// a live one gets the same running line a created run shows.
     /// </summary>
     private static string AdoptedStatusText(AgentRunModel run)
     {
         if (string.Equals(run.Status, "waiting_user", StringComparison.Ordinal))
         {
-            return "Waiting to continue. Type Continue to resume.";
+            return "Waiting for your answer.";
         }
 
         if (string.Equals(run.Status, "waiting_approval", StringComparison.Ordinal))

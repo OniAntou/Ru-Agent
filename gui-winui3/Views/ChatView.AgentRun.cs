@@ -231,7 +231,6 @@ namespace RuApp.Views
                     HasPendingApproval: controller?.HasPendingApproval == true,
                     HasPendingInput: controller?.HasPendingInput == true,
                     NeedsWorkspaceTrust: controller?.NeedsWorkspaceTrust == true,
-                    CanContinue: controller?.CanContinue == true,
                     KeepTerminalFailureVisible: keepTerminalFailureVisible,
                     RunPending: IsActiveAgentRunPending(),
                     StatusText: statusText,
@@ -479,14 +478,6 @@ namespace RuApp.Views
                     if (!shiftDown)
                     {
                         e.Handled = true;
-                        if (IsTypedContinueForResumableRun())
-                        {
-                            // A run parked for Continue still counts as in hand (it can be
-                            // stopped), so the queue below used to swallow the very word the
-                            // pause message asks for. The send path resumes it instead.
-                            await SendCurrentMessageAsync();
-                            return;
-                        }
                         if (_isSendButtonInStopMode || IsActiveAgentRunPending())
                         {
                             // A second thought lands in the queue instead of being
@@ -613,17 +604,6 @@ namespace RuApp.Views
                 }
 
                 if (TryHandleAdvisorCommand(text, attachments.Count)) return;
-
-                if (IsContinueResumeCommand(text, attachments) && _agentController?.CanContinue == true)
-                {
-                    // Typed "Continue" resumes a resumable run instead of
-                    // starting a new turn; the failure message points here.
-                    Composer.ClearText();
-                    await RunAgentActionAsync(
-                        () => _agentController?.ContinueAsync() ?? Task.CompletedTask,
-                        "Resuming Coding Agent…");
-                    return;
-                }
 
                 // The limit is checked before the composer enters its sending face:
                 // bailing out after UpdateSendButtonMode(true) leaves the button showing
@@ -983,18 +963,6 @@ namespace RuApp.Views
             {
                 throw new OperationCanceledException(cancellationToken);
             }
-        }
-
-        private bool IsTypedContinueForResumableRun() =>
-            _agentController?.CanContinue == true
-            && IsContinueResumeCommand(ChatInputTextBox.Text, Composer.Attachments);
-
-        public static bool IsContinueResumeCommand(string text, IReadOnlyCollection<ImageAttachmentItem> attachments)
-        {
-            ArgumentNullException.ThrowIfNull(text);
-            ArgumentNullException.ThrowIfNull(attachments);
-            return attachments.Count == 0
-                && string.Equals(text.Trim(), "Continue", StringComparison.OrdinalIgnoreCase);
         }
 
         private static Task<byte[]?> ReadBoundedBytesAsync(System.IO.Stream stream, int maximumBytes) =>

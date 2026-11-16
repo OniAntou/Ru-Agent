@@ -116,7 +116,7 @@ public sealed class HarnessRecoveryStartupServiceTests
     /// </summary>
     [Theory]
     [InlineData(HarnessRunState.WaitingUser)]
-    public async Task Parked_runs_are_registered_for_resume_but_not_driven_until_continued(
+    public async Task Runs_waiting_on_ask_user_are_registered_but_not_driven_until_answered(
         HarnessRunState parkedState)
     {
         var fixture = await BackendHarnessTestFixture.CreateAsync();
@@ -128,6 +128,8 @@ public sealed class HarnessRecoveryStartupServiceTests
                 new HarnessRunStatus(parkedState),
                 runId,
                 sessionId);
+            // An ask_user wait is the one WaitingUser park left: its newest event is the question.
+            await AppendEventAsync(fixture, request.Run, HarnessEventKind.InputRequested, parkedState, "input_required");
             var roots = new AgentRuntimeRootRegistry();
             var service = new HarnessRecoveryStartupService(
                 fixture.EventStore,
@@ -148,7 +150,7 @@ public sealed class HarnessRecoveryStartupServiceTests
             try
             {
                 var registered = await WaitForRootAsync(roots, request.Run.RunId, TimeSpan.FromSeconds(15));
-                Assert.True(registered, "the parked run's root must be registered so a later Continue can be driven");
+                Assert.True(registered, "the waiting run's root must be registered so its answer can be driven");
                 Assert.True(roots.TryGetPolicySnapshot(request.Run.RunId, out var policySnapshot));
                 Assert.NotNull(policySnapshot);
 
@@ -163,10 +165,10 @@ public sealed class HarnessRecoveryStartupServiceTests
                     var parked = await fixture.EventStore.GetRunAsync(request.Run.RunId, CancellationToken.None);
                     Assert.Equal(parkedState, parked!.State);
 
-                    // Continue's own transition (Continue for WaitingUser, the typed
-                    // reconciliation decision for ReconciliationRequired) is the only change
-                    // needed: with the root registered the loop picks the run up from here.
-                    await CommitResumeAsync(fixture, parked);
+                    // The answer's own transition is the only change needed: with the root
+                    // registered the loop picks the run up from here.
+                    await AppendEventAsync(fixture, parked, HarnessEventKind.RunStateChanged,
+                        HarnessRunState.Running, "input_resolved");
                     var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
                     while (factory.Calls == 0 && DateTimeOffset.UtcNow < deadline)
                     {
@@ -220,21 +222,23 @@ public sealed class HarnessRecoveryStartupServiceTests
         return false;
     }
 
-    private static async Task CommitResumeAsync(BackendHarnessTestFixture fixture, AgentRun run)
+    private static async Task AppendEventAsync(
+        BackendHarnessTestFixture fixture,
+        AgentRun run,
+        HarnessEventKind eventKind,
+        HarnessRunState state,
+        string safeCode)
     {
-        var transition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Continue);
-        Assert.True(transition.Accepted);
-        var eventKind = HarnessEventKind.ContinueRequested;
         var next = new AgentRun(
             run.RunId,
             run.SessionId,
             run.WorkspaceId,
-            transition.Next,
+            new HarnessRunStatus(state),
             run.Version + 1,
             run.LastSequence + 1,
-            run.BudgetWindow + 1,
-            0,
-            0,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
             run.Preset,
             run.PolicySnapshotVersion,
             run.PolicySnapshotSha256,
@@ -248,7 +252,7 @@ public sealed class HarnessRecoveryStartupServiceTests
                 run.RunId,
                 run.Version,
                 next,
-                [new HarnessEventIntent(new EventId($"evt_{Guid.NewGuid():N}"), eventKind)],
+                [new HarnessEventIntent(new EventId($"evt_{Guid.NewGuid():N}"), eventKind, safeCode: safeCode)],
                 Array.Empty<HarnessPayloadIntent>(),
                 Array.Empty<ConversationOutboxIntent>()),
             CancellationToken.None);

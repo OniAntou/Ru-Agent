@@ -173,7 +173,7 @@ public sealed partial class ContextCompactionCoordinatorTests
         var limitEvent = Assert.Single(
             store.Commits.SelectMany(commit => commit.Events),
             item => item.SafeCode == "context_limit_reached");
-        Assert.Equal(HarnessEventKind.ModelStepStarted, limitEvent.Kind);
+        Assert.Equal(HarnessEventKind.RunFailed, limitEvent.Kind);
         Assert.Null(limitEvent.PayloadId);
     }
 

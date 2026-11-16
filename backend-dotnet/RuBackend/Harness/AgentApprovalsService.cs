@@ -55,6 +55,14 @@ public sealed class AgentApprovalsService
     // cannot retain an unbounded amount of memory until restart.
     // The service is a Host singleton, so one ledger serves every request in this Host.
     private readonly ConcurrentDictionary<string, DateTimeOffset> _hostApprovalLedger = new(StringComparer.Ordinal);
+
+    internal const string ApprovalDeniedCode = RuAgent.Harness.Core.Prompting.FailedToolCompletionGuard.ApprovalDeniedCode;
+
+    // What the model reads in place of the call's result. Without it a denied call is
+    // easily re-proposed verbatim until the repetition guard ends the run.
+    internal const string ApprovalDeniedHint =
+        "The user denied this call. Do not repeat it unchanged; take another approach, "
+        + "or ask the user what they want instead.";
     private static readonly TimeSpan HostApprovalLedgerTtl = ApprovalState.DefaultLifetime;
 
     private void PruneHostApprovalLedger(DateTimeOffset now)
@@ -216,7 +224,18 @@ public sealed class AgentApprovalsService
 
         if (isDeny)
         {
-            var denyTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Fail);
+            // A deny settles the asked call, not the run: the call gets an approval_denied
+            // receipt the model reads, and the run resumes with the rest of its batch, the
+            // way an ask_user answer does. The user's Stop is what ends a run.
+            if (pendingApprovalEvent?.ToolCallId is not { } deniedToolCallId
+                || pendingApprovalEvent.ModelStepId is not { } deniedModelStepId
+                || string.IsNullOrWhiteSpace(pendingApprovalEvent.ProviderCallId))
+            {
+                _hostApprovalLedger.TryRemove(key, out _);
+                return BoundedError(409, "approval_stale", "Approval request is incomplete.");
+            }
+
+            var denyTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
             if (!denyTransition.Accepted)
             {
                 _hostApprovalLedger.TryRemove(key, out _);
@@ -224,20 +243,54 @@ public sealed class AgentApprovalsService
             }
 
             var denyNow = _time.UtcNow;
+            var deniedExecutionId = _ids.NewExecutionId();
+            var deniedPayloadBytes = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string>
+            {
+                ["error"] = "tool_denied",
+                ["code"] = ApprovalDeniedCode,
+                ["hint"] = ApprovalDeniedHint,
+            });
+            var deniedPayload = new HarnessPayloadIntent(
+                _ids.NewPayloadId(),
+                HarnessPayloadKind.ToolOutput,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                HarnessPayloadEncoding.Json,
+                deniedPayloadBytes.Length,
+                deniedPayloadBytes);
+            // The resolution comes first: the retained-approval rehydrator requires every
+            // gated execution of the batch to follow its approval's resolution.
+            var denyEvents = new[]
+            {
+                new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: "approval_resolved"),
+                new HarnessEventIntent(
+                    _ids.NewEventId(),
+                    HarnessEventKind.ToolExecutionRequested,
+                    modelStepId: deniedModelStepId,
+                    toolCallId: deniedToolCallId,
+                    providerCallId: pendingApprovalEvent.ProviderCallId,
+                    executionId: deniedExecutionId,
+                    safeCode: ApprovalDeniedCode),
+                new HarnessEventIntent(
+                    _ids.NewEventId(),
+                    HarnessEventKind.ToolExecutionCompleted,
+                    modelStepId: deniedModelStepId,
+                    toolCallId: deniedToolCallId,
+                    providerCallId: pendingApprovalEvent.ProviderCallId,
+                    executionId: deniedExecutionId,
+                    payloadId: deniedPayload.PayloadId,
+                    safeCode: ApprovalDeniedCode,
+                    toolOutcome: ToolExecutionOutcome.Failed,
+                    sideEffectsPossible: false),
+            };
             var deniedRun = AdvanceRun(
                 run,
                 denyTransition.Next,
                 run.BudgetWindow,
                 run.ModelStepsInWindow,
                 run.ToolCallsInWindow,
-                1,
-                denyNow,
-                terminalErrorCode: "approval_denied");
-            var denyEvt = new HarnessEventIntent(
-                _ids.NewEventId(),
-                HarnessEventKind.RunFailed,
-                safeCode: "approval_denied");
-            var denyCommit = new HarnessCommit(runId, run.Version, deniedRun, new[] { denyEvt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
+                denyEvents.Length,
+                denyNow);
+            var denyCommit = new HarnessCommit(runId, run.Version, deniedRun, denyEvents, new[] { deniedPayload }, Array.Empty<ConversationOutboxIntent>());
             HarnessCommitResult denyResult;
             try
             {

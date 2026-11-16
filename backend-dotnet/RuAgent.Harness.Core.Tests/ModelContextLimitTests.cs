@@ -108,12 +108,15 @@ public sealed class ModelContextLimitTests
         var limitEvent = Assert.Single(
             store.Commits.SelectMany(commit => commit.Events),
             item => item.SafeCode == "context_limit_reached");
-        Assert.Equal(HarnessEventKind.ModelStepStarted, limitEvent.Kind);
+        // The run ends with the named code instead of parking for a Continue.
+        Assert.Equal(HarnessEventKind.RunFailed, limitEvent.Kind);
         Assert.Null(limitEvent.PayloadId);
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
+        Assert.Equal("context_limit_reached", result.Run.TerminalErrorCode);
     }
 
     [Fact]
-    public async Task Continue_cannot_override_a_true_provider_context_limit()
+    public async Task A_true_provider_context_limit_ends_the_run_and_takes_no_further_step()
     {
         var model = new FakeModelStepRunner();
         model.Enqueue(FinalStep("never reached"));
@@ -123,12 +126,12 @@ public sealed class ModelContextLimitTests
 
         var firstBlock = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
         Assert.Equal("context_limit_reached", firstBlock.ErrorCode);
+        Assert.Equal(HarnessRunState.Failed, firstBlock.Run.State);
 
-        await coordinator.ContinueAsync(RunId(), CancellationToken.None);
         var secondBlock = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
         Assert.Empty(model.Requests);
-        Assert.Equal("context_limit_reached", secondBlock.ErrorCode);
+        Assert.Equal("run_not_runnable", secondBlock.ErrorCode);
     }
 
     [Fact]

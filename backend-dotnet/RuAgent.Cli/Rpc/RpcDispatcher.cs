@@ -50,7 +50,6 @@ public sealed partial class RpcDispatcher
         "run.trust",
         "run.approve",
         "run.cancel",
-        "run.continue",
         "run.status",
         "run.command",
         "run.output",
@@ -132,7 +131,6 @@ public sealed partial class RpcDispatcher
                 "run.trust" => await RunTrustAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.approve" => await RunApproveAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.cancel" => await RunCancelAsync(request, cancellationToken).ConfigureAwait(false),
-                "run.continue" => await RunContinueAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.status" => await RunStatusAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.command" => await RunCommandAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.output" => await RunOutputAsync(request, cancellationToken).ConfigureAwait(false),
@@ -408,12 +406,6 @@ public sealed partial class RpcDispatcher
         return new JsonObject { ["cancelled"] = runId };
     }
 
-    private async Task<JsonNode> RunContinueAsync(RpcRequest request, CancellationToken ct)
-    {
-        var runId = RequireRunId(request);
-        await _agentClient.ContinueAsync(runId, ct).ConfigureAwait(false);
-        return new JsonObject { ["continued"] = runId };
-    }
 
     private async Task<JsonNode> RunCommandAsync(RpcRequest request, CancellationToken ct)
     {

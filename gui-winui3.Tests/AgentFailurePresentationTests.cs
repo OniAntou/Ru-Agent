@@ -72,13 +72,12 @@ public sealed class AgentFailurePresentationTests
     [Fact]
     public void Reconciliation_required_renders_recovery_copy_instead_of_the_raw_code()
     {
-        // A run parked on reconciliation is not terminal: the status bar must
-        // explain why the agent stopped and what the user can do, not leak the
-        // internal wire token.
+        // The status bar must explain why the agent stopped and what the user can
+        // do, not leak the internal wire token.
         string rendered = AgentFailurePresentation.Render("reconciliation_required");
 
         Assert.NotEqual("reconciliation_required", rendered);
-        Assert.Contains("Continue", rendered, StringComparison.Ordinal);
+        Assert.Contains("Send a new message", rendered, StringComparison.Ordinal);
         Assert.Equal(
             rendered,
             AgentFailurePresentation.InlineFailureStatus(
@@ -105,7 +104,7 @@ public sealed class AgentFailurePresentationTests
     [Theory]
     [InlineData("process_timed_out", "Command timed out. Raise the timeout or split the command, then retry.")]
     [InlineData("policy_denied", "Blocked by policy. Switch preset or rephrase the request, then retry.")]
-    [InlineData("context_limit_reached", "Context limit reached. Run /compact or start a fresh session, then retry.")]
+    [InlineData("context_limit_reached", "Context limit reached. Send a new message: the next run starts from a compact handoff of this one.")]
     [InlineData("workspace_changed", "Workspace changed. Re-read the file and retry the change.")]
     public void Newly_copied_codes_render_the_shared_copy_instead_of_the_raw_token(string code, string expected)
     {
@@ -206,7 +205,7 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
-    public void A_busy_session_waiting_user_points_at_continue()
+    public void A_busy_session_waiting_user_points_at_its_prompt()
     {
         string rendered = AgentFailurePresentation.RenderStartFailure(
             "workspace_busy",
@@ -215,7 +214,7 @@ public sealed class AgentFailurePresentationTests
             blockingStatus: "waiting_user");
 
         Assert.Equal(
-            "Run run_abc is waiting to continue. Send Continue to resume it, then try again.",
+            "Run run_abc (waiting_user) still owns this session. Answer its pending prompt, or cancel it and try again.",
             rendered);
     }
 

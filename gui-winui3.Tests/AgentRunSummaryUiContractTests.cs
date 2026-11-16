@@ -97,44 +97,6 @@ public sealed class AgentRunSummaryUiContractTests
         Assert.True(string.IsNullOrWhiteSpace(empty.MetadataText) || !empty.MetadataText.Contains("0 ", StringComparison.Ordinal));
     }
 
-    [Theory]
-    [InlineData("Continue", true)]
-    [InlineData("continue", true)]
-    [InlineData("  CONTINUE  ", true)]
-    [InlineData("Continue please", false)]
-    [InlineData("", false)]
-    public void Typed_continue_resumes_only_as_a_bare_command(string text, bool expected)
-    {
-        Assert.Equal(expected, RuApp.Views.ChatView.IsContinueResumeCommand(
-            text,
-            new List<ImageAttachmentItem>()));
-    }
-
-    [Fact]
-    public void Typed_continue_with_attachments_is_a_normal_prompt()
-    {
-        var attachments = new List<ImageAttachmentItem>
-        {
-            new() { FileName = "shot.png" },
-        };
-
-        Assert.False(RuApp.Views.ChatView.IsContinueResumeCommand("Continue", attachments));
-    }
-
-    [Fact]
-    public void Enter_resumes_a_parked_run_before_it_would_queue_the_typed_continue()
-    {
-        // Regression: a run parked for Continue still counts as in hand, so Enter queued
-        // "continue" behind a turn that could never end, and the pause never lifted.
-        var keyDown = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OnChatInputPreviewKeyDown");
-        var resume = keyDown.IndexOf("IsTypedContinueForResumableRun()", StringComparison.Ordinal);
-        var queue = keyDown.IndexOf("QueueCurrentComposerTurn()", StringComparison.Ordinal);
-        Assert.True(resume >= 0 && queue > resume, "Enter must check for a typed Continue before queueing.");
-
-        Assert.Contains("IsContinueResumeCommand(ChatInputTextBox.Text, Composer.Attachments)",
-            GuiSource.ViewText("ChatView"), StringComparison.Ordinal);
-    }
-
     private static AgentRunSummaryModel Model(string status, string verification) =>
         new(status, verification, "Workspace", 5, 1, 0, 0, null, 1);
 }

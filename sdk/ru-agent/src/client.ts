@@ -22,7 +22,6 @@ const REQUIRED_BRIDGE_METHODS = [
   "run.trust",
   "run.approve",
   "run.cancel",
-  "run.continue",
   "run.status",
   "run.command",
   "run.reconcile",

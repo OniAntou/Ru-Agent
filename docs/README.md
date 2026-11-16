@@ -60,6 +60,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 
 ## Decisions
 
+- [No Continue gate; a deny settles the call, not the run](adr/0048-no-continue-gate.md)
 - [Advisor: the main model consults a second pinned model on any provider](adr/0047-advisor-consultation.md) (proposed)
 - [Self-evolution runs: Ru proposes changes to its own source](adr/0046-self-evolution-runs.md) (proposed)
 - [Detached background subagents and manual PR integration](adr/0045-detached-background-subagents.md) (proposed)

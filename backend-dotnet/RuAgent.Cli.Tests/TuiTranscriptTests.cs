@@ -963,7 +963,7 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void ContinueRequested_WaitingUser_PrintsParkedNoticeAndContinuePath()
+    public void ContinueRequested_WaitingUser_PrintsParkedNoticeAndNewMessageAdvice()
     {
         var (transcript, status, output) = CreateWithStatus();
         transcript.BeginTurn();
@@ -975,8 +975,8 @@ public sealed class TuiTranscriptTests
         Assert.Contains(
             rows,
             row => row.Contains("model_step_budget_exhausted", StringComparison.Ordinal)
-                && row.Contains("Continue", StringComparison.Ordinal)
-                && row.Contains("ru agent continue run_1", StringComparison.Ordinal));
+                && row.Contains("send a new message", StringComparison.Ordinal)
+                && !row.Contains("ru agent continue", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -998,7 +998,7 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void ReconciliationRequired_SetsPausedAndContinueNotice()
+    public void ReconciliationRequired_SetsPausedAndNewMessageNotice()
     {
         var (transcript, status, output) = CreateWithStatus();
         transcript.BeginTurn();
@@ -1009,7 +1009,7 @@ public sealed class TuiTranscriptTests
             Rows(output),
             row => row.Contains("run parked", StringComparison.Ordinal)
                 && row.Contains("recovery_ambiguous", StringComparison.Ordinal)
-                && row.Contains("Continue", StringComparison.Ordinal));
+                && row.Contains("send a new message", StringComparison.Ordinal));
 
         // The paired state_changed frame for the same park must not repeat the notice.
         transcript.ApplyDurable(Durable("run.state_changed", "reconciliation_required", "reconciliation_required", sequence: 6));

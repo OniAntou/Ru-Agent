@@ -148,14 +148,14 @@ public sealed partial class ContextCompactionCoordinatorTests
     }
 
     [Fact]
-    public async Task Family_budget_denial_parks_the_root_before_dispatch()
+    public async Task Family_budget_denial_fails_the_root_before_dispatch()
     {
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run());
         var model = new CheckpointModel(store);
         var result = await CheckpointCoordinator(model, store, familyBudget: new DeniedFamilyBudget())
             .CompactAsync(RunId(), ContextCompactionStrategy.Normal, ContextCompactionReason.Manual, default);
-        Assert.Equal(HarnessRunState.WaitingUser, result.Run!.State);
+        Assert.Equal(HarnessRunState.Failed, result.Run!.State);
         Assert.Equal("subagent_family_budget_exhausted", result.ErrorCode);
         Assert.Equal(0, model.Calls);
         Assert.DoesNotContain(store.Commits.SelectMany(commit => commit.Events), evt => evt.SafeCode == "checkpoint_started");
@@ -228,13 +228,14 @@ public sealed partial class ContextCompactionCoordinatorTests
     [InlineData("checkpoint_provider_transient", false)]
     [InlineData("checkpoint_timeout", true)]
     [InlineData("checkpoint_provider_transient", true)]
-    public async Task Transient_checkpoint_failure_parks_the_root_but_never_asks_a_child_user(string code, bool child)
+    public async Task Transient_checkpoint_failure_fails_root_and_child_alike(string code, bool child)
     {
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run());
         var model = new CheckpointModel(store) { ErrorCode = code };
         var result = await CheckpointCoordinator(model, store, internalRun: child).RunOneStepAsync(RunId(), default);
-        Assert.Equal(child ? HarnessRunState.Failed : HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
+        Assert.Equal(code, result.Run.TerminalErrorCode);
         Assert.Equal(code, result.ErrorCode);
         Assert.Equal(1, result.Run.ModelStepsInWindow);
         Assert.Equal(1, model.Calls);

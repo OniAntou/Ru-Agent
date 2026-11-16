@@ -46,7 +46,6 @@ public sealed class AgentInlinePanelPolicyTests
     [InlineData(nameof(AgentInlinePanelInput.HasPendingApproval))]
     [InlineData(nameof(AgentInlinePanelInput.HasPendingInput))]
     [InlineData(nameof(AgentInlinePanelInput.NeedsWorkspaceTrust))]
-    [InlineData(nameof(AgentInlinePanelInput.CanContinue))]
     [InlineData(nameof(AgentInlinePanelInput.KeepTerminalFailureVisible))]
     public void Actionable_signals_keep_the_panel_from_collapsing(string flag)
     {
@@ -59,7 +58,6 @@ public sealed class AgentInlinePanelPolicyTests
             nameof(AgentInlinePanelInput.HasPendingApproval) => Input(hasPendingApproval: true, statusText: "working"),
             nameof(AgentInlinePanelInput.HasPendingInput) => Input(hasPendingInput: true, statusText: "working"),
             nameof(AgentInlinePanelInput.NeedsWorkspaceTrust) => Input(needsWorkspaceTrust: true, statusText: "working"),
-            nameof(AgentInlinePanelInput.CanContinue) => Input(canContinue: true, statusText: "working"),
             nameof(AgentInlinePanelInput.KeepTerminalFailureVisible) => Input(keepTerminalFailureVisible: true, statusText: "working"),
             _ => throw new ArgumentOutOfRangeException(nameof(flag)),
         };
@@ -99,15 +97,6 @@ public sealed class AgentInlinePanelPolicyTests
         Assert.False(state.ShowApproval);
         Assert.True(state.ShowInlinePanel);
         Assert.False(state.ShowStop);
-    }
-
-    [Fact]
-    public void A_resumable_run_keeps_the_panel_without_the_approval_block()
-    {
-        var state = AgentInlinePanelPolicy.Evaluate(Input(canContinue: true));
-
-        Assert.True(state.ShowInlinePanel);
-        Assert.False(state.ShowApproval);
     }
 
     [Fact]
@@ -181,7 +170,7 @@ public sealed class AgentInlinePanelPolicyTests
     {
         Assert.True(AgentInlinePanelPolicy.Evaluate(Input(canCancel: true)).IsRunning);
         Assert.True(AgentInlinePanelPolicy.Evaluate(Input(isBusy: true, runPending: true)).IsRunning);
-        Assert.False(AgentInlinePanelPolicy.Evaluate(Input(canContinue: true)).IsRunning);
+        Assert.False(AgentInlinePanelPolicy.Evaluate(Input(keepTerminalFailureVisible: true)).IsRunning);
     }
 
     [Fact]
@@ -236,7 +225,6 @@ public sealed class AgentInlinePanelPolicyTests
         bool canCancel = false,
         bool hasPendingApproval = false,
         bool needsWorkspaceTrust = false,
-        bool canContinue = false,
         bool keepTerminalFailureVisible = false,
         bool runPending = false,
         string statusText = "",
@@ -250,7 +238,6 @@ public sealed class AgentInlinePanelPolicyTests
             hasPendingApproval,
             hasPendingInput,
             needsWorkspaceTrust,
-            canContinue,
             keepTerminalFailureVisible,
             runPending,
             statusText,

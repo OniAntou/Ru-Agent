@@ -11,8 +11,6 @@ public enum HarnessRunTransition
     ResolveApproval,
     RequestInput,
     ResolveInput,
-    ExhaustBudget,
-    Continue,
     BeginFinalHistory,
     AcknowledgeFinalHistory,
     Cancel,

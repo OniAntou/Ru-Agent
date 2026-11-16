@@ -213,36 +213,6 @@ public sealed class ParkRecoveryRegressionTests
         Assert.EndsWith(new string('b', 32), owner.ParkedRunId);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void A_repeated_park_after_continue_stops_suggesting_the_same_retry(bool stateFirst)
-    {
-        var output = new StringWriter();
-        var surface = new TuiSurface(output);
-        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { Width = 160 };
-        var park = Envelope(1, "continue.requested", "waiting_user", "provider_rate_limited");
-        transcript.ApplyDurable(park);
-        transcript.ApplyDurable(park); // Duplicate within one park is not a repeat.
-        Assert.DoesNotContain("still blocked", TuiText.Strip(output.ToString()));
-        transcript.BeginTurn();
-        // A model step may complete without the run reaching a terminal state.
-        transcript.ApplyDurable(Envelope(2, "model.step_completed", "completed", "step_done"));
-        output.GetStringBuilder().Clear();
-        if (stateFirst) transcript.ApplyDurable(Envelope(3, "run.state_changed", "waiting_user", "waiting_user"));
-        transcript.ApplyDurable(park with { Sequence = 4 });
-        var text = TuiText.Strip(output.ToString());
-        Assert.Contains("still blocked after Continue", text);
-        Assert.DoesNotContain("wait a moment first", text);
-        Assert.Contains("cancel the run from CLI", text);
-
-        transcript.ForgetParkHistory(RunId);
-        transcript.BeginTurn();
-        output.GetStringBuilder().Clear();
-        transcript.ApplyDurable(park with { Sequence = 5 });
-        Assert.Contains("wait a moment first", TuiText.Strip(output.ToString()));
-    }
-
     [Fact]
     public void Changed_reason_or_finished_run_does_not_reuse_repeat_advice()
     {

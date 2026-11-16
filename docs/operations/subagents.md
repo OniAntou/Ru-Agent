@@ -205,7 +205,7 @@ and the read-only `GET /agent/v1/runs/{runId}/subagents/{agentId}/changes?result
 Each attempt carries `created_at`, `admitted_at` and, once terminal, `ended_at`; these are
 fixed instants, so an idle snapshot keeps its `snapshot_id`. In a change review a deleted
 file has `proposed_text: null` (an empty string means an existing empty file).
-Generic run approval/input/cancel/continue/compact/command/reconcile/trust writes reject
+Generic run approval/input/cancel/compact/command/reconcile/trust writes reject
 internal children with `subagent_read_only`, including marker-only attempts.
 RPC/SDK exposes `subagent.list` and `subagent.get`; CLI accepts
 `/subagents [run-id] [agent-id result [version]]`. The Terminal.Gui chat also consumes the root's `subagent.changed` hints for a live header strip and one transcript line per child transition. Root SSE `subagent.changed` frames are

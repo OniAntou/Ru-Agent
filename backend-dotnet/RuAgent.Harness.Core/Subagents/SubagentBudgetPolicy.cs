@@ -11,12 +11,13 @@ public static class SubagentBudgetPolicy
     public static AgentBudgetReservation ReserveToolCalls(AgentRun run, int count, DateTimeOffset now) =>
         AgentBudgetPolicy.ReserveToolCalls(run, count, now, allowAutomaticWindow: true);
 
-    public static AgentBudgetReservation Reject(AgentRun run, bool terminal, string code, DateTimeOffset now)
+    /// <summary>A refused reservation fails the run, root or child, with its named code.</summary>
+    public static AgentBudgetReservation Reject(AgentRun run, string code, DateTimeOffset now)
     {
         if (run.State != HarnessRunState.Running) throw new InvalidOperationException("invalid_budget_state");
-        var transition = AgentRunStateMachine.TryTransition(run.Status, terminal ? HarnessRunTransition.Fail : HarnessRunTransition.ExhaustBudget);
+        var transition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Fail);
         if (!transition.Accepted) throw new InvalidOperationException(transition.ErrorCode);
         return AgentBudgetReservation.Reject(run.Advance(transition.Next, run.BudgetWindow, run.ModelStepsInWindow,
-            run.ToolCallsInWindow, 1, now, terminal ? code : null), code);
+            run.ToolCallsInWindow, 1, now, code), code);
     }
 }

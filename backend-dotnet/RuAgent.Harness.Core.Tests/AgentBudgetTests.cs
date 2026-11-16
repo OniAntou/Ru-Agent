@@ -9,7 +9,7 @@ public sealed class AgentBudgetTests
         new(2026, 8, 24, 8, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void Last_model_step_in_the_window_is_allowed_and_next_attempt_enters_waiting_user()
+    public void Last_model_step_in_the_window_is_allowed_and_next_attempt_fails_the_run()
     {
         var run = Run(modelSteps: AgentBudgetPolicy.ModelStepLimit - 1);
 
@@ -23,7 +23,8 @@ public sealed class AgentBudgetTests
         Assert.Equal(HarnessRunState.Running, lastAllowed.NextRun.State);
         Assert.False(exhausted.Granted);
         Assert.Equal("model_step_budget_exhausted", exhausted.ErrorCode);
-        Assert.Equal(HarnessRunState.WaitingUser, exhausted.NextRun.State);
+        Assert.Equal(HarnessRunState.Failed, exhausted.NextRun.State);
+        Assert.Equal("model_step_budget_exhausted", exhausted.NextRun.TerminalErrorCode);
         Assert.Equal(AgentBudgetPolicy.ModelStepLimit, exhausted.NextRun.ModelStepsInWindow);
     }
 
@@ -47,7 +48,7 @@ public sealed class AgentBudgetTests
         Assert.Equal(limit, lastAllowed.NextRun.ToolCallsInWindow);
         Assert.False(exhausted.Granted);
         Assert.Equal("tool_call_budget_exhausted", exhausted.ErrorCode);
-        Assert.Equal(HarnessRunState.WaitingUser, exhausted.NextRun.State);
+        Assert.Equal(HarnessRunState.Failed, exhausted.NextRun.State);
         Assert.False(oversizedBatch.Granted);
         Assert.Equal(limit - 1, oversizedBatch.NextRun.ToolCallsInWindow);
     }
@@ -102,7 +103,7 @@ public sealed class AgentBudgetTests
 
         Assert.False(refused.Granted);
         Assert.Equal("model_step_budget_exhausted", refused.ErrorCode);
-        Assert.Equal(HarnessRunState.WaitingUser, refused.NextRun.State);
+        Assert.Equal(HarnessRunState.Failed, refused.NextRun.State);
     }
 
     [Fact]
@@ -123,7 +124,8 @@ public sealed class AgentBudgetTests
         Assert.Equal(2, admitted.NextRun.ToolCallsInWindow);
         Assert.False(oversized.Granted);
         Assert.Equal("tool_call_budget_exhausted", oversized.ErrorCode);
-        Assert.Equal(HarnessRunState.WaitingUser, oversized.NextRun.State);
+        Assert.Equal(HarnessRunState.Failed, oversized.NextRun.State);
+        Assert.Equal("tool_call_budget_exhausted", oversized.NextRun.TerminalErrorCode);
     }
 
     [Fact]
@@ -142,25 +144,6 @@ public sealed class AgentBudgetTests
         Assert.Equal(9, resumed.ToolCallsInWindow);
     }
 
-    [Fact]
-    public void Continue_opens_a_fresh_window_on_the_same_run()
-    {
-        var run = Run(
-            status: HarnessRunState.WaitingUser,
-            budgetWindow: 2,
-            modelSteps: AgentBudgetPolicy.ModelStepLimit,
-            toolCalls: AgentBudgetPolicy.ToolCallLimit);
-
-        var continued = AgentBudgetPolicy.Continue(run, Now.AddSeconds(1));
-
-        Assert.Equal(run.RunId, continued.RunId);
-        Assert.Equal(3, continued.BudgetWindow);
-        Assert.Equal(0, continued.ModelStepsInWindow);
-        Assert.Equal(0, continued.ToolCallsInWindow);
-        Assert.Equal(HarnessRunState.Running, continued.State);
-        Assert.Equal(run.Version + 1, continued.Version);
-        Assert.Equal(run.LastSequence + 1, continued.LastSequence);
-    }
 
     [Fact]
     public void Budget_actions_reject_invalid_states_or_counts()
@@ -171,8 +154,7 @@ public sealed class AgentBudgetTests
                 Now));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             AgentBudgetPolicy.ReserveToolCalls(Run(), 0, Now));
-        Assert.Throws<InvalidOperationException>(() =>
-            AgentBudgetPolicy.Continue(Run(), Now));
+
     }
 
     [Fact]

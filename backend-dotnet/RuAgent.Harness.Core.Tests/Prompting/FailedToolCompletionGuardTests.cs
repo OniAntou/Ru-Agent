@@ -129,6 +129,28 @@ public sealed class FailedToolCompletionGuardTests
     }
 
     [Fact]
+    public void A_users_deny_lets_the_model_finish()
+    {
+        // The user's deny is a decision, not a tool fault: a reply that accepts it
+        // completes the run instead of drawing unverified-failure notes.
+        var context = CreateContext(
+            Receipt(ToolExecutionOutcome.Failed, FailedToolCompletionGuard.ApprovalDeniedCode));
+
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(context, out _));
+    }
+
+    [Fact]
+    public void A_users_deny_does_not_hide_another_failure()
+    {
+        var context = CreateContext(
+            Receipt(ToolExecutionOutcome.Failed, FailedToolCompletionGuard.ApprovalDeniedCode),
+            Receipt(ToolExecutionOutcome.Failed, "process_exit_nonzero"));
+
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(context, out var code));
+        Assert.Equal("process_exit_nonzero", code);
+    }
+
+    [Fact]
     public void Repeated_policy_deny_returns_failure()
     {
         var first = ModelContextEntry.ToolResult(

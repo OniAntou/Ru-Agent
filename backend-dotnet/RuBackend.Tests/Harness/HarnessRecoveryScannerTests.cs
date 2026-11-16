@@ -170,6 +170,127 @@ public sealed class HarnessRecoveryScannerTests
         }
     }
 
+    [Theory]
+    [InlineData("continue.requested", "provider_rate_limited", "provider_rate_limited")]
+    [InlineData("continue.requested", "repeated_tool_call", "repeated_tool_call")]
+    [InlineData("model.step_started", "context_limit_reached", "context_limit_reached")]
+    [InlineData("run.state_changed", "waiting_user", "continue_removed")]
+    public async Task A_run_an_older_build_parked_for_continue_fails_with_its_park_code(
+        string lastKind, string parkCode, string expected)
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var seeded = await fixture.SeedRunAsync(new HarnessRunStatus(HarnessRunState.Running));
+            var kind = lastKind switch
+            {
+                "continue.requested" => HarnessEventKind.ContinueRequested,
+                "model.step_started" => HarnessEventKind.ModelStepStarted,
+                _ => HarnessEventKind.RunStateChanged,
+            };
+            var parked = await ParkAsync(fixture, seeded.Run, new HarnessEventIntent(
+                new EventId("evt_" + new string('c', 32)), kind,
+                modelStepId: kind == HarnessEventKind.ModelStepStarted ? new ModelStepId("step_" + new string('c', 32)) : null,
+                safeCode: parkCode));
+
+            var summary = await new HarnessRecoveryScanner(fixture.EventStore, new FixedTime(Timestamp.AddMinutes(1)))
+                .ScanRunAsync(parked.RunId, CancellationToken.None);
+
+            Assert.NotNull(summary);
+            var failed = await fixture.EventStore.GetRunAsync(parked.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.Failed, failed!.State);
+            Assert.Equal(expected, failed.TerminalErrorCode);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task An_ask_user_wait_is_not_mistaken_for_a_continue_park()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var seeded = await fixture.SeedRunAsync(new HarnessRunStatus(HarnessRunState.Running));
+            var parked = await ParkAsync(fixture, seeded.Run, new HarnessEventIntent(
+                new EventId("evt_" + new string('c', 32)), HarnessEventKind.InputRequested,
+                modelStepId: new ModelStepId("step_" + new string('c', 32)),
+                toolCallId: new ToolCallId("call_" + new string('c', 32)),
+                providerCallId: "provider_c",
+                executionId: new ExecutionId("exec_" + new string('c', 32)),
+                safeCode: "input_required"));
+
+            await new HarnessRecoveryScanner(fixture.EventStore, new FixedTime(Timestamp.AddMinutes(1)))
+                .ScanRunAsync(parked.RunId, CancellationToken.None);
+
+            var current = await fixture.EventStore.GetRunAsync(parked.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.WaitingUser, current!.State);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<AgentRun> ParkAsync(BackendHarnessTestFixture fixture, AgentRun run, HarnessEventIntent cause)
+    {
+        var next = new AgentRun(run.RunId, run.SessionId, run.WorkspaceId,
+            new HarnessRunStatus(HarnessRunState.WaitingUser), run.Version + 1, run.LastSequence + 1,
+            run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, run.Preset,
+            run.PolicySnapshotVersion, run.PolicySnapshotSha256, run.CreatedAt, Timestamp.AddSeconds(2));
+        var commit = await fixture.EventStore.CommitAsync(new HarnessCommit(run.RunId, run.Version, next, [cause],
+            Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>()), CancellationToken.None);
+        Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
+        return commit.Run!;
+    }
+
+    [Fact]
+    public async Task A_user_denied_ask_is_settled_and_the_rest_of_the_batch_resumes_after_restart()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var waiting = await SeedApprovalBatchAsync(fixture);
+            var current = await fixture.EventStore.GetRunAsync(waiting.RunId, CancellationToken.None);
+            Assert.NotNull(current);
+            var modelStepId = new ModelStepId("step_11111111111111111111111111111111");
+            var deniedCall = new ToolCallId("call_" + new string('2', 32));
+            var deniedExecution = new ExecutionId("exec_" + new string('9', 32));
+            // What the approval route commits for a deny: the resolution, then the asked
+            // call's approval_denied receipt, with the run back to Running.
+            var events = new List<HarnessEventIntent>
+            {
+                new(new EventId("evt_" + new string('f', 32)), HarnessEventKind.RunStateChanged, safeCode: "approval_resolved"),
+                new(new EventId("evt_" + new string('e', 32)), HarnessEventKind.ToolExecutionRequested,
+                    modelStepId: modelStepId, toolCallId: deniedCall, providerCallId: "provider_2",
+                    executionId: deniedExecution, safeCode: "approval_denied"),
+                new(new EventId("evt_" + new string('d', 32)), HarnessEventKind.ToolExecutionCompleted,
+                    modelStepId: modelStepId, toolCallId: deniedCall, providerCallId: "provider_2",
+                    executionId: deniedExecution, safeCode: "approval_denied",
+                    toolOutcome: ToolExecutionOutcome.Failed, sideEffectsPossible: false),
+            };
+            var next = new AgentRun(current!.RunId, current.SessionId, current.WorkspaceId,
+                new HarnessRunStatus(HarnessRunState.Running), current.Version + 1, current.LastSequence + events.Count,
+                current.BudgetWindow, current.ModelStepsInWindow, current.ToolCallsInWindow, current.Preset,
+                current.PolicySnapshotVersion, current.PolicySnapshotSha256, current.CreatedAt, Timestamp.AddSeconds(2));
+            var commit = await fixture.EventStore.CommitAsync(new HarnessCommit(current.RunId, current.Version, next,
+                events, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>()), CancellationToken.None);
+            Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
+
+            var step = await new RetainedApprovalRehydrator(fixture.EventStore, fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1))).RehydrateAsync(waiting.RunId, CancellationToken.None);
+
+            Assert.NotNull(step);
+            Assert.Equal(["provider_1", "provider_3"], step!.Proposals.Select(item => item.ProviderCallId).ToArray());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [Fact]
     public async Task Retained_approval_rehydration_excludes_denials_around_the_ask()
     {

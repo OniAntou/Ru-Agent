@@ -670,7 +670,7 @@ transition applies instantly when Windows animations are off. Incoming activity
 data and session replay own its current plan;
 realizing or recycling a transcript row cannot update it. Routine run/model-step
 status stays in the transcript; the composer feedback row is for actionable
-failures, resumable states and local input feedback.
+failures, waiting states and local input feedback.
 Shell policy contexts retain the selected runtime and exact invocation for
 approval matching; nonempty shell argv allow rules use literal, case-sensitive
 whole invocations, so script wildcards cannot widen a remembered permission.
@@ -842,7 +842,7 @@ Headless `run`/`attach` detach at the current durable park boundary with exit 2,
 without cancelling the run. Chat `/release` checks session ownership and parked
 status before cancelling, and retains its run identity if cancellation fails.
 Repeated park guidance remembers at most 64 run reasons and clears on release
-or a terminal run event. Explicit OpenAI HTTP 429 quota codes park immediately;
+or a terminal run event. Explicit OpenAI HTTP 429 quota codes end the run immediately;
 ordinary throttles retain bounded retries. Neither path changes pinned selection.
 Host single-instance claims bind the physical identity of both data and log
 directories, including aliases. Directory handles retain those roots for the

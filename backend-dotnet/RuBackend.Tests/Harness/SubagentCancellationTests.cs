@@ -14,7 +14,7 @@ public sealed partial class SubagentCancellationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Generic_continue_cannot_reset_internal_attempt_budget_even_if_owner_metadata_is_lost(bool missingOwner)
+    public async Task Generic_run_routes_cannot_change_an_internal_attempt_even_if_owner_metadata_is_lost(bool missingOwner)
     {
         await using var fixture = await BackendHarnessTestFixture.CreateAsync();
         var root = await fixture.SeedRunAsync(new(HarnessRunState.Running));
@@ -40,9 +40,6 @@ public sealed partial class SubagentCancellationTests
         }
         var before = (await fixture.EventStore.GetRunAsync(child.RunId, default))!;
         var services = new AgentV1ServiceTestBuilder(fixture).Build();
-        var response = await services.Lifecycle.ContinueAsync(child.RunId.Value, default);
-        Assert.Equal(409, response.StatusCode);
-        Assert.Contains("subagent_read_only", System.Text.Json.JsonSerializer.Serialize(response.Body));
         foreach (var blocked in new[] {
             await services.Lifecycle.CancelAsync(child.RunId.Value, default),
             await services.Approvals.HandleApprovalAsync(child.RunId.Value, "apr_fixture", null, default),

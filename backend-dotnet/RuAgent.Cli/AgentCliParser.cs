@@ -10,7 +10,6 @@ public enum CliCommandKind
     Attach,
     Trust,
     Cancel,
-    Continue,
     Status,
     Approve,
     Deny,
@@ -59,8 +58,6 @@ public sealed record TrustCommand(
 public sealed record CancelCommand(
     string RunId) : AgentCommand(CliCommandKind.Cancel, false);
 
-public sealed record ContinueCommand(
-    string RunId) : AgentCommand(CliCommandKind.Continue, false);
 
 public sealed record StatusCommand(
     string RunId,
@@ -221,7 +218,7 @@ public static partial class AgentCliParser
             return Fail("unknown_command", $"Unknown command '{args[0]}'. Expected 'agent'.");
 
         if (args.Length < 2)
-            return Fail("missing_subcommand", "Missing agent subcommand. Expected run|attach|trust|cancel|continue|status|approve|deny|answer|policy|chat|session.");
+            return Fail("missing_subcommand", "Missing agent subcommand. Expected run|attach|trust|cancel|status|approve|deny|answer|policy|chat|session.");
 
         var sub = args[1];
         return sub switch
@@ -230,7 +227,10 @@ public static partial class AgentCliParser
             "attach" => ParseAttach(args),
             "trust" => ParseTrust(args),
             "cancel" => ParseCancel(args),
-            "continue" => ParseContinue(args),
+            // Runs no longer park for a Continue: a run that stops reports its error and
+            // ends. Name the removal instead of calling it an unknown subcommand.
+            "continue" => Fail("continue_removed",
+                "'agent continue' was removed: a run that stops reports its error and ends. Send a new message in the session to keep going."),
             "status" => ParseStatus(args),
             "approve" => ParseApprove(args),
             "deny" => ParseDeny(args),

@@ -114,9 +114,6 @@ public sealed partial class AgentRunClientAdapter : IAgentRunClient, IDisposable
         CancellationToken cancellationToken = default)
         => _apiClient.DispatchCommandAsync(runId, text, cancellationToken);
 
-    public Task ContinueAsync(string runId, CancellationToken cancellationToken = default)
-        => _apiClient.ContinueAsync(runId, cancellationToken);
-
 
     /// <summary>
     /// Streams run events, transparently resuming from the last durable sequence

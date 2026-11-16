@@ -270,9 +270,10 @@ public static class AgentFailureCopy
             "Run not runnable",
             "the run is no longer in a runnable state",
             "send the request again to start a fresh run");
+
         Add(table, ["run_not_parked"],
             "Run is not paused",
-            "the run is not waiting to continue",
+            "the run is not parked, so there is nothing to release",
             "send a new message, or check the run state first");
         Add(table, ["run_failed"],
             "Run failed",
@@ -285,7 +286,7 @@ public static class AgentFailureCopy
         Add(table, ["reconciliation_required"],
             "Run paused for inspection",
             "the last action was interrupted so its result is unverified",
-            "send Continue to resume with a read-only inspection, or Stop to end the run");
+            "send a new message; the next run checks the workspace before acting");
         Add(table, ["reconcile_stale"],
             "Reconciliation outdated",
             "the workspace changed since the snapshot was taken",
@@ -298,8 +299,8 @@ public static class AgentFailureCopy
         // Approvals.
         Add(table, ["approval_denied"],
             "Approval denied",
-            "the run stopped before that tool executed",
-            "send the request again and approve the action");
+            "you denied that tool call, so it did not run",
+            "the agent continues without it; tell it what to do instead");
         Add(table, ["approval_expired"],
             "Approval expired",
             "the approval expired before it was answered",
@@ -329,15 +330,15 @@ public static class AgentFailureCopy
         Add(table, ["model_step_budget_exhausted"],
             "Model step budget used up",
             "the run reached its 128 model steps for this budget window",
-            "send /continue to open a fresh budget window, or stop the run");
+            "send a new message to keep going in a fresh run");
         Add(table, ["tool_call_budget_exhausted"],
             "Tool call budget used up",
             "the run reached its 256 tool calls for this budget window",
-            "send /continue to open a fresh budget window, or stop the run");
+            "send a new message to keep going in a fresh run");
         Add(table, ["context_limit_reached"],
             "Context limit reached",
             "the conversation is over the model's context window even after compaction",
-            "run /compact or start a fresh session, then retry");
+            "send a new message: the next run starts from a compact handoff of this one");
         Add(table, ["commit_conflict"],
             "Run changed during the step",
             "another writer changed the run before this step could commit",

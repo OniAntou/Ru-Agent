@@ -447,18 +447,6 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
             throw new AgentApiException(ExtractErrorCode(body) ?? "cancel_failed", body, (int)resp.StatusCode);
     }
 
-    public async Task ContinueAsync(string runId, CancellationToken ct = default)
-    {
-        ValidateRunId(runId);
-        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/continue");
-        using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
-        EnsureAuth(req);
-        using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
-        if (!resp.IsSuccessStatusCode)
-            throw new AgentApiException(ExtractErrorCode(body) ?? "continue_failed", body, (int)resp.StatusCode);
-    }
-
     public async Task<CompactAgentRunResponse> CompactAsync(
         string runId,
         CompactAgentRunRequest? request = null,

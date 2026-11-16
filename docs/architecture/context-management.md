@@ -47,12 +47,12 @@ and never expose raw instruction or prompt text. A crash after admission keeps
 the spent reservation; it cannot make a dispatched call free. A failed summary
 does not replace original history. An exhausted format repair or permanent checkpoint
 failure stops the run with its named error. Transient provider failures, operator-repairable account limits and the
-checkpoint deadline park a root run for explicit Continue; internal children
-fail instead of requesting user input. Neither path loops automatically.
-Budget exhaustion follows ordinary run policy: a root run opens its automatic
-windows first and only waits for explicit Continue after the automatic
-allowance (8 windows) is spent, while internal child runs fail at their bound;
-no extra call dispatches without an admitted reservation.
+checkpoint deadline also fail the run, root or child, with their code; there is no
+Continue gate (ADR 0048) and nothing loops automatically. A run that cannot fit its
+context after compaction fails as `context_limit_reached`. Budget exhaustion follows
+ordinary run policy: root and child runs open automatic windows, and a reservation
+that cannot be granted fails the run; no extra call dispatches without an admitted
+reservation.
 
 A successful summary must shrink the selected span. It is encrypted and
 committed with covered ranges and an input digest through the existing

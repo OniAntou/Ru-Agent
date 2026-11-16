@@ -33,7 +33,6 @@ public sealed record AgentInlinePanelInput(
     bool HasPendingApproval,
     bool HasPendingInput,
     bool NeedsWorkspaceTrust,
-    bool CanContinue,
     bool KeepTerminalFailureVisible,
     bool RunPending,
     string StatusText,
@@ -79,7 +78,6 @@ public static class AgentInlinePanelPolicy
             && !input.HasPendingApproval
             && !input.HasPendingInput
             && !input.NeedsWorkspaceTrust
-            && !input.CanContinue
             && !input.KeepTerminalFailureVisible)
         {
             return Hidden(input);
@@ -104,10 +102,8 @@ public static class AgentInlinePanelPolicy
         // a resume to send, or a terminal failure whose only signal lives here.
         bool hasInlineAction = input.HasPendingApproval
             || input.HasPendingInput
-            || input.CanContinue
             || input.KeepTerminalFailureVisible;
-        string status = input.KeepTerminalFailureVisible || input.CanContinue
-            ? input.StatusText : string.Empty;
+        string status = input.KeepTerminalFailureVisible ? input.StatusText : string.Empty;
 
         return new AgentInlinePanelState(
             ShowInlinePanel: hasInlineAction,

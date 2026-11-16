@@ -78,7 +78,7 @@ public sealed partial class AgentRunCoordinator
 
     /// <summary>
     /// Tool calls keep their dispatch path. The repetition guard may answer with one repair
-    /// note or park the run; otherwise the calls are dispatched. Repetition is not part of
+    /// note or end the run; otherwise the calls are dispatched. Repetition is not part of
     /// the completion policy and is evaluated against the pre-refresh context, as before.
     /// </summary>
     private async Task<AgentRunStepResult> DispatchToolCallsAsync(
@@ -120,6 +120,22 @@ public sealed partial class AgentRunCoordinator
                     invocation.PromptComposedEvent,
                     cancellationToken,
                     invocation.ReasoningText)
+                .ConfigureAwait(false);
+        }
+
+        // A batch larger than a whole budget window can never be reserved. The model can fix
+        // that by splitting it, so it gets the bounded repair note first; only a model that
+        // keeps sending oversized batches reaches the reservation, which ends the run.
+        if (step.ToolCalls.Count > AgentBudgetPolicy.ToolCallLimit
+            && AgentRecoveryNotes.CanAdvise(context, AgentRecoveryKind.ModelRepairable))
+        {
+            invocation.RetractAssistantText();
+            return await _steps.HandleModelRepairableFailureStepAsync(
+                    run,
+                    modelStepId,
+                    AgentRecoveryNotes.ToolBatchTooLargeCode,
+                    AgentRecoveryNotes.NoteCount(context, AgentRecoveryKind.ModelRepairable),
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 

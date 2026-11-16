@@ -199,7 +199,7 @@ public sealed partial class AgentCommands
         if (parked)
         {
             var noticeWriter = json ? _err : _out;
-            var notice = $"run parked · {parkReason ?? "reason pending"} · continue with 'ru agent continue {runId}' · abandon with 'ru agent cancel {runId}'";
+            var notice = $"run parked · {parkReason ?? "reason pending"} · an older build parked it · release it with 'ru agent cancel {runId}'";
             await noticeWriter.WriteLineAsync(notice).ConfigureAwait(false);
             await noticeWriter.FlushAsync().ConfigureAwait(false);
         }

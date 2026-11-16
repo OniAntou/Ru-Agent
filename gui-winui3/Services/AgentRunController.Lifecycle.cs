@@ -33,21 +33,6 @@ public sealed partial class AgentRunController
         }
     }
 
-    public bool CanContinue
-    {
-        get
-        {
-            lock (_gate)
-            {
-                // A run parked on Continue waits for the user; reconciliation is
-                // retired and no longer a resumable wait.
-                return _currentRunId is not null
-                    && _waitKind == "waiting_user"
-                    && !_isCancelRequested;
-            }
-        }
-    }
-
     public async Task<bool> CreateAndRunAsync(
         CreateAgentRunRequest request,
         CancellationToken externalCancellation = default,
@@ -323,11 +308,11 @@ public sealed partial class AgentRunController
 
     /// <summary>
     /// Takes over a run this controller did not create. A host restart leaves a
-    /// session's newest run parked or live with no client following it; opening the
-    /// session must offer Continue or Stop for exactly that run instead of leaving
-    /// it invisible. The stream is followed from the run's durable cursor in the
-    /// background, so opening a session never waits on a run that may stay parked
-    /// indefinitely. Returns <c>true</c> when this call latched the run and started
+    /// session's newest run waiting or live with no client following it; opening the
+    /// session must offer its pending prompt or Stop for exactly that run instead of
+    /// leaving it invisible. The stream is followed from the run's durable cursor in
+    /// the background, so opening a session never waits on a run that may keep
+    /// waiting indefinitely. Returns <c>true</c> when this call latched the run and started
     /// its follow; <c>false</c> when adoption was skipped because another run
     /// already owns the controller or the open token was already cancelled.
     /// </summary>
@@ -695,38 +680,6 @@ public sealed partial class AgentRunController
         CancellationToken cancellationToken = default)
         => _client.DispatchCommandAsync(runId, text, cancellationToken);
 
-    public async Task ContinueAsync(CancellationToken cancellationToken = default)
-    {
-        string? runId;
-        lock (_gate)
-        {
-            runId = _currentRunId;
-        }
-
-        if (runId is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await _client.ContinueAsync(runId, cancellationToken).ConfigureAwait(false);
-            RunOnUi(() =>
-            {
-                _waitKind = null;
-                _statusText = "Resume request sent.";
-                RefreshCommands();
-            });
-        }
-        catch (Exception ex)
-        {
-            RunOnUi(() =>
-            {
-                _statusText = $"Resume error: {ex.Message}";
-                RefreshCommands();
-            });
-        }
-    }
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         string? runId;

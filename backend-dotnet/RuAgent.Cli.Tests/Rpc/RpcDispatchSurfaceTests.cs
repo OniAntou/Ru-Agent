@@ -412,7 +412,6 @@ public sealed partial class RpcDispatchSurfaceTests
                 "run.trust",
                 "run.approve",
                 "run.cancel",
-                "run.continue",
                 "run.status",
                 "run.command",
                 "run.output",

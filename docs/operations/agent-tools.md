@@ -85,11 +85,11 @@ marker without a receipt blocks repetition, as do changed source/policy/SDK pins
 Indexed batch receipts preserve original positions, including partial failures.
 Interrupted effects can require reconciliation and workspace
 inspection. Nested calls count against the shared 256-tool-call budget window.
-An unresolved program trace blocks verified completion; Continue does not clear
+An unresolved program trace blocks verified completion; a new run does not clear
 the journal or authorize repeating it. If the effects cannot be established,
 report `[BLOCKED]` and start a fresh run after inspecting the workspace.
 The root's displayed model-tool counter still counts model-visible calls;
-the shared family counters also count nested calls and have no ceiling. Continue opens a new window.
+the shared family counters also count nested calls and have no ceiling. A full window opens the next one automatically.
 
 The full trace remains encrypted audit/completion evidence. Provider context
 always receives selected results without the trace, including when the response
@@ -451,7 +451,7 @@ Structured protected paths (harness key/database files, runtime descriptors and 
 plus user-added `RU_PROTECTED_PATHS` entries) are denied in `plan` and
 `standard` and allowed in `full_access`, and canonical, symlink, junction, and
 hard-link checks stay active. An ambiguous
-mutation pauses for inspection until explicit Continue.
+mutation reaches the model as a failed result with `sideEffectsPossible`.
 
 `apply_patch` is advertised only by `coding_v3`. Internal
 adapter names do not create additional public model capabilities.
@@ -482,7 +482,7 @@ call is completed by the answer route, and the durable rehydrator resumes the
 remaining retained proposals without a new model proposal. A denial may return
 a repair hint. An exact repeat or short failed-call cycle is suppressed before
 duplicate dispatch; up to two `[REPETITION GUARD]` notes request changed arguments,
-then `repeated_tool_call` parks the run for explicit Continue. Suppressed calls
+then the run fails as `repeated_tool_call`. Suppressed calls
 remain audit-only and do not create unmatched native-history tool calls. The
 failed receipt remains visible behind advice, so prose alone cannot clear it. An empty or whitespace-only
 final step is answered up to three times with a bounded `[HARNESS RECOVERY]` note before the run fails as
@@ -494,8 +494,10 @@ tool calls, is suppressed before any execution and gets up to three recovery not
 requesting smaller output, then fails as `model_output_truncated`. A
 `ContentFilter` or `Error` finish fails immediately as `model_content_filtered`
 or `model_reply_error`. All recovery kinds share a cumulative 24-note run cap;
-provider-transient failures retain their existing retry/Continue behavior, and
-prompt failures never take the note path.
+provider-transient failures fail the run with their code once the runner's bounded
+retries are spent, and prompt failures never take the note path. A batch of more
+tool calls than one window holds first gets a `model_tool_batch_too_large` note
+(sharing the runner-rejection notes) asking the model to split it.
 
 The shared budget remains 256 model-initiated tool calls per window; there is no
 new low per-step cap. A window is a counter reset, not a run limit: a root run
@@ -552,9 +554,8 @@ without an exclusive workspace lock. The compatibility `409 workspace_busy`
 (or the session-scoped variant) for a second run in the same session
 names the run that owns that session in `blocking_run_id`/`blocking_run_status`,
 so a client can point the operator at the exact run to cancel
-(`ru agent cancel <run-id>`), attach to (`ru agent attach <run-id>`), or — when
-`blocking_run_status` is `waiting_user` or `reconciliation_required` — resume
-with `ru agent continue <run-id>`.
+(`ru agent cancel <run-id>`) or attach to (`ru agent attach <run-id>`), which
+answers a waiting approval or question.
 
 While a run is actively driven, a dedicated heartbeat renews its workspace
 membership independently of model and tool step duration. A failed renewal
@@ -855,8 +856,7 @@ listing from globbing (`List`, `Glob`), tool docs (`Docs`) and terminal follow-u
 reports the bounded number of covered context entries and the elapsed time of a
 context compaction (the summary text never crosses the sink boundary); `retry`
 reports a bounded tool transport retry attempt (any access kind, at most once
-per call). Status rows can carry a bounded plain-text `detail` (for example the
-inspection-gate pause with its Continue guidance). Completed tool kinds
+per call). Status rows can carry a bounded plain-text `detail`. Completed tool kinds
 carry a bounded `duration_ms` measured from the scheduled execution.
 
 Assistant text uses a separate typed `assistant.delta` transient frame. The
@@ -898,7 +898,7 @@ outbox intent with the same preview-sanitized `agent` shape.
 The feed is shown only after the first valid activity frame and is cleared on
 terminal completion, cancellation, failure, disconnect, session replacement,
 or reset. The inline surface still owns bounded status, workspace trust,
-approval, Stop, and Continue controls. Malformed, unknown, stale, or other
+approval and Stop controls. Malformed, unknown, stale, or other
 content-bearing transient frames are ignored. Raw commands, arguments, stdout,
 or private payload content never reach the feed, durable audit, conversation
 history, or public payload metadata.
@@ -913,9 +913,8 @@ disconnect marks an ambiguous request as a bounded retryable error; it never
 silently replays a request that might already have committed. An approved run
 rehydrates and re-evaluates its durable retained batch without a new model
 proposal or duplicate proposal event; the model is never asked to reissue an
-approved call. An ambiguous mutation outcome pauses with a waiting status
-detail, and explicit `Continue` clears the inspection gate with a
-`gate_cleared_by_user` audit event in the same commit.
+approved call. An ambiguous mutation outcome reaches the model as a failed result
+with `sideEffectsPossible`, which it inspects before acting again.
 
 The short-intent resolver may answer only an exact, high-confidence greeting
 or acknowledgement locally. Corrections, filesystem/path, search, network,

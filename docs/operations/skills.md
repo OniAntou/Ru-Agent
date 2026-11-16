@@ -137,8 +137,8 @@ preserved timestamp can leave the stamp unchanged; it is not a content pin.
 Use `expected_body_sha256` from an earlier load when the exact body must match.
 The returned body digest identifies the exact normalized body.
 
-Once loaded, the run uses a captured snapshot. Compact, restart and Continue
-restore that snapshot, not changed disk contents. Explicitly loading again
+Once loaded, the run uses a captured snapshot. Compact and restart restore that
+snapshot, not changed disk contents. Explicitly loading again
 refreshes the selected version. Up to four full workflows within a 128 KiB body
 budget are retained; omitted workflows are disclosed. New chat runs do not
 automatically inherit every workflow used previously.

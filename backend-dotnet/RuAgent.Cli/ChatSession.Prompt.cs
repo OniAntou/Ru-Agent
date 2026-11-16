@@ -77,10 +77,7 @@ public sealed partial class AgentCommands
                 }
                 try
                 {
-                    if (runSession.ParkedRunId is not null)
-                        await ContinueParkedRunAsync(ct).ConfigureAwait(false);
-                    else
-                        await FollowRetainedRunAsync(ct).ConfigureAwait(false);
+                    await FollowRetainedRunAsync(ct).ConfigureAwait(false);
                 }
                 catch (RunParkedException)
                 {

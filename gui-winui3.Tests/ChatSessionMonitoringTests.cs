@@ -118,7 +118,6 @@ public sealed class ChatSessionMonitoringTests
         public Task TrustAsync(string runId, TrustAgentRunRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<long> SetSessionPresetAsync(string sessionId, string preset, long expectedVersion, bool interactive, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task CancelAsync(string runId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task ContinueAsync(string runId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<DispatchAgentCommandResponse> DispatchCommandAsync(string runId, string text, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task ApproveAsync(string runId, string approvalId, string scope, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task DenyAsync(string runId, string approvalId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

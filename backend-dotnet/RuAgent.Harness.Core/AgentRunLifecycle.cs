@@ -108,28 +108,6 @@ internal sealed class AgentRunLifecycle
             .ConfigureAwait(false);
     }
 
-    public async Task<AgentRun> ContinueAsync(
-        RunId runId,
-        CancellationToken cancellationToken)
-    {
-        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        var next = AgentBudgetPolicy.Continue(run, _time.UtcNow);
-        return await CommitAsync(
-                run,
-                next,
-                new[]
-                {
-                    new HarnessEventIntent(
-                        _ids.NewEventId(),
-                        HarnessEventKind.ContinueRequested,
-                        safeCode: "continued"),
-                },
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
     /// <summary>
     /// Moves a Running run to WaitingApproval without consuming any budget counter.
     /// </summary>

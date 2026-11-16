@@ -355,10 +355,11 @@ public sealed partial class HeadlessCodingLoopTests
                 runId,
                 new HashSet<string>(StringComparer.Ordinal) { "waiting_user", "completed", "failed" },
                 TimeSpan.FromSeconds(30)),
-            "run did not reach a terminal or continue state");
+            "run did not reach a terminal state");
 
         var events = await ReadEventsAsync(client, runId);
-        Assert.Equal("waiting_user", await GetStatusAsync(client, runId));
+        // The repetition guard's notes are spent, so the run ends instead of parking.
+        Assert.Equal("failed", await GetStatusAsync(client, runId));
         Assert.Equal(5, events.Count(item => item.GetProperty("event_type").GetString() == "tool.execution_completed"));
         Assert.Equal(5, events.Count(item => item.GetProperty("event_type").GetString() == "tool.proposed"));
         Assert.Equal(2, events.Count(item => item.GetProperty("event_type").GetString() == "run.note_added"));

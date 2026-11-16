@@ -71,7 +71,7 @@ The first request must be `initialize`:
 ```
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"bridge":{"version":"1.0.0.0"},"methods":["initialize","host.status","session.create","session.list","session.rewind","run.start","run.attach","run.detach","run.trust","run.approve","run.cancel","run.continue","run.status","run.command","run.reconcile","run.output","subagent.list","subagent.get","policy.list","policy.import","policy.remove"],"notifications":["run.event","run.transient","run.detached","bridge.shutdown"]}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"bridge":{"version":"1.0.0.0"},"methods":["initialize","host.status","session.create","session.list","session.rewind","run.start","run.attach","run.detach","run.trust","run.approve","run.cancel","run.status","run.command","run.reconcile","run.output","subagent.list","subagent.get","policy.list","policy.import","policy.remove"],"notifications":["run.event","run.transient","run.detached","bridge.shutdown"]}}
 ```
 
 - `protocolVersion` must be `1`. Any other value is rejected with `-32000` and
@@ -103,7 +103,6 @@ truncating it.
 | `run.trust` | `runId`, `approve`? | `{ "run_id", "status" }` | `POST /agent/v1/runs/{runId}/trust` |
 | `run.approve` | `runId`, `approvalId`, `decision` | approval payload (passthrough) | `POST /agent/v1/runs/{runId}/approvals/{approvalId}` |
 | `run.cancel` | `runId` | `{ "cancelled": "<runId>" }` | `POST /agent/v1/runs/{runId}/cancel` |
-| `run.continue` | `runId` | `{ "continued": "<runId>" }` | `POST /agent/v1/runs/{runId}/continue` |
 | `run.status` | `runId` | run record (passthrough) | `GET /agent/v1/runs/{runId}` |
 | `run.command` | `runId`, `command` | command payload (passthrough) | `POST /agent/v1/runs/{runId}/commands` |
 | `run.reconcile` | `runId`, `outcome`, `hash` | reconcile payload (passthrough) | `POST /agent/v1/runs/{runId}/reconcile` |

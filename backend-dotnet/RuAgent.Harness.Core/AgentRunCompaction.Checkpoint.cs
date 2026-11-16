@@ -25,7 +25,7 @@ internal sealed partial class AgentRunCompaction
         bool optional = false)
     {
         async Task<(AgentRun Run, ContextCompactionPlan? Plan, string? ErrorCode)> PauseOrReportAsync(AgentRun current, string code) =>
-            optional ? (current, null, code) : await PauseOrFailCheckpointAsync(current, code, ct).ConfigureAwait(false);
+            optional ? (current, null, code) : await FailCheckpointAsync(current, code, ct).ConfigureAwait(false);
 
         var entries = plan.CoveredEntries.ToArray();
         var snapshot = new ModelContextSnapshot(entries, ModelContextSnapshot.Canonicalize(entries),
@@ -189,14 +189,15 @@ internal sealed partial class AgentRunCompaction
         return (recorded.Run!, receiptError);
     }
 
-    private async Task<(AgentRun Run, ContextCompactionPlan? Plan, string? ErrorCode)> PauseOrFailCheckpointAsync(
+    /// <summary>A required checkpoint that cannot be made fails the run, root or child, with its code.</summary>
+    private async Task<(AgentRun Run, ContextCompactionPlan? Plan, string? ErrorCode)> FailCheckpointAsync(
         AgentRun run, string code, CancellationToken ct)
     {
         if (run.State != HarnessRunState.Running) return (run, null, code);
-        var reservation = Subagents.SubagentBudgetPolicy.Reject(run, _internalRun, code, _time.UtcNow);
+        var reservation = Subagents.SubagentBudgetPolicy.Reject(run, code, _time.UtcNow);
         var committed = await _store.CommitAsync(new HarnessCommit(run.RunId, run.Version, reservation.NextRun,
-            [new HarnessEventIntent(_ids.NewEventId(), _internalRun ? HarnessEventKind.RunFailed : HarnessEventKind.ContinueRequested,
-                safeCode: code)], [], []), ct).ConfigureAwait(false);
+            [new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunFailed, safeCode: code)], [], []), ct)
+            .ConfigureAwait(false);
         return (committed.Run ?? run, null, committed.Outcome == HarnessCommitOutcome.Committed ? code : "commit_conflict");
     }
 }

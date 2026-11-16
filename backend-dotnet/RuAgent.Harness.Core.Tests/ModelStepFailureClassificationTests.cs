@@ -123,7 +123,7 @@ public sealed class ModelStepFailureClassificationTests
     public void Exhausted_quota_requires_operator_action_instead_of_transient_retries()
     {
         Assert.False(ProviderTransientPauseException.IsProviderTransientCode("provider_quota_exhausted"));
-        Assert.True(ProviderTransientPauseException.RequiresExplicitContinue("provider_quota_exhausted"));
+        Assert.True(ProviderTransientPauseException.EndsRunWithProviderCode("provider_quota_exhausted"));
     }
 
     [Theory]

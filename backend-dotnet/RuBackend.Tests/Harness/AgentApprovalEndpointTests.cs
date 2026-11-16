@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Prompting;
 using RuBackend.Harness.Policy;
@@ -170,7 +171,7 @@ public sealed partial class AgentApprovalEndpointTests
     }
 
     [Fact]
-    public async Task Approval_Deny_DoesNotCreateRule_AndReturnsDenied()
+    public async Task Approval_Deny_DoesNotCreateRule_AndKeepsTheRunGoing()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         BackendWebApplicationFactory? factory = null;
@@ -184,10 +185,21 @@ public sealed partial class AgentApprovalEndpointTests
             var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal("denied", json.GetProperty("status").GetString());
             Assert.Equal("approval_denied", json.GetProperty("error_code").GetString());
-            Assert.Equal("failed", json.GetProperty("run_state").GetString());
+            // A deny settles the call, not the run: the run resumes and the model reads the denial.
+            Assert.Equal("running", json.GetProperty("run_state").GetString());
             Assert.False(json.TryGetProperty("rule_saved", out var rs) && rs.GetBoolean());
 
-            // Denial terminates the run; a stale reuse of the same ID is rejected.
+            var store = factory.Services.GetRequiredService<IHarnessEventStore>();
+            var completions = new List<HarnessEvent>();
+            await foreach (var envelope in store.ReadEventsAsync(new RunId(runId), 0, CancellationToken.None))
+            {
+                if (envelope.Event.Kind == "tool.execution_completed") completions.Add(envelope.Event);
+            }
+            var denial = Assert.Single(completions, item => item.SafeCode == "approval_denied");
+            Assert.Equal(ToolExecutionOutcome.Failed, denial.ToolOutcome);
+            Assert.False(denial.SideEffectsPossible);
+
+            // The approval is consumed; a stale reuse of the same ID is rejected.
             using var dup = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { decision = "deny", scope = "once" });
             Assert.Equal((HttpStatusCode)409, dup.StatusCode);
         }

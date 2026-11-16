@@ -69,8 +69,9 @@ with the next prompt, and Office documents are not supported as attachments.
 ## Sessions and paused runs
 
 Each chat is a session. `/sessions` finds one and `/sessions id:<session-id>` reopens it, redrawing its
-newest turns as they looked live. A run can pause, for example while waiting for a payment or quota
-problem to be fixed; typing `Continue` resumes the parked run this session tracks, and `Escape`
+newest turns as they looked live. A run that hits an error, for example a payment or quota problem,
+ends with that error; send a new message to keep going once it is fixed. Typing `Continue` reopens a
+run this session tracks that is still running or waiting on your approval or answer, and `Escape`
 interrupts a running turn. A run that is still going is attached from another terminal with
 `ru agent attach <run-id>` and abandoned with `ru agent cancel <run-id>`.
 

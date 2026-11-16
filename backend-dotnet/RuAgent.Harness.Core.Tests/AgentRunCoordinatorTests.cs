@@ -458,7 +458,7 @@ public sealed partial class AgentRunCoordinatorTests
     }
 
     [Fact]
-    public async Task Repetition_after_the_repair_budget_parks_the_run_for_continue()
+    public async Task Repetition_after_the_repair_budget_ends_the_run()
     {
         var prior = ToolStep();
         var notes = Enumerable.Range(0, ConsecutiveToolCallGuard.MaximumRepairNotes)
@@ -494,23 +494,46 @@ public sealed partial class AgentRunCoordinatorTests
 
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
-        Assert.Equal(HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
         Assert.Equal("repeated_tool_call", result.ErrorCode);
-        Assert.Null(result.Run.TerminalErrorCode);
+        Assert.Equal("repeated_tool_call", result.Run.TerminalErrorCode);
         Assert.Empty(gateway.ExecuteAttempts);
         var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
         Assert.Contains(events, item =>
             item.Kind == HarnessEventKind.ModelStepCompleted
             && item.SafeCode == "repeated_tool_call");
         Assert.Contains(events, item =>
-            item.Kind == HarnessEventKind.ContinueRequested
+            item.Kind == HarnessEventKind.RunFailed
             && item.SafeCode == "repeated_tool_call");
-        Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.RunFailed);
+        Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.ContinueRequested);
+    }
+
+    [Fact]
+    public async Task An_oversized_tool_batch_draws_a_repair_note_instead_of_ending_the_run()
+    {
+        // A batch larger than one window can never be reserved; the model can fix it by
+        // splitting the work, so it is told to before anything would fail.
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep(callCount: AgentBudgetPolicy.ToolCallLimit + 1));
+        var gateway = new FakeToolGateway();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+
+        var result = await Coordinator(model, gateway, store).RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.Empty(gateway.ExecuteAttempts);
+        var note = Assert.Single(store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.RunNoteAdded);
+        Assert.Equal(AgentRecoveryNotes.ToolBatchTooLargeCode, note.SafeCode);
+        var text = Encoding.UTF8.GetString(Assert.Single(store.Commits.SelectMany(commit => commit.Payloads),
+            payload => payload.Kind == HarnessPayloadKind.ModelContextNote).Plaintext.Span);
+        Assert.Contains($"at most {AgentBudgetPolicy.ToolCallLimit} tool calls", text, StringComparison.Ordinal);
     }
 
     [Theory]
     [InlineData(1, HarnessRunState.Running, "repeated_tool_call_advised")]
-    [InlineData(2, HarnessRunState.WaitingUser, "repeated_tool_call")]
+    [InlineData(2, HarnessRunState.Failed, "repeated_tool_call")]
     public async Task Failed_short_cycle_is_advised_or_stopped_without_gateway_dispatch(
         int repairNotes,
         HarnessRunState expectedState,
@@ -710,7 +733,9 @@ public sealed partial class AgentRunCoordinatorTests
     [Fact]
     public async Task Explicit_blocker_report_is_visible_and_terminal_without_claiming_success()
     {
-        const string code = "approval_denied";
+        // Any failed receipt the model could not get past; a user's own deny is not one,
+        // since the model may simply accept it and finish.
+        const string code = "process_exit_nonzero";
         var source = new FixedContextSource(ModelContextEntry.Assistant("assistant-prior", 1, ToolStep()),
             ModelContextEntry.ToolResult("tool-prior", 2, new ToolExecutionReceipt(
                 new ExecutionId("exec_11111111111111111111111111111111"),

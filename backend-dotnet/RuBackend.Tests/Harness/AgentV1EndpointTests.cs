@@ -40,7 +40,6 @@ public sealed class AgentV1EndpointTests
         ("POST", "/agent/v1/runs/{runId}/inputs/{inputId}"),
         ("POST", "/agent/v1/runs/{runId}/trust"),
         ("POST", "/agent/v1/runs/{runId}/cancel"),
-        ("POST", "/agent/v1/runs/{runId}/continue"),
         ("POST", "/agent/v1/runs/{runId}/compact"),
         ("POST", "/agent/v1/runs/{runId}/commands"),
         ("GET", "/agent/v1/sessions/{sessionId}/runs"),
@@ -68,7 +67,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(55, doc.RootElement.GetArrayLength()); // Skills, user plugins and selected admission remain; external session exchange is retired.
+        Assert.Equal(54, doc.RootElement.GetArrayLength()); // Skills, user plugins and selected admission remain; external session exchange is retired.
     }
 
     [Theory]
@@ -82,7 +81,6 @@ public sealed class AgentV1EndpointTests
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/inputs/inp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/trust")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cancel")]
-    [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/continue")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compact")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runs")]
@@ -120,7 +118,6 @@ public sealed class AgentV1EndpointTests
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/inputs/inp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/trust")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cancel")]
-    [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/continue")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compact")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runs")]

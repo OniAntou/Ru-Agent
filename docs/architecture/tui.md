@@ -21,7 +21,7 @@ sequence associate estimates and usage with their request; transient sequence is
 only ordered within that step. Reported usage rejects delayed estimates, a new step
 accepts a restarted transient cursor, and compaction clears the old reading until
 new request evidence arrives. A new run resets causal/billing cursors while keeping
-the last reading during preparation; Continue of the same run keeps its billing
+the last reading during preparation; reopening the same run keeps its billing
 baseline. Missing usage keeps an available estimate instead of inventing zero.
 
 ## Core TUI
@@ -32,9 +32,9 @@ baseline. Missing usage keeps an available estimate instead of inventing zero.
 submission guards/snapshots, admission, the bounded queue, prompt history,
 turn cancellation, pause/resume and the independent task inspection
 lane. `ChatSession.Engine.cs` wires the same command and run handlers, attachment
-ownership and shutdown settlement for every presentation. A parked `Continue`
-revalidates the retained run's owner/state and preserves its provider pin; it does
-not require current default settings to match a new submission.
+ownership and shutdown settlement for every presentation. A typed `Continue`
+that reopens a retained run revalidates its owner/state and preserves its provider
+pin; it does not require current default settings to match a new submission.
 
 `TgChatLoop` is a native key binding over this controller, with
 `TgChatEngineView` translating its notifications to Terminal.Gui widgets.
@@ -153,8 +153,9 @@ multiline results use a closable document. Existing conversations retain normal
 report output. Command capture is bounded and isolated from independent run output.
 These commands retain their operation lifetime and input guards.
 Custom prompt commands retain their run behavior. `/follow` is removed from
-completion, help and dispatch. `Continue` resumes only the current session's
-known parked/followable run; without one it remains an ordinary prompt.
+completion, help and dispatch. `Continue` reopens only the current session's
+known followable run (running, or waiting on an approval or a question); without
+one it remains an ordinary prompt. Runs no longer park for a Continue (ADR 0048).
 A classifier admits this recovery while a queue is held, without claiming
 draft attachments. Repeated recovery input while busy stays in the draft.
 
@@ -697,7 +698,7 @@ width, including while tool details are expanded; evicted text does not stay ali
 through the cache. Turn-end assistant reconciliation reads at most four payloads
 concurrently and preserves their model-step order and types. Optional header-title
 reads have a 250 ms cancellation deadline. Reopened sessions and an explicit
-attach treat `waiting_subagents` parents as active without posting Continue.
+attach treat `waiting_subagents` parents as active.
 Tool activity metadata is updated by ID and consumed in durable proposal order;
 the transient durable sequence is a stream anchor, not a tool identity.
 Silent durable run/model metadata does not flush unfinished assistant prose.
@@ -722,7 +723,7 @@ Activity/todo/change inspectors, the project-file browser, session tree, rewind,
 Markdown export and separate token/prompt-history reports are absent from the
 interactive command surface. Up/Down prompt recall remains. Headless CLI and RPC
 retain their own capabilities. File intake uses clipboard/drop or `--image`;
-parked chat runs resume on typed `Continue`. `/attach`, `/attachments`, `/paste`,
+a tracked waiting or running chat run reopens on typed `Continue`. `/attach`, `/attachments`, `/paste`,
 `/detach`, `/continue` and `/quit` are absent from dispatch, help and completion.
 `/exit` is the sole quit command. Escape dismisses overlays or interrupts an
 active turn; idle Escape keeps the chat and draft open. Conversation replay retains the latest
@@ -746,4 +747,4 @@ existing known-secret redactor before the public activity sink; URL credentials,
 path, query and fragment do not enter the fetched-host label.
 
 - CLI submission ownership: `ChatSubmissionState` owns pending attachments, snapshot admission, held retry identity and accepted attachment transfers in both terminal paths. A declined trust gate returns the transfer to pending state once; cancellation and failure release its temporary images. `ChatSubmissionSnapshot` retains immutable intent and the original idempotency key. Rendering and run orchestration remain in the existing dispatcher.
-- CLI turn ownership: `ChatRunSession` owns turn cancellation, active/parked/followable run identities and unique assistant payload references. A failed Continue retains the parked identity; parking cancels following without requesting server cancellation. Interrupting another active run still targets that run. The dispatcher renders and performs the HTTP operations through this state owner.
+- CLI turn ownership: `ChatRunSession` owns turn cancellation, active/parked/followable run identities and unique assistant payload references. A park replayed from an older build cancels following without requesting server cancellation. Interrupting another active run still targets that run. The dispatcher renders and performs the HTTP operations through this state owner.

@@ -236,6 +236,9 @@ public static class AgentRecoveryNotes
     /// Names the runner's model-repairable rejection and asks the model to redo
     /// it. The code is a bounded runner code, so it is safe text.
     /// </summary>
+    /// <summary>A tool batch larger than one budget window; the model repairs it by splitting.</summary>
+    public const string ToolBatchTooLargeCode = "model_tool_batch_too_large";
+
     public static string BuildModelRepairableNote(string? code)
     {
         var stable = string.IsNullOrWhiteSpace(code) ? "invalid_selection" : code;
@@ -247,6 +250,8 @@ public static class AgentRecoveryNotes
                 "Choose a tool id and version from the advertised tool list, then re-issue the call with complete JSON arguments.",
             "invalid_selection" =>
                 "A tool call written out as text could not be read. Call the tool through the native tool-calling interface, or answer in plain text.",
+            ToolBatchTooLargeCode =>
+                $"One step may make at most {AgentBudgetPolicy.ToolCallLimit} tool calls. Split the work into several smaller batches and send the first one.",
             _ =>
                 "Re-issue a valid advertised tool call with complete JSON arguments, or answer in plain text.",
         };

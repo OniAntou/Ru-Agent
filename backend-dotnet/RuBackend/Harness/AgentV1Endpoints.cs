@@ -32,7 +32,6 @@ public static partial class AgentV1Endpoints
         app.MapPost("/agent/v1/runs/{runId}/inputs/{inputId}", PostInputAsync);
         app.MapPost("/agent/v1/runs/{runId}/trust", PostTrustAsync);
         app.MapPost("/agent/v1/runs/{runId}/cancel", PostCancelAsync);
-        app.MapPost("/agent/v1/runs/{runId}/continue", PostContinueAsync);
         app.MapPost("/agent/v1/runs/{runId}/compact", PostCompactAsync);
         app.MapPost("/agent/v1/runs/{runId}/commands", PostCommandAsync);
         app.MapGet("/agent/v1/sessions/{sessionId}/runs", GetSessionRunsAsync);
@@ -692,12 +691,6 @@ public static partial class AgentV1Endpoints
     private static async Task<IResult> PostCancelAsync(string runId, AgentRunLifecycleService service, CancellationToken ct)
     {
         var result = await service.CancelAsync(runId, ct);
-        return Results.Json(result.Body, statusCode: result.StatusCode);
-    }
-
-    private static async Task<IResult> PostContinueAsync(string runId, AgentRunLifecycleService service, CancellationToken ct)
-    {
-        var result = await service.ContinueAsync(runId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 

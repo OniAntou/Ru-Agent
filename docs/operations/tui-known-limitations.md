@@ -152,28 +152,21 @@ the chat; `/exit` is the sole quit command. Interrupts no longer only detach the
 both `POST` `/agent/v1/runs/{runId}/cancel` so the run releases its workspace
 lock. The POST is best-effort — on failure the TUI prints `run_cancel_failed`
 plus the manual `ru agent cancel <run-id>` fallback, and until that is run the
-server may still own the run. A run that parked itself
-(`waiting_user`, `reconciliation_required`) is never cancelled by an interrupt:
-there is nothing to cancel and its notice already points at typed `Continue`.
+server may still own the run. A run waiting on the user (an approval or an
+`ask_user` question) is never cancelled by an interrupt.
 
-### A parked run is surfaced, and only the newest run is adopted
+### Runs do not park for Continue, and only the newest run is adopted
 
-`waiting_user` and `reconciliation_required` now stop the spinner: the status
-row reads `▲ run paused · <code> · Continue` and exactly one notice carries
-`resume with Continue (or 'ru agent continue <run-id>')`.
-A bare `Continue` while a parked run is known follows the resumed run from
-its durable cursor, and a resumed run clears the paused row. Opening
-`chat --session <id>` adopts the session's newest non-terminal run, so a run
-left behind by a host restart is visible again. Remaining limits: older parked
-runs are not adopted and need an explicit `ru agent continue <run-id>` from
-another terminal, and a resumed
-`reconciliation_required` run needs the fixed recovery sweep
-(`HarnessRecoveryScanner` re-registering its runtime root) because the drive
-loop starts `Running` runs and rehydrates `WaitingApproval` runs, but never
-picks up an unregistered one. An
-adopted `running` run is attached explicitly with `ru agent attach <run-id>`;
-it is never followed automatically. In-chat typed `Continue` accepts only runs
-belonging to the current session.
+There is no Continue gate (ADR 0048): a run that stops ends with its named code,
+and a new message starts a fresh run with the session's handoff. `ru agent continue`
+answers `continue_removed`. Replaying a run an older build parked still shows
+`▲ run paused · <code>` with one notice to send a new message; startup recovery
+has failed such a run with that code. Opening `chat --session <id>` adopts the
+session's newest non-terminal run, so a run left behind by a host restart is
+visible again; typed `Continue` reopens it in that chat when it is running or
+waiting on an approval or a question, and accepts only runs belonging to the
+current session. An adopted `running` run can also be attached with
+`ru agent attach <run-id>`; it is never followed automatically.
 
 ### Retained approval recovery differs between GUI and TUI
 

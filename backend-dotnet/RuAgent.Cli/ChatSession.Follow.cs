@@ -432,126 +432,14 @@ public sealed partial class AgentCommands
             }
         }
 
-        /// <summary>Claims Continue only for a run tracked by this session.</summary>
-        private bool IsRetainedContinuation(string line) =>
-            (runSession.ParkedRunId is not null || runSession.FollowableRunId is not null)
-            && line.Equals("Continue", StringComparison.OrdinalIgnoreCase);
-
         /// <summary>
-        /// Resumes a parked run the way the GUI's typed Continue does: read the parked
-        /// run's durable cursor, post the continue, then follow the run from that cursor
-        /// as if it were a fresh turn. Without a tracked parked run this is informational,
-        /// never an error.
+        /// Claims Continue only for a running, approval or question run this session can
+        /// reopen. Runs no longer park for a Continue: one that stops has ended with its
+        /// error, so the word is an ordinary prompt for it.
         /// </summary>
-        async Task ContinueParkedRunAsync(CancellationToken cancellationToken)
-        {
-            var targetRunId = runSession.ParkedRunId;
-            if (string.IsNullOrWhiteSpace(targetRunId))
-            {
-                await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("no parked run · nothing to continue")).ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
-                return;
-            }
-
-            // The parked turn already rendered durable frames up to LastSequence; the
-            // continue call's own "continued" event is the first frame after it. Resuming
-            // from 0 would replay the whole turn into a terminal that cannot unprint.
-            using var retainedSettlement = runSession.RetainRunSettlement();
-            GetAgentRunResponse run;
-            try
-            {
-                run = await _agentClient.GetRunAsync(targetRunId, cancellationToken).ConfigureAwait(false);
-            }
-            catch (AgentApiException ex)
-            {
-                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
-                return;
-            }
-            catch (Exception ex)
-            {
-                // A transport failure must not escape the REPL: report it bounded and keep
-                // the prompt (and the parked tracking) intact.
-                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
-                    $"continue_error: {CliErrorText.ShortMessage(ex.Message)}")).ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
-                return;
-            }
-
-            if (!string.Equals(run.SessionId, sessionId, StringComparison.Ordinal))
-            {
-                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
-                    $"run_session_mismatch: run belongs to {run.SessionId}; resume that session with /sessions id:{run.SessionId} before continuing it.")).ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
-                return;
-            }
-
-            if (run.TerminalAt is not null || IsTerminalRunStatus(run.Status))
-            {
-                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
-                    $"run_not_runnable: run {targetRunId} is {run.Status} and cannot be continued.")).ConfigureAwait(false);
-                runSession.ForgetParked(targetRunId);
-
-                await _out.FlushAsync().ConfigureAwait(false);
-                return;
-            }
-
-            // A retained target that is no longer parked (running, waiting_approval,
-            // waiting_workspace_trust) is being driven elsewhere or waits on another
-            // decision: the resume POST could only earn a 409.
-            if (!IsParkedRunStatus(run.Status))
-            {
-                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
-                    $"run_not_parked: run {targetRunId} is {run.Status} and not waiting to continue.")).ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
-                return;
-            }
-
-            await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
-
-            runSession.BeginContinue(targetRunId, cancellationToken);
-            sessionRenderer.Width = ChatRenderWidth();
-            sessionRenderer.Status.SetTokens(lastTotalTokens);
-            sessionRenderer.BeginTurn();
-
-            try
-            {
-                await _agentClient.ContinueAsync(targetRunId, runSession.Token).ConfigureAwait(false);
-                // Only a confirmed Continue releases this run's parked identity.
-                runSession.ForgetParked(targetRunId);
-
-                await FollowRunAsync(targetRunId, run.LastSequence, runSession.Token).ConfigureAwait(false);
-                await FinishTurnAsync().ConfigureAwait(false);
-                // A completed Continue is no longer a retained run: leave the identity
-                // clean so /preset and the next create are not blocked by a terminal run.
-                runSession.ForgetCompletedRun();
-            }
-            catch (OperationCanceledException)
-            {
-                await ReportInterruptionAsync().ConfigureAwait(false);
-            }
-            catch (RunParkedException)
-            {
-                // The --json approval escape: the notice is already on stderr and the
-                // run stays waiting server-side. Wind the turn down and let the caller
-                // exit the chat instead of settling for a "continue_error" line.
-                await FinishTurnAsync().ConfigureAwait(false);
-                runSession.RememberFollowable(targetRunId);
-                throw;
-            }
-            catch (AgentApiException ex)
-            {
-                await FinishTurnAsync().ConfigureAwait(false);
-                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                await FinishTurnAsync().ConfigureAwait(false);
-                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err($"continue_error: {ex.Message}")).ConfigureAwait(false);
-            }
-
-            await _out.FlushAsync().ConfigureAwait(false);
-        }
+        private bool IsRetainedContinuation(string line) =>
+            runSession.FollowableRunId is not null
+            && line.Equals("Continue", StringComparison.OrdinalIgnoreCase);
 
         async Task FollowRetainedRunAsync(CancellationToken cancellationToken)
         {
@@ -566,7 +454,7 @@ public sealed partial class AgentCommands
 
             if (string.IsNullOrWhiteSpace(targetRunId))
             {
-                await WriteDiagnosticLineAsync(humanOut, "no active run to follow · type Continue for a parked run").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(humanOut, "no active run to follow").ConfigureAwait(false);
                 return;
             }
 
@@ -597,7 +485,7 @@ public sealed partial class AgentCommands
             if (!ChatRunWorkflow.IsFollowable(run))
             {
                 var hint = IsParkedRunStatus(run.Status)
-                    ? $"run {targetRunId} is parked · use 'ru agent continue {targetRunId}'"
+                    ? $"run {targetRunId} stopped and cannot resume · send a new message to keep going"
                     : $"run_not_followable: run {targetRunId} is {run.Status}";
                 await WriteDiagnosticLineAsync(_err, hint).ConfigureAwait(false);
                 return;

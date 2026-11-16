@@ -62,20 +62,6 @@ public sealed partial class AgentCommands
         }
     }
 
-    public async Task<int> ContinueAsync(ContinueCommand cmd, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await _agentClient.ContinueAsync(cmd.RunId, cancellationToken).ConfigureAwait(false);
-            await _out.WriteLineAsync($"continued {cmd.RunId}").ConfigureAwait(false);
-            return 0;
-        }
-        catch (AgentApiException ex)
-        {
-            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-            return 1;
-        }
-    }
 
     public async Task<int> DispatchCommandAsync(
         DispatchCommandCommand cmd,

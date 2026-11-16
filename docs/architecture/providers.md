@@ -42,13 +42,13 @@ so an unattended long run rides out a short provider outage. The
 2/5/10/20/30/60/120/180/300-second backoff bases use 0.8–1.2 jitter, honor a
 longer positive HTTP `Retry-After` delta or date. The automatic wait budget is
 five minutes per retry: a longer server hint
-is preserved and parks the logical step immediately with its original provider
-code, rather than shortening the hint and retrying early. Continue starts an
-explicit new attempt; this is not an automatic cooldown timer across user actions
-or Host restarts. Cancellation interrupts accepted automatic waits.
+is preserved and fails the logical step immediately with its original provider
+code, rather than shortening the hint and retrying early. A new message starts a
+fresh run; there is no automatic cooldown timer across user actions or Host
+restarts. Cancellation interrupts accepted automatic waits.
 Rate-limit metadata propagates through Chat Completions, Responses and Anthropic
-errors without changing provider selection. Exhaustion retains the existing
-explicit-Continue behavior; retries never dispatch a partial tool call.
+errors without changing provider selection. Exhaustion fails the run with the
+provider's code (ADR 0048); retries never dispatch a partial tool call.
 
 `ProviderRetryPolicy` owns the pure retry admission and delay decisions. The
 runner measures accepted cooldowns separately as `ProviderRetryWait`; this is

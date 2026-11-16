@@ -52,13 +52,14 @@ public sealed partial class AgentProviderTransientParkTests
         Assert.Equal(1, gateway.Evaluations);
         if (priorNotes == ConsecutiveToolCallGuard.MaximumRepairNotes)
         {
-            Assert.Equal(HarnessRunState.WaitingUser, suppressed.Run.State);
-            await coordinator.ContinueAsync(seeded.Run.RunId, CancellationToken.None);
+            // The repair notes are spent, so the run ends instead of waiting for a Continue.
+            Assert.Equal(HarnessRunState.Failed, suppressed.Run.State);
+            Assert.Equal("repeated_tool_call", suppressed.Run.TerminalErrorCode);
+            Assert.Equal(2, provider.Calls);
+            return;
         }
-        else
-        {
-            Assert.Equal(HarnessRunState.Running, suppressed.Run.State);
-        }
+
+        Assert.Equal(HarnessRunState.Running, suppressed.Run.State);
 
         // Actual SQLite context assembly and native conversation projection must
         // reach the provider again without an orphan call from the suppressed step.

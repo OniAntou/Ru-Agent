@@ -124,6 +124,15 @@ public sealed class HarnessRecoveryScanner(
                 .ConfigureAwait(false);
         }
 
+        if (run.State == HarnessRunState.WaitingUser
+            && await ReadContinueParkCodeAsync(run.RunId, cancellationToken).ConfigureAwait(false) is { } parkCode)
+        {
+            // Continue was removed: a run an older build parked for it can no longer
+            // resume. It fails with the code it parked on, which releases its session;
+            // an ask_user wait shares the state and is left for its answer.
+            return await FailRunAsync(run, parkCode, cancellationToken).ConfigureAwait(false);
+        }
+
         if (run.PermissionProfileVersion != AgentPermissionPresetMapper.CurrentPermissionProfileVersion)
         {
             return await FailRunAsync(run, "permission_profile_changed", cancellationToken)
@@ -288,6 +297,32 @@ public sealed class HarnessRecoveryScanner(
             terminalAt,
             terminalErrorCode,
             current.PermissionProfileVersion);
+    }
+
+    internal const string ContinueRemovedCode = "continue_removed";
+
+    /// <summary>
+    /// While a run is parked nothing drives it, so its newest event is the park cause. An
+    /// <c>input.requested</c> park is an ask_user wait (null); any other WaitingUser park was
+    /// waiting for Continue, and its code is the one the park recorded.
+    /// </summary>
+    private async Task<string?> ReadContinueParkCodeAsync(RunId runId, CancellationToken cancellationToken)
+    {
+        HarnessEvent? latest = null;
+        await foreach (var envelope in store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
+        {
+            latest = envelope.Event;
+        }
+
+        if (latest is null || string.Equals(latest.Kind, "input.requested", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return latest.Kind is "continue.requested" or "model.step_started"
+            && !string.IsNullOrWhiteSpace(latest.SafeCode)
+                ? latest.SafeCode
+                : ContinueRemovedCode;
     }
 
     private async Task<RecoveredRunSummary?> FailRunAsync(

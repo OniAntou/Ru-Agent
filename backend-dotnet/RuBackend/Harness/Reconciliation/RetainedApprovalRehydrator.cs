@@ -202,7 +202,11 @@ public sealed class RetainedApprovalRehydrator
         var retained = proposals
             .Where(item => !execution.Completed.Contains(item.ToolCallId))
             .ToArray();
-        if (retained.Length == 0 || !retained.Any(item => item.ToolCallId == askToolCallId))
+        // A denied ask already carries its approval_denied receipt, so it is settled and only
+        // the rest of the batch resumes; any other completed ask is an inconsistent record.
+        if (retained.Length == 0
+            || !retained.Any(item => item.ToolCallId == askToolCallId)
+                && !IsDeniedAsk(allEvents, modelStepId, askToolCallId))
         {
             throw Invalid("retained_approval_set_invalid");
         }
@@ -491,6 +495,13 @@ public sealed class RetainedApprovalRehydrator
 
         return new ExecutionState(completed, completed.Count == proposals.Count);
     }
+
+    private static bool IsDeniedAsk(IReadOnlyList<HarnessEvent> events, ModelStepId modelStepId, ToolCallId askToolCallId) =>
+        events.Any(item =>
+            string.Equals(item.Kind, "tool.execution_completed", StringComparison.Ordinal)
+            && item.ModelStepId == modelStepId
+            && item.ToolCallId == askToolCallId
+            && string.Equals(item.SafeCode, AgentApprovalsService.ApprovalDeniedCode, StringComparison.Ordinal));
 
     /// <summary>
     /// Executions that are not gated by a Broker approval: a policy denial never

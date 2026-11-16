@@ -63,15 +63,18 @@ error code. A definitive first-attempt client error does not trigger this
 unknown-outcome state.
 
 Opening a session adopts its newest non-terminal run, so a run that outlived
-the host is not invisible: WinUI re-arms Continue/Stop for it (`AdoptRunAsync`;
-a running run is subscribed from its durable `LastSequence`, a parked one waits
-for the typed Continue), the TUI adopts it when `chat --session` reopens the
-session (parked → typed `Continue`; a running or approval-waiting run is attached
-explicitly with `ru agent attach <run-id>`), and switching sessions detaches a
-parked run instead of cancelling it. In-chat continue rejects foreign-session runs.
-The Continue path is the same on both clients: a parked run
-(`waiting_user`, `reconciliation_required`) resumes only when the client
-continues or reconciles it.
+the host is not invisible: WinUI re-arms Stop for it (`AdoptRunAsync`; a running
+run is subscribed from its durable `LastSequence`), the TUI adopts it when
+`chat --session` reopens the session (typed `Continue` reopens a running,
+approval-waiting or question-waiting run in that chat, or `ru agent attach <run-id>`
+attaches from another terminal), and switching sessions detaches a waiting run
+instead of cancelling it. In-chat reopening rejects foreign-session runs.
+
+There is no Continue gate (ADR 0048). A run only waits on the user for an approval,
+an `ask_user` answer or workspace trust; every other stop ends the run with its named
+code, and a new message starts a fresh run that carries the session's handoff
+(ADR 0023). Startup recovery fails a run an older build parked for Continue with the
+code it parked on (`continue_removed` when none was recorded).
 
 Startup recovery compares the durable event stream with dispatch boundaries: a
 crash before any dispatch fails the run as `recovery_pre_dispatch`, an incomplete
@@ -85,13 +88,12 @@ the session for a fresh prompt.
 
 The runtime polls the conversation outbox and registered runs independently of
 long model/tool work. A new registration, a successful client POST to a run
-(trust, approval, answer, continue, cancel) and a drive pass that changed the run
+(trust, approval, answer, cancel) and a drive pass that changed the run
 wake the loop at once; polling (250 ms while a run can progress, one second when
 none is registered or every run waits for a client) is the fallback. A run parked
 on an approval is not rebuilt while it waits; only expiry is checked until its
-version changes. At most sixteen run workers execute concurrently and model calls
-keep their own provider-step bound; each run has one scheduled worker, including
-while it waits for a slot. Session deletion cancels its owned worker, and host
+version changes. Every registered run gets its own worker at once; model calls are
+unbounded unless `RU_MAX_CONCURRENT_MODEL_STEPS` sets a cap. Session deletion cancels its owned worker, and host
 shutdown waits for workers to unwind.
 A live SSE stream re-reads the run every 100 ms while it can progress and every
 second while it waits for a client; the client POST that answers it signals the
@@ -349,11 +351,10 @@ guarded confirmation, while CLI `run`/`chat` use `--trust-workspace`. A moved or
 recreated identity requires trust again. Windows identity resolution requires
 native final-path, volume and directory file-ID evidence; an unavailable lookup
 fails instead of substituting a hash of the path. Full Access requires the GUI gate or
-CLI `--confirm-full-access`. Workspace trust, approval, Stop, Continue, and
-bounded Agent status remain inline above the input. The terminal client keeps
-the same parked-run path: the status row reads `▲ run paused · <reason> (<code>) · Continue`
-and one notice carries `resume with Continue (or 'ru agent continue <run-id>')`,
-cleared when the resumed run moves again. The reason comes from one shared
+CLI `--confirm-full-access`. Workspace trust, approval, Stop and
+bounded Agent status remain inline above the input. Replaying a run an older build
+parked, the terminal client shows `▲ run paused · <reason> (<code>)` with one notice
+to send a new message. The reason comes from one shared
 catalog (`AgentParkReasonCopy`): a provider transport failure reads as a network
 connection failure, a timeout as an unresponsive provider, and a spent budget as
 a spent window, instead of showing only the raw code. The desktop activity row
@@ -368,8 +369,7 @@ frames do not enter durable history or audit. The projector covers fourteen kind
 (see [agent tools](agent-tools.md)), including `compaction` (bounded covered-entry count and elapsed time) and
 `retry` (bounded tool transport retry attempt, any access kind, at most once
 per call), plus a generic
-`status` fallback (status rows can carry a bounded plain-text `detail`, for
-example the inspection-gate pause with its Continue guidance). Agent payloads and raw tool output
+`status` fallback (status rows can carry a bounded plain-text `detail`). Agent payloads and raw tool output
 never enter transport metadata or automation names.
 Assistant text is delivered separately as a typed `assistant.delta` transient
 frame. The client validates the outer kind, bounded UTF-8 text, model-step id,
@@ -497,10 +497,9 @@ automatically and keeps working, and there is **no window cap**: a root run ends
 when the model finishes, the user stops it, or a failure does — not because its
 own counters ran out. The per-window counters, not a wall-clock timer, bound the
 loop, and no wall-clock or cost cap exists. Internal subagent runs never take an
-automatic window: their own limits fail them. When a run parks for any other
-reason, the TUI shows a `▲ run paused` row plus `resume with Continue (or 'ru
-agent continue <run-id>')`; typing `Continue` while a parked run is known POSTs
-the resume and follows that tracked run from its durable cursor. Native calls,
+automatic window: their own limits fail them. A batch larger than a whole window
+(`tool_call_budget_exhausted`) is first answered with a bounded
+`model_tool_batch_too_large` repair note asking the model to split it. Native calls,
 calls written out as text, arguments, and outputs never enter the visible transcript
 as execution markup, mood state, or public diagnostics.
 
@@ -513,24 +512,20 @@ Incomplete `Length` finishes get up to 3 truncation notes in a row (a later trun
 cap of 24 notes within the recovery window (the last 512 durable events, about fifty steps). System recovery notes remain visible through
 compaction. Feedback keeps the same model/provider; spent bounds fail with the
 original code. Exact repeated calls and short failed cycles receive at most two
-`[REPETITION GUARD]` notes, then park for Continue. The suppressed assistant step
+`[REPETITION GUARD]` notes, then fail as `repeated_tool_call`. The suppressed assistant step
 is audit-only; its calls never enter native history without matching receipts.
 Trailing advice does not hide the earlier receipt from repetition detection. After its
 holds, a failed verification completes the run as `unverified`; it is never labelled `verified`.
-An exhausted provider-transient failure
-(`provider_rate_limited`, `provider_timeout`, `provider_server_error`,
-`provider_transport_error`) is not failed either: it parks the run in
-`waiting_user` with a `ContinueRequested` that preserves the provider's code,
-and an explicit Continue retries the same provider in a fresh budget window.
+A provider that is still failing after the runner's bounded retries (about twelve
+minutes for `provider_rate_limited`, `provider_timeout`, `provider_server_error`
+and `provider_transport_error`; never retried for `provider_quota_exhausted`) fails
+the run with the provider's code. The same holds for `context_limit_reached` after
+compaction and for a required checkpoint that cannot be made: the run ends with its
+named code instead of waiting for a Continue.
 
-CLI parking cancels its live subscription, not the server run. When the first
-`run.state_changed` frame contains only `waiting_user`, it reads the next committed
-frame once through finite `live=0` replay, limited to two seconds and four frames.
-Only the exact next sequence, same run, and parked `continue.requested` event can
-supply the reason. Missing/unavailable replay keeps generic Continue guidance;
-parent cancellation still propagates. Provider-transient reasons advise waiting
-before Continue. Reason deduplication is scoped to the park and reset on new turns
-or resumed state; session adoption does not invent a reason from run status.
+Replaying a run an older build parked, the CLI still reads the park reason from the
+committed `continue.requested` event (one finite `live=0` replay of at most four frames
+within two seconds) so its history shows why it stopped.
 A provider stream that goes silent is the case behind `provider_timeout`: the
 SSE reader resets a 120-second idle watchdog on every received chunk and
 cancels a stream that sends nothing, so a provider that accepts the connection
@@ -538,9 +533,11 @@ and stalls becomes the same retryable timeout instead of holding the step until
 the user cancels. The watchdog applies to all three protocols; the HTTP request
 timeout itself stays infinite because a whole-request bound would cut a healthy
 long generation.
-Approval-decision deny and reconciliation decisions stay outside this loop: a
-user deny keeps its fail-closed rule, the approval rules above are unchanged,
-and an ambiguous mutation still pauses until explicit reconciliation. An allow
+A user's deny settles the asked call, not the run: the approval route commits an
+`approval_denied` receipt for that call (never dispatched, no side effects), the run
+resumes with the rest of its batch, and the model reads the denial and may change
+course, ask, or simply finish. A deny is not a tool fault, so it never draws
+`unverified_after_tool_failure` notes; Stop is how the user ends a run. An allow
 decision is remembered for the session: the exact approved intent is
 materialized as a run-scope allow rule into the session's later policy
 snapshots, so an identical call — including later in the same run — evaluates

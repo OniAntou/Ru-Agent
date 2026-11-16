@@ -621,7 +621,7 @@ namespace RuApp.Views
                 }
 
                 // A run that outlived the host is invisible until it is adopted:
-                // re-arm Continue/Stop for this session's newest non-terminal run.
+                // re-arm its prompt and Stop for this session's newest non-terminal run.
                 // Bounded and fail-soft; a read failure never fails the open.
                 await TryAdoptSessionRunAsync(sessionId, openToken, generation);
                 if (IsCurrentOpen(generation))
@@ -699,8 +699,8 @@ namespace RuApp.Views
 
         /// <summary>
         /// Adopts the session's newest non-terminal run when the controller is not
-        /// already tracking a run for it. After a host restart a parked run must
-        /// still offer Continue/Cancel; adoption re-arms exactly that run. Best
+        /// already tracking a run for it. After a host restart a waiting run must
+        /// still offer its prompt and Cancel; adoption re-arms exactly that run. Best
         /// effort and bounded: any read failure leaves the open as it would have been.
         /// </summary>
         private async Task TryAdoptSessionRunAsync(string sessionId, CancellationToken cancellationToken, long generation)
@@ -783,13 +783,8 @@ namespace RuApp.Views
                     }
                 }
 
-                // A live run needs the monitor so its terminal frame settles the
-                // transcript; a parked run waits for the typed Continue, whose own
-                // action starts the monitor.
-                if (!IsParkedRunStatus(run.Status))
-                {
-                    StartAgentMonitor();
-                }
+                // The run needs the monitor so its terminal frame settles the transcript.
+                StartAgentMonitor();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -800,9 +795,6 @@ namespace RuApp.Views
                 GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Could not adopt the session run: {ex.Message}");
             }
         }
-
-        private static bool IsParkedRunStatus(string status) =>
-            string.Equals(status, "waiting_user", StringComparison.Ordinal);
 
         /// <summary>
         /// True while the attempt that started as <paramref name="generation"/> is still the

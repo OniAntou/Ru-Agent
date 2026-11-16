@@ -26,8 +26,32 @@ public sealed partial class InProcessModelStepRunnerTests
         Assert.Equal(1, provider.Calls);
         var sent = Assert.Single(provider.Requests);
         Assert.Equal(Bootstrap().Model, sent.Model);
-        Assert.InRange(sent.MaximumOutputTokens!.Value, 1, 8192);
+        // The default test pin: a 32k window and an 8,192 output reserve.
+        Assert.Equal(8_192, sent.MaximumOutputTokens!.Value);
         Assert.Contains(ContextCheckpoint.Instruction, string.Join("\n", sent.Turns.Select(turn => turn.Content)));
+    }
+
+    [Theory]
+    [InlineData(32_768, null, 8_192)]
+    [InlineData(200_000, null, 8_192)]
+    [InlineData(1_048_576, 65_536, 32_768)]
+    [InlineData(1_048_576, 4_096, 4_096)]
+    [InlineData(16_384, 65_536, 4_096)]
+    public async Task Checkpoint_output_cap_is_bounded_by_the_pin_and_a_quarter_of_the_window(
+        int contextWindow, int? outputTokenReserve, int expectedCap)
+    {
+        var provider = new ScriptedProvider((_, _) => Deltas(new ModelDelta(
+            string.Join("\n", ContextCheckpoint.Sections.Select(section => section + "\n- prior decision")), [],
+            completed: true, finishReason: "stop",
+            usage: new ModelUsage(100, 50, 150, null, null, "model-b", true))));
+
+        var result = await Runner(
+                provider,
+                Bootstrap(contextWindowTokens: contextWindow, outputTokenReserve: outputTokenReserve))
+            .SummarizeAsync(Request(), default);
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(expectedCap, Assert.Single(provider.Requests).MaximumOutputTokens);
     }
 
     [Fact]

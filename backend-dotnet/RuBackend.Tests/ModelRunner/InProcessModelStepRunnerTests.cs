@@ -411,20 +411,25 @@ public sealed partial class InProcessModelStepRunnerTests
         Assert.Equal(2, provider.Calls);
     }
 
-    private static InProcessModelStepRunner Runner(ScriptedProvider provider) =>
+    private static InProcessModelStepRunner Runner(
+        ScriptedProvider provider, ProviderBootstrapData? bootstrap = null) =>
         new(new ModelStepService(provider))
         {
             StepRetryBackoffsOverride = [TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero],
-            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(bootstrap ?? Bootstrap()),
         };
 
-    private static ProviderBootstrapData Bootstrap(bool acceptsImageInput = false) => new(
+    private static ProviderBootstrapData Bootstrap(
+        bool acceptsImageInput = false,
+        int? contextWindowTokens = 32_768,
+        int? outputTokenReserve = null) => new(
         "Kilo",
         "chat_completions",
         new Uri("https://step-provider.invalid/v1"),
         "model-b",
         "step-secret",
-        contextWindowTokens: 32_768,
+        contextWindowTokens: contextWindowTokens,
+        outputTokenReserve: outputTokenReserve,
         acceptsImageInput: acceptsImageInput);
 
     private static ModelStepRequest Request(SystemPromptContext? promptContext = null) => new(

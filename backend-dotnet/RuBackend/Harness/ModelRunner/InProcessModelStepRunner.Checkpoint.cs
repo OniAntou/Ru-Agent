@@ -1,5 +1,6 @@
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Model;
 
@@ -22,12 +23,13 @@ public sealed partial class InProcessModelStepRunner
                 null, timeout.Token, preparingSnapshot: true).ConfigureAwait(false);
             var bootstrap = source.ProviderBootstrap.WithReducedEffort();
             // Reasoning tokens draw from the same completion budget on every protocol, and
-            // this model may ignore the reduced-effort request. A 4,096 cap truncated the
-            // checkpoint mid-summary on a verbose model (finish_reason=length), which ended
-            // the run as checkpoint_incomplete; the summary is supposed to be at most 8,000
-            // characters, so the cap only bounds a runaway completion. Raise it to the pinned
-            // reserve when that is larger, still bounded by the released 8,192 default.
-            var cap = Math.Min(8_192, bootstrap.MaximumOutputTokens ?? 8_192);
+            // a model may ignore the reduced-effort request, so the summary needs real
+            // headroom: a verbose completion cut off at 4,096 tokens ended the run as
+            // checkpoint_incomplete. The cap is now up to 32,768 (the order of magnitude
+            // other agents allow for a summarizer), but never above the run's pinned output
+            // reserve or a quarter of the model's window, so requesting the summary can
+            // never exceed what the provider is pinned to serve or squeeze its own input.
+            var cap = CheckpointOutputCap(bootstrap);
             var summaryBootstrap = new ProviderBootstrapData(bootstrap.Backend, bootstrap.Protocol,
                 bootstrap.Endpoint, bootstrap.Model, bootstrap.Credential, bootstrap.RequestOptions, cap,
                 useMaxCompletionTokens: bootstrap.UseMaxCompletionTokens,
@@ -55,5 +57,18 @@ public sealed partial class InProcessModelStepRunner
             ? "checkpoint_provider_transient" : "checkpoint_provider_failed", error); }
         catch (ModelRunnerProtocolException error)
         { throw new ContextCheckpointException("checkpoint_input_invalid", error); }
+    }
+
+    /// <summary>
+    /// Output tokens one checkpoint (summary) call may request: up to 32,768, but no more
+    /// than the run's pinned output reserve or a quarter of the model's window. The quarter
+    /// keeps three quarters of the window for the conversation the summary replays; the pin
+    /// keeps the auxiliary call inside what the provider was already pinned to serve.
+    /// </summary>
+    internal static int CheckpointOutputCap(ProviderBootstrapData bootstrap)
+    {
+        var windowTokens = bootstrap.ContextWindowTokens ?? ContextWindowDefaults.UnknownContextWindowTokens;
+        var quarterOfWindow = Math.Max(1_024L, windowTokens / 4);
+        return (int)Math.Min(32_768L, Math.Min((long)bootstrap.OutputTokenReserve, quarterOfWindow));
     }
 }

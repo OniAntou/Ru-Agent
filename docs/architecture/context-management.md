@@ -45,8 +45,10 @@ reserved. Reported usage is stored through `ModelUsageRecorded` even when the
 returned checkpoint text later fails validation. Prompt-composition receipts retain private block digests
 and never expose raw instruction or prompt text. A crash after admission keeps
 the spent reservation; it cannot make a dispatched call free. A failed summary
-does not replace original history. The checkpoint completion cap is up to 8,192 tokens:
-reasoning tokens draw from the same completion budget, and a summary cut off by a
+does not replace original history. The checkpoint completion cap is up to 32,768 tokens,
+bounded by the run's pinned output reserve and a quarter of the model's context window
+(so the summarizer always leaves the rest of the window for the conversation it replays).
+Reasoning tokens draw from the same completion budget, and a summary cut off by the old
 4,096 cap used to fail the compaction as `checkpoint_incomplete`. A truncated
 response is retried once with a shorter directive; only a second truncation is a
 permanent `checkpoint_incomplete`. An exhausted format repair or permanent checkpoint

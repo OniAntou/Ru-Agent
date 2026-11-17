@@ -241,7 +241,17 @@ null. Repeated-attempt success rate is the fraction of attempts resolved; it
 is not pass@k. A failed/intervened agent run cannot earn a passing reward from
 a coincidentally correct final workspace.
 
-`trajectory.json` records bounded safe events and run/session IDs. The
+`trajectory.json` records bounded safe events and run/session IDs. After a run
+reaches a terminal state, the adapter fetches each `tool.proposed` argument
+payload with the documented `run.output` method (at most 400 calls, within 60
+seconds outside the agent deadline) and keeps only `tool_id`, the declared
+check `purpose` and, for `run_process`/`powershell`, the executable's base name.
+Argument text, paths, commands and results are not retained, and the safe
+events still carry no `payload_ref`. `tool_calls.outcomes_paired` is true only
+when every payload was read and proposal and completion counts match; outcomes
+then pair in durable order, as the TUI settles tools, and
+`tool_calls.summary` counts calls per tool, `purpose=verification` checks and
+failed checks. Otherwise those outcomes stay null rather than guessed. The
 `tool_profile` field records the actual run pin when the Host supplies it; older
 Hosts return null. To compare `coding_v2` and `coding_v3`, start a dedicated Host with `RU_AGENT_TOOL_PROFILE` set before its
 new runs, use fresh identical fixture copies, and hold the runtime, model,

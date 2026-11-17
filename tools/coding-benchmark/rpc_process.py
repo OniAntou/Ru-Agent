@@ -7,6 +7,7 @@ import time
 from contextlib import suppress
 
 from execution import close_process_tree, start_process, stop_process
+from tool_calls import MAX_TOOL_CALLS, tool_payload_ref
 
 MAX_RPC_LINE_BYTES = 1024 * 1024
 MAX_EVENTS = 1000
@@ -39,6 +40,8 @@ class JsonRpcProcess:
         self._last_sequence_seen = None
         self._events_truncated = False
         self._token_usage = dict.fromkeys(TOKEN_FIELDS)
+        # Proposal payload ids are kept apart from the safe events, which never carry them.
+        self._tool_payload_refs = []
         self._reader_error = None
         self._closed = False
         self._stdout_thread = threading.Thread(target=self._read_stdout, daemon=True)
@@ -87,8 +90,10 @@ class JsonRpcProcess:
     def drain_notifications(self):
         with self._capture_lock:
             events, self._events = self._events, []
+            refs, self._tool_payload_refs = self._tool_payload_refs, []
             return {
                 "events": events,
+                "tool_payload_refs": refs,
                 "event_count": self._event_count,
                 "last_sequence_seen": self._last_sequence_seen,
                 "events_truncated": self._events_truncated,
@@ -142,6 +147,9 @@ class JsonRpcProcess:
                 self._events.append(event)
             else:
                 self._events_truncated = True
+            ref = tool_payload_ref(params)
+            if ref is not None and len(self._tool_payload_refs) < MAX_TOOL_CALLS:
+                self._tool_payload_refs.append(ref)
 
     def _drain_stderr(self):
         while self.process.stderr.read(4096):

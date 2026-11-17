@@ -16,6 +16,7 @@ from rpc_process import (
     safe_event,
     valid_token_count,
 )
+from tool_calls import collect_tool_calls, tool_payload_ref
 from trajectory_metrics import measure_events
 
 MAX_PROVIDER_LABEL_CHARS = 256
@@ -29,6 +30,7 @@ INTERVENTION_STATUSES = {
     "waiting_approval", "waiting_user", "reconciliation_required",
 }
 RUN_ID_PATTERN = re.compile(r"run_[0-9a-f]{32}\Z")
+TOOL_CALL_COLLECTION_SECONDS = 60
 
 
 def build_agent_command(executable):
@@ -63,6 +65,9 @@ def _consume_notifications(bridge, subscription_id, state):
                 if value is not None:
                     state["token_usage"][name] = value
         events = batch.get("events", [])
+        refs = batch.get("tool_payload_refs")
+        if isinstance(refs, list):
+            state["tool_payload_refs"].extend(ref for ref in refs if isinstance(ref, tuple) and len(ref) == 2)
     else:
         events = batch
     if not isinstance(events, (list, tuple)):
@@ -75,6 +80,9 @@ def _consume_notifications(bridge, subscription_id, state):
             continue
         if not has_totals:
             state["events_seen"] += 1
+            ref = tool_payload_ref(params)
+            if ref is not None:
+                state["tool_payload_refs"].append(ref)
         state["last_sequence_seen"] = _maximum_sequence(
             state["last_sequence_seen"], params.get("sequence")
         )
@@ -184,7 +192,9 @@ def run_ru(
     deadline = started + limit
     state = {"events": [], "events_seen": 0, "events_truncated": False,
              "token_usage": dict.fromkeys(TOKEN_FIELDS), "last_sequence_seen": None,
-             "expected_sequence": None}
+             "expected_sequence": None, "tool_payload_refs": []}
+    tool_calls = None
+    terminal_elapsed = None
     bridge = None
     run_id = None
     session_id = None
@@ -255,6 +265,13 @@ def run_ru(
             if run_status in TERMINAL_STATUSES:
                 status = "completed" if run_status == "completed" else run_status
                 _catch_up_terminal_events(bridge, subscription_id, state, deadline)
+                # Agent time stops at the terminal run; reading back tool identities is
+                # post-run bookkeeping with its own bound, outside the task deadline.
+                terminal_elapsed = round(time.monotonic() - started, 3)
+                tool_calls = collect_tool_calls(
+                    bridge, run_id, state["tool_payload_refs"], state["events"],
+                    deadline=time.monotonic() + TOOL_CALL_COLLECTION_SECONDS,
+                    request_timeout=RPC_TIMEOUT_SECONDS)
                 break
             if run_status in INTERVENTION_STATUSES or run_status not in ACTIVE_STATUSES:
                 status = "intervention_required"
@@ -290,7 +307,7 @@ def run_ru(
         "run_status": run_status,
         "run_id": run_id,
         "session_id": session_id,
-        "elapsed_seconds": round(time.monotonic() - started, 3),
+        "elapsed_seconds": terminal_elapsed if terminal_elapsed is not None else round(time.monotonic() - started, 3),
         "exit_code": getattr(getattr(bridge, "process", None), "returncode", None),
         "provider_backend": provider_backend,
         "provider_model": provider_model,
@@ -308,6 +325,8 @@ def run_ru(
         "token_usage": state["token_usage"],
         "tool_metrics": measure_events(state["events"], complete=completeness is True and not state["events_truncated"]),
     }
+    if tool_calls is not None:
+        result["tool_calls"] = tool_calls
     if cancel_error is not None:
         result["cancel_error"] = cancel_error
     _write_trajectory(trial_dir, result)

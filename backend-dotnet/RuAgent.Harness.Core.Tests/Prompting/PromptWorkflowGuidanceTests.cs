@@ -19,6 +19,15 @@ public sealed class PromptWorkflowGuidanceTests
     }
 
     [Fact]
+    public void Core_contract_makes_the_final_check_cover_every_stated_rule()
+    {
+        Assert.Contains("that exercises every rule the request states: each rejection, boundary value and immutability "
+            + "or isolation rule it names, not only its example flow.", Core, StringComparison.Ordinal);
+        Assert.Contains("A passing check that skips a stated rule does not verify that rule.", Core, StringComparison.Ordinal);
+        Assert.DoesNotContain("verify with one short command that exercises the stated requirements", Core, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Core_contract_keeps_progress_reporting_short()
     {
         Assert.Contains("open with one sentence saying what you are about to do", Core, StringComparison.Ordinal);

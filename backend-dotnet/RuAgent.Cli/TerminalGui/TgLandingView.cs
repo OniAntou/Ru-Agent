@@ -15,6 +15,9 @@ public sealed partial class TgLandingView : ImageView
     internal Func<System.Drawing.Rectangle, bool>? IsWordmarkOccluded { get; set; }
     private readonly TuiGalaxySky _sky = new();
     private TimeSpan? _lastTick;
+    private TimeSpan _settleAt;
+    private bool _wakeRequested = true;
+    private bool _settled;
     private double _animationTime;
     internal double AnimationTime => _animationTime;
     internal long SkyRenderCount => _sky.RenderCount;
@@ -55,10 +58,38 @@ public sealed partial class TgLandingView : ImageView
     public void Tick() => Tick(TimeSpan.FromSeconds(
         (double)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency));
 
+    /// <summary>
+    /// Wall time the welcome animates after it appears or after the user's last input. Then it
+    /// holds a still frame, so an untouched welcome stops redrawing and leaves the CPU idle.
+    /// One cycle matches the wordmark's sweep period, so every cycle shows one light sweep.
+    /// </summary>
+    internal static readonly TimeSpan ActiveCycle = TimeSpan.FromSeconds(TgWelcomeWordmark.SweepPeriodSeconds);
+
+    /// <summary>Asks the welcome to animate for another <see cref="ActiveCycle"/> from its next tick.</summary>
+    public void Wake() => _wakeRequested = true;
+
+    /// <summary>True while the welcome holds its still frame and asks for no redraws.</summary>
+    internal bool IsSettled => _settled;
+
     internal void Tick(TimeSpan now)
     {
         if (!Visible || Viewport.Width <= 0 || Viewport.Height <= 0)
         {
+            // Showing the welcome again starts a fresh cycle.
+            _lastTick = null;
+            _wakeRequested = true;
+            return;
+        }
+        if (_wakeRequested)
+        {
+            _wakeRequested = false;
+            _settleAt = now + ActiveCycle;
+            _settled = false;
+        }
+        // Settle only between sweeps, so the still frame never freezes the light mid-beam.
+        if (now >= _settleAt && double.IsNaN(TgWelcomeWordmark.SweepPosition(_animationTime)))
+        {
+            _settled = true;
             _lastTick = null;
             return;
         }

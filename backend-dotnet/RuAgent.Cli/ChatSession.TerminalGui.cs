@@ -42,16 +42,39 @@ public sealed partial class AgentCommands
                 }
                 return false;
             });
-            var timer = tgApp.AddTimeout(TimeSpan.FromMilliseconds(Tui.TuiHeader.MeteorFrameMilliseconds), () =>
+            // The session clock ticks at frame rate only while something animates. A settled
+            // welcome or an idle conversation drops to the quiet interval, so an untouched
+            // session does not wake the CPU 55 times a second.
+            var animatingInterval = TimeSpan.FromMilliseconds(Tui.TuiHeader.MeteorFrameMilliseconds);
+            var quietInterval = TimeSpan.FromMilliseconds(QuietTickMilliseconds);
+            var interval = animatingInterval;
+            object? timer = null;
+            bool OnSessionTick()
             {
                 if (Volatile.Read(ref stopping) != 0) return false;
                 TickSession(clock.Elapsed.TotalSeconds);
-                return true;
-            });
+                var next = IsSessionQuiet() ? quietInterval : animatingInterval;
+                if (next == interval) return true;
+                interval = next;
+                timer = tgApp.AddTimeout(next, OnSessionTick);
+                return false;
+            }
+            timer = tgApp.AddTimeout(animatingInterval, OnSessionTick);
+            // Any input or resize lets the welcome animate for another cycle.
+            void WakeOnKey(object? sender, Terminal.Gui.Input.Key key) => tgWindow!.Landing.Wake();
+            void WakeOnMouse(object? sender, Terminal.Gui.Input.Mouse mouse) => tgWindow!.Landing.Wake();
+            void WakeOnResize(object? sender, Terminal.Gui.App.EventArgs<System.Drawing.Rectangle> args) =>
+                tgWindow!.Landing.Wake();
+            tgApp.Keyboard.KeyDown += WakeOnKey;
+            tgApp.Mouse.MouseEvent += WakeOnMouse;
+            tgApp.ScreenChanged += WakeOnResize;
             try { if (Volatile.Read(ref stopping) == 0) tgApp.Run(tgWindow!); }
             finally
             {
                 StopTerminalGuiChat();
+                tgApp.Keyboard.KeyDown -= WakeOnKey;
+                tgApp.Mouse.MouseEvent -= WakeOnMouse;
+                tgApp.ScreenChanged -= WakeOnResize;
                 if (startup is not null) tgApp.RemoveTimeout(startup);
                 if (timer is not null) tgApp.RemoveTimeout(timer);
                 // UI completion has a bounded drain. Accepted creates and attachment
@@ -62,6 +85,20 @@ public sealed partial class AgentCommands
                 submissions.ClearPending();
                 stopTerminalGui = null;
             }
+        }
+
+        /// <summary>Session clock interval while nothing on screen animates.</summary>
+        private const int QuietTickMilliseconds = 50;
+
+        /// <summary>
+        /// Nothing needs frame-rate ticks: the welcome is settled or hidden and no run shows a
+        /// live activity row or hint wave.
+        /// </summary>
+        private bool IsSessionQuiet()
+        {
+            var landing = tgWindow!.Landing;
+            var welcomeStill = !landing.Visible || landing.IsSettled;
+            return welcomeStill && sessionRenderer.Status.State is Tui.TuiRunState.Idle or Tui.TuiRunState.Failed;
         }
 
         private Action? stopTerminalGui;

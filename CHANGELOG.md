@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(cli)**: The terminal welcome sky no longer animates forever. It plays one 10-second cycle after it appears and after each key, mouse event or resize, then holds a still frame (never mid-sweep), and the session clock slows from 18 ms to 50 ms while nothing animates. An untouched welcome used to keep about 10% of one CPU core busy.
+
 - **fix(cli)**: Floating terminal panels (session picker, approval, trust, secret) are sized to the composed card instead of the full modal envelope, so the welcome sky no longer shows an opaque black band around the panel.
 
 - **fix(cli)**: Deleting the open session returns to the empty landing instead of silently switching to another conversation; the first prompt creates a fresh session lazily, so no empty "Cuộc trò chuyện mới" row is left behind. A refused session/model change now names the real blocker (running turn, queued prompts, or a paused approval/question) instead of always claiming queued prompts; a stray submit while a local panel owns the input is dropped, and stale hint text clears when a panel closes or the window returns to the landing.

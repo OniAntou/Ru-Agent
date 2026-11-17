@@ -546,7 +546,14 @@ narrow beam survives quantization. Cached palettes respect the terminal limit
 (up to 32 colors); warm lookup does not allocate or resample the image. Cropped
 Sixel fragments use the same palette; Kitty retains full pixel colors.
 The existing welcome clock owns animation timing; no additional periodic timer or
-background renderer is started. `TgLandingView` inherits `ImageView` for native
+background renderer is started. The welcome animates for one cycle
+(`TgLandingView.ActiveCycle`, the 10-second sweep period) after it appears and after
+each key, mouse event or resize, then holds a still frame; it settles only between
+sweeps, so the light never freezes mid-beam, and resumes without jumping forward.
+While the welcome is still (or hidden) and no run is active, the session clock
+ticks every 50 ms instead of every 18 ms. An untouched welcome therefore stops
+redrawing: the sky used to cost about 10% of one core indefinitely.
+`TgLandingView` inherits `ImageView` for native
 raster ownership and cleanup. It captures the ID of the image command registered
 by the base view once, then places its bounded logo through Terminal.Gui's output
 buffer after text. It does not duplicate the library's private ID format. Sky,

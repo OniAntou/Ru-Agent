@@ -69,8 +69,12 @@ public sealed class TgSquareWordmarkIntegrationTests
             if (stage == 0)
             {
                 w.Landing.Tick(TimeSpan.Zero);
+                // An active user keeps the welcome animating past its settle point.
                 for (var tick = 1; tick <= 133; tick++)
+                {
+                    w.Landing.Wake();
                     w.Landing.Tick(TimeSpan.FromSeconds(13.25 * tick / 133));
+                }
                 w.Landing.SetNeedsDraw();
                 return true;
             }

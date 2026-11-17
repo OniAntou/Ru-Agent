@@ -96,7 +96,8 @@ public sealed class TgOpenCodeLayoutTests
         {
             w.Landing.Tick(TimeSpan.Zero);
             var steps = (int)Math.Ceiling(time / 0.1);
-            for (var i = 1; i <= steps; i++) w.Landing.Tick(TimeSpan.FromSeconds(time * i / steps));
+            // An active user keeps the welcome animating past its settle point.
+            for (var i = 1; i <= steps; i++) { w.Landing.Wake(); w.Landing.Tick(TimeSpan.FromSeconds(time * i / steps)); }
         });
     }
 
@@ -132,7 +133,8 @@ public sealed class TgOpenCodeLayoutTests
         {
             w.Landing.Tick(TimeSpan.Zero);
             var steps = (int)Math.Ceiling(time / 0.1);
-            for (var i = 1; i <= steps; i++) w.Landing.Tick(TimeSpan.FromSeconds(time * i / steps));
+            // An active user keeps the welcome animating past its settle point.
+            for (var i = 1; i <= steps; i++) { w.Landing.Wake(); w.Landing.Tick(TimeSpan.FromSeconds(time * i / steps)); }
         });
     }
 

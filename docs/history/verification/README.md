@@ -3,6 +3,7 @@
 These records are dated evidence, not current operating instructions. [Current verification](../../operations/verification.md) owns commands and acceptance boundaries.
 
 - [undated](undated.md)
+- [2026-11-17](2026-11-17.md) - live hy4-flash-free cohorts: Terminal/SWE 6/9, Everyday 11/11, tool-call trajectories, A/B of the stated-rule check guidance and an advisor probe
 - [2026-11-03 codebase review](2026-11-03-codebase-review.md) - six P2 findings and their submission, history, MCP and terminal-streaming remediations; final .NET matrix 9,593
 - [2026-11-03 native acceptance and TUI performance](2026-11-03-native-acceptance-and-tui-performance.md) - native WinUI navigation/resize, controlled ConPTY latency, repaint/cadence improvements and real-provider task evidence
 - [2026-11-02](2026-11-02.md) - new-session render batching, stable workspace headers and known-empty opening path; GUI suite 2,046

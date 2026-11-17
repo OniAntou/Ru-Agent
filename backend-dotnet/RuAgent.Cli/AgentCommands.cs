@@ -25,7 +25,7 @@ public sealed partial class AgentCommands : IDisposable
     private readonly RunStartCore _runStartCore;
     private Rpc.RpcBridgeServer? _rpcServer;
 
-    internal Func<CancellationToken, Task<PublicHostSession>>? ReconnectHost { get; init; }
+    internal Func<CancellationToken, Task<PublicHostSession>>? ResolveSubmissionHost { get; init; }
 
     public AgentCommands(
         PublicHostSession session,

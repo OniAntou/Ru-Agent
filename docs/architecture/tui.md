@@ -308,11 +308,12 @@ Resize, retention and multi-row removal still invalidate the layout and rediscov
 table ranges; expanded-block handling is unchanged. This optimization changes no
 history cap, parser/source text, model input, copy content or execution authority.
 
-An open chat can reconnect to the managed Host after idle shutdown. When the
-pre-submission settings read loses its connection, the CLI uses the normal Host
-starter and validates settings on the replacement connection. The session,
-provider/model snapshot, and draft attachments stay with the same submission.
-Session creation and run writes remain outside the reconnect attempt.
+Before a new prompt's first write, a settings read that loses the local Host
+can resolve a replacement once through the existing managed Host starter. The
+client authenticates and reads settings again, then checks the queued provider
+and model before sending with the original session and submission identity.
+This path applies to fresh prompts with no retained run. Authorization errors,
+changed settings and failed recovery retain the paused queue and attachments.
 
 Mouse drag selects the transcript's displayed rows without moving composer focus.
 Copy keeps whole graphemes and uses the displayed line breaks. Selection coordinates

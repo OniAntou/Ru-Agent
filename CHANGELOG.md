@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Recover the local Host connection once before sending a new
+  prompt after idle shutdown. Retain the current session and validate the
+  selected provider and model before sending.
 - **fix(broker)**: Accept a single string `pattern` as the `grep` query alias.
 - **fix(tui)**: Hide successful tool receipts and their inline diffs in native chat,
   including replay. Keep live activity, failures, unknown outcomes, approvals and

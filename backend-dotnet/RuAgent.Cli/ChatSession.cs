@@ -27,7 +27,7 @@ public sealed partial class AgentCommands
     private sealed partial class ChatSession
     {
         private AgentCommands _host;
-        private bool ownsReconnectedHost;
+        private bool ownsReplacementHostClients;
         private ChatCommand cmd;
         private readonly ChatBootstrapContext bootstrap;
         private CancellationToken cancellationToken;
@@ -108,7 +108,7 @@ public sealed partial class AgentCommands
             finally
             {
                 submissions.ClearPending();
-                if (ownsReconnectedHost) _host.Dispose();
+                if (ownsReplacementHostClients) _host.Dispose();
             }
         }
     }

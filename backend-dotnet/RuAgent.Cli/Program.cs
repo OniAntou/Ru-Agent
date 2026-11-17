@@ -78,7 +78,7 @@ public static class Program
             var session = await starter.GetOrStartAsync(projectRoot, starterCts.Token).ConfigureAwait(false);
             commands = new AgentCommands(session, httpClient, Console.Out, Console.Error, sseHttpClient: sseHttpClient)
             {
-                ReconnectHost = token => starter.GetOrStartAsync(projectRoot, token),
+                ResolveSubmissionHost = command is ChatCommand ? token => starter.GetOrStartAsync(projectRoot, token) : null,
             };
         }
         catch (AgentApiException ex)

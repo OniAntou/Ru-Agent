@@ -89,6 +89,9 @@ conversation is created in between. While a turn is running, prompts are queued,
 approval/question is pending, Ru refuses a session or model change and says which of those
 is blocking it.
 
+For a new prompt after idle shutdown, Ru starts or finds the Host and rechecks the
+selected provider and model before sending in the current session.
+
 ## What the terminal UI leaves to the desktop app
 
 The desktop app has dedicated views for activity, plans, file changes and the file tree; the terminal UI

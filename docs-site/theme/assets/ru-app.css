@@ -1,0 +1,862 @@
+/*
+ * The rebuilt Ru window (see ru-app.js), measured against real 1584x992 captures of the desktop app's
+ * dark theme (gui-winui3/App.xaml). The base size is the app's 15px body text at 1584px; every other
+ * length is that capture's pixel value divided by 15, so the whole window scales with its frame.
+ */
+
+.ra-host {
+  container-type: inline-size;
+  position: relative;
+}
+
+.ra,
+.ra *,
+.ra *::before,
+.ra *::after {
+  box-sizing: border-box;
+}
+
+.ra {
+  --c-canvas: #1a1a1a;
+  --c-side: #141414;
+  --c-surface: #242424;
+  --c-soft: #2e2e2e;
+  --c-ink: #eeeeee;
+  --c-muted: #aaaaaa;
+  --c-line: #3c3c3c;
+  --c-ok: #34d399;
+  --c-bad: #f87171;
+  --c-accent: #e2e8f0;
+  font-family: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-size: calc(100cqw * 15 / 1584);
+  line-height: 1.6;
+  color: var(--c-ink);
+  background: var(--c-canvas);
+  aspect-ratio: 1584 / 992;
+  display: grid;
+  grid-template-columns: 16.6em minmax(0, 1fr);
+  grid-template-rows: 2.733em minmax(0, 1fr);
+  overflow: hidden;
+  position: relative;
+  text-align: left;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ra-i {
+  width: 1.07em;
+  height: 1.07em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ra-mono,
+.ra code {
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 0.93em;
+}
+
+/* Scoped through the host so the page's own inline-code styling never reaches the rebuilt app. */
+.ra-host .ra code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.93em;
+  font-weight: 600;
+  color: var(--c-ink);
+}
+
+.ra-dim {
+  color: var(--c-muted);
+}
+
+/* ---------------------------------------------------------------- title bar (41px, canvas colour) */
+
+.ra-titlebar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 0 0.95em;
+  background: var(--c-canvas);
+  color: var(--c-ink);
+}
+
+.ra-tb-left {
+  display: flex;
+  align-items: center;
+  gap: 1.25em;
+}
+
+.ra-tb-left .ra-i {
+  width: 1.15em;
+  height: 1.15em;
+}
+
+.ra-nav-i {
+  stroke-width: 1.3;
+}
+
+.ra-off {
+  color: #666;
+}
+
+.ra-caps {
+  display: flex;
+  align-items: center;
+  gap: 2.35em;
+  padding-right: 1.35em;
+}
+
+.ra-caps i {
+  width: 0.73em;
+  height: 0.73em;
+  border: 1px solid #cfcfcf;
+}
+
+.ra-caps i:first-child {
+  height: 0;
+  border-width: 1px 0 0;
+}
+
+.ra-caps i:last-child {
+  border: 0;
+  width: 0.8em;
+  height: 0.8em;
+  background:
+    linear-gradient(45deg, transparent 45%, #cfcfcf 45%, #cfcfcf 55%, transparent 55%),
+    linear-gradient(-45deg, transparent 45%, #cfcfcf 45%, #cfcfcf 55%, transparent 55%);
+}
+
+/* ---------------------------------------------------------------- sidebar (249px) */
+
+.ra-side {
+  display: flex;
+  flex-direction: column;
+  padding: 1.07em 0.87em 1.1em 0.93em;
+  background: var(--c-side);
+  font-size: 0.93em;
+}
+
+.ra-new {
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  height: 2.5em;
+  padding: 0 0.9em;
+  border: 1px solid #8d7db6;
+  border-radius: 0.45em;
+  background: linear-gradient(90deg, #213e35, #293847 50%, #3f3857);
+  font-weight: 500;
+}
+
+.ra-nav,
+.ra-ws,
+.ra-settings {
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  padding: 0 0.7em;
+  font-weight: 600;
+}
+
+.ra-nav {
+  margin-top: 1.05em;
+  font-size: 1.07em;
+  font-weight: 500;
+}
+
+.ra-sec {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  margin-top: 2.05em;
+  padding: 0 0.15em;
+  font-size: 0.8em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+}
+
+.ra-sec .ra-r {
+  margin-left: auto;
+}
+
+.ra-sec .ra-i {
+  width: 1.15em;
+  height: 1.15em;
+}
+
+.ra-sec .ra-r + .ra-i {
+  margin-left: 1.15em;
+}
+
+.ra-sec ~ .ra-sec {
+  margin-top: 4.3em;
+}
+
+.ra-ws {
+  margin-top: 1.3em;
+  padding: 0 0.2em;
+}
+
+.ra-sess {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 2.55em;
+  margin: 0.5em 0 0 -0.6em;
+  padding: 0 0.7em;
+  border-radius: 0.45em;
+  background: var(--c-soft);
+  font-size: 0.97em;
+}
+
+.ra-sess-t {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ra-sess .ra-mono {
+  font-size: 0.85em;
+}
+
+.ra-empty {
+  margin-top: 1.55em;
+  padding: 0 0.2em;
+  font-size: 0.93em;
+  color: var(--c-muted);
+}
+
+.ra-settings {
+  margin-top: auto;
+  padding: 0 0.6em;
+  font-size: 1.07em;
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------- main column */
+
+.ra-main {
+  position: relative;
+  display: grid;
+  grid-template-rows: 3.4em minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  background: var(--c-canvas);
+}
+
+.ra-crumb {
+  grid-row: 1;
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0 1.85em 0 2.07em;
+  border-bottom: 1px solid var(--c-line);
+  white-space: nowrap;
+  min-width: 0;
+  font-size: 0.93em;
+  color: var(--c-muted);
+}
+
+.ra-crumb > .ra-i:first-child {
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.ra-title {
+  overflow: hidden;
+  max-width: 22.3em;
+  font-weight: 600;
+  color: var(--c-ink);
+  margin: 0 0.6em 0 0.2em;
+}
+
+.ra-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+}
+
+.ra-mode i,
+.ra-working i,
+.ra-path i {
+  width: 0.4em;
+  height: 0.4em;
+  border-radius: 50%;
+  background: var(--c-ok);
+}
+
+.ra-working {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  margin-left: auto;
+}
+
+.ra-working i {
+  animation: ra-pulse 1.2s ease-in-out infinite;
+}
+
+.ra-crumb-r {
+  margin-left: auto;
+  color: var(--c-ink);
+}
+
+.ra[data-state="working"] .ra-working + .ra-crumb-r {
+  margin-left: 1.6em;
+}
+
+/* An empty session centres the greeting and the composer in the whole main area, the greeting
+   aligned to the composer's left edge. */
+.ra-hello {
+  grid-row: 2;
+  grid-column: 1;
+  align-self: center;
+  justify-self: center;
+  width: 25.6em;
+  max-width: calc(100% - 1em);
+  margin-top: -1.74em;
+  font-size: 1.96em;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+}
+
+.ra[data-state="empty"] .ra-composer,
+.ra[data-state="typing"] .ra-composer {
+  margin-right: 0;
+}
+
+.ra-path {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  margin-bottom: 0.75em;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 0.4em;
+  font-weight: 400;
+  color: var(--c-muted);
+}
+
+.ra-path i {
+  background: #d4d4d4;
+}
+
+/* The conversation column is 720px wide, centred a little left of the main area as in the app. */
+.ra-scroll {
+  grid-row: 2;
+  grid-column: 1;
+  overflow: hidden;
+  padding: 3.27em 2.7em 1em 0;
+}
+
+.ra-thread {
+  width: 48em;
+  max-width: calc(100% - 2em);
+  margin: 0 auto;
+}
+
+.ra-user {
+  font-size: 0.933em;
+  line-height: 1.714;
+  padding: 0.9em 1.15em 1.1em;
+  border: 1px solid var(--c-line);
+  border-radius: 0.53em;
+  background: var(--c-surface);
+  line-height: 1.6;
+}
+
+.ra-turn {
+  margin-top: 3.68em;
+  font-size: 0.933em;
+  line-height: 1.714;
+}
+
+.ra-worked {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  line-height: 1.5;
+}
+
+.ra-worked .ra-i {
+  width: 1em;
+  height: 1em;
+  color: var(--c-muted);
+}
+
+.ra-worked-t {
+  margin-left: 0.15em;
+}
+
+.ra-open {
+  display: none;
+}
+
+.ra[data-state="working"] .ra-open {
+  display: block;
+}
+
+.ra[data-state="working"] .ra-shut {
+  display: none;
+}
+
+.ra-steps {
+  margin-top: 0.05em;
+}
+
+.ra-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  height: 1.643em;
+  padding-left: 1.43em;
+  color: var(--c-muted);
+}
+
+.ra-step .ra-i {
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.07em;
+}
+
+.ra-dot {
+  font-size: 0.6em;
+  margin: 0 0.15em;
+}
+
+.ra-step .ra-mono {
+  margin-left: 0.6em;
+}
+
+.ra-step .ra-mono + .ra-mono,
+.ra-target + .ra-mono {
+  margin-left: 0.4em;
+}
+
+.ra-say {
+  padding: 0.6em 0 1.05em;
+  color: var(--c-ink);
+}
+
+.ra-step + .ra-say {
+  margin-top: 0.55em;
+}
+
+.ra-add,
+.ra-del {
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 0.87em;
+}
+
+.ra-add {
+  color: var(--c-ok);
+}
+
+.ra-del {
+  color: var(--c-bad);
+}
+
+.ra-step .ra-add {
+  margin-left: 0.9em;
+}
+
+.ra-reply {
+  margin-top: 0.05em;
+}
+
+.ra-reply p {
+  margin: 0;
+}
+
+.ra-reply p + p {
+  margin-top: 0.85em;
+}
+
+.ra-reply ul {
+  margin: 0.85em 0 0;
+  padding-left: 2.05em;
+}
+
+.ra-reply li {
+  margin: 0 0 0.53em;
+  padding-left: 0.24em;
+}
+
+.ra-reply ul + p {
+  margin-top: 0.4em;
+}
+
+.ra-files {
+  margin-top: 1.4em;
+  border: 1px solid var(--c-line);
+  border-radius: 0.53em;
+  background: var(--c-surface);
+  overflow: hidden;
+}
+
+.ra-files-h {
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  height: 3em;
+  padding: 0 0.8em;
+  border-bottom: 1px solid #343434;
+  font-size: 0.97em;
+}
+
+.ra-files-i {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 1.75em;
+  height: 1.75em;
+  padding: 0 0.3em;
+  white-space: nowrap;
+  letter-spacing: -0.05em;
+  border-radius: 0.35em;
+  background: #2e2e2e;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 0.87em;
+  color: var(--c-muted);
+}
+
+.ra-files-h b {
+  font-weight: 600;
+}
+
+.ra-chip {
+  margin-left: auto;
+  padding: 0.3em 0.7em;
+  border-radius: 0.35em;
+  background: #313131;
+  font-size: 0.8em;
+}
+
+.ra-files > .ra-mono {
+  padding: 0.85em 0.87em 0;
+}
+
+.ra-files > .ra-mono:last-child {
+  padding-bottom: 0.95em;
+}
+
+/* ---------------------------------------------------------------- composer (751x110) */
+
+.ra-composer {
+  grid-row: 3;
+  grid-column: 1;
+  justify-self: center;
+  width: 50.07em;
+  max-width: calc(100% - 2em);
+  height: 7.33em;
+  margin: 0 2.7em 1.67em 0;
+  padding: 0.95em 1.07em 0.75em;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--c-line);
+  border-radius: 0.67em;
+  background: var(--c-surface);
+}
+
+.ra-input {
+  position: relative;
+  flex: 1;
+  font-size: 0.933em;
+  line-height: 1.714;
+  max-height: 4.8em;
+  overflow: hidden;
+  line-height: 1.6;
+}
+
+.ra-ph {
+  color: #cdcdcd;
+}
+
+.ra-typed:not(:empty) ~ .ra-ph {
+  display: none;
+}
+
+.ra-caret {
+  display: none;
+  width: 1px;
+  height: 1.15em;
+  margin-left: 1px;
+  vertical-align: -0.2em;
+  background: var(--c-ink);
+  animation: ra-blink 1s steps(1) infinite;
+}
+
+.ra[data-state="typing"] .ra-caret {
+  display: inline-block;
+}
+
+.ra-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.95em;
+  margin-top: 0.6em;
+  font-size: 0.87em;
+}
+
+.ra-bar > .ra-i:first-child {
+  color: var(--c-muted);
+  width: 1.15em;
+  height: 1.15em;
+}
+
+.ra-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  font-weight: 500;
+}
+
+.ra-pick .ra-i {
+  width: 0.8em;
+  height: 0.8em;
+  color: var(--c-muted);
+}
+
+.ra-sep {
+  width: 1px;
+  height: 1.1em;
+  background: var(--c-line);
+}
+
+.ra-ring {
+  margin-left: auto;
+  width: 1.45em;
+  height: 1.45em;
+  color: #555;
+}
+
+.ra-send {
+  display: inline-grid;
+  place-items: center;
+  width: 2.45em;
+  height: 2.45em;
+  margin-left: 0.4em;
+  border-radius: 0.4em;
+  background: var(--c-accent);
+  color: #0f172a;
+  transition: transform 160ms ease;
+}
+
+.ra-send .ra-i {
+  width: 1.2em;
+  height: 1.2em;
+  fill: currentColor;
+  stroke: none;
+}
+
+.ra.is-sending .ra-send {
+  transform: scale(0.86);
+}
+
+/* ---------------------------------------------------------------- session panel (280px) */
+
+.ra-panel {
+  position: absolute;
+  top: 7.81em;
+  right: 1.22em;
+  width: 20em;
+  padding: 1.15em 1.35em 1.2em;
+  border: 1px solid var(--c-line);
+  border-radius: 0.53em;
+  background: var(--c-surface);
+  font-size: 0.93em;
+  z-index: 2;
+}
+
+.ra-panel-h {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.ra-panel-h b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 1.07em;
+  font-weight: 600;
+}
+
+.ra-panel-h .ra-i {
+  margin-left: auto;
+  color: var(--c-muted);
+}
+
+.ra-prow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55em;
+  margin-top: 1.05em;
+  font-size: 0.93em;
+  line-height: 1.45;
+}
+
+.ra-prow small {
+  display: block;
+  color: var(--c-muted);
+  font-size: 0.86em;
+  white-space: nowrap;
+}
+
+.ra-prow .ra-i {
+  margin-top: 0.15em;
+  color: var(--c-muted);
+}
+
+.ra-diff {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+
+.ra-diff .ra-add {
+  margin-right: 0.3em;
+}
+
+.ra.has-diff .ra-diff {
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------- states */
+
+.ra-crumb > *:not(.ra-crumb-r),
+.ra-scroll,
+.ra-panel {
+  visibility: hidden;
+}
+
+.ra[data-state="working"] .ra-crumb > *,
+.ra[data-state="working"] .ra-scroll,
+.ra[data-state="working"] .ra-panel,
+.ra[data-state="done"] .ra-crumb > *,
+.ra[data-state="done"] .ra-scroll,
+.ra[data-state="done"] .ra-panel {
+  visibility: visible;
+}
+
+.ra[data-state="empty"] .ra-crumb,
+.ra[data-state="typing"] .ra-crumb {
+  border-bottom-color: transparent;
+}
+
+.ra[data-state="working"] .ra-hello,
+.ra[data-state="done"] .ra-hello {
+  display: none;
+}
+
+.ra-working,
+.ra-reply {
+  display: none;
+}
+
+.ra[data-state="working"] .ra-working {
+  display: inline-flex;
+}
+
+.ra[data-state="done"] .ra-steps {
+  display: none;
+}
+
+.ra[data-state="done"] .ra-reply {
+  display: block;
+}
+
+/* ---------------------------------------------------------------- motion (play mode only) */
+
+@media (prefers-reduced-motion: no-preference) {
+  .ra.is-playing .ra-step,
+  .ra.is-playing .ra-say {
+    animation: ra-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .ra.is-playing[data-state="working"] .ra-user,
+  .ra.is-playing[data-state="working"] .ra-panel {
+    animation: ra-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .ra.is-playing[data-state="done"] .ra-reply > * {
+    animation: ra-in 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .ra.is-playing[data-state="done"] .ra-reply > :nth-child(2) { animation-delay: 90ms; }
+  .ra.is-playing[data-state="done"] .ra-reply > :nth-child(3) { animation-delay: 180ms; }
+  .ra.is-playing[data-state="done"] .ra-reply > :nth-child(4) { animation-delay: 300ms; }
+  .ra.is-playing[data-state="done"] .ra-reply > :nth-child(5) { animation-delay: 460ms; }
+}
+
+@keyframes ra-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.6em);
+  }
+}
+
+@keyframes ra-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes ra-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---------------------------------------------------------------- narrow frames: the main column only */
+
+@container (max-width: 760px) {
+  .ra {
+    font-size: clamp(9px, 2.6cqw, 13px);
+    grid-template-columns: minmax(0, 1fr);
+    aspect-ratio: 4 / 5;
+  }
+
+  .ra-side,
+  .ra-panel,
+  .ra-crumb-r {
+    display: none;
+  }
+
+  .ra-titlebar {
+    grid-column: 1;
+  }
+
+  .ra-scroll {
+    padding: 1.3em 0 0.8em;
+  }
+
+  .ra-thread {
+    max-width: calc(100% - 2.2em);
+  }
+
+  .ra-turn {
+    margin-top: 1.8em;
+  }
+
+  .ra-composer {
+    width: auto;
+    justify-self: stretch;
+    margin: 0 1.1em 1.1em;
+    min-height: 0;
+  }
+
+  .ra-hello {
+    width: auto;
+    margin: 0 1.1em;
+    font-size: 1.5em;
+  }
+}

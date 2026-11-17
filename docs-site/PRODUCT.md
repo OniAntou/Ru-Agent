@@ -53,8 +53,11 @@ repository (README, `docs/`, package READMEs) and is rebuilt on every push to `d
 ## Brand Commitments
 
 - Name: Ru Agent. The pixel-style wordmark `docs/assets/wordmark-clean.svg` is the existing identity asset.
-- Tone, confirmed for this surface: calm, technical and honest. Ru is a Preview; the site states limits
+- Tone, confirmed for the manual pages: calm, technical and honest. Ru is a Preview; the site states limits
   (no sandbox, unsigned packages) plainly and does not oversell.
+- Tone, confirmed by the owner for the cover (2026-11-17): a confident product pitch that leads with the
+  desktop app over the CLI. Limits move below the first viewport but are still stated plainly where the
+  visitor installs or chooses a permission mode, and no claim goes beyond what Ru does.
 - Not binding (evidence only): the TUI palette is steel-blue with violet accents and warm neutrals; the
   desktop app is dark-first.
 
@@ -62,9 +65,9 @@ repository (README, `docs/`, package READMEs) and is rebuilt on every push to `d
 
 - `README.md` (positioning, install, quick start, permissions), `docs/` (about 50 pages), 23 ADRs.
 - Real terminal output from Ru runs (for example the status panel and subagent lines) can be quoted.
-- Screenshots of the desktop app exist only in local test artifacts and have not been cleared for
-  publication; none may be assumed available. No customers, testimonials, benchmarks or download counts
-  exist to cite.
+- Desktop app captures cleared for the cover live in `docs-site/theme/assets/shots/`: a real 0.1.3 Preview
+  run on a throwaway demo workspace, with no personal sessions or folders in view. No customers,
+  testimonials, benchmarks or download counts exist to cite.
 
 ## Product Principles
 

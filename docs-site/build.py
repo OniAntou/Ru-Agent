@@ -51,9 +51,9 @@ THEME = HERE / "theme"
 # root README is published as the "Overview" page under another name.
 ALIASES = {"README.md": "overview.md"}
 FONTS = (
-    "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700"
+    "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800"
     "&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400"
-    "&family=JetBrains+Mono:wght@400;600&display=swap"
+    "&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
 )
 
 LINK = re.compile(r"(?<!\!)\]\(([^)\s]+?)(\s+\"[^\"]*\")?\)")

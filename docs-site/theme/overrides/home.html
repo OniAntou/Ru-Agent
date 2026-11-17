@@ -1,8 +1,76 @@
 {% extends "base.html" %}
 
-{# The cover of the manual. The body comes from docs-site/home.md; the contents list is generated. #}
-{% block content %}
-  <article class="manual-home">
+{#
+  The cover is the site's one Persuade surface ("The Desk", see docs-site/DESIGN.md). It replaces the
+  Material header, rail and footer with its own, keeps MkDocs search and metadata, and loads its own
+  stylesheet and replay script. The body comes from docs-site/home.md; the contents list is generated.
+#}
+{% block extrahead %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ '_manual/ru-app.css' | url }}">
+  <link rel="stylesheet" href="{{ '_manual/landing.css' | url }}">
+  <meta property="og:title" content="Ru Agent: the coding agent that lives on your Windows desktop">
+  <meta property="og:description" content="A native Windows app that reads your project, edits files and runs your checks while you watch every step. Your model, your keys, no account.">
+  <meta property="og:image" content="{{ config.site_url }}_manual/shots/desktop-result.png">
+{% endblock %}
+
+{% block header %}
+  {# Material's script looks the header up by this attribute; without it the page throws on load. #}
+  <header class="desk-bar" data-md-component="header">
+    <a class="desk-bar__mark" href="{{ nav.homepage.url | url }}" aria-label="Ru Agent home">
+      <img src="{{ '_manual/wordmark.svg' | url }}" alt="ru agent" width="148" height="20">
+    </a>
+    <nav class="desk-bar__nav" aria-label="Site">
+      <a href="{{ 'overview/' | url }}">Overview</a>
+      <a href="{{ 'docs/guide/install/' | url }}">Guide</a>
+      <a href="{{ config.repo_url }}">GitHub</a>
+    </nav>
+    <a class="desk-bar__cta" href="https://github.com/OniAntou/Ru-Agent/releases">Download</a>
+  </header>
+{% endblock %}
+
+{% block tabs %}{% endblock %}
+
+{% block container %}
+  <main class="desk" id="top">
     {{ page.content }}
-  </article>
+  </main>
+{% endblock %}
+
+{% block footer %}
+  <footer class="desk-foot">
+    <div class="desk-foot__brand">
+      <img src="{{ '_manual/wordmark.svg' | url }}" alt="ru agent" width="148" height="20">
+      <p>The coding agent that lives on your Windows desktop.</p>
+      <p class="desk-foot__fine">Preview &middot; Windows x64 &middot; MIT licence</p>
+    </div>
+    <nav class="desk-foot__cols" aria-label="Footer">
+      <div>
+        <h3>Product</h3>
+        <a href="https://github.com/OniAntou/Ru-Agent/releases">Download</a>
+        <a href="#install">Install the CLI</a>
+        <a href="{{ config.repo_url }}/blob/dev/CHANGELOG.md">Changelog</a>
+      </div>
+      <div>
+        <h3>Docs</h3>
+        <a href="{{ 'overview/' | url }}">Overview</a>
+        <a href="{{ 'docs/guide/first-task/' | url }}">First task</a>
+        <a href="{{ 'docs/guide/permissions/' | url }}">Permissions</a>
+        <a href="{{ 'docs/operations/agent-tools/' | url }}">Tool policy</a>
+      </div>
+      <div>
+        <h3>Project</h3>
+        <a href="{{ config.repo_url }}">GitHub</a>
+        <a href="https://github.com/OniAntou/Ru-Agent/discussions">Discussions</a>
+        <a href="{{ config.repo_url }}/blob/dev/SECURITY.md">Security</a>
+        <a href="{{ config.repo_url }}/blob/dev/LICENSE">Licence</a>
+      </div>
+    </nav>
+  </footer>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ '_manual/ru-app.js' | url }}"></script>
+  <script src="{{ '_manual/landing.js' | url }}"></script>
 {% endblock %}

@@ -124,8 +124,7 @@ eyebrows over ordinary sections.
 ## Layout
 
 Three columns on wide screens: a 15.5rem chapter rail, a reading column at 72ch, and an on-page contents
-margin. The cover is a two-column spread (identity, then the procedure plate) at up to 76rem; everything
-stacks below 60em. Spacing is generous between sections and tight inside a plate.
+margin. The cover has its own layout (see "The cover" below); manual pages stack below 60em. Spacing is generous between sections and tight inside a plate.
 
 ## Elevation & Depth
 
@@ -158,6 +157,51 @@ number becomes a green chip. Each page opens with a plate line (chapter, title, 
 ### Specification tables
 A heavy top rule, hairline rows, condensed uppercase heads, first column bold.
 
+## The cover: "The Desk"
+
+The cover is the one Persuade surface and runs on its own stylesheet (`theme/assets/landing.css`). It keeps
+the brand inks (Ru green on graphite, the three faces) and the manual's flat grammar for everything that
+is reading; it adds the one device a Windows desktop owns natively: a window with real depth.
+
+- **The desk.** The first viewport is a graphite desktop field with a faint green dot grid that fades out
+  under the headline, like a wallpaper nobody chose. Kicker, a two-line headline, a two-line lede and one
+  primary action sit centred; the real app window follows, flat, large and readable, rising into view.
+  One window and nothing staged around it: the owner judged a tilted, layered rig (terminal behind,
+  magnifier in front, a dotted RU) not clean (2026-11-17). Windows are the only elements with a deep shadow
+  and an 8px corner, because that is what a window is; everything else stays square. Raised panels (the
+  install grid, the modes dial) may carry a soft drop shadow and a 1px top highlight, and a faint green
+  light falls on the headline from above; depth stays a whisper, never a glow.
+- **The green pedestal.** The cover's one loud move: a field of Ru green (Committed strategy, on the cover
+  only) rises behind the lower half of the window, so the window stands on it. Its top edge is flat under
+  the window and steps down in four pixel stairs across the margins, the wordmark's pixel grid at desk
+  scale. It rises once on load and is clipped to the hero. The closing band repeats it (below) and the
+  primary action is green-filled; nothing else is.
+- **Case.** Uppercase belongs to labels, the kicker, buttons and the hero headline; section and beat
+  headings are sentence case so the page reads calm between the loud moments.
+- **Display type** may rise to 6rem in Barlow Condensed on the cover only; the manual keeps its scale.
+- **The replay.** The window is an HTML rebuild of the app (`theme/assets/ru-app.js`, `ru-app.css`, dark
+  tokens from `gui-winui3/App.xaml`, every length measured against real 1584x992 captures and checked by
+  overlaying the render on them) that plays one real run: the prompt is typed and sent, steps stream
+  in, counters move, the feed folds into "Worked" and the reply lands. It drives the Ask, Watch and Done
+  beats, which can jump to their phase. Under `prefers-reduced-motion` it shows the finished run at rest.
+- **Ru green** stays the only brand ink: the download action, the replay's clock, engaged states and Ru's
+  bar in the measured charts. Hazard colours
+  appear only in the limits strip near install.
+- **Rebuilt, not invented.** The owner chose (2026-11-17) a crisp HTML rebuild over blurry 1x captures. Its
+  content is one real run's prompt, steps and reply, and the caption says it is rebuilt; never add UI or
+  results the app does not produce.
+- **Measured, then close.** The owner asked (2026-11-18) for the premium feel of company sites while keeping
+  this identity, and rejected repository counts (tests, ADRs) as meaningless to a visitor. After the replay,
+  "Light on your machine" charts Ru's terminal app against other terminal agents (install size, memory
+  while idle, time to a ready prompt) as three small multiples, one scale each, rows in a fixed order with
+  Ru first. Ru's bar is the only green mark; the others are neutral grey and named on every row, with
+  values labelled and a full table under "See every number". Every figure comes from one measured
+  session on one machine (2026-11-18); the note under the charts states the machine, versions, date and
+  method, and a metric where Ru does not lead stays on the page. Re-measure every agent in one session
+  before changing any figure, and refresh the charts, table and note together. The page ends on a full-bleed green closing band whose top edge
+  climbs in the pedestal's stairs, with one ink-black download action, then a footer with the wordmark
+  and three link columns (Product, Docs, Project).
+
 ## Do's and Don'ts
 
 ### Do:
@@ -168,4 +212,5 @@ A heavy top rule, hairline rows, condensed uppercase heads, first column bold.
 ### Don't:
 - **Don't** use a coloured side border on callouts or list items; the plate is the grammar.
 - **Don't** set body copy in monospace.
-- **Don't** add shadows, gradients or glass.
+- **Don't** add shadows, gradients or glass to the manual. On the cover the app window's shadow is the
+  single exception; gradients and glass stay out there too.

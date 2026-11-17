@@ -1,0 +1,1389 @@
+/*
+ * THE DESK: the cover of the Ru Agent site (docs-site/DESIGN.md, "The cover").
+ *
+ * THESIS: the cover is a Windows desk with the real Ru window on it, not a hero banner with a
+ * screenshot in a card; it refuses the dark page with one neon headline and a feature-card grid.
+ * OWN-WORLD: graphite desktop ground with a faint green dot grid, one Windows 11 window with real depth,
+ * Barlow Condensed display at desk scale, Ru green only on the primary action and the replay's clock.
+ * STORY: the visitor sees the app, watches one real task go from ask to checked result, learns what keeps
+ * it in bounds, then downloads the desktop app (or installs the CLI).
+ * FIRST VIEWPORT: a centred kicker, a two-line display headline, one lede line block and the Download
+ * action (the CLI as a text link), then the real app window mid-run, flat and large, rising into view.
+ * FORM: assigned structure 6 ("desk scene") fused with the run-replay staging; seed ceac62e5.
+ */
+
+/* ------------------------------------------------------------------ cover tokens (always night desk) */
+
+.md-main__inner:has(.desk) {
+  max-width: none;
+  margin: 0;
+  display: block;
+}
+
+.md-container:has(.desk),
+.md-main:has(.desk) {
+  background: #0b100e;
+}
+
+.desk {
+  --ru-bg: #0b100e;
+  --ru-surface: #111815;
+  --ru-surface-2: #17211d;
+  --ru-rule: #26332d;
+  --ru-rule-strong: #3d4f46;
+  --ru-ink: #e6ece7;
+  --ru-ink-2: #a9b6af;
+  --ru-ink-3: #86958d;
+  --ru-link: #4ff0a1;
+  --ru-brand: #00e676;
+  --ru-caution: #ffb224;
+  --ru-caution-bg: #1f1806;
+
+  --desk-pad: clamp(1rem, 4vw, 3rem);
+  --desk-max: 84rem;
+  --window-radius: 8px;
+  --window-shadow: 0 28px 64px -18px rgba(0, 0, 0, 0.72), 0 10px 24px -12px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(230, 236, 231, 0.07);
+
+  display: block;
+  color: var(--ru-ink);
+  background-color: var(--ru-bg);
+  font-family: var(--ru-body);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  overflow-x: clip;
+}
+
+.desk a {
+  color: var(--ru-link);
+}
+
+.desk code {
+  font-family: var(--ru-mono);
+  font-size: 0.88em;
+  color: var(--ru-ink);
+  background: var(--ru-surface-2);
+  padding: 0.08em 0.36em;
+}
+
+.desk h1,
+.desk h2,
+.desk h3 {
+  font-family: var(--ru-condensed);
+  color: var(--ru-ink);
+  margin: 0;
+  text-wrap: balance;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ top bar */
+
+.desk-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 0.85rem var(--desk-pad, 2rem);
+  background: #070b09;
+  border-bottom: 1px solid #1a241f;
+}
+
+.desk-bar__mark img {
+  display: block;
+  height: 20px;
+  width: auto;
+}
+
+.desk-bar__nav {
+  display: flex;
+  gap: 1.6rem;
+  margin-left: auto;
+  font-family: var(--ru-condensed);
+  font-weight: 600;
+  font-size: 1.02rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.desk-bar__nav a {
+  color: #a9b6af;
+  text-decoration: none;
+}
+
+.desk-bar__nav a:hover,
+.desk-bar__nav a:focus-visible {
+  color: #e6ece7;
+}
+
+.desk-bar__cta {
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  font-size: 1rem;
+  color: #04140b;
+  background: #00e676;
+  padding: 0.42rem 0.95rem;
+}
+
+.desk-bar__cta:hover,
+.desk-bar__cta:focus-visible {
+  background: #e6ece7;
+  color: #04140b;
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 1.12rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0.78rem 1.35rem;
+  border: 1px solid transparent;
+  transition: background-color 160ms var(--ru-ease), color 160ms var(--ru-ease), border-color 160ms var(--ru-ease);
+}
+
+.desk .btn--go {
+  background: var(--ru-brand);
+  color: #04140b;
+}
+
+.desk .btn--go:hover,
+.desk .btn--go:focus-visible {
+  background: var(--ru-ink);
+  color: #04140b;
+}
+
+.desk .btn--line {
+  color: var(--ru-ink);
+  border-color: var(--ru-rule-strong);
+}
+
+.desk .btn--line:hover,
+.desk .btn--line:focus-visible {
+  border-color: var(--ru-ink);
+  background: var(--ru-surface-2);
+}
+
+.desk a:focus-visible,
+.desk button:focus-visible,
+.desk-bar a:focus-visible {
+  outline: 2px solid #4ff0a1;
+  outline-offset: 3px;
+}
+
+/* ------------------------------------------------------------------ windows */
+
+.window {
+  margin: 0;
+  position: relative;
+  border-radius: var(--window-radius);
+  box-shadow: var(--window-shadow);
+  background: #1c1c1c;
+  overflow: hidden;
+}
+
+.window img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ------------------------------------------------------------------ hero: the desk */
+
+.hero {
+  position: relative;
+  padding: clamp(3rem, 8vw, 6.5rem) var(--desk-pad) 0;
+  background-color: var(--ru-bg);
+}
+
+.hero::before {
+  /* The desk's wallpaper: a dot grid in Ru green at very low strength, masked out below the window. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at center, rgba(0, 230, 118, 0.09) 1px, transparent 1.6px);
+  background-size: 28px 28px;
+  background-position: center top;
+  -webkit-mask-image: linear-gradient(to bottom, #000 30%, transparent 70%);
+  mask-image: linear-gradient(to bottom, #000 30%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero__copy {
+  position: relative;
+  z-index: 2;
+  max-width: var(--desk-max);
+  margin: 0 auto;
+}
+
+.hero__kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 1.4rem;
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ru-ink-2);
+}
+
+.dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--ru-brand);
+  display: inline-block;
+}
+
+.hero__title {
+  font-weight: 800;
+  font-size: clamp(3rem, 8.4vw, 6rem);
+  line-height: 0.92;
+  letter-spacing: -0.012em;
+  text-transform: uppercase;
+  max-width: 13ch;
+}
+
+.hero__title em {
+  font-style: normal;
+  color: var(--ru-brand);
+}
+
+.hero__lede {
+  max-width: 46ch;
+  margin: 1.6rem 0 0;
+  font-size: clamp(1.1rem, 1.6vw, 1.32rem);
+  line-height: 1.55;
+  color: var(--ru-ink-2);
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.9rem 1.6rem;
+  margin-top: 2.2rem;
+}
+
+.desk .hero__alt {
+  font-family: var(--ru-condensed);
+  font-weight: 600;
+  font-size: 1.12rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ru-ink-2);
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+  text-decoration-color: var(--ru-rule-strong);
+}
+
+.desk .hero__alt:hover,
+.desk .hero__alt:focus-visible {
+  color: var(--ru-ink);
+  text-decoration-color: var(--ru-ink);
+}
+
+.install__note {
+  font-size: 0.92rem;
+  color: var(--ru-caution) !important;
+}
+
+/* ------------------------------------------------------------------ the green desk */
+
+/* The one loud move on the cover: a field of Ru green that the window stands on. Its top edge steps
+   down in pixel stairs taken from the wordmark's own grid, so the colour reads as Ru, not as a banner. */
+.hero {
+  --step: clamp(8px, 1.5vw, 24px);
+  padding-bottom: clamp(3.5rem, 6vw, 5.5rem);
+  /* Keeps the green field inside the hero while it rises on load. */
+  overflow: hidden;
+}
+
+.hero::after {
+  /* --m is the margin beside the window; the stairs climb across it to meet the window's edge. */
+  --m: max(1.5rem, calc((100% - min(76rem, 100% - 10vw)) / 2));
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(7rem, 44vw, 44rem);
+  background: var(--ru-brand);
+  clip-path: polygon(
+    0 calc(var(--step) * 4),
+    calc(var(--m) * 0.25) calc(var(--step) * 4), calc(var(--m) * 0.25) calc(var(--step) * 3),
+    calc(var(--m) * 0.5) calc(var(--step) * 3), calc(var(--m) * 0.5) calc(var(--step) * 2),
+    calc(var(--m) * 0.75) calc(var(--step) * 2), calc(var(--m) * 0.75) var(--step),
+    var(--m) var(--step), var(--m) 0,
+    calc(100% - var(--m)) 0, calc(100% - var(--m)) var(--step),
+    calc(100% - var(--m) * 0.75) var(--step), calc(100% - var(--m) * 0.75) calc(var(--step) * 2),
+    calc(100% - var(--m) * 0.5) calc(var(--step) * 2), calc(100% - var(--m) * 0.5) calc(var(--step) * 3),
+    calc(100% - var(--m) * 0.25) calc(var(--step) * 3), calc(100% - var(--m) * 0.25) calc(var(--step) * 4),
+    100% calc(var(--step) * 4), 100% 100%, 0 100%
+  );
+}
+
+.hero__copy {
+  z-index: 2;
+}
+
+.window--hero {
+  --window-shadow: 0 40px 70px -24px rgba(2, 20, 10, 0.75), 0 14px 30px -14px rgba(2, 20, 10, 0.6),
+    0 0 0 1px rgba(4, 20, 11, 0.5);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero::after {
+    animation: desk-rise 1200ms cubic-bezier(0.16, 1, 0.3, 1) 220ms backwards;
+  }
+
+  @keyframes desk-rise {
+    from {
+      transform: translateY(100%);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ hero window */
+
+/* One real window, flat and large, centred under the headline: the capture is read, not admired. */
+.window--hero {
+  position: relative;
+  z-index: 1;
+  max-width: min(76rem, 100% - 10vw);
+  margin: clamp(2.4rem, 4.5vw, 3.6rem) auto 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .window--hero {
+    animation: window-rise 1100ms cubic-bezier(0.16, 1, 0.3, 1) 120ms backwards;
+  }
+
+  @keyframes window-rise {
+    from {
+      transform: translateY(48px) scale(0.97);
+    }
+  }
+}
+
+/* Wide screens: the headline block is centred and short enough that the window starts in the first view. */
+@media (min-width: 64em) {
+  .hero {
+    padding-top: clamp(2.4rem, 6vh, 4.5rem);
+    text-align: center;
+  }
+
+  .hero__copy {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .hero__title {
+    max-width: 22ch;
+    font-size: clamp(3.4rem, 4.9vw, 5.4rem);
+  }
+
+  .hero__lede {
+    max-width: 58ch;
+    margin-top: 1.3rem;
+  }
+
+  .hero__actions {
+    margin-top: 1.8rem;
+  }
+
+  .hero__actions {
+    justify-content: center;
+  }
+}
+
+/* ------------------------------------------------------------------ replay */
+
+/* A real screen recording is the clock: the beat for the part now playing lights up, and a beat can be
+   chosen to jump the recording there. Without script the video simply has its own controls. */
+.replay {
+  position: relative;
+  max-width: var(--desk-max);
+  margin: 0 auto;
+  padding: clamp(4rem, 9vw, 7rem) var(--desk-pad) 0;
+  display: grid;
+  gap: 2.4rem;
+}
+
+.window--stage {
+  background: #1c1c1c;
+}
+
+.replay__progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(230, 236, 231, 0.08);
+}
+
+.replay__progress span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--ru-brand);
+}
+
+.replay__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.beat {
+  position: relative;
+  padding: 1.5rem 0 1.6rem 1.4rem;
+  border-top: 1px solid var(--ru-rule);
+  transition: opacity 360ms var(--ru-ease);
+}
+
+.beat::before {
+  /* The beat's own clock: fills while its part of the recording plays. */
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 1.5rem;
+  bottom: 1.6rem;
+  width: 3px;
+  background: var(--ru-rule);
+}
+
+.beat::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 1.5rem;
+  width: 3px;
+  height: calc((100% - 3.1rem) * var(--fill, 0));
+  background: var(--ru-brand);
+}
+
+.replay.is-live .beat {
+  cursor: pointer;
+  opacity: 0.45;
+}
+
+.replay.is-live .beat.is-on,
+.replay.is-live .beat:hover,
+.replay.is-live .beat:focus-visible {
+  opacity: 1;
+}
+
+.beat:focus-visible {
+  outline: 2px solid #4ff0a1;
+  outline-offset: 4px;
+}
+
+.beat__label {
+  margin: 0 0 0.6rem;
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ru-brand);
+}
+
+.beat h3 {
+  font-weight: 700;
+  font-size: clamp(1.7rem, 2.6vw, 2.2rem);
+  line-height: 1.04;
+  letter-spacing: 0;
+}
+
+.beat p:not(.beat__label) {
+  max-width: 44ch;
+  margin: 0.8rem 0 0;
+  color: var(--ru-ink-2);
+}
+
+.replay__caption {
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--ru-rule);
+  font-size: 0.9rem;
+  color: var(--ru-ink-3);
+  max-width: 44ch;
+}
+
+/* Wide screens: the beats sit beside the recording, which stays in view while it plays. */
+@media (min-width: 64em) {
+  .replay {
+    grid-template-columns: minmax(18rem, 0.36fr) minmax(0, 1fr);
+    column-gap: clamp(2rem, 4vw, 4rem);
+    align-items: start;
+  }
+
+  .replay__stage {
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    top: 5.5rem;
+  }
+
+  .replay__steps {
+    grid-column: 1;
+    grid-row: 1;
+  }
+}
+
+/* ------------------------------------------------------------------ shared band title */
+
+.band-title {
+  font-weight: 700;
+  font-size: clamp(2.2rem, 4.4vw, 3.6rem);
+  line-height: 1;
+  letter-spacing: 0;
+  max-width: 20ch;
+}
+
+.band-title span {
+  color: var(--ru-ink-3);
+}
+
+.native,
+.modes,
+.terminal,
+.install {
+  max-width: var(--desk-max);
+  margin: 0 auto;
+  padding: clamp(4rem, 9vw, 7.5rem) var(--desk-pad) 0;
+}
+
+/* ------------------------------------------------------------------ native */
+
+.native {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  column-gap: clamp(2rem, 5vw, 5rem);
+  align-items: start;
+}
+
+.native__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 2rem;
+  margin: 0.4rem 0 0;
+  border-top: 3px solid var(--ru-ink);
+}
+
+.native__list > div {
+  padding: 1.6rem 0 1.8rem;
+  border-bottom: 1px solid var(--ru-rule);
+}
+
+.native__list dt {
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 1.5rem;
+  line-height: 1.1;
+  color: var(--ru-ink);
+}
+
+.native__list dd {
+  margin: 0.7rem 0 0;
+  max-width: 36ch;
+  color: var(--ru-ink-2);
+}
+
+/* ------------------------------------------------------------------ modes */
+
+.modes__lede {
+  max-width: 58ch;
+  margin: 1.4rem 0 0;
+  color: var(--ru-ink-2);
+}
+
+.modes__dial {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 2.6rem 0 0;
+  padding: 0;
+  border: 1px solid var(--ru-rule-strong);
+}
+
+.modes__dial li {
+  position: relative;
+  padding: 1.6rem 1.5rem 1.7rem;
+  margin: 0;
+}
+
+.modes__dial li + li {
+  border-left: 1px solid var(--ru-rule-strong);
+}
+
+.modes__dial code {
+  display: block;
+  width: fit-content;
+  font-size: 1.15rem;
+  font-weight: 600;
+  padding: 0.25em 0.55em;
+}
+
+.modes__dial p {
+  margin: 1rem 0 0;
+  color: var(--ru-ink-2);
+}
+
+.modes__dial .is-default {
+  background: var(--ru-surface);
+  box-shadow: inset 0 3px 0 var(--ru-brand);
+}
+
+.modes__dial .is-default code {
+  background: var(--ru-brand);
+  color: #04140b;
+}
+
+.modes__dial .is-default::after {
+  content: "Default";
+  position: absolute;
+  top: 1.75rem;
+  right: 1.5rem;
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ru-brand);
+}
+
+.limits {
+  margin: 1.6rem 0 0;
+  padding: 1rem 1.2rem;
+  max-width: 72ch;
+  background: var(--ru-caution-bg);
+  border: 1px solid rgba(255, 178, 36, 0.4);
+  color: var(--ru-ink);
+}
+
+.limits strong {
+  font-family: var(--ru-condensed);
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ru-caution);
+  margin-right: 0.4rem;
+}
+
+/* ------------------------------------------------------------------ terminal */
+
+.terminal {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(2rem, 5vw, 4.5rem);
+  align-items: center;
+}
+
+.terminal__copy p {
+  max-width: 44ch;
+  margin: 1.4rem 0 2rem;
+  color: var(--ru-ink-2);
+}
+
+.window--term {
+  background: #0c0c0c;
+}
+
+.term__bar {
+  display: flex;
+  align-items: center;
+  height: 2.3rem;
+  padding: 0 1rem;
+  background: #1f1f1f;
+  font-family: var(--ru-body);
+  font-size: 0.82rem;
+  color: #cfcfcf;
+}
+
+.term__body {
+  margin: 0;
+  padding: 1.3rem 1.4rem 1.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.term__body code {
+  background: none;
+  padding: 0;
+  font-size: 0.86rem;
+  line-height: 1.7;
+  color: #d8dee9;
+}
+
+.t-dim {
+  color: #8fa1c7;
+}
+
+.t-ok {
+  color: #00e676;
+}
+
+.window--term figcaption {
+  padding: 0 1.4rem 1.2rem;
+  font-size: 0.82rem;
+  color: #86958d;
+  background: #0c0c0c;
+}
+
+/* ------------------------------------------------------------------ install */
+
+.install__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  margin-top: 2.6rem;
+  border: 1px solid var(--ru-rule-strong);
+}
+
+.install__card {
+  padding: clamp(1.6rem, 3vw, 2.4rem);
+}
+
+.install__card + .install__card {
+  border-left: 1px solid var(--ru-rule-strong);
+}
+
+.install__card--main {
+  background: #0f2a1c;
+}
+
+.install__label {
+  margin: 0;
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.92rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ru-brand);
+}
+
+.install__card h3 {
+  margin-top: 0.6rem;
+  font-size: 1.9rem;
+  line-height: 1.04;
+}
+
+.install__card p:not(.install__label) {
+  color: var(--ru-ink-2);
+  max-width: 44ch;
+}
+
+.install__cmd {
+  margin: 1.2rem 0 0.8rem;
+  padding: 1rem 1.1rem;
+  background: #070b09;
+  border: 1px solid var(--ru-rule);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.install__cmd code {
+  background: none;
+  padding: 0;
+  font-size: 0.84rem;
+  line-height: 1.65;
+}
+
+.copy {
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ru-ink);
+  background: transparent;
+  border: 1px solid var(--ru-rule-strong);
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+.copy:hover {
+  border-color: var(--ru-ink);
+}
+
+.copy.is-done {
+  color: #04140b;
+  background: var(--ru-brand);
+  border-color: var(--ru-brand);
+}
+
+.install__next {
+  margin: 1.6rem 0 0;
+  color: var(--ru-ink-2);
+}
+
+/* The install section closes the page before the footer. */
+.install {
+  padding-bottom: clamp(4rem, 8vw, 6rem);
+}
+
+/* ------------------------------------------------------------------ bench */
+
+/* Measured footprint against other terminal agents: small multiples, one scale per metric.
+   Ru's bar is the only green mark; the others stay neutral and are named on every row. */
+.bench {
+  max-width: var(--desk-max);
+  margin: 0 auto;
+  padding: clamp(4rem, 9vw, 7.5rem) var(--desk-pad) 0;
+}
+
+.bench__lede {
+  max-width: 46ch;
+  margin: 1.1rem 0 0;
+  font-size: clamp(1.05rem, 1.4vw, 1.2rem);
+  color: var(--ru-ink-2);
+}
+
+.bench__charts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem;
+  margin-top: clamp(2rem, 4vw, 3rem);
+}
+
+.bench__chart {
+  margin: 0;
+  padding: 1.5rem 1.5rem 1.4rem;
+  border: 1px solid var(--ru-rule);
+  background: linear-gradient(180deg, rgba(230, 236, 231, 0.025), transparent 60%);
+  box-shadow: inset 0 1px 0 rgba(230, 236, 231, 0.05);
+}
+
+.bench__chart figcaption {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 1.3rem;
+}
+
+.bench__metric {
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 1.3rem;
+  line-height: 1.1;
+  color: var(--ru-ink);
+}
+
+.bench__unit {
+  font-size: 0.85rem;
+  color: var(--ru-ink-3);
+}
+
+.bench__rows {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bench__rows li {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr) 2.6rem;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--ru-ink-2);
+}
+
+.bench__track {
+  display: block;
+  height: 10px;
+  border-radius: 0 4px 4px 0;
+}
+
+.bench__fill {
+  display: block;
+  height: 100%;
+  width: calc(var(--v) * 100%);
+  min-width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: #5d6b64;
+  transform-origin: left center;
+  transition: transform 900ms var(--ru-ease), background-color 160ms ease;
+}
+
+.bench__rows li:hover .bench__fill {
+  background: #7d8b84;
+}
+
+.bench__rows .is-ru {
+  color: var(--ru-ink);
+  font-weight: 600;
+}
+
+.bench__rows .is-ru .bench__fill,
+.bench__rows .is-ru:hover .bench__fill {
+  background: var(--ru-brand);
+}
+
+.bench__val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bars grow from the baseline when the chart scrolls into view. */
+.has-reveal .bench__chart .bench__fill {
+  transform: scaleX(0);
+}
+
+.has-reveal .bench__chart.is-in .bench__fill {
+  transform: scaleX(1);
+}
+
+.has-reveal .bench__chart.is-in li:nth-child(2) .bench__fill { transition-delay: 80ms; }
+.has-reveal .bench__chart.is-in li:nth-child(3) .bench__fill { transition-delay: 160ms; }
+.has-reveal .bench__chart.is-in li:nth-child(4) .bench__fill { transition-delay: 240ms; }
+
+.bench__idle {
+  margin: 1.4rem 0 0;
+  color: var(--ru-ink-2);
+}
+
+.bench__table {
+  margin-top: 1.4rem;
+  border-top: 1px solid var(--ru-rule);
+  padding-top: 1rem;
+}
+
+.bench__table summary {
+  cursor: pointer;
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ru-ink-2);
+}
+
+.bench__table summary:hover,
+.bench__table summary:focus-visible {
+  color: var(--ru-ink);
+}
+
+.bench__table table {
+  display: block;
+  overflow-x: auto;
+  margin-top: 1rem;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.bench__table th,
+.bench__table td {
+  padding: 0.55rem 1.2rem 0.55rem 0;
+  border-bottom: 1px solid var(--ru-rule);
+  text-align: left;
+  white-space: nowrap;
+  color: var(--ru-ink-2);
+}
+
+.bench__table thead th {
+  font-weight: 600;
+  color: var(--ru-ink-3);
+}
+
+.bench__table tbody th {
+  color: var(--ru-ink);
+}
+
+.bench__note {
+  max-width: 78ch;
+  margin: 1.2rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--ru-ink-3);
+}
+
+/* ------------------------------------------------------------------ closer */
+
+.closer {
+  --step: clamp(8px, 1.5vw, 24px);
+  --m: max(1.5rem, calc((100% - min(76rem, 100% - 10vw)) / 2));
+  position: relative;
+  margin-top: clamp(5rem, 10vw, 8rem);
+  padding: calc(var(--step) * 4 + clamp(3rem, 6vw, 5rem)) var(--desk-pad) clamp(3.5rem, 7vw, 5.5rem);
+  background: var(--ru-brand);
+  color: #04140b;
+  /* The pedestal's stairs again, now climbing into the closing band. */
+  clip-path: polygon(
+    0 calc(var(--step) * 4),
+    calc(var(--m) * 0.25) calc(var(--step) * 4), calc(var(--m) * 0.25) calc(var(--step) * 3),
+    calc(var(--m) * 0.5) calc(var(--step) * 3), calc(var(--m) * 0.5) calc(var(--step) * 2),
+    calc(var(--m) * 0.75) calc(var(--step) * 2), calc(var(--m) * 0.75) var(--step),
+    var(--m) var(--step), var(--m) 0,
+    calc(100% - var(--m)) 0, calc(100% - var(--m)) var(--step),
+    calc(100% - var(--m) * 0.75) var(--step), calc(100% - var(--m) * 0.75) calc(var(--step) * 2),
+    calc(100% - var(--m) * 0.5) calc(var(--step) * 2), calc(100% - var(--m) * 0.5) calc(var(--step) * 3),
+    calc(100% - var(--m) * 0.25) calc(var(--step) * 3), calc(100% - var(--m) * 0.25) calc(var(--step) * 4),
+    100% calc(var(--step) * 4), 100% 100%, 0 100%
+  );
+}
+
+.closer__inner {
+  max-width: var(--desk-max);
+  margin: 0 auto;
+  text-align: center;
+}
+
+.desk .closer__title {
+  font-weight: 800;
+  font-size: clamp(2.6rem, 5.6vw, 5rem);
+  line-height: 0.95;
+  text-transform: uppercase;
+  color: #04140b;
+  max-width: 18ch;
+  margin: 0 auto;
+}
+
+.closer__lede {
+  max-width: 44ch;
+  margin: 1.3rem auto 0;
+  font-size: clamp(1.05rem, 1.4vw, 1.2rem);
+  color: #0d3a23;
+}
+
+.closer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem 1.6rem;
+  margin-top: 2.2rem;
+}
+
+.desk .btn--ink {
+  background: #04140b;
+  color: #e6ece7;
+  transition: background-color 200ms ease, transform 200ms var(--ru-ease), box-shadow 200ms ease;
+}
+
+.desk .btn--ink:hover,
+.desk .btn--ink:focus-visible {
+  background: #0b2416;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px -14px rgba(4, 20, 11, 0.8);
+}
+
+.desk .closer__alt {
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 1.12rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #04140b;
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+  text-decoration-color: rgba(4, 20, 11, 0.4);
+}
+
+.desk .closer__alt:hover,
+.desk .closer__alt:focus-visible {
+  text-decoration-color: #04140b;
+}
+
+.closer a:focus-visible {
+  outline-color: #04140b;
+}
+
+/* ------------------------------------------------------------------ footer */
+
+.desk-foot {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr);
+  gap: 2.5rem 4rem;
+  padding: clamp(3rem, 6vw, 4.5rem) max(var(--desk-pad, 2rem), calc((100% - 84rem) / 2)) 3rem;
+  background: #070b09;
+  color: #86958d;
+  font-size: 0.95rem;
+}
+
+.desk-foot__brand img {
+  display: block;
+  height: 20px;
+  width: auto;
+}
+
+.desk-foot__brand p {
+  margin: 1rem 0 0;
+  max-width: 30ch;
+  color: #a9b6af;
+}
+
+.desk-foot__brand .desk-foot__fine {
+  margin-top: 1.6rem;
+  font-size: 0.85rem;
+  color: #6f7d76;
+}
+
+.desk-foot__cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2rem;
+}
+
+.desk-foot__cols h3 {
+  margin: 0 0 1rem;
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #e6ece7;
+}
+
+.desk-foot__cols a {
+  display: block;
+  margin: 0 0 0.7rem;
+  color: #a9b6af;
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.desk-foot__cols a:hover,
+.desk-foot__cols a:focus-visible {
+  color: #4ff0a1;
+}
+
+/* ------------------------------------------------------------------ depth */
+
+/* A hairline of light along the top edge of raised surfaces, the way lit glass catches it. */
+.install__grid,
+.modes__dial,
+.window {
+  box-shadow: var(--window-shadow, none), inset 0 1px 0 rgba(230, 236, 231, 0.05);
+}
+
+.install__grid,
+.modes__dial {
+  box-shadow: 0 30px 60px -40px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(230, 236, 231, 0.06);
+}
+
+/* A soft green light falls on the headline from above the desk. */
+.hero::before {
+  background-image:
+    radial-gradient(ellipse 60% 45% at 50% 0%, rgba(0, 230, 118, 0.10), transparent 70%),
+    radial-gradient(circle at center, rgba(0, 230, 118, 0.09) 1px, transparent 1.6px);
+  background-size: 100% 100%, 28px 28px;
+  background-repeat: no-repeat, repeat;
+}
+
+/* ------------------------------------------------------------------ narrow screens */
+
+@media (max-width: 72em) {
+  .native {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .native__list {
+    margin-top: 2.6rem;
+  }
+}
+
+@media (max-width: 60em) {
+  .bench__charts {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 34rem;
+  }
+
+  .desk-foot,
+  .desk-foot__cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desk-foot__cols {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .desk-bar__nav {
+    display: none;
+  }
+
+  .hero {
+    padding-top: 2.2rem;
+  }
+
+  .desk-bar__cta {
+    margin-left: auto;
+  }
+
+  .terminal,
+  .install__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .install__card + .install__card {
+    border-left: 0;
+    border-top: 1px solid var(--ru-rule-strong);
+  }
+
+  .modes__dial {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modes__dial li + li {
+    border-left: 0;
+    border-top: 1px solid var(--ru-rule-strong);
+  }
+}
+
+@media (max-width: 30em) {
+  .bench__chart {
+    padding: 1.2rem 1rem;
+  }
+
+  .bench__rows li {
+    grid-template-columns: 5.6rem minmax(0, 1fr) 2.4rem;
+    gap: 0.5rem;
+  }
+
+  .desk-foot__cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .native__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero__actions .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .desk-foot nav {
+    margin-left: 0;
+  }
+}
+
+/* ------------------------------------------------------------------ motion and polish */
+
+.desk-bar {
+  border-bottom-color: transparent;
+  transition: border-color 240ms ease, background-color 240ms ease;
+}
+
+.desk-bar.is-scrolled {
+  border-bottom-color: #1f2a25;
+}
+
+.desk .btn--go {
+  transition: background-color 200ms ease, transform 200ms var(--ru-ease), box-shadow 200ms ease;
+}
+
+.desk .btn--go:hover,
+.desk .btn--go:focus-visible {
+  background: #3df59c;
+  color: #04140b;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px -12px rgba(0, 230, 118, 0.55);
+}
+
+.desk .btn--go:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.desk-bar__cta {
+  transition: background-color 200ms ease;
+}
+
+.desk-bar__cta:hover,
+.desk-bar__cta:focus-visible {
+  background: #3df59c;
+  color: #04140b;
+}
+
+.native__list > div,
+.modes__dial li {
+  transition: background-color 240ms ease;
+}
+
+.modes__dial li:hover {
+  background: var(--ru-surface);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The headline arrives word by word; the kicker, lede and actions follow it. */
+  .hero__title.is-split .word {
+    display: inline-block;
+    animation: word-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i) * 55ms + 60ms);
+  }
+
+  .hero__kicker,
+  .hero__lede,
+  .hero__actions {
+    animation: fade-up 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .hero__kicker {
+    animation-delay: 0ms;
+  }
+
+  .hero__lede {
+    animation-delay: 420ms;
+  }
+
+  .hero__actions {
+    animation-delay: 560ms;
+  }
+
+  .window--hero {
+    animation-delay: 520ms;
+  }
+
+  /* Everything below the fold rises once as it comes into view. */
+  .has-reveal .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 700ms ease, transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .has-reveal .reveal.is-in {
+    opacity: 1;
+    transform: none;
+  }
+
+  @keyframes word-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.32em);
+      filter: blur(8px);
+    }
+  }
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+  }
+}

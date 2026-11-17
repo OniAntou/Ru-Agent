@@ -37,8 +37,12 @@ NOTE / CAUTION / WARNING plates, Ru green as the only brand ink, dark by default
 | `theme/assets/manual.css` | The whole stylesheet; the direction contract is at its top. |
 | `theme/assets/manual.js` | Tick-off steps (state kept in localStorage). |
 | `theme/overrides/main.html` | The per-page plate line with the chapter and section number. |
-| `theme/overrides/home.html`, `home.md` | The cover. `home.md` is hand-written Markdown with `{{REV}}`, `{{DATE}}` and a generated `{{CONTENTS}}` list. |
+| `theme/overrides/home.html`, `home.md` | The cover ("The Desk"): its own header and footer, with `home.md` holding the landing markup. The chapter list lives in the site navigation, not on the cover. |
+| `theme/assets/landing.css`, `landing.js` | The cover's stylesheet and behaviour (replay beats, reveals, copy button); the manual pages never load them. |
+| `theme/assets/ru-app.css`, `ru-app.js` | The HTML rebuild of the desktop window that the cover shows and plays, measured against real captures of the app. |
+| `theme/assets/shots/` | Real captures of the desktop app: the no-script fallback and the social preview image. |
 
-The cover repeats the install command and the permission table from the README, so keep `home.md` in
-step when those change. Fonts (Barlow Condensed, Atkinson Hyperlegible, JetBrains Mono) load from
-Google Fonts at view time.
+The cover repeats the install command, the permission modes and facts from the README, so keep `home.md`
+in step when those change. When the desktop app's look changes, re-measure `ru-app.css` against a fresh
+capture. Fonts (Barlow Condensed, Atkinson Hyperlegible, Inter, JetBrains Mono) load from Google Fonts
+at view time.

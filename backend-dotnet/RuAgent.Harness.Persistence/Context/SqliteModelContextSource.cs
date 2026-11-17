@@ -48,6 +48,10 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
     private readonly ContextEntryCache? _entryCache;
     private readonly ActiveContextCache? _activeCache;
 
+    // A source-run reader for native continuation (ADR 0049). It reads one run's own
+    // history without following that run's continuation, so the chain never recurses.
+    private readonly bool _readsContinuationSource;
+
     public SqliteModelContextSource(
         HarnessSqliteOptions options,
         HarnessPayloadStore payloadStore,
@@ -60,6 +64,11 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
         _entryCache = enableEntryCache ? new ContextEntryCache() : null;
         _activeCache = enableEntryCache ? new ActiveContextCache() : null;
     }
+
+    private SqliteModelContextSource(HarnessSqliteOptions options, HarnessPayloadStore payloadStore,
+        bool readsContinuationSource)
+        : this(options, payloadStore, workStates: null, enableEntryCache: false) =>
+        _readsContinuationSource = readsContinuationSource;
 
     public Task<ModelContextSourceSnapshot> LoadAsync(
         RunId runId,

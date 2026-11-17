@@ -9,10 +9,12 @@ namespace RuAgent.Harness.Persistence;
 public sealed partial class HarnessPayloadStore
 {
     private const int HandoffEntryLimit = 48;
+    private const int MaximumHandoffEntryLimit = 384;
     private const int HandoffPayloadByteLimit = 128 * 1024;
 
-    private sealed class HandoffReadBudget
+    private sealed class HandoffReadBudget(int entryLimit)
     {
+        public int EntryLimit { get; } = entryLimit;
         public int RemainingBytes = 2 * 1024 * 1024;
         public bool Omitted;
         public int OmittedPayloadCount;
@@ -31,62 +33,28 @@ public sealed partial class HarnessPayloadStore
         return context?.RenderedHandoff;
     }
 
+    /// <param name="maximumCharacters">The rendered size; entry reads and excerpt clips scale with it.</param>
+    /// <param name="nativeSourceRunId">
+    /// A source run the target continues natively (ADR 0049). It still supplies scope hints,
+    /// but is not rendered: the target reads its history as native entries instead.
+    /// </param>
     public async Task<SessionRunHandoffContext?> ReadSessionRunHandoffContextAsync(RunId targetId, SessionId sessionId,
-        IReadOnlyCollection<string> visibleSourceRunIds, CancellationToken ct)
+        IReadOnlyCollection<string> visibleSourceRunIds, CancellationToken ct,
+        int maximumCharacters = SessionRunHandoff.DefaultCharacters, RunId? nativeSourceRunId = null)
     {
-        ArgumentNullException.ThrowIfNull(visibleSourceRunIds);
-        var visible = visibleSourceRunIds.Distinct(StringComparer.Ordinal).ToArray();
-        if (visible.Length > 256 || visible.Any(id => string.IsNullOrEmpty(id) || id.Length > 128))
-            throw new HarnessStoreException("handoff_sources_invalid");
+        var visible = ValidateVisibleSources(visibleSourceRunIds);
         var options = RequireOptions();
         await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var transaction = connection.BeginTransaction(deferred: true);
-        var target = await HarnessSqliteQueries.GetRunAsync(connection, transaction, targetId, ct).ConfigureAwait(false)
-            ?? throw new HarnessStoreException("handoff_run_not_found");
-        if (target.SessionId != sessionId) throw new HarnessStoreException("handoff_scope_mismatch");
-        using var guard = connection.CreateCommand();
-        guard.Transaction = transaction;
-        guard.CommandText = """
-            SELECT base_context_captured_at_utc IS NOT NULL
-                OR EXISTS(SELECT 1 FROM agent_internal_runs WHERE run_id=$run)
-                OR EXISTS(SELECT 1 FROM agent_subagent_attempts WHERE run_id=$run)
-                OR EXISTS(SELECT 1 FROM agent_session_tombstones WHERE session_id=$session)
-            FROM agent_runs WHERE run_id=$run
-            """;
-        guard.Parameters.AddWithValue("$run", targetId.Value);
-        guard.Parameters.AddWithValue("$session", sessionId.Value);
-        if (target.State.IsTerminal() || (long)(await guard.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 1L) != 0)
-            return null;
-        if (visible.Length == 0) return null;
-
-        using var sources = connection.CreateCommand();
-        sources.Transaction = transaction;
-        var sourceParameters = visible.Select((_, index) => "$source" + index).ToArray();
-        for (int index = 0; index < visible.Length; index++)
-            sources.Parameters.AddWithValue(sourceParameters[index], visible[index]);
-        // rowid is only a snapshot-local insertion fence, not a stored identity.
-        // It excludes later runs even if timestamps repeat or the clock moves back.
-        sources.CommandText = $"""
-            SELECT {HarnessSqliteMapper.RunColumns} FROM agent_runs r
-            WHERE r.session_id=$session AND r.workspace_id=$workspace
-              AND r.run_id IN ({string.Join(',', sourceParameters)})
-              AND r.rowid < (SELECT rowid FROM agent_runs WHERE run_id=$run)
-              AND r.terminal_at_utc IS NOT NULL AND r.state IN (7,8,9,10)
-              AND NOT EXISTS(SELECT 1 FROM agent_internal_runs i WHERE i.run_id=r.run_id)
-              AND NOT EXISTS(SELECT 1 FROM agent_subagent_attempts a WHERE a.run_id=r.run_id)
-            ORDER BY r.created_at_utc DESC, r.run_id DESC LIMIT $limit
-            """;
-        sources.Parameters.AddWithValue("$run", targetId.Value);
-        sources.Parameters.AddWithValue("$session", sessionId.Value);
-        sources.Parameters.AddWithValue("$workspace", target.WorkspaceId.Value);
-        sources.Parameters.AddWithValue("$limit", SessionRunHandoff.MaximumRuns);
-        var runs = new List<AgentRun>();
-        using (var reader = await sources.ExecuteReaderAsync(ct).ConfigureAwait(false))
-            while (await reader.ReadAsync(ct).ConfigureAwait(false)) runs.Add(HarnessSqliteMapper.ReadRun(reader));
+        var target = await ReadHandoffTargetAsync(connection, transaction, targetId, sessionId, ct).ConfigureAwait(false);
+        if (target is null || visible.Length == 0) return null;
+        var runs = await ReadHandoffSourcesAsync(connection, transaction, target, visible, SessionRunHandoff.MaximumRuns, ct)
+            .ConfigureAwait(false);
         if (runs.Count == 0) return null;
 
         var contextSource = new SqliteModelContextSource(options, this);
-        var budget = new HandoffReadBudget();
+        var budget = new HandoffReadBudget((int)Math.Min(MaximumHandoffEntryLimit,
+            HandoffEntryLimit * SessionRunHandoff.Scale(maximumCharacters)));
         var histories = new List<RunHandoffHistory>();
         var observedPaths = new List<string>(SessionScopeHints.MaximumPaths);
         var knownPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -107,12 +75,80 @@ public sealed partial class HarnessPayloadStore
                 AddRecentScopeHints(FileObservationPaths.Read(entries.Concat(scopeHistory)
                     .OrderBy(entry => entry.Sequence)), observedPaths, knownPaths);
             }
+            if (run.RunId == nativeSourceRunId) continue;
             histories.Add(new(run.RunId, run.State, entries, budget.Omitted || summaryRead.Omitted,
                 run.TerminalErrorCode, budget.OmittedPayloadCount, summaryRead.Entries));
         }
         await transaction.CommitAsync(ct).ConfigureAwait(false);
         histories.Reverse();
-        return new SessionRunHandoffContext(SessionRunHandoff.Render(histories), Array.AsReadOnly(observedPaths.AsEnumerable().Reverse().ToArray()));
+        return new SessionRunHandoffContext(SessionRunHandoff.Render(histories, maximumCharacters),
+            Array.AsReadOnly(observedPaths.AsEnumerable().Reverse().ToArray()));
+    }
+
+    private static string[] ValidateVisibleSources(IReadOnlyCollection<string> visibleSourceRunIds)
+    {
+        ArgumentNullException.ThrowIfNull(visibleSourceRunIds);
+        var visible = visibleSourceRunIds.Distinct(StringComparer.Ordinal).ToArray();
+        if (visible.Length > 256 || visible.Any(id => string.IsNullOrEmpty(id) || id.Length > 128))
+            throw new HarnessStoreException("handoff_sources_invalid");
+        return visible;
+    }
+
+    /// <summary>
+    /// The target run when it is a live root run whose base is not captured yet; null when
+    /// it may not receive history from earlier runs.
+    /// </summary>
+    private static async Task<AgentRun?> ReadHandoffTargetAsync(SqliteConnection connection,
+        SqliteTransaction transaction, RunId targetId, SessionId sessionId, CancellationToken ct)
+    {
+        var target = await HarnessSqliteQueries.GetRunAsync(connection, transaction, targetId, ct).ConfigureAwait(false)
+            ?? throw new HarnessStoreException("handoff_run_not_found");
+        if (target.SessionId != sessionId) throw new HarnessStoreException("handoff_scope_mismatch");
+        using var guard = connection.CreateCommand();
+        guard.Transaction = transaction;
+        guard.CommandText = """
+            SELECT base_context_captured_at_utc IS NOT NULL
+                OR EXISTS(SELECT 1 FROM agent_internal_runs WHERE run_id=$run)
+                OR EXISTS(SELECT 1 FROM agent_subagent_attempts WHERE run_id=$run)
+                OR EXISTS(SELECT 1 FROM agent_session_tombstones WHERE session_id=$session)
+            FROM agent_runs WHERE run_id=$run
+            """;
+        guard.Parameters.AddWithValue("$run", targetId.Value);
+        guard.Parameters.AddWithValue("$session", sessionId.Value);
+        if (target.State.IsTerminal() || (long)(await guard.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 1L) != 0)
+            return null;
+        return target;
+    }
+
+    /// <summary>Visible terminal root runs before the target in its session and workspace, newest first.</summary>
+    private static async Task<List<AgentRun>> ReadHandoffSourcesAsync(SqliteConnection connection,
+        SqliteTransaction transaction, AgentRun target, string[] visible, int limit, CancellationToken ct)
+    {
+        using var sources = connection.CreateCommand();
+        sources.Transaction = transaction;
+        var sourceParameters = visible.Select((_, index) => "$source" + index).ToArray();
+        for (int index = 0; index < visible.Length; index++)
+            sources.Parameters.AddWithValue(sourceParameters[index], visible[index]);
+        // rowid is only a snapshot-local insertion fence, not a stored identity.
+        // It excludes later runs even if timestamps repeat or the clock moves back.
+        sources.CommandText = $"""
+            SELECT {HarnessSqliteMapper.RunColumns} FROM agent_runs r
+            WHERE r.session_id=$session AND r.workspace_id=$workspace
+              AND r.run_id IN ({string.Join(',', sourceParameters)})
+              AND r.rowid < (SELECT rowid FROM agent_runs WHERE run_id=$run)
+              AND r.terminal_at_utc IS NOT NULL AND r.state IN (7,8,9,10)
+              AND NOT EXISTS(SELECT 1 FROM agent_internal_runs i WHERE i.run_id=r.run_id)
+              AND NOT EXISTS(SELECT 1 FROM agent_subagent_attempts a WHERE a.run_id=r.run_id)
+            ORDER BY r.created_at_utc DESC, r.run_id DESC LIMIT $limit
+            """;
+        sources.Parameters.AddWithValue("$run", target.RunId.Value);
+        sources.Parameters.AddWithValue("$session", target.SessionId.Value);
+        sources.Parameters.AddWithValue("$workspace", target.WorkspaceId.Value);
+        sources.Parameters.AddWithValue("$limit", limit);
+        var runs = new List<AgentRun>();
+        using var reader = await sources.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false)) runs.Add(HarnessSqliteMapper.ReadRun(reader));
+        return runs;
     }
 
     private static void AddRecentScopeHints(IReadOnlyList<string> paths, List<string> retained,
@@ -146,14 +182,14 @@ public sealed partial class HarnessPayloadStore
             """;
         command.CommandText = selectEntriesSql + " ORDER BY p.context_sequence DESC LIMIT $limit";
         command.Parameters.AddWithValue("$run", runId.Value);
-        command.Parameters.AddWithValue("$limit", HandoffEntryLimit + 1);
+        command.Parameters.AddWithValue("$limit", budget.EntryLimit + 1);
         var entries = new List<ModelContextEntry>();
         bool hasPrompt = false;
         using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
         {
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
-                if (entries.Count == HandoffEntryLimit) { budget.Omitted = true; break; }
+                if (entries.Count == budget.EntryLimit) { budget.Omitted = true; break; }
                 hasPrompt |= reader.GetInt32(1) == (int)HarnessPayloadKind.UserPrompt;
                 entries.Add(await ReadHandoffEntryAsync(reader, source, runId, budget, ct).ConfigureAwait(false));
             }

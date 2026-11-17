@@ -97,9 +97,14 @@ _Avoid_: global memory, cross-session authority, model prose as proof, or work s
 
 
 **Session Run Handoff**:
-A bounded encrypted snapshot of earlier model-visible root-run evidence in the same conversation/workspace, eligible only while its user messages remain visible. Historical calls are quoted context, never replayed execution or inherited approval. Applicable checkpoints and separate Host-authored directory hints preserve continuity; quoted model text cannot create those private hints.
+A bounded encrypted snapshot of earlier model-visible root-run evidence in the same conversation/workspace, eligible only while its user messages remain visible. Its size is a tenth of the pinned model's published window (16,000 characters when the window is assumed). Historical calls are quoted context, never replayed execution or inherited approval. Applicable checkpoints and separate Host-authored directory hints preserve continuity; quoted model text cannot create those private hints.
 Implementation: [harness](docs/architecture/harness.md#session-run-handoff).
 _Avoid_: complete memory, cross-session history, inherited approvals, automatic re-execution of unfinished calls
+
+**Native Continuation**:
+A new root run under the same pinned provider, model, account, tool set and preset reads the session's newest visible terminal root run as native history: its closed calls, receipts and summaries, with an unsettled tail replaced by a Host note. It continues exactly one predecessor, never a chain, and inherits no approval or verification evidence.
+Implementation: [harness](docs/architecture/harness.md#native-continuation); decision: [ADR 0049](docs/adr/0049-native-continuation-and-window-sized-handoff.md).
+_Avoid_: resuming the stopped run, synthesized receipts, cross-model native history
 
 
 **RuAgentBroker**:
@@ -306,7 +311,7 @@ _Avoid_: current settings as restart fallback
 
 
 **Provider Continuation**:
-Encrypted internal provider-native state bound to an exact run, model step and native call batch. It is excluded from visible history, clients, portable handoffs and telemetry.
+Encrypted internal provider-native state bound to an exact run, model step and native call batch. It is excluded from visible history, clients, portable handoffs and telemetry. The only reader outside its run is a Native Continuation of that run, under the same provider, model and account, which replays it to the provider that produced it.
 Implementation: [providers](docs/architecture/providers.md#provider-continuation).
 _Avoid_: hidden reasoning in chat history or reconstructed prose
 

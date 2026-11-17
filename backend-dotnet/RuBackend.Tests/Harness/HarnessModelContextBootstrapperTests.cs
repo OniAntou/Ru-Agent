@@ -10,7 +10,7 @@ using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
-public sealed class HarnessModelContextBootstrapperTests
+public sealed partial class HarnessModelContextBootstrapperTests
 {
     [Theory]
     [InlineData(true)]

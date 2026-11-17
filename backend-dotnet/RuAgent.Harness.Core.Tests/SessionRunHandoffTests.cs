@@ -36,7 +36,7 @@ public sealed class SessionRunHandoffTests
             Enumerable.Range(1, 90).Select(sequence => ModelContextEntry.Text("event:e" + sequence,
                 sequence, ModelContextRole.User, "\u0001\"\\😀" + new string('x', 2000) + sequence)).ToArray(), true)).ToArray();
         var text = SessionRunHandoff.Render(histories);
-        Assert.True(text.Length <= SessionRunHandoff.MaximumCharacters, $"Length {text.Length}");
+        Assert.True(text.Length <= SessionRunHandoff.DefaultCharacters, $"Length {text.Length}");
         Assert.Contains("coverage is partial", text);
         Assert.Contains("current user request takes precedence", text);
         Assert.EndsWith("[/session_run_handoff]", text);

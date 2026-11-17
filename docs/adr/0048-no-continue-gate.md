@@ -50,7 +50,9 @@ stays readable for old databases and history replay.
 ## Consequences
 
 Work after a stop continues through the handoff, which is bounded (16,000 characters from
-at most four earlier runs) rather than the full native history Continue kept. A provider
+at most four earlier runs) rather than the full native history Continue kept. [ADR 0049](0049-native-continuation-and-window-sized-handoff.md)
+later sized the handoff by the model's window and carries the stopped run natively when the next
+run uses the same model. A provider
 that is still failing after the runner's retries (about twelve minutes; a Retry-After over
 five minutes is not waited out) ends the run, so an unattended run no longer waits for the
 user across an outage. Execution authority, approval tokens, policy and provider pins are

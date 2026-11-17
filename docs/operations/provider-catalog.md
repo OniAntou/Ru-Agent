@@ -261,6 +261,10 @@ completed dialogue, Session Work State and a bounded Session Run Handoff from
 earlier terminal roots in that session/workspace, including recorded tool results
 from a stopped run with no final reply. This also works between ordinary turns
 without a model change. A stopped run is never resumed; the new run carries its handoff.
+The handoff takes a tenth of the new model's published context window (16,000 characters
+when the window is assumed). When the new run keeps the same provider, model, account, tools
+and preset, it reads the previous run as native history instead (ADR 0049); switching models
+always goes through the text handoff.
 The handoff is historical evidence, not a replay of pending tool calls or a transfer
 of approvals. Older/large details may be omitted with an explicit notice; the new
 model must check current files and unverified effects before continuing.

@@ -41,6 +41,10 @@ public sealed partial class SqliteModelContextSource
             }
         }
         if (cached is null && sessionBase.Count != header.BaseCount) throw new HarnessStoreException("context_base_incomplete");
+        // The carried history joins the base before compactions apply, so this run's own
+        // summaries can cover it, and the cached projection keeps it on later steps.
+        if (cached is null && !_readsContinuationSource)
+            await AppendNativeContinuationAsync(sessionBase, ct).ConfigureAwait(false);
         // Seed only the call association, never replay old receipts against seeded checks.
         var evidenceEntries = cached?.LastAssistant is { } assistant
             ? appended.Prepend(assistant).ToArray() : appended.ToArray();
@@ -59,7 +63,8 @@ public sealed partial class SqliteModelContextSource
         ReplaceSkillInvocationSeeds(sessionBase);
         ReplaceSkillInvocationSeeds(runLocal);
         await ApplyCompactionsAsync(connection, transaction, runId, sessionBase, runLocal,
-            cached?.Version ?? -1, header.Version, ct).ConfigureAwait(false);
+            cached?.Version ?? -1, header.Version, ct, tolerateUncoveredRanges: _readsContinuationSource)
+            .ConfigureAwait(false);
 
         // Cache only active model entries and bounded receipt projections. Images,
         // dynamic work state and inherited child context are refreshed separately.
@@ -76,12 +81,15 @@ public sealed partial class SqliteModelContextSource
             activeSkills.OmissionEntry is null ? 0 : 1);
         if (workflow is not null) runLocal.Add(workflow);
         if (activeSkills.OmissionEntry is not null) runLocal.Add(activeSkills.OmissionEntry);
-        await AttachToolImagesAsync(connection, transaction, runId, runLocal, ct).ConfigureAwait(false);
+        // A continuation source carries text only: raw images stay with the run that read them.
+        if (!_readsContinuationSource)
+            await AttachToolImagesAsync(connection, transaction, runId, runLocal, ct).ConfigureAwait(false);
         var inheritedPaths = await InheritSubagentContextAsync(connection, transaction, runId, sessionBase, depth, ct).ConfigureAwait(false);
         await AppendSessionWorkStateAsync(connection, transaction, runId, sessionBase,
             VisibleReceiptEventIds(sessionBase.Concat(runLocal)), ct).ConfigureAwait(false);
         await transaction.CommitAsync(ct).ConfigureAwait(false);
         return new ModelContextSourceSnapshot(sessionBase.Where(e => e.SourceId != SessionScopeHints.SourceId
+                && e.SourceId != NativeRunContinuation.MarkerSourceId
                 && !ActiveSkillSnapshots.IsReservedSourceId(e.SourceId)).ToArray(),
             runLocal.Where(e => !ActiveSkillSnapshots.IsReservedSourceId(e.SourceId)).ToArray(),
             inheritedPaths.Concat(paths).ToArray(), verification);

@@ -523,7 +523,7 @@ public sealed partial class HeadlessCodingLoopTests
             };
         }
 
-        private static string NativeBatch(params string[] calls)
+        internal static string NativeBatch(params string[] calls)
         {
             var output = new JsonArray();
             var sse = new StringBuilder();
@@ -571,7 +571,7 @@ public sealed partial class HeadlessCodingLoopTests
             return sse.ToString();
         }
 
-        private static string TextCompletion(string text) =>
+        internal static string TextCompletion(string text) =>
             Event("response.output_text.delta", new JsonObject { ["type"] = "response.output_text.delta", ["delta"] = text })
             + Event("response.completed", new JsonObject
             {

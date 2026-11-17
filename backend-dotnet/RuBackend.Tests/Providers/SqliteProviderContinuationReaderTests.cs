@@ -107,6 +107,55 @@ public sealed class SqliteProviderContinuationReaderTests
         Assert.Equal("read", continuations[0].OutputItems[0]["name"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task A_natively_continued_run_replays_its_source_run_steps_and_no_other_run()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var created = await fixture.SeedRunAsync(new HarnessRunStatus(HarnessRunState.Running));
+        var source = created.Run;
+        var step = new ModelStepId("step_cccccccccccccccccccccccccccccccc");
+        var assistantEvent = new EventId(Event(20));
+        var ended = source.UpdatedAt.AddSeconds(1);
+        var stopped = new AgentRun(source.RunId, source.SessionId, source.WorkspaceId,
+            new HarnessRunStatus(HarnessRunState.Failed), 1, source.LastSequence + 3, source.BudgetWindow,
+            source.ModelStepsInWindow, source.ToolCallsInWindow, source.Preset, source.PolicySnapshotVersion,
+            source.PolicySnapshotSha256, source.CreatedAt, ended, terminalAt: ended,
+            terminalErrorCode: "tool_call_budget_exhausted");
+        Assert.Equal(HarnessCommitOutcome.Committed, (await fixture.EventStore.CommitAsync(new HarnessCommit(source.RunId, 0,
+            stopped,
+            [
+                new HarnessEventIntent(assistantEvent, HarnessEventKind.ModelStepCompleted, modelStepId: step,
+                    payloadId: Payload(20)),
+                new HarnessEventIntent(new EventId(Event(21)), HarnessEventKind.ProviderContinuationRecorded,
+                    modelStepId: step, payloadId: Payload(21), safeCode: "openai_responses_v1"),
+                new HarnessEventIntent(new EventId(Event(22)), HarnessEventKind.RunStateChanged),
+            ],
+            [AssistantPayload(Payload(20)), ContinuationPayload(Payload(21), step)], []), CancellationToken.None)).Outcome);
+        var target = new AgentRun(new RunId("run_22222222222222222222222222222222"), source.SessionId, source.WorkspaceId,
+            new HarnessRunStatus(HarnessRunState.Created), 0, 1, 1, 0, 0, source.Preset, 1, source.PolicySnapshotSha256,
+            ended.AddSeconds(1), ended.AddSeconds(1));
+        await fixture.EventStore.TryCreateRunAsync(new NewAgentRun(target,
+            [new HarnessEventIntent(new EventId(Event(23)), HarnessEventKind.RunStateChanged)], [], [],
+            new RunCreationIdentity(new string('e', 64), new string('f', 64), 1)), CancellationToken.None);
+        var bootstrap = new ProviderBootstrapData("OpenAI", "openai_responses",
+            new Uri("https://provider.invalid/v1/responses"), "gpt-5.6-luna", "synthetic");
+        var reader = new SqliteProviderContinuationReader(fixture.Options, fixture.PayloadStore);
+
+        // Without a marker the target owns none of the source's steps.
+        var refused = await Assert.ThrowsAsync<ProviderCatalogException>(() =>
+            reader.ReadAsync(target.RunId, bootstrap, [assistantEvent.Value], CancellationToken.None));
+        Assert.Equal("provider_continuation_invalid", refused.Code);
+
+        await fixture.PayloadStore.CaptureBaseContextAsync(target.RunId,
+            [new(Payload(24), RuAgent.Harness.Core.Context.NativeRunContinuation.MarkerSourceId, 1,
+                RuAgent.Harness.Core.Context.ModelContextRole.User,
+                RuAgent.Harness.Core.Context.NativeRunContinuation.EncodeMarker(source.RunId))],
+            BackendHarnessTestFixture.Timestamp, CancellationToken.None);
+        var continuations = await reader.ReadAsync(target.RunId, bootstrap, [assistantEvent.Value], CancellationToken.None);
+
+        Assert.Equal("call-c", Assert.Single(continuations).OutputItems[0]["call_id"]!.GetValue<string>());
+    }
+
     private static HarnessPayloadIntent AssistantPayload(PayloadId payloadId) => new(
         payloadId, HarnessPayloadKind.AssistantStep,
         HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
@@ -138,5 +187,6 @@ public sealed class SqliteProviderContinuationReaderTests
     private static string Event(int number) => "evt_" + number.ToString("x32");
 
     private static SqliteProviderContinuationReader.ContinuationReference Reference(string eventId, int number) =>
-        new(eventId, new ModelStepId("step_" + number.ToString("x32")), new PayloadId("payload_" + number.ToString("x32")));
+        new(eventId, new ModelStepId("step_" + number.ToString("x32")), new PayloadId("payload_" + number.ToString("x32")),
+            new RunId("run_" + new string('a', 32)));
 }

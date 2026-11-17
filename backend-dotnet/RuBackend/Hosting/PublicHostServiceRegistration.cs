@@ -285,7 +285,17 @@ internal static class PublicHostServiceRegistration
         bool isManagedRuntime)
     {
         services.AddSingleton<HarnessOutboxStore>();
-        services.AddSingleton<RuBackend.Harness.IHarnessModelContextBootstrapper, RuBackend.Harness.HarnessModelContextBootstrapper>();
+        services.AddSingleton<RuBackend.Harness.IHarnessModelContextBootstrapper>(services =>
+            new RuBackend.Harness.HarnessModelContextBootstrapper(
+                services.GetRequiredService<ISessionStore>(),
+                services.GetRequiredService<HarnessPayloadStore>(),
+                services.GetRequiredService<IIdGenerator>(),
+                services.GetRequiredService<TimeProvider>(),
+                // A scripted model has no provider pin: its runs keep the default handoff.
+                services.GetService<IAgentRunModelMetadataResolver>() is { } metadata
+                    ? new RuBackend.Harness.AgentRunHandoffModelFacts(metadata,
+                        services.GetRequiredService<SqliteAgentRunProviderSelectionStore>())
+                    : null));
         services.AddSingleton<AgentConversationActivityProjector>();
         services.AddSingleton<AgentRunHistoryTransitionSink>();
         services.AddSingleton<IAgentHistoryTransitionSink>(services =>

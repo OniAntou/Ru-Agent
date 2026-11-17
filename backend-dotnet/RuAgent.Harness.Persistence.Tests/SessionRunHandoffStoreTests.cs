@@ -7,7 +7,7 @@ using Xunit;
 
 namespace RuAgent.Harness.Persistence.Tests;
 
-public sealed class SessionRunHandoffStoreTests
+public sealed partial class SessionRunHandoffStoreTests
 {
     private static readonly IReadOnlyList<string> VisibleRunIds = Enumerable.Range(1, 16)
         .Select(number => HarnessStoreTestFixture.Run(number).Value).ToArray();
@@ -26,7 +26,7 @@ public sealed class SessionRunHandoffStoreTests
         Assert.Contains("original-request-3", handoff);
         Assert.Contains("payload omitted by handoff read limit", handoff);
         Assert.Contains("coverage is partial", handoff);
-        Assert.True(handoff!.Length <= SessionRunHandoff.MaximumCharacters);
+        Assert.True(handoff!.Length <= SessionRunHandoff.DefaultCharacters);
     }
 
     [Fact]
@@ -203,7 +203,8 @@ public sealed class SessionRunHandoffStoreTests
     }
 
     private static async Task EndAsync(HarnessStoreTestFixture fixture, NewAgentRun request, int number, string result,
-        bool includeAudit = false, int recoveryNotes = 0, string? observedFilePath = null)
+        bool includeAudit = false, int recoveryNotes = 0, string? observedFilePath = null,
+        string? terminalErrorCode = null, bool endsWithUnsettledCall = false)
     {
         var payloads = new List<HarnessPayloadIntent>();
         var events = new List<HarnessEventIntent>();
@@ -239,20 +240,33 @@ public sealed class SessionRunHandoffStoreTests
             payloads.Add(note);
             events.Add(new(HarnessStoreTestFixture.Event(number * 1000 + index), HarnessEventKind.RunNoteAdded, payloadId: note.PayloadId));
         }
+        if (endsWithUnsettledCall)
+        {
+            // A second batch the run never settled: the step is recorded, its result is not.
+            var unsettled = new AssistantStep("Editing parser.cs", [new ModelToolCall("call-open-" + number, "edit", "1",
+                JsonDocument.Parse("{\"path\":\"parser.cs\"}").RootElement)], AssistantFinishReason.ToolCalls, 1);
+            var open = new HarnessPayloadIntent(HarnessStoreTestFixture.Payload(number * 10 + 5), HarnessPayloadKind.AssistantStep,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext, HarnessPayloadEncoding.Json,
+                8192, AssistantStepJsonCodec.Serialize(unsettled));
+            payloads.Add(open);
+            events.Add(new(HarnessStoreTestFixture.Event(number * 10 + 5), HarnessEventKind.ModelStepCompleted, payloadId: open.PayloadId));
+        }
         events.Add(new(HarnessStoreTestFixture.Event(number * 10 + 4), HarnessEventKind.RunStateChanged));
         var ended = HarnessStoreTestFixture.Timestamp.AddSeconds(number);
         var run = request.Run;
         var store = fixture.CreateEventStore();
         var current = await store.GetRunAsync(run.RunId, default) ?? throw new InvalidOperationException("run missing");
-        var terminal = new AgentRun(run.RunId, run.SessionId, run.WorkspaceId, new(HarnessRunState.Cancelled),
+        var terminal = new AgentRun(run.RunId, run.SessionId, run.WorkspaceId,
+            new(terminalErrorCode is null ? HarnessRunState.Cancelled : HarnessRunState.Failed),
             current.Version + 1, current.LastSequence + events.Count, current.BudgetWindow,
             current.ModelStepsInWindow + 1, current.ToolCallsInWindow + 1, run.Preset, 1,
-            run.PolicySnapshotSha256, run.CreatedAt, ended, terminalAt: ended);
+            run.PolicySnapshotSha256, run.CreatedAt, ended, terminalAt: ended, terminalErrorCode: terminalErrorCode);
         await store.CommitAsync(new HarnessCommit(run.RunId, current.Version, terminal, events, payloads, []), default);
     }
 
     private static async Task CompactAsync(HarnessStoreTestFixture fixture, NewAgentRun request,
-        string compactionId, string summaryText, int id, IReadOnlyList<string> sourceIds)
+        string compactionId, string summaryText, int id, IReadOnlyList<string> sourceIds,
+        IReadOnlyList<ContextEntryRange>? coveredRanges = null)
     {
         var store = fixture.CreateEventStore();
         var run = await store.GetRunAsync(request.Run.RunId, default) ?? throw new InvalidOperationException("run missing");
@@ -263,7 +277,7 @@ public sealed class SessionRunHandoffStoreTests
         var payload = new HarnessPayloadIntent(payloadId, HarnessPayloadKind.ModelContextSummary,
             HarnessPayloadAudience.ModelContext, HarnessPayloadEncoding.Utf8Text, 4096,
             Encoding.UTF8.GetBytes(summaryText));
-        var ranges = sourceIds.Select(source => new ContextEntryRange(source, 1, 1)).ToArray();
+        var ranges = coveredRanges?.ToArray() ?? sourceIds.Select(source => new ContextEntryRange(source, 1, 1)).ToArray();
         var result = await store.CommitAsync(new HarnessCommit(run.RunId, run.Version, next,
             [new HarnessEventIntent(HarnessStoreTestFixture.Event(900 + id), HarnessEventKind.ContextCompacted,
                 safeCode: "context_compacted", safeCount: 1)], [payload], [],

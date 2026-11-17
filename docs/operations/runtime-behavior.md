@@ -73,7 +73,8 @@ instead of cancelling it. In-chat reopening rejects foreign-session runs.
 There is no Continue gate (ADR 0048). A run only waits on the user for an approval,
 an `ask_user` answer or workspace trust; every other stop ends the run with its named
 code, and a new message starts a fresh run that carries the session's handoff
-(ADR 0023). Startup recovery fails a run an older build parked for Continue with the
+(ADR 0023), or the previous run's native history when the model is unchanged
+(ADR 0049). Startup recovery fails a run an older build parked for Continue with the
 code it parked on (`continue_removed` when none was recorded).
 
 Startup recovery compares the durable event stream with dispatch boundaries: a

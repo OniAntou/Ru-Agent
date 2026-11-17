@@ -11,8 +11,11 @@ durable run because shutdown may let the worker commit progress. It preserves
 already terminal results and retries version conflicts up to eight times without
 repeating tool shutdown; exhausted contention still reports `commit_conflict`.
 
-The Host validates model/reasoning against that catalog at the first model
-step. Settings changes after the selection is pinned affect the next run.
+A root run's selection is pinned when its base context is captured, to size the handoff
+and choose native continuation (waiting at most five seconds; a selection that cannot be
+resolved then is pinned at the first model step instead). The Host validates model/reasoning
+against that catalog at the first model step. Settings changes after the selection is pinned
+affect the next run.
 That new root run also captures a bounded **Session Run Handoff** from up to four
 earlier terminal roots in the same session/workspace, so a different model can
 see work performed before Stop even without a final assistant reply. The
@@ -23,7 +26,10 @@ the rendered handoff is encrypted with the new run's once-only base context.
 It is a separate, charged history turn and cannot silently fall out of native
 history fitting. At most 48 recent entries per source plus its original request and bounded
 applicable summaries are read, with a 128 KiB per-payload and 2 MiB aggregate read cap; the final
-portable text is capped at 16,000 characters. Excerpts and omissions are explicit.
+portable text takes a tenth of the pinned model's published window (three characters per token,
+between 16,000 and 400,000 characters; 16,000 when the window is assumed), and the entry count
+(up to 384) and excerpt clips scale with it. Base capture resolves the run's pin to learn the
+window. Excerpts and omissions are explicit.
 Up to four recent compaction records per source supply applicable summaries,
 prioritizing newer summaries and reporting omitted older coverage. Separate
 Host-authored directory hints preserve instruction discovery; quoted text cannot
@@ -34,6 +40,8 @@ retain provenance; missing receipts or interrupted effects must be checked befor
 repeating a mutation. Native provider continuation, audit-only bytes, child-private
 history, credentials and approval state are excluded. See
 [ADR 0023](../adr/0023-bounded-session-run-handoff.md).
+A run under the same model as the newest source continues it natively instead; see
+[Native Continuation](#native-continuation).
 The typed step service rejects missing/invalid snapshots and strips untrusted
 reasoning fields. The Host reads credentials directly from its own store, so no
 per-step handoff file exists. New runs receive an unselected pin row atomically;
@@ -606,6 +614,30 @@ provider continuation and execution authority are not inherited. Model selection
 remains pinned separately per run.
 _Avoid_: complete memory, cross-session history, inherited approvals, automatic
 re-execution of unfinished calls
+
+## Native Continuation
+
+[ADR 0049](../adr/0049-native-continuation-and-window-sized-handoff.md). At base capture,
+`HarnessModelContextBootstrapper` asks `ReadNativeContinuationCandidateAsync` for the session's
+newest visible terminal root run with the same preset and permission profile, and an ending
+other than `context_limit_reached`, `request_too_large`, `checkpoint_*` or `context_*`.
+`AgentRunHandoffModelFacts.SharesModelAsync` then compares both pins: backend, alias, protocol,
+base URI, model, account, calling mode, tool profile, and computer-use and provider-search pins.
+Last, `ReadNativeContinuationSliceAsync` projects the source without following its own
+continuation. `NativeRunContinuation.Close` keeps the closed prefix and turns the first unsettled
+batch, and everything after it, into a Host note listing each call and its receipt or `none`;
+the source's recovery and repetition notes are dropped. The slice must hold at most 256 entries,
+keeping carried base sequences inside the guards' 512-sequence window, and leave half of the
+window free, assuming 128,000 tokens when no window is published.
+
+A source that passes is recorded as the reserved base entry `base:native-continuation`. The
+source's own dialogue turn is dropped from the base, and the text handoff skips rendering it
+while still reading it for scope hints. On every uncached load, `SqliteModelContextSource`
+appends the slice (and `base:native-continuation-note`) after the captured base, with
+base sequences, before the run's own compactions apply; the marker itself never reaches the
+model. `SqliteProviderContinuationReader` replays recorded provider items for retained steps of
+the run and of the one source its marker names. Any failed condition, including a source that
+cannot be projected, falls back to the text handoff.
 
 ## Tool Output Projection
 

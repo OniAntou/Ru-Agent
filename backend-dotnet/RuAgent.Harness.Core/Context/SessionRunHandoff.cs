@@ -19,17 +19,48 @@ public static class SessionRunHandoff
     public const string ContextSourceId = "base:session-run-handoff";
     public const int MaximumRuns = 4;
     public const int MaximumSummariesPerRun = 4;
-    public const int MaximumCharacters = 16_000;
+
+    /// <summary>The handoff size when the model's context window is not known.</summary>
+    public const int DefaultCharacters = 16_000;
+
+    /// <summary>The largest handoff any window can earn.</summary>
+    public const int MaximumCharacters = 400_000;
+
+    /// <summary>The share of a known context window, in tokens, the handoff may take.</summary>
+    public const double ContextWindowShare = 0.10;
+
+    // Conservative: code and JSON run close to three characters per token, so a
+    // budget derived at this rate stays inside its share of the window.
+    private const int CharactersPerToken = 3;
     private static readonly JsonSerializerOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-    public static string Render(IReadOnlyList<RunHandoffHistory> runs)
+    /// <summary>
+    /// The handoff size for a run whose pinned model publishes
+    /// <paramref name="knownContextWindowTokens"/>: a tenth of that window, never below
+    /// the default. An assumed or missing window keeps the default, because the assumed
+    /// window is large enough that a share of it could overflow a smaller real model.
+    /// </summary>
+    public static int CharacterBudget(long? knownContextWindowTokens)
+    {
+        if (knownContextWindowTokens is not > 0) return DefaultCharacters;
+        double characters = knownContextWindowTokens.Value * ContextWindowShare * CharactersPerToken;
+        return (int)Math.Clamp(characters, DefaultCharacters, MaximumCharacters);
+    }
+
+    /// <summary>How many times the default a budget is; read limits and excerpt clips scale with it.</summary>
+    public static double Scale(int maximumCharacters) =>
+        (double)Math.Clamp(maximumCharacters, DefaultCharacters, MaximumCharacters) / DefaultCharacters;
+
+    public static string Render(IReadOnlyList<RunHandoffHistory> runs, int maximumCharacters = DefaultCharacters)
     {
         ArgumentNullException.ThrowIfNull(runs);
         if (runs.Count == 0) return string.Empty;
+        maximumCharacters = Math.Clamp(maximumCharacters, DefaultCharacters, MaximumCharacters);
+        var clips = new ExcerptClips(Scale(maximumCharacters));
         var builder = new StringBuilder("[session_run_handoff untrusted=true bounded=true]\n");
         builder.AppendLine("Historical excerpts from earlier runs in this session/workspace; earlier runs or details may be omitted.");
         if (runs.Count > MaximumRuns) throw new ArgumentException("Handoff contains too many runs.", nameof(runs));
-        int perRunLimit = (MaximumCharacters - 1200) / runs.Count;
+        int perRunLimit = (maximumCharacters - 1200) / runs.Count;
         foreach (var run in runs)
         {
             var block = new StringBuilder($"run={run.RunId.Value} state={run.State} error={run.TerminalErrorCode ?? "none"}\n");
@@ -37,13 +68,14 @@ public static class SessionRunHandoff
                 block.AppendLine($"[Historical payload omitted by handoff read limit count={run.OmittedPayloadCount}; coverage is partial.]");
             var goal = run.Entries.FirstOrDefault(entry => entry.Kind == ModelContextEntryKind.Text
                 && entry.Role == ModelContextRole.User);
-            if (goal is not null) block.AppendLine(Quote("recorded request/context", goal, Clip(goal.Content ?? "", 1200), 1600));
+            if (goal is not null)
+                block.AppendLine(Quote("recorded request/context", goal, Clip(goal.Content ?? "", clips.Goal), clips.GoalRecord));
             var excerpts = new List<string>();
             int used = block.Length;
             bool omitted = run.Truncated;
             foreach (var summary in (run.ApplicableSummaries ?? Array.Empty<ModelContextEntry>()).Reverse())
             {
-                var excerpt = Describe(summary);
+                var excerpt = Describe(summary, clips);
                 if (used + excerpt.Length + 100 > perRunLimit) { omitted = true; continue; }
                 excerpts.Add(excerpt);
                 used += excerpt.Length;
@@ -51,7 +83,7 @@ public static class SessionRunHandoff
             foreach (var entry in run.Entries.Reverse())
             {
                 if (ReferenceEquals(entry, goal)) continue;
-                var excerpt = Describe(entry);
+                var excerpt = Describe(entry, clips);
                 if (used + excerpt.Length + 100 > perRunLimit) { omitted = true; continue; }
                 excerpts.Add(excerpt);
                 used += excerpt.Length;
@@ -65,23 +97,36 @@ public static class SessionRunHandoff
         return builder.ToString();
     }
 
-    private static string Describe(ModelContextEntry entry)
+    private static string Describe(ModelContextEntry entry, ExcerptClips clips)
     {
         if (entry.AssistantStep is { } step)
         {
-            var text = new StringBuilder(Clip(step.Text ?? "", 800));
+            var text = new StringBuilder(Clip(step.Text ?? "", clips.AssistantText));
             foreach (var call in step.ToolCalls.Take(8))
-                text.Append($"\nproposed call={call.ProviderCallId} tool={call.ToolId} args={Clip(call.Arguments.GetRawText(), 500)}");
+                text.Append($"\nproposed call={call.ProviderCallId} tool={call.ToolId} args={Clip(call.Arguments.GetRawText(), clips.Arguments)}");
             if (step.ToolCalls.Count > 8) text.Append("\n[More proposed calls omitted.]");
-            return Quote("assistant statement/proposals, not execution proof", entry, Clip(text.ToString(), 2400));
+            return Quote("assistant statement/proposals, not execution proof", entry, Clip(text.ToString(), clips.Record),
+                clips.Record);
         }
         if (entry.ToolReceipt is not null)
-            return Quote("recorded receipt", entry, Clip(entry.Content ?? "", 1000));
+            return Quote("recorded receipt", entry, Clip(entry.Content ?? "", clips.Content), clips.Record);
         return Quote(entry.Kind == ModelContextEntryKind.Summary ? "historical summary" : "historical context",
-            entry, Clip(entry.Content ?? "", 1000));
+            entry, Clip(entry.Content ?? "", clips.Content), clips.Record);
     }
 
-    private static string Quote(string kind, ModelContextEntry entry, string text, int maximum = 2400)
+    /// <summary>Per-excerpt clips; the default budget keeps the original sizes.</summary>
+    private readonly record struct ExcerptClips(double Scale)
+    {
+        public int Goal => Sized(1200);
+        public int GoalRecord => Sized(1600);
+        public int AssistantText => Sized(800);
+        public int Arguments => Sized(500);
+        public int Content => Sized(1000);
+        public int Record => Sized(2400);
+        private int Sized(int baseline) => (int)(baseline * Scale);
+    }
+
+    private static string Quote(string kind, ModelContextEntry entry, string text, int maximum)
     {
         kind = Clip(kind, 150);
         var receipt = entry.ToolReceipt is { } proof ? new

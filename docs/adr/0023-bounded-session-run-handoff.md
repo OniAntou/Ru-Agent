@@ -15,6 +15,9 @@ reusing execution authority.
 ## Decision
 
 Amended 2026-10-27 for applicable checkpoints and private instruction-scope hints.
+Amended 2026-11-17 by [ADR 0049](0049-native-continuation-and-window-sized-handoff.md): the
+rendered size follows the pinned model's window, and a run under the same model continues the
+newest source natively instead of through this text.
 
 Capture a **Session Run Handoff** when bootstrapping each new root run, whether
 or not the model changes. Read up to four earlier terminal root runs in the

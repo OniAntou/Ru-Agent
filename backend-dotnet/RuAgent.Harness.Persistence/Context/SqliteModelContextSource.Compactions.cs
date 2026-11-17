@@ -14,7 +14,8 @@ public sealed partial class SqliteModelContextSource
         RunId runId,
         List<ModelContextEntry> sessionBase, List<ModelContextEntry> runLocal,
         long fromVersion, long throughVersion,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool tolerateUncoveredRanges = false)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -99,18 +100,23 @@ public sealed partial class SqliteModelContextSource
                 ranges.Min(range => range.StartSequence),
                 summaryText,
                 ranges);
-            ApplyCompaction(sessionBase, runLocal, summary);
+            ApplyCompaction(sessionBase, runLocal, summary, tolerateUncoveredRanges);
         }
     }
 
+    /// <param name="tolerateUncoveredRanges">
+    /// True only for a continuation source read: its own carried history is not loaded, so a
+    /// summary that covered only that history has nothing left to replace and is skipped.
+    /// </param>
     private static void ApplyCompaction(List<ModelContextEntry> sessionBase,
-        List<ModelContextEntry> runLocal, ModelContextEntry summary)
+        List<ModelContextEntry> runLocal, ModelContextEntry summary, bool tolerateUncoveredRanges = false)
     {
         var ranges = summary.SummaryRanges!.ToDictionary(range => range.SourceId, StringComparer.Ordinal);
         bool Covered(ModelContextEntry entry) => ranges.TryGetValue(entry.SourceId, out var range)
             && entry.Sequence >= range.StartSequence && entry.Sequence <= range.EndSequence;
-        var first = sessionBase.Concat(runLocal).FirstOrDefault(Covered)
-            ?? throw new HarnessStoreException("context_compaction_range_missing");
+        var first = sessionBase.Concat(runLocal).FirstOrDefault(Covered);
+        if (first is null && tolerateUncoveredRanges) return;
+        if (first is null) throw new HarnessStoreException("context_compaction_range_missing");
         var target = sessionBase.Contains(first) ? sessionBase : runLocal;
         var index = target.IndexOf(first);
         sessionBase.RemoveAll(entry => Covered(entry));

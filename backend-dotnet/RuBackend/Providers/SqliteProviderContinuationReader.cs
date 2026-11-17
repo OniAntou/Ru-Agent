@@ -50,23 +50,37 @@ public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions option
             "chat_completions" when bootstrap.ReplayChatReasoning => "chat",
             _ => throw new ProviderCatalogException("provider_continuation_invalid"),
         };
+        // A natively continued run replays its source run's steps too (ADR 0049). The source is
+        // the one its own captured marker names, and both runs share provider, model and account,
+        // so the items go back to the provider that produced them. No other run's state is read.
+        RunId sourceRunId;
+        try
+        {
+            sourceRunId = await payloads.ReadNativeContinuationSourceAsync(runId, cancellationToken).ConfigureAwait(false)
+                ?? runId;
+        }
+        catch (HarnessStoreException)
+        {
+            throw new ProviderCatalogException("provider_continuation_invalid");
+        }
         await using var connection = await options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         var eventParameters = retainedAssistantEventIds.Select((_, index) => "$step_event_" + index).ToArray();
         command.CommandText = $"""
-            SELECT assistant_step.event_id, continuation.model_step_id, continuation.payload_id
+            SELECT assistant_step.event_id, continuation.model_step_id, continuation.payload_id, assistant_step.run_id
             FROM agent_events AS assistant_step
             JOIN agent_events AS continuation
               ON continuation.run_id = assistant_step.run_id
              AND continuation.model_step_id = assistant_step.model_step_id
              AND continuation.kind = 'model.provider_continuation_recorded'
-            WHERE assistant_step.run_id = $run_id
+            WHERE assistant_step.run_id IN ($run_id, $source_run_id)
               AND assistant_step.kind = 'model.step_completed'
               AND assistant_step.event_id IN ({string.Join(",", eventParameters)})
-            ORDER BY assistant_step.sequence
+            ORDER BY assistant_step.run_id = $run_id, assistant_step.sequence
             LIMIT {MaximumRows + 1}
             """;
         command.Parameters.AddWithValue("$run_id", runId.Value);
+        command.Parameters.AddWithValue("$source_run_id", sourceRunId.Value);
         for (var index = 0; index < retainedAssistantEventIds.Count; index++)
             command.Parameters.AddWithValue(eventParameters[index], retainedAssistantEventIds[index]);
         var references = new List<ContinuationReference>();
@@ -76,7 +90,8 @@ public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions option
             {
                 if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2))
                     throw new ProviderCatalogException("provider_continuation_invalid");
-                references.Add(new ContinuationReference(reader.GetString(0), new ModelStepId(reader.GetString(1)), new PayloadId(reader.GetString(2))));
+                references.Add(new ContinuationReference(reader.GetString(0), new ModelStepId(reader.GetString(1)),
+                    new PayloadId(reader.GetString(2)), new RunId(reader.GetString(3))));
             }
         }
         if (!HasExactAssociations(references, retainedAssistantEventIds))
@@ -86,7 +101,8 @@ public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions option
         foreach (var reference in references)
         {
             var content = await payloads.ReadProviderContinuationAsync(
-                runId, reference.PayloadId, reference.ModelStepId, provider, bootstrap.Protocol, bootstrap.Model, cancellationToken)
+                reference.RunId, reference.PayloadId, reference.ModelStepId, provider, bootstrap.Protocol, bootstrap.Model,
+                cancellationToken)
                 .ConfigureAwait(false);
             aggregateBytes = AddWithinBudget(aggregateBytes, content.Plaintext.Length);
             result.Add(Parse(content.Plaintext, bootstrap, provider));
@@ -148,5 +164,6 @@ public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions option
         && value.AsSpan(4).ToString().All(character =>
             character is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
 
-    internal sealed record ContinuationReference(string AssistantEventId, ModelStepId ModelStepId, PayloadId PayloadId);
+    internal sealed record ContinuationReference(string AssistantEventId, ModelStepId ModelStepId, PayloadId PayloadId,
+        RunId RunId);
 }

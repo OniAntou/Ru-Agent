@@ -354,7 +354,7 @@ native final-path, volume and directory file-ID evidence; an unavailable lookup
 fails instead of substituting a hash of the path. Full Access requires the GUI gate or
 CLI `--confirm-full-access`. Workspace trust, approval, Stop and
 bounded Agent status remain inline above the input. Replaying a run an older build
-parked, the terminal client shows `▲ run paused · <reason> (<code>)` with one notice
+parked, the terminal client shows `▲ run paused · <reason>` with one notice
 to send a new message. The reason comes from one shared
 catalog (`AgentParkReasonCopy`): a provider transport failure reads as a network
 connection failure, a timeout as an unresponsive provider, and a spent budget as

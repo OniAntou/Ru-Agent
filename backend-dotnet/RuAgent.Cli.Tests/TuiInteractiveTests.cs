@@ -102,7 +102,8 @@ public sealed class TuiInteractiveTests
             var output = sw.ToString();
             Assert.Contains("✗", output, StringComparison.Ordinal);
             Assert.DoesNotContain("turn ", output, StringComparison.Ordinal);
-            Assert.Contains("provider_rate_limited", output, StringComparison.Ordinal);
+            Assert.Contains("Rate limited", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("provider_rate_limited", output, StringComparison.Ordinal);
             Assert.Contains("/model", output, StringComparison.Ordinal);
         }
     }
@@ -225,9 +226,9 @@ public sealed class TuiInteractiveTests
 
             var output = sw.ToString();
             Assert.Contains("tail-no-newline", output, StringComparison.Ordinal);
-            Assert.Contains("recovery_ambiguous", output, StringComparison.Ordinal);
+            Assert.Contains("result is unverified", output, StringComparison.Ordinal);
             Assert.True(
-                output.IndexOf("tail-no-newline", StringComparison.Ordinal) < output.IndexOf("recovery_ambiguous", StringComparison.Ordinal),
+                output.IndexOf("tail-no-newline", StringComparison.Ordinal) < output.IndexOf("result is unverified", StringComparison.Ordinal),
                 "buffered tail must print before the envelope output");
         }
     }
@@ -242,7 +243,9 @@ public sealed class TuiInteractiveTests
             "run.state_changed", "2026-09-10T00:00:00Z", "running", "started");
         renderer.RenderFrame(new SseFrame(1, "run.state_changed", JsonSerializer.Serialize(envelope), false, null));
 
-        Assert.Contains("unsupported_protocol_version", sw.ToString(), StringComparison.Ordinal);
+        var output = sw.ToString();
+        Assert.Contains("out of date", output, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("unsupported_protocol_version", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1487,8 +1490,9 @@ public sealed class TuiInteractiveTests
         // Fail-soft: one bounded notice, then the REPL still starts and exits normally.
         Assert.Equal(0, exit);
         var output = outWriter.ToString();
-        Assert.Contains("session_replay_unavailable", output, StringComparison.Ordinal);
-        Assert.Equal(1, output.Split('\n').Count(line => line.Contains("session_replay_unavailable", StringComparison.Ordinal)));
+        Assert.Contains("could not load this session's history", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("session_replay_unavailable", output, StringComparison.Ordinal);
+        Assert.Equal(1, output.Split('\n').Count(line => line.Contains("could not load this session's history", StringComparison.Ordinal)));
     }
 
     private sealed class BlockingStream : System.IO.Stream

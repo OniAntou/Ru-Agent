@@ -118,7 +118,8 @@ public sealed partial class TuiTranscript
 
             case "approval.requested":
                 _status.SetState(TuiRunState.WaitingApproval);
-                Notice("approval needed · " + summary, TuiToken.Warn);
+                TuiDebug.Log("approval", $"code={summary}");
+                Notice("approval needed · " + TuiText.Truncate(AgentApprovalCopy.Render(summary), 80), TuiToken.Warn);
                 return;
 
             case "reconciliation.required":
@@ -127,11 +128,13 @@ public sealed partial class TuiTranscript
 
             case "reconciliation.resolved":
                 ClearPaused();
-                Notice("reconciliation · " + summary, TuiToken.Brand2);
+                TuiDebug.Log("reconciliation", $"settled code={summary}");
+                Notice("the last change was checked · continuing", TuiToken.Brand2);
                 return;
 
             case "transient.frames_dropped":
-                Notice("some steps were skipped · " + summary, TuiToken.Warn);
+                TuiDebug.Log("frames", $"dropped code={summary}");
+                Notice("some steps were skipped · the view may be incomplete", TuiToken.Warn);
                 return;
 
             case "run.failed":
@@ -139,7 +142,8 @@ public sealed partial class TuiTranscript
                 return;
 
             default:
-                Notice($"[{envelope.Sequence}] {type}: {summary}", TuiToken.Line);
+                TuiDebug.Log("durable", $"event={type} code={summary}");
+                Notice("unrecognized update from the host · update Ru if this repeats", TuiToken.Line);
                 return;
         }
     }
@@ -173,16 +177,22 @@ public sealed partial class TuiTranscript
             ? null : code.Trim();
 
     /// <summary>
-    /// The human reason plus the machine code it came from. The code stays beside
-    /// it because that token is what a bug report and the logs carry; the sentence
-    /// is what tells a reader that a network call, not the user, failed.
+    /// The human reason for a paused run. The wire code stays in the debug log and the
+    /// Host log, where a bug report can find it; the transcript says what happened
+    /// instead of printing the token.
     /// </summary>
-    private static string? ParkLabel(string? reason) =>
-        reason is not null
-        && AgentParkReasonCopy.TryGet(reason, out var copy)
-        && copy is not null
-            ? $"{copy.Headline} ({reason})"
-            : reason;
+    private static string? ParkLabel(string? reason)
+    {
+        if (reason is null)
+        {
+            return null;
+        }
+
+        TuiDebug.Log("park", $"code={reason}");
+        return AgentParkReasonCopy.TryGet(reason, out var copy) && copy is not null
+            ? copy.Headline
+            : "paused by the host";
+    }
 
     private static string ParkAction(string runId, string reason, bool repeated = false)
     {

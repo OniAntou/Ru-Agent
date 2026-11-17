@@ -104,9 +104,12 @@ public sealed class TuiSessionRenderer
         if (envelope.ProtocolVersion != HarnessSafeEventEnvelope.CurrentProtocolVersion)
         {
             // The Host and CLI agree on one envelope version; rendering an unknown shape
-            // would be guesswork. Name the mismatch instead of silently dropping the turn.
+            // would be guesswork. Name the mismatch in human terms; the versions stay in the
+            // debug log rather than in the transcript.
+            TuiDebug.Log("protocol",
+                $"unsupported envelope version {envelope.ProtocolVersion} (expected {HarnessSafeEventEnvelope.CurrentProtocolVersion})");
             _transcript.Note(
-                $"unsupported_protocol_version: {envelope.ProtocolVersion} (expected {HarnessSafeEventEnvelope.CurrentProtocolVersion})",
+                "this terminal is out of date with the running backend · update Ru, then retry",
                 TuiToken.Err);
             return;
         }

@@ -39,7 +39,9 @@ public sealed partial class TuiTranscript
                 }
                 if (activity.State == AgentActivityState.Failed)
                 {
-                    Notice($"compaction failed ({activity.SafeCode})", TuiToken.Err);
+                    TuiDebug.Log("compaction", $"failed code={activity.SafeCode}");
+                    Notice("context compaction failed · retry the turn; if it repeats, start a fresh session",
+                        TuiToken.Err);
                 }
                 else
                 {
@@ -90,9 +92,12 @@ public sealed partial class TuiTranscript
                 var status = TuiActivityLabels.StatusText(activity.SafeCode);
                 if (status is null)
                 {
-                    // A failure is never hidden, even when its code has no sentence yet.
+                    // A failure is never hidden, even when its code has no sentence yet. The
+                    // code itself is a machine token; the transcript says what happened and
+                    // leaves the token to the debug log (/status and the Host log carry it too).
                     if (activity.State != AgentActivityState.Failed) return;
-                    status = "stopped: " + activity.SafeCode.Replace('_', ' ');
+                    TuiDebug.Log("activity", $"failed status code={activity.SafeCode}");
+                    status = "stopped unexpectedly · run /status or check the logs";
                 }
 
                 Notice(status, activity.State == AgentActivityState.Failed ? TuiToken.Err : TuiToken.Line);

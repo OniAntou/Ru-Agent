@@ -201,19 +201,20 @@ public sealed class TuiTranscriptTests
         Assert.Equal(3, lines.Count);
         Assert.DoesNotContain("turn", lines[0], StringComparison.Ordinal);
         Assert.Contains("6.1s", lines[0], StringComparison.Ordinal);
-        Assert.Contains("provider_rate_limited", lines[0], StringComparison.Ordinal);
+        Assert.Contains("Rate limited", lines[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("provider_rate_limited", lines[0], StringComparison.Ordinal);
         Assert.Contains("429", lines[1], StringComparison.Ordinal);
         Assert.Contains("/model", lines[2], StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ComposeFailure_FallsBackWithCodeAndLogPointer()
+    public void ComposeFailure_UsesAGenericSentenceForAnUnknownCode()
     {
         var lines = TuiTranscript.ComposeFailure(0.5, "some_new_code");
 
         Assert.Equal(3, lines.Count);
-        Assert.Contains("some_new_code", lines[0], StringComparison.Ordinal);
-        Assert.Contains("some_new_code", lines[1], StringComparison.Ordinal);
+        Assert.Contains("Run stopped", lines[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("some_new_code", string.Join("\n", lines), StringComparison.Ordinal);
         Assert.Contains("/status", lines[2], StringComparison.Ordinal);
     }
 
@@ -736,7 +737,8 @@ public sealed class TuiTranscriptTests
         transcript.EndTurn();
 
         var rows = Rows(output);
-        Assert.Contains(rows, row => row.Contains('✗') && row.Contains("provider_rate_limited", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Contains('✗') && row.Contains("Rate limited", StringComparison.Ordinal));
+        Assert.DoesNotContain(rows, row => row.Contains("provider_rate_limited", StringComparison.Ordinal));
         Assert.Contains(rows, row => row.Contains("/model", StringComparison.Ordinal));
     }
 
@@ -974,7 +976,7 @@ public sealed class TuiTranscriptTests
         Assert.Contains(rows, row => row.Contains("run parked", StringComparison.Ordinal));
         Assert.Contains(
             rows,
-            row => row.Contains("model_step_budget_exhausted", StringComparison.Ordinal)
+            row => row.Contains("used its model step budget", StringComparison.Ordinal)
                 && row.Contains("send a new message", StringComparison.Ordinal)
                 && !row.Contains("ru agent continue", StringComparison.Ordinal));
     }
@@ -1008,7 +1010,7 @@ public sealed class TuiTranscriptTests
         Assert.Contains(
             Rows(output),
             row => row.Contains("run parked", StringComparison.Ordinal)
-                && row.Contains("recovery_ambiguous", StringComparison.Ordinal)
+                && row.Contains("result is unverified", StringComparison.Ordinal)
                 && row.Contains("send a new message", StringComparison.Ordinal));
 
         // The paired state_changed frame for the same park must not repeat the notice.

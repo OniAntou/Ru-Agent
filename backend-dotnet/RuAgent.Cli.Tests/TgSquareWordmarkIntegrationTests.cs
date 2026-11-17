@@ -193,7 +193,7 @@ public sealed class TgSquareWordmarkIntegrationTests
     [InlineData("palette", "Commands")]
     [InlineData("document", "motion document")]
     [InlineData("secret", "motion provider")]
-    [InlineData("approval", "motion approval")]
+    [InlineData("approval", "folder outside the project")]
     [InlineData("question", "motion question")]
     public void Welcome_overlays_keep_the_sky_moving_and_preserve_their_text(string overlay, string marker)
     {
@@ -208,7 +208,7 @@ public sealed class TgSquareWordmarkIntegrationTests
                     case "palette": window.OpenCommandPalette(); break;
                     case "document": window.ShowDocument(marker, ["first row", "second row"]); break;
                     case "secret": window.ShowSecret(marker); break;
-                    case "approval": window.ShowApproval(marker); break;
+                    case "approval": window.ShowApproval("external_directory_required"); break;
                     case "question": window.ShowQuestion(ChatInputWorkflowTests.Question with { Question = marker }); break;
                 }
                 window.TickWelcome();

@@ -220,6 +220,49 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
+        /// The last session was deleted: return to the empty landing instead of creating a
+        /// replacement session. A fresh chat creates its session lazily on the first prompt,
+        /// so deleting the last conversation no longer leaves an empty "Cuộc trò chuyện mới"
+        /// row behind (which the same delete flow would otherwise create again on every pass).
+        /// </summary>
+        async Task LeaveDeletedSessionAsync(CancellationToken ct)
+        {
+            sessionId = string.Empty;
+            cmd = cmd with { SessionId = null };
+            sessionTitle = null;
+            runSession.ResetSession();
+            ownedRunId = null;
+            turn = 0;
+            sessionTitleProbes = 0;
+            lastTotalTokens = null;
+            usage = new Tui.TuiUsageTracker();
+            preparedContext = null;
+            initialDraftSessionId = null;
+            draftCreationFailed = false;
+            if (tgMode) chatEngine?.ResetInputHistory();
+            ClearSubagentStrip();
+            submissions.ClearPending();
+            RefreshAttachmentLabels();
+            sessionRenderer = CreateSessionRenderer(ResolveRenderWriter());
+            sessionRenderer.Width = ChatRenderWidth();
+            if (tgMode)
+            {
+                RunOnTgUi(() =>
+                {
+                    tgWindow!.ResetTranscript();
+                    tgWindow.Hints.ClearWorkspaceBusy();
+                    tgWindow.Hints.SetIdle(workspaceLabel);
+                    tgWindow.Header.SetTitle(string.Empty);
+                    tgWindow.Header.UpdateUsage(0, null, null);
+                    tgWindow.Composer.SetMeta(cmd.Preset, activeModel, backendName ?? "(provider unknown)");
+                    tgWindow.Composer.SetReasoningEffort(activeReasoningEffort);
+                });
+            }
+
+            await RefreshModelUsageInfoAsync(ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
         /// Binds session commands to the selected presentation's picker capabilities.
         /// </summary>
         ChatSessionCommands CreateSessionCommands() =>
@@ -236,6 +279,7 @@ public sealed partial class AgentCommands
                 // can be drawn; line I/O keeps the plain list and /sessions id:<id>.
                 tgMode ? (list, ct) => TgPanelRequests.RequestSessionChoiceAsync(tgWindow!, list, ct) : null,
                 tgMode ? DeleteSessionAsync : null,
+                tgMode ? LeaveDeletedSessionAsync : null,
                 WriteDiagnosticLineAsync,
                 humanOut,
                 _err,

@@ -52,6 +52,17 @@ public sealed class AgentFailureCopyTests
     [InlineData("invalid_image_mime")]
     [InlineData("invalid_image_base64")]
     [InlineData("invalid_prompt")]
+    [InlineData("checkpoint_incomplete")]
+    [InlineData("checkpoint_timeout")]
+    [InlineData("checkpoint_invalid")]
+    [InlineData("checkpoint_tool_rejected")]
+    [InlineData("checkpoint_not_smaller")]
+    [InlineData("retained_approval_recovery_failed")]
+    [InlineData("subagent_cancel_incomplete")]
+    [InlineData("agent_create_outcome_unknown")]
+    [InlineData("provider_selection_invalid")]
+    [InlineData("run_terminal")]
+    [InlineData("model_tool_batch_too_large")]
     public void Every_audited_code_resolves_to_copy(string code)
     {
         Assert.True(AgentFailureCopy.TryGet(code, out var copy), code);

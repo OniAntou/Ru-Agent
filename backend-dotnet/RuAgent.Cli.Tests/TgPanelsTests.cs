@@ -48,6 +48,51 @@ public sealed class TgPanelsTests
     }
 
     [Fact]
+    public void Picker_ModalHostIsSizedToTheCardNotTheFullEnvelope()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            window.ShowPicker(
+                "sessions",
+                [new ChoiceItem("one", "ws", "one")],
+                footer: "â†‘â†“ select Â· enter open Â· esc cancel");
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            var size = window.ModalPanelSize;
+            Assert.NotNull(size);
+
+            var availableWidth = Math.Max(1, window.Viewport.Width - 4);
+            var candidateWidth = Math.Max(1, TuiCard.ComputeWidth(availableWidth));
+            var maxRows = Math.Max(1, Math.Min(14, window.Viewport.Height - 2));
+            var expected = TuiCard.ComposeListFitting(
+                candidateWidth,
+                maxRows,
+                "sessions",
+                "esc",
+                [new CardItem("one", "ws", true)],
+                0,
+                "â†‘â†“ select Â· enter open Â· esc cancel",
+                "Search");
+
+            // The host equals the composed card, not the 14-row modal envelope; otherwise
+            // Terminal.Gui paints the difference as an opaque band around the panel.
+            Assert.Equal(expected[0].Width, size!.Value.Width);
+            Assert.Equal(expected.Count, size.Value.Height);
+            Assert.True(size.Value.Height < maxRows);
+            app.RequestStop();
+            return false;
+        });
+
+        app.Run(window);
+    }
+
+    [Fact]
     public void Picker_StripsTerminalControlsFromCatalogText()
     {
         using IApplication app = Application.Create();

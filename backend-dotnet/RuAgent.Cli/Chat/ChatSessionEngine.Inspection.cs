@@ -1,3 +1,5 @@
+using RuAgent.Cli.Tui;
+
 namespace RuAgent.Cli.Chat;
 
 public partial class ChatSessionEngine
@@ -40,7 +42,9 @@ public partial class ChatSessionEngine
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            Dispatch(() => _view.ShowFeedback("inspection_error: " + CliErrorText.ShortMessage(ex.Message), true));
+            TuiDebug.Log("inspection", $"code={ex.GetType().Name}");
+            Dispatch(() => _view.ShowFeedback(
+                "could not read the inspection panel · " + CliErrorText.ShortMessage(ex.Message), true));
         }
         finally
         {

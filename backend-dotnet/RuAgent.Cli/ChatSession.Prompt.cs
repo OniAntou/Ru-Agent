@@ -442,7 +442,8 @@ public sealed partial class AgentCommands
             var arg = parts.Length > 1 ? parts[1].Trim() : null;
             if (Tui.ChatCommandCatalog.IsRemovedCommand(slashLine))
             {
-                await WriteDiagnosticLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err,
+                    $"unknown command {slashCmd} · type /help for the command list").ConfigureAwait(false);
                 return true;
             }
             if (slashCmd is "/subagents" && !await RequireSavedSessionAsync().ConfigureAwait(false)) return true;
@@ -509,7 +510,8 @@ public sealed partial class AgentCommands
             }
             var customNames = CustomPromptCommands.List(canonicalWorkspace, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             var customHint = customNames.Count == 0 ? string.Empty : " Custom: " + string.Join(' ', customNames.Select(name => "/" + name)) + ".";
-            await WriteDiagnosticLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.{customHint}").ConfigureAwait(false);
+            await WriteDiagnosticLineAsync(_err,
+                $"unknown command {slashCmd} · type /help for the command list{customHint}").ConfigureAwait(false);
             return true;
         }
 

@@ -28,7 +28,7 @@ public sealed class TuiSingleSessionTests
                 case 1 when host.Streams.Count == 1:
                     Send(app, page, command); stage++; break;
                 case 2:
-                    Assert.Contains("finish queued prompts", page.Hints.FeedbackMessage);
+                    Assert.Contains("a run is still active", page.Hints.FeedbackMessage);
                     Assert.Equal(1, host.CreatedSessions); Assert.Single(host.Prompts);
                     Assert.Same(page, app.TopRunnableView);
                     app.InjectKey(Key.F6); app.InjectKey(Key.N.WithAlt);

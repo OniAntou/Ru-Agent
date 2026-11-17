@@ -501,6 +501,7 @@ public sealed class TgChromeTests
 
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
+            window.Hints.ShowCommandFeedback("stale session hint", true);
             window.ResetTranscript();
             return false;
         });
@@ -512,6 +513,8 @@ public sealed class TgChromeTests
             Assert.DoesNotContain("hello", text);
             Assert.DoesNotContain("39,413", text);
             Assert.DoesNotContain("$0.29", text);
+            Assert.Null(window.Hints.FeedbackMessage);
+            Assert.DoesNotContain("stale session hint", text);
             app.RequestStop();
             return false;
         });
@@ -546,6 +549,33 @@ public sealed class TgChromeTests
             var esc = row.IndexOf("esc", StringComparison.Ordinal);
             Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, esc).Foreground);
             Assert.Equal(TgPalette.ToColor(TuiToken.Meta), TgSnapshot.CellAttribute(app, 0, esc + 4).Foreground);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    [Fact]
+    public void HidingAPanelBackOnTheLandingClearsAStaleHint()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            window.ShowDocument("status", ["first row"]);
+            window.Hints.ShowCommandFeedback("stale panel hint", true);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            window.HidePanel();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
+        {
+            Assert.Null(window.Hints.FeedbackMessage);
             app.RequestStop();
             return false;
         });

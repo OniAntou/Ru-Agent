@@ -27,7 +27,8 @@ public sealed class TuiParkReasonTests
             Assert.Contains("send a new message", detail);
         }
         var rows = TuiText.Strip(output.ToString()).Split('\n');
-        Assert.Equal(2, rows.Count(row => row.Contains("reason:") && row.Contains(reason)));
+        Assert.Equal(2, rows.Count(row => row.Contains("reason:", StringComparison.Ordinal)));
+        Assert.DoesNotContain(reason, output.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("waiting_user · resume", output.ToString());
         Assert.DoesNotContain("wait a moment first", TuiText.Strip(status.Compose(220)));
     }
@@ -42,7 +43,7 @@ public sealed class TuiParkReasonTests
         transcript.BeginTurn();
         transcript.ApplyDurable(Frame("continue.requested", "provider_timeout", 6));
         transcript.ApplyDurable(Frame("continue.requested", "provider_timeout", 6) with { RunId = "run_2" });
-        Assert.Equal(2, TuiText.Strip(output.ToString()).Split('\n').Count(row => row.Contains("provider_timeout")));
+        Assert.Equal(2, TuiText.Strip(output.ToString()).Split('\n').Count(row => row.Contains("the provider stopped responding", StringComparison.Ordinal)));
     }
 
     [Fact]

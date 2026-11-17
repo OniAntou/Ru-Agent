@@ -500,6 +500,55 @@ public static class AgentFailureCopy
             "the event stream uses a protocol version this build does not understand",
             "update Ru, then retry");
 
+        // Context compaction and checkpoints.
+        Add(table, ["checkpoint_incomplete"],
+            "Context summary cut short",
+            "the model's checkpoint hit its output limit while compacting the conversation",
+            "retry the turn · if it repeats, start a fresh session or switch model with /model");
+        Add(table, ["checkpoint_timeout", "checkpoint_provider_transient", "checkpoint_provider_failed"],
+            "Context checkpoint failed",
+            "the model could not summarize the conversation for compaction",
+            "retry the turn · if it repeats, start a fresh session");
+        Add(table, ["checkpoint_invalid", "checkpoint_input_invalid", "checkpoint_receipt_invalid"],
+            "Context checkpoint invalid",
+            "the compaction summary could not be validated",
+            "retry the turn · if it repeats, start a fresh session and check the logs");
+        Add(table, ["checkpoint_context_overflow", "checkpoint_input_too_large"],
+            "Context checkpoint too large",
+            "the conversation span could not fit the model's window for summarization",
+            "retry the turn · if it repeats, start a fresh session or switch to a model with a larger window");
+        Add(table, ["checkpoint_tool_rejected"],
+            "Checkpoint requested a tool",
+            "the summarizer tried to call a tool instead of returning a summary",
+            "retry the turn · if it repeats, switch model with /model");
+        Add(table, ["checkpoint_not_smaller"],
+            "Context compaction had no effect",
+            "the summary did not shrink the conversation",
+            "retry the turn · if it repeats, start a fresh session");
+        Add(table, ["retained_approval_recovery_failed", "retained_approval_resume_failed", "retained_input_resume_failed"],
+            "Run could not resume",
+            "the pending approval or question could not be reattached",
+            "send a new message to start a fresh run");
+        Add(table, ["subagent_cancel_incomplete", "subagent_result_capture_failed", "subagent_scope_invalid", "subagent_family_budget_exhausted"],
+            "Subagent stopped",
+            "a child agent could not finish cleanly",
+            "retry the request · if it repeats, start a fresh session");
+        Add(table, ["agent_create_outcome_unknown", "agent_create_failed"],
+            "Run could not start",
+            "the host did not confirm a new run",
+            "run /status, then send the message again");
+        Add(table, ["provider_selection_invalid", "provider_model_unavailable", "provider_snapshot_capacity"],
+            "Provider selection invalid",
+            "the run's pinned provider data could not be restored",
+            "re-select the model with /model, then retry");
+        Add(table, ["run_terminal", "invalid_run_transition"],
+            "Run ended unexpectedly",
+            "the host refused a run state change",
+            "send a new message to start a fresh run");
+        Add(table, ["model_tool_batch_too_large"],
+            "Tool batch too large",
+            "the model asked for more tool calls than one budget window allows",
+            "the model was asked to split the batch · retry if it does not");
         return table;
     }
 

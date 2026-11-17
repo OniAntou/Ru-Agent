@@ -136,7 +136,7 @@ public sealed class ChatTaskWorkflowTests
         Assert.Equal(0, await commands.ChatAsync(new ChatCommand(@"C:\workspace", SessionId, "standard", false), default));
         Assert.Equal(["/tasks"], host.Commands);
         Assert.Contains("broker_gateway_unavailable", errors.ToString());
-        Assert.DoesNotContain("unknown_command", errors.ToString());
+        Assert.DoesNotContain("unknown command", errors.ToString());
     }
 
     [Fact]

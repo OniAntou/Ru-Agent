@@ -1,3 +1,5 @@
+using RuAgent.Client;
+
 namespace RuAgent.Cli.Tui;
 
 /// <summary>One selectable answer to an approval request.</summary>
@@ -60,7 +62,7 @@ public sealed class ApprovalPrompt
         Summary = TuiText.Truncate(summary, 60);
         _choices = [.. choices];
         _list = new ChoiceList(
-            title ?? "approval · " + Summary,
+            title ?? "approval",
             _choices.Select(c => new ChoiceItem(c.Label, c.Description, c.Decision)).ToList(),
             defaultIndex,
             "↑↓ · 1-9 · enter · esc");
@@ -127,7 +129,8 @@ public sealed class ApprovalPrompt
         return new ApprovalPrompt(
             TuiText.Truncate(safeSummary, 60),
             choices,
-            defaultIndex: 1);
+            defaultIndex: 1,
+            title: "approval · " + TuiText.Truncate(AgentApprovalCopy.Render(reason), 60));
     }
 
     /// <summary>

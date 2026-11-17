@@ -8,10 +8,11 @@ public sealed record TuiFailureInfo(string Code, string Title, string Cause, str
 /// <summary>
 /// The terminal surface over the shared failure copy table. Every bounded error
 /// code the Host can end a turn with maps to a title, a cause and an actionable
-/// fix; codes outside the table still name themselves and point at the logs
-/// instead of rendering a bare token. The copy itself lives in
+/// fix; a code outside the table still gets a human sentence and a pointer at the
+/// logs, never a bare machine token in the transcript. The copy itself lives in
 /// <see cref="AgentFailureCopy"/> so the terminal and the desktop client resolve
-/// the same wording from one source.
+/// the same wording from one source; the raw code stays available to diagnostics
+/// and to <see cref="TuiDebug"/>.
 /// </summary>
 public static class TuiFailureCatalog
 {
@@ -26,13 +27,17 @@ public static class TuiFailureCatalog
         if (key.Length == 0)
         {
             key = "run_failed";
+            if (TryGet(key, out info))
+            {
+                return info;
+            }
         }
 
         return new TuiFailureInfo(
             key,
-            "Error",
-            $"unrecognized error '{key}'",
-            @"check the logs under %LOCALAPPDATA%\Ru\logs and run /status for details");
+            "Run stopped",
+            "something interrupted the turn before it could finish",
+            @"send a new message to retry · run /status or check the logs under %LOCALAPPDATA%\Ru\logs for details");
     }
 
     public static bool TryGet(string? code, out TuiFailureInfo info)

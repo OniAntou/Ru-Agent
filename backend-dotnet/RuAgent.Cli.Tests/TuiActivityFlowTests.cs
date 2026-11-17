@@ -252,7 +252,8 @@ public sealed class TuiActivityFlowTests
         Assert.DoesNotContain("· ok", texts);
         Assert.Contains("· started a subagent", texts);
         // A failure always shows; a code with no sentence is worded, not printed raw.
-        Assert.Contains("· stopped: ok", texts);
+        Assert.Contains(texts, text => text.Contains("stopped unexpectedly", StringComparison.Ordinal));
+        Assert.DoesNotContain(texts, text => text.Contains("brand_new_code", StringComparison.Ordinal));
         // An unworded success code explains nothing, so it earns no row at all.
         Assert.DoesNotContain(texts, text => text.Contains("brand new code", StringComparison.Ordinal));
     }

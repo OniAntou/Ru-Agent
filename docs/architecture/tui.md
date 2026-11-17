@@ -59,6 +59,14 @@ welcome/header drawing methods have been removed; shared glyph data and path
 shortening remain. Host orchestration, protocol routes, provider selection
 compatibility and Broker permissions are unchanged by this client refactor.
 
+Failure, approval and activity copy resolve through the shared client tables
+(`AgentFailureCopy`, `AgentApprovalCopy`): the transcript never prints a bare wire
+token such as `checkpoint_incomplete` or `external_directory_required`. A code the
+copy table does not know gets a human sentence with a `/status` and log pointer;
+the token itself stays in the Host log and `RU_TUI_DEBUG` diagnostics. Protocol
+mismatch, run-cancel failure and session-replay notices follow the same rule.
+`--json`, NDJSON and RPC are machine surfaces and keep their codes.
+
 Terminal chat omits `/skills` and `/skill` from handling, completion, palettes and
 help; entering either command reports `unknown_command` without a run or catalog
 mutation. Ordinary prompts can still ask for a skill. Host discovery, the model's
@@ -113,6 +121,13 @@ Alt+N shortcut. Active or held/queued work must finish or be cancelled before
 changing sessions. Opening saved history resolves its recorded workspace and
 session preset before replacing current state. A missing recorded folder fails
 closed; one session's full-access choice does not become another session's default.
+
+Deleting the open session returns to the empty landing; it never opens another saved
+conversation on its own, and the next prompt creates a session lazily, so no
+empty replacement conversation is left behind. A refused session or model change names
+the actual blocker (a running turn, queued prompts, or a paused approval/question), and
+a stray submit while a local panel owns the input is dropped instead of being reported
+as a queue failure.
 
 A fresh prompt retains its submitted provider/model through
 `POST /agent/v1/runs/selected`. The Host stores that intent atomically with
@@ -738,9 +753,12 @@ answer that replaces it never reads as the same answer printed twice.
 One flat card frame backs every popup — picker, approval, workspace trust,
 secret key, document window and slash suggestions — with the title and its
 dismiss hint, a dim header rule, the filled selection bar, footer keys and a
-scroll position when a list is clipped. The session card switches on Enter and
-deletes behind a confirm on Delete, moving off the open session when it is the
-one removed. Reasoning uses the same
+scroll position when a list is clipped.
+The floating picker/approval/secret host is measured to the composed card, so the
+welcome sky outside the card stays visible instead of being masked by an opaque
+band the width and height of the old modal envelope. The session card switches on Enter and
+deletes behind a confirm on Delete, returning to the empty landing when the open
+session itself is removed; the first prompt then creates a fresh session lazily. Reasoning uses the same
 bounded collapsed-detail owner without repeated feed summaries. Web tool detail
 includes queries up to 160 characters or fetched host names. Detail passes the
 existing known-secret redactor before the public activity sink; URL credentials,

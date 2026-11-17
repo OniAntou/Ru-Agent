@@ -85,7 +85,7 @@ public sealed partial class RetainedContinuationTests
         engine.SetSubmissionSnapshotFactory(_ => throw new InvalidOperationException("must not take draft ownership"));
         view.InputText = command; engine.Submit();
         Assert.Equal(command, view.InputText); Assert.Empty(engine.History);
-        Assert.Contains("unknown_command", errors.ToString());
+        Assert.Contains("unknown command", errors.ToString());
         engine.Stop(); await engine.Completion;
     }
 }

@@ -75,6 +75,12 @@ run this session tracks that is still running or waiting on your approval or ans
 interrupts a running turn. A run that is still going is attached from another terminal with
 `ru agent attach <run-id>` and abandoned with `ru agent cancel <run-id>`.
 
+Deleting the conversation you have open returns to the empty landing instead of opening
+another saved conversation. Your next prompt starts a new session, so no empty
+conversation is created in between. While a turn is running, prompts are queued, or an
+approval/question is pending, Ru refuses a session or model change and says which of those
+is blocking it.
+
 ## What the terminal UI leaves to the desktop app
 
 The desktop app has dedicated views for activity, plans, file changes and the file tree; the terminal UI

@@ -282,7 +282,7 @@ public sealed partial class ChatUsageReaderTests
         using var commands = new AgentCommands(Session, http, output, errors, reader);
         Assert.Equal(0, await commands.ChatAsync(new ChatCommand(Path.GetTempPath(), null, "standard", json, Classic: true), default));
         Assert.Contains(json ? "session_id" : "Session:", output.ToString());
-        Assert.DoesNotContain("unknown_command", errors.ToString());
+        Assert.DoesNotContain("unknown command", errors.ToString());
         Assert.All(host.Requests, request => Assert.StartsWith("GET ", request));
         if (json)
             foreach (var line in output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries))

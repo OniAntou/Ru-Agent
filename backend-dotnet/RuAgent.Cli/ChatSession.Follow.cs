@@ -426,8 +426,13 @@ public sealed partial class AgentCommands
             }
             catch (Exception ex)
             {
+                TuiDebug.Log("cancel",
+                    $"code={(ex as AgentApiException)?.ErrorCode ?? ex.GetType().Name}");
                 await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
-                await humanOut.WriteLineAsync(Tui.TuiPalette.Err($"run_cancel_failed: {ex.Message}")).ConfigureAwait(false);
+                await humanOut.WriteLineAsync(Tui.TuiPalette.Err(
+                        "could not stop the run · "
+                        + ChatDisplayText.Sanitize(CliErrorText.ShortMessage(ex.Message), 200)))
+                    .ConfigureAwait(false);
                 await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"run {cancelRunId} may still be running; release it with 'ru agent cancel {cancelRunId}'.")).ConfigureAwait(false);
             }
         }

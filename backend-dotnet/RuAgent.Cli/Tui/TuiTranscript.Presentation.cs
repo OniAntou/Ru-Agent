@@ -25,9 +25,10 @@ public sealed partial class TuiTranscript
             return;
         }
         var info = TuiFailureCatalog.For(errorCode ?? _terminalCode ?? "run_failed");
+        TuiDebug.Log("failure", $"code={info.Code}");
         _surface.AppendPresentation(new TranscriptRunBuilder().Append("  ✗ ", TuiToken.Err)
             .Append($"{TuiStatusLine.FormatElapsed(seconds)} · ", TuiToken.Meta).Append(info.Title, TuiToken.Err)
-            .Append($" ({info.Code})", TuiToken.Meta).Line(TranscriptRole.Meta));
+            .Line(TranscriptRole.Meta));
         _surface.AppendPresentation(TranscriptLine.Plain("    " + info.Cause, TranscriptRole.Meta, TuiToken.Line));
         _surface.AppendPresentation(TranscriptLine.Plain("    " + info.Fix, TranscriptRole.Meta, TuiToken.Line));
     }

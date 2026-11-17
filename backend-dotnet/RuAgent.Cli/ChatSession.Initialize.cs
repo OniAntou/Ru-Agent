@@ -60,9 +60,7 @@ public sealed partial class AgentCommands
                 }
                 else if (replay.Error is not null)
                 {
-                    sessionRenderer.Note(
-                        $"session_replay_unavailable: {replay.Error}",
-                        Tui.TuiToken.Warn);
+                    sessionRenderer.Note(replay.Error, Tui.TuiToken.Warn);
                     sessionRenderer.Flush();
                 }
             }

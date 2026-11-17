@@ -28,6 +28,7 @@ public sealed partial class TgChatWindow : Window
     private string? _commandPaletteDraft;
     private int _commandPaletteDraftCursor;
     private TgPanelHost? _panel;
+    private Func<int, int, IReadOnlyList<CardLine>>? _panelCard;
     private TgDocumentPanel? _document;
     private ApprovalPrompt? _approval;
     private ChoiceList? _choices;
@@ -127,6 +128,10 @@ public sealed partial class TgChatWindow : Window
     public bool IsSlashDropdownOpen => _slashDropdown?.SuperView is not null;
     public bool IsCommandPaletteOpen => _commandPaletteView?.SuperView is not null;
     public bool IsModalPanelOpen => _panel?.SuperView is not null || _questionPanel?.SuperView is not null;
+
+    /// <summary>The floating card host's laid-out size, for panel parity tests.</summary>
+    internal (int Width, int Height)? ModalPanelSize =>
+        _panel?.SuperView is null ? null : (_panel.Viewport.Width, _panel.Viewport.Height);
     internal bool HasBlockingOverlay => IsModalPanelOpen || IsDocumentPanelOpen || IsCommandPaletteOpen;
     internal SemaphoreSlim ModalRequestGate { get; } = new(1, 1);
     public string CommandPaletteQuery => _commandPalette.Query;
@@ -433,7 +438,7 @@ public sealed partial class TgChatWindow : Window
         _choices = null;
         _secretPanel = false;
         ShowPanel((width, height) => TuiCard.ComposeFitting(
-            TuiCard.ComputeWidth(width),
+            width,
             height,
             prompt.Title,
             "esc",
@@ -465,7 +470,7 @@ public sealed partial class TgChatWindow : Window
             if (lastCard is not null && lastLayout == layout) return lastCard;
 
             lastLayout = layout;
-            lastCard = TuiCard.ComposeListFitting(TuiCard.ComputeWidth(width), height, safeTitle, "esc",
+            lastCard = TuiCard.ComposeListFitting(width, height, safeTitle, "esc",
                 CardItems(list), list.Selected, PickerFooter(list),
                 list.Filter.Length == 0 ? SearchHint : $"{SearchHint} {list.Filter}");
             return lastCard;
@@ -502,7 +507,7 @@ public sealed partial class TgChatWindow : Window
         _secret.Clear();
         _secretProvider = string.IsNullOrWhiteSpace(providerDisplay) ? "api key" : providerDisplay.Trim();
         ShowPanel((width, height) => TuiCard.ComposeFitting(
-            TuiCard.ComputeWidth(width),
+            width,
             height,
             KeyInputPanel.CardTitle(_secretProvider),
             "esc",
@@ -518,6 +523,9 @@ public sealed partial class TgChatWindow : Window
     {
         Transcript.Clear();
         Header.UpdateUsage(0, null, null);
+        // A switch/new chat starts a fresh surface: a command hint left from the previous
+        // session (an old refusal or error) must not sit under the landing composer.
+        Hints.ClearFeedback();
     }
 
     public void HidePanel()
@@ -553,6 +561,12 @@ public sealed partial class TgChatWindow : Window
             }
 
             FocusComposer();
+        }
+
+        // Back on the landing composer, the panel that just closed owns no feedback row.
+        if (Landing.Visible)
+        {
+            Hints.ClearFeedback();
         }
 
         SetNeedsDraw();
@@ -644,6 +658,13 @@ public sealed partial class TgChatWindow : Window
             var driver = _resizeApp?.Driver ?? App?.Driver;
             TgChatLayout.Apply(this, driver?.Cols ?? Viewport.Width, driver?.Rows ?? Viewport.Height);
             Layout();
+            if (_panel?.SuperView is not null)
+            {
+                // The card is measured for the current viewport; keep the host exactly card-sized
+                // after a resize so no opaque band grows around a floating panel.
+                FitPanelToCard();
+            }
+
             SetNeedsDraw();
         }
         finally
@@ -664,10 +685,11 @@ public sealed partial class TgChatWindow : Window
         {
             _panel = new TgPanelHost();
             _panel.PanelKey += OnPanelKey;
-            TgModalLayout.Apply(_panel, this, 14);
         }
 
+        _panelCard = card;
         _panel.SetCard(card);
+        FitPanelToCard();
         if (_panel.SuperView is null)
         {
             Add(_panel);
@@ -675,6 +697,39 @@ public sealed partial class TgChatWindow : Window
 
         SetNeedsDraw();
         _panel.SetFocus();
+    }
+
+    private const int PanelMaxRows = 14;
+
+    /// <summary>
+    /// Sizes the floating host to the composed card instead of the full modal envelope the
+    /// panel used to reserve. Terminal.Gui paints the host's background, so a host wider or
+    /// taller than the card left an opaque black band around it — most visible over the
+    /// welcome sky. The callers now compose at the viewport width they are given, so the
+    /// measured line width is the exact host width.
+    /// </summary>
+    private void FitPanelToCard()
+    {
+        if (_panel is null || _panelCard is null)
+        {
+            return;
+        }
+
+        var availableWidth = Math.Max(1, Viewport.Width - 4);
+        var maxRows = Math.Max(1, Math.Min(PanelMaxRows, Viewport.Height - 2));
+        var candidateWidth = Math.Max(1, TuiCard.ComputeWidth(availableWidth));
+        var lines = _panelCard(candidateWidth, maxRows);
+        if (lines.Count == 0)
+        {
+            return;
+        }
+
+        var width = Math.Max(1, lines[0].Width);
+        var height = Math.Max(1, lines.Count);
+        _panel.Width = Dim.Func(_ => width);
+        _panel.Height = Dim.Func(_ => height);
+        _panel.X = Pos.Center();
+        _panel.Y = Pos.Center();
     }
 
     private void RefreshSlashDropdown()

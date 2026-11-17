@@ -187,7 +187,8 @@ public sealed class ChatSessionWorkflowTests
 
         Assert.Equal(0, exit);
         Assert.Contains(CurrentSession, errors.ToString(), StringComparison.Ordinal);
-        Assert.Contains("session_get_failed", errors.ToString(), StringComparison.Ordinal);
+        Assert.Contains("could not load this session's history", errors.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("session_get_failed", errors.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("/sessions/sess_missing/rewind", requests, StringComparer.Ordinal);
     }
 
@@ -241,7 +242,7 @@ public sealed class ChatSessionWorkflowTests
         Assert.Equal(0, exit);
         Assert.Contains($"/agent/v1/sessions/{targetSession}/runs?limit=100", requests);
         Assert.Equal(1, requests.Count(path => path == $"/agent/v1/runs/{ActiveRun}"));
-        Assert.Contains("unknown_command: /follow", errors.ToString(), StringComparison.Ordinal);
+        Assert.Contains("unknown command /follow", errors.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

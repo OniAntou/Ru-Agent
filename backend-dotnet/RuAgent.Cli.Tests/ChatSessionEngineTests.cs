@@ -100,12 +100,61 @@ public sealed class ChatSessionEngineTests
         view.InputText = "second"; engine.Submit();
         view.InputText = "/model another"; engine.Submit();
         Assert.Equal("/model another", view.InputText);
-        Assert.Contains("finish queued prompts", diagnostics.ToString());
+        Assert.Contains("a run is still active", diagnostics.ToString());
         Assert.Equal(["first"], seen);
         release.TrySetResult();
         await engine.WaitForIdleAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(["first", "second"], seen);
         Assert.False(engine.IsBusy);
+        engine.Stop(); await engine.Completion;
+    }
+
+    [Fact]
+    public async Task State_change_while_a_local_command_owns_the_surface_is_dropped()
+    {
+        using var diagnostics = new StringWriter();
+        var view = new PlainChatView(diagnostics, ""); var engine = new ChatSessionEngine(view);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.SetStateChangingCommandClassifier(line => line.StartsWith("/model", StringComparison.Ordinal));
+        engine.SetLocalCommandClassifier(line => line.StartsWith("/sessions", StringComparison.Ordinal));
+        engine.SetPromptHandler(async (line, ct) =>
+        {
+            if (line == "/sessions")
+            {
+                entered.TrySetResult();
+                await release.Task.WaitAsync(ct);
+            }
+        });
+
+        view.InputText = "/sessions";
+        engine.Submit();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // A stray submit while the local surface owns the input: no misleading busy hint.
+        view.InputText = "/model another";
+        engine.Submit();
+        Assert.Equal("/model another", view.InputText);
+        Assert.DoesNotContain("a run is still active", diagnostics.ToString());
+
+        release.TrySetResult();
+        await engine.WaitForIdleAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+        engine.Stop(); await engine.Completion;
+    }
+
+    [Fact]
+    public async Task Refused_state_change_names_the_paused_queue_instead_of_a_run()
+    {
+        using var diagnostics = new StringWriter();
+        var view = new PlainChatView(diagnostics, ""); var engine = new ChatSessionEngine(view);
+        engine.SetStateChangingCommandClassifier(line => line.StartsWith("/new", StringComparison.Ordinal));
+        engine.PauseQueuedSubmissions();
+
+        view.InputText = "/new";
+        engine.Submit();
+
+        Assert.Contains("pending approval, question or retry", diagnostics.ToString());
+        Assert.DoesNotContain("a run is still active", diagnostics.ToString());
         engine.Stop(); await engine.Completion;
     }
 

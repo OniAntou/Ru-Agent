@@ -35,11 +35,13 @@ internal static class ChatSessionReplay
         }
         catch (AgentApiException ex)
         {
-            return Failed($"{ex.ErrorCode}: {ChatDisplayText.Sanitize(CliErrorText.ShortMessage(ex.Message), CliErrorText.MaxMessageChars)}");
+            Tui.TuiDebug.Log("replay", $"code={ex.ErrorCode}");
+            return Failed(HumanFailure("could not load this session's history", ex.Message));
         }
         catch (Exception ex)
         {
-            return Failed($"session_get_failed: {ChatDisplayText.Sanitize(CliErrorText.ShortMessage(ex.Message), CliErrorText.MaxMessageChars)}");
+            Tui.TuiDebug.Log("replay", $"exception={ex.GetType().Name}");
+            return Failed(HumanFailure("could not load this session's history", ex.Message));
         }
 
         return Parse(root);
@@ -77,6 +79,19 @@ internal static class ChatSessionReplay
     }
 
     private static ChatSessionReplayResult Failed(string error) => new([], 0, 0, null, error);
+
+    /// <summary>
+    /// One user sentence for a failed read, never a bare wire code. The bounded server
+    /// message is kept when it says something; otherwise the sentence names the next step.
+    /// </summary>
+    private static string HumanFailure(string what, string? detail)
+    {
+        var message = ChatDisplayText.Sanitize(
+            CliErrorText.ShortMessage(detail), CliErrorText.MaxMessageChars).Trim();
+        return message.Length == 0 || message == "request failed"
+            ? what + " · send a message or start a new session, then retry"
+            : what + " · " + message;
+    }
 
     private static string? ReadTitle(JsonElement root)
     {

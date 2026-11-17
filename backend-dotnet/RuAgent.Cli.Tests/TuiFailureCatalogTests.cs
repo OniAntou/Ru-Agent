@@ -92,12 +92,13 @@ public sealed class TuiFailureCatalogTests : IDisposable
     }
 
     [Fact]
-    public void UnknownCode_NamesItselfAndPointsAtLogs()
+    public void UnknownCode_GetsAHumanSentenceAndLogPointer()
     {
         var info = TuiFailureCatalog.For("some_future_code");
 
         Assert.Equal("some_future_code", info.Code);
-        Assert.Contains("some_future_code", info.Cause, StringComparison.Ordinal);
+        Assert.Equal("Run stopped", info.Title);
+        Assert.DoesNotContain("some_future_code", info.Cause, StringComparison.Ordinal);
         Assert.Contains("/status", info.Fix, StringComparison.Ordinal);
     }
 
@@ -121,12 +122,16 @@ public sealed class TuiFailureCatalogTests : IDisposable
     [InlineData("policy_denied", "policy")]
     [InlineData("context_limit_reached", "context")]
     [InlineData("workspace_changed", "changed")]
+    [InlineData("checkpoint_incomplete", "checkpoint")]
+    [InlineData("checkpoint_timeout", "checkpoint")]
+    [InlineData("subagent_cancel_incomplete", "subagent")]
+    [InlineData("agent_create_outcome_unknown", "run")]
     public void NewlyCatalogedCodes_GetTheirOwnCopyInsteadOfTheFallback(string code, string marker)
     {
         var info = TuiFailureCatalog.For(code);
 
         Assert.Equal(code, info.Code);
-        Assert.NotEqual("Error", info.Title);
+        Assert.NotEqual("Run stopped", info.Title);
         Assert.Contains(marker, $"{info.Title} {info.Cause} {info.Fix}", StringComparison.OrdinalIgnoreCase);
     }
 }

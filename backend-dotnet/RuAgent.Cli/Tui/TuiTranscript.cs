@@ -681,16 +681,21 @@ public sealed partial class TuiTranscript
             + TuiPalette.Paint(string.Join(" · ", parts), TuiToken.Meta);
     }
 
-    /// <summary>Failure card: title plus cause and fix lines from the failure catalog.</summary>
+    /// <summary>Failure card: title plus cause and fix lines from the shared failure catalog.</summary>
+    /// <remarks>
+    /// The wire code is a machine token; the card shows the cataloged sentence and keeps the
+    /// token in <see cref="TuiDebug"/> diagnostics only. An uncataloged code resolves to a
+    /// generic sentence, so no raw token reaches the transcript.
+    /// </remarks>
     public static IReadOnlyList<string> ComposeFailure(double seconds, string code)
     {
         var info = TuiFailureCatalog.For(code);
+        TuiDebug.Log("failure", $"code={info.Code}");
         return
         [
             TuiPalette.Paint("  ✗ ", TuiToken.Err)
             + TuiPalette.Paint($"{TuiStatusLine.FormatElapsed(seconds)} · ", TuiToken.Meta)
-            + TuiPalette.Paint(info.Title, TuiToken.Err)
-            + TuiPalette.Paint($" ({info.Code})", TuiToken.Meta),
+            + TuiPalette.Paint(info.Title, TuiToken.Err),
             TuiPalette.Paint("    " + info.Cause, TuiToken.Line),
             TuiPalette.Paint("    " + info.Fix, TuiToken.Line),
         ];

@@ -56,7 +56,7 @@ public sealed class RemovedChatCommandTests
         var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
 
         Assert.Equal(0, exit);
-        Assert.Contains("unknown_command: " + slashCommand, errors.ToString(), StringComparison.Ordinal);
+        Assert.Contains("unknown command " + slashCommand, errors.ToString(), StringComparison.Ordinal);
         Assert.Contains("sess_123", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("Goodbye!", output.ToString(), StringComparison.Ordinal);
         // Opening an existing chat activates its session; removed commands must add no mutations.

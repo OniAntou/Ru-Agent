@@ -189,7 +189,9 @@ public sealed class ApprovalPromptTests
 
         var text = string.Join("\n", prompt.Render(80).Select(TuiText.Strip));
 
-        Assert.Contains("approval · external_directory_required", text, StringComparison.Ordinal);
+        // The card names the request in words; the ask's wire token stays out of the title.
+        Assert.Contains("approval · Ru needs to access files in a folder", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("external_directory_required", text, StringComparison.Ordinal);
         Assert.Contains("1 · once", text, StringComparison.Ordinal);
         Assert.Contains("2 · deny", text, StringComparison.Ordinal);
         Assert.Contains("3 · folder", text, StringComparison.Ordinal);

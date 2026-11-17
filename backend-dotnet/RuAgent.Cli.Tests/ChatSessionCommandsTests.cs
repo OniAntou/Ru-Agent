@@ -74,7 +74,7 @@ public sealed class ChatSessionCommandsTests
     }
 
     [Fact]
-    public async Task Deleting_the_open_session_moves_to_the_newest_remaining_one()
+    public async Task Deleting_the_open_session_returns_to_the_landing_instead_of_switching()
     {
         var fake = new FakeSessions();
         fake.Sessions.Add(new ChatSessionChoice("s1", "First", 2, "ws", null));
@@ -87,11 +87,14 @@ public sealed class ChatSessionCommandsTests
         await commands.TryHandleAsync("/sessions", null, CancellationToken.None);
 
         Assert.Equal(["s1"], fake.DeleteAttempts);
-        Assert.Equal(["s2"], fake.Switched);
+        // The surviving conversation is not opened behind the operator's back.
+        Assert.Empty(fake.Switched);
+        Assert.Equal(1, fake.LeftToLanding);
+        Assert.Equal(0, fake.Created);
     }
 
     [Fact]
-    public async Task Deleting_the_last_session_starts_a_fresh_one()
+    public async Task Deleting_the_last_session_returns_to_an_empty_chat()
     {
         var fake = new FakeSessions();
         fake.Sessions.Add(new ChatSessionChoice("s1", "First", 2, "ws", null));
@@ -102,8 +105,10 @@ public sealed class ChatSessionCommandsTests
 
         await commands.TryHandleAsync("/sessions", null, CancellationToken.None);
 
-        Assert.Equal(1, fake.Created);
-        Assert.Equal(["new-1"], fake.Switched);
+        // No replacement session is created: the landing creates one lazily on the next prompt.
+        Assert.Equal(0, fake.Created);
+        Assert.Equal(1, fake.LeftToLanding);
+        Assert.Empty(fake.Switched);
     }
 
     [Fact]
@@ -225,6 +230,7 @@ public sealed class ChatSessionCommandsTests
         public string Current { get; set; } = "s1";
         public bool Busy { get; set; }
         public int Created { get; private set; }
+        public int LeftToLanding { get; private set; }
         public int SessionPickerCalls { get; private set; }
 
         public ChatSessionCommands Build(bool withSessionPicker = true, bool withPicker = true)
@@ -274,6 +280,11 @@ public sealed class ChatSessionCommandsTests
                         return Task.FromResult(result);
                     }
                     : null,
+                _ =>
+                {
+                    LeftToLanding++;
+                    return Task.CompletedTask;
+                },
                 (writer, line) =>
                 {
                     (ReferenceEquals(writer, error) ? Errors : Output).Add(line);

@@ -17,7 +17,9 @@ public partial class ChatSessionEngine
     private const string QueueFullHint = "queue full · enter retries";
     private const string SubmissionTooLargeHint = "submission too large · shorten or detach files";
     private const string SubmissionUnavailableHint = "cannot queue this command with pending attachments";
-    private const string StateChangeBusyHint = "finish queued prompts before changing session or model";
+    private const string StateChangeRunHint = "a run is still active · wait for it to finish or press esc before changing session or model";
+    private const string StateChangeQueuedHint = "prompts are still queued · wait for them to start before changing session or model";
+    private const string StateChangePausedHint = "finish the pending approval, question or retry before changing session or model";
     private const long MaxQueuedSubmissionBytes = 32L * 1024 * 1024;
     private const int MaxSubmissionPromptChars = 16_000;
 
@@ -229,7 +231,7 @@ public partial class ChatSessionEngine
         if (ChatCommandCatalog.IsRemovedCommand(line))
         {
             var command = line.TrimStart().Split(' ', 2)[0].ToLowerInvariant();
-            _view.ShowFeedback($"unknown_command: {command}. Type /help for assistance.", true);
+            _view.ShowFeedback($"unknown command {command} · type /help for the command list", true);
             return;
         }
         if (TrySubmitTaskControl(line)) return;
@@ -254,17 +256,37 @@ public partial class ChatSessionEngine
         var isRepairCommandWhilePaused = false;
         lock (_queueGate)
         {
-            if (retainedContinuation && _busy)
+            var busyNow = _busy;
+            var queuedNow = _queued.Count;
+            var pausedNow = _queuePaused;
+            var localCommandActive = _localCommandActive;
+            if (retainedContinuation && busyNow)
             {
                 _view.ShowFeedback("run recovery is already active · wait or cancel it", true);
                 return;
             }
-            isRepairCommandWhilePaused = _queuePaused && !_busy && (ChatSubmissionSnapshot.IsPausedControlCommand(line) || retainedContinuation);
-            if ((_busy || _queued.Count > 0 || _queuePaused)
+            isRepairCommandWhilePaused = pausedNow && !busyNow && (ChatSubmissionSnapshot.IsPausedControlCommand(line) || retainedContinuation);
+            if ((busyNow || queuedNow > 0 || pausedNow)
                 && !isRepairCommandWhilePaused
                 && _stateChangingCommandClassifier?.Invoke(line) is true)
             {
-                _view.ShowFeedback(StateChangeBusyHint, true);
+                if (busyNow && localCommandActive)
+                {
+                    // A local command owns the surface (a picker, a report or a document
+                    // panel). A second submit here is normally a keystroke meant for that
+                    // surface; answering it as a refused state change read as a failure of
+                    // the operation the panel was performing (for example deleting a
+                    // session). Drop it instead of showing a misleading hint.
+                    TuiDebug.Log("submit", "ignored state change submitted while a local command is active");
+                    return;
+                }
+
+                var hint = busyNow ? StateChangeRunHint
+                    : pausedNow ? StateChangePausedHint
+                    : StateChangeQueuedHint;
+                TuiDebug.Log("submit",
+                    $"refused state change: busy={busyNow} queued={queuedNow} paused={pausedNow}");
+                _view.ShowFeedback(hint, true);
                 return;
             }
         }

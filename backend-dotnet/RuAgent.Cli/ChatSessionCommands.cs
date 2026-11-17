@@ -12,6 +12,7 @@ internal sealed class ChatSessionCommands
     private readonly Func<ChoiceList, CancellationToken, Task<string?>>? _picker;
     private readonly Func<ChoiceList, CancellationToken, Task<SessionPickerOutcome>>? _sessionPicker;
     private readonly Func<string, CancellationToken, Task<SessionDeleteResult>>? _deleteSession;
+    private readonly Func<CancellationToken, Task>? _leaveSession;
     private readonly Func<TextWriter, string, Task> _writeLine;
     private readonly TextWriter _output;
     private readonly TextWriter _error;
@@ -26,6 +27,7 @@ internal sealed class ChatSessionCommands
         Func<ChoiceList, CancellationToken, Task<string?>>? picker,
         Func<ChoiceList, CancellationToken, Task<SessionPickerOutcome>>? sessionPicker,
         Func<string, CancellationToken, Task<SessionDeleteResult>>? deleteSession,
+        Func<CancellationToken, Task>? leaveSession,
         Func<TextWriter, string, Task> writeLine,
         TextWriter output,
         TextWriter error,
@@ -39,6 +41,7 @@ internal sealed class ChatSessionCommands
         _picker = picker;
         _sessionPicker = sessionPicker;
         _deleteSession = deleteSession;
+        _leaveSession = leaveSession;
         _writeLine = writeLine;
         _output = output;
         _error = error;
@@ -246,21 +249,24 @@ internal sealed class ChatSessionCommands
     }
 
     /// <summary>
-    /// The open session was just deleted: move to the newest remaining one, or start a fresh
-    /// session when none is left. Nothing else is left to switch to, so the picker closes.
+    /// The open session was just deleted: return to the empty landing. Deleting a
+    /// conversation must not silently jump into another one; the operator stays on the
+    /// landing and picks a saved conversation explicitly (or the first prompt starts a
+    /// fresh one, created lazily). An empty replacement session would only be an extra
+    /// "new conversation" row to delete later.
     /// </summary>
     private async Task MoveOffDeletedSessionAsync(CancellationToken cancellationToken)
     {
-        var remaining = await ReadChoicesOrEmptyAsync(null, cancellationToken).ConfigureAwait(false);
-        var next = remaining.FirstOrDefault();
         try
         {
-            if (next is not null)
+            if (_leaveSession is not null)
             {
-                await _switchSession(next.Id).ConfigureAwait(false);
+                await _leaveSession(cancellationToken).ConfigureAwait(false);
                 return;
             }
 
+            // Line I/O has no delete card, but a host without the landing callback keeps a
+            // usable chat rather than stranding it.
             var created = await _createSession(cancellationToken).ConfigureAwait(false);
             await _switchSession(created).ConfigureAwait(false);
         }

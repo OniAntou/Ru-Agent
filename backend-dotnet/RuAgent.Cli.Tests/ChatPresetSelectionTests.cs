@@ -167,7 +167,7 @@ public sealed class ChatPresetSelectionTests
         Assert.DoesNotContain("/agent/v1/runs", handler.Posts);
         Assert.DoesNotContain("/agent/v1/policies", handler.Posts);
         if (error is not null) Assert.Contains(error, errors.ToString());
-        else Assert.DoesNotContain("unknown_command", errors.ToString());
+        else Assert.DoesNotContain("unknown command", errors.ToString());
     }
 
     private sealed class ReadHandler : HttpMessageHandler

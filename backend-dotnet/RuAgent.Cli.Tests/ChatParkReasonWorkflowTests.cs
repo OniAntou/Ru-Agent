@@ -167,8 +167,8 @@ public sealed class ChatParkReasonWorkflowTests
         Assert.Equal(0, exit);
         Assert.True(replayRequested);
         var combined = Tui.TuiText.Strip(outWriter.ToString() + errWriter.ToString());
-        if (includeReason) Assert.Contains("provider_rate_limited", combined);
-        else Assert.DoesNotContain("provider_rate_limited", combined);
+        if (includeReason) Assert.Contains("rate-limiting", combined);
+        else Assert.DoesNotContain("rate-limiting", combined);
         Assert.DoesNotContain("waiting_user · resume", combined);
         Assert.False(cancelPosted, "a parked run is the user's to resume; the turn must not cancel it");
         var output = outWriter.ToString();

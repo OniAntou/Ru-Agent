@@ -157,7 +157,7 @@ public sealed class ParkRecoveryRegressionTests
         var errors = new StringWriter();
         using var commands = new AgentCommands(Session(), http, new StringWriter(), errors, new StringReader(command + "\n/exit\n"));
         Assert.Equal(0, await commands.ChatAsync(new ChatCommand(Path.GetTempPath(), SessionId, "standard", false), default));
-        Assert.Contains("unknown_command: " + command, errors.ToString());
+        Assert.Contains("unknown command " + command, errors.ToString());
         Assert.Empty(mutations);
     }
 

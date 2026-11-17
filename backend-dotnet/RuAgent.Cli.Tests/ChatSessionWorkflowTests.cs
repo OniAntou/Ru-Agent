@@ -324,6 +324,33 @@ public sealed class ChatSessionWorkflowTests
         "\"event_type\":\"approval.requested\",\"occurred_at\":\"2026-10-04T00:00:00Z\"," +
         "\"status\":\"" + status + "\",\"safe_summary\":\"" + summary + "\",\"approval_id\":\"" + approvalId + "\"}";
 
+    [Theory]
+    [InlineData(30, "just now")]
+    [InlineData(120, "2m ago")]
+    [InlineData(7_200, "2h ago")]
+    [InlineData(172_800, "2d ago")]
+    public void Session_age_is_relative_and_compact(int secondsAgo, string expected)
+    {
+        var now = new DateTimeOffset(2026, 11, 18, 9, 0, 0, TimeSpan.Zero);
+        Assert.Equal(expected, SessionRelativeTime.Format(now.AddSeconds(-secondsAgo), now));
+    }
+
+    [Fact]
+    public void Session_card_searches_workspace_and_shows_a_relative_age()
+    {
+        var updatedAt = DateTimeOffset.UtcNow.AddHours(-2).AddMinutes(-5).ToString("O");
+        using var document = System.Text.Json.JsonDocument.Parse(
+            $"{{\"sessions\":[{{\"id\":\"sess_one\",\"title\":\"Fix lock\",\"message_count\":4,\"workspace_label\":\"Repo Alpha\",\"updated_at\":\"{updatedAt}\"}}]}}");
+        var choice = Assert.Single(ChatSessionWorkflow.Filter(document.RootElement, "repo alpha"));
+        Assert.Equal("Repo Alpha", choice.WorkspaceLabel);
+        Assert.NotNull(choice.UpdatedAt);
+        Assert.Equal(2026, choice.UpdatedAt!.Value.Year);
+        var list = ChatSessionWorkflow.ToChoiceList([choice], null);
+        Assert.Contains("4 msg", list.Items[0].Detail, StringComparison.Ordinal);
+        Assert.Contains("2h ago", list.Items[0].Detail, StringComparison.Ordinal);
+        Assert.Contains("Repo Alpha", list.Items[0].Detail, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void SessionChoices_StripTerminalControlsAndIgnoreMalformedMessageCounts()
     {

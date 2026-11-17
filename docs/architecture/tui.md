@@ -270,6 +270,8 @@ lexical styles. Verified tables retain typed inline runs through alignment, wrap
 and the narrow label/value layout; cells receive data tone before wrapping so tokens
 split across display rows keep their paint. Plain table output serializes the same
 layout without terminal attributes. None of this changes model context or tool policy.
+A closed fence ends with a dim rule naming its language and line count, so a long block
+visibly finishes instead of simply stopping (an empty bare fence still emits nothing).
 Its
 `StreamingParagraphParser` checkpoints settled top-level inline content at whitespace
 boundaries, using Markdig source spans rather than pairing Markdown delimiters itself.
@@ -761,11 +763,15 @@ One flat card frame backs every popup — picker, approval, workspace trust,
 secret key, document window and slash suggestions — with the title and its
 dismiss hint, a dim header rule, the filled selection bar, footer keys and a
 scroll position when a list is clipped.
-The floating picker/approval/secret host is measured to the composed card, so the
+Resize reads the new terminal rectangle from the screen-changed event and forces one full
+repaint, so a running turn no longer keeps right-anchored header text and footer glyphs
+from the previous width after the terminal grows. The floating picker/approval/secret host is measured to the composed card, so the
 welcome sky outside the card stays visible instead of being masked by an opaque
 band the width and height of the old modal envelope. The session card switches on Enter and
 deletes behind a confirm on Delete, returning to the empty landing when the open
-session itself is removed; the first prompt then creates a fresh session lazily. Reasoning uses the same
+session itself is removed; the first prompt then creates a fresh session lazily.
+Rows carry a current-session bullet, relative age, `empty`/message count and workspace;
+typing filters across title, id and workspace. Reasoning uses the same
 bounded collapsed-detail owner without repeated feed summaries. Web tool detail
 includes queries up to 160 characters or fetched host names. Detail passes the
 existing known-secret redactor before the public activity sink; URL credentials,

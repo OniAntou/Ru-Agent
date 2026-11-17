@@ -49,7 +49,8 @@ public sealed class TuiMarkdownTests
         Assert.Contains("var x = 1;", code, StringComparison.Ordinal);
         Assert.Contains("│", code, StringComparison.Ordinal);
 
-        Assert.Empty(markdown.RenderLine("```", 80));
+        var closed = Assert.Single(markdown.RenderLine("```", 80));
+        Assert.Contains("csharp · 1 line", TuiText.Strip(closed), StringComparison.Ordinal);
         Assert.False(markdown.InFence);
     }
 

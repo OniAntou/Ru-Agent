@@ -124,7 +124,8 @@ public sealed class StructuredTranscriptTests
         Assert.Equal(one.Select(row => row.Text), markdown.PreviewPresentation("const string x = \"hello\";", 80).Select(row => row.Text));
         Assert.StartsWith("  1 │ ", Assert.Single(markdown.RenderPresentation("const string x = \"hello\";", 80)).Text);
         Assert.StartsWith("  2 │ ", Assert.Single(markdown.RenderPresentation("return 42;", 80)).Text);
-        Assert.Empty(markdown.RenderPresentation("```", 80));
+        var closed = Assert.Single(markdown.RenderPresentation("```", 80));
+        Assert.Contains("csharp · 2 lines", closed.Text, StringComparison.Ordinal);
         Assert.False(markdown.InFence);
         Assert.Contains(one.Single().Runs, run => run.Text == "const" && run.Token == TuiToken.Brand2);
         Assert.Contains(one.Single().Runs, run => run.Text == "\"hello\"" && run.Token == TuiToken.Ok);

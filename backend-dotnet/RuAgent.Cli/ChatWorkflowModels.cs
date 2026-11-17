@@ -6,10 +6,71 @@ using RuAgent.Client;
 
 namespace RuAgent.Cli;
 
-internal sealed record ChatSessionChoice(string Id, string Title, int MessageCount, string WorkspaceLabel, string? WorkspacePath)
+internal sealed record ChatSessionChoice(
+    string Id,
+    string Title,
+    int MessageCount,
+    string WorkspaceLabel,
+    string? WorkspacePath,
+    DateTimeOffset? UpdatedAt = null)
 {
-    public string Display =>
-        $"{(string.IsNullOrWhiteSpace(Title) ? "Untitled" : Title)} · {MessageCount} messages · {WorkspaceLabel} · {Id}";
+    public string Display
+    {
+        get
+        {
+            var title = string.IsNullOrWhiteSpace(Title) ? "Untitled" : Title;
+            var messages = MessageCount == 0 ? "empty" : $"{MessageCount} messages";
+            var updated = SessionRelativeTime.Format(UpdatedAt);
+            var activity = updated is null ? string.Empty : $" · {updated}";
+            return $"{title} · {messages} · {WorkspaceLabel}{activity} · {Id}";
+        }
+    }
+}
+
+/// <summary>
+/// The compact age shown beside a saved session. Relative copy keeps the card readable while
+/// still telling the operator which conversation is recent; absolute dates would eat the
+/// right-hand detail column.
+/// </summary>
+internal static class SessionRelativeTime
+{
+    public static string? Format(DateTimeOffset? value, DateTimeOffset? now = null)
+    {
+        if (value is not { } updated)
+        {
+            return null;
+        }
+
+        var delta = (now ?? DateTimeOffset.UtcNow) - updated;
+        if (delta < TimeSpan.Zero)
+        {
+            delta = TimeSpan.Zero;
+        }
+
+        if (delta < TimeSpan.FromMinutes(1))
+        {
+            return "just now";
+        }
+
+        if (delta < TimeSpan.FromHours(1))
+        {
+            return $"{Math.Max(1, (int)delta.TotalMinutes)}m ago";
+        }
+
+        if (delta < TimeSpan.FromDays(1))
+        {
+            return $"{Math.Max(1, (int)delta.TotalHours)}h ago";
+        }
+
+        if (delta < TimeSpan.FromDays(7))
+        {
+            return $"{Math.Max(1, (int)delta.TotalDays)}d ago";
+        }
+
+        return delta < TimeSpan.FromDays(365)
+            ? updated.ToLocalTime().ToString("MMM d", CultureInfo.InvariantCulture)
+            : updated.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.InvariantCulture);
+    }
 }
 
 /// <summary>
@@ -147,7 +208,9 @@ internal static class ChatSessionWorkflow
 
             if (!string.IsNullOrWhiteSpace(normalizedQuery)
                 && !choice.Id.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase)
-                && !choice.Title.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
+                && !choice.Title.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase)
+                && !choice.WorkspaceLabel.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase)
+                && (choice.WorkspacePath?.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase) != true))
             {
                 continue;
             }
@@ -160,20 +223,30 @@ internal static class ChatSessionWorkflow
 
     public static ChoiceList ToChoiceList(IReadOnlyList<ChatSessionChoice> sessions, string? currentSessionId)
     {
-        // The card shows the title left and the identity right: a session is told apart by
-        // its title plus how much it holds, not by a 60-character one-line dump.
-        var items = sessions.Select(session => new ChoiceItem(
-            string.Equals(session.Id, currentSessionId, StringComparison.Ordinal)
-                ? $"{(string.IsNullOrWhiteSpace(session.Title) ? "Untitled" : session.Title)} (current)"
-                : string.IsNullOrWhiteSpace(session.Title) ? "Untitled" : session.Title,
-            $"{session.MessageCount} msg · {session.WorkspaceLabel}",
-            session.Id)).ToArray();
+        // The card shows the title left and the three facts that tell two same-titled
+        // conversations apart on the right: how much they hold, how old they are and which
+        // workspace they belong to. The current one carries a bullet so it stays visible when
+        // the filter moves the selection elsewhere.
+        var items = sessions.Select(session =>
+        {
+            var title = string.IsNullOrWhiteSpace(session.Title) ? "Untitled" : session.Title;
+            var current = string.Equals(session.Id, currentSessionId, StringComparison.Ordinal);
+            var messages = session.MessageCount == 0 ? "empty" : $"{session.MessageCount} msg";
+            var updated = SessionRelativeTime.Format(session.UpdatedAt);
+            var detail = updated is null
+                ? $"{messages} · {session.WorkspaceLabel}"
+                : $"{messages} · {updated} · {session.WorkspaceLabel}";
+            return new ChoiceItem(
+                current ? "● " + title : title,
+                detail,
+                session.Id);
+        }).ToArray();
         var selected = Array.FindIndex(items, item => string.Equals(item.Value, currentSessionId, StringComparison.Ordinal));
         return new ChoiceList(
             "sessions",
             items,
             selected < 0 ? 0 : selected,
-            "↑↓ select · enter switch · del delete · esc close");
+            "↑↓ select · enter switch · del delete · type searches · esc close");
     }
 
     private static bool TryRead(JsonElement item, out ChatSessionChoice choice)
@@ -221,7 +294,16 @@ internal static class ChatSessionWorkflow
             workspaceLabel = ChatDisplayText.Sanitize(Tui.TuiHeader.ShortenWorkspace(workspacePath, 64), 64);
         }
 
-        choice = new ChatSessionChoice(id!, title, messageCount, workspaceLabel.Length == 0 ? "workspace unknown" : workspaceLabel, workspacePath);
+        DateTimeOffset? updatedAt = null;
+        if (item.TryGetProperty("updated_at", out var updatedElement)
+            && updatedElement.ValueKind == JsonValueKind.String
+            && DateTimeOffset.TryParse(updatedElement.GetString(), CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind, out var parsedUpdated))
+        {
+            updatedAt = parsedUpdated;
+        }
+
+        choice = new ChatSessionChoice(id!, title, messageCount, workspaceLabel.Length == 0 ? "workspace unknown" : workspaceLabel, workspacePath, updatedAt);
         return true;
     }
 

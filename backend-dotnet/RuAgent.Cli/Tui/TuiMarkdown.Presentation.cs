@@ -9,7 +9,13 @@ public sealed partial class TuiMarkdown
         if (!InFence && trimmed.Length > 0
             && (FenceChars.StartsWith(trimmed, StringComparison.Ordinal)
                 || trimmed.StartsWith(FenceChars, StringComparison.Ordinal))) return [];
-        var copy = new TuiMarkdown { HighlightCode = HighlightCode, _fence = _fence, _codeLine = _codeLine };
+        var copy = new TuiMarkdown
+        {
+            HighlightCode = HighlightCode,
+            _fence = _fence,
+            _codeLine = _codeLine,
+            _fenceLanguage = _fenceLanguage,
+        };
         return copy.RenderPresentation(line, width);
     }
 
@@ -48,6 +54,28 @@ public sealed partial class TuiMarkdown
         return TuiLineKind.Paragraph;
     }
 
+    /// <summary>
+    /// The closing rule for a fenced block: the language and number of code rows it held.
+    /// Matches the classic renderer so replay and live frames tell the same story.
+    /// </summary>
+    private static IReadOnlyList<TranscriptLine> PresentationFenceFooter(string language, int lines, int width)
+    {
+        if (width <= 4 || lines == 0)
+        {
+            return [];
+        }
+
+        var count = lines == 1 ? "1 line" : $"{lines} lines";
+        var head = language.Length == 0 ? "  ── " + count + " " : "  ── " + language + " · " + count + " ";
+        var tail = Math.Max(0, width - TuiText.VisibleWidth(head));
+        return
+        [
+            new TranscriptRunBuilder()
+                .Append(head, TuiToken.Meta)
+                .Append(new string('─', tail), TuiToken.Line)
+                .Line(),
+        ];
+    }
     /// <summary>One reflowed paragraph: soft line breaks become spaces, inline styles stay.</summary>
     public IReadOnlyList<TranscriptLine> RenderParagraphPresentation(string text) =>
         [new(PresentationInline(text))];
@@ -63,10 +91,18 @@ public sealed partial class TuiMarkdown
         if (!InFence && IsTableCandidate(line)) return [TranscriptLine.Plain(line)];
         if (InFence)
         {
-            if (IsFenceLine(line)) { _fence = string.Empty; return []; }
+            if (IsFenceLine(line))
+            {
+                var footer = PresentationFenceFooter(_fenceLanguage, _codeLine, width);
+                _fence = string.Empty;
+                _codeLine = 0;
+                _fenceLanguage = string.Empty;
+                return footer;
+            }
             var code = new TranscriptRunBuilder();
+            _codeLine++;
             if (HighlightCode)
-                return [code.Append($"{++_codeLine,3} ", TuiToken.Line).Append("│ ", TuiToken.Line)
+                return [code.Append($"{_codeLine,3} ", TuiToken.Line).Append("│ ", TuiToken.Line)
                     .Append(TuiCodeHighlight.Tokenize(line)).Line()];
             return [code.Append(Gutter, TuiToken.Line).Append(line, TuiToken.Ink).Line()];
         }
@@ -74,9 +110,9 @@ public sealed partial class TuiMarkdown
         {
             _fence = FenceChars;
             _codeLine = 0;
-            var info = line.Trim().TrimStart('`').Trim();
-            if (info.Length == 0 || width <= 4) return [];
-            var head = "  ── " + ChatDisplayText.Sanitize(info, 32) + " ";
+            _fenceLanguage = FenceLanguage(line);
+            if (_fenceLanguage.Length == 0 || width <= 4) return [];
+            var head = "  ── " + _fenceLanguage + " ";
             return [new TranscriptRunBuilder().Append(head, TuiToken.Meta)
                 .Append(new string('─', Math.Max(0, width - TuiText.VisibleWidth(head))), TuiToken.Line).Line()];
         }

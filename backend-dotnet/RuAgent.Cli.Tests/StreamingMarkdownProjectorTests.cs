@@ -61,10 +61,10 @@ public sealed class StreamingMarkdownProjectorTests
         var committed = events.Where(item => !item.Preview).ToArray();
         Assert.Equal(Flatten(Reference("```cs\nfirst\nsecond\nthird\n```\n# Next\n")),
             Flatten(committed.SelectMany(item => item.Rows)));
-        var emptyIndex = Array.FindIndex(committed, item => item.Rows.Count == 0);
-        Assert.True(emptyIndex > 0);
-        Assert.Contains("third", committed[emptyIndex - 1].Rows[^1].Text);
-        Assert.Contains("Next", committed[emptyIndex + 1].Rows[0].Text);
+        Assert.Contains(committed.SelectMany(item => item.Rows),
+            row => row.Text.Contains("3 lines", StringComparison.Ordinal));
+        Assert.Contains(committed.SelectMany(item => item.Rows),
+            row => row.Text.Contains("Next", StringComparison.Ordinal));
     }
 
     [Fact]

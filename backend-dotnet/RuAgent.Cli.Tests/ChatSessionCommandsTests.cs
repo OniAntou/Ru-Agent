@@ -210,7 +210,7 @@ public sealed class ChatSessionCommandsTests
         Assert.Equal("sessions", list.Title);
         Assert.Equal("First", list.Items[0].Label);
         Assert.Equal("2 msg · D:/LLM", list.Items[0].Detail);
-        Assert.Equal("Second (current)", list.Items[1].Label);
+        Assert.Equal("● Second", list.Items[1].Label);
         Assert.Equal(1, list.Selected);
         Assert.Contains("del delete", list.Footer, StringComparison.Ordinal);
     }

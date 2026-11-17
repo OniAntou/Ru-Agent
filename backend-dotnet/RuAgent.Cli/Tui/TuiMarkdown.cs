@@ -28,6 +28,7 @@ public sealed partial class TuiMarkdown
 
     private string _fence = string.Empty;
     private int _codeLine;
+    private string _fenceLanguage = string.Empty;
 
     /// <summary>True while the stream is inside a fenced code block.</summary>
     public bool InFence => _fence.Length > 0;
@@ -51,7 +52,13 @@ public sealed partial class TuiMarkdown
         if (!InFence && trimmed.Length > 0
             && (FenceChars.StartsWith(trimmed, StringComparison.Ordinal)
                 || trimmed.StartsWith(FenceChars, StringComparison.Ordinal))) return string.Empty;
-        var copy = new TuiMarkdown { HighlightCode = HighlightCode, _fence = _fence, _codeLine = _codeLine };
+        var copy = new TuiMarkdown
+        {
+            HighlightCode = HighlightCode,
+            _fence = _fence,
+            _codeLine = _codeLine,
+            _fenceLanguage = _fenceLanguage,
+        };
         return string.Join("\n", copy.RenderLogicalLine(line, width));
     }
 
@@ -60,22 +67,47 @@ public sealed partial class TuiMarkdown
     {
         _fence = string.Empty;
         _codeLine = 0;
+        _fenceLanguage = string.Empty;
     }
 
     /// <summary>
     /// The opening fence becomes a dim language label (<c>── csharp ────</c>) when it names
     /// a language; a bare fence stays invisible so it contributes no row of its own.
     /// </summary>
+    private static string FenceLanguage(string line) =>
+        ChatDisplayText.Sanitize(line.Trim().TrimStart('`').Trim(), 32);
+
     private static IReadOnlyList<string> FenceLabelRow(string line, int width)
     {
-        var info = line.Trim().TrimStart('`').Trim();
-        if (info.Length == 0 || width <= 4)
+        var language = FenceLanguage(line);
+        if (language.Length == 0 || width <= 4)
         {
             return [];
         }
 
-        var language = ChatDisplayText.Sanitize(info, 32);
         var head = "  ── " + language + " ";
+        var tail = Math.Max(0, width - TuiText.VisibleWidth(head));
+        return
+        [
+            TuiPalette.Paint(head, TuiToken.Meta)
+                + TuiPalette.Paint(new string('─', tail), TuiToken.Line),
+        ];
+    }
+
+    /// <summary>
+    /// The closing fence becomes a dim rule naming the language and how many code rows the
+    /// block held. Without it a long block ends by simply stopping, which made it hard to
+    /// tell the code had finished rather than been truncated.
+    /// </summary>
+    private static IReadOnlyList<string> FenceFooterRow(string language, int lines, int width)
+    {
+        if (width <= 4 || lines == 0)
+        {
+            return [];
+        }
+
+        var count = lines == 1 ? "1 line" : $"{lines} lines";
+        var head = language.Length == 0 ? "  ── " + count + " " : "  ── " + language + " · " + count + " ";
         var tail = Math.Max(0, width - TuiText.VisibleWidth(head));
         return
         [
@@ -95,13 +127,16 @@ public sealed partial class TuiMarkdown
         {
             if (IsFenceLine(line))
             {
+                var footer = FenceFooterRow(_fenceLanguage, _codeLine, width);
                 _fence = string.Empty;
-                return [];
+                _codeLine = 0;
+                _fenceLanguage = string.Empty;
+                return footer;
             }
 
+            _codeLine++;
             if (HighlightCode)
             {
-                _codeLine++;
                 return TuiCodeHighlight.RenderLine(line, _codeLine, width, TuiPalette.Level);
             }
 
@@ -112,6 +147,7 @@ public sealed partial class TuiMarkdown
         {
             _fence = FenceChars;
             _codeLine = 0;
+            _fenceLanguage = FenceLanguage(line);
             return FenceLabelRow(line, width);
         }
 

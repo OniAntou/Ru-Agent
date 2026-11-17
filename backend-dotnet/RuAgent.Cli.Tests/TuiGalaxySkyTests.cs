@@ -159,6 +159,9 @@ public sealed class TuiGalaxySkyTests
         view.Visible = true;
         view.Tick(TimeSpan.FromSeconds(10)); Assert.Equal(0.10, view.AnimationTime, 6);
         view.Tick(TimeSpan.FromSeconds(10.05)); Assert.Equal(0.15, view.AnimationTime, 6);
-        view.Tick(TimeSpan.FromSeconds(100)); Assert.Equal(0.25, view.AnimationTime, 6);
+        // After the visible cycle settles the welcome holds its still frame instead of
+        // continuing to advance the animation clock forever.
+        view.Tick(TimeSpan.FromSeconds(100)); Assert.Equal(0.15, view.AnimationTime, 6);
+        Assert.True(view.IsSettled);
     }
 }

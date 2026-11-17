@@ -262,6 +262,8 @@ internal sealed class ChatSessionCommands
             if (_leaveSession is not null)
             {
                 await _leaveSession(cancellationToken).ConfigureAwait(false);
+                await _writeLine(_output,
+                    "back at the landing · the next prompt starts a new session").ConfigureAwait(false);
                 return;
             }
 

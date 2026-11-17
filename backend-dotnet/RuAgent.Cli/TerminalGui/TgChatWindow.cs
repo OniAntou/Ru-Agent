@@ -40,6 +40,7 @@ public sealed partial class TgChatWindow : Window
     private IApplication? _resizeApp;
     private ModalInputState? _modalInputState;
     private bool _relayoutInProgress;
+    private bool _resizeSettlePending;
     internal void RefreshSessionLayout() => Relayout();
 
     private TgChatWindow()
@@ -635,7 +636,37 @@ public sealed partial class TgChatWindow : Window
 
     private void OnScreenChanged(object? sender, EventArgs<Rectangle> args)
     {
-        Relayout();
+        var app = _resizeApp;
+        if (app is null)
+        {
+            Relayout();
+            return;
+        }
+
+        // The event carries the terminal's new rectangle. Use it rather than Driver.Cols/Rows:
+        // the driver can still report the previous size while the event is raised, which laid
+        // the session out one resize behind and left it stale until another resize happened.
+        Relayout(args.Value.Width, args.Value.Height);
+
+        // Terminal.Gui repaints only cells the views mark dirty. A wider terminal leaves the
+        // old right-aligned header usage cluster (and other right-anchored text) in cells that
+        // no current view owns, so the stale glyphs survived repeated resizes during a run.
+        // Clear the physical screen once per resize, then settle the layout after the driver
+        // publishes the new size.
+        app.ClearScreenNextIteration = true;
+        if (_resizeSettlePending)
+        {
+            return;
+        }
+
+        _resizeSettlePending = true;
+        app.AddTimeout(TimeSpan.FromMilliseconds(20), () =>
+        {
+            _resizeSettlePending = false;
+            Relayout();
+            app.ClearScreenNextIteration = true;
+            return false;
+        });
     }
 
     /// <summary>
@@ -647,6 +678,12 @@ public sealed partial class TgChatWindow : Window
     /// </summary>
     private void Relayout()
     {
+        var driver = _resizeApp?.Driver ?? App?.Driver;
+        Relayout(driver?.Cols ?? Viewport.Width, driver?.Rows ?? Viewport.Height);
+    }
+
+    private void Relayout(int columns, int rows)
+    {
         if (_relayoutInProgress)
         {
             return;
@@ -655,8 +692,9 @@ public sealed partial class TgChatWindow : Window
         _relayoutInProgress = true;
         try
         {
-            var driver = _resizeApp?.Driver ?? App?.Driver;
-            TgChatLayout.Apply(this, driver?.Cols ?? Viewport.Width, driver?.Rows ?? Viewport.Height);
+            columns = Math.Max(1, columns);
+            rows = Math.Max(1, rows);
+            TgChatLayout.Apply(this, columns, rows);
             Layout();
             if (_panel?.SuperView is not null)
             {

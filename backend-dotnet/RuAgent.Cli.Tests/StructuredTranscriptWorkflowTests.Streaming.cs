@@ -37,7 +37,8 @@ public sealed partial class StructuredTranscriptWorkflowTests
                 {
                     Assert.Equal(lines, ui.View.Lines.Count(row => row.Text.Contains("Console.WriteLine(", StringComparison.Ordinal)));
                     Assert.Contains("Console.WriteLine(0);", ui.View.Lines[2].Text);
-                    Assert.Contains("Console.WriteLine(1023);", ui.View.Lines[^1].Text);
+                    Assert.Contains(ui.View.Lines, row => row.Text.Contains("Console.WriteLine(1023);", StringComparison.Ordinal));
+                    Assert.Contains(ui.View.Lines, row => row.Text.Contains("1024 lines", StringComparison.Ordinal));
                     Assert.Equal(TranscriptStyle.User, ui.View.Lines[0].Style);
                 });
                 watch.Stop();

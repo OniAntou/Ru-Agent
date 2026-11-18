@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: A run's tool images (ADR 0026, up to 4 MiB each) are deleted in the commit that ends the run instead of staying in the database until the session is deleted; the tool results stay. Images of runs that ended earlier are not swept.
+
 - **fix(broker)**: A terminal command the Broker classifies as a Git read (`git diff`, `git status`, `git log`, ...) no longer runs a repository-local clean, smudge or process filter. It uses the same `GIT_CONFIG_*` override the Broker's own Git reads use; global filters such as LFS stay active, Git writes keep the repository's filters, and an unreadable filter table fails closed with `git_filters_unreadable`.
 - **fix(cli)**: `/key` never echoes its argument, so a key pasted where the provider name belongs (`/key sk-...`) is not printed back, and `/key` lines stay out of the composer's history. An HTTP timeout during a turn is reported as a failure with its message instead of "esc interrupted". Command output drawn through the transcript drops raw C0/C1 control characters (BEL, backspace, the single-byte CSI U+009B), and `agent run`/`agent attach` summaries pass through the untrusted-text filter.
 - **fix(host)**: A run whose drive fails and whose failure cannot be recorded (the store refused the transition) is retried at once after the first failure and then with a doubling delay up to 30 seconds, instead of every 250 ms with two log records per attempt for as long as the store kept refusing.

@@ -407,6 +407,53 @@ internal static class HarnessSqliteWriteSet
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Drops a terminal run's tool images (ADR 0026). Only the run that read an image
+    /// attaches it again, and a terminal run assembles no further model context, so the
+    /// encrypted bytes (up to 4 MiB each) would otherwise sit in the database until the
+    /// session is deleted. Images are found through their result payloads' completion
+    /// events and deleted by primary key; the image rows themselves are not indexed by run.
+    /// </summary>
+    internal static async Task DeleteRunToolImagesIfTerminalAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        AgentRun run,
+        CancellationToken cancellationToken)
+    {
+        if (!run.State.IsTerminal())
+        {
+            return;
+        }
+
+        var imageIds = new List<string>();
+        await using (var receipts = connection.CreateCommand())
+        {
+            receipts.Transaction = transaction;
+            receipts.CommandText = """
+                SELECT payload_id FROM agent_events
+                WHERE run_id = $run_id AND kind = 'tool.execution_completed' AND payload_id IS NOT NULL
+                """;
+            receipts.Parameters.AddWithValue("$run_id", run.RunId.Value);
+            await using var reader = await receipts.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                imageIds.Add(ToolImagePayloadId.For(new PayloadId(reader.GetString(0))).Value);
+            }
+        }
+
+        foreach (var chunk in imageIds.Chunk(128))
+        {
+            await using var delete = connection.CreateCommand();
+            delete.Transaction = transaction;
+            var names = chunk.Select((_, index) => "$image" + index).ToArray();
+            delete.CommandText = $"DELETE FROM agent_payloads WHERE run_id = $run_id AND kind = $kind AND payload_id IN ({string.Join(',', names)})";
+            delete.Parameters.AddWithValue("$run_id", run.RunId.Value);
+            delete.Parameters.AddWithValue("$kind", (int)HarnessPayloadKind.ToolImage);
+            for (var index = 0; index < chunk.Length; index++) delete.Parameters.AddWithValue(names[index], chunk[index]);
+            await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private static void ValidateIntentSet(
         IReadOnlyList<HarnessEventIntent> events,
         IReadOnlyList<HarnessPayloadIntent> payloads,

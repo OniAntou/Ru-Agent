@@ -125,6 +125,56 @@ public sealed class ToolImageContextTests
     }
 
     [Fact]
+    public async Task Terminal_run_drops_its_tool_images_but_keeps_their_results()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var store = fixture.CreateEventStore();
+        var created = fixture.NewRun(1, 1, 1);
+        await store.TryCreateRunAsync(created, default);
+        var output = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(101),
+            HarnessPayloadKind.ToolOutput,
+            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Json,
+            4096,
+            Encoding.UTF8.GetBytes("{\"path\":\"shot.png\",\"media_type\":\"image/png\"}"));
+        var image = Png(7);
+        var running = NextRun(created.Run, version: 1, lastSequence: created.Run.LastSequence + 1);
+        await store.CommitAsync(new HarnessCommit(created.Run.RunId, 0, running,
+            [new HarnessEventIntent(
+                HarnessStoreTestFixture.Event(101),
+                HarnessEventKind.ToolExecutionCompleted,
+                toolCallId: new ToolCallId($"call_{1:D32}"),
+                providerCallId: "provider-call-1",
+                executionId: new ExecutionId($"exec_{1:D32}"),
+                payloadId: output.PayloadId,
+                safeCode: "ok",
+                toolOutcome: ToolExecutionOutcome.Succeeded,
+                sideEffectsPossible: false)],
+            [output, new HarnessPayloadIntent(ToolImagePayloadId.For(output.PayloadId), HarnessPayloadKind.ToolImage,
+                HarnessPayloadAudience.ModelContext, HarnessPayloadEncoding.Opaque, image.Length, image)],
+            []), default);
+        Assert.Equal(1, await CountPayloadsAsync(fixture, HarnessPayloadKind.ToolImage));
+
+        var completed = new AgentRun(
+            running.RunId, running.SessionId, running.WorkspaceId,
+            new HarnessRunStatus(HarnessRunState.Completed),
+            running.Version + 1, running.LastSequence + 1,
+            running.BudgetWindow, running.ModelStepsInWindow, running.ToolCallsInWindow,
+            running.Preset, running.PolicySnapshotVersion, running.PolicySnapshotSha256,
+            running.CreatedAt, running.UpdatedAt.AddSeconds(1), terminalAt: running.UpdatedAt.AddSeconds(1));
+        var result = await store.CommitAsync(new HarnessCommit(created.Run.RunId, running.Version, completed,
+            [new HarnessEventIntent(HarnessStoreTestFixture.Event(102), HarnessEventKind.RunStateChanged)], [], []), default);
+
+        Assert.Equal(HarnessCommitOutcome.Committed, result.Outcome);
+        Assert.Equal(0, await CountPayloadsAsync(fixture, HarnessPayloadKind.ToolImage));
+        Assert.Equal(1, await CountPayloadsAsync(fixture, HarnessPayloadKind.ToolOutput));
+        var kept = await fixture.PayloadStore.ReadForClientAsync(created.Run.RunId, output.PayloadId, default);
+        Assert.Equal(output.Plaintext.ToArray(), kept.Plaintext.ToArray());
+    }
+
+    [Fact]
     public void Tool_image_payloads_must_be_opaque_and_model_only()
     {
         var bytes = Png(1);
@@ -145,6 +195,16 @@ public sealed class ToolImageContextTests
         Assert.Equal(first, ToolImagePayloadId.For(HarnessStoreTestFixture.Payload(1)));
         Assert.NotEqual(first, ToolImagePayloadId.For(HarnessStoreTestFixture.Payload(2)));
         Assert.NotEqual(HarnessStoreTestFixture.Payload(1), first);
+    }
+
+    private static async Task<long> CountPayloadsAsync(HarnessStoreTestFixture fixture, HarnessPayloadKind kind)
+    {
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM agent_payloads WHERE kind = $kind";
+        command.Parameters.AddWithValue("$kind", (int)kind);
+        return (long)(await command.ExecuteScalarAsync() ?? 0L);
     }
 
     private static byte[] Png(byte fill)

@@ -73,6 +73,10 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
         var json = JsonSerializer.Serialize(request);
         Exception? lastTransportError = null;
         var hasTransportUncertainty = false;
+        // The caller's token is honored only before the first send. A create commits a
+        // durable run before it answers, so abandoning the wait would orphan a run whose id
+        // the caller never learns; each attempt is bounded by its own deadline instead, and
+        // the caller stops the run through its normal path once the acknowledgement arrives.
         for (var attempt = 0; attempt < MaxCreateRunAttempts; attempt++)
         {
             try

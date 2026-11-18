@@ -24,4 +24,17 @@ public sealed record RuntimeDescriptor(
         WriteIndented = false,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
+
+    /// <summary>Record text never carries the bearer; serialization is unaffected.</summary>
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        builder.Append("ProtocolVersion = ").Append(ProtocolVersion)
+            .Append(", BaseUrl = ").Append(BaseUrl)
+            .Append(", BearerToken = <redacted>")
+            .Append(", ProcessId = ").Append(ProcessId)
+            .Append(", ProcessStartTime = ").Append(ProcessStartTime)
+            .Append(", InstanceNonce = ").Append(InstanceNonce)
+            .Append(", CreatedAt = ").Append(CreatedAt);
+        return true;
+    }
 }

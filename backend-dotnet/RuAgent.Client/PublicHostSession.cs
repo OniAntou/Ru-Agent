@@ -18,6 +18,16 @@ public sealed record PublicHostSession(
         return new PublicHostSession(normalized, descriptor.BearerToken, descriptor);
     }
 
+    /// <summary>
+    /// The compiler-generated record text would print the bearer and the descriptor (which
+    /// carries it too); any log line or exception that formats a session must not leak it.
+    /// </summary>
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        builder.Append("BaseUri = ").Append(BaseUri).Append(", BearerToken = <redacted>");
+        return true;
+    }
+
     public Uri BuildUri(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || !path.StartsWith('/'))

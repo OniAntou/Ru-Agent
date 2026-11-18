@@ -59,7 +59,7 @@ public sealed class TgPanelsTests
             window.ShowPicker(
                 "sessions",
                 [new ChoiceItem("one", "ws", "one")],
-                footer: "â†‘â†“ select Â· enter open Â· esc cancel");
+                footer: "↑↓ select · enter open · esc cancel");
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
@@ -77,7 +77,7 @@ public sealed class TgPanelsTests
                 "esc",
                 [new CardItem("one", "ws", true)],
                 0,
-                "â†‘â†“ select Â· enter open Â· esc cancel",
+                "↑↓ select · enter open · esc cancel",
                 "Search");
 
             // The host equals the composed card, not the 14-row modal envelope; otherwise

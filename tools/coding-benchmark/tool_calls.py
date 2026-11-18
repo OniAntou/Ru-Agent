@@ -118,7 +118,7 @@ def collect_tool_calls(bridge, run_id, refs, events, *, deadline, request_timeou
         if event.get("event_type") == "tool.execution_completed"
     ]
     paired = complete and len(outcomes) == len(calls)
-    for call, outcome in zip(calls, outcomes if paired else [None] * len(calls)):
+    for call, outcome in zip(calls, outcomes if paired else [None] * len(calls), strict=True):
         call["outcome"] = outcome if isinstance(outcome, str) and OUTCOME_PATTERN.match(outcome) else None
     return {"calls": calls, "complete": complete, "outcomes_paired": paired, "summary": summarize_calls(calls, paired)}
 

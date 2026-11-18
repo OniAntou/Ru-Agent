@@ -226,6 +226,69 @@ public sealed class FilePatchAdapterTests : IDisposable
     }
 
     [Fact]
+    public void Pure_rename_moves_the_exact_bytes_and_reports_a_create_and_a_delete()
+    {
+        // A BOM, CRLF and no final newline: a pure rename must not re-encode anything.
+        byte[] original = [0xEF, 0xBB, 0xBF, (byte)'a', (byte)'\r', (byte)'\n', (byte)'b'];
+        File.WriteAllBytes(Full("old.txt"), original);
+        var sourceHash = FileHashService.ComputeFileHash(Full("old.txt"));
+        var args = new JsonObject
+        {
+            ["patch"] = "diff --git a/old.txt b/new.txt\nsimilarity index 100%\nrename from old.txt\nrename to new.txt\n",
+            ["expected_hashes"] = new JsonObject { ["old.txt"] = sourceHash, ["new.txt"] = FileHashService.Missing },
+        };
+
+        var result = new FilePatchAdapter(_root).Execute(args);
+
+        Assert.False(File.Exists(Full("old.txt")));
+        Assert.Equal(original, File.ReadAllBytes(Full("new.txt")));
+        var rows = result["files"]!.AsArray().Select(row => row!.AsObject()).ToArray();
+        Assert.Equal(2, rows.Length);
+        Assert.Equal("new.txt", rows[0]["path"]!.GetValue<string>());
+        Assert.Equal(FileHashService.Missing, rows[0]["before_sha256"]!.GetValue<string>());
+        Assert.Equal(sourceHash, rows[0]["after_sha256"]!.GetValue<string>());
+        Assert.Equal("old.txt", rows[1]["path"]!.GetValue<string>());
+        Assert.Equal(FileHashService.Missing, rows[1]["after_sha256"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("new.txt")]
+    [InlineData("old.txt")]
+    public void Failed_rename_step_rolls_back_both_paths(string failingFile)
+    {
+        File.WriteAllText(Full("old.txt"), "one\n");
+        var adapter = new FilePatchAdapter(_root, simulateFailure: path => path.EndsWith(failingFile, StringComparison.OrdinalIgnoreCase));
+        var args = new JsonObject
+        {
+            ["patch"] = "--- a/old.txt\n+++ b/new.txt\n@@ -1,1 +1,1 @@\n-one\n+two\n",
+            ["expected_hashes"] = new JsonObject { ["old.txt"] = Hash("one\n"), ["new.txt"] = FileHashService.Missing },
+        };
+
+        var ex = Assert.Throws<IOException>(() => adapter.Execute(args));
+
+        Assert.Equal("simulated_replacement_failure", ex.Message);
+        Assert.Equal("one\n", File.ReadAllText(Full("old.txt")));
+        Assert.False(File.Exists(Full("new.txt")));
+    }
+
+    [Fact]
+    public void Rename_onto_an_existing_file_is_refused_and_changes_nothing()
+    {
+        File.WriteAllText(Full("old.txt"), "one\n");
+        File.WriteAllText(Full("new.txt"), "keep\n");
+        var args = new JsonObject
+        {
+            ["patch"] = "--- a/old.txt\n+++ b/new.txt\n@@ -1,1 +1,1 @@\n-one\n+two\n",
+            ["expected_hashes"] = new JsonObject { ["old.txt"] = Hash("one\n"), ["new.txt"] = Hash("keep\n") },
+        };
+
+        Assert.Throws<UnauthorizedAccessException>(() => new FilePatchAdapter(_root).Execute(args));
+
+        Assert.Equal("one\n", File.ReadAllText(Full("old.txt")));
+        Assert.Equal("keep\n", File.ReadAllText(Full("new.txt")));
+    }
+
+    [Fact]
     public void No_path_can_repeat()
     {
         var patch = BuildPatch("a.txt", "old", "new") + BuildPatch("a.txt", "old2", "new2");

@@ -14,7 +14,17 @@ public sealed record ParsedPatchFile(
     string? SourcePath,
     IReadOnlyList<PatchHunk> Hunks,
     bool IsNewFile,
-    bool IsDeletedFile);
+    bool IsDeletedFile)
+{
+    /// <summary>
+    /// The file moves from <see cref="SourcePath"/> to <see cref="TargetPath"/>: the source is
+    /// deleted and the target created with the source content after the hunks (none for a pure
+    /// rename). Every authority check treats it as exactly that delete plus that create.
+    /// </summary>
+    public bool IsRename =>
+        !IsNewFile && !IsDeletedFile && SourcePath is not null
+        && !string.Equals(SourcePath, TargetPath, StringComparison.Ordinal);
+}
 
 public static partial class UnifiedPatchParser
 {
@@ -40,6 +50,10 @@ public static partial class UnifiedPatchParser
         var lines = SplitLines(patch);
         var files = new List<ParsedPatchFile>();
         var seenPaths = new HashSet<string>(StringComparer.Ordinal);
+        // Git's "rename from"/"rename to" pair: either the next ---/+++ header repeats it
+        // (a rename with edits), or the file section ends without one (a pure rename).
+        string? renameFrom = null;
+        string? renameTo = null;
         int i = 0;
         while (i < lines.Count)
         {
@@ -47,12 +61,30 @@ public static partial class UnifiedPatchParser
 
             if (line.StartsWith("diff --git ", StringComparison.Ordinal))
             {
+                FlushPureRename();
                 i++;
                 continue;
             }
 
-            if (line.StartsWith("index ", StringComparison.Ordinal))
+            if (line.StartsWith("index ", StringComparison.Ordinal)
+                || IsIgnoredGitHeader(line))
             {
+                i++;
+                continue;
+            }
+
+            if (line.StartsWith("rename from ", StringComparison.Ordinal))
+            {
+                if (renameFrom is not null) throw new ArgumentException("invalid_patch_header");
+                renameFrom = NormalizePatchPath(line["rename from ".Length..]);
+                i++;
+                continue;
+            }
+
+            if (line.StartsWith("rename to ", StringComparison.Ordinal))
+            {
+                if (renameTo is not null) throw new ArgumentException("invalid_patch_header");
+                renameTo = NormalizePatchPath(line["rename to ".Length..]);
                 i++;
                 continue;
             }
@@ -85,19 +117,25 @@ public static partial class UnifiedPatchParser
                     effectivePath = targetPath;
                 }
 
-                if (string.IsNullOrWhiteSpace(effectivePath))
+                ValidatePath(effectivePath);
+                var isRename = !isNewFile && !isDeleted && !string.Equals(sourcePath, targetPath, StringComparison.Ordinal);
+                if (renameFrom is not null || renameTo is not null)
                 {
-                    throw new ArgumentException("invalid_patch_path");
+                    // The git rename lines must name the same move as the header.
+                    if (!isRename
+                        || !string.Equals(renameFrom, sourcePath, StringComparison.Ordinal)
+                        || !string.Equals(renameTo, targetPath, StringComparison.Ordinal))
+                    {
+                        throw new ArgumentException("invalid_patch_header");
+                    }
+
+                    renameFrom = null;
+                    renameTo = null;
                 }
 
-                if (effectivePath.Contains('\0'))
+                if (isRename)
                 {
-                    throw new ArgumentException("invalid_patch_path");
-                }
-
-                if (effectivePath.Length > FileToolLimits.MaxPathLength)
-                {
-                    throw new ArgumentException("path_too_long");
+                    ValidateRenameSource(sourcePath, effectivePath);
                 }
 
                 if (!seenPaths.Add(effectivePath))
@@ -165,12 +203,60 @@ public static partial class UnifiedPatchParser
             throw new ArgumentException("invalid_patch_format");
         }
 
+        FlushPureRename();
         if (files.Count == 0)
         {
             throw new ArgumentException("patch_no_files");
         }
 
         return files;
+
+        void FlushPureRename()
+        {
+            if (renameFrom is null && renameTo is null) return;
+            if (renameFrom is null || renameTo is null || renameFrom == "/dev/null" || renameTo == "/dev/null")
+                throw new ArgumentException("invalid_patch_header");
+            ValidatePath(renameTo);
+            if (string.Equals(renameFrom, renameTo, StringComparison.Ordinal)) throw new ArgumentException("invalid_patch_header");
+            ValidateRenameSource(renameFrom, renameTo);
+            if (!seenPaths.Add(renameTo)) throw new ArgumentException("patch_duplicate_path");
+            if (files.Count >= MaxFiles) throw new ArgumentException("patch_too_many_files");
+            files.Add(new ParsedPatchFile(renameTo, renameFrom, [], IsNewFile: false, IsDeletedFile: false));
+            renameFrom = null;
+            renameTo = null;
+        }
+
+        void ValidateRenameSource(string source, string target)
+        {
+            ValidatePath(source);
+            // Canonical paths compare case-insensitively, so a case-only move would delete
+            // the file it just created.
+            if (string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("patch_rename_case_only");
+            if (!seenPaths.Add(source)) throw new ArgumentException("patch_duplicate_path");
+        }
+    }
+
+    /// <summary>Git extended header lines that carry nothing Ru applies (modes, similarity).</summary>
+    private static bool IsIgnoredGitHeader(string line) =>
+        line.StartsWith("similarity index ", StringComparison.Ordinal)
+        || line.StartsWith("dissimilarity index ", StringComparison.Ordinal)
+        || line.StartsWith("old mode ", StringComparison.Ordinal)
+        || line.StartsWith("new mode ", StringComparison.Ordinal)
+        || line.StartsWith("new file mode ", StringComparison.Ordinal)
+        || line.StartsWith("deleted file mode ", StringComparison.Ordinal);
+
+    private static void ValidatePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Contains('\0'))
+        {
+            throw new ArgumentException("invalid_patch_path");
+        }
+
+        if (path.Length > FileToolLimits.MaxPathLength)
+        {
+            throw new ArgumentException("path_too_long");
+        }
     }
 
     private static void RequireOriginalLine(List<string> originalLines, int index, string expected)

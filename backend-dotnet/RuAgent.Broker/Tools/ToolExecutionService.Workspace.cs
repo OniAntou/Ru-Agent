@@ -333,18 +333,21 @@ public sealed partial class ToolExecutionService
         foreach (var file in files)
         {
             ct.ThrowIfCancellationRequested();
-            if (file.Hunks.Count == 0 || file.IsNewFile && file.IsDeletedFile) throw new ArgumentException("invalid_patch_header");
-            if (!file.IsNewFile && !file.IsDeletedFile && !string.Equals(file.SourcePath, file.TargetPath, StringComparison.Ordinal))
-                throw new ArgumentException("patch_rename_unsupported");
-            var target = tools.MutationResolver.Resolve(file.TargetPath);
-            if (target.IsOutsideWorkspace) throw new UnauthorizedAccessException("patch_outside_workspace");
-            if (target.IsProtected) throw new UnauthorizedAccessException("protected_path");
-            if (!paths.Add(target.CanonicalPath)) throw new ArgumentException("patch_duplicate_target");
-            if (File.Exists(target.CanonicalPath)) totalBytes += new FileInfo(target.CanonicalPath).Length;
-            if (totalBytes > FileMutationJournal.MaxTotalBytes) throw new ArgumentException("patch_preimages_too_large");
+            // Only a pure rename carries no hunks.
+            if (file.Hunks.Count == 0 && !file.IsRename || file.IsNewFile && file.IsDeletedFile) throw new ArgumentException("invalid_patch_header");
+            if (file.IsRename)
+            {
+                // The source is a delete: the same boundary, protection, preimage and size checks.
+                var source = ResolvePatchPath(file.SourcePath!);
+                var sourceHash = FileHashService.GetCurrentHash(source.CanonicalPath);
+                if (FileHashService.IsMissing(sourceHash)) throw new IOException("file_not_found");
+                hashes[file.SourcePath!] = sourceHash;
+            }
+
+            var target = ResolvePatchPath(file.TargetPath);
             var hash = FileHashService.GetCurrentHash(target.CanonicalPath);
-            if (file.IsNewFile && !FileHashService.IsMissing(hash)) throw new IOException("file_exists");
-            if (!file.IsNewFile && FileHashService.IsMissing(hash)) throw new IOException("file_not_found");
+            if ((file.IsNewFile || file.IsRename) && !FileHashService.IsMissing(hash)) throw new IOException("file_exists");
+            if (!file.IsNewFile && !file.IsRename && FileHashService.IsMissing(hash)) throw new IOException("file_not_found");
             if (file.IsDeletedFile)
             {
                 var original = StrictUtf8.GetString(ReadBoundedBytes(target.CanonicalPath, FileWriteAdapter.MaxInputBytes));
@@ -353,6 +356,17 @@ public sealed partial class ToolExecutionService
             }
             hashes[file.TargetPath] = hash;
         }
+        ResolvedPath ResolvePatchPath(string path)
+        {
+            var resolved = tools.MutationResolver.Resolve(path);
+            if (resolved.IsOutsideWorkspace) throw new UnauthorizedAccessException("patch_outside_workspace");
+            if (resolved.IsProtected) throw new UnauthorizedAccessException("protected_path");
+            if (!paths.Add(resolved.CanonicalPath)) throw new ArgumentException("patch_duplicate_target");
+            if (File.Exists(resolved.CanonicalPath)) totalBytes += new FileInfo(resolved.CanonicalPath).Length;
+            if (totalBytes > FileMutationJournal.MaxTotalBytes) throw new ArgumentException("patch_preimages_too_large");
+            return resolved;
+        }
+
         var adapterArguments = new JsonObject { ["patch"] = patch, ["expected_hashes"] = hashes };
         var profile = ActivePolicyProfile(context);
         var adapter = new FilePatchAdapter(tools.CanonicalRoot, allowProtectedPaths: profile is not null && AgentPolicyProfileCatalog.OpensProtectedPaths(profile));

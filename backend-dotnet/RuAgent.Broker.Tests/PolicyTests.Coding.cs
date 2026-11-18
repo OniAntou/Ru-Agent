@@ -30,6 +30,44 @@ public sealed partial class PolicyEvaluationTests
         Assert.Equal("deny", decision.Decision);
     }
 
+    [Fact]
+    public void Rename_evaluates_its_source_as_a_delete_so_a_protected_source_is_denied()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var context = factory.Create("apply_patch", "1.0.0", new JsonObject { ["patch"] =
+            "diff --git a/.ru/hooks.json b/moved.json\nsimilarity index 100%\nrename from .ru/hooks.json\nrename to moved.json\n" });
+
+        Assert.Equal(2, context.PatchTargets.Count);
+        Assert.Contains(context.PatchTargets, target => target.RelativePathInsideWorkspace == Path.Combine(".ru", "hooks.json"));
+        var decision = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
+        Assert.Equal("deny", decision.Decision);
+    }
+
+    [Fact]
+    public void Deny_rule_on_a_rename_source_denies_the_rename()
+    {
+        var snapshot = PolicyEvalSnapshots.SnapshotWith(PolicyEvalSnapshots.Rule("deny-secret", "deny",
+            PolicyEvalSnapshots.Matcher(pathPattern: "secret.txt")));
+        var (lease, factory) = Bind(snapshot);
+        var context = factory.Create("apply_patch", "1.0.0", new JsonObject { ["patch"] =
+            "--- a/secret.txt\n+++ b/public.txt\n@@ -1,1 +1,1 @@\n-x\n+y\n" });
+
+        var decision = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
+        Assert.Equal("deny", decision.Decision);
+        Assert.Equal("deny-secret", decision.MatchedRuleId);
+    }
+
+    [Fact]
+    public void Plan_denies_a_rename()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty("plan"));
+        var context = factory.Create("apply_patch", "1.0.0", new JsonObject { ["patch"] =
+            "--- a/a.txt\n+++ b/b.txt\n@@ -1,1 +1,1 @@\n-x\n+y\n" });
+
+        var decision = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
+        Assert.Equal("deny", decision.Decision);
+    }
+
     [Theory]
     [InlineData("write_file", "write", "write")]
     [InlineData("edit_file", "edit", "edit")]

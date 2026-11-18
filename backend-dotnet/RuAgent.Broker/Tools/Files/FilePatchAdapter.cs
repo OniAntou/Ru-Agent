@@ -32,6 +32,14 @@ public sealed class FilePatchAdapter
         var resultArray = new JsonArray();
         foreach (var entry in resolvedMap)
         {
+            if (entry.Source is { } renameSource)
+            {
+                var sourceHash = FileHashService.GetCurrentHash(renameSource.CanonicalPath);
+                var moved = MovedContent(entry, ReadBoundedBytes(renameSource.CanonicalPath, FileWriteAdapter.MaxInputBytes, "file_too_large"), sourceHash);
+                foreach (var row in RenameRows(entry, renameSource, sourceHash, moved)) resultArray.Add(row);
+                continue;
+            }
+
             var currentHash = FileHashService.GetCurrentHash(entry.CanonicalPath);
             string oldContent = string.Empty;
             if (!FileHashService.IsMissing(currentHash))
@@ -93,25 +101,11 @@ public sealed class FilePatchAdapter
         {
             foreach (var entry in resolvedMap)
             {
-                ResolvedPath reResolved;
-                try
+                var reResolved = ReResolve(entry.Parsed.TargetPath, entry.CanonicalPath, entry.Classification);
+                if (entry.Source is { } renameSource)
                 {
-                    reResolved = _resolver.Resolve(entry.Parsed.TargetPath);
-                }
-                catch (ArgumentException ex)
-                {
-                    throw new UnauthorizedAccessException("workspace_changed", ex);
-                }
-
-                if (!string.Equals(reResolved.CanonicalPath, entry.CanonicalPath, StringComparison.OrdinalIgnoreCase)
-                    || reResolved.Classification != entry.Classification)
-                {
-                    throw new UnauthorizedAccessException("workspace_changed");
-                }
-
-                if (reResolved.IsProtected || reResolved.IsOutsideWorkspace)
-                {
-                    throw new UnauthorizedAccessException("workspace_changed");
+                    results.AddRange(ExecuteRename(entry, renameSource, reResolved, expectedMap, journal));
+                    continue;
                 }
 
                 var currentHash = FileHashService.GetCurrentHash(reResolved.CanonicalPath);
@@ -227,6 +221,145 @@ public sealed class FilePatchAdapter
         };
     }
 
+    /// <summary>Re-resolves a prepared path before its write; any drift fails as <c>workspace_changed</c>.</summary>
+    private ResolvedPath ReResolve(string patchPath, string canonicalPath, PathClassification classification)
+    {
+        ResolvedPath reResolved;
+        try
+        {
+            reResolved = _resolver.Resolve(patchPath);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new UnauthorizedAccessException("workspace_changed", ex);
+        }
+
+        if (!string.Equals(reResolved.CanonicalPath, canonicalPath, StringComparison.OrdinalIgnoreCase)
+            || reResolved.Classification != classification
+            || reResolved.IsProtected || reResolved.IsOutsideWorkspace)
+        {
+            throw new UnauthorizedAccessException("workspace_changed");
+        }
+
+        return reResolved;
+    }
+
+    /// <summary>
+    /// Creates the target with the source content after the hunks, then deletes the source.
+    /// Both steps are journaled, so a failure on either rolls the whole patch back.
+    /// </summary>
+    private IEnumerable<JsonObject> ExecuteRename(
+        ResolvedPatchEntry entry,
+        RenameSource source,
+        ResolvedPath target,
+        Dictionary<string, string> expectedMap,
+        FileMutationJournal journal)
+    {
+        var from = ReResolve(source.PatchPath, source.CanonicalPath, source.Classification);
+        var targetHash = FileHashService.GetCurrentHash(target.CanonicalPath);
+        var sourceHash = FileHashService.GetCurrentHash(from.CanonicalPath);
+        if (!FileHashService.IsMissing(targetHash)
+            || !string.Equals(targetHash, expectedMap[entry.Parsed.TargetPath], StringComparison.Ordinal)
+            || !string.Equals(sourceHash, expectedMap[source.PatchPath], StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException("workspace_changed");
+        }
+
+        var sourceBytes = ReadBoundedBytes(from.CanonicalPath, FileWriteAdapter.MaxInputBytes, "file_too_large");
+        var moved = MovedContent(entry, sourceBytes, sourceHash);
+
+        journal.Record(target.CanonicalPath, targetHash, null, wasMissing: true);
+        SimulateFailure(target.CanonicalPath);
+        Mutate(() => FileMutationGuard.ReplaceIfHashMatches(target.CanonicalPath, moved.Bytes, targetHash));
+        journal.MarkApplied(moved.Hash);
+        RequireHashAfter(target.CanonicalPath, moved.Hash);
+
+        journal.Record(from.CanonicalPath, sourceHash, sourceBytes, wasMissing: false);
+        SimulateFailure(from.CanonicalPath);
+        Mutate(() => FileMutationGuard.DeleteIfHashMatches(from.CanonicalPath, sourceHash));
+        journal.MarkApplied(FileHashService.Missing);
+        RequireHashAfter(from.CanonicalPath, FileHashService.Missing);
+
+        return RenameRows(entry, source, sourceHash, moved);
+
+        static void Mutate(Action mutation)
+        {
+            try
+            {
+                mutation();
+            }
+            catch (UnauthorizedAccessException ex) when (ex.Message != "workspace_changed")
+            {
+                throw new UnauthorizedAccessException("access_denied", ex);
+            }
+        }
+
+        static void RequireHashAfter(string canonicalPath, string expected)
+        {
+            if (!string.Equals(FileHashService.GetCurrentHash(canonicalPath), expected, StringComparison.Ordinal))
+            {
+                throw new IOException("io_error");
+            }
+        }
+    }
+
+    private void SimulateFailure(string canonicalPath)
+    {
+        if (_simulateFailure != null && _simulateFailure(canonicalPath))
+        {
+            throw new IOException("simulated_replacement_failure");
+        }
+    }
+
+    private sealed record MovedFile(byte[] Bytes, string Hash, string Text);
+
+    /// <summary>
+    /// The target content of a rename. A pure rename keeps the source bytes exactly; a rename
+    /// with hunks applies them to the source text like an ordinary edit.
+    /// </summary>
+    private static MovedFile MovedContent(ResolvedPatchEntry entry, byte[] sourceBytes, string sourceHash)
+    {
+        if (entry.Parsed.Hunks.Count == 0)
+        {
+            return new MovedFile(sourceBytes, sourceHash, string.Empty);
+        }
+
+        string oldContent;
+        try
+        {
+            oldContent = StrictUtf8.GetString(sourceBytes);
+        }
+        catch (DecoderFallbackException ex)
+        {
+            throw new ArgumentException("invalid_utf8", ex);
+        }
+
+        var newContent = UnifiedPatchParser.ApplyHunks(oldContent, entry.Parsed.Hunks);
+        ValidateUtf8AndSize(newContent);
+        return new MovedFile(Encoding.UTF8.GetBytes(newContent), FileHashService.ComputeStringHash(newContent), newContent);
+    }
+
+    /// <summary>A rename reports as a create of its target plus a delete of its source.</summary>
+    private static IEnumerable<JsonObject> RenameRows(ResolvedPatchEntry entry, RenameSource source, string sourceHash, MovedFile moved) =>
+    [
+        new JsonObject
+        {
+            ["path"] = entry.RelativePath,
+            ["before_sha256"] = FileHashService.Missing,
+            ["after_sha256"] = moved.Hash,
+            ["renamed_from"] = source.RelativePath,
+            ["diff_summary"] = BuildDiffSummary(FileHashService.Missing, moved.Hash, string.Empty, moved.Text),
+        },
+        new JsonObject
+        {
+            ["path"] = source.RelativePath,
+            ["before_sha256"] = sourceHash,
+            ["after_sha256"] = FileHashService.Missing,
+            ["renamed_to"] = entry.RelativePath,
+            ["diff_summary"] = BuildDiffSummary(sourceHash, FileHashService.Missing, string.Empty, string.Empty),
+        },
+    ];
+
     private (string patchText, Dictionary<string, string> expectedMap) ValidateArguments(JsonObject arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
@@ -276,7 +409,8 @@ public sealed class FilePatchAdapter
             throw new ArgumentException("expected_hashes_empty");
         }
 
-        if (map.Count > UnifiedPatchParser.MaxFiles)
+        // A rename names two paths: its source and its target.
+        if (map.Count > UnifiedPatchParser.MaxFiles * 2)
         {
             throw new ArgumentException("patch_too_many_files");
         }
@@ -286,7 +420,9 @@ public sealed class FilePatchAdapter
 
     private void ValidateExpectedMap(IReadOnlyList<ParsedPatchFile> parsed, Dictionary<string, string> expectedMap)
     {
-        var parsedSet = parsed.Select(p => p.TargetPath).ToHashSet(StringComparer.Ordinal);
+        var parsedSet = parsed.Select(p => p.TargetPath)
+            .Concat(parsed.Where(p => p.IsRename).Select(p => p.SourcePath!))
+            .ToHashSet(StringComparer.Ordinal);
         if (parsedSet.Count != expectedMap.Count)
         {
             throw new ArgumentException("expected_hash_count_mismatch");
@@ -294,7 +430,7 @@ public sealed class FilePatchAdapter
 
         foreach (var p in parsed)
         {
-            if (!expectedMap.ContainsKey(p.TargetPath))
+            if (!expectedMap.ContainsKey(p.TargetPath) || p.IsRename && !expectedMap.ContainsKey(p.SourcePath!))
             {
                 throw new ArgumentException("missing_expected_hash_for_target");
             }
@@ -315,7 +451,11 @@ public sealed class FilePatchAdapter
         PathClassification Classification,
         string RelativePath,
         ResolvedPath Resolved,
-        bool IsDeleted);
+        bool IsDeleted,
+        RenameSource? Source = null);
+
+    /// <summary>The source of a rename: deleted after its content lands at the target.</summary>
+    private sealed record RenameSource(string PatchPath, string CanonicalPath, PathClassification Classification, string RelativePath);
 
     private List<ResolvedPatchEntry> ResolveAndValidateTargets(IReadOnlyList<ParsedPatchFile> parsed, Dictionary<string, string> expectedMap)
     {
@@ -323,44 +463,66 @@ public sealed class FilePatchAdapter
         var canonicalSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in parsed)
         {
-            ResolvedPath resolved;
-            try
-            {
-                resolved = _resolver.Resolve(file.TargetPath);
-            }
-            catch (ArgumentException ex)
-            {
-                throw new ArgumentException("invalid_patch_path", ex);
-            }
-
-            if (resolved.IsProtected)
-            {
-                throw new UnauthorizedAccessException("protected_path");
-            }
-
-            if (resolved.IsOutsideWorkspace)
-            {
-                throw new UnauthorizedAccessException("outside_workspace");
-            }
-
+            var resolved = ResolveMutable(file.TargetPath, canonicalSeen);
             var rel = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, resolved.CanonicalPath);
-            if (!canonicalSeen.Add(resolved.CanonicalPath))
+            RenameSource? source = null;
+            if (file.IsRename)
             {
-                throw new ArgumentException("patch_duplicate_path");
+                var from = ResolveMutable(file.SourcePath!, canonicalSeen);
+                source = new RenameSource(file.SourcePath!, from.CanonicalPath, from.Classification,
+                    WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, from.CanonicalPath));
             }
 
-            list.Add(new ResolvedPatchEntry(file, resolved.CanonicalPath, resolved.Classification, rel, resolved, file.IsDeletedFile));
+            list.Add(new ResolvedPatchEntry(file, resolved.CanonicalPath, resolved.Classification, rel, resolved, file.IsDeletedFile, source));
         }
 
         return list;
+    }
+
+    private ResolvedPath ResolveMutable(string patchPath, HashSet<string> canonicalSeen)
+    {
+        ResolvedPath resolved;
+        try
+        {
+            resolved = _resolver.Resolve(patchPath);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ArgumentException("invalid_patch_path", ex);
+        }
+
+        if (resolved.IsProtected)
+        {
+            throw new UnauthorizedAccessException("protected_path");
+        }
+
+        if (resolved.IsOutsideWorkspace)
+        {
+            throw new UnauthorizedAccessException("outside_workspace");
+        }
+
+        if (!canonicalSeen.Add(resolved.CanonicalPath))
+        {
+            throw new ArgumentException("patch_duplicate_path");
+        }
+
+        return resolved;
     }
 
     private void ValidatePreimages(List<ResolvedPatchEntry> resolvedMap, Dictionary<string, string> expectedMap)
     {
         foreach (var entry in resolvedMap)
         {
-            var expected = expectedMap[entry.Parsed.TargetPath];
-            var current = FileHashService.GetCurrentHash(entry.CanonicalPath);
+            RequireHash(entry.CanonicalPath, expectedMap[entry.Parsed.TargetPath]);
+            if (entry.Source is { } source)
+            {
+                RequireHash(source.CanonicalPath, expectedMap[source.PatchPath]);
+            }
+        }
+
+        static void RequireHash(string canonicalPath, string expected)
+        {
+            var current = FileHashService.GetCurrentHash(canonicalPath);
             if (!string.Equals(current, expected, StringComparison.Ordinal))
             {
                 throw new UnauthorizedAccessException("workspace_changed");

@@ -75,6 +75,38 @@ public sealed partial class ToolExecutionServiceTests
     }
 
     [Fact]
+    public async Task Patch_renames_a_file_with_edits_and_refuses_an_occupied_target()
+    {
+        var fixture = CreateFullAccessService("ru-coding-rename-");
+        var workspace = Path.Combine(fixture.Root, "workspace");
+        File.WriteAllText(Path.Combine(workspace, "old.txt"), "one\n");
+        File.WriteAllText(Path.Combine(workspace, "taken.txt"), "keep\n");
+        try
+        {
+            var moved = await Patch("--- a/old.txt\n+++ b/src/new.txt\n@@ -1,1 +1,1 @@\n-one\n+two\n");
+            Assert.Equal(ToolResultStatuses.Succeeded, moved.Status);
+            Assert.False(File.Exists(Path.Combine(workspace, "old.txt")));
+            Assert.Equal("two\n", File.ReadAllText(Path.Combine(workspace, "src", "new.txt")));
+            Assert.Equal(2, moved.Output["files"]!.AsArray().Count);
+
+            var refused = await Patch("diff --git a/src/new.txt b/taken.txt\nrename from src/new.txt\nrename to taken.txt\n");
+            Assert.Equal(ToolResultStatuses.Failed, refused.Status);
+            Assert.Equal("file_exists", refused.ErrorCode);
+            Assert.Equal("two\n", File.ReadAllText(Path.Combine(workspace, "src", "new.txt")));
+            Assert.Equal("keep\n", File.ReadAllText(Path.Combine(workspace, "taken.txt")));
+        }
+        finally { await fixture.Service.DisposeAsync(); Directory.Delete(fixture.Root, true); }
+
+        Task<ToolResult> Patch(string patch) => fixture.Service.ExecuteAuthenticatedV2Async(new AgentEnvelope(
+            AgentEnvelopeCodec.ProtocolVersionV2, "rename-" + Guid.NewGuid().ToString("N"), AgentMessageTypes.ToolExecute,
+            fixture.SessionId, null, 30_000, new JsonObject
+            {
+                ["tool_id"] = "apply_patch", ["tool_version"] = "1.0.0", ["run_id"] = fixture.RunId,
+                ["capability_class"] = "internal", ["arguments"] = new JsonObject { ["patch"] = patch },
+            }), default);
+    }
+
+    [Fact]
     public async Task Coding_tools_create_then_atomically_edit_without_discriminators()
     {
         var fixture = CreateFullAccessService("ru-coding-tools-");

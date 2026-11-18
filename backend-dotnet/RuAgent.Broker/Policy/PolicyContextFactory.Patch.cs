@@ -19,15 +19,11 @@ public sealed partial class PolicyContextFactory
         var boundaryResolver = new CanonicalPathResolver(_canonicalRoot, allowProtectedPaths: true);
         foreach (var file in files)
         {
-            var target = Create(file.IsNewFile || file.IsDeletedFile ? "write" : "edit", version, new JsonObject
-            {
-                ["path"] = file.TargetPath, ["op"] = file.IsDeletedFile ? "delete" : "write",
-            });
-            var resolved = boundaryResolver.Resolve(file.TargetPath);
-            if (!resolved.IsInsideWorkspace)
-                throw new PolicyContextException("patch_outside_workspace");
-            if (!paths.Add(resolved.CanonicalPath)) throw new PolicyContextException("patch_duplicate_target");
-            targets.Add(target with { ToolId = "apply_patch", RelativePathInsideWorkspace = Path.GetRelativePath(_canonicalRoot, resolved.CanonicalPath) });
+            // A rename is evaluated as exactly a delete of its source plus a create of its
+            // target, so every rule, protected path and boundary check sees both paths.
+            AddTarget(file.TargetPath, file.IsNewFile || file.IsDeletedFile || file.IsRename ? "write" : "edit",
+                file.IsDeletedFile ? "delete" : "write");
+            if (file.IsRename) AddTarget(file.SourcePath!, "write", "delete");
         }
         var canonicalTargets = new JsonArray(targets.Select(target => (JsonNode?)target.Target!.CanonicalIntentHash).ToArray());
         var hashArguments = new JsonObject { ["patch"] = patch, ["canonical_targets"] = canonicalTargets };
@@ -37,5 +33,15 @@ public sealed partial class PolicyContextFactory
             IntentHash = ComputeIntentHash("apply_patch", version, null, null, [], null, PolicyOperationClasses.Patch, hashArguments),
             PatchTargets = targets.AsReadOnly(),
         };
+
+        void AddTarget(string path, string toolId, string operation)
+        {
+            var target = Create(toolId, version, new JsonObject { ["path"] = path, ["op"] = operation });
+            var resolved = boundaryResolver.Resolve(path);
+            if (!resolved.IsInsideWorkspace)
+                throw new PolicyContextException("patch_outside_workspace");
+            if (!paths.Add(resolved.CanonicalPath)) throw new PolicyContextException("patch_duplicate_target");
+            targets.Add(target with { ToolId = "apply_patch", RelativePathInsideWorkspace = Path.GetRelativePath(_canonicalRoot, resolved.CanonicalPath) });
+        }
     }
 }

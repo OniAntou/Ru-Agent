@@ -206,7 +206,7 @@ public static class AgentToolDescriptorTable
             Risk = AgentToolRisk.Reversible, RequiresApproval = true, Adapter = AgentToolAdapter.Desktop, WorkspaceRequired = true,
             Access = AgentToolAccess.Mutation, MaxOutputBytes = null,
             PolicyFamily = null,
-            Description = "Apply a bounded unified diff to workspace files. Use --- a/path and +++ b/path headers with exact @@ -old,count +new,count @@ hunks. /dev/null denotes file creation/deletion. All paths are checked before mutation; no renames, binary patches, fuzzy hunks or outside-workspace paths. A rejected hunk leaves files unchanged; after an I/O failure inspect current files before retrying. Send only patch; hashes are captured by Broker.",
+            Description = "Apply a bounded unified diff to workspace files. Use --- a/path and +++ b/path headers with exact @@ -old,count +new,count @@ hunks. /dev/null denotes file creation/deletion; differing --- and +++ paths, or git rename from/rename to lines, move a file to a new path that must not exist. All paths are checked before mutation; no binary patches, fuzzy hunks or outside-workspace paths. A rejected hunk leaves files unchanged; after an I/O failure inspect current files before retrying. Send only patch; hashes are captured by Broker.",
             InputSchema = AgentToolDefinitionCatalog.ApplyPatchSchema,
         },
         new()

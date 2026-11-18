@@ -372,7 +372,13 @@ The modern surface separates file creation/deletion/restoration and Windows
 terminal launch/read/stop operations. `edit_file` performs exact, non-overlapping
 replacements against one original file and commits once. `apply_patch` checks
 every path and hunk before writing, retaining bounded conflict-safe rollback.
-Patch approval is one-time; outside-workspace patches and renames are rejected.
+Patch approval is one-time; outside-workspace patches are rejected. A rename
+(differing `---`/`+++` paths, or git `rename from`/`rename to` lines; a pure
+rename carries no hunks and moves the exact bytes) is a delete of its source plus
+a create of its target: policy evaluates both paths, the target must not exist,
+both steps are journaled for rollback, and the result reports both as `files`
+rows. Case-only renames are refused (`patch_rename_case_only`), because canonical
+paths compare case-insensitively. Git mode and similarity header lines are ignored.
 `read_file` pages whole UTF-8 lines with `start_line`/`line_count` and `next_line`,
 a 4 MiB snapshot scan cap and 32 KiB serialized output cap. `read` retains byte
 paging and image input. A line too large for the output budget returns

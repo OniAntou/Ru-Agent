@@ -157,7 +157,8 @@ public sealed partial class AgentCommands
                 TgTerminalPaste.Attach(tgApp);
             }
 
-            TgTranscriptWriter? tgWriter = tgMode ? new TgTranscriptWriter(tgApp!, tgWindow!.Transcript) : null;
+            TgTranscriptWriter? tgWriter = tgWindow is not null
+                ? new TgTranscriptWriter(tgApp!, tgWindow.Transcript, tgWindow.SetTodos) : null;
 
             if (backendName is not null)
             {

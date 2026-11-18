@@ -1,10 +1,29 @@
+using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli.Tui;
 
+internal interface ITranscriptTodoWriter
+{
+    bool TryWriteTodos(IReadOnlyList<AgentTodoWire> todos);
+}
+
 public sealed partial class TuiTranscript
 {
     internal const int PlanChecklistLimit = 8;
+
+    internal void RestoreTodos(AgentRunActivityReplay replay)
+    {
+        var latest = replay.Activities.LastOrDefault(activity => activity.Kind == AgentActivityKind.Todo
+            && activity.State == AgentActivityState.Completed && activity.Todos is not null);
+        if (latest?.Todos is { } todos) ApplyTodos(todos);
+    }
+
+    private void ApplyTodos(IReadOnlyList<AgentTodoWire> todos)
+    {
+        if (_surface.Writer is ITranscriptTodoWriter writer && writer.TryWriteTodos(todos)) return;
+        _pendingPlan = todos.Count > 0 ? todos : null;
+    }
 
     /// <summary>
     /// The model's plan, inline. A new or reworded plan prints its checklist (at most

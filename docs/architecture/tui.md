@@ -218,11 +218,15 @@ The terminal is a compact coding surface: chat, inline tool activity and expanda
 errors/diffs, approvals, attachments, session/model selection, run recovery and
 background terminal task inspection/control.
 The header retains its live context meter and shows the session title as soon as a
-reopened session is replayed. A new or reworded plan prints an inline checklist (at
-most eight items around the active one, with the rest counted); a later update that
-only moves progress prints one `◦ Plan 9/16 · ▸ item` line. There are no separate
-activity, todo or project-file browser panels. Attaching to a running run with
-Reattaching a tracked run counts elapsed time from its start; resuming a parked
+reopened session is replayed. Completed `todo_write` activities replace the native
+session checklist. On wide terminals, the list sits beside the transcript and wraps
+long items. Narrow or short terminals and completed lists use a one-line summary.
+The composer spans both columns. Clicking the heading or pressing `Ctrl+T` opens a
+read-only, scrollable list that receives subsequent updates. A clear snapshot or a
+session switch resets the list. Durable run activity replay restores the latest
+recorded snapshot, including for a retained run. The plain output adapter keeps its
+bounded inline checklist and progress rows. Reattaching a tracked run counts elapsed
+time from its start; resuming a parked
 run counts from the resume. Prompt history remains available with Up/Down. Detailed inspection
 belongs in the GUI; headless CLI and RPC capabilities are independent of this UI scope.
 Terminal.Gui owns the interactive screen. Shared event and Markdown formatting

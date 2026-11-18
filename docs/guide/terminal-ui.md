@@ -31,6 +31,7 @@ terminal smaller than 80 by 24.
 | `Ctrl+P` | Open the searchable command palette |
 | `Esc`, `Ctrl+C` | Interrupt the running turn |
 | `Ctrl+O` | Expand or collapse the model's reasoning block |
+| `Ctrl+T` | Open or close the full Todos list |
 | `Ctrl+Alt+Up` / `Ctrl+Alt+Down` | Select an earlier or later reasoning block |
 | Drag across the transcript | Select visible text from one or more lines |
 | `Ctrl+C` with text selected | Copy the highlighted transcript text |
@@ -92,10 +93,12 @@ is blocking it.
 For a new prompt after idle shutdown, Ru starts or finds the Host and rechecks the
 selected provider and model before sending in the current session.
 
-## What the terminal UI leaves to the desktop app
+## Todos
 
-The desktop app has dedicated views for activity, plans, file changes and the file tree; the terminal UI
-keeps the transcript and tool rows. Plans appear as completed-of-total counts.
+When Ru creates a checklist, the terminal shows completed, in-progress and pending items on the
+right. A narrow terminal or a finished checklist shows a compact `Todos 3/3` button. Click the
+heading or button, or press `Ctrl+T`, to open the full list. Use the arrow keys or mouse wheel to
+scroll, and `Esc` to close it. Reopening a session restores its latest recorded checklist.
 
 ## More
 

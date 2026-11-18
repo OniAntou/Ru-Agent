@@ -1,6 +1,7 @@
 using System.Text;
 using RuAgent.Cli.Tui;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
 using Terminal.Gui.App;
 
 namespace RuAgent.Cli.TerminalGui;
@@ -11,7 +12,9 @@ namespace RuAgent.Cli.TerminalGui;
 /// TextWriter and the older string interfaces remain import adapters for slash-command
 /// reports, diagnostics and existing callers; their ANSI parsing is outside that path.
 /// </summary>
-public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptView transcript) : TextWriter, ITranscriptLineWriter, ITranscriptStepRewriter, ITranscriptTurnRewriter, ITranscriptActivityWriter, ITranscriptPresentationWriter, ITranscriptToolResultFilter
+public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptView transcript,
+    Action<IReadOnlyList<AgentTodoWire>>? updateTodos = null) : TextWriter, ITranscriptLineWriter, ITranscriptStepRewriter,
+    ITranscriptTurnRewriter, ITranscriptActivityWriter, ITranscriptPresentationWriter, ITranscriptToolResultFilter, ITranscriptTodoWriter
 {
     private readonly StringBuilder _pending = new();
     private bool _rowOpen;
@@ -22,6 +25,14 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
     private int _turnMark = -1;
     private long _turnRetentionVersion;
     private readonly BoundedInsertionMap<string, (int Row, long Version)> _toolRows = new(64, StringComparer.Ordinal);
+
+    bool ITranscriptTodoWriter.TryWriteTodos(IReadOnlyList<AgentTodoWire> todos)
+    {
+        if (updateTodos is null) return false;
+        try { app.Invoke(() => updateTodos(todos)); }
+        catch (NotInitializedException) { }
+        return true;
+    }
 
     public void AppendToolRow(string activityId, string text)
     {

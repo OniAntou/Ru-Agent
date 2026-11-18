@@ -164,9 +164,10 @@ send a message or select a session first.
 
 The TUI focuses on chat and coding, with inline tool activity and expandable
 errors/diffs, approvals, attachments, session/model controls and run recovery.
-The header keeps the live context meter. A new plan prints an inline checklist
-and later progress one line naming the active item; use the GUI for dedicated
-activity and plan inspection or file browsing. Drop a known file path or use Ctrl+V to add it to
+The header keeps the live context meter. The agent's Todos list updates beside the
+transcript and collapses to a progress button when the terminal is narrow or the
+list is complete. Click the heading or press Ctrl+T for the full list. Plain output
+prints the checklist and later progress inline. Drop a known file path or use Ctrl+V to add it to
 the composer. Up/Down still recalls previous prompts. `/exit` is the only quit
 command; Escape closes an overlay or interrupts an active turn and never exits
 the chat. An idle Escape preserves the draft.

@@ -103,6 +103,12 @@ internal sealed class TgChatKeyboardBindings
             return;
         }
 
+        if (key == Key.T.WithCtrl && _window.ToggleTodos())
+        {
+            key.Handled = true;
+            return;
+        }
+
         if (TryHandleTranscriptNavigationKey(key))
         {
             key.Handled = true;
@@ -170,7 +176,7 @@ internal sealed class TgChatKeyboardBindings
 
     private void OnApplicationKeyDown(object? sender, Key key)
     {
-        if (key.Handled || _window.IsModalPanelOpen || _window.IsDocumentPanelOpen)
+        if (key.Handled || _window.IsModalPanelOpen)
         {
             return;
         }
@@ -184,6 +190,13 @@ internal sealed class TgChatKeyboardBindings
 
             return;
         }
+
+        if (key == Key.T.WithCtrl && _window.ToggleTodos())
+        {
+            key.Handled = true;
+            return;
+        }
+        if (_window.IsDocumentPanelOpen) return;
 
         // Escape must never reach the framework's default quit binding, including
         // when focus has moved from the composer into the transcript.

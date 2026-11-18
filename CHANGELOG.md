@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Show the agent's live checklist beside the transcript, with a
+  compact progress button on narrow terminals and when all items are complete.
 - **fix(tui)**: Select answers with arrow keys or mouse clicks. Wrap long
   questions and suggestions, and preserve a custom draft under Other.
 - **fix(tui)**: Use a steady vertical-bar caret in the prompt editor instead of

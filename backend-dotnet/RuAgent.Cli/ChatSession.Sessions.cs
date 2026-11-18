@@ -195,6 +195,7 @@ public sealed partial class AgentCommands
                         {
                             sessionRenderer.Note(notice, Tui.TuiToken.Warn);
                         }
+                        await RestoreRetainedTodosAsync(candidateRunId).ConfigureAwait(false);
                         return;
                     }
 
@@ -218,6 +219,7 @@ public sealed partial class AgentCommands
                     {
                         sessionRenderer.Note(followNotice, Tui.TuiToken.Meta);
                     }
+                    await RestoreRetainedTodosAsync(candidateRunId).ConfigureAwait(false);
                     return;
                 }
             }
@@ -231,6 +233,13 @@ public sealed partial class AgentCommands
                 // REPL start; the headless 'ru agent attach <run-id>' remains available.
                 Tui.TuiDebug.Log("adopt", $"session run adoption failed: {CliErrorText.ShortMessage(ex.Message)}");
             }
+        }
+
+        async Task RestoreRetainedTodosAsync(string runId)
+        {
+            if (!tgMode || cmd.Json) return;
+            var replay = await _agentClient.ListRunActivityReplayAsync(runId, cancellationToken).ConfigureAwait(false);
+            sessionRenderer.Transcript.RestoreTodos(replay);
         }
 
         async Task<SessionDeleteResult> DeleteSessionAsync(string targetId, CancellationToken ct)

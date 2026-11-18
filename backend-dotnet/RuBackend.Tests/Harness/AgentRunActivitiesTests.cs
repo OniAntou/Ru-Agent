@@ -152,8 +152,10 @@ public sealed class AgentRunActivitiesTests
     /// simply gone the next time the session is opened -- which is exactly the failure a
     /// kind added later falls into, because nothing fails when a switch has no case for it.
     /// </remarks>
-    [Fact]
-    public async Task Replayed_activities_include_the_task_list()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(RuBackend.Harness.AgentActivitiesService.MaxReplayedActivities + 1)]
+    public async Task Replayed_activities_include_the_task_list(int earlierRows)
     {
         var steps = new Queue<AssistantStep>();
         steps.Enqueue(new AssistantStep(
@@ -194,6 +196,22 @@ public sealed class AgentRunActivitiesTests
         var session = await CreateSessionAsync(client);
         var runId = await CreateRunAsync(
             client, session, tmp.Path, "plan this", "todo-act-key-" + Guid.NewGuid().ToString("N"));
+        if (earlierRows > 0)
+        {
+            var store = factory.Services.GetRequiredService<IHarnessEventStore>();
+            var run = await store.GetRunAsync(new RunId(runId), CancellationToken.None);
+            Assert.NotNull(run);
+            var ids = new CryptographicIdGenerator();
+            var history = Enumerable.Range(0, earlierRows).Select(_ => new HarnessEventIntent(
+                ids.NewEventId(), HarnessEventKind.ModelStepCompleted, modelStepId: ids.NewModelStepId())).ToArray();
+            var next = new AgentRun(run.RunId, run.SessionId, run.WorkspaceId, run.Status,
+                run.Version + 1, run.LastSequence + history.Length, run.BudgetWindow,
+                run.ModelStepsInWindow, run.ToolCallsInWindow, run.Preset, run.PolicySnapshotVersion,
+                run.PolicySnapshotSha256, run.CreatedAt, DateTimeOffset.UtcNow,
+                permissionProfileVersion: run.PermissionProfileVersion);
+            var commit = await store.CommitAsync(new HarnessCommit(run.RunId, run.Version, next, history, [], []), CancellationToken.None);
+            Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
+        }
         await TrustAsync(client, runId);
         await WaitForTerminalAsync(client, runId);
 
@@ -201,6 +219,11 @@ public sealed class AgentRunActivitiesTests
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
         var activities = json.GetProperty("activities").EnumerateArray().ToArray();
+        if (earlierRows > 0)
+        {
+            Assert.Equal(RuBackend.Harness.AgentActivitiesService.MaxReplayedActivities, activities.Length);
+            Assert.Equal("thinking", activities[^1].GetProperty("kind").GetString());
+        }
 
         // The tool row is replayed, as it always was. Which display label it carries is
         // not this test's subject, so it is asserted only as "some non-todo row exists":

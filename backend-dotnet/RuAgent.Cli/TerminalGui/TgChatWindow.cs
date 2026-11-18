@@ -54,13 +54,15 @@ public sealed partial class TgChatWindow : Window
         Composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(TgComposerView.RowCount + 1), Width = Dim.Fill(), Height = TgComposerView.RowCount };
         Composer.PresetChanged += preset => { Header.SetPreset(preset); Relayout(); };
         Hints = new TgHintsView { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
+        Todos = new TgTodosView();
+        Todos.DetailsRequested += () => ToggleTodos();
         Landing = new TgLandingView
         {
             IsWordmarkOccluded = frame => HasBlockingOverlay
                 || (IsSlashDropdownOpen && _slashDropdown!.Frame.IntersectsWith(frame)),
         };
 
-        Add(Transcript, Landing, Header, HeaderDivider, Composer, Hints);
+        Add(Transcript, Landing, Header, HeaderDivider, Composer, Hints, Todos);
         CanFocus = true;
 
         // The pre-chat wordmark owns the transcript region only while it is empty; the
@@ -102,6 +104,7 @@ public sealed partial class TgChatWindow : Window
     public TgTranscriptView Transcript { get; }
     public TgComposerView Composer { get; }
     public TgHintsView Hints { get; }
+    internal TgTodosView Todos { get; }
 
     /// <summary>The aurora/gray wordmark shown until the transcript has content.</summary>
     public TgLandingView Landing { get; }
@@ -193,6 +196,7 @@ public sealed partial class TgChatWindow : Window
     public void ShowDocument(string title, IReadOnlyList<string> body)
     {
         ArgumentNullException.ThrowIfNull(body);
+        _todosDocumentOpen = false;
         Transcript.ClearTextSelection();
         // The window takes the keyboard, so the suggestion list must not linger behind it.
         HideSlashDropdown();
@@ -216,6 +220,7 @@ public sealed partial class TgChatWindow : Window
 
     public void HideDocument()
     {
+        _todosDocumentOpen = false;
         if (_document?.SuperView is not null)
         {
             Remove(_document);
@@ -522,6 +527,7 @@ public sealed partial class TgChatWindow : Window
     /// </summary>
     public void ResetTranscript()
     {
+        SetTodos([]);
         Transcript.Clear();
         Header.UpdateUsage(0, null, null);
         // A switch/new chat starts a fresh surface: a command hint left from the previous
@@ -713,6 +719,7 @@ public sealed partial class TgChatWindow : Window
 
     private void ShowPanel(Func<int, int, IReadOnlyList<CardLine>> card)
     {
+        if (_todosDocumentOpen) HideDocument();
         Transcript.ClearTextSelection();
         // A modal panel takes the keyboard; the suggestion list must not linger behind it.
         HideSlashDropdown();

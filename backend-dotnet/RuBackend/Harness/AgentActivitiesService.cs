@@ -204,7 +204,7 @@ public sealed class AgentActivitiesService
             // it here is what makes the checklist survive leaving a session -- without it
             // the feed rebuilds and the plan is silently absent, which is indistinguishable
             // from a turn that never wrote one.
-            if (proposal.ToolId is "todo_write"
+            if (proposal.ToolId is "todo_write" && state == AgentActivityState.Completed
                 && AgentTodoPayload.TryRead(receipt.ModelContent.Span) is { } todos)
             {
                 rows.Add(new ReplayedActivityRow(
@@ -267,7 +267,12 @@ public sealed class AgentActivitiesService
         }
 
         var wires = new List<JsonElement>();
-        var cappedRows = rows.OrderBy(item => item.Sequence).TakeLast(MaxReplayedActivities).ToList();
+        var orderedRows = rows.OrderBy(item => item.Sequence).ToArray();
+        var cappedRows = orderedRows.TakeLast(MaxReplayedActivities).ToList();
+        // The checklist is a snapshot. Keep the latest update (including a clear)
+        // even when newer activity fills the replay budget.
+        var latestTodos = orderedRows.LastOrDefault(item => item.Activity.Todos is not null);
+        if (latestTodos is not null && !cappedRows.Contains(latestTodos)) cappedRows[0] = latestTodos;
         foreach (var row in cappedRows)
         {
             JsonElement wire;

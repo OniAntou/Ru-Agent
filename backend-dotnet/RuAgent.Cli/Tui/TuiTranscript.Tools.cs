@@ -104,7 +104,7 @@ public sealed partial class TuiTranscript
                 return;
 
             case AgentActivityKind.Todo:
-                if (activity.Todos is { Count: > 0 } todos) _pendingPlan = todos;
+                if (activity.State == AgentActivityState.Completed && activity.Todos is { } todos) ApplyTodos(todos);
                 if (!string.IsNullOrWhiteSpace(activity.ToolDisplay)) ApplyToolActivity(activity);
                 return;
 

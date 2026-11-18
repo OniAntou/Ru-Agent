@@ -38,12 +38,17 @@ public sealed class TgDocumentPanel : View
 
     public void SetContent(string title, IReadOnlyList<string> body)
     {
+        _offset = 0;
+        RefreshContent(title, body);
+    }
+
+    internal void RefreshContent(string title, IReadOnlyList<string> body)
+    {
         ArgumentNullException.ThrowIfNull(body);
         _title = string.IsNullOrWhiteSpace(title) ? "output" : title.Trim();
         // Legacy report writers emit ANSI; native views need visible text before wrapping.
         // Keep the captured original for the transcript's separate styled-import path.
         _body = body.Select(line => TgAnsiPaint.Parse(line ?? string.Empty).Clean).ToArray();
-        _offset = 0;
         _wrapWidth = -1;
         SetNeedsLayout();
         SetNeedsDraw();
@@ -120,6 +125,15 @@ public sealed class TgDocumentPanel : View
     private int PageSize() => Math.Max(1, Viewport.Height - TuiCard.TuiCardFrameRows);
 
     private int TotalRows(int page) => Math.Max(page, _wrapWidth < 0 ? _body.Count : _rows.Count);
+
+    protected override bool OnMouseEvent(Mouse mouse)
+    {
+        if (mouse.Flags.HasFlag(MouseFlags.WheeledUp)) ScrollBy(-3);
+        else if (mouse.Flags.HasFlag(MouseFlags.WheeledDown)) ScrollBy(3);
+        else return false;
+        mouse.Handled = true;
+        return true;
+    }
 
     private void OnKeyDown(object? sender, Key key)
     {

@@ -11,7 +11,6 @@ public sealed partial class AgentCommands
     {
         /// <summary>Metadata attempts per run; two is enough for a window to resolve.</summary>
         private const int MaxContextMetadataAttempts = 2;
-        internal const string AdvisorUsageSafeCode = "advisor_usage";
         private readonly object contextMetadataGate = new();
         private string? contextMetadataRun;
         private int contextMetadataAttempts;

@@ -50,7 +50,7 @@ public sealed partial class ChatUsageReaderTests
                 var body = new StringBuilder();
                 for (var index = 1; index <= ReportCount; index++)
                     body.Append(Event(run, index, "model.usage_recorded", Payload(Duplicate ? 1 : index), ForeignEvent ? "other_session" : Owner,
-                        index == AdvisorReport ? ChatUsageReader.AdvisorUsageSafeCode : "synthetic"));
+                        index == AdvisorReport ? SessionUsageReplayPolicy.AdvisorUsageSafeCode : "synthetic"));
                 if (Compact) body.Append(Event(run, ReportCount + 1, "context.compacted"));
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 { Content = new StringContent(body.ToString(), Encoding.UTF8, "text/event-stream") });

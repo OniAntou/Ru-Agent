@@ -13,7 +13,6 @@ internal sealed class ChatUsageReader(AgentApiClient agents, AgentSseClient even
     Func<string?, string, CancellationToken, Task<CatalogModelDetails?>> rates)
 {
     internal const int MaxRuns = 8;
-    internal const string AdvisorUsageSafeCode = "advisor_usage";
     internal const int MaxReports = 256;
     internal const int MaxFrames = 8192;
     private const int MaxReplayCharacters = 8 * 1024 * 1024;

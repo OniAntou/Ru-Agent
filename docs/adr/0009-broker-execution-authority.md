@@ -99,8 +99,10 @@ approve.
     proposal executes with the returned one-time `authorization_token`
     (60 s). Only the explicit `allow_always` decision persists a reusable
     project-scope allow rule for the exact intent; `allow_once` and the
-    session-directory grant stay single-use, and the Broker lease
-    rebind remains future work.
+    session-directory grant stay single-use. (The Broker lease rebind this
+    paragraph once called future work landed with the 2026-10-07 amendment
+    below: the gateway factory opens a new lease generation for the
+    re-materialized snapshot.)
   - Web wiring: web options are defined once on the Host, forwarded to the
     Broker process through the environment, and the v2 lease enables the
     standalone `web_search`/`web_fetch` tools only when enabled. Web tools always ask;

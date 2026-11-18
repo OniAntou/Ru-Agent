@@ -135,7 +135,7 @@ public sealed partial class BrokerExecutionRuntime
         if (!lease.AdvertisedCapabilities.Contains(toolId))
         {
             // A policy rule cannot grant a tool absent from this lease's advertised surface.
-            return new ToolEvaluateResult(new RuntimeError("phase_not_available", "tool is not advertised yet"), null);
+            return new ToolEvaluateResult(new RuntimeError("phase_not_available", "tool is not advertised for this run"), null);
         }
 
         if (payload["arguments"] is not JsonObject arguments)
@@ -305,7 +305,7 @@ public sealed partial class BrokerExecutionRuntime
         if (!lease.AdvertisedCapabilities.Contains(toolId))
         {
             return new ToolExecutePreparation(
-                ToolExecutionReply.Error("phase_not_available", "tool is not advertised yet"),
+                ToolExecutionReply.Error("phase_not_available", "tool is not advertised for this run"),
                 null);
         }
 

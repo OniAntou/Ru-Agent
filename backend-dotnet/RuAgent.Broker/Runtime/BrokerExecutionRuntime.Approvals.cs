@@ -67,13 +67,12 @@ public sealed partial class BrokerExecutionRuntime
     {
         var payload = request.Payload;
 
-        // approval.respond without a run lease stays reserved: there is no
-        // pending v2 approval to consume on a session-only request.
+        // Every pending approval belongs to a run lease, and the Host always names the
+        // run. A request without one has nothing to consume, so it fails closed.
         var runId = PayloadReads.OptionalString(payload, "run_id");
         if (string.IsNullOrWhiteSpace(runId))
         {
-            // For v1 sessions without run lease, approval.respond is still phase_not_available
-            return ApprovalDecisionResult.Denied("phase_not_available", "v2 approval decisions are not wired without run_id");
+            return ApprovalDecisionResult.Denied("phase_not_available", "approval decisions require a run_id");
         }
 
         var approvalId = PayloadReads.OptionalString(payload, "approval_id");

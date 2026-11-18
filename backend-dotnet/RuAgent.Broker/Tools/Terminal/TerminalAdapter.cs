@@ -22,6 +22,7 @@ public sealed class TerminalAdapter
     private readonly StreamingProcessRunner _runner;
     private readonly CommandIntentResolver _resolver;
     private readonly CommandAnalyzerRegistry _analyzers;
+    private readonly Git.StreamingGitCli _gitFilters;
 
     public TerminalAdapter(
         WorkspacePathGuard workspace,
@@ -37,6 +38,7 @@ public sealed class TerminalAdapter
             TerminalLimits.MaxSpoolFileBytes);
         _resolver = intentResolver ?? new CommandIntentResolver(_workspace.Root);
         _analyzers = analyzers ?? new CommandAnalyzerRegistry();
+        _gitFilters = new Git.StreamingGitCli(environment: _environment.ChildEnvironment);
     }
 
     /// <summary>Same credential redaction as terminal output, before retaining a bounded UI label.</summary>
@@ -179,16 +181,40 @@ public sealed class TerminalAdapter
         int? killTimeoutMs = null,
         TerminalOutputDeltaHandler? output = null)
     {
-        var arguments = IsAutomaticGitRead(intent)
+        var automaticGitRead = IsAutomaticGitRead(intent);
+        var arguments = automaticGitRead
             ? BuildSafeGitReadArguments(intent.Arguments)
             : intent.Arguments;
+        var environment = _environment.ChildEnvironment;
+        if (automaticGitRead)
+        {
+            // A read must not run a repository-supplied clean/smudge/process filter
+            // (`git diff` runs the clean filter on modified files). The same local and
+            // worktree filter override the Broker's own Git reads use; global filters
+            // such as LFS stay active. An unreadable table fails closed.
+            var filters = await _gitFilters.FilterEnvironmentAsync(
+                intent.CanonicalWorkingDirectory,
+                cancellationToken,
+                intent.ResolvedExecutable).ConfigureAwait(false)
+                ?? throw new UnauthorizedAccessException("git_filters_unreadable");
+            if (filters.Count > 0)
+            {
+                var merged = new Dictionary<string, string>(environment, StringComparer.OrdinalIgnoreCase);
+                foreach (var pair in filters)
+                {
+                    merged[pair.Key] = pair.Value;
+                }
+
+                environment = merged;
+            }
+        }
 
         return await _runner.RunAsync(
             new ProcessRunSpec(
                 intent.ResolvedExecutable,
                 arguments,
                 intent.CanonicalWorkingDirectory,
-                _environment.ChildEnvironment,
+                environment,
                 killTimeoutMs ?? intent.TimeoutMs,
                 TerminalLimits.MaxSpoolFileBytes),
             WrapRetain(retainOutput, output),

@@ -172,7 +172,9 @@ reconciliation surfaces from Phase 3:
   - `apply_patch` exposes a workspace-scoped unified diff through the existing patch adapter, with
     all-target policy checks, internal preimage hashes and preparation before mutation.
   - Ru has no Git tool. `git` is an ordinary terminal command under Broker policy; automatic
-    terminal Git reads pin `core.fsmonitor=false` and disable external diff and textconv.
+    terminal Git reads pin `core.fsmonitor=false`, disable external diff and textconv, and
+    override repository-local clean/smudge/process filters (an unreadable filter table fails
+    closed with `git_filters_unreadable`); Git writes keep the repository's filters.
     Subagent worktree setup is the only Git the Broker runs itself, through `StreamingGitCli`.
   - See the pinned coding profiles below.
 - Model surface: the Protocol tool definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The `mcp` tool connects to user-declared stdio or Streamable HTTP servers through the Broker under [ADR 0025](../adr/0025-mcp-servers-through-the-broker.md); workspace files cannot declare servers, and subagents cannot use it. The opt-in `computer` tool ([ADR 0031](../adr/0031-computer-use-through-the-broker.md)) captures monitors and sends pointer and keyboard input through `ComputerUseService` behind the same execution authority; `plan` denies it, `standard` grants apps per session, protected apps and Ru's terminal hosts are never targets, and Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) cancels the controlling run. Mail/calendar/task connectors are not advertised Agent tools.

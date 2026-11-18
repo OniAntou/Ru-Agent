@@ -3,8 +3,9 @@ using RuAgent.Protocol;
 namespace RuAgent.Broker.Policy.Commands;
 
 /// <summary>
-/// Recognized ripgrep forms. Plain search and list-files allow; replacement and
-/// preprocessor flags ask because they alter output or execute external programs.
+/// Recognized ripgrep forms. Plain search and list-files classify as ReadOnly; replacement
+/// and preprocessor flags stay Unknown because they alter output or execute external
+/// programs. As with every analyzer since ADR 0017, the class does not decide allow or ask.
 /// </summary>
 public sealed class RipgrepCommandAnalyzer : ICommandAnalyzer
 {

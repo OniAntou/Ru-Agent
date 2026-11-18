@@ -4,8 +4,10 @@ using RuAgent.Protocol;
 namespace RuAgent.Broker.Policy.Commands;
 
 /// <summary>
-/// Recognized local Git forms. Reads allow; local mutations ask; push/fetch/pull/clone/remote
-/// are external network mutations.
+/// Recognized local Git forms, classified as reads, local mutations or (push/fetch/pull/clone/
+/// remote) external network mutations. Since ADR 0017 the class does not decide allow or ask:
+/// launch permission follows the canonical working directory and explicit rules. A ReadOnly
+/// verdict selects the hardened automatic Git-read launch and the reported terminal effect.
 /// </summary>
 public sealed class GitCommandAnalyzer : ICommandAnalyzer
 {

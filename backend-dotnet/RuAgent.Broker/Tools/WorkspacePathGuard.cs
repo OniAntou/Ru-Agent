@@ -14,7 +14,12 @@ public sealed class WorkspacePathGuard
 
     public string Root { get; }
 
-    public string Resolve(string relativePath, bool allowMissing = false)
+    /// <summary>
+    /// Test-support resolution only. It has no protected-path catalog or alternate-data-stream
+    /// checks, so no tool adapter may authorize a target with it: production file tools resolve
+    /// through <see cref="Paths.CanonicalPathResolver"/>. Internal keeps it out of the Host.
+    /// </summary>
+    internal string Resolve(string relativePath, bool allowMissing = false)
     {
         if (string.IsNullOrWhiteSpace(relativePath)
             || Path.IsPathRooted(relativePath)
@@ -38,7 +43,8 @@ public sealed class WorkspacePathGuard
         return candidate;
     }
 
-    public string ToRelative(string fullPath)
+    /// <summary>Test-support counterpart of <see cref="Resolve"/>; adapters use <see cref="ToWorkspaceRelative"/>.</summary>
+    internal string ToRelative(string fullPath)
     {
         var resolved = Path.GetFullPath(fullPath);
         if (!IsWithinRoot(resolved))

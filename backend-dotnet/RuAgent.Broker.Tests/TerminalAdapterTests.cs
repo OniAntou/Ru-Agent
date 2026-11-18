@@ -143,6 +143,95 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
+    public async Task Plain_git_diff_does_not_run_a_repository_clean_filter()
+    {
+        var root = CreateTemporaryRoot("ru-git-configured-filter-");
+        try
+        {
+            if (!await IsGitAvailableAsync())
+            {
+                return;
+            }
+
+            var marker = await PrepareRepositoryWithConfiguredFilterAsync(root);
+
+            var result = await CreateAdapter(root).RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request("git", ["diff", "--stat"]),
+                CancellationToken.None);
+
+            Assert.True(
+                result.Status == "succeeded",
+                $"git diff failed with exit={result.ExitCode}: {result.StderrHead}{result.StderrTail}");
+            Assert.Contains("tracked.txt", result.StdoutHead);
+            Assert.False(File.Exists(marker), "an automatic Git read must not execute a repository clean filter");
+        }
+        finally
+        {
+            DeleteReadOnlyTree(root);
+        }
+    }
+
+    [Fact]
+    public async Task Git_read_fails_closed_when_the_filter_table_is_too_large_to_override()
+    {
+        var root = CreateTemporaryRoot("ru-git-filter-overflow-");
+        try
+        {
+            if (!await IsGitAvailableAsync())
+            {
+                return;
+            }
+
+            var marker = await PrepareRepositoryWithConfiguredFilterAsync(root);
+            var drivers = string.Concat(Enumerable.Range(0, 80)
+                .Select(index => $"[filter \"bulk{index}\"]\n\tclean = cat\n"));
+            await File.AppendAllTextAsync(Path.Combine(root, ".git", "config"), drivers);
+
+            var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() => CreateAdapter(root).RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request("git", ["diff", "--stat"]),
+                CancellationToken.None));
+
+            Assert.Equal("git_filters_unreadable", error.Message);
+            Assert.False(File.Exists(marker));
+        }
+        finally
+        {
+            DeleteReadOnlyTree(root);
+        }
+    }
+
+    [Fact]
+    public async Task Git_mutation_keeps_the_repository_filter()
+    {
+        var root = CreateTemporaryRoot("ru-git-filter-mutation-");
+        try
+        {
+            if (!await IsGitAvailableAsync())
+            {
+                return;
+            }
+
+            var marker = await PrepareRepositoryWithConfiguredFilterAsync(root);
+
+            var result = await CreateAdapter(root).RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request("git", ["add", "tracked.txt"]),
+                CancellationToken.None);
+
+            Assert.True(
+                result.Status == "succeeded",
+                $"git add failed with exit={result.ExitCode}: {result.StderrHead}{result.StderrTail}");
+            Assert.True(File.Exists(marker), "a Git write keeps the repository's own filter semantics");
+        }
+        finally
+        {
+            DeleteReadOnlyTree(root);
+        }
+    }
+
+    [Fact]
     public async Task Plain_git_status_does_not_run_the_repository_configured_fsmonitor_helper()
     {
         var root = CreateTemporaryRoot("ru-git-configured-fsmonitor-");
@@ -770,6 +859,25 @@ public sealed class TerminalAdapterTests
             "#!/bin/sh\nprintf 'helper executed\\n' > \"$0.marker\"\nexit 0\n",
             new System.Text.UTF8Encoding(false));
         await RunGitFixtureAsync(root, "config", configKey, helper.Replace('\\', '/'));
+        await File.WriteAllTextAsync(Path.Combine(root, "tracked.txt"), "changed\n");
+        return marker;
+    }
+
+    /// <summary>
+    /// A committed file under a repository-local clean filter that drops a marker
+    /// beside the repository when Git runs it, then a modification Git must diff.
+    /// </summary>
+    private static async Task<string> PrepareRepositoryWithConfiguredFilterAsync(string root)
+    {
+        await RunGitFixtureAsync(root, "init", "--quiet");
+        await File.WriteAllTextAsync(Path.Combine(root, "tracked.txt"), "initial\n");
+        await RunGitFixtureAsync(root, "add", "tracked.txt");
+        await RunGitFixtureAsync(root, "-c", "user.name=Ru Test", "-c", "user.email=ru@example.invalid", "commit", "--quiet", "-m", "fixture");
+
+        var marker = Path.Combine(root, "filter.marker");
+        await File.WriteAllTextAsync(Path.Combine(root, ".gitattributes"), "tracked.txt filter=probe\n");
+        await RunGitFixtureAsync(root, "config", "filter.probe.clean",
+            "printf ran > '" + marker.Replace('\\', '/') + "'; cat");
         await File.WriteAllTextAsync(Path.Combine(root, "tracked.txt"), "changed\n");
         return marker;
     }

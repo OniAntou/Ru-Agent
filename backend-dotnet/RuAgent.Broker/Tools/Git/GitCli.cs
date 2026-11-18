@@ -116,16 +116,19 @@ public sealed class StreamingGitCli : IGitCli
     /// (a driver name may contain <c>=</c>), and local scope only keeps global
     /// filters such as LFS active so a valid clean file is not reported as modified.
     /// Returns null when the table cannot be read safely, so the caller fails closed.
+    /// The terminal's automatic Git-read path passes its resolved executable so the
+    /// table is read by the same Git that then runs the read.
     /// </summary>
-    private async Task<Dictionary<string, string>?> FilterEnvironmentAsync(
+    internal async Task<Dictionary<string, string>?> FilterEnvironmentAsync(
         string workingDirectory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string executable = "git")
     {
         var keys = new List<string>();
         foreach (var scope in new[] { "--local", "--worktree" })
         {
             var spec = new ProcessRunSpec(
-                "git",
+                executable,
                 [
                     "--no-optional-locks",
                     "-c",

@@ -302,8 +302,9 @@ public sealed class StreamingProcessRunner
     // No git config hardening on this path, deliberately. This runner carries
     // terminal commands; a filter override here would change what `git add` and
     // `git commit` must do (LFS, content transforms). GitCli applies read-only
-    // hardening for the reads the Broker performs itself; the terminal path keeps
-    // the user's git semantics.
+    // hardening for the reads the Broker performs itself, and TerminalAdapter applies
+    // the same filter override to a terminal command classified as a Git read; every
+    // other terminal command keeps the user's git semantics.
 
     private async Task<long> DrainAsync(
         StreamReader reader,

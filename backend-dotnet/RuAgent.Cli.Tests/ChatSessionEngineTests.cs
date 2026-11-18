@@ -230,6 +230,47 @@ public sealed class ChatSessionEngineTests
         Assert.Equal("prompt 20", engine.History[0]); Assert.Equal("prompt 119", engine.History[^1]);
     }
 
+    [Fact]
+    public void KeyCommandLinesStayOutOfHistory()
+    {
+        var engine = new ChatSessionEngine(new PlainChatView(TextWriter.Null, ""));
+        engine.RememberForTests("/key sk-pasted-secret");
+        engine.RememberForTests("  /KEY openai");
+        engine.RememberForTests("/keys are not the key command");
+
+        Assert.Equal(["/keys are not the key command"], engine.History);
+    }
+
+    [Fact]
+    public async Task HttpTimeoutIsReportedAsAFailureNotAnEscapeInterrupt()
+    {
+        using var diagnostics = new StringWriter();
+        var view = new PlainChatView(diagnostics, ""); var engine = new ChatSessionEngine(view);
+        engine.SetPromptHandler((_, _) => Task.FromException(
+            new TaskCanceledException("request timed out", new TimeoutException())));
+
+        view.InputText = "hello"; engine.Submit();
+        await engine.WaitForIdleAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Contains("request timed out", diagnostics.ToString());
+        Assert.DoesNotContain("esc interrupted", diagnostics.ToString());
+        engine.Stop(); await engine.Completion;
+    }
+
+    [Fact]
+    public async Task UserCancellationStillReportsAnEscapeInterrupt()
+    {
+        using var diagnostics = new StringWriter();
+        var view = new PlainChatView(diagnostics, ""); var engine = new ChatSessionEngine(view);
+        engine.SetPromptHandler((_, _) => Task.FromException(new OperationCanceledException()));
+
+        view.InputText = "hello"; engine.Submit();
+        await engine.WaitForIdleAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Contains("esc interrupted", diagnostics.ToString());
+        engine.Stop(); await engine.Completion;
+    }
+
     private sealed class CountingReader(string text) : StringReader(text)
     {
         internal int Reads;

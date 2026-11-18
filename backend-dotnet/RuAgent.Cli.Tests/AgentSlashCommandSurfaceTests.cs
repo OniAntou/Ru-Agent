@@ -693,6 +693,23 @@ public sealed partial class AgentSlashCommandSurfaceTests
         Assert.DoesNotContain("sk-test-key", text, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("sk-pasted-secret-value-123456")]
+    [InlineData("remove sk-pasted-secret-value-123456")]
+    public async Task Key_WithPastedSecretAsProvider_NeverEchoesTheArgument(string argument)
+    {
+        var output = new StringWriter();
+        var errors = new StringWriter();
+        var client = new SettingsApiClient(Session(), new HttpClient(new FakeHandler(_ => Json("{\"status\":\"ok\"}"))));
+        var commands = new AgentSlashCommands(client, output, errors) { PanelWidth = 80 };
+        commands.SecretPrompt = (_, _) => Task.FromResult<string?>("unused");
+
+        Assert.True(await commands.TryHandleAsync("/key", argument, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.Contains(AgentSlashCommands.UnknownProviderMessage, errors.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("sk-pasted-secret", errors.ToString() + output.ToString(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Key_WithModelsDevId_PostsTheIdAndKeyPair()
     {

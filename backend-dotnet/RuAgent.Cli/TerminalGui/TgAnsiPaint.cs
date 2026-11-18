@@ -24,9 +24,11 @@ internal static class TgAnsiPaint
     /// <summary>Splits <paramref name="text"/> into visible characters and styled runs.</summary>
     public static (string Clean, IReadOnlyList<TgSpan>? Spans) Parse(string text)
     {
+        // Controls are dropped after escape parsing, never before: BEL terminates an OSC
+        // sequence, so removing it first would let the OSC swallow the rest of the row.
         if (string.IsNullOrEmpty(text) || !text.Contains('\u001b'))
         {
-            return (text, null);
+            return (DropControlCharacters(text), null);
         }
 
         try
@@ -38,7 +40,7 @@ internal static class TgAnsiPaint
             // Escape sequences arrive in command output, file previews and model prose.
             // A paint that cannot be parsed must degrade to plain text, never abort the
             // current frame: Trim and the extractors call this outside their own guards.
-            return (TuiText.Strip(text), null);
+            return (DropControlCharacters(TuiText.Strip(text)), null);
         }
     }
 
@@ -92,7 +94,7 @@ internal static class TgAnsiPaint
                 continue;
             }
 
-            if (text[index] == '\r')
+            if (text[index] == '\r' || DroppedControls.Contains(text[index]))
             {
                 index++;
                 continue;
@@ -330,6 +332,37 @@ internal static class TgAnsiPaint
         14 => (0, 255, 255),
         _ => (255, 255, 255),
     };
+
+    /// <summary>
+    /// Removes C0 controls other than tab, newline, carriage return and ESC, plus DEL and the
+    /// C1 range. ESC is kept for the sequence parser; the others would reach the console as
+    /// raw bytes (BEL, backspace, the single-byte CSI U+009B) once Terminal.Gui draws the cell.
+    /// </summary>
+    internal static string DropControlCharacters(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.AsSpan().ContainsAny(DroppedControls))
+        {
+            return text;
+        }
+
+        var builder = new StringBuilder(text.Length);
+        foreach (var character in text)
+        {
+            if (!DroppedControls.Contains(character))
+            {
+                builder.Append(character);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static readonly System.Buffers.SearchValues<char> DroppedControls = System.Buffers.SearchValues.Create(
+        Enumerable.Range(0, 0x20)
+            .Where(code => code is not ('\t' or '\n' or '\r' or 0x1B))
+            .Concat(Enumerable.Range(0x7F, 0x21))
+            .Select(code => (char)code)
+            .ToArray());
 
     private static (string Slice, int Consumed, int CodePoint) ReadRuneText(string text, int index)
     {

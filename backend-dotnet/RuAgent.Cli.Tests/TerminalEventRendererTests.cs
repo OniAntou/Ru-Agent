@@ -48,6 +48,17 @@ public sealed class TerminalEventRendererTests
     }
 
     [Fact]
+    public void Summary_escapes_and_controls_never_reach_stdout()
+    {
+        var output = RenderDurable(Envelope("run.failed", "code\u001b]52;c;cGF5bG9hZA==\u0007\u001b[31m_x\u0007\u009b2J"));
+
+        Assert.DoesNotContain('\u001b', output);
+        Assert.DoesNotContain('\u0007', output);
+        Assert.DoesNotContain('\u009b', output);
+        Assert.Contains("code_x", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Reconciliation_events_render_the_safe_intent_code()
     {
         var required = RenderDurable(Envelope("reconciliation.required", "recovery_ambiguous"));

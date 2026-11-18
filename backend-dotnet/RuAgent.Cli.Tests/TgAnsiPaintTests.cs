@@ -21,6 +21,36 @@ public sealed class TgAnsiPaintTests
         Assert.Null(spans);
     }
 
+    [Theory]
+    [InlineData("bell\u0007 text", "bell text")]
+    [InlineData("back\u0008space", "backspace")]
+    [InlineData("c1\u009b31m csi", "c131m csi")]
+    [InlineData("del\u007f char", "del char")]
+    public void Parse_DropsRawControlCharacters_WithAndWithoutEscapes(string input, string expected)
+    {
+        Assert.Equal(expected, TgAnsiPaint.Parse(input).Clean);
+
+        using var _ = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        var (clean, spans) = TgAnsiPaint.Parse(TuiPalette.Paint(input, TuiToken.Warn));
+        Assert.Equal(expected, clean);
+        Assert.Equal(expected, string.Concat(spans!.Select(span => span.Text)));
+    }
+
+    [Theory]
+    [InlineData("\u001b]0;title\u0007visible", "visible")]
+    [InlineData("\u001b]8;;https://example.invalid\u0007link\u001b]8;;\u0007 tail", "link tail")]
+    [InlineData("\u001b]52;c;cGF5bG9hZA==\u001b\\after", "after")]
+    public void Parse_BelTerminatedOscEndsTheSequenceAndKeepsTheRestOfTheRow(string input, string expected)
+    {
+        Assert.Equal(expected, TgAnsiPaint.Parse(input).Clean);
+    }
+
+    [Fact]
+    public void Parse_KeepsTabsAndNewlines()
+    {
+        Assert.Equal("a\tb\nc", TgAnsiPaint.Parse("a\tb\nc").Clean);
+    }
+
     [Fact]
     public void Parse_TrueColorPaint_YieldsOneSpanWithTheTokenColour()
     {

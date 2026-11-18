@@ -661,6 +661,13 @@ public sealed partial class AgentSlashCommands
         }
     }
 
+    /// <summary>
+    /// The /key argument is never echoed: a key pasted where the provider name belongs
+    /// (/key sk-...) would otherwise be printed back to the screen.
+    /// </summary>
+    internal const string UnknownProviderMessage =
+        "unknown_provider: that is not a provider. Use openai, anthropic, custom, or models.dev:<id>.";
+
     private async Task HandleKeyAsync(string? arg, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(arg))
@@ -701,7 +708,7 @@ public sealed partial class AgentSlashCommands
         var provider = ProviderCredential.Resolve(providerArg);
         if (provider is null)
         {
-            await _err.WriteLineAsync($"unknown_provider: '{providerArg.Trim()}' is not a provider. Use openai, anthropic, custom, or models.dev:<id>.").ConfigureAwait(false);
+            await _err.WriteLineAsync(UnknownProviderMessage).ConfigureAwait(false);
             return;
         }
 
@@ -764,7 +771,7 @@ public sealed partial class AgentSlashCommands
         var provider = ProviderCredential.Resolve(providerArg);
         if (provider is null)
         {
-            await _err.WriteLineAsync($"unknown_provider: '{providerArg.Trim()}' is not a provider. Use openai, anthropic, custom, or models.dev:<id>.").ConfigureAwait(false);
+            await _err.WriteLineAsync(UnknownProviderMessage).ConfigureAwait(false);
             return;
         }
 

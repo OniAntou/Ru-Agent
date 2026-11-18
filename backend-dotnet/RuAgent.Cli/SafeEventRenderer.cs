@@ -81,7 +81,9 @@ public static class SafeEventRenderer
 
     private static string Escape(string s)
     {
-        if (s.Length > 500) return Tui.TuiText.SafeCut(s, 500) + "...";
-        return s.Replace("\n", " ").Replace("\r", " ");
+        // The summary is a Host-issued code today, but this is stdout for append-only
+        // commands: drop escapes and controls like every other untrusted display field.
+        var flat = Tui.TuiText.SanitizeUntrusted(s.Replace("\n", " ").Replace("\r", " ").Replace("\t", " "));
+        return flat.Length > 500 ? Tui.TuiText.SafeCut(flat, 500) + "..." : flat;
     }
 }

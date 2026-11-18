@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - **fix(broker)**: A terminal command the Broker classifies as a Git read (`git diff`, `git status`, `git log`, ...) no longer runs a repository-local clean, smudge or process filter. It uses the same `GIT_CONFIG_*` override the Broker's own Git reads use; global filters such as LFS stay active, Git writes keep the repository's filters, and an unreadable filter table fails closed with `git_filters_unreadable`.
+- **fix(cli)**: `/key` never echoes its argument, so a key pasted where the provider name belongs (`/key sk-...`) is not printed back, and `/key` lines stay out of the composer's history. An HTTP timeout during a turn is reported as a failure with its message instead of "esc interrupted". Command output drawn through the transcript drops raw C0/C1 control characters (BEL, backspace, the single-byte CSI U+009B), and `agent run`/`agent attach` summaries pass through the untrusted-text filter.
 
 - **perf(cli)**: The terminal welcome sky no longer animates forever. It plays one 10-second cycle after it appears and after each key, mouse event or resize, then holds a still frame (never mid-sweep), and the session clock slows from 18 ms to 50 ms while nothing animates. An untouched welcome used to keep about 10% of one CPU core busy.
 

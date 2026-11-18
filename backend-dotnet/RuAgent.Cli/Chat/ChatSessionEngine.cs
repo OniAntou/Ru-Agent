@@ -448,7 +448,9 @@ public partial class ChatSessionEngine
 
     private void Remember(string line)
     {
-        if (string.IsNullOrWhiteSpace(line))
+        // A pasted key can land in a /key line by mistake (/key sk-...); recall must never
+        // hand it back, so /key lines stay out of the history.
+        if (string.IsNullOrWhiteSpace(line) || IsKeyCommand(line))
         {
             return;
         }
@@ -467,6 +469,9 @@ public partial class ChatSessionEngine
             _historyIndex = _history.Count;
         }
     }
+
+    private static bool IsKeyCommand(string line) =>
+        line.TrimStart().Split(' ', 2)[0].Equals("/key", StringComparison.OrdinalIgnoreCase);
 
     private void StartTurn(ChatSubmissionSnapshot submission)
     {
@@ -539,7 +544,10 @@ public partial class ChatSessionEngine
             if (!_localCommandActive) Dispatch(() => _view.SetRunning(QueuedCount));
             await _submissionHandler(submission, ct).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        // An HTTP client timeout also surfaces as a cancellation (TaskCanceledException with
+        // an inner TimeoutException). It is a failure, not the user's Escape, so it takes the
+        // error path below and names the timeout instead of reporting an interrupt.
+        catch (OperationCanceledException error) when (error.InnerException is not TimeoutException)
         {
             _submissionDiscarded?.Invoke(submission);
             Dispatch(() => _view.Append(" esc interrupted", ChatMessageKind.Meta));

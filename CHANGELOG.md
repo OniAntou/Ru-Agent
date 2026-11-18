@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Select answers with arrow keys or mouse clicks. Wrap long
+  questions and suggestions, and preserve a custom draft under Other.
 - **fix(tui)**: Use a steady vertical-bar caret in the prompt editor instead of
   a white block. Preserve the caret style while typing and returning from menus.
 - **perf(tui)**: Show saved messages while run details and usage load, and resolve

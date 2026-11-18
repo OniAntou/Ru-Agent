@@ -496,8 +496,11 @@ the available window height. The wrap cache is shared by measurement and drawing
 content replacement requests layout, and resize clamps the scroll offset against
 the new page size. The popup does not clear background cells outside its card.
 
-`ask_user` in Terminal.Gui uses a native modal answer editor. Suggested options fill
-the editor without submitting; only Enter confirms. Text paste and Unicode/newlines
+`ask_user` in Terminal.Gui uses a native modal answer editor. The question and
+numbered choices share a wrapped, scrollable region. Up/Down, Tab/Shift+Tab and
+mouse clicks select suggestions, including their continuation lines. The Other
+choice restores the custom draft and caret when switching back. Only Enter confirms.
+Text paste and Unicode/newlines
 remain answer text, never slash commands. The composer draft/cursor survives the
 modal. Escape defers the question and pauses queued prompts without cancelling the
 Host run; `Continue` can reopen that tracked question while the queue is paused.

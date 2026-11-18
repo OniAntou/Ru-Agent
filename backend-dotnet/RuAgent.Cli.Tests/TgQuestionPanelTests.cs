@@ -1,3 +1,4 @@
+using System.Drawing;
 using RuAgent.Cli.TerminalGui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drivers;
@@ -64,6 +65,82 @@ public sealed class TgQuestionPanelTests
                 Assert.False(window.IsModalPanelOpen);
                 Assert.Equal(1, deferred);
                 app.RequestStop(); return false;
+            });
+        });
+    }
+
+    [Fact]
+    public void Arrows_select_all_options_and_other_restores_the_unsent_custom_answer()
+    {
+        Drive((window, app) =>
+        {
+            string? answer = null;
+            window.PanelConfirmed += value => answer = value;
+            window.ShowQuestion(ChatInputWorkflowTests.Question with { Options = ["staging", "production", "development"] });
+            app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
+            {
+                var editor = window.QuestionPanel.Editor;
+                Assert.Contains("4. Other", string.Join('\n', TgSnapshot.Capture(app)));
+                app.InjectKey(Key.CursorDown);
+                Assert.Equal("staging", editor.Text);
+                app.InjectKey(Key.CursorDown);
+                Assert.Equal("production", editor.Text);
+                app.InjectKey(Key.CursorDown);
+                Assert.Equal("development", editor.Text);
+                app.InjectKey(Key.CursorDown);
+                Assert.Empty(editor.Text);
+                Assert.True(window.TryPasteText("custom\nanswer"));
+                editor.InsertionPoint = 2;
+                app.InjectKey(Key.CursorUp);
+                Assert.Equal("development", editor.Text);
+                app.InjectKey(Key.CursorDown);
+                Assert.Equal("custom\nanswer", editor.Text);
+                Assert.Equal(2, editor.InsertionPoint);
+                Assert.Null(answer);
+                app.InjectKey(Key.Enter);
+                Assert.Equal("custom\nanswer", answer);
+                app.RequestStop(); return false;
+            });
+        });
+    }
+
+    [Fact]
+    public void Click_selects_a_wrapped_continuation_row_and_then_other_without_sending()
+    {
+        Drive((window, app) =>
+        {
+            string? answer = null;
+            window.PanelConfirmed += value => answer = value;
+            var longOption = "Recommended " + string.Concat(Enumerable.Repeat("detail ", 24)) + "visible ending";
+            window.ShowQuestion(ChatInputWorkflowTests.Question with { Options = [longOption, "production", "development"] });
+            app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
+            {
+                var panel = window.QuestionPanel;
+                var bounds = panel.ViewportToScreen();
+                var screen = TgSnapshot.Capture(app).ToArray();
+                var first = Array.FindIndex(screen, line => line.Contains("1. Recommended", StringComparison.Ordinal));
+                var continuation = Array.FindIndex(screen, line => line.Contains("visible ending", StringComparison.Ordinal));
+                Assert.InRange(first, bounds.Top, bounds.Bottom - 1);
+                Assert.InRange(continuation, first + 1, bounds.Bottom - 1);
+                ClickRow(continuation);
+                Assert.Equal(longOption, panel.Editor.Text);
+                Assert.Null(answer);
+                var other = Array.FindIndex(screen, line => line.Contains("4. Other", StringComparison.Ordinal));
+                Assert.InRange(other, continuation + 1, bounds.Bottom - 1);
+                ClickRow(other);
+                Assert.Empty(panel.Editor.Text);
+                Assert.True(panel.Editor.HasFocus);
+                Assert.Null(answer);
+                Assert.True(window.TryPasteText("another choice"));
+                app.InjectKey(Key.Enter);
+                Assert.Equal("another choice", answer);
+                app.RequestStop(); return false;
+
+                void ClickRow(int row) => app.Mouse.RaiseMouseEvent(new Mouse
+                {
+                    Flags = MouseFlags.LeftButtonClicked,
+                    ScreenPosition = new Point(bounds.Left + 8, row),
+                });
             });
         });
     }
@@ -154,7 +231,7 @@ public sealed class TgQuestionPanelTests
     }
 
     [Fact]
-    public void Long_question_pages_and_reverse_tab_starts_at_last_option()
+    public void Long_question_pages_and_reverse_tab_reaches_other_and_last_suggestion()
     {
         Drive((window, app) =>
         {
@@ -166,15 +243,26 @@ public sealed class TgQuestionPanelTests
             app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
             {
                 app.InjectKey(Key.Tab.WithShift);
+                Assert.Empty(window.QuestionPanel.Editor.Text);
+                app.InjectKey(Key.Tab.WithShift);
                 Assert.Equal("option 8", window.QuestionPanel.Editor.Text);
-                app.InjectKey(Key.PageDown); app.InjectKey(Key.PageDown); app.InjectKey(Key.PageDown);
+                app.InjectKey(Key.PageUp); app.InjectKey(Key.PageUp); app.InjectKey(Key.PageUp);
                 app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
                 {
-                    var screen = string.Join('\n', TgSnapshot.Capture(app));
-                    Assert.Contains("Question row 20", screen);
-                    Assert.Contains("option 8", screen);
-                    Assert.DoesNotContain('\u001b', screen);
-                    app.RequestStop(); return false;
+                    var top = string.Join('\n', TgSnapshot.Capture(app));
+                    Assert.Contains("Question row 01", top);
+                    Assert.DoesNotContain("8. option 8", top);
+                    app.InjectKey(Key.PageDown); app.InjectKey(Key.PageDown); app.InjectKey(Key.PageDown);
+                    app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
+                    {
+                        var bottom = string.Join('\n', TgSnapshot.Capture(app));
+                        Assert.Contains("8. option 8", bottom);
+                        Assert.Contains("9. Other", bottom);
+                        Assert.DoesNotContain("Question row 01", bottom);
+                        Assert.DoesNotContain('\u001b', bottom);
+                        app.RequestStop(); return false;
+                    });
+                    return false;
                 });
                 return false;
             });

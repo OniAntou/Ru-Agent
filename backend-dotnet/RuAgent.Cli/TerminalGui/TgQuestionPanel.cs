@@ -5,15 +5,25 @@ using Terminal.Gui.ViewBase;
 
 namespace RuAgent.Cli.TerminalGui;
 
-/// <summary>A visible answer editor; suggestions fill it, and only explicit Enter sends it.</summary>
+/// <summary>Scrollable answer choices above an editor that submits only on Enter.</summary>
 internal sealed class TgQuestionPanel : View
 {
+    private const int BodyTop = 2;
+    private const int ChromeRows = BodyTop + 2; // Answer label and footer.
+    private const int MaxEditorRows = 3;
+    private const string OtherLabel = "Other · write your own answer";
+
+    private readonly record struct BodyRow(string Text, int Choice = -1, bool First = false);
+
     private string _question = "";
     private IReadOnlyList<string> _options = [];
-    private IReadOnlyList<string> _questionRows = [];
+    private readonly List<BodyRow> _body = [];
+    private readonly List<int> _choiceStarts = [];
     private int _wrapWidth = -1;
     private int _offset;
     private int _selected = -1;
+    private string _customDraft = "";
+    private int _customCursor;
     private string? _error;
     internal TgPromptEditor Editor { get; } = new();
     internal event Action<string>? Answered;
@@ -29,13 +39,21 @@ internal sealed class TgQuestionPanel : View
         Editor.Width = Dim.Fill(2);
         Editor.Height = Dim.Func(_ => InputRows);
         Editor.KeyDown += OnEditorKey;
+        Editor.ContentsChanged += (_, _) =>
+        {
+            _error = null;
+            SetNeedsDraw();
+        };
         Add(Editor);
     }
 
-    private int InputRows => Math.Clamp(Viewport.Height / 5, 1, 3);
-    private int OptionRows => Math.Min(_options.Count, Math.Max(0, Math.Min(3, Viewport.Height - 8)));
-    private int QuestionRows => Math.Max(1, Math.Min(6, Viewport.Height - InputRows - OptionRows - 5));
-    private int EditorTop => 3 + QuestionRows + OptionRows;
+    private int InputRows => Math.Clamp(Viewport.Height - ChromeRows - 1, 1, MaxEditorRows);
+    private int BodyHeight => Math.Max(0, Viewport.Height - ChromeRows - InputRows);
+    private int EditorTop => BodyTop + BodyHeight + 1;
+    private int ChoiceCount => _options.Count == 0 ? 0 : _options.Count + 1;
+    private bool IsPreset(int choice) => choice >= 0 && choice < _options.Count;
+    // Editing a suggested answer turns it into a custom draft.
+    private int SelectedChoice => IsPreset(_selected) && Editor.Text != _options[_selected] ? _options.Count : _selected;
 
     internal void SetQuestion(ChatInputQuestion question)
     {
@@ -44,6 +62,8 @@ internal sealed class TgQuestionPanel : View
         _wrapWidth = -1;
         _offset = 0;
         _selected = -1;
+        _customDraft = "";
+        _customCursor = 0;
         _error = null;
         Editor.Text = "";
         SetNeedsLayout();
@@ -52,16 +72,70 @@ internal sealed class TgQuestionPanel : View
 
     internal int MeasureHeight(int width, int available)
     {
-        EnsureQuestionRows(width);
-        return Math.Min(available, Math.Min(6, _questionRows.Count) + Math.Min(3, _options.Count) + 8);
+        EnsureBodyRows(width);
+        return Math.Min(available, _body.Count + ChromeRows + MaxEditorRows);
     }
 
-    private void EnsureQuestionRows(int width)
+    private void EnsureBodyRows(int width)
     {
         var inner = Math.Max(1, width - 4);
         if (_wrapWidth == inner) return;
-        _questionRows = TuiText.HardWrap(_question.Split('\n'), inner);
         _wrapWidth = inner;
+        _body.Clear();
+        _choiceStarts.Clear();
+        foreach (var line in TuiText.Wrap(TuiText.ExpandTabs(_question), inner)) _body.Add(new(line));
+        if (ChoiceCount == 0) return;
+        _body.Add(new(""));
+        for (var choice = 0; choice < ChoiceCount; choice++)
+        {
+            _choiceStarts.Add(_body.Count);
+            var label = IsPreset(choice) ? _options[choice] : OtherLabel;
+            var number = $"{choice + 1}. ";
+            var prefixWidth = number.Length + 2;
+            var lines = TuiText.Wrap(TuiText.ExpandTabs(label), Math.Max(1, inner - prefixWidth));
+            _body.Add(new(number + (lines.Count > 0 ? lines[0] : ""), choice, First: true));
+            foreach (var line in lines.Skip(1)) _body.Add(new(new string(' ', prefixWidth) + line, choice));
+        }
+    }
+
+    private void ScrollBody(int rows)
+    {
+        EnsureBodyRows(Viewport.Width);
+        _offset = Math.Clamp(_offset + rows, 0, Math.Max(0, _body.Count - BodyHeight));
+        SetNeedsDraw();
+    }
+
+    private void MoveChoice(int step)
+    {
+        var current = SelectedChoice;
+        var next = current < 0 ? (step > 0 ? 0 : ChoiceCount - 1) : (current + step + ChoiceCount) % ChoiceCount;
+        SelectChoice(next, reveal: true);
+    }
+
+    private void SelectChoice(int choice, bool reveal)
+    {
+        var current = SelectedChoice;
+        if (current != choice)
+        {
+            if (!IsPreset(current))
+            {
+                _customDraft = Editor.Text;
+                _customCursor = Editor.InsertionPoint;
+            }
+            _selected = choice;
+            Editor.Text = IsPreset(choice) ? _options[choice] : _customDraft;
+            Editor.InsertionPoint = IsPreset(choice) ? Editor.Text.Length : _customCursor;
+            _error = null;
+        }
+        if (reveal)
+        {
+            EnsureBodyRows(Viewport.Width);
+            var start = _choiceStarts[choice];
+            var end = choice + 1 < ChoiceCount ? _choiceStarts[choice + 1] : _body.Count;
+            _offset = end - start > BodyHeight ? start : Math.Clamp(_offset, Math.Max(0, end - BodyHeight), start);
+        }
+        Editor.SetFocus();
+        SetNeedsDraw();
     }
 
     internal bool Paste(string text)
@@ -90,45 +164,61 @@ internal sealed class TgQuestionPanel : View
         else if (key == Key.Tab || key == Key.Tab.WithShift)
         {
             key.Handled = true;
-            if (_options.Count == 0) return;
-            _selected = _selected < 0 ? (key == Key.Tab ? 0 : _options.Count - 1)
-                : (_selected + (key == Key.Tab ? 1 : _options.Count - 1)) % _options.Count;
-            Editor.Text = _options[_selected];
-            Editor.InsertionPoint = Editor.Text.Length;
-            _error = null;
-            SetNeedsDraw();
+            if (ChoiceCount > 0) MoveChoice(key == Key.Tab ? 1 : -1);
+        }
+        else if (ChoiceCount > 0 && (key == Key.CursorUp && (IsPreset(SelectedChoice) || Editor.IsAtFirstVisualRow)
+            || key == Key.CursorDown && (IsPreset(SelectedChoice) || Editor.IsAtLastVisualRow)))
+        {
+            key.Handled = true;
+            MoveChoice(key == Key.CursorUp ? -1 : 1);
         }
         else if (key == Key.PageUp || key == Key.PageDown)
         {
             key.Handled = true;
-            EnsureQuestionRows(Viewport.Width);
-            _offset = Math.Clamp(_offset + (key == Key.PageDown ? QuestionRows : -QuestionRows), 0,
-                Math.Max(0, _questionRows.Count - QuestionRows));
-            SetNeedsDraw();
+            ScrollBody(key == Key.PageDown ? BodyHeight : -BodyHeight);
         }
         else if (key == Key.V.WithCtrl)
         { key.Handled = true; Paste(CliClipboard.TryReadText() ?? ""); }
+    }
+
+    protected override bool OnMouseEvent(Mouse mouse)
+    {
+        if (mouse.Position is not { } position || position.Y < BodyTop || position.Y >= BodyTop + BodyHeight)
+            return false;
+        if (mouse.Flags.HasFlag(MouseFlags.WheeledUp)) ScrollBody(-3);
+        else if (mouse.Flags.HasFlag(MouseFlags.WheeledDown)) ScrollBody(3);
+        else if (mouse.Flags.HasFlag(MouseFlags.LeftButtonClicked))
+        {
+            EnsureBodyRows(Viewport.Width);
+            var row = _offset + position.Y - BodyTop;
+            if (row >= _body.Count || _body[row].Choice < 0) return false;
+            SelectChoice(_body[row].Choice, reveal: false);
+        }
+        else return false;
+        mouse.Handled = true;
+        return true;
     }
 
     protected override bool OnDrawingContent(DrawContext? context)
     {
         var width = Viewport.Width;
         if (width < 1 || Viewport.Height < 1) return true;
-        EnsureQuestionRows(width);
-        _offset = Math.Clamp(_offset, 0, Math.Max(0, _questionRows.Count - QuestionRows));
+        EnsureBodyRows(width);
+        _offset = Math.Clamp(_offset, 0, Math.Max(0, _body.Count - BodyHeight));
         for (var row = 0; row < Viewport.Height; row++) Paint(row, "", TuiToken.Ink);
         Paint(0, "Question · answer in Ru", TuiToken.Brand2);
-        for (var index = 0; index < QuestionRows && _offset + index < _questionRows.Count; index++)
-            Paint(2 + index, _questionRows[_offset + index], TuiToken.Ink);
-        var start = _selected < 0 ? 0 : _selected / Math.Max(1, OptionRows) * Math.Max(1, OptionRows);
-        for (var index = 0; index < OptionRows && start + index < _options.Count; index++)
+        var selected = SelectedChoice;
+        for (var index = 0; index < BodyHeight && _offset + index < _body.Count; index++)
         {
-            var option = start + index;
-            Paint(2 + QuestionRows + index, $"{(option == _selected ? '›' : ' ')} {option + 1}. {_options[option]}",
-                option == _selected ? TuiToken.Ok : TuiToken.Meta);
+            var row = _body[_offset + index];
+            var active = row.Choice >= 0 && row.Choice == selected;
+            var text = row.First ? (active ? "› " : "  ") + row.Text : row.Text;
+            Paint(BodyTop + index, text, row.Choice < 0 ? TuiToken.Ink : active ? TuiToken.Ok : TuiToken.Meta);
         }
-        Paint(EditorTop - 1, _error ?? "Answer (Tab cycles suggestions)", _error is null ? TuiToken.Meta : TuiToken.Err);
-        Paint(Viewport.Height - 1, "enter send · tab option · ctrl+j newline · pgup/dn question · esc later", TuiToken.Meta);
+        Paint(EditorTop - 1, _error ?? "Answer", _error is null ? TuiToken.Meta : TuiToken.Err);
+        var keys = ChoiceCount > 0 ? "↑/↓ or click select · Enter send · Esc later" : "Enter send · Ctrl+J newline · Esc later";
+        if (_body.Count > BodyHeight) keys += " · PgUp/Dn scroll";
+        Paint(Viewport.Height - 1, keys, TuiToken.Meta);
         return true;
     }
 

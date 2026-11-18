@@ -24,6 +24,7 @@ public sealed class TgFocusTests
         {
             Assert.True(window.Composer.Input.HasFocus);
             Assert.True(window.Composer.Input.Cursor?.IsVisible);
+            Assert.Equal(CursorStyle.SteadyBar, window.Composer.Input.Cursor?.Style);
             app.RequestStop();
             return false;
         });
@@ -50,6 +51,7 @@ public sealed class TgFocusTests
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
         {
             Assert.Equal("ab", window.Composer.Input.Text?.ToString());
+            Assert.Equal(CursorStyle.SteadyBar, window.Composer.Input.Cursor?.Style);
             app.RequestStop();
             return false;
         });

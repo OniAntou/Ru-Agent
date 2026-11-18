@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Globalization;
 using System.Text;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.Views;
 
 namespace RuAgent.Cli.TerminalGui;
@@ -15,6 +16,7 @@ public sealed class TgPromptEditor : TextView
 
     public TgPromptEditor()
     {
+        Cursor = new Cursor { Style = CursorStyle.SteadyBar };
         Multiline = true;
         EnterKeyAddsLine = true;
         TabKeyAddsTab = false;

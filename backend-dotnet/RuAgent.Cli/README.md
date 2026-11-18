@@ -53,7 +53,9 @@ and diagnostics; plain and JSON output retain their existing contracts.
 Ru's terminal chrome uses a mint-accented signature, a quiet session divider and
 a filled prompt surface in the panel tone — the opencode-style block, with no
 frame outline and no accent rail. An empty chat centres the logo above the same
-block. The empty prompt is capped at 80 columns. Active sessions use a padded
+block. Its editor uses a steady vertical-bar caret instead of a block cursor,
+without an application blink timer. The empty prompt is capped at 80 columns.
+Active sessions use a padded
 transcript and a full-width bottom prompt with the same side margins as chat; the
 model, selected reasoning effort and provider sit on the meta row inside the block. The permission preset
 appears in green beside the token cluster in the top header during chat; the

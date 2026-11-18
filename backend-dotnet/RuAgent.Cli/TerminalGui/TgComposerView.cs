@@ -1,6 +1,5 @@
 using RuAgent.Cli.Tui;
 using Terminal.Gui.Drawing;
-using Terminal.Gui.Drivers;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -41,7 +40,6 @@ public sealed class TgComposerView : View
         SetScheme(TgPalette.Scheme(TuiToken.Ink, TuiPalette.SurfaceRgb()));
         CanFocus = true;
         Input = new TgPromptEditor { X = Inset, Y = 1, Width = Dim.Fill(Inset), Height = 1, Text = string.Empty };
-        Input.Cursor = new Cursor { Style = CursorStyle.SteadyBlock };
         Input.SetScheme(TgPalette.Scheme(TuiToken.Ink, TuiPalette.SurfaceRgb()));
         _ghost = new Label { X = Inset, Y = 1, Width = Dim.Fill(Inset), Height = 1, Text = "Ask anything…" };
         _ghost.SetScheme(TgPalette.Scheme(TuiToken.Meta, TuiPalette.SurfaceRgb()));

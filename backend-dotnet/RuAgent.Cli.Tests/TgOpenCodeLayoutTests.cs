@@ -224,12 +224,12 @@ public sealed class TgOpenCodeLayoutTests
     }
 
     [Fact]
-    public void CompactComposerKeepsABlockCursorAfterFocusAndEditing()
+    public void CompactComposerKeepsASteadyBarCursorAfterFocusAndEditing()
     {
         Render(120, 30, true, w => w.Composer.Input.Text = "Hello", (_, w, _) =>
         {
             w.Composer.Input.InsertionPoint = 2;
-            Assert.Equal(CursorStyle.SteadyBlock, w.Composer.Input.Cursor.Style);
+            Assert.Equal(CursorStyle.SteadyBar, w.Composer.Input.Cursor.Style);
             Assert.Equal(TgComposerView.RowCount, w.Composer.Frame.Height);
         });
     }

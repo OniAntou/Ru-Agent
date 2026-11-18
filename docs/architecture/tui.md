@@ -155,6 +155,11 @@ run. Saved conversations remain available through `/sessions`.
 Escape can cancel pending task inspection before its panel opens.
 Inspection cancellation keeps priority over model cancellation.
 
+`TgPromptEditor` owns a `SteadyBar` cursor, so focus, typing, wrapping and modal
+return keep a non-blinking vertical caret. The composer does not override it with
+a block. Existing drivers emit the terminal cursor style; no extra timer or
+render loop is introduced.
+
 The composer metadata can display the selected effort alone (for example `max` or `high`) between model and provider.
 Startup and existing selection refreshes use the settings response's selected
 reasoning value, with no extra catalog call or polling. Model/provider changes

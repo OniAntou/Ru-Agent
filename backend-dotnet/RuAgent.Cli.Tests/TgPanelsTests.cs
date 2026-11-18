@@ -233,6 +233,7 @@ public sealed class TgPanelsTests
             Assert.True(window.Composer.Input.HasFocus);
             Assert.Equal("keep this draft", window.Composer.Input.Text?.ToString());
             Assert.Equal(5, window.Composer.Input.InsertionPoint);
+            Assert.Equal(CursorStyle.SteadyBar, window.Composer.Input.Cursor?.Style);
             app.RequestStop();
             return false;
         });

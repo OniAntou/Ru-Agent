@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Opening Session usage or Settings no longer turns the window black for about half a second. The modal's entrance transition animated the dim backdrop's own opacity to 1, so the 75% scrim drew as a solid canvas until the transition ended; the translucency now lives on a shared `RuModalScrimBrush`.
 - **fix(gui)**: The desktop composer wraps a long prompt to its width instead of running it off the right edge as one line, and grows with the window (35% of the chat view, 180–480 px) before it scrolls vertically.
 - **fix(broker)**: Broker `web_search` races Bing as its primary engine, with DuckDuckGo and Mojeek as fallbacks. Google HTML search now answers scripted clients with a JavaScript-only page, so as the primary it failed on every call and only added a wasted request. A configured Google endpoint still parses as before.
 - **fix(gui)**: Advisor consultations (`advisor_usage`) no longer feed the desktop context meter or replace a reply's usage footer. The session usage panel bills them on the advisor model's own rate, shows them as an `advisor` figure on the run's row, and leaves them out of the run's peak context; a run whose advisor model has no published rate is unpriced instead of priced without it. Reopening a session in the desktop app or the terminal restores the context reading from the run's own model, never from an advisor report.

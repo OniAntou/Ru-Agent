@@ -1,3 +1,5 @@
+using System.Linq;
+using System.Xml.Linq;
 using Xunit;
 
 namespace RuApp.Tests;
@@ -84,6 +86,26 @@ public sealed class SessionUsagePanelUiSourceContractTests
         Assert.Equal("Close session usage",
             GuiSource.AttributeValue(GuiSource.Require(document, "CloseSessionUsageButton"), "Name"));
         Assert.Contains("_isSessionUsageOpen", GuiSource.MethodBody(code, "OnShellPreviewKeyDown"), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("SessionUsageBackdrop")]
+    [InlineData("SettingsBackdrop")]
+    public void A_modal_scrim_keeps_its_translucency_on_the_brush(string backdrop)
+    {
+        var document = GuiSource.Xml("MainWindow.xaml");
+        var element = GuiSource.Require(document, backdrop);
+
+        // The modal's EntranceThemeTransition animates the backdrop's own opacity to 1.
+        // An element-level 0.75 therefore drew a solid canvas for the whole entrance and
+        // then snapped back: the window went black for half a second on every open.
+        Assert.Null(GuiSource.AttributeValue(element, "Opacity"));
+        Assert.Equal("{StaticResource RuModalScrimBrush}", GuiSource.AttributeValue(element, "Background"));
+
+        var app = GuiSource.Xml("App.xaml");
+        var scrim = app.Descendants()
+            .Single(node => (string?)node.Attribute(XName.Get("Key", "http://schemas.microsoft.com/winfx/2006/xaml")) == "RuModalScrimBrush");
+        Assert.Equal("0.75", (string?)scrim.Attribute("Opacity"));
     }
 
     [Fact]

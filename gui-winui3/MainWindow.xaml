@@ -687,9 +687,8 @@
             </Grid.ChildrenTransitions>
 
             <!-- Dimmed Backdrop (Click outside card to close) -->
-            <Border
-                    Background="{StaticResource RuCanvasBrush}"
-                    Opacity="0.75"
+            <Border x:Name="SettingsBackdrop"
+                    Background="{StaticResource RuModalScrimBrush}"
                     PointerPressed="OnSettingsBackdropPointerPressed" />
 
             <!-- Dialog Card Container (Fixed stable dimension avoids jitter/shifting) -->
@@ -751,8 +750,7 @@
 
             <!-- Dimmed Backdrop (Click outside card to close) -->
             <Border x:Name="SessionUsageBackdrop"
-                    Background="{StaticResource RuCanvasBrush}"
-                    Opacity="0.75"
+                    Background="{StaticResource RuModalScrimBrush}"
                     PointerPressed="OnSessionUsageBackdropPointerPressed" />
 
             <!-- Dialog Card Container: the height follows the panel, the code only

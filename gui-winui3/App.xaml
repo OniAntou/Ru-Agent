@@ -232,6 +232,11 @@
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
 
             <SolidColorBrush x:Key="RuCanvasBrush" Color="{ThemeResource RuCanvasColor}" />
+            <!-- The dim behind a modal. Its translucency lives on the brush, not on the
+                 backdrop element: a modal's EntranceThemeTransition animates its children's
+                 opacity to 1, which turned an element-level 0.75 into a solid canvas for
+                 the length of the entrance and then snapped it back (a black flash). -->
+            <SolidColorBrush x:Key="RuModalScrimBrush" Color="{ThemeResource RuCanvasColor}" Opacity="0.75" />
             <SolidColorBrush x:Key="RuSidebarBrush" Color="{ThemeResource RuSidebarColor}" />
             <!-- The canvases a custom background shows through. Separate from the
                  brushes above so popups, menus and inputs stay opaque; the shell

@@ -6,8 +6,13 @@ namespace RuAgent.Client;
 /// <param name="Sequence">Durable event sequence, so a reader can order reports.</param>
 /// <param name="ModelStepId">The step that produced the report, when the Host named one.</param>
 /// <param name="PayloadRef">Handle for the report's payload.</param>
-/// <param name="Advisor">An advisor consultation (ADR 0047): billed with the run, never its context.</param>
-public readonly record struct SessionUsageReport(long Sequence, string? ModelStepId, string PayloadRef, bool Advisor = false);
+/// <param name="Advisor">An advisor consultation (ADR 0047): billed on the advisor model, never the run's context.</param>
+/// <param name="Checkpoint">A compaction checkpoint request: billed with the run, never its context.</param>
+public readonly record struct SessionUsageReport(long Sequence, string? ModelStepId, string PayloadRef, bool Advisor = false, bool Checkpoint = false)
+{
+    /// <summary>Whether the report measures the run's own next-request context.</summary>
+    public bool IsContextReading => !Advisor && !Checkpoint;
+}
 
 /// <summary>
 /// Finds the usage report to restore when a session is opened.
@@ -26,6 +31,18 @@ public static class SessionUsageReplayPolicy
     /// <summary>The safe code an advisor consultation's usage report carries (ADR 0047).</summary>
     public const string AdvisorUsageSafeCode = "advisor_usage";
 
+    /// <summary>The safe code of a compaction checkpoint request's usage report.</summary>
+    public const string CheckpointUsageSafeCode = "checkpoint_usage";
+
+    /// <summary>
+    /// Whether a usage report with this safe code measures the run's own context. An advisor
+    /// consultation and a compaction checkpoint each send their own separate request; both
+    /// are billed, but neither says how full the run's next request is.
+    /// </summary>
+    public static bool IsContextReading(string? safeSummary) =>
+        !string.Equals(safeSummary, AdvisorUsageSafeCode, StringComparison.Ordinal)
+        && !string.Equals(safeSummary, CheckpointUsageSafeCode, StringComparison.Ordinal);
+
     /// <summary>Bound on distinct reports read from one run's log.</summary>
     private const int MaximumReports = 4096;
 
@@ -33,7 +50,8 @@ public static class SessionUsageReplayPolicy
     /// The newest usage report in one run's replayed event lines, or null when the run
     /// reported none. This is the latest step's context-window reading, not cumulative
     /// billing for the run, so it follows line order rather than the distinct-payload set.
-    /// An advisor consultation reads its own separate request, so it is never this reading.
+    /// An advisor consultation or a compaction checkpoint reads its own separate request, so it
+    /// is never this reading.
     /// </summary>
     /// <param name="eventLines">Raw replay lines, SSE <c>data:</c> or plain JSON.</param>
     public static SessionUsageReport? FindLatestUsageReport(IEnumerable<string> eventLines)
@@ -43,7 +61,7 @@ public static class SessionUsageReplayPolicy
         SessionUsageReport? latest = null;
         foreach (var line in eventLines)
         {
-            if (TryParseReport(line, out var report) && !report.Advisor) latest = report;
+            if (TryParseReport(line, out var report) && report.IsContextReading) latest = report;
         }
 
         return latest;
@@ -137,10 +155,11 @@ public static class SessionUsageReplayPolicy
                 && sequenceElement.TryGetInt64(out var parsed) ? parsed : 0;
             var stepId = root.TryGetProperty("model_step_id", out var stepElement)
                 && stepElement.ValueKind == JsonValueKind.String ? stepElement.GetString() : null;
-            var advisor = root.TryGetProperty("safe_summary", out var summary)
-                && summary.ValueKind == JsonValueKind.String
-                && string.Equals(summary.GetString(), AdvisorUsageSafeCode, StringComparison.Ordinal);
-            report = new SessionUsageReport(sequence, stepId, payloadRef.GetString()!, advisor);
+            var safeSummary = root.TryGetProperty("safe_summary", out var summary)
+                && summary.ValueKind == JsonValueKind.String ? summary.GetString() : null;
+            report = new SessionUsageReport(sequence, stepId, payloadRef.GetString()!,
+                Advisor: string.Equals(safeSummary, AdvisorUsageSafeCode, StringComparison.Ordinal),
+                Checkpoint: string.Equals(safeSummary, CheckpointUsageSafeCode, StringComparison.Ordinal));
             return true;
         }
     }

@@ -60,10 +60,24 @@ public sealed class TuiUsageTracker
         get { lock (_gate) return _costKnown; }
     }
 
+    /// <summary>The next request's size as far as it is known: the reading plus the reply tail.</summary>
     public long? ContextTokens
     {
-        get { lock (_gate) return _context.Tokens; }
+        get { lock (_gate) return _context.ContextTokens; }
     }
+
+    /// <summary>Where the Host compacts, in the units of <see cref="ContextTokens"/>, when published.</summary>
+    public long? CompactionTriggerTokens
+    {
+        get { lock (_gate) return _context.CompactionTriggerTokens; }
+    }
+
+    /// <summary>Provider tokens per heuristic token for the bound route, when a report taught it.</summary>
+    public double? Ratio
+    {
+        get { lock (_gate) return _context.Ratio; }
+    }
+
 
     public bool ContextIsEstimated
     {
@@ -76,7 +90,7 @@ public sealed class TuiUsageTracker
         {
             lock (_gate)
             {
-                return _contextLimit is > 0 && _context.Tokens is { } tokens
+                return _contextLimit is > 0 && _context.ContextTokens is { } tokens
                     ? Math.Clamp(100d * tokens / _contextLimit.Value, 0, 999)
                     : null;
             }
@@ -102,6 +116,18 @@ public sealed class TuiUsageTracker
             // Keep the last reading while the next request is being prepared.
             _context.Reset(preserveReading: true);
         }
+    }
+
+    /// <summary>Names the provider route; a different one forgets the token ratio and budget.</summary>
+    public void UseRoute(string? protocol, string? model)
+    {
+        lock (_gate) _context.UseRoute(ContextBaselineMemory.RouteKey(protocol, model));
+    }
+
+    /// <summary>Counts a finished reply the latest reading does not contain, from its visible characters.</summary>
+    public void ObserveReplyTail(long characters)
+    {
+        lock (_gate) _context.ObserveReplyTail(characters);
     }
 
     public bool BeginStep(string? stepId, long sequence)

@@ -35,6 +35,21 @@ public sealed class AgentUsageEstimateModelTests
     }
 
     [Fact]
+    public void TryParse_reads_the_published_compaction_trigger_and_rejects_a_malformed_one()
+    {
+        var frame = Frame(5, new { estimated_input_tokens = 4_000, max_prompt_tokens = 200_000, compaction_trigger_tokens = 159_000, model_step_id = StepId });
+        Assert.True(AgentUsageEstimateModel.TryParse(frame, out var estimate));
+        Assert.Equal(159_000, estimate!.CompactionTriggerTokens);
+
+        var absent = Frame(6, new { estimated_input_tokens = 4_000, max_prompt_tokens = 200_000, compaction_trigger_tokens = (long?)null, model_step_id = StepId });
+        Assert.True(AgentUsageEstimateModel.TryParse(absent, out var none));
+        Assert.Null(none!.CompactionTriggerTokens);
+
+        var malformed = Frame(7, new { estimated_input_tokens = 4_000, max_prompt_tokens = 200_000, compaction_trigger_tokens = "soon", model_step_id = StepId });
+        Assert.False(AgentUsageEstimateModel.TryParse(malformed, out _));
+    }
+
+    [Fact]
     public void TryParse_accepts_an_unknown_prompt_budget_so_the_client_falls_back_to_its_catalog()
     {
         var frame = Frame(4, new { estimated_input_tokens = 900, max_prompt_tokens = 0, model_step_id = StepId });

@@ -73,6 +73,17 @@ internal sealed partial class AgentRunCompaction
         _internalRun = internalRun;
     }
 
+    /// <summary>
+    /// The estimated request size at which preflight compacts a request against this prompt
+    /// budget: the same normal-strategy trigger <see cref="ContextBudgetPolicy"/> applies before
+    /// each step. Published beside the step's estimate so a context meter can mark it. The
+    /// history-window fill is a second trigger this figure does not cover.
+    /// </summary>
+    internal long? NormalTriggerTokens(long maxPromptTokens) =>
+        maxPromptTokens > 0
+            ? _contextBudgetPolicy.EvaluateAvailablePromptTokens(0, maxPromptTokens, ContextCompactionStrategy.Normal).SoftTriggerTokens
+            : null;
+
     public async Task<ContextCompactionResult> CompactAsync(
         RunId runId,
         ContextCompactionStrategy strategy,

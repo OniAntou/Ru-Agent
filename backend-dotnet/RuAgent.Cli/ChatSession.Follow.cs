@@ -92,6 +92,10 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            // The run's last request did not contain its final reply; count it until the next request.
+            usage.ObserveReplyTail(completeSteps[^1].Length);
+            PaintContextUsage();
+
             var full = TuiText.SanitizeUntrusted(expected.ToString());
             var streamed = TuiText.SanitizeUntrusted(sessionRenderer.Transcript.StreamedAssistantText);
             Tui.TuiDebug.Log("recover", $"streamed {streamed.Length} of {full.Length} chars");

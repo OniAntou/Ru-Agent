@@ -180,6 +180,33 @@ It never lowers an estimate. Without it a tokenizer that bytes/4 undercounts (De
 by about 25% on a long coding run) pushed the 80% compaction trigger to about the full
 window, so the provider rejected the request before Ru compacted.
 
+### What a context meter shows
+
+The desktop and terminal meters share `RequestContextReading` and change only the figure they
+display; admission and compaction keep the estimate above. The reading is the provider's prompt
+count for the run's latest request. Between reports:
+
+- A step's `agent.usage_estimate` carries the request's heuristic breakdown. The meter multiplies
+  its total by the route's last provider-to-heuristic ratio (from the previous report, bounded to
+  0.5–2.0, forgotten when the protocol or model changes) instead of showing the raw estimate,
+  which overstated a model that counts fewer tokens than bytes/4 by about 12% and fell back at
+  every report. On a recorded run the converted figure was within 3% of the next report.
+- A finished reply is not in the reading that produced it, so its visible text is added as an
+  estimated tail until the next request is measured. Output tokens are not used: on recorded
+  runs most of them were reasoning that the next request did not replay.
+- The estimate frame also carries `compaction_trigger_tokens`, the normal preflight trigger for
+  that budget in the estimate's units; the meter converts it with the same ratio and names where
+  the run compacts. The history-window fill can compact earlier.
+- Before a session's first request, the fixed prompt (system prompt and tool definitions) last
+  seen for the same model stands in, marked as an estimate. A model not seen in this process
+  shows the visible text only.
+- A run without a published window shows no percentage. Its estimate's prompt budget is derived
+  from an assumed default window, so dividing by it would invent a capacity.
+
+Advisor consultations (`advisor_usage`) and compaction checkpoints (`checkpoint_usage`) record
+usage for their own separate requests. Both are billed with the run; neither is a context
+reading, live or when a session is reopened.
+
 The token trigger is not the only one. The runner fits history into a fixed window of
 4,096 messages and 32 MiB by dropping the oldest of it, and on a large-context model the
 token budget may never ask for compaction before that window fills. Preflight therefore

@@ -23,6 +23,7 @@ internal sealed class AgentModelInvocation
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
     private readonly AgentRunLifecycle _lifecycle;
+    private readonly Func<long, long?>? _compactionTriggerTokens;
 
     public AgentModelInvocation(
         IModelStepRunner model,
@@ -32,8 +33,10 @@ internal sealed class AgentModelInvocation
         IAgentActivitySink? activitySink,
         IIdGenerator ids,
         ITimeProvider time,
-        AgentRunLifecycle lifecycle)
+        AgentRunLifecycle lifecycle,
+        Func<long, long?>? compactionTriggerTokens = null)
     {
+        _compactionTriggerTokens = compactionTriggerTokens;
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _promptContextProvider = promptContextProvider
             ?? throw new ArgumentNullException(nameof(promptContextProvider));
@@ -324,6 +327,9 @@ internal sealed class AgentModelInvocation
             {
                 estimated_input_tokens = prepared.EstimatedInputTokens,
                 max_prompt_tokens = prepared.MaxPromptTokens,
+                // In the same units as estimated_input_tokens: preflight compacts once the
+                // estimate passes it.
+                compaction_trigger_tokens = _compactionTriggerTokens?.Invoke(prepared.MaxPromptTokens),
                 context_tokens = prepared.ContextTokens,
                 model_step_id = modelStepId.Value,
             }),

@@ -139,6 +139,31 @@ public sealed class RetainedContextMeterPresenterTests
         Assert.Equal(int.MaxValue, presenter.Measure([], "draft", 0).UsedTokens);
     }
 
+    [Fact]
+    public void A_finished_reply_counts_after_the_reading_and_a_new_session_starts_from_the_fixed_prompt()
+    {
+        var model = "meter-" + Guid.NewGuid().ToString("N");
+        var presenter = new RetainedContextMeterPresenter();
+        presenter.ScopeToRun(Run() with { ProviderModel = model }, "session-1");
+        var reported = new AgentModelUsage(18_000, 300, null, 0, null, model, InputTokensIncludeCache: true)
+        {
+            ContextTokens = new RuAgent.Protocol.Harness.ContextTokenBreakdown(10_000, 10_000, 0),
+        };
+        Assert.True(presenter.ObserveUsage(RunId, "session-1", 6, "openai_responses", reported));
+
+        // The 4,000-character reply is not in the reported prompt: ~1,000 heuristic tokens at 0.9.
+        var finished = presenter.Measure([("question", 0, 0), ("reply", 0, 0)], null, 0, replyTailCharacters: 4_000);
+        Assert.Equal(18_900, finished.UsedTokens);
+        Assert.Equal(18_900, presenter.ContextTokens!.Total);
+
+        // Another session on the same model, before its first request, starts from the fixed prompt.
+        var fresh = new RetainedContextMeterPresenter();
+        fresh.ScopeToRun(null, "session-2");
+        var start = fresh.Measure([], "hi", 0, baselineModel: model);
+        Assert.Equal(18_000, start.BaselineTokens);
+        Assert.Equal(18_000 + ModelContextSpecs.EstimateTokens("hi".Length), start.UsedTokens);
+    }
+
     private static AgentRunModel Run(string? runId = null) => new(
         runId ?? RunId, "session-1", "workspace-1", "running", null, "standard", 1, "sha", 1,
         0, "2026-10-05", "2026-10-05", null, null, null, "identity",

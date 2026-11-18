@@ -379,7 +379,8 @@ unknown fields, malformed JSON, raw tool output, and replayed sequence keys are
 dropped without changing the durable cursor.
 The measured request size for a model step about to run rides a typed
 `agent.usage_estimate` transient frame (estimated input tokens, the step's prompt
-budget, model-step id and optional numeric `context_tokens` breakdown), published before the step's first token and on the
+budget, model-step id, optional numeric `context_tokens` breakdown and optional
+`compaction_trigger_tokens`, the preflight compaction point in the estimate's units), published before the step's first token and on the
 same hub channel as activity rows so a delta burst cannot evict it. Provider usage
 only arrives when a step ends, so this frame is what lets a client's context meter
 move while the model is still working; the reported usage supersedes it.

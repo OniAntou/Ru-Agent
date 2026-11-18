@@ -113,7 +113,8 @@ public sealed partial class AgentRunCoordinator
             activitySink,
             _ids,
             _time,
-            _lifecycle);
+            _lifecycle,
+            _compaction.NormalTriggerTokens);
     }
 
     /// <summary>

@@ -39,7 +39,7 @@ internal sealed class ChatUsageReader(AgentApiClient agents, AgentSseClient even
 
     private async Task<ChatRunUsage> ReadRunAsync(GetAgentRunResponse run, bool contextOnly, CancellationToken ct)
     {
-        var references = new List<(string Id, long Sequence, bool Advisor)>();
+        var references = new List<(string Id, long Sequence, bool SeparateRequest)>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var sequences = new Dictionary<long, string>();
         var frames = 0; long characters = 0; long boundary = 0; long lastSequence = 0;
@@ -74,13 +74,13 @@ internal sealed class ChatUsageReader(AgentApiClient agents, AgentSseClient even
                 if (!contextOnly) throw Limit();
                 references.RemoveAt(0);
             }
-            references.Add((reference, envelope.Sequence, envelope.SafeSummary == AdvisorUsageSafeCode));
+            references.Add((reference, envelope.Sequence, !SessionUsageReplayPolicy.IsContextReading(envelope.SafeSummary)));
         }
         var reports = new List<ChatTokenUsage>();
         ChatTokenUsage? latest = null;
         // Context is the latest request of the run's own model; an advisor consultation (ADR 0047)
-        // is a separate request and is billed, never read as the run's context.
-        var contextReferences = references.Where(reference => !reference.Advisor);
+        // or a compaction checkpoint is a separate request: billed, never read as the run's context.
+        var contextReferences = references.Where(reference => !reference.SeparateRequest);
         var requestedReports = contextOnly ? contextReferences.Where(reference => reference.Sequence > boundary).TakeLast(1) : references;
         foreach (var reference in requestedReports)
         {
@@ -88,7 +88,7 @@ internal sealed class ChatUsageReader(AgentApiClient agents, AgentSseClient even
             if ((characters += payload.Length) > MaxReplayCharacters) throw Limit();
             var report = ChatTokenUsage.Parse(payload);
             reports.Add(report);
-            if (reference.Sequence > boundary && !reference.Advisor) latest = report;
+            if (reference.Sequence > boundary && !reference.SeparateRequest) latest = report;
         }
         decimal? cost = null;
         var models = reports.Select(report => report.Model ?? run.ProviderModel).Distinct(StringComparer.Ordinal).ToArray();

@@ -73,11 +73,11 @@ public sealed partial class AgentRunController
         }
 
         AgentModelUsage? usage = null;
-        // An advisor consultation (ADR 0047) is a separate request: it is billed with the run
-        // (the session usage panel reads it from the durable log), but it is not the reply's
-        // usage and says nothing about how full the run's context is.
+        // An advisor consultation (ADR 0047) or a compaction checkpoint is a separate request:
+        // it is billed with the run (the session usage panel reads it from the durable log),
+        // but it is not the reply's usage and says nothing about how full the run's context is.
         if (string.Equals(model.EventType, "model.usage_recorded", StringComparison.Ordinal)
-            && !string.Equals(model.SafeSummary, SessionUsageReplayPolicy.AdvisorUsageSafeCode, StringComparison.Ordinal)
+            && SessionUsageReplayPolicy.IsContextReading(model.SafeSummary)
             && !string.IsNullOrWhiteSpace(model.PayloadRef))
         {
             usage = AgentModelUsage.Parse(await FetchPayloadContentAsync(model).ConfigureAwait(false));

@@ -646,6 +646,11 @@ public sealed partial class AgentRunCoordinatorTests
         using var payload = JsonDocument.Parse(estimate.Content);
         Assert.Equal(4_000, payload.RootElement.GetProperty("estimated_input_tokens").GetInt64());
         Assert.Equal(200_000, payload.RootElement.GetProperty("max_prompt_tokens").GetInt64());
+        // The same normal trigger preflight applies, so a meter can mark where compaction starts.
+        Assert.Equal(
+            AgentRunCoordinator.CreateBudgetPolicy()
+                .EvaluateAvailablePromptTokens(0, 200_000, ContextCompactionStrategy.Normal).SoftTriggerTokens,
+            payload.RootElement.GetProperty("compaction_trigger_tokens").GetInt64());
         Assert.Equal(
             estimate.ModelStepId!.Value.Value,
             payload.RootElement.GetProperty("model_step_id").GetString());

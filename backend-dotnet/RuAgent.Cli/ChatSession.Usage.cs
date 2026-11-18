@@ -36,7 +36,8 @@ public sealed partial class AgentCommands
                         && !row.ContextInvalidated && row.LatestContext is null && row.Reports.Count == 0 && row.Notice == "No provider usage report."
                         ? saved.Estimate : null;
                     var draft = await ReadDraftEstimateAsync(deadline.Token).ConfigureAwait(false);
-                    lines = ChatUsagePresentation.Context(reading, prepared, usage.ContextLimit, draft, activeModel);
+                    lines = ChatUsagePresentation.Context(reading, prepared, usage.ContextLimit, draft, activeModel,
+                        usage.Ratio, usage.CompactionTriggerTokens);
                 }
                 else lines = ChatUsagePresentation.Usage(reading);
                 if (cmd.Json)

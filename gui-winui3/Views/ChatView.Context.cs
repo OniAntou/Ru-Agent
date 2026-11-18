@@ -89,7 +89,10 @@ namespace RuApp.Views
                 draftText,
                 Composer.ImageCount,
                 Composer.Attachments.Where(attachment => !attachment.IsImage)
-                    .Sum(attachment => attachment.TextContent?.Length ?? 0));
+                    .Sum(attachment => attachment.TextContent?.Length ?? 0),
+                replyTailCharacters: FinishedReplyTailCharacters(),
+                baselineModel: isRetainedRun ? retainedRun!.ProviderModel : ModelSelection.DisplayModel);
+
 
             int estimatedTokens = measured.UsedTokens;
             if (!measured.HasKnownHistoryBoundary) { maxTokens = 0; displayLimit = string.Empty; }
@@ -103,7 +106,8 @@ namespace RuApp.Views
                 measured.EstimatedTokens,
                 measured.HasKnownHistoryBoundary,
                 requestFailed: string.Equals(retainedRun?.Status, "failed", StringComparison.OrdinalIgnoreCase),
-                hasReportedUsage: _retainedContextMeter.HasReportedUsage);
+                hasReportedUsage: _retainedContextMeter.HasReportedUsage,
+                baselineTokens: measured.BaselineTokens);
             PaintContextBreakdown(reading, usedTokens, meter.MaximumTokens);
             AutomationProperties.SetHelpText(ContextMeterButton,
                 (isRetainedRun ? RetainedRunIdentityText.Text + ". " : string.Empty)
@@ -133,9 +137,10 @@ namespace RuApp.Views
                 ContextUsedLabel.Text = reading.NextRequestOnly
                     ? $"~{ModelContextSpecs.FormatTokens(usedTokens)} / {meter.DisplayLimit} (estimated)"
                     : $"~{ModelContextSpecs.FormatTokens(usedTokens)} / {meter.DisplayLimit}";
-                ContextPercentLabel.Text = reading.NextRequestOnly
+                ContextPercentLabel.Text = (reading.NextRequestOnly
                     ? percentage.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "% estimated for next request"
-                    : percentage.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "% of context used";
+                    : percentage.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "% of context used")
+                    + ContextCompactionNote(meter.MaximumTokens);
                 ContextPercentLabel.Foreground = meter.Severity == AgentContextMeterSeverity.Normal
                     ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"]
                     : brush;
@@ -147,6 +152,30 @@ namespace RuApp.Views
                 ContextPercentLabel.Text = "Context size unknown";
                 ContextPercentLabel.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
             }
+        }
+
+        /// <summary>
+        /// Where the run compacts, as a share of the window the meter shows, when the Host
+        /// published the point for the current run. Compaction can also start earlier, when
+        /// the retained history window fills, so this names the token trigger only.
+        /// </summary>
+        private string ContextCompactionNote(int maximumTokens)
+        {
+            if (maximumTokens <= 0 || _retainedContextMeter.CompactionTriggerTokens is not > 0) return string.Empty;
+            double share = Math.Min(100, 100.0 * _retainedContextMeter.CompactionTriggerTokens.Value / maximumTokens);
+            return " · compacts near " + share.ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "%";
+        }
+
+        /// <summary>
+        /// Visible characters of the finished reply the latest provider reading does not contain:
+        /// the last message when it is an assistant reply and no turn is running. While a turn
+        /// runs, the next step's estimate is about to measure everything, so there is no tail.
+        /// </summary>
+        private int FinishedReplyTailCharacters()
+        {
+            if (_agentController?.IsBusy == true || Messages.Count == 0) return 0;
+            var last = Messages[^1];
+            return string.Equals(last.Role, "assistant", StringComparison.Ordinal) ? last.Content?.Length ?? 0 : 0;
         }
 
         /// <summary>

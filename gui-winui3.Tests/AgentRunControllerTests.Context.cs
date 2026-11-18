@@ -71,6 +71,27 @@ public sealed partial class AgentRunControllerTests
         Assert.Equal(50000, usage.Usage.InputTokens);
     }
 
+    [Fact]
+    public async Task Compaction_checkpoint_usage_never_reaches_the_reply_or_the_context_meter()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        fake.PayloadContents["usage-main"] = """{"input_tokens":21000,"output_tokens":200}""";
+        fake.PayloadContents["usage-checkpoint"] = """{"input_tokens":6000,"output_tokens":4096}""";
+        fake.Stream.Add(SafeEvent(1, "model.step_started") with { ModelStepId = ContextStepA });
+        fake.Stream.Add(SafeEvent(2, "model.usage_recorded", "usage-main") with { ModelStepId = ContextStepA });
+        fake.Stream.Add(SafeEvent(3, "model.usage_recorded", "usage-checkpoint") with
+        {
+            SafeSummary = SessionUsageReplayPolicy.CheckpointUsageSafeCode,
+        });
+        var controller = new AgentRunController(fake);
+        var received = new List<AgentUsageReceivedEventArgs>();
+        controller.UsageReceived += (_, item) => received.Add(item);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest("sess_1", "C:\\work", "checkpoint", "standard", null, "causal-checkpoint"));
+
+        Assert.Equal(21000, Assert.Single(received).Usage.InputTokens);
+    }
+
     private static AgentEventModel Estimate(string step, long tokens, long sequence)
     {
         var data = JsonSerializer.Serialize(new

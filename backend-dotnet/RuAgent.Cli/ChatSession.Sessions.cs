@@ -376,6 +376,12 @@ public sealed partial class AgentCommands
             // the meter is restored from the target's newest run rather than left empty
             // until that session's next turn reports one.
             await RestoreSessionUsageAsync(targetSessionId, cancellationToken).ConfigureAwait(false);
+            // The restored reading is the last request; the reply it produced came after it.
+            if (replay.Messages.LastOrDefault() is { } lastMessage && !string.Equals(lastMessage.Role, "user", StringComparison.Ordinal))
+            {
+                usage.ObserveReplyTail(lastMessage.Text.Length);
+                PaintContextUsage();
+            }
 
             if (replay.Messages.Length > 0 && !cmd.Json)
             {

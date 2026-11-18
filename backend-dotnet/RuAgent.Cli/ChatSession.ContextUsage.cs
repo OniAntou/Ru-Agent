@@ -29,19 +29,21 @@ public sealed partial class AgentCommands
                 usage.BeginStep(envelope.ModelStepId, envelope.Sequence);
                 QueuePinnedContextMetadata(runId, ct);
             }
-            // An advisor consultation (ADR 0047) is billed with the run but reads its own,
-            // separate request: it says nothing about how full the run's context is.
-            var advisorUsage = envelope.EventType == "model.usage_recorded" && envelope.SafeSummary == AdvisorUsageSafeCode;
+            // An advisor consultation (ADR 0047) or a compaction checkpoint is billed with the
+            // run but reads its own, separate request: it says nothing about how full the
+            // run's context is.
+            var separateRequestUsage = envelope.EventType == "model.usage_recorded"
+                && !SessionUsageReplayPolicy.IsContextReading(envelope.SafeSummary);
             if (envelope.TotalTokens is not null || envelope.InputTokens is not null || envelope.OutputTokens is not null)
             {
                 // A usage report supersedes the prepared request estimate /status context shows.
-                if (envelope.EventType == "model.usage_recorded" && !advisorUsage && preparedContext?.Run == envelope.RunId)
+                if (envelope.EventType == "model.usage_recorded" && !separateRequestUsage && preparedContext?.Run == envelope.RunId)
                     preparedContext = null;
                 usage.ApplyBilling(envelope.InputTokens, envelope.OutputTokens);
                 lastTotalTokens = envelope.TotalTokens ?? ((envelope.InputTokens ?? 0) + (envelope.OutputTokens ?? 0));
                 sessionRenderer.Status.SetTokens(lastTotalTokens);
             }
-            if (tgMode && envelope.EventType == "model.usage_recorded" && !advisorUsage)
+            if (tgMode && envelope.EventType == "model.usage_recorded" && !separateRequestUsage)
             {
                 QueuePinnedContextMetadata(runId, ct);
                 if (!string.IsNullOrWhiteSpace(envelope.PayloadRef))
@@ -99,6 +101,7 @@ public sealed partial class AgentCommands
                 if (run.RunId != runId || run.SessionId != sessionId || !usage.IsBoundTo(runId)) return;
                 if (string.IsNullOrWhiteSpace(run.ProviderProtocol)) return;
                 usage.ProviderProtocol = run.ProviderProtocol;
+                usage.UseRoute(run.ProviderProtocol, run.ProviderModel);
                 usage.ContextLimit = run.ProviderProtocol is "chat_completions" or "openai_responses" or "anthropic_messages"
                     ? run.ContextWindowTokens : null;
                 if (run.ContextWindowTokens is > 0)
@@ -169,10 +172,15 @@ public sealed partial class AgentCommands
         private void PaintContextUsage()
         {
             if (!tgMode) return;
-            var tokens = usage.ContextTokens ?? 0;
-            var percent = usage.ContextPercent;
+            var reading = usage.ContextTokens;
+            // Before a session's first request, the fixed prompt this model last cost stands in.
+            var baseline = reading is null ? ContextBaselineMemory.BaselineFor(ContextBaselineMemory.ModelKey(activeModel)) : null;
+            var tokens = reading ?? baseline ?? 0;
+            var limit = usage.ContextLimit;
+            var percent = reading is not null ? usage.ContextPercent
+                : baseline is { } fixedPrompt && limit is > 0 ? Math.Clamp(100d * fixedPrompt / limit.Value, 0, 999) : null;
             var cost = usage.CostKnown ? (decimal?)usage.SessionCost : null;
-            var estimated = usage.ContextIsEstimated;
+            var estimated = usage.ContextIsEstimated || baseline is not null;
             RunOnTgUi(() => tgWindow!.Header.UpdateUsage(tokens, percent, cost, estimated));
         }
 
@@ -206,6 +214,7 @@ public sealed partial class AgentCommands
                     var run = await _agentClient.GetRunAsync(runId, ct).ConfigureAwait(false);
                     if (run.SessionId != targetSessionId) continue;
                     ProviderPromptTokens.TryRead(payload.Content, run.ProviderProtocol, out var prompt, out var breakdown);
+                    usage.UseRoute(run.ProviderProtocol, run.ProviderModel);
                     usage.ProviderProtocol = run.ProviderProtocol;
                     usage.ContextLimit = run.ProviderProtocol is "chat_completions" or "openai_responses" or "anthropic_messages"
                         ? run.ContextWindowTokens : null;

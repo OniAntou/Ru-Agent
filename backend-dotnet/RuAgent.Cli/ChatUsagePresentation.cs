@@ -11,13 +11,17 @@ internal static class ChatUsagePresentation
         + (long)Math.Max(0, images) * ContextTokenBreakdown.ImageTokenAllowance;
 
     internal static IReadOnlyList<string> Context(ChatUsageReading reading, AgentUsageEstimateModel? prepared,
-        long? catalogLimit, long draft, string? selectedModel = null)
+        long? catalogLimit, long draft, string? selectedModel = null, double? ratio = null, long? compactionTrigger = null)
     {
         var row = reading.Runs.LastOrDefault();
         var report = row?.LatestContext;
         var breakdown = report?.Context ?? (report is null ? prepared?.ContextTokens : null);
         var reported = report?.Prompt(row?.Run.ProviderProtocol);
-        var used = reported ?? (report is null ? prepared?.EstimatedInputTokens : null) ?? breakdown?.Total;
+        // A prepared estimate is a bytes/4 heuristic; the route's last report converts it to provider tokens.
+        var preparedTokens = report is not null ? null
+            : ratio is { } scale && prepared?.ContextTokens is { Total: > 0 } parts ? (long?)Math.Round(parts.Total * scale)
+            : prepared?.EstimatedInputTokens;
+        var used = reported ?? preparedTokens ?? breakdown?.Total;
         var limit = row is null ? catalogLimit : row.Run.ContextWindowTokens;
         var lines = new List<string> {
             "Context · latest request", "Session: " + (reading.Session.Length == 0 ? "not started" : reading.Session),
@@ -35,6 +39,8 @@ internal static class ChatUsagePresentation
             "Unsent draft: ~" + ChatTokenUsage.Number(draft) + " tokens (separate estimate)",
         };
         if (prepared is not null) lines.Add("Prepared prompt budget: " + ChatTokenUsage.Number(prepared.MaxPromptTokens));
+        if (compactionTrigger is > 0)
+            lines.Add("Compacts near: ~" + ChatTokenUsage.Number(compactionTrigger) + " tokens (history-window fill can compact earlier)");
         lines.Add(row?.Notice ?? (report is null && prepared is null ? "No current request reading; the next request will provide one." : ""));
         lines.Add("Context is one request, not accumulated billed tokens. Draft uses ~1 token/3.5 characters plus an image allowance.");
         return lines;

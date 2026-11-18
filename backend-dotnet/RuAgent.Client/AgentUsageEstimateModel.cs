@@ -21,6 +21,12 @@ public sealed record AgentUsageEstimateModel(
     long TransientSequence)
 {
     public ContextTokenBreakdown? ContextTokens { get; init; }
+
+    /// <summary>
+    /// The estimate at which the Host compacts before this step, in the units of
+    /// <see cref="EstimatedInputTokens"/>, when the Host published it.
+    /// </summary>
+    public long? CompactionTriggerTokens { get; init; }
     public static bool TryParse(SseFrame frame, out AgentUsageEstimateModel? estimate)
     {
         estimate = null;
@@ -43,7 +49,7 @@ public sealed record AgentUsageEstimateModel(
             }
 
             using var inner = JsonDocument.Parse(innerJson);
-            if (!TryReadInner(inner.RootElement, out var estimatedInput, out var maxPrompt, out var modelStepId, out var contextTokens))
+            if (!TryReadInner(inner.RootElement, out var estimatedInput, out var maxPrompt, out var modelStepId, out var contextTokens, out var trigger))
             {
                 return false;
             }
@@ -52,7 +58,7 @@ public sealed record AgentUsageEstimateModel(
                 estimatedInput,
                 maxPrompt,
                 modelStepId,
-                frame.TransientSequence.Value) { ContextTokens = contextTokens };
+                frame.TransientSequence.Value) { ContextTokens = contextTokens, CompactionTriggerTokens = trigger };
             return true;
         }
         catch (JsonException)
@@ -100,8 +106,10 @@ public sealed record AgentUsageEstimateModel(
         out long estimatedInputTokens,
         out long maxPromptTokens,
         out string modelStepId,
-        out ContextTokenBreakdown? contextTokens)
+        out ContextTokenBreakdown? contextTokens,
+        out long? compactionTriggerTokens)
     {
+        compactionTriggerTokens = null;
         estimatedInputTokens = 0;
         maxPromptTokens = 0;
         modelStepId = string.Empty;
@@ -137,6 +145,13 @@ public sealed record AgentUsageEstimateModel(
                     when property.Value.ValueKind == JsonValueKind.Number
                         && property.Value.TryGetInt64(out maxPromptTokens):
                     hasMaxPrompt = true;
+                    break;
+                case "compaction_trigger_tokens" when property.Value.ValueKind == JsonValueKind.Null:
+                    break;
+                case "compaction_trigger_tokens"
+                    when property.Value.ValueKind == JsonValueKind.Number
+                        && property.Value.TryGetInt64(out var trigger) && trigger > 0:
+                    compactionTriggerTokens = trigger;
                     break;
                 case "model_step_id" when property.Value.ValueKind == JsonValueKind.String:
                     modelStepId = property.Value.GetString() ?? string.Empty;

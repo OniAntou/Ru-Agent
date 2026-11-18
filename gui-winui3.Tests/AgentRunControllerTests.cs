@@ -1001,7 +1001,7 @@ public sealed partial class AgentRunControllerTests
         var meter = new RetainedContextMeterPresenter();
         (string? Content, int ImageCount, int TextAttachmentCharacters)[] restoredTranscript =
             [(new string('x', 200_000), 0, 0)];
-        (int Characters, int Images, int ReportedPromptTokens, int EstimatedTokens, int UsedTokens, bool HasKnownHistoryBoundary) adoptedMeasure = default;
+        (int Characters, int Images, int ReportedPromptTokens, int EstimatedTokens, int UsedTokens, bool HasKnownHistoryBoundary, int BaselineTokens) adoptedMeasure = default;
         controller.RunAdopted += (_, adopted) =>
         {
             meter.ScopeToRun(adopted.Run, adopted.Run.SessionId);

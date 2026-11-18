@@ -25,6 +25,27 @@ public sealed class SessionUsageReplayPolicyTests
     }
 
     [Fact]
+    public void A_compaction_checkpoint_report_is_billed_but_never_the_context_reading()
+    {
+        // Recorded shape: a run whose last reports were checkpoint requests before it failed.
+        string[] lines =
+        [
+            """{"event_type":"model.usage_recorded","sequence":35,"safe_summary":"reported","payload_ref":"pay_step"}""",
+            """{"event_type":"model.usage_recorded","sequence":51,"safe_summary":"checkpoint_usage","payload_ref":"pay_cp1"}""",
+            """{"event_type":"context.compacted","sequence":53}""",
+            """{"event_type":"model.usage_recorded","sequence":65,"safe_summary":"checkpoint_usage","payload_ref":"pay_cp2"}""",
+        ];
+
+        Assert.Equal("pay_step", SessionUsageReplayPolicy.FindLatestUsageReport(lines)!.Value.PayloadRef);
+        var reports = SessionUsageReplayPolicy.FindUsageReports(lines);
+        Assert.Equal(3, reports.Count);
+        Assert.Equal([true, false, false], reports.Select(report => report.IsContextReading));
+        Assert.False(SessionUsageReplayPolicy.IsContextReading("checkpoint_usage"));
+        Assert.False(SessionUsageReplayPolicy.IsContextReading("advisor_usage"));
+        Assert.True(SessionUsageReplayPolicy.IsContextReading("reported"));
+    }
+
+    [Fact]
     public void An_advisor_report_is_billed_but_never_the_context_reading()
     {
         string[] lines =

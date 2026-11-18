@@ -12,7 +12,11 @@ public sealed class RetainedContextMeterPresenter
     private int _visibleMessageStart;
     private bool _hasKnownHistoryBoundary = true;
     private readonly RequestContextReading _reading = new();
-    public ContextTokenBreakdown? ContextTokens => _reading.Breakdown;
+    /// <summary>The breakdown scaled to the displayed figure, the reply tail counted as messages.</summary>
+    public ContextTokenBreakdown? ContextTokens => _reading.DisplayBreakdown;
+
+    /// <summary>Where the Host compacts, in displayed tokens, when it published the point.</summary>
+    public long? CompactionTriggerTokens => _reading.CompactionTriggerTokens;
 
     /// <summary>Whether the provider reported real prompt usage for this scope.</summary>
     public bool HasReportedUsage => _reading.HasReportedUsage;
@@ -37,6 +41,8 @@ public sealed class RetainedContextMeterPresenter
     {
         bool isCurrent = run is not null
             && string.Equals(run.SessionId, activeSessionId, StringComparison.Ordinal);
+        // A route counts tokens its own way; the gap between two runs keeps the last one.
+        if (isCurrent) _reading.UseRoute(ContextBaselineMemory.RouteKey(run!.ProviderProtocol, run.ProviderModel));
         var runId = isCurrent ? run!.RunId : null;
         var sessionId = isCurrent ? run!.SessionId : null;
         if (string.Equals(_runId, runId, StringComparison.Ordinal)
@@ -107,11 +113,23 @@ public sealed class RetainedContextMeterPresenter
         return true;
     }
 
-    public (int Characters, int Images, int ReportedPromptTokens, int EstimatedTokens, int UsedTokens, bool HasKnownHistoryBoundary) Measure(
+    /// <summary>
+    /// The displayed context: the latest request reading plus the reply it does not contain
+    /// and the unsent draft. Before any reading, the route's remembered fixed prompt
+    /// (<paramref name="baselineModel"/>) is added to the visible text, so a new session does
+    /// not start at the size of its first message.
+    /// </summary>
+    /// <param name="replyTailCharacters">
+    /// Visible characters of a finished reply that came after the latest reading; zero while a
+    /// turn is still running, when the next request's estimate is about to replace the reading.
+    /// </param>
+    public (int Characters, int Images, int ReportedPromptTokens, int EstimatedTokens, int UsedTokens, bool HasKnownHistoryBoundary, int BaselineTokens) Measure(
         IReadOnlyList<(string? Content, int ImageCount, int TextAttachmentCharacters)> messages,
         string? draftText,
         int pendingImages,
-        int pendingTextAttachmentCharacters = 0)
+        int pendingTextAttachmentCharacters = 0,
+        int replyTailCharacters = 0,
+        string? baselineModel = null)
     {
         ArgumentNullException.ThrowIfNull(messages);
         int start = _hasKnownHistoryBoundary
@@ -133,11 +151,19 @@ public sealed class RetainedContextMeterPresenter
         int historyEstimate = ModelContextSpecs.EstimateTokens(historyCharacters, historyImages);
         int unsentEstimate = ModelContextSpecs.EstimateTokens(unsentCharacters, unsentImages);
         int reported = _reading.HasReportedUsage ? (int)Math.Min(int.MaxValue, _reading.Tokens ?? 0) : 0;
-        int estimate = historyEstimate + unsentEstimate;
-        int used = _reading.Tokens is { } promptTokens
-            ? (int)Math.Min(int.MaxValue, Math.Min(int.MaxValue, promptTokens) + unsentEstimate)
+        int baseline = 0;
+        if (_reading.Tokens is null && _hasKnownHistoryBoundary
+            && ContextBaselineMemory.BaselineFor(ContextBaselineMemory.ModelKey(baselineModel)) is { } remembered)
+        {
+            baseline = (int)Math.Min(int.MaxValue, remembered);
+        }
+
+        int estimate = (int)Math.Min(int.MaxValue, (long)historyEstimate + unsentEstimate + baseline);
+        _reading.ObserveReplyTail(Math.Max(0, replyTailCharacters));
+        int used = _reading.ContextTokens is { } contextTokens
+            ? (int)Math.Min(int.MaxValue, Math.Min(int.MaxValue, contextTokens) + unsentEstimate)
             : estimate;
-        return (historyCharacters + unsentCharacters, historyImages + unsentImages, reported, estimate, used, _hasKnownHistoryBoundary);
+        return (historyCharacters + unsentCharacters, historyImages + unsentImages, reported, estimate, used, _hasKnownHistoryBoundary, baseline);
     }
 
     public static int? ResolvePromptTokens(string? protocol, AgentModelUsage usage)

@@ -342,7 +342,15 @@ namespace RuApp.Services
                 async (index, token) => reports[index] = await ReadUsagePayloadAsync(runId, references[index].PayloadRef, token));
             // A failed read makes the run unknown, never a cheaper partial total.
             if (reports.Any(report => report is null)) return (null, null);
-            return (Sum(advisor: false), Sum(advisor: true));
+            var own = Sum(advisor: false);
+            // A compaction checkpoint bills the run's own model but is a separate request, so
+            // the run's peak context comes only from its own context readings.
+            if (own is not null)
+            {
+                var readings = reports.Where((_, index) => references[index].IsContextReading).Select(report => report!.ResolvedTotal).ToArray();
+                own = own with { PeakStepTokens = readings.Length > 0 ? readings.Max() : null };
+            }
+            return (own, Sum(advisor: true));
 
             AgentModelUsage? Sum(bool advisor) => RunUsageAccumulator.Sum(
                 reports.Where((_, index) => references[index].Advisor == advisor).Select(report => report!).ToArray());

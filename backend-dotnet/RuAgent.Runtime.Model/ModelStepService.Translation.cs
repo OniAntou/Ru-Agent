@@ -11,7 +11,8 @@ public sealed partial class ModelStepService
     /// property of the row, not of the exception's flag: adapter call sites set
     /// <see cref="ModelProviderException.Retryable"/> for the codes that pass
     /// through unchanged (<c>http_error</c>, <c>redirect_rejected</c>, <c>vision_unsupported</c>,
-    /// <c>empty_model_reply</c>, and unknown codes), while a listed code always
+    /// <c>empty_model_reply</c>, <c>context_window_exceeded</c>, <c>model_unavailable</c>,
+    /// <c>provider_payment_required</c>, and unknown codes), while a listed code always
     /// carries the retryability decided here.
     /// </summary>
     private static ModelStepException MapProviderException(ModelProviderException error) => error.Code switch
@@ -24,6 +25,13 @@ public sealed partial class ModelStepService
         "server_error" => new ModelStepException("provider_server_error", retryable: true,
             innerException: error, retryAfter: error.RetryAfter),
         "transport_error" => new ModelStepException("provider_transport_error", retryable: true, error),
+        // These three codes are acted on by name outside this table: the Harness
+        // compacts and resumes a run on context_window_exceeded instead of failing
+        // it, and the client carries operator-facing copy for the other two. A
+        // generic generation_failed here would make every one of those paths
+        // unreachable, so the provider's domain code passes through unchanged.
+        "context_window_exceeded" or "model_unavailable" or "provider_payment_required"
+            => new ModelStepException(error.Code, retryable: false, error),
         // Split on purpose: an unreadable chunk is a per-response accident and
         // the next request is a fresh draw, so the Host's bounded retry is the
         // right response. A response that is simply too large is a ceiling --

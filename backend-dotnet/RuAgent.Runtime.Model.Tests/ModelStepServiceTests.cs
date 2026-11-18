@@ -1092,6 +1092,9 @@ public sealed partial class ModelStepServiceTests
     [InlineData("transport_error", false, "provider_transport_error", true)]
     [InlineData("malformed_payload", false, "protocol_failure", true)]
     [InlineData("response_too_large", false, "protocol_failure", false)]
+    [InlineData("context_window_exceeded", false, "context_window_exceeded", false)]
+    [InlineData("model_unavailable", false, "model_unavailable", false)]
+    [InlineData("provider_payment_required", false, "provider_payment_required", false)]
     [InlineData("unmapped_provider_code", false, "generation_failed", false)]
     [InlineData("unmapped_provider_code", true, "generation_failed", true)]
     public async Task Provider_failure_table_maps_code_and_retryability_exactly(

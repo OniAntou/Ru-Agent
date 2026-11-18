@@ -10,7 +10,12 @@ public sealed record WebOptions
     public const int DefaultMaxResponseBytes = 4 * 1024 * 1024;
     public const int MaxConfiguredResponseBytes = 4 * 1024 * 1024;
 
-    public static readonly Uri DefaultGoogleEndpoint = new("https://www.google.com/search");
+    /// <summary>
+    /// The default primary engine. Google HTML search now answers scripted clients
+    /// with a page that requires JavaScript, so it can never win the race and is no
+    /// longer a default engine; its parser stays for an explicitly configured endpoint.
+    /// </summary>
+    public static readonly Uri DefaultSearchEndpoint = new("https://www.bing.com/search");
 
     /// <summary>
     /// Free fallback engines raced against the configured primary; the first
@@ -44,12 +49,13 @@ public sealed record WebOptions
         }
 
         Enabled = enabled;
-        // The primary engine is whatever is configured (Google by default).
-        // Free fallback engines (DuckDuckGo, Bing, Mojeek) race it; the first
+        // The primary engine is whatever is configured (Bing by default).
+        // The free fallback engines (DuckDuckGo, Bing, Mojeek; a fallback equal to
+        // the primary is skipped) race it; the first
         // engine with usable results answers. The set is fixed public
         // services and every request still passes WebPolicy, so a fallback
         // never widens the network boundary the call was granted under.
-        SearchEndpoint = searchEndpoint ?? (enabled ? DefaultGoogleEndpoint : null);
+        SearchEndpoint = searchEndpoint ?? (enabled ? DefaultSearchEndpoint : null);
         MaxResponseBytes = maxResponseBytes;
         SearchMode = searchMode;
     }

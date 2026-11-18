@@ -31,7 +31,7 @@ internal static class ManagedRuntimeBootstrapper
     // Web tool configuration is defined once and shared: the in-process
     // execution authority receives it through the environment and parses it
     // with the Broker child's rules.
-    public const string BrokerWebSearchEndpoint = "https://www.google.com/search";
+    public const string BrokerWebSearchEndpoint = "https://www.bing.com/search";
 
     internal static async Task<ManagedRuntimeBootstrap> StartAsync(IConfiguration configuration, string projectRoot)
     {

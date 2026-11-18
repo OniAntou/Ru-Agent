@@ -59,7 +59,7 @@ public sealed class WebCapabilityTests
     {
         var options = new WebOptions(enabled: true);
 
-        Assert.Equal("https://www.google.com/search", options.SearchEndpoint?.AbsoluteUri.TrimEnd('/'));
+        Assert.Equal("https://www.bing.com/search", options.SearchEndpoint?.AbsoluteUri.TrimEnd('/'));
         Assert.True(options.SearchEnabled);
         Assert.True(options.FetchEnabled);
     }

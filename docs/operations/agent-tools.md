@@ -192,9 +192,10 @@ the answer as that call's durable tool result. Web tools are standalone with the
 `plan`, `standard`, and `full_access` profiles. `web_approval_required` remains
 available only when an explicit ordered rule asks; profile fallback does not
 synthesize it.
-Google HTML (`https://www.google.com/search`) is the primary search engine and
-is raced against a fixed set of free fallback engines (DuckDuckGo HTML, Bing,
-Mojeek); the first engine with usable results answers, so a slow or blocked
+Bing HTML (`https://www.bing.com/search`) is the primary search engine and
+is raced against a fixed set of free fallback engines (DuckDuckGo HTML and
+Mojeek). Google is no longer a default engine: its HTML search now answers
+scripted clients with a JavaScript-only page, so it could never win. The first engine with usable results answers, so a slow or blocked
 primary no longer holds the call hostage. Every engine request still passes
 redirect and private-host validation, so a fallback never widens the network
 boundary the call was granted under. When every engine fails, or when anchors
@@ -709,9 +710,9 @@ adapter uses the same parser and renders only bounded result metadata.
 
 ## Web tool gates
 
-For the managed Agent path, Web tools use the configured Google HTML search
-engine, `https://www.google.com/search`, raced against fixed free fallbacks
-(DuckDuckGo HTML, Bing, Mojeek); the first engine with usable results answers,
+For the managed Agent path, Web tools use the configured Bing HTML search
+engine, `https://www.bing.com/search`, raced against fixed free fallbacks
+(DuckDuckGo HTML, Mojeek); the first engine with usable results answers,
 so one blocked or slow engine no longer delays the answer. The remaining
 in-flight engine requests are cancelled once a winner is known, and every
 request -- winner or loser -- still passes redirect and

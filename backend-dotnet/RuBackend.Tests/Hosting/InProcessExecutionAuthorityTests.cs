@@ -184,7 +184,7 @@ public sealed class InProcessExecutionAuthorityTests : IDisposable
             name => name == "RU_AGENT_BROKER_WEB_ENABLED" ? "true" : null,
             NullLogger.Instance);
         Assert.NotNull(defaulted);
-        Assert.Equal("https://www.google.com/search", defaulted!.SearchEndpoint!.AbsoluteUri);
+        Assert.Equal("https://www.bing.com/search", defaulted!.SearchEndpoint!.AbsoluteUri);
     }
 
     [Fact]

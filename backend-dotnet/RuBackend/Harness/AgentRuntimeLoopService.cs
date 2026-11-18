@@ -55,6 +55,7 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
     private readonly WorkspaceCoordinatorStore _workspaceCoordinatorStore;
     private readonly WorkspaceJournalProtector _workspaceJournalProtector;
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
+    private readonly AgentRunDriveBackoff _driveBackoff = new(PollInterval);
     private readonly Dictionary<string, Task> _workers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CancellationTokenSource> _workerCancellation = new(StringComparer.Ordinal);
     private readonly object _workerLock = new();
@@ -208,13 +209,26 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
                         {
                             var runId = new RunId(registration.RunId);
                             // The run may have been removed after this snapshot was taken.
-                            if (!_roots.TryGetRoot(runId, out _)) return;
+                            if (!_roots.TryGetRoot(runId, out _))
+                            {
+                                _driveBackoff.Forget(registration.RunId);
+                                return;
+                            }
+
+                            if (!_driveBackoff.IsDue(registration.RunId)) return;
+                            var failuresBefore = _driveBackoff.Failures(registration.RunId);
                             _roots.TryGetPolicySnapshot(runId, out var policySnapshot);
                             await DriveRunIfRunningAsync(registration.RunId, registration.WorkspaceRoot,
                                 policySnapshot, workerToken).ConfigureAwait(false);
+                            _driveBackoff.RecordPass(registration.RunId, failuresBefore);
                         }
                         catch (OperationCanceledException) when (workerToken.IsCancellationRequested) { }
-                        catch (Exception error) { _logger.LogWarning(error, "agent run worker failed for {RunId}", registration.RunId); }
+                        catch (Exception error)
+                        {
+                            var delay = _driveBackoff.RecordFailure(registration.RunId);
+                            _logger.LogWarning(error, "agent run worker failed for {RunId}; next attempt in {DelayMs} ms",
+                                registration.RunId, (long)delay.TotalMilliseconds);
+                        }
                     }, CancellationToken.None);
                     _workers.Add(registration.RunId, worker);
                 }
@@ -351,6 +365,7 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
         if (_subagents is not null)
             await _subagents.CancelChildrenBeforeReleaseAsync(runId, this, CancellationToken.None).ConfigureAwait(false);
         await _runLifecycle.ReleaseRegistrationAsync(runId).ConfigureAwait(false);
+        _driveBackoff.Forget(runId.Value);
     }
 
     /// <summary>
@@ -759,7 +774,10 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
             }
             catch (Exception nested) when (nested is not OperationCanceledException)
             {
-                _logger.LogError(nested, "failed to mark run {RunId} as failed", runIdValue);
+                // The run stays registered for a later retry; space those retries out.
+                var delay = _driveBackoff.RecordFailure(runIdValue);
+                _logger.LogError(nested, "failed to mark run {RunId} as failed; next attempt in {DelayMs} ms",
+                    runIdValue, (long)delay.TotalMilliseconds);
             }
         }
         finally

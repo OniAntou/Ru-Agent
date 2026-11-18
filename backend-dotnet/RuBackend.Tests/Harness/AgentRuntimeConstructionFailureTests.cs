@@ -55,6 +55,29 @@ public sealed class AgentRuntimeConstructionFailureTests
         Assert.False(roots.TryGetRoot(seeded.Run.RunId, out _));
     }
 
+    [Fact]
+    public async Task Repeated_store_failure_spaces_out_the_retries()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var seeded = await SeedAsync(fixture, new(HarnessRunState.Running));
+        var roots = await RootsAsync(fixture, seeded);
+        var store = new RacingStore(fixture.EventStore) { FailWrites = true };
+        using var loop = Loop(fixture, store, roots);
+
+        await loop.StepOnceAsync(default);
+        var afterFirst = store.Writes;
+        await loop.StepOnceAsync(default);
+        var afterSecond = store.Writes;
+        await loop.StepOnceAsync(default);
+
+        // The first failure retries on the next pass; the second starts the backoff, so an
+        // immediate third pass leaves the store alone and the run stays registered.
+        Assert.True(afterFirst > 0);
+        Assert.True(afterSecond > afterFirst);
+        Assert.Equal(afterSecond, store.Writes);
+        Assert.True(roots.TryGetRoot(seeded.Run.RunId, out _));
+    }
+
     [Theory]
     [InlineData(false, HarnessRunState.Failed)]
     [InlineData(true, HarnessRunState.Cancelled)]

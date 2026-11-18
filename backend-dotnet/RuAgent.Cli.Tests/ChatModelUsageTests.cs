@@ -84,11 +84,14 @@ public sealed class ChatModelUsageTests
             new TuiUsageTracker(), new("provider", "model"), true, cancellation.Token));
     }
 
-    [Fact]
-    public async Task Catalog_failure_preserves_retained_context_without_inventing_rates()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Catalog_failure_preserves_retained_context_without_inventing_rates(bool timeout)
     {
+        Exception failure = timeout ? new TaskCanceledException("catalog timed out") : new HttpRequestException("catalog unavailable");
         var resolver = new ChatModelUsage((_, _, _) =>
-            Task.FromException<CatalogModelDetails?>(new HttpRequestException("catalog unavailable")));
+            Task.FromException<CatalogModelDetails?>(failure));
         var usage = new TuiUsageTracker();
 
         await resolver.RefreshAsync(usage, new("provider", "model", true, 1000, "chat_completions"),

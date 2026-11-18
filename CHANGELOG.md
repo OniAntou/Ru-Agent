@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(tui)**: Show saved messages while run details and usage load, and resolve
+  a saved session's workspace once per switch.
 - **fix(tui)**: Recover the local Host connection once before sending a new
   prompt after idle shutdown. Retain the current session and validate the
   selected provider and model before sending.

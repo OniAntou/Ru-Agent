@@ -65,6 +65,15 @@ public sealed partial class TgTranscriptView : View
     public bool CanScroll { get { EnsureWrapped(); return _wrapped.Count + LiveRows > Math.Max(1, Viewport.Height); } }
     public bool HasUnseenOutput { get; private set; }
     public int ScrollPosition { get { EnsureWrapped(); return _followingTail ? Math.Max(0, _wrapped.Count + LiveRows - Viewport.Height) : _scrollTop; } }
+    internal int RowsBelowViewport
+    {
+        get
+        {
+            if (_followingTail) return 0;
+            EnsureWrapped();
+            return Math.Max(0, _wrapped.Count + LiveRows - Viewport.Height - _scrollTop);
+        }
+    }
 
     /// <summary>Rows the live activity row occupies (one, or zero when idle).</summary>
     private int LiveRows => _live is null ? 0 : 1;

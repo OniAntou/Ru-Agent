@@ -11,7 +11,7 @@ using Xunit;
 
 namespace RuAgent.Cli.Tests;
 
-public sealed class TuiSingleSessionTests
+public sealed partial class TuiSingleSessionTests
 {
     [Theory]
     [InlineData("/new")]
@@ -228,20 +228,35 @@ public sealed class TuiSingleSessionTests
         internal string? RecordedWorkspace;
         internal string? SavedPreset;
         internal bool FailPresetRead;
+        internal object[]? SavedMessages;
+        internal string? SavedTitle = "Saved session";
+        internal bool ReadTurnPage;
+        internal int SessionListReads;
+        internal Func<string, CancellationToken, Task<HttpResponseMessage?>>? ReplayResponse;
         internal void Complete(string run) { _completed[run] = true; _release[run].TrySetResult(); }
+        internal void SeedCompletedRun(string run, string session)
+        {
+            _runSessions[run] = session;
+            _completed[run] = true;
+        }
         internal void SeedExternalRun()
         {
             _externalRun = "run_" + Guid.NewGuid().ToString("N");
             _runSessions[_externalRun] = "session_1";
             _release[_externalRun] = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
-        private static HttpResponseMessage Json(object body, HttpStatusCode status = HttpStatusCode.OK) => new(status)
+        internal static HttpResponseMessage Json(object body, HttpStatusCode status = HttpStatusCode.OK) => new(status)
         { Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json") };
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var path = request.RequestUri!.AbsolutePath;
-            if (path == "/sessions") return Json(new { status = "ok", sessions = new[] { new { id = "session_2", title = "Saved session", workspace_path = RecordedWorkspace } } });
+            if (ReplayResponse is not null && await ReplayResponse(path, ct) is { } response) return response;
+            if (path == "/sessions")
+            {
+                Interlocked.Increment(ref SessionListReads);
+                return Json(new { status = "ok", sessions = new[] { new { id = "session_2", title = "Saved session", workspace_path = RecordedWorkspace } } });
+            }
             if (path == "/settings")
             {
                 if (request.Method != HttpMethod.Get)
@@ -307,10 +322,13 @@ public sealed class TuiSingleSessionTests
                 Cancels[_runSessions[run]] = run;
                 return Json(new { run_id = run, status = "cancelled", version = 2 });
             }
+            if (SavedMessages is not null && path.EndsWith("/messages"))
+                return ReadTurnPage ? Json(new { status = "ok", messages = SavedMessages })
+                    : Json(new { error = "synthetic history page unavailable" }, HttpStatusCode.ServiceUnavailable);
             if (path.EndsWith("/activate") || path.StartsWith("/sessions/session_"))
             {
                 var session = path.Split('/')[2];
-                return Json(new { status = "ok", session = new { id = session, title = session, messages = Array.Empty<object>() } });
+                return Json(new { status = "ok", session = new { id = session, title = SavedMessages is null ? session : SavedTitle, messages = SavedMessages ?? Array.Empty<object>() } });
             }
             if (_runSessions.TryGetValue(path.Split('/').Last(), out var owner))
             {

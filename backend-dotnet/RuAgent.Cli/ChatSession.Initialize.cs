@@ -41,9 +41,20 @@ public sealed partial class AgentCommands
             runSession = new ChatRunSession();
 
             ConfigureSlashCommands();
-            await RefreshModelSelectionAsync().ConfigureAwait(false);
+            sessionCommands = CreateSessionCommands();
+            // The native loop can paint saved messages while the remaining startup
+            // reads settle. Line mode loads its history before accepting stdin.
+            if (!tgMode || string.IsNullOrWhiteSpace(cmd.SessionId))
+                await LoadInitialSessionAsync().ConfigureAwait(false);
+        }
 
-            if (!cmd.Json && !string.IsNullOrWhiteSpace(cmd.SessionId))
+        private async Task LoadInitialSessionAsync()
+        {
+            var reopening = !string.IsNullOrWhiteSpace(cmd.SessionId);
+            if (!tgMode || !reopening)
+                await RefreshModelSelectionAsync().ConfigureAwait(false);
+
+            if (!cmd.Json && reopening)
             {
                 // A reopened session shows its last messages; the TG frame owns its welcome view.
                 var replay = await ChatSessionReplay.LoadAsync(_sessionClient, sessionId, cancellationToken).ConfigureAwait(false);
@@ -64,6 +75,9 @@ public sealed partial class AgentCommands
                     sessionRenderer.Flush();
                 }
             }
+
+            if (tgMode && reopening)
+                await RefreshModelSelectionAsync().ConfigureAwait(false);
 
             if (modelWarning is not null)
             {
@@ -97,18 +111,12 @@ public sealed partial class AgentCommands
 
             await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
 
-            if (!string.IsNullOrWhiteSpace(cmd.SessionId))
+            if (reopening)
             {
                 // Only an explicit --session reopens someone else's session; a fresh session
                 // has no run to adopt and must not spend the round trip.
                 await AdoptSessionRunAsync(sessionId).ConfigureAwait(false);
             }
-
-            // The non-slash branch of the sequential key loop, moved into the shape the
-            // dispatcher expects. 'continue' became 'return' (both resume the key loop),
-            // and dispatcherExitCode carries the paths that used to return from ChatAsync.
-            sessionCommands = CreateSessionCommands();
-
         }
 
         private void ConfigureSlashCommands()

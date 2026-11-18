@@ -48,7 +48,7 @@ internal sealed class ChatModelUsage(
                     }
                 }
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 TuiDebug.Log("usage", $"model details read failed: {ex.GetType().Name}");

@@ -16,7 +16,8 @@ public sealed partial class AgentCommands
         {
             using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cancellationToken = lifetime.Token;
-            var loop = CreateTerminalGuiLoop();
+            Task? sessionLoad = null;
+            var loop = CreateTerminalGuiLoop(() => sessionLoad is { IsCompleted: false });
             var stopping = 0;
             stopTerminalGui = () =>
             {
@@ -29,6 +30,8 @@ public sealed partial class AgentCommands
                 catch (NotInitializedException) { }
             };
             using var registration = cancellationToken.Register(StopTerminalGuiChat);
+            if (!string.IsNullOrWhiteSpace(cmd.SessionId))
+                sessionLoad = Task.Run(LoadInitialSessionAsync);
             var clock = System.Diagnostics.Stopwatch.StartNew();
             var startup = tgApp!.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
             {
@@ -81,6 +84,11 @@ public sealed partial class AgentCommands
                 // handlers still own resources until their settlement completes.
                 await loop.Completion.ConfigureAwait(false);
                 await loop.WaitForShutdownSettlementAsync().ConfigureAwait(false);
+                if (sessionLoad is not null)
+                {
+                    try { await sessionLoad.ConfigureAwait(false); }
+                    catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+                }
                 loop.SetViewActive(null);
                 submissions.ClearPending();
                 stopTerminalGui = null;
@@ -104,14 +112,19 @@ public sealed partial class AgentCommands
         private Action? stopTerminalGui;
         private void StopTerminalGuiChat() => stopTerminalGui?.Invoke();
 
-        private TgChatLoop CreateTerminalGuiLoop()
+        private TgChatLoop CreateTerminalGuiLoop(Func<bool> openingSession)
         {
             var loop = new TgChatLoop(tgWindow!, cancellationToken);
             loop.SetImmediateCommandHandler(line =>
             {
-                if (!line.Trim().Split(' ', 2)[0].Equals("/exit", StringComparison.OrdinalIgnoreCase)) return false;
-                tgWindow!.Composer.Input.Text = string.Empty;
-                StopTerminalGuiChat();
+                if (line.Trim().Split(' ', 2)[0].Equals("/exit", StringComparison.OrdinalIgnoreCase))
+                {
+                    tgWindow!.Composer.Input.Text = string.Empty;
+                    StopTerminalGuiChat();
+                    return true;
+                }
+                if (!openingSession()) return false;
+                tgWindow!.Hints.ShowFeedback("loading session history");
                 return true;
             });
             tgLoop = loop;

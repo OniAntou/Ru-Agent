@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.IO;
 using System.Net;
 using System.Net.Http.Headers;
@@ -37,17 +38,51 @@ public sealed partial class AgentCommands
             ChatSessionReplayResult fallback,
             CancellationToken cancellationToken)
         {
+            if (tgMode) RenderSessionReplay(targetSessionId, fallback);
+
             var turns = await ChatSessionTurnReplay.LoadAsync(_sessionClient, _agentClient, targetSessionId, cancellationToken)
                 .ConfigureAwait(false);
             if (turns is not { Length: > 0 } loaded)
             {
-                if (fallback.Messages.Length > 0) RenderSessionReplay(targetSessionId, fallback);
+                if (!tgMode) RenderSessionReplay(targetSessionId, fallback);
                 return;
             }
 
-            sessionRenderer.Note(
-                $"↺ replayed the last {loaded.Length} {(loaded.Length == 1 ? "turn" : "turns")} from session {targetSessionId}",
-                Tui.TuiToken.Meta);
+            if (!tgMode)
+            {
+                sessionRenderer.Note(
+                    $"↺ replayed the last {loaded.Length} {(loaded.Length == 1 ? "turn" : "turns")} from session {targetSessionId}",
+                    Tui.TuiToken.Meta);
+                RenderSessionTurns(loaded);
+                return;
+            }
+
+            // The switch still owns the submission lane, so the only rows to replace
+            // are this session's preview. Keep the reader's distance from the tail.
+            var transcript = tgWindow!.Transcript;
+            var rowsBelow = 0;
+            RunOnTgUi(() =>
+            {
+                rowsBelow = transcript.RowsBelowViewport;
+                transcript.Clear();
+                transcript.DeferWrapping = true;
+            });
+            try
+            {
+                RenderSessionTurns(loaded);
+            }
+            finally
+            {
+                RunOnTgUi(() =>
+                {
+                    transcript.DeferWrapping = false;
+                    if (rowsBelow > 0) transcript.ScrollRows(-rowsBelow);
+                });
+            }
+        }
+
+        private void RenderSessionTurns(ImmutableArray<ChatReplayTurn> loaded)
+        {
             foreach (var turn in loaded)
             {
                 foreach (var prompt in turn.Prompts)
@@ -86,9 +121,10 @@ public sealed partial class AgentCommands
             string targetSessionId,
             ChatSessionReplayResult replay)
         {
-            sessionRenderer.Note(
-                $"↺ replayed the last {replay.Messages.Length} messages from session {targetSessionId}",
-                Tui.TuiToken.Meta);
+            if (!tgMode)
+                sessionRenderer.Note(
+                    $"↺ replayed the last {replay.Messages.Length} messages from session {targetSessionId}",
+                    Tui.TuiToken.Meta);
             foreach (var message in replay.Messages)
             {
                 if (string.Equals(message.Role, "user", StringComparison.Ordinal))
@@ -306,7 +342,7 @@ public sealed partial class AgentCommands
             var sameSession = string.Equals(targetSessionId, sessionId, StringComparison.Ordinal);
             if (sameSession)
             {
-                await WriteDiagnosticLineAsync(humanOut, $"already in session {sessionId}").ConfigureAwait(false);
+                await ReportSessionNavigationAsync($"already in session \"{sessionTitle ?? "Untitled session"}\"").ConfigureAwait(false);
                 return;
             }
 
@@ -352,7 +388,6 @@ public sealed partial class AgentCommands
             draftCreationFailed = false;
             if (tgMode) chatEngine?.ResetInputHistory();
             ClearSubagentStrip();
-            await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
 
             submissions.ClearPending();
             RefreshAttachmentLabels();
@@ -372,10 +407,14 @@ public sealed partial class AgentCommands
                 });
             }
 
-            // The header was just blanked, and the session payload carries no usage, so
-            // the meter is restored from the target's newest run rather than left empty
-            // until that session's next turn reports one.
-            await RestoreSessionUsageAsync(targetSessionId, cancellationToken).ConfigureAwait(false);
+            // History and the restored meter load together, so saved messages appear without
+            // waiting on the usage replay. The session payload carries no usage, so the meter
+            // comes from the target's newest run rather than staying empty until its next turn.
+            var history = replay.Messages.Length > 0 && !cmd.Json
+                ? RenderSessionHistoryAsync(targetSessionId, replay, cancellationToken)
+                : Task.CompletedTask;
+            await Task.WhenAll(history, RestoreSwitchedSessionUsageAsync(targetSessionId, cancellationToken))
+                .ConfigureAwait(false);
             // The restored reading is the last request; the reply it produced came after it.
             if (replay.Messages.LastOrDefault() is { } lastMessage && !string.Equals(lastMessage.Role, "user", StringComparison.Ordinal))
             {
@@ -383,19 +422,13 @@ public sealed partial class AgentCommands
                 PaintContextUsage();
             }
 
-            if (replay.Messages.Length > 0 && !cmd.Json)
-            {
-                await RenderSessionHistoryAsync(targetSessionId, replay, cancellationToken).ConfigureAwait(false);
-            }
-
             await AdoptSessionRunAsync(targetSessionId).ConfigureAwait(false);
 
             await RefreshModelSelectionAsync().ConfigureAwait(false);
-            var otherWorkspace = await ChatSessionWorkflow.ReadWorkspaceLabelAsync(
-                _sessionClient,
-                targetSessionId,
-                cancellationToken).ConfigureAwait(false);
-            if (otherWorkspace is { } recordedWorkspace
+            // The native switch already resolved and adopted the recorded workspace.
+            // Line mode keeps its launch workspace and reports any difference.
+            if (!tgMode && await ChatSessionWorkflow.ReadWorkspaceLabelAsync(
+                    _sessionClient, targetSessionId, cancellationToken).ConfigureAwait(false) is { } recordedWorkspace
                 && !string.Equals(recordedWorkspace.Path, canonicalWorkspace, StringComparison.OrdinalIgnoreCase))
             {
                 var currentWorkspaceLabel = ChatDisplayText.Sanitize(
@@ -409,18 +442,21 @@ public sealed partial class AgentCommands
                 }
             }
 
-            // A switch is a local command result, not transcript content: the header title
-            // already changed, so the confirmation belongs in the footer hint. Writing it
-            // to the transcript left a stray "switched to session ..." line under the turn.
-            if (tgMode)
-            {
-                var switchedTo = string.IsNullOrWhiteSpace(sessionTitle) ? targetSessionId : sessionTitle!;
-                RunOnTgUi(() => tgWindow!.Hints.ShowCommandFeedback($"switched to {switchedTo}"));
-            }
-            else
-            {
-                await WriteDiagnosticLineAsync(humanOut, $"switched to session {targetSessionId}").ConfigureAwait(false);
-            }
+            await ReportSessionNavigationAsync($"switch to session \"{sessionTitle ?? "Untitled session"}\"").ConfigureAwait(false);
+        }
+
+        private async Task RestoreSwitchedSessionUsageAsync(string targetSessionId, CancellationToken ct)
+        {
+            await RefreshModelUsageInfoAsync(ct).ConfigureAwait(false);
+            await RestoreSessionUsageAsync(targetSessionId, ct).ConfigureAwait(false);
+        }
+
+        private Task ReportSessionNavigationAsync(string notice)
+        {
+            if (!tgMode) return WriteDiagnosticLineAsync(humanOut, notice);
+            // Keep navigation feedback outside the restored transcript.
+            RunOnTgUi(() => tgWindow!.Hints.ShowCommandFeedback(notice, false));
+            return Task.CompletedTask;
         }
     }
 }

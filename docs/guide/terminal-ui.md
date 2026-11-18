@@ -71,13 +71,13 @@ Attach images with `--image PATH` at startup (up to four), a dropped path or
 image file is sent as a path instead. Any other file can be dropped too, whatever its type: text up to
 8 KB is added to the prompt as a code block, and anything else (PDFs, Word or Excel files, archives,
 large logs) is sent as a path the agent opens itself. A file from outside the workspace is first copied
-into `.ruttachments`, which git ignores. Backspace on an empty prompt removes the last attachment.
+into `.ru\attachments`, which git ignores. Backspace on an empty prompt removes the last attachment.
 Attachments travel with the next prompt.
 
 ## Sessions and paused runs
 
 Each chat is a session. `/sessions` finds one and `/sessions id:<session-id>` reopens it, redrawing its
-newest turns as they looked live. A run that hits an error, for example a payment or quota problem,
+newest turns as they looked live. The native terminal shows recent saved messages first, then fills in activity and timing. A run that hits an error, for example a payment or quota problem,
 ends with that error; send a new message to keep going once it is fixed. Typing `Continue` reopens a
 run this session tracks that is still running or waiting on your approval or answer, and `Escape`
 interrupts a running turn. A run that is still going is attached from another terminal with

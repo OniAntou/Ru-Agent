@@ -25,6 +25,21 @@ public sealed class SessionUsageReplayPolicyTests
     }
 
     [Fact]
+    public void An_advisor_report_is_billed_but_never_the_context_reading()
+    {
+        string[] lines =
+        [
+            """{"event_type":"model.usage_recorded","sequence":4,"model_step_id":"step_a","payload_ref":"pay_main"}""",
+            """{"event_type":"model.usage_recorded","sequence":6,"safe_summary":"advisor_usage","payload_ref":"pay_advisor"}""",
+        ];
+
+        Assert.Equal("pay_main", SessionUsageReplayPolicy.FindLatestUsageReport(lines)!.Value.PayloadRef);
+        var reports = SessionUsageReplayPolicy.FindUsageReports(lines);
+        Assert.Equal(["pay_main", "pay_advisor"], reports.Select(report => report.PayloadRef));
+        Assert.Equal([false, true], reports.Select(report => report.Advisor));
+    }
+
+    [Fact]
     public void Sse_data_lines_and_plain_json_are_both_read()
     {
         string[] lines =

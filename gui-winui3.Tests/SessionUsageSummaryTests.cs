@@ -23,6 +23,21 @@ public sealed class SessionUsageSummaryTests
         Assert.Equal(1001, new AgentModelUsage(1000, 1, null, 998, null, InputTokensIncludeCache: true).ResolvedTotal);
     }
 
+    [Fact]
+    public void Advisor_usage_is_billed_but_never_raises_the_context_peak()
+    {
+        var row = new SessionUsageRow("run", true, "completed", null, null,
+            new AgentModelUsage(100, 20, null, 0, 0, InputTokensIncludeCache: false),
+            new AgentModelUsage(5000, 300, null, 0, 0, "advisor", InputTokensIncludeCache: false));
+
+        var summary = SessionUsagePolicy.Summarize([row]);
+
+        Assert.Equal(120, summary.PeakTotal);
+        Assert.Equal(5420, summary.BilledTokens);
+        Assert.Equal(5420, row.BilledTokens);
+        Assert.True(row.HasAdvisorUsage);
+    }
+
     /// <summary>A row with nothing but the fields these tests are about.</summary>
     private static SessionUsageRow Row(string id, bool terminal, AgentModelUsage? usage) =>
         new(id, terminal, terminal ? "completed" : "running", null, null, usage);

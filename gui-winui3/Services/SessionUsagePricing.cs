@@ -112,9 +112,30 @@ public static class SessionUsagePricing
                 continue;
             }
 
+            var cost = Cost(row.Usage, row.Usage?.HasAny == true, rate);
+            if (row.HasAdvisorUsage)
+            {
+                // Advisor consultations (ADR 0047) bill the advisor's own model at its own
+                // rate; a run whose advisor part cannot be priced has no honest total.
+                var advisorModel = row.AdvisorUsage!.Model?.Trim();
+                if (string.IsNullOrWhiteSpace(advisorModel))
+                {
+                    prices[row.RunId] = new SessionRunPrice(model, null, ModelKnown: false, RateKnown: false);
+                    continue;
+                }
+
+                if (!rates.TryGetValue(advisorModel, out var advisorRate))
+                {
+                    prices[row.RunId] = new SessionRunPrice(model, null, ModelKnown: true, RateKnown: false);
+                    continue;
+                }
+
+                cost = cost + Cost(row.AdvisorUsage, hasUsage: true, advisorRate);
+            }
+
             prices[row.RunId] = new SessionRunPrice(
                 model,
-                Cost(row, rate),
+                cost,
                 ModelKnown: true,
                 RateKnown: true);
         }
@@ -136,10 +157,9 @@ public static class SessionUsagePricing
     /// part of a free model is free however its cache is billed. Refusing to price one
     /// would report a genuinely free session as one whose cost nobody knows.
     /// </remarks>
-    private static decimal? Cost(SessionUsageRow row, ProviderCatalogCost rate)
+    private static decimal? Cost(AgentModelUsage? usage, bool hasUsage, ProviderCatalogCost rate)
     {
-        var usage = row.Usage;
-        if (usage is null || !row.HasUsage)
+        if (usage is null || !hasUsage)
         {
             return 0m;
         }

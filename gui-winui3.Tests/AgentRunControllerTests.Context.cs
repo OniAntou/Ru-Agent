@@ -49,6 +49,28 @@ public sealed partial class AgentRunControllerTests
         Assert.True(meter.HasReportedUsage);
     }
 
+    [Fact]
+    public async Task Advisor_usage_never_reaches_the_reply_or_the_context_meter()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        fake.PayloadContents["usage-main"] = """{"input_tokens":50000,"output_tokens":500}""";
+        fake.PayloadContents["usage-advisor"] = """{"input_tokens":90000,"output_tokens":900,"model":"advisor"}""";
+        fake.Stream.Add(SafeEvent(1, "model.step_started") with { ModelStepId = ContextStepA });
+        fake.Stream.Add(SafeEvent(2, "model.usage_recorded", "usage-main") with { ModelStepId = ContextStepA });
+        fake.Stream.Add(SafeEvent(3, "model.usage_recorded", "usage-advisor") with
+        {
+            SafeSummary = SessionUsageReplayPolicy.AdvisorUsageSafeCode,
+        });
+        var controller = new AgentRunController(fake);
+        var received = new List<AgentUsageReceivedEventArgs>();
+        controller.UsageReceived += (_, item) => received.Add(item);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest("sess_1", "C:\\work", "advisor", "standard", null, "causal-advisor"));
+
+        var usage = Assert.Single(received);
+        Assert.Equal(50000, usage.Usage.InputTokens);
+    }
+
     private static AgentEventModel Estimate(string step, long tokens, long sequence)
     {
         var data = JsonSerializer.Serialize(new

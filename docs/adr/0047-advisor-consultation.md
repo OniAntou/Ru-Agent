@@ -11,7 +11,10 @@ Proposed. Scope chosen by the owner on 2026-11-14: the main model decides when t
 consult, with one Host recommendation before finishing (decision 4), the advisor
 works with every signed-in provider, and Ru adds no advisor-specific limit. Phases 2 and 3 are implemented: selection and pin in the
 TUI and the desktop app, and the `advisor` tool with user-named model and effort.
-Usage reporting (phase 4) is not. A live run on 2026-11-14 confirmed the
+Usage reporting (phase 4) is implemented: each consultation records `advisor_usage`;
+`/status usage` and the desktop session usage panel bill it on the advisor's rates and
+show it apart from the run's own model, and neither the context meter nor a reply's
+usage footer reads it. A live run on 2026-11-14 confirmed the
 consultation end to end (main model `longcat-2.5-free` and advisor
 `deepseek-v4.1-flash`, both on OpenCode Go); accepting this ADR is the owner's call.
 

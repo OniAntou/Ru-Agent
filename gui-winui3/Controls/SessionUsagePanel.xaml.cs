@@ -385,10 +385,13 @@ namespace RuApp.Controls
                 Margin = new Thickness(0, 1, 0, 0),
             };
 
+            // The bar compares the run's own requests with the session's peak; its share of
+            // the billed total also counts its advisor consultations (ADR 0047).
             int measured = row.Usage?.ResolvedTotal ?? 0;
             double share = SessionUsagePolicy.ShareOfPeak(measured, summary.PeakTotal);
-            string shareText = measured > 0 && summary.HasAny
-                ? summary.ShareOfBilled(measured).ToString("0", CultureInfo.InvariantCulture) + "%"
+            int billed = row.BilledTokens;
+            string shareText = billed > 0 && summary.HasAny
+                ? summary.ShareOfBilled(billed).ToString("0", CultureInfo.InvariantCulture) + "%"
                 : string.Empty;
 
             string started = row.CreatedAt is { } created
@@ -414,6 +417,13 @@ namespace RuApp.Controls
             if (took.Length > 0)
             {
                 facts.Children.Add(Fact(took, mono, muted));
+            }
+
+            if (row.HasAdvisorUsage)
+            {
+                // Shown apart from the run's own model, as the advisor bills its own.
+                facts.Children.Add(Fact(
+                    "advisor " + ModelContextSpecs.FormatTokens(row.AdvisorUsage!.ResolvedTotal), mono, muted));
             }
 
             // The run's own cost, when it could be worked out. An unpriced run says

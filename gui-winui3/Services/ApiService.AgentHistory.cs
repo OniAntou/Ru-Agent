@@ -262,11 +262,12 @@ namespace RuApp.Services
 
                     // Completed steps of live runs already have durable usage too.
                     AgentModelUsage? usage = null;
+                    AgentModelUsage? advisorUsage = null;
                     if (run.IsTerminal || run.Status is not ("created" or "waiting_workspace_trust"))
                     {
                         try
                         {
-                            usage = await GetRunUsageTotalAsync(run.RunId, cancellationToken);
+                            (usage, advisorUsage) = await GetRunUsageTotalAsync(run.RunId, cancellationToken);
                         }
                         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                         {
@@ -284,7 +285,8 @@ namespace RuApp.Services
                         run.Status,
                         run.CreatedAt,
                         run.TerminalAt,
-                        usage));
+                        usage,
+                        advisorUsage));
                 }
 
                 return rows;
@@ -322,20 +324,28 @@ namespace RuApp.Services
             return await ReadUsagePayloadAsync(runId, payloadRef, cancellationToken);
         }
 
-        private async Task<AgentModelUsage?> GetRunUsageTotalAsync(string runId, CancellationToken cancellationToken)
+        /// <summary>
+        /// The run's own model usage and its advisor consultations' usage (ADR 0047), each
+        /// summed separately: they bill different models, and only the run's own requests
+        /// say how full its context was.
+        /// </summary>
+        private async Task<(AgentModelUsage? Usage, AgentModelUsage? Advisor)> GetRunUsageTotalAsync(string runId, CancellationToken cancellationToken)
         {
             using var response = await _httpClient.GetAsync(
                 $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}/events?live=0&after_sequence=0", cancellationToken);
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode) return (null, null);
             var body = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken);
-            var references = SessionUsageReplayPolicy.FindUsagePayloadRefs(body.Split('\n'));
+            var references = SessionUsageReplayPolicy.FindUsageReports(body.Split('\n'));
             var reports = new AgentModelUsage?[references.Count];
             await Parallel.ForEachAsync(Enumerable.Range(0, references.Count),
                 new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
-                async (index, token) => reports[index] = await ReadUsagePayloadAsync(runId, references[index], token));
+                async (index, token) => reports[index] = await ReadUsagePayloadAsync(runId, references[index].PayloadRef, token));
             // A failed read makes the run unknown, never a cheaper partial total.
-            return reports.Any(report => report is null) ? null
-                : RunUsageAccumulator.Sum(reports.Select(report => report!).ToArray());
+            if (reports.Any(report => report is null)) return (null, null);
+            return (Sum(advisor: false), Sum(advisor: true));
+
+            AgentModelUsage? Sum(bool advisor) => RunUsageAccumulator.Sum(
+                reports.Where((_, index) => references[index].Advisor == advisor).Select(report => report!).ToArray());
         }
 
         private async Task<AgentModelUsage?> ReadUsagePayloadAsync(string runId, string payloadRef, CancellationToken cancellationToken)

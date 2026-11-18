@@ -12,17 +12,29 @@ namespace RuApp.Services;
 /// <param name="Status">The host's own status for the run, verbatim.</param>
 /// <param name="CreatedAt">When the run started, or null when the host did not say.</param>
 /// <param name="TerminalAt">When the run ended, or null while it is still live.</param>
-/// <param name="Usage">The provider's counts, or null when the run never reported.</param>
+/// <param name="Usage">The provider's counts for the run's own model, or null when it never reported.</param>
+/// <param name="AdvisorUsage">
+/// The run's advisor consultations (ADR 0047), summed under the advisor's model, or null
+/// when it consulted none. Billed with the run; never part of its context reading.
+/// </param>
 public sealed record SessionUsageRow(
     string RunId,
     bool IsTerminal,
     string Status,
     DateTimeOffset? CreatedAt,
     DateTimeOffset? TerminalAt,
-    AgentModelUsage? Usage)
+    AgentModelUsage? Usage,
+    AgentModelUsage? AdvisorUsage = null)
 {
     /// <summary>Whether the provider reported anything for this run.</summary>
-    public bool HasUsage => Usage?.HasAny == true;
+    public bool HasUsage => Usage?.HasAny == true || HasAdvisorUsage;
+
+    /// <summary>Whether the run consulted its advisor and that consultation was billed.</summary>
+    public bool HasAdvisorUsage => AdvisorUsage?.HasAny == true;
+
+    /// <summary>Tokens billed for the run: its own model plus its advisor consultations.</summary>
+    public int BilledTokens => (Usage?.HasAny == true ? Usage.ResolvedTotal : 0)
+        + (HasAdvisorUsage ? AdvisorUsage!.ResolvedTotal : 0);
 
     /// <summary>
     /// The model this run billed, as the adapter sent it, or null when the run predates
@@ -267,18 +279,12 @@ public static class SessionUsagePolicy
             }
 
             reported++;
-            var usage = row.Usage!;
-            billed = checked(billed + usage.ResolvedTotal);
-            inputComplete &= usage.InputTokens is not null
-                && !(usage.InputTokensIncludeCache is null && (usage.CacheReadInputTokens > 0 || usage.CacheWriteInputTokens > 0))
-                && !(usage.InputTokensIncludeCache == true && usage.CacheReadInputTokens is null);
-            outputComplete &= usage.OutputTokens is not null;
-            readComplete &= usage.CacheReadInputTokens is not null;
-            writeComplete &= usage.CacheWriteInputTokens is not null || usage.InputTokensIncludeCache == true;
-            input += usage.UncachedInputTokens ?? 0;
-            output += usage.OutputTokens ?? 0;
-            cacheRead += usage.CacheReadInputTokens ?? 0;
-            cacheWrite += usage.CacheWriteInputTokens ?? 0;
+            // The advisor is billed like the run's own model (ADR 0047), but its separate
+            // request never counts toward the run's peak context.
+            if (row.HasAdvisorUsage) AddBilled(row.AdvisorUsage!);
+            if (row.Usage?.HasAny != true) continue;
+            var usage = row.Usage;
+            AddBilled(usage);
             if (usage.CacheHitPercent is not null && usage.PromptInputTokens is { } promptTokens)
             {
                 cachePromptTokens += promptTokens;
@@ -291,6 +297,21 @@ public static class SessionUsagePolicy
             {
                 peak = total;
             }
+        }
+
+        void AddBilled(AgentModelUsage usage)
+        {
+            billed = checked(billed + usage.ResolvedTotal);
+            inputComplete &= usage.InputTokens is not null
+                && !(usage.InputTokensIncludeCache is null && (usage.CacheReadInputTokens > 0 || usage.CacheWriteInputTokens > 0))
+                && !(usage.InputTokensIncludeCache == true && usage.CacheReadInputTokens is null);
+            outputComplete &= usage.OutputTokens is not null;
+            readComplete &= usage.CacheReadInputTokens is not null;
+            writeComplete &= usage.CacheWriteInputTokens is not null || usage.InputTokensIncludeCache == true;
+            input += usage.UncachedInputTokens ?? 0;
+            output += usage.OutputTokens ?? 0;
+            cacheRead += usage.CacheReadInputTokens ?? 0;
+            cacheWrite += usage.CacheWriteInputTokens ?? 0;
         }
 
         return new SessionUsageSummary(runs, reported, input, output, peak, cacheRead, cacheWrite,

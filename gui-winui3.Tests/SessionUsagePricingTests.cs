@@ -60,6 +60,28 @@ public sealed class SessionUsagePricingTests
         Assert.Equal(0.57m, prices["run"].Dollars);
     }
 
+    [Fact]
+    public void Advisor_consultations_are_priced_at_the_advisor_rate_and_an_unknown_advisor_rate_unprices_the_run()
+    {
+        var main = new AgentModelUsage(1_000_000, 0, null, 0, 0, "vendor/main", false);
+        var advisor = new AgentModelUsage(1_000_000, 0, null, 0, 0, "vendor/advisor", false);
+        var row = new SessionUsageRow("run", true, "completed", null, null, main, advisor);
+
+        var priced = SessionUsagePricing.PriceRuns([row], new Dictionary<string, ProviderCatalogCost>
+        {
+            ["vendor/main"] = Rate(input: 1, cacheRead: 0, cacheWrite: 0),
+            ["vendor/advisor"] = Rate(input: 10, cacheRead: 0, cacheWrite: 0),
+        });
+        Assert.Equal(11m, priced["run"].Dollars);
+
+        var unpriced = SessionUsagePricing.PriceRuns([row], new Dictionary<string, ProviderCatalogCost>
+        {
+            ["vendor/main"] = Rate(input: 1, cacheRead: 0, cacheWrite: 0),
+        });
+        Assert.Null(unpriced["run"].Dollars);
+        Assert.Equal("no rate", unpriced["run"].Blocker);
+    }
+
     private static ProviderCatalogCost Rate(
         double input = 3, double output = 15, double? cacheRead = null, double? cacheWrite = null) =>
         new() { Input = input, Output = output, CacheRead = cacheRead, CacheWrite = cacheWrite };

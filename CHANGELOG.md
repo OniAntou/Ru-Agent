@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Advisor consultations (`advisor_usage`) no longer feed the desktop context meter or replace a reply's usage footer. The session usage panel bills them on the advisor model's own rate, shows them as an `advisor` figure on the run's row, and leaves them out of the run's peak context; a run whose advisor model has no published rate is unpriced instead of priced without it. Reopening a session in the desktop app or the terminal restores the context reading from the run's own model, never from an advisor report.
 - **feat(broker)**: `apply_patch` renames files. Differing `---`/`+++` paths move a file with edits, and git `rename from`/`rename to` lines without hunks move it byte for byte. A rename is checked as a delete of its source plus a create of its target (policy, protected paths, the workspace boundary and preimages apply to both), the target must not exist, both steps roll back together, and the result lists both paths. Case-only renames are refused with `patch_rename_case_only`; git mode and similarity header lines are now accepted and ignored.
 - **fix(harness)**: A run's tool images (ADR 0026, up to 4 MiB each) are deleted in the commit that ends the run instead of staying in the database until the session is deleted; the tool results stay. Images of runs that ended earlier are not swept.
 - **chore(broker)**: Approval and tool-advertisement refusals no longer mention retired v1/v2 protocol phases; their codes are unchanged.

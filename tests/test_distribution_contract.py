@@ -12,7 +12,10 @@ def test_installers_do_not_close_apps_or_delete_the_profile() -> None:
     assert "[UninstallDelete]" not in setup
     assert "[InstallDelete]" not in setup
     assert "ChangeUserPath(True)" in setup
-    helper = (ROOT / "installer/apply-update.ps1").read_text(encoding="utf-8")
+    # Each product installs into a folder that names it, not a bare "Desktop" or "CLI".
+    assert r"DefaultDirName={localappdata}\Programs\Ru Agent {#Product}" in setup
+    assert "AppName=Ru Agent {#Product}" in setup
+    helper =(ROOT / "installer/apply-update.ps1").read_text(encoding="utf-8")
     assert "Stop-Process" not in helper
     assert "taskkill" not in helper.lower()
     assert "/NOCLOSEAPPLICATIONS" in helper

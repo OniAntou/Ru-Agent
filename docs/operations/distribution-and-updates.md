@@ -16,8 +16,10 @@ Download `Ru-Desktop-VERSION-win-x64-Setup.exe` or
 [releases](https://github.com/OniAntou/Ru-Agent/releases). The current Preview is
 [0.1.3-preview.1](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.3-preview.1);
 no Stable release is published yet.
-Default installation roots are `%LOCALAPPDATA%\Programs\Ru\Desktop`
-and `%LOCALAPPDATA%\Programs\Ru\CLI`, without administrator rights. Use a
+Default installation roots are `%LOCALAPPDATA%\Programs\Ru Agent Desktop`
+and `%LOCALAPPDATA%\Programs\Ru Agent CLI`, without administrator rights. Releases up
+to 0.1.3-preview.1 used `%LOCALAPPDATA%\Programs\Ru\Desktop` and `...\Ru\CLI`; an
+installation there keeps its folder when it is updated or reinstalled. Use a
 dedicated empty directory for a new installation. Desktop adds a Start-menu
 shortcut; CLI adds only its own directory to the user's PATH. Open a new terminal
 and run `ru` after installing CLI. ZIP archives provide the matching portable trees.

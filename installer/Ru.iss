@@ -18,11 +18,14 @@ CreateUninstallRegKey=no
 #else
 AppId=OniAntou.Ru.{#Product}
 #endif
-AppName=Ru {#Product}
+AppName=Ru Agent {#Product}
 AppVersion={#ReleaseVersion}
 AppPublisher=OniAntou
 AppPublisherURL=https://github.com/OniAntou/Ru-Agent
-DefaultDirName={localappdata}\Programs\Ru\{#Product}
+; One named folder per product, the way Windows lists installed programs. A product
+; installed under an earlier default keeps its folder: Inno reuses the AppId's previous
+; directory, and the updater passes /DIR with the current installation.
+DefaultDirName={localappdata}\Programs\Ru Agent {#Product}
 DefaultGroupName=Ru Agent
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64

@@ -12,7 +12,7 @@ need the .NET SDK unless you build from source.
 
 1. Open the [Releases page](https://github.com/OniAntou/Ru-Agent/releases) and download
    `Ru-Desktop-VERSION-win-x64-Setup.exe`.
-2. Run it. It installs for your user under `%LOCALAPPDATA%\Programs\Ru\Desktop` without administrator
+2. Run it. It installs for your user under `%LOCALAPPDATA%\Programs\Ru Agent Desktop` without administrator
    rights and adds a Start-menu shortcut.
 3. Start **Ru** from the Start menu.
 

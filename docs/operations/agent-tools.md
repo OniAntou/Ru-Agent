@@ -17,9 +17,9 @@ declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 
 ## Coding profiles
 
-New runs use `coding_v3` (28 definitions): the coding tools plus `apply_patch`
+New runs use `coding_v3` (29 definitions): the coding tools plus `apply_patch`
 and `run_code` ([ADR 0043](../adr/0043-single-default-coding-profile.md)). Runs
-already pinned to `coding_v2` (26) keep it; `patch_v2` and `coding_code_v1` are
+already pinned to `coding_v2` (27) keep it; `patch_v2` and `coding_code_v1` are
 retired. Changing the Host setting does not alter an existing run. Set
 `RU_AGENT_TOOL_PROFILE=coding_v2|coding_v3` in a dedicated Host process to choose
 the profile for new runs. Persisted provider selections must

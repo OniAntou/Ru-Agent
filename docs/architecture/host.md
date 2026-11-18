@@ -123,7 +123,7 @@ host-status, session, run, subagent and policy handles.
 
 The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP.NET Core Public Host, the in-process model step, and LLM providers:
 - **Client preparation:** WinUI 3 `ImageAttachmentResizer` scales images exceeding 2048px on their longest dimension down proportionally and compresses them to JPEG (quality 0.85) or PNG (if alpha present). Up to 4 images can be attached per user turn.
-- **Backend validation & persistence:** `POST /agent/v1/runs` has a 26 MiB JSON request-body bound for encoded `image_attachments` data URLs, distinct from decoded image bounds. ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), canonical decodable Base64 (including padding and trailing bits), actual decoded per-image size (<=4 MiB), total decoded size (<=20 MiB), and retains valid images even when the selected model accepts only text. Validation is bounded before allocation and is repeated by `ModelImage` at the adapter boundary. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
+- **Backend validation & persistence:** `POST /agent/v1/runs` has a 24 MiB JSON request-body bound for encoded `image_attachments` data URLs, distinct from decoded image bounds. ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), canonical decodable Base64 (including padding and trailing bits), actual decoded per-image size (<=4 MiB), total decoded size (<=20 MiB), and retains valid images even when the selected model accepts only text. Validation is bounded before allocation and is repeated by `ModelImage` at the adapter boundary. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
   An empty `workspace_path` is also valid after the session is verified to exist: the Host allocates its scratch workspace under the data root (`workspaces/<session id>`). Existing directories require a matching ownership marker; the Host does not adopt unmarked or foreign folders. Run responses and session listings return `workspace_kind: "scratch"` only when the canonical workspace matches the same session's marked non-reparse directory. A session delete removes that folder only after successful or confirmed-absent primary deletion, and a startup sweeper reclaims folders whose session is gone. A folder without a matching marker is never deleted ([ADR 0041](../adr/0041-scratch-workspaces.md)).
 - **Model step integration:** the typed `ModelGenerationRequest.Images` carries decrypted `UserImage` payloads. `ModelStepService` projects these into `ModelRequest.Images` (`IReadOnlyList<ModelImage>`).
 - **Provider projection:** Model adapters project images into provider-native payloads:
@@ -150,7 +150,7 @@ _Avoid_: Edge, proxy, FastAPI backend
 ## Public Contract
 
 The stable authenticated surface of HTTP method/path pairs with no WebSocket
-route (23 non-Agent plus 32 `/agent/v1/*`; Agent v2 is
+route (23 non-Agent plus 31 `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC

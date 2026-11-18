@@ -14,6 +14,10 @@ has 28 model-visible rows and 27 Broker-bound manifests; `ask_user` remains
 Host-intercepted. The original 29-row decision below records the initial scope;
 counts are version-specific and are not registry invariants.
 
+Catalog amendment (2026-11-18): ADR 0047 added the Host-intercepted `advisor`
+row, so the current table has 29 model-visible rows and 27 Broker-bound manifests;
+`ask_user` and `advisor` have no manifest.
+
 ## Context
 
 A model-visible tool used to be described in several hand-maintained places that had to

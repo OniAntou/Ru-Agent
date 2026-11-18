@@ -309,7 +309,7 @@ execution schemas, timeout, output limit, and trust class. Its ID/version and
 proposal schema digest must match the immutable definition in
 `RuAgent.Protocol`; it does not itself make a tool model-visible.
 
-Manifests are derived from `AgentToolDescriptorTable` rather than hand-written. `ToolCatalog` builds one manifest per Broker-bound row (27 of the 28 rows; `ask_user` has none) and requires executors and manifests to match in both directions. The trusted adapter allowlist in `ToolRegistry` comes from the `AgentToolAdapter` enum, with the Host-intercepted member excluded. Risk and adapter values map through explicit arms that throw when unmapped. A session grant adds each advertised tool's manifest scopes. The access class (`ReadOnly`, `Mutation` or `Terminal`) comes from the row through `ToolAccessClassification`, which the Broker gateway and the hook gateway both call. See [ADR 0038](../adr/0038-tool-descriptor-table.md).
+Manifests are derived from `AgentToolDescriptorTable` rather than hand-written. `ToolCatalog` builds one manifest per Broker-bound row (27 of the 29 rows; `ask_user` and `advisor` have none) and requires executors and manifests to match in both directions. The trusted adapter allowlist in `ToolRegistry` comes from the `AgentToolAdapter` enum, with the Host-intercepted member excluded. Risk and adapter values map through explicit arms that throw when unmapped. A session grant adds each advertised tool's manifest scopes. The access class (`ReadOnly`, `Mutation` or `Terminal`) comes from the row through `ToolAccessClassification`, which the Broker gateway and the hook gateway both call. See [ADR 0038](../adr/0038-tool-descriptor-table.md).
 
 Computer drag and scroll resolve and authorize the target immediately before
 each injected move, button-down or wheel event, with a final native root-window
@@ -343,7 +343,7 @@ The profile is pinned alongside the provider selection and removed from request
 options before provider transport. Missing pins fail as `tool_profile_required`;
 retired or unknown pins fail as `tool_profile_invalid`, without provider access
 or substitution. Run queries return null for unsupported historical labels.
-The catalog has 28 definitions and the Broker 27 bindings (`ask_user` is Host-only).
+The catalog has 29 definitions and the Broker 27 bindings (`ask_user` and `advisor` are Host-only).
 There are no public `write`, `edit` or `bash` bindings. Internal operation tags
 still let saved policy-family deny/ask rules constrain the corresponding modern
 tools; they cannot dispatch a retired tool. Shared file/terminal adapters remain

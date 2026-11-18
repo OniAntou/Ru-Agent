@@ -558,6 +558,10 @@ source of the typed text, because WinUI raises `TextChanged` after an edit: meth
 that compare or save text take the box's current value, so text typed while a send
 awaits the Host is never cleared by that send. The view model writes text back only
 through `TextReplaced` (restore and clear), never through a two-way binding.
+The text box wraps long lines to the composer's width and scrolls only vertically.
+It grows with its content up to `ComposerInputHeightPolicy`: 35% of the chat view's
+height, between 180 and 480 px, re-applied on resize, so a long prompt is read in a
+window that follows the app's size rather than a fixed eight-line slot.
 The composed prompt (typed text plus every inlined document) is checked against
 `AgentRunLimits.MaxPromptChars` before the send and before a turn is queued; an
 oversized prompt stays in the composer with a named status instead of failing the

@@ -818,6 +818,8 @@ namespace RuApp.Views
         {
             if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
             TodoPanelScroll.MaxHeight = AgentTodoPanelPresentation.Create(_latestTodos, RootGrid.ActualHeight).ListHeight;
+            // A long draft wraps and grows with the window before it scrolls.
+            ChatInputTextBox.MaxHeight = ComposerInputHeightPolicy.MaxHeightFor(RootGrid.ActualHeight);
 
             UpdateSidePanelLayout();
 

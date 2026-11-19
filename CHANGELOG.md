@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(harness)**: The model decides when a source edit cannot be checked. A final
+  reply that starts with `[UNVERIFIED]` and names what was not checked completes without
+  the one-time "run a verification check" hold, saving a model round trip. The run is
+  still reported as unverified, and outstanding checks, open todos, the completion
+  review and the advisor recommendation still apply (ADR 0039, amended).
+
 ## [0.1.4-preview.1] - 2026-11-19
 
 - **feat(tui)**: Show the agent's live checklist beside the transcript, with a

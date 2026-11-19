@@ -642,7 +642,10 @@ successful or unknown-effect `apply_patch` or `agent_apply` call, or a `write`,
 `edit`, `write_file` or `edit_file` call to a non-documentation path, sets the
 condition until a launched `purpose=verification` check runs. The harness retracts
 that reply and asks for a verification build or test; this is advice, not a
-failure, and a later final reply is not held again.
+failure, and a later final reply is not held again. A reply that starts with
+`[UNVERIFIED]` followed by what was not checked and why is the model's own statement
+that no applicable check can run: it is not held, keeps the marker visible, and the run
+is still labelled `unverified` (ADR 0039 amendment).
 
 Two more one-time holds can follow it, in this order, on a non-empty final reply
 that the earlier checks did not take. An `open_todos` hold retracts the reply when the

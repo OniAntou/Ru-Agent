@@ -121,10 +121,14 @@ internal static class CompletionPolicy
             RetractStreamedText: true, ErrorCode: errorCode);
     }
 
-    // R5: one nudge after source edits with no declared verification since. Prose only.
+    // R5: one nudge after source edits with no declared verification since. Prose only. A reply
+    // that already declares [UNVERIFIED] with its reason has made the call the note would ask for,
+    // so it is not held; the run still reports its verification state as unverified.
     private static StepDecision? UnverifiedSourceEdit(AssistantStep step, ModelContextSnapshot context)
     {
-        if (IsBlank(step) || !UnverifiedSourceEditGuard.ShouldAdvise(context))
+        if (IsBlank(step)
+            || AgentRecoveryNotes.IsDeclaredUnverifiedReply(step)
+            || !UnverifiedSourceEditGuard.ShouldAdvise(context))
         {
             return null;
         }

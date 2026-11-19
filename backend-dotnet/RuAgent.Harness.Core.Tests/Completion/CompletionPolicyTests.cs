@@ -288,6 +288,48 @@ public sealed class CompletionPolicyTests
         AssertDecision(decision, StepDecisionKind.Complete, "R9.complete");
     }
 
+    [Fact]
+    public void R5_declared_unverified_reply_completes_without_the_nudge_and_keeps_its_text()
+    {
+        var decision = After(Step("[UNVERIFIED] Only the generated client changed; no test project covers it."),
+            Snapshot(Edit(1)));
+
+        AssertDecision(decision, StepDecisionKind.Complete, "R9.complete");
+        Assert.False(decision.RetractStreamedText);
+        Assert.Null(decision.NoteKind);
+    }
+
+    [Theory]
+    [InlineData("[UNVERIFIED]")]
+    [InlineData("[UNVERIFIED]   ")]
+    [InlineData(" [UNVERIFIED] no check exists")]
+    [InlineData("Done. [UNVERIFIED] no check exists")]
+    public void R5_marker_without_a_leading_reason_is_still_held(string text)
+    {
+        var decision = After(Step(text), Snapshot(Edit(1)));
+
+        AssertDecision(decision, StepDecisionKind.Hold, "R5.unverified_source_edit");
+    }
+
+    [Fact]
+    public void R5_declared_unverified_reply_does_not_waive_an_outstanding_check()
+    {
+        var decision = After(Step("[UNVERIFIED] The tests cannot run here."),
+            Snapshot(Edit(1).Concat(Failing(3))));
+
+        AssertHold(decision, "R4c.unverified_advice", AgentRecoveryKind.UnverifiedAfterToolFailure,
+            VerificationNote("process_exit_nonzero"));
+    }
+
+    [Fact]
+    public void R5_declared_unverified_reply_does_not_waive_open_todos()
+    {
+        var decision = After(Step("[UNVERIFIED] No check exists for this file."),
+            Snapshot(Edit(1).Concat(TodoWrite(3, "write the parser"))));
+
+        AssertDecision(decision, StepDecisionKind.Hold, "R6.open_todos");
+    }
+
     // R6: open todos.
 
     [Fact]

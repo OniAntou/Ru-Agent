@@ -55,6 +55,19 @@ public static class AgentRecoveryNotes
         return report.Length > 0;
     }
 
+    // The model's own declaration that no applicable check could run for its source edits. It
+    // stays in the visible reply as the user's report and waives only the one-time source-edit
+    // hold: outstanding checks, open todos and the advisor recommendation still apply, and the
+    // run's verification label still comes from receipts alone.
+    public const string UnverifiedReplyPrefix = "[UNVERIFIED]";
+
+    public static bool IsDeclaredUnverifiedReply(AssistantStep step) =>
+        step.ToolCalls.Count == 0
+        && step.FinishReason == AssistantFinishReason.Stop
+        && step.Text is { } text
+        && text.StartsWith(UnverifiedReplyPrefix, StringComparison.Ordinal)
+        && !string.IsNullOrWhiteSpace(text[UnverifiedReplyPrefix.Length..]);
+
     // Bounded self-repair budgets per case: a model that ignores the note still
     // fails, but a weak model gets a real chance to answer or change course. The
     // sizing assumption is a long task: a 40-tool-call run that hits the same

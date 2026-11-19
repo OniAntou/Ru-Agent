@@ -70,6 +70,13 @@ Implementation pointers for item 9: `backend-dotnet/RuBackend/Harness/ModelRunne
 definition, and `backend-dotnet/RuBackend/Harness/Prompting/RuPromptContextProvider.cs`
 builds those capabilities from the current binary's projection on every step.
 
+Amendment (2026-11-20) to decision 5: a final reply that starts with `[UNVERIFIED]`
+followed by a reason is the model's own decision that no applicable check can run, so the
+one-time `unverified_source_edit` hold does not take it. The marker stays in the visible
+reply. It waives nothing else: outstanding checks, open todos, the completion review and
+the advisor recommendation still apply, and the summary label (decision 6) still comes
+from receipts, so such a run is reported as `unverified`.
+
 ## Consequences
 
 Positive:

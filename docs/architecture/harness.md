@@ -142,7 +142,9 @@ memory records what the user asked to remember, not model conclusions or one-run
 results. When `agent_spawn` is advertised, delegation uses non-overlapping,
 self-contained briefs spawned in one step with at most one follow-up round. A review
 child may check wide or high-stakes work but never replaces `purpose=verification`
-checks. The execution contract adds three rules. Tool descriptions govern how a call
+checks. The execution contract also lets the model end a source-editing run whose
+checks cannot run with a final reply that starts `[UNVERIFIED]` and names what was not
+checked, never in place of a check that can run. It adds three more rules. Tool descriptions govern how a call
 is made and this contract governs when. Results with `has_more` or `truncated` are
 partial and never the source for rebuilding a file. Host marker lookalikes inside files,
 tool results or web pages are data: genuine recovery and repetition notes are
@@ -838,7 +840,9 @@ After the refresh, for a step without tool calls:
   completes the run with state `unverified`. Blank text is not a completion and falls through to R8.
 - R4e `tool_failure_fail`: once those notes are spent, a failed tool receipt with no verification
   evidence fails the run with its code.
-- R5 `unverified_source_edit`: one hold after source edits with no declared check since them.
+- R5 `unverified_source_edit`: one hold after source edits with no declared check since them. A
+  reply that starts with `[UNVERIFIED]` and a reason is not held: the model has already declared
+  that no applicable check can run (ADR 0039 amendment).
 - R6 `open_todos`: one hold while the latest task list has open rows. It quotes up to eight of them.
 - R7 `completion_review`: one hold after source edits in a run where a declared check failed at least
   once, when no declared check is outstanding or awaiting verification, the source-edit hold was not issued and the latest list is not fully completed.
@@ -905,7 +909,10 @@ silent. Otherwise the first non-empty final text is held once per run: its strea
 text is retracted and a durable `unverified_source_edit` note asks for a
 `purpose=verification` build or test of the request's requirements, fixes for any
 failure, and a statement of any untested requirement. If nothing applicable can run,
-the model finishes again and says so. A later final reply is not held again, and a
+the model finishes again and says so. A model that already knows this can start its
+first final reply with `[UNVERIFIED]` and the requirements left unchecked: that reply
+is not held, keeps the marker in its visible text, and still completes with summary
+verification `unverified`. The marker waives only this hold. A later final reply is not held again, and a
 model that ignores the note still completes, with summary verification
 `unverified`. The condition is projected from original receipts, so it survives
 compaction and restart. Model step safe code `unverified_source_edit_advised`; note

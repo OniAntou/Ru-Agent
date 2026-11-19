@@ -61,6 +61,15 @@ public sealed class PromptWorkflowGuidanceTests
     }
 
     [Fact]
+    public void Execution_contract_lets_the_model_declare_an_unrunnable_check()
+    {
+        Assert.Contains("you may start the final reply with " + AgentRecoveryNotes.UnverifiedReplyPrefix
+            + " followed by which requirements were not checked and why", Execution, StringComparison.Ordinal);
+        Assert.Contains("the run is still reported as unverified", Execution, StringComparison.Ordinal);
+        Assert.Contains("Never use it in place of a check that can run.", Execution, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Execution_contract_forbids_rebuilding_files_from_partial_results()
     {
         Assert.Contains("A result with has_more or truncated set is partial: never rebuild or overwrite a file from it.",

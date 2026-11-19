@@ -397,7 +397,7 @@ _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 
 
 **Staged Attachment**:
-A copy of a file the user attached from outside the workspace, made by the client in `<workspace>\.ruttachments` so the model opens it by workspace path with the ordinary file tools. It is the user's own action on their workspace and grants the agent nothing: Broker path rules and presets are unchanged. The folder ignores itself in git, a copy is bounded, removed with its pending attachment, and pruned after 14 days.
+A copy of a file the user attached from outside the workspace, made by the client in `<workspace>\.ru\attachments` so the model opens it by workspace path with the ordinary file tools. It is the user's own action on their workspace and grants the agent nothing: Broker path rules and presets are unchanged. The folder ignores itself in git, a copy is bounded, removed with its pending attachment, and pruned after 14 days.
 Implementation: [GUI](docs/architecture/gui.md), [TUI](docs/architecture/tui.md), [ADR 0053](docs/adr/0053-attachments-reach-the-model-as-paths.md).
 _Avoid_: Widening read access to a folder outside the workspace, inlining binary bytes, editing the user's `.gitignore`
 

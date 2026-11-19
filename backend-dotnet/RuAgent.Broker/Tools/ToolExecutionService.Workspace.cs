@@ -28,11 +28,11 @@ public sealed partial class ToolExecutionService
         var prepared = WithInternalExpectedHash(tools.MutationResolver, arguments);
         var canonicalPath = TryCanonicalPath(tools.MutationResolver, arguments);
         // Create-only stays the default. The one exception replaces nothing but this
-        // session's own unchanged output (see SessionAuthoredFiles).
+        // session's own unchanged output or a file it read in full (see SessionKnownFiles).
         if (canonicalPath is not null
             && !(prepared["overwrite"] is JsonValue flag && flag.TryGetValue<bool>(out var requested) && requested)
             && prepared["expected_sha256"] is JsonValue expected && expected.TryGetValue<string>(out var currentHash)
-            && _authoredFiles.IsUnchangedSinceOwnWrite(context.SessionId, canonicalPath, currentHash))
+            && _knownFiles.IsUnchangedSinceSessionLastSaw(context.SessionId, canonicalPath, currentHash))
         {
             prepared["overwrite"] = true;
         }
@@ -47,16 +47,53 @@ public sealed partial class ToolExecutionService
         var tools = ResolveTools(context, TargetPathOf(arguments));
         var output = tools.Delete.Execute(WithInternalExpectedHash(tools.MutationResolver, arguments));
         if (TryCanonicalPath(tools.MutationResolver, arguments) is { } canonicalPath)
-            _authoredFiles.Forget(context.SessionId, canonicalPath);
+            _knownFiles.Forget(context.SessionId, canonicalPath);
         return output;
     }
 
     private void RecordAuthoredMutation(string sessionId, string? canonicalPath, JsonObject output)
     {
         if (canonicalPath is null) return;
-        _authoredFiles.RecordMutation(sessionId, canonicalPath,
+        _knownFiles.RecordMutation(sessionId, canonicalPath,
             output["before_sha256"] is JsonValue before && before.TryGetValue<string>(out var beforeHash) ? beforeHash : null,
             output["after_sha256"] is JsonValue after && after.TryGetValue<string>(out var afterHash) ? afterHash : null);
+    }
+
+    // The Host clips one tool result to ModelInputLimits.MaxToolResultChars (128 Ki characters)
+    // before the model sees it. A read counts as seen in full only when its serialized result
+    // stays well under that, so the model really received every byte write_file may now replace.
+    private const int MaximumFullReadResultChars = 96 * 1024;
+
+    /// <summary>
+    /// Records a text read that returned the whole file in one page, so a later write_file of
+    /// that unchanged file needs no overwrite flag. Partial pages, extracted documents, images
+    /// and results the Host might clip are never recorded.
+    /// </summary>
+    private void RecordFullRead(string sessionId, CanonicalPathResolver resolver, JsonObject arguments,
+        JsonObject output, bool wholeFile)
+    {
+        if (!wholeFile
+            || output["content"] is not JsonValue content || !content.TryGetValue<string>(out var text)
+            || text.Length > MaximumFullReadResultChars
+            || output["sha256"] is not JsonValue hashValue || !hashValue.TryGetValue<string>(out var hash)
+            || TryCanonicalPath(resolver, arguments) is not { } canonicalPath
+            || output.ToJsonString().Length > MaximumFullReadResultChars)
+        {
+            return;
+        }
+
+        _knownFiles.RecordFullRead(sessionId, canonicalPath, hash);
+    }
+
+    // Adapter outputs hold CLR ints or longs, and a reparsed node holds a JsonElement.
+    private static bool TryReadInteger(JsonNode? node, out long value)
+    {
+        value = 0;
+        if (node is not JsonValue number) return false;
+        if (number.TryGetValue<long>(out value)) return true;
+        if (!number.TryGetValue<int>(out var narrow)) return false;
+        value = narrow;
+        return true;
     }
 
     private static string? TryCanonicalPath(CanonicalPathResolver resolver, JsonObject arguments)
@@ -390,8 +427,12 @@ public sealed partial class ToolExecutionService
     {
         try
         {
-            return ToolExecutionOutcome.Succeeded(await ResolveTools(context, TargetPathOf(arguments)).Read.ExecuteLinesAsync(arguments, ct)
-                .ConfigureAwait(false), ToolVerificationStates.NotRequired, "Workspace file read by line.");
+            var tools = ResolveTools(context, TargetPathOf(arguments));
+            var output = await tools.Read.ExecuteLinesAsync(arguments, ct).ConfigureAwait(false);
+            var wholeFile = TryReadInteger(output["start_line"], out var first) && first == 1
+                && output["has_more"] is JsonValue more && more.TryGetValue<bool>(out var hasMore) && !hasMore;
+            RecordFullRead(context.SessionId, tools.MutationResolver, arguments, output, wholeFile);
+            return ToolExecutionOutcome.Succeeded(output, ToolVerificationStates.NotRequired, "Workspace file read by line.");
         }
         catch (FileReadRefusalException error)
         {

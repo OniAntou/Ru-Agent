@@ -312,10 +312,14 @@ original file. Missing-target errors direct the caller to `write_file`;
 permissions and overwrite checks remain in force.
 
 `write_file` is create-only: an existing target needs `overwrite=true`, or it fails
-with `file_exists`. One exception: a file the same session created with
-`write_file` may be written again without the flag while it still holds that
-session's last `write_file`/`edit_file` result (same SHA-256). Any other change to the
-file, a file the session did not create, or a Host restart falls back to create-only.
+with `file_exists`. One exception: a file the same session has seen whole may be
+written again without the flag while it still holds what the session last saw (same
+SHA-256). A file is seen whole when the session created it with `write_file`, or read
+it in one text page (`read` from offset 0 with `truncated: false`, or `read_file` from
+line 1 with `has_more: false`) whose result is at most 96 Ki characters, so the Host's
+128 Ki-character tool page cannot have clipped it. The record then follows the session's
+own `write_file`/`edit_file` results. Any other change to the file, a partial or larger
+read, an extracted document or image, or a Host restart falls back to create-only.
 The Broker keeps this record in memory, bounded and per session; policy and approvals
 are evaluated exactly as before.
 

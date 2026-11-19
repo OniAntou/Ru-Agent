@@ -1,18 +1,19 @@
 namespace RuAgent.Broker.Tools.Files;
 
 /// <summary>
-/// Files a session created with <c>write_file</c>, with the content hash this session last
-/// left in each one. A later <c>write_file</c> to such a file may replace it without
-/// <c>overwrite=true</c> while the file still holds exactly that content: the only bytes
-/// replaced are the session's own output, so create-only still protects every file the
-/// session did not create and every change made by someone else.
+/// Files whose whole current content this session has already seen, with the content hash it
+/// last saw in each: files it created with <c>write_file</c>, and files it read in full in one
+/// page. A later <c>write_file</c> to such a file may replace it without <c>overwrite=true</c>
+/// while the file still holds exactly that content, so create-only still protects every file
+/// the session has not seen in full and every change made by someone else since.
 /// </summary>
 /// <remarks>
-/// Before this, rewriting a file the run had just created failed with <c>file_exists</c>
-/// and cost a read plus a retry: two model round trips for no protection. The record is
-/// in memory, session-scoped and bounded; a restart or eviction falls back to create-only.
+/// Before this, rewriting a file the run had just created or read failed with
+/// <c>file_exists</c> and cost a retry: a model round trip for no protection, since the
+/// model could already replace the same bytes with <c>edit_file</c>. The record is in memory,
+/// session-scoped and bounded; a restart or eviction falls back to create-only.
 /// </remarks>
-internal sealed class SessionAuthoredFiles(int capacity = 4096)
+internal sealed class SessionKnownFiles(int capacity = 4096)
 {
     private const int MaximumKeyChars = 4224;
 
@@ -21,8 +22,8 @@ internal sealed class SessionAuthoredFiles(int capacity = 4096)
     private readonly Queue<string> _order = new();
     private readonly int _capacity = Math.Max(1, capacity);
 
-    /// <summary>True when this session created <paramref name="canonicalPath"/> and it still holds the session's last write.</summary>
-    public bool IsUnchangedSinceOwnWrite(string sessionId, string canonicalPath, string currentHash)
+    /// <summary>True when this session has seen <paramref name="canonicalPath"/> in full and it still holds what the session last saw.</summary>
+    public bool IsUnchangedSinceSessionLastSaw(string sessionId, string canonicalPath, string currentHash)
     {
         if (Key(sessionId, canonicalPath) is not { } key || FileHashService.IsMissing(currentHash)) return false;
         lock (_gate)
@@ -52,9 +53,26 @@ internal sealed class SessionAuthoredFiles(int capacity = 4096)
             }
 
             if (!created) return;
-            _hashes[key] = afterHash;
-            _order.Enqueue(key);
-            while (_order.Count > _capacity) _hashes.Remove(_order.Dequeue());
+            Add(key, afterHash);
+        }
+    }
+
+    /// <summary>
+    /// Records a read that returned the whole file in one page, with the hash of the file it
+    /// read. The caller decides what counts as a whole-file read.
+    /// </summary>
+    public void RecordFullRead(string sessionId, string canonicalPath, string hash)
+    {
+        if (Key(sessionId, canonicalPath) is not { } key || FileHashService.IsMissing(hash)) return;
+        lock (_gate)
+        {
+            if (_hashes.ContainsKey(key))
+            {
+                _hashes[key] = hash;
+                return;
+            }
+
+            Add(key, hash);
         }
     }
 
@@ -63,6 +81,14 @@ internal sealed class SessionAuthoredFiles(int capacity = 4096)
     {
         if (Key(sessionId, canonicalPath) is not { } key) return;
         lock (_gate) _hashes.Remove(key);
+    }
+
+    // Caller holds _gate.
+    private void Add(string key, string hash)
+    {
+        _hashes[key] = hash;
+        _order.Enqueue(key);
+        while (_order.Count > _capacity) _hashes.Remove(_order.Dequeue());
     }
 
     private static string? Key(string sessionId, string canonicalPath) =>

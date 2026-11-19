@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(broker)**: `write_file` replaces a file the session has just read whole without
+  `overwrite=true`, while the file still holds what was read. Benchmarks showed models
+  calling `write_file` on existing files and paying a `file_exists` failure and a retry. A
+  partial page, an extracted document or image, a read result over 96 Ki characters,
+  another session's read, or any change since the read keeps create-only.
+
 - **feat(harness)**: The model decides when a source edit cannot be checked. A final
   reply that starts with `[UNVERIFIED]` and names what was not checked completes without
   the one-time "run a verification check" hold, saving a model round trip. The run is

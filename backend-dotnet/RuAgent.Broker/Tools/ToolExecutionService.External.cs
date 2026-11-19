@@ -623,16 +623,27 @@ public sealed partial class ToolExecutionService
         CancellationToken cancellationToken)
     {
         FileReadResult result;
+        var tools = ResolveTools(context, TargetPathOf(arguments));
         try
         {
-            result = await ResolveTools(context, TargetPathOf(arguments))
-                .Read.ExecuteAsync(arguments, context.ImageInputAccepted, cancellationToken)
+            result = await tools.Read.ExecuteAsync(arguments, context.ImageInputAccepted, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (FileReadRefusalException error)
         {
             return ToolExecutionOutcome.Failed(error.Code, error.Hint);
         }
+
+        // Only the plain text pager reports bytes_read/total_bytes; extracted documents and
+        // images do not, so they never count as a whole-file read.
+        var output = result.Output;
+        var wholeFile = result.Image is null
+            && TryReadInteger(output["offset"], out var offset) && offset == 0
+            && output["truncated"] is JsonValue truncatedValue && truncatedValue.TryGetValue<bool>(out var truncated) && !truncated
+            && TryReadInteger(output["bytes_read"], out var bytesRead)
+            && TryReadInteger(output["total_bytes"], out var totalBytes)
+            && bytesRead == totalBytes;
+        RecordFullRead(context.SessionId, tools.MutationResolver, arguments, output, wholeFile);
 
         return ToolExecutionOutcome.Succeeded(
             result.Output,

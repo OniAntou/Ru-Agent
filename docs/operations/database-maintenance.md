@@ -1,6 +1,6 @@
 # Database maintenance
 
-Ru keeps business state and Harness state in one SQLite WAL database. Schema v37
+Ru keeps business state and Harness state in one SQLite WAL database. Schema v38
 upgrades the released v18 floor and retained development versions atomically;
 retain a backup before upgrading. The migration retains messages still present
 in old session documents, not messages already removed by older builds.
@@ -10,13 +10,14 @@ an older installation has no maintenance command, stop every Ru Host before
 making a pre-upgrade raw copy of the database, any outstanding `-wal` file and
 `harness_key.dat` together. Keep that raw snapshot separate from manifest bundles;
 restore it offline with its original build before retrying an upgrade. The new
-Host migrates supported v18–v36 data to v37 on startup, including durable
+Host migrates supported v18–v37 data to v38 on startup, including durable
 provider/model intent for explicit run submissions. The v33 upgrade accepts
 both development v32 shapes (execution-provenance index or provider-intent table)
 and preserves already recorded intents. The v34 migration backfills delivery
 provenance and image receipt counts from retained records. Later upgrades raise the
-subagent family budget bounds (v35), make those counters unbounded (v36), and
-remove the default workspace concurrency ceiling (v37).
+subagent family budget bounds (v35), make those counters unbounded (v36),
+remove the default workspace concurrency ceiling (v37), and store each
+session's advisor (v38).
 
 Run these commands from a matching Ru installation:
 

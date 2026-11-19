@@ -80,7 +80,7 @@ Version 38 adds `agent_session_advisors`, the advisor each session's new root ru
 (ADR 0047; no row means none, and the row is deleted with the session).
 Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
-v19-v36 databases remain eligible sources; adding a migration extends one ordered
+v19-v37 databases remain eligible sources; adding a migration extends one ordered
 catalog instead of every historical branch. Fresh installs use the same released
 baseline and upgrade batch. Tests cover every retained source, identical schema,
 rollback/retry, restored FKs and two simultaneous initializer processes.

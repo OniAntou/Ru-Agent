@@ -1,6 +1,6 @@
 # Ru current architecture
 
-The coding product consists of native Windows Desktop, terminal CLI/TUI, a loopback Public Host and one in-process Broker execution authority. Component implementation details live in the references below; [CONTEXT.md](../CONTEXT.md) defines domain language.
+The coding product consists of native Windows Desktop, terminal CLI/TUI, a loopback Public Host and one in-process Broker execution authority. Component implementation details live in the references below; a rendered [visual system map](architecture/system-map.html) shows the same topology, run lifecycle and module layers. [CONTEXT.md](../CONTEXT.md) defines domain language.
 
 ## Process topology
 
@@ -55,7 +55,7 @@ The Host orchestrates; Harness state machines own ordering/durability; Broker ow
 
 ## Data ownership
 
-The canonical profile keeps the shared SQLite WAL store and encrypted payloads; credentials remain in Windows Credential Manager. Schema initialization uses an ordered catalog and one atomic selected upgrade batch ending in v37 (relational history/search, context mutation fences, indexed execution-request provenance, explicit run provider intents, retained delivery and image receipt facts, subagent family budgets, and unbounded workspace membership). The released v18 schema is the supported floor; earlier versions are rejected without mutation. Development v19-v36 sources still upgrade through the catalog. Fresh and upgraded shape, rollback and concurrent initialization are checked against frozen original DDL. See [Harness persistence](architecture/harness.md#data-ownership), [ADR 0013](adr/0013-consolidate-business-persistence-in-sqlite.md) and [data location](adr/0004-canonical-ru-data-location.md).
+The canonical profile keeps the shared SQLite WAL store and encrypted payloads; credentials remain in Windows Credential Manager. Schema initialization uses an ordered catalog and one atomic selected upgrade batch ending in v38 (relational history/search, context mutation fences, indexed execution-request provenance, explicit run provider intents, retained delivery and image receipt facts, subagent family budgets, unbounded workspace membership and the session advisor). The released v18 schema is the supported floor; earlier versions are rejected without mutation. Development v19-v37 sources still upgrade through the catalog. Fresh and upgraded shape, rollback and concurrent initialization are checked against frozen original DDL. See [Harness persistence](architecture/harness.md#data-ownership), [ADR 0013](adr/0013-consolidate-business-persistence-in-sqlite.md) and [data location](adr/0004-canonical-ru-data-location.md).
 
 ## Privacy boundary
 

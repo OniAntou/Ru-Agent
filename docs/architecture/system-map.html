@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ru · System map</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-paper-2: #ececec;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-soft:    #5a6580;
+      --color-accent:  #bf4520;
+      --color-link:    #2e5aa8;
+      --rule:          rgba(45,49,66,0.12);
+      --font-sans:     'Geist', system-ui, 'Segoe UI', sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, 'Cascadia Mono', monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      padding: 48px 24px 64px;
+      line-height: 1.5;
+    }
+
+    .frame { max-width: 1280px; margin: 0 auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw + 0.5rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 0.75rem;
+    }
+
+    h2 {
+      font-family: var(--font-sans);
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin: 3rem 0 0.75rem;
+    }
+
+    h2 .num {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--color-accent);
+      letter-spacing: 0.08em;
+      margin-right: 0.5rem;
+    }
+
+    .intro {
+      max-width: 76ch;
+      font-size: 0.95rem;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .caption {
+      max-width: 92ch;
+      font-size: 0.82rem;
+      color: var(--color-muted);
+      margin-top: 0.75rem;
+    }
+
+    .diagram-container {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      background: var(--color-paper);
+      padding: 12px;
+    }
+
+    svg { width: 100%; min-width: 1280px; display: block; }
+
+    .callout {
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 14px;
+      fill: var(--color-soft);
+    }
+
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 1rem;
+    }
+
+    .fact {
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      padding: 12px 14px;
+      background: #ffffff;
+    }
+
+    .fact .k {
+      font-family: var(--font-mono);
+      font-size: 1.6rem;
+      font-weight: 600;
+      color: var(--color-ink);
+      line-height: 1.1;
+    }
+
+    .fact .v {
+      font-size: 0.78rem;
+      color: var(--color-muted);
+      margin-top: 4px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      font-size: 0.82rem;
+    }
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    th {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      border-bottom: 1px solid rgba(45,49,66,0.24);
+    }
+
+    td code, .mono {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--color-ink);
+    }
+
+    .layer {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+      text-transform: uppercase;
+    }
+
+    footer {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--rule);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--color-soft);
+    }
+
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+      body { padding: 0; }
+    }
+
+    @media (max-width: 900px) {
+      .facts { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">RU · SYSTEM MAP · 2026-11-19</p>
+    <h1>Ru architecture at a glance</h1>
+    <p class="intro">
+      Ru là một coding agent chạy native trên Windows: desktop WinUI 3 và terminal/TUI
+      cùng nói chuyện với một Public Host loopback bằng HTTP/SSE. Host sở hữu
+      orchestration, model generation và durable state; nó compose Broker library
+      ngay trong process, và Broker là authority duy nhất cho mọi side effect.
+      Bản đồ dưới đây được đọc lại từ codebase tại HEAD <span class="mono">14a2072f</span>.
+    </p>
+
+    <h2><span class="num">01</span>Process và trust topology</h2>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="map-arch-title map-arch-desc">
+        <title id="map-arch-title">Ru process and trust topology</title>
+        <desc id="map-arch-desc">Desktop and CLI clients reach a loopback Public Host, which orchestrates an in-process durable Harness, model step, and the Broker execution authority, backed by local encrypted stores and external model providers and OS resources.</desc>
+        <defs>
+          <marker id="map-arch-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="map-arch-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+          <marker id="map-arch-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- Zones (drawn before arrows and nodes) -->
+        <rect x="40" y="96" width="280" height="328" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="92" y="100" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="124" y="110" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">CLIENTS</text>
+
+        <rect x="352" y="96" width="640" height="432" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="424" y="100" width="96" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="472" y="110" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">HOST PROCESS</text>
+
+        <rect x="1008" y="96" width="232" height="432" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="1064" y="100" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="1100" y="110" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">EXTERNAL</text>
+
+        <!-- Arrows (before nodes) -->
+        <!-- Desktop -> Host, bearer HTTP/SSE -->
+        <line x1="296" y1="196" x2="384" y2="196" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#map-arch-arrow-link)"/>
+        <rect x="304" y="178" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="340" y="188" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTP + SSE</text>
+
+        <!-- CLI -> Host, turns up into Host bottom -->
+        <path d="M 296,316 H 464 Q 472,316 472,308 V 256" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#map-arch-arrow-link)"/>
+        <rect x="320" y="298" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="356" y="308" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTP + SSE</text>
+
+        <!-- Host -> Harness -->
+        <line x1="616" y1="212" x2="680" y2="212" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#map-arch-arrow)"/>
+        <rect x="620" y="194" width="56" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="648" y="204" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RUN LOOP</text>
+
+        <!-- Harness -> Model step -->
+        <line x1="816" y1="256" x2="816" y2="288" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#map-arch-arrow)"/>
+        <rect x="824" y="264" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="850" y="274" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PREPARE</text>
+
+        <!-- Model step -> Providers -->
+        <line x1="952" y1="328" x2="1032" y2="328" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#map-arch-arrow-link)"/>
+        <rect x="964" y="310" width="48" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="988" y="320" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTPS</text>
+
+        <!-- Broker -> OS resources (the execution path) -->
+        <line x1="952" y1="468" x2="1032" y2="468" stroke="#bf4520" stroke-width="1.4" marker-end="url(#map-arch-arrow-accent)"/>
+        <rect x="960" y="450" width="56" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="988" y="460" fill="#bf4520" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">EXECUTE</text>
+
+        <!-- Harness -> Broker through the in-process IToolGateway -->
+        <path d="M 680,240 H 648 Q 640,240 640,248 V 440 Q 640,448 648,448 H 680" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#map-arch-arrow)"/>
+        <rect x="560" y="330" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="596" y="340" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GATEWAY</text>
+
+        <!-- Host -> durable stores -->
+        <line x1="500" y1="256" x2="500" y2="576" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#map-arch-arrow)"/>
+        <rect x="508" y="360" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="538" y="370" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">DURABLE</text>
+
+        <!-- Annotation callouts -->
+        <text class="callout" x="384" y="140">Loopback HTTP/SSE with a bearer token; no WebSocket.</text>
+        <text class="callout" x="680" y="404">The Broker is the only tool execution authority.</text>
+
+        <!-- Node: WinUI Desktop -->
+        <rect x="64" y="160" width="232" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="64" y="160" width="232" height="72" rx="6" fill="rgba(79,93,117,0.10)" stroke="#5a6580" stroke-width="1"/>
+        <rect x="72" y="168" width="32" height="12" rx="2" fill="transparent" stroke="rgba(90,101,128,0.40)" stroke-width="0.8"/>
+        <text x="88" y="177" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
+        <text x="180" y="198" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">WinUI Desktop</text>
+        <text x="180" y="216" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">RuAgent.Client · HTTP/SSE</text>
+
+        <!-- Node: CLI / TUI -->
+        <rect x="64" y="280" width="232" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="64" y="280" width="232" height="72" rx="6" fill="rgba(79,93,117,0.10)" stroke="#5a6580" stroke-width="1"/>
+        <rect x="72" y="288" width="32" height="12" rx="2" fill="transparent" stroke="rgba(90,101,128,0.40)" stroke-width="0.8"/>
+        <text x="88" y="297" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
+        <text x="180" y="318" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">CLI / TUI</text>
+        <text x="180" y="336" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Terminal.Gui · stdio RPC</text>
+
+        <!-- Node: Public Host -->
+        <rect x="384" y="176" width="232" height="80" rx="6" fill="#f5f5f5"/>
+        <rect x="384" y="176" width="232" height="80" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="392" y="184" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="406" y="193" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HOST</text>
+        <text x="500" y="218" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Public Host</text>
+        <text x="500" y="236" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">ASP.NET Core · bearer · 56 routes</text>
+
+        <!-- Node: Durable Harness -->
+        <rect x="680" y="168" width="272" height="88" rx="6" fill="#f5f5f5"/>
+        <rect x="680" y="168" width="272" height="88" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="688" y="176" width="44" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="710" y="185" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HARNESS</text>
+        <text x="816" y="214" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Durable Harness</text>
+        <text x="816" y="232" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">runs · context · schema 38</text>
+
+        <!-- Node: Model Step -->
+        <rect x="680" y="288" width="272" height="80" rx="6" fill="#f5f5f5"/>
+        <rect x="680" y="288" width="272" height="80" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="688" y="296" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="706" y="305" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MODEL</text>
+        <text x="816" y="330" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Model Step</text>
+        <text x="816" y="348" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">projection · streaming · 3 protocols</text>
+
+        <!-- Node: Broker (focal) -->
+        <rect x="680" y="424" width="272" height="88" rx="6" fill="#f5f5f5"/>
+        <rect x="680" y="424" width="272" height="88" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.2"/>
+        <rect x="688" y="432" width="52" height="12" rx="2" fill="transparent" stroke="rgba(191,69,32,0.50)" stroke-width="0.8"/>
+        <text x="714" y="441" fill="#bf4520" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">AUTHORITY</text>
+        <text x="816" y="470" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Broker</text>
+        <text x="816" y="488" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">policy · approvals · tools</text>
+
+        <!-- Node: Model Providers -->
+        <rect x="1032" y="288" width="184" height="80" rx="6" fill="#f5f5f5"/>
+        <rect x="1032" y="288" width="184" height="80" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="1040" y="296" width="24" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="1052" y="305" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+        <text x="1124" y="330" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Model Providers</text>
+        <text x="1124" y="348" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">OpenAI · Responses · Anthropic</text>
+
+        <!-- Node: Workspace & OS -->
+        <rect x="1032" y="424" width="184" height="88" rx="6" fill="#f5f5f5"/>
+        <rect x="1032" y="424" width="184" height="88" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="1040" y="432" width="24" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="1052" y="441" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">OS</text>
+        <text x="1124" y="466" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Workspace &amp; OS</text>
+        <text x="1124" y="484" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">files · shell · desktop</text>
+
+        <!-- Node: local state (unzoned on purpose: disk is shared) -->
+        <rect x="384" y="576" width="560" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="384" y="576" width="560" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="392" y="584" width="36" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.40)" stroke-width="0.8"/>
+        <text x="410" y="593" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STORE</text>
+        <text x="664" y="608" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Local state on disk</text>
+        <text x="664" y="626" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">SQLite WAL · encrypted payloads · sessions/settings JSON · Credential Manager</text>
+
+        <!-- Legend -->
+        <line x1="40" y1="652" x2="1240" y2="652" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="40" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+
+        <rect x="112" y="666" width="24" height="12" rx="2" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+        <text x="144" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">EXECUTION AUTHORITY</text>
+        <rect x="340" y="666" width="24" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="372" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">IN-PROCESS SERVICE</text>
+        <rect x="568" y="666" width="24" height="12" rx="2" fill="rgba(79,93,117,0.10)" stroke="#5a6580" stroke-width="1"/>
+        <text x="600" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">CLIENT</text>
+        <rect x="744" y="666" width="24" height="12" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="776" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">EXTERNAL</text>
+        <rect x="904" y="666" width="24" height="12" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="936" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">DURABLE STATE</text>
+
+        <line x1="112" y1="696" x2="152" y2="696" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#map-arch-arrow-link)"/>
+        <text x="160" y="700" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">HTTP / SSE</text>
+        <line x1="300" y1="696" x2="340" y2="696" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#map-arch-arrow)"/>
+        <text x="348" y="700" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">INTERNAL CALL</text>
+        <line x1="520" y1="696" x2="560" y2="696" stroke="#bf4520" stroke-width="1.4" marker-end="url(#map-arch-arrow-accent)"/>
+        <text x="568" y="700" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">EXECUTION PATH</text>
+      </svg>
+    </div>
+    <p class="caption">
+      Mọi thứ nằm trong process Host (nền xám) đều là code .NET 10 compose trong
+      cùng một process; chỉ client và model provider là ranh giới ngoài. Host bind
+      ephemeral loopback port và ghi URL thật vào runtime descriptor sau readiness.
+      Broker giữ policy, approval và toàn bộ file/terminal/network/computer adapter;
+      Harness không tự chạy tool, nó chỉ đi qua <span class="mono">IToolGateway</span>.
+    </p>
+
+    <h2><span class="num">02</span>Một agent run, từ đầu đến cuối</h2>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="map-run-title map-run-desc">
+        <title id="map-run-title">One Ru agent run end to end</title>
+        <desc id="map-run-desc">Sequence diagram showing a client creating a run over loopback HTTP, subscribing to SSE, the Host driving the Harness, the Harness calling the model step and the Broker in a tool loop, then streaming durable frames back to the client.</desc>
+        <defs>
+          <marker id="map-run-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="map-run-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+          <marker id="map-run-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+          <marker id="map-run-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#4f5d75" stroke-width="1.2"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- Lifelines -->
+        <line x1="160" y1="128" x2="160" y2="608" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="400" y1="128" x2="400" y2="608" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="640" y1="128" x2="640" y2="608" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="880" y1="128" x2="880" y2="608" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="1120" y1="128" x2="1120" y2="608" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+
+        <!-- Activation bars -->
+        <rect x="156" y="176" width="8" height="88" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="396" y="176" width="8" height="124" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="636" y="284" width="8" height="284" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="876" y="428" width="8" height="64" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="1116" y="320" width="8" height="200" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+
+        <!-- Messages -->
+        <line x1="160" y1="192" x2="400" y2="192" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#map-run-arrow-link)"/>
+        <rect x="250" y="174" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="280" y="184" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">POST /RUNS</text>
+
+        <line x1="400" y1="228" x2="160" y2="228" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#map-run-arrow)"/>
+        <rect x="246" y="210" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="280" y="220" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">202 + RUNID</text>
+
+        <line x1="160" y1="264" x2="400" y2="264" stroke="#2e5aa8" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#map-run-arrow-open)"/>
+        <rect x="238" y="246" width="84" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="280" y="256" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SSE SUBSCRIBE</text>
+
+        <line x1="400" y1="300" x2="640" y2="300" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#map-run-arrow)"/>
+        <rect x="486" y="282" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="520" y="292" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CREATE RUN</text>
+
+        <line x1="640" y1="336" x2="1120" y2="336" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#map-run-arrow)"/>
+        <rect x="730" y="318" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="760" y="328" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GENERATE</text>
+
+        <path d="M 1120,364 H 1152 Q 1160,364 1160,372 V 380 Q 1160,388 1152,388 H 1120" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#map-run-arrow)"/>
+        <rect x="1166" y="368" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="1192" y="378" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PROVIDER</text>
+
+        <line x1="1120" y1="408" x2="640" y2="408" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#map-run-arrow)"/>
+        <rect x="730" y="390" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="764" y="400" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">TOOL CALLS</text>
+
+        <line x1="640" y1="444" x2="880" y2="444" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#map-run-arrow)"/>
+        <rect x="714" y="426" width="92" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="760" y="436" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">TOOL.EXECUTE</text>
+
+        <line x1="880" y1="480" x2="640" y2="480" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#map-run-arrow)"/>
+        <rect x="734" y="462" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="760" y="472" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RESULT</text>
+
+        <line x1="640" y1="516" x2="1120" y2="516" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#map-run-arrow)"/>
+        <rect x="730" y="498" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="766" y="508" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NEXT ROUND</text>
+
+        <line x1="640" y1="552" x2="400" y2="552" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#map-run-arrow-open)"/>
+        <rect x="490" y="534" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="520" y="544" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">DURABLE</text>
+
+        <line x1="400" y1="588" x2="160" y2="588" stroke="#bf4520" stroke-width="1.4" marker-end="url(#map-run-arrow-accent)"/>
+        <rect x="244" y="570" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="280" y="580" fill="#bf4520" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SSE FRAMES</text>
+
+        <!-- Actors -->
+        <rect x="72" y="64" width="176" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="72" y="64" width="176" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#5a6580" stroke-width="1"/>
+        <rect x="80" y="72" width="32" height="12" rx="2" fill="transparent" stroke="rgba(90,101,128,0.40)" stroke-width="0.8"/>
+        <text x="96" y="81" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
+        <text x="160" y="96" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Client</text>
+        <text x="160" y="112" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">GUI or TUI</text>
+
+        <rect x="312" y="64" width="176" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="312" y="64" width="176" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="320" y="72" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="334" y="81" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HOST</text>
+        <text x="400" y="96" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Public Host</text>
+        <text x="400" y="112" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">HTTP / SSE</text>
+
+        <rect x="552" y="64" width="176" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="552" y="64" width="176" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="560" y="72" width="44" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="582" y="81" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HARNESS</text>
+        <text x="640" y="96" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Harness</text>
+        <text x="640" y="112" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">runs · context</text>
+
+        <rect x="792" y="64" width="176" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="792" y="64" width="176" height="64" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.2"/>
+        <rect x="800" y="72" width="52" height="12" rx="2" fill="transparent" stroke="rgba(191,69,32,0.50)" stroke-width="0.8"/>
+        <text x="826" y="81" fill="#bf4520" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">AUTHORITY</text>
+        <text x="880" y="96" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Broker</text>
+        <text x="880" y="112" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">policy · tools</text>
+
+        <rect x="1032" y="64" width="176" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="1032" y="64" width="176" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="1040" y="72" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="1058" y="81" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MODEL</text>
+        <text x="1120" y="96" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Model Step</text>
+        <text x="1120" y="112" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">providers</text>
+
+        <!-- Legend -->
+        <line x1="40" y1="652" x2="1240" y2="652" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="40" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <line x1="120" y1="672" x2="160" y2="672" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#map-run-arrow-link)"/>
+        <text x="168" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">CALL</text>
+        <line x1="240" y1="672" x2="280" y2="672" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#map-run-arrow)"/>
+        <text x="288" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">RETURN</text>
+        <line x1="380" y1="672" x2="420" y2="672" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#map-run-arrow-open)"/>
+        <text x="428" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">ASYNC</text>
+        <line x1="510" y1="672" x2="550" y2="672" stroke="#bf4520" stroke-width="1.4" marker-end="url(#map-run-arrow-accent)"/>
+        <text x="558" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">HEADLINE</text>
+      </svg>
+    </div>
+    <p class="caption">
+      Time chảy từ trên xuống. Host tạo run và pin provider trước; Harness giữ state
+      machine, gọi Model Step để chuẩn bị request, rồi lặp model ↔ tool: model trả
+      tool call, Harness gửi qua gateway, Broker chạy side effect và trả result.
+      Mọi bước được ghi durable event; client nhận lại qua SSE frame. Broker không
+      bao giờ được gọi trực tiếp bởi model — chỉ qua `IToolGateway`.
+    </p>
+
+    <h2><span class="num">03</span>Module map</h2>
+    <p class="intro">
+      Codebase .NET 10 gồm 3 executable surface (desktop, CLI, Host) và các shared
+      library. Bảng dưới đây là thứ tự phụ thuộc thực tế đọc từ
+      <span class="mono">ProjectReference</span>: cột reference chỉ project được
+      tham chiếu, không phải chiều gọi runtime.
+    </p>
+    <table>
+      <thead>
+        <tr><th>Layer</th><th>Project</th><th>Vai trò</th><th>Reference chính</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="layer">App</td><td><code>gui-winui3</code> (RuApp)</td><td>Desktop WinUI 3: chat, session, approvals, side panels; dùng Client và Protocol, không có execution authority.</td><td>Client · Hosting · Protocol</td></tr>
+        <tr><td class="layer">App</td><td><code>RuAgent.Cli</code></td><td>Terminal.Gui TUI + line/JSON adapters + stdio RPC; cùng API loopback với GUI.</td><td>Client · Protocol</td></tr>
+        <tr><td class="layer">Client</td><td><code>RuAgent.Client</code></td><td>HTTP/SSE client dùng chung, resume/replay, update client.</td><td>Hosting · Protocol · Updates</td></tr>
+        <tr><td class="layer">Host</td><td><code>RuBackend</code></td><td>ASP.NET Core Public Host: auth, 56 routes, orchestration, run creation, model runner, settings/session APIs.</td><td>Broker · Harness.Core · Harness.Persistence · Hosting · Protocol · Runtime.* · Updates</td></tr>
+        <tr><td class="layer">Contract</td><td><code>RuAgent.Protocol</code></td><td>Nguồn duy nhất cho tool schema/descriptor (29 tool), wire DTO, policy/activity contract.</td><td>— (leaf)</td></tr>
+        <tr><td class="layer">Harness</td><td><code>RuAgent.Harness.Core</code></td><td>Run state machine, context assembly, policy evaluation, recovery, compaction, subagent orchestration.</td><td>Protocol</td></tr>
+        <tr><td class="layer">Harness</td><td><code>RuAgent.Harness.Persistence</code></td><td>SQLite WAL store (schema 38), ordered migrations, encrypted payloads, work state, journal.</td><td>Harness.Core</td></tr>
+        <tr><td class="layer">Runtime</td><td><code>RuAgent.Runtime.Model</code></td><td>ModelStepService: exact projection, context estimate, tool-result budget, retry/streaming coordination.</td><td>Harness.Core · Protocol · Runtime.Adapters</td></tr>
+        <tr><td class="layer">Runtime</td><td><code>RuAgent.Runtime.Adapters</code></td><td>3 provider protocols: chat_completions, openai_responses, anthropic_messages; request/SSE decoding.</td><td>Harness.Core · Protocol</td></tr>
+        <tr><td class="layer">Authority</td><td><code>RuAgent.Broker</code></td><td>BrokerExecutionRuntime: canonical paths, policy/approval, file/terminal/network/computer/skill/MCP adapters, subagents.</td><td>Protocol</td></tr>
+        <tr><td class="layer">Platform</td><td><code>RuAgent.Hosting</code></td><td>Parent-process watch, idle probe, runtime descriptor, auth primitives dùng chung app/host.</td><td>Protocol</td></tr>
+        <tr><td class="layer">Platform</td><td><code>RuAgent.Updates</code></td><td>Packaging/update plan và installer support.</td><td>— (leaf)</td></tr>
+      </tbody>
+    </table>
+
+    <h2><span class="num">04</span>Bên trong từng khối</h2>
+    <table>
+      <thead>
+        <tr><th>Khối</th><th>Subsystem / file tiêu biểu</th><th>Việc nó sở hữu</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Public Host</td><td><code>AgentV1Endpoints.*</code>, <code>AgentRunCreationService</code>, <code>AgentRuntimeLoopService</code>, <code>InProcessModelStepRunner</code>, <code>AgentPoliciesService</code>, <code>AgentWorkspacesService</code>, session/settings APIs, diagnostics</td><td>56 route, bearer auth, run admission, orchestration, model step, business session/settings, SSE hub.</td></tr>
+        <tr><td>Harness Core</td><td><code>AgentRunCoordinator</code>, <code>AgentRunStepHandlers</code>, <code>AgentContextAssembler</code>, <code>AgentToolExecutionPipeline</code>, <code>AgentRunCompaction</code>, recovery/reconciliation, <code>Subagents</code>, session work state</td><td>run state machine, context/compaction, policy evaluation, tool scheduling, recovery, subagent family budgets.</td></tr>
+        <tr><td>Harness Persistence</td><td><code>HarnessSqliteSchema</code> (v38), <code>SqliteHarnessEventStore</code>, <code>HarnessPayloadStore</code>, work-state/rule/provider-selection stores, session JSON store</td><td>durable events, encrypted payloads, snapshots, work state, policy rules, run provider pins.</td></tr>
+        <tr><td>Broker</td><td><code>BrokerExecutionRuntime</code>, <code>PolicyContextFactory</code>, pending approvals/tokens, file/terminal/web/computer adapters, skills installer, MCP host, subagents, program journal</td><td>canonical validation, policy/approval, bounded execution, skills/plugins/MCP, computer-use, program sandbox.</td></tr>
+        <tr><td>Runtime</td><td><code>ModelStepService</code>, <code>RequestContextEstimator</code>, <code>chat_completions</code>, <code>openai_responses</code> and <code>anthropic_messages</code> adapters, SSE decoders</td><td>exact request projection, token/cost estimate, provider streaming + retry, native tool calls.</td></tr>
+        <tr><td>GUI</td><td><code>MainWindow</code>, <code>ChatView.*</code> (run/feed/history/attachments/subagents), <code>SettingsViewModel</code>, <code>ApiService.*</code>, <code>AgentRunController</code></td><td>presentation + SSE consumption, drafts/queue, approvals, context/activity/todo panels; no tool execution.</td></tr>
+        <tr><td>CLI</td><td><code>ChatSessionEngine</code>, <code>ChatSession.*</code> partials, <code>TerminalGui</code>, <code>RpcDispatcher</code>, attachments/images</td><td>TUI + line/JSON view, stdio RPC, same Host contract, image/text attachment intake.</td></tr>
+      </tbody>
+    </table>
+
+    <h2><span class="num">05</span>Số liệu đọc trực tiếp từ code</h2>
+    <div class="facts">
+      <div class="fact"><div class="k">56</div><div class="v">HTTP routes trong <span class="mono">public-route-contract.json</span>; 33 route thuộc <span class="mono">/agent/v1</span>, 23 route business/settings/status; chỉ loopback + bearer.</div></div>
+      <div class="fact"><div class="k">29</div><div class="v">tool definitions trong <span class="mono">AgentToolDescriptorTable</span>: read, read_file, grep/glob, files, PowerShell/run_process, web, skill, MCP, computer, subagent, advisor, ask_user…</div></div>
+      <div class="fact"><div class="k">38</div><div class="v">schema SQLite hiện tại: migration cuối <span class="mono">37→38 SessionAdvisorMigration</span>; WAL, một DB cho business + Harness state, payload mã hoá AES-GCM.</div></div>
+      <div class="fact"><div class="k">3</div><div class="v">provider protocol: <span class="mono">chat_completions</span>, <span class="mono">openai_responses</span>, <span class="mono">anthropic_messages</span>; selection được pin cho run.</div></div>
+      <div class="fact"><div class="k">1</div><div class="v">execution authority: <span class="mono">BrokerExecutionRuntime</span> sau <span class="mono">IToolGateway</span>. Host không tự chạy file/terminal/network tool.</div></div>
+      <div class="fact"><div class="k">0</div><div class="v">WebSocket hoặc transport chat thứ hai; HTTPS/SSE loopback là Public Contract, stdio RPC chỉ wrap cùng API.</div></div>
+    </div>
+
+    <h2><span class="num">06</span>Ba invariant đáng nhớ</h2>
+    <p class="intro">
+      <strong>Một authority.</strong> Mọi side effect đi qua Broker; model chỉ đề xuất
+      tool call, Harness gửi qua gateway, Broker kiểm tra canonical path/target,
+      policy của session, approval token dùng một lần rồi mới chạy.<br><br>
+      <strong>Pin cho run.</strong> Provider, model, protocol và tool identity không
+      được thay giữa chừng; lỗi trả code có tên, retry chỉ trong cùng selection, không
+      fallback sang provider khác.<br><br>
+      <strong>Host orchestration, không phải execution.</strong> Host giữ auth,
+      conversation/lịch sử, run creation, model step; Harness Core giữ state machine;
+      Broker giữ side effect. Ba tầng này không được trộn authority vào nhau.
+    </p>
+
+    <footer>
+      Generated from D:\LLM at HEAD 14a2072f · 2026-11-19 · Ru · .NET 10 ·
+      source of truth: backend-dotnet/*, gui-winui3/*, docs/architecture.md.
+    </footer>
+  </div>
+</body>
+</html>

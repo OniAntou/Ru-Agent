@@ -48,8 +48,6 @@ public sealed record SessionRunPrice(
 /// </remarks>
 public static class SessionUsagePricing
 {
-    private const decimal TokensPerUnit = 1_000_000m;
-
     /// <summary>
     /// Every rate the catalog publishes, keyed by model id.
     /// </summary>
@@ -144,71 +142,17 @@ public static class SessionUsagePricing
     }
 
     /// <summary>
-    /// One run's cost, or null when a part of it cannot be priced.
+    /// One run's cost, or null when a part of it cannot be priced. A run with no report
+    /// costs nothing; everything else follows the rules the terminal shares
+    /// (<see cref="RuAgent.Client.Usage.UsageCost"/>).
     /// </summary>
-    /// <remarks>
-    /// A run with no report costs nothing and is not an error, so it prices to zero.
-    /// A run whose cache traffic is measured but whose rate for it is unpublished does
-    /// not: the total would then be missing an amount the session really spent, and a
-    /// figure that quietly excludes a part cannot be called the cost of the run.
-    ///
-    /// Except on a model the provider prices at zero for both input and output. That
-    /// is not a missing rate, it is a statement that the model is free, and every
-    /// part of a free model is free however its cache is billed. Refusing to price one
-    /// would report a genuinely free session as one whose cost nobody knows.
-    /// </remarks>
-    private static decimal? Cost(AgentModelUsage? usage, bool hasUsage, ProviderCatalogCost rate)
-    {
-        if (usage is null || !hasUsage)
-        {
-            return 0m;
-        }
-
-        if (rate.Input == 0 && rate.Output == 0)
-        {
-            return 0m;
-        }
-
-        // Older reports do not identify whether cached tokens overlap input.
-        // Keep them readable, but do not publish a price based on guessed buckets.
-        if ((usage.InputTokensIncludeCache is null
-                && (usage.CacheReadInputTokens > 0 || usage.CacheWriteInputTokens > 0))
-            || (usage.InputTokensIncludeCache == true && usage.CacheReadInputTokens is null)
-            || (usage.PeakStepTokens is not null && (usage.InputTokens is null || usage.OutputTokens is null
-                || usage.CacheReadInputTokens is null || usage.CacheWriteInputTokens is null)))
-            return null;
-
-        var total = 0m;
-        if (!Part(usage.UncachedInputTokens, rate.Input, ref total)
-            || !Part(usage.OutputTokens, rate.Output, ref total)
-            || !Part(usage.CacheReadInputTokens, rate.CacheRead, ref total)
-            || !Part(usage.CacheWriteInputTokens, rate.CacheWrite, ref total))
-        {
-            return null;
-        }
-
-        return total;
-    }
-
-    /// <summary>
-    /// Adds one part's cost. A part nobody measured is free; a part that was measured
-    /// but has no published rate cannot be priced at all.
-    /// </summary>
-    private static bool Part(int? tokens, double? rate, ref decimal total)
-    {
-        if (tokens is not { } count || count == 0)
-        {
-            return true;
-        }
-
-        if (rate is not { } published)
-        {
-            return false;
-        }
-
-        total += (decimal)count / TokensPerUnit * (decimal)published;
-        return true;
-    }
+    private static decimal? Cost(AgentModelUsage? usage, bool hasUsage, ProviderCatalogCost rate) =>
+        usage is null || !hasUsage
+            ? 0m
+            : RuAgent.Client.Usage.UsageCost.Price(
+                new(usage.InputTokens, usage.OutputTokens, usage.CacheReadInputTokens, usage.CacheWriteInputTokens,
+                    usage.InputTokensIncludeCache, IsAggregate: usage.PeakStepTokens is not null),
+                new(rate.Input, rate.Output, rate.CacheRead, rate.CacheWrite));
 
     /// <summary>
     /// Sums the priced runs. Null when there is nothing priced, so that "nothing to

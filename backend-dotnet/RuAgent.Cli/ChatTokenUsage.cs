@@ -60,19 +60,11 @@ internal sealed record ChatTokenUsage(long? Input, long? Output, long? Total, lo
         catch (InvalidOperationException) { throw Invalid(); }
     }
 
-    internal decimal? Price(CatalogModelDetails? rates)
-    {
-        if (rates is null || UncachedInput is null || Output is null || CacheRead is null || WriteBucket is null) return null;
-        decimal cost = 0;
-        foreach (var (count, rate) in new[] { (UncachedInput, rates.InputCost), (Output, rates.OutputCost),
-                     (CacheRead, rates.CacheReadCost), (WriteBucket, rates.CacheWriteCost) })
-        {
-            if (count == 0) continue;
-            if (rate is not { } published || !double.IsFinite(published) || published is < 0 or > 1_000_000_000) return null;
-            cost += count!.Value / 1_000_000m * (decimal)published;
-        }
-        return cost;
-    }
+    /// <summary>This report's cost at <paramref name="rates"/>, by the rules both clients share.</summary>
+    internal decimal? Price(CatalogModelDetails? rates) => rates is null ? null
+        : RuAgent.Client.Usage.UsageCost.Price(
+            new(Input, Output, CacheRead, CacheWrite, IncludesCache),
+            new(rates.InputCost, rates.OutputCost, rates.CacheReadCost, rates.CacheWriteCost));
 
     internal static string Number(long? value) => value?.ToString("N0", CultureInfo.InvariantCulture) ?? "unknown";
     internal static string Dollars(decimal? value) => value?.ToString("$0.000000", CultureInfo.InvariantCulture) ?? "unknown";

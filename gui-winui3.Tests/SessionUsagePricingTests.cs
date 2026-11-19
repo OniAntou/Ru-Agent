@@ -263,8 +263,8 @@ public sealed class SessionUsagePricingTests
     {
         var rows = new[]
         {
-            Row("run_1", input: 1_000_000, model: "vendor/paid"),
-            Row("run_2", input: 1_000_000, model: "gone/model"),
+            Row("run_1", input: 1_000_000, output: 0, model: "vendor/paid"),
+            Row("run_2", input: 1_000_000, output: 0, model: "gone/model"),
         };
         var prices = SessionUsagePricing.PriceRuns(
             rows,
@@ -319,7 +319,7 @@ public sealed class SessionUsagePricingTests
     public void Rates_are_matched_whatever_the_case_of_the_model_id()
     {
         var prices = SessionUsagePricing.PriceRuns(
-            new[] { Row(input: 1_000_000, model: "Vendor/Paid") },
+            new[] { Row(input: 1_000_000, output: 0, model: "Vendor/Paid") },
             SessionUsagePricing.RatesFrom(Catalog(("vendor/paid", Rate()))));
 
         Assert.True(prices.Values.Single().IsPriced);

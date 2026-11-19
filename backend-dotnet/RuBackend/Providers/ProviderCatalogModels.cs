@@ -27,6 +27,18 @@ public sealed record CatalogModel(string Id, bool Supported, string Protocol, Ca
         = new Dictionary<string, JsonObject>();
     public int? ContextLength { get; init; }
 
+    /// <summary>
+    /// What Models.dev declares about the model's image input, or null when nothing
+    /// does. <see cref="AcceptsImages"/> applies the same rule a run pin uses.
+    /// </summary>
+    public bool? DeclaresVision { get; init; }
+
+    /// <summary>
+    /// Whether a run pinned to this model would send image attachments as images
+    /// (ADR 0040): the catalog's declaration, else the model-name fallback.
+    /// </summary>
+    public bool AcceptsImages => RuAgent.Runtime.Adapters.Models.ModelImage.IsVisionModel(Id, DeclaresVision);
+
     /// <summary>The largest output the model accepts, when its catalog publishes one.</summary>
     public int? MaxOutputTokens { get; init; }
 
@@ -67,6 +79,7 @@ public sealed record ProviderCatalogSnapshot(
                 ["id"] = model.Id,
                 ["supported"] = model.Supported,
                 ["protocol"] = model.Protocol,
+                ["accepts_images"] = model.AcceptsImages,
                 ["reasoning"] = new JsonObject
                 {
                     ["state"] = model.Reasoning.State,

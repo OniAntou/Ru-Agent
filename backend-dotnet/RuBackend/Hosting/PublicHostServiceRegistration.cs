@@ -201,6 +201,18 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<SessionWorkStateCryptography>(services =>
             new SessionWorkStateCryptography(services.GetRequiredService<IHarnessKeyStore>()));
         services.AddSingleton<SessionWorkStateStore>();
+        services.AddSingleton(services => new SessionImageCarryover(
+            services.GetRequiredService<HarnessPayloadStore>(),
+            services.GetRequiredService<IHarnessEventStore>(),
+            services.GetRequiredService<ISessionStore>(),
+            async (runId, cancellationToken) =>
+            {
+                var state = await services.GetRequiredService<SqliteAgentRunProviderSelectionStore>()
+                    .GetAsync(runId, cancellationToken)
+                    .ConfigureAwait(false);
+                return state?.Selection is { } selection && ImageInputPolicy.IsPinned(selection);
+            },
+            services.GetService<ILogger<SessionImageCarryover>>()));
         services.AddSingleton<RetainedApprovalRehydrator>();
         services.AddSingleton<RetainedInputRehydrator>();
         services.AddSingleton<RuBackend.Harness.Policy.HarnessPolicySnapshotService>();
@@ -376,24 +388,8 @@ internal static class PublicHostServiceRegistration
                 // ADR 0047: one consultation's snapshot, from the run's pin or a user-named model.
                 ResolveAdvisorAsync = (runId, model, effort, ct) =>
                     services.GetRequiredService<AdvisorTargetResolver>().ResolveAsync(runId, model, effort, ct),
-                LoadRunImagesAsync = async (runId, ct) =>
-                {
-                    var store = services.GetRequiredService<HarnessPayloadStore>();
-                    // Reads through the payload store so the audience rule and the
-                    // encrypted-payload contract stay in one place instead of being
-                    // re-implemented as SQL with a raw kind number here.
-                    var payloadIds = await store
-                        .ListPayloadIdsAsync(runId, HarnessPayloadKind.UserImage, ct)
-                        .ConfigureAwait(false);
-                    var list = new List<string>();
-                    foreach (var pid in payloadIds)
-                    {
-                        var content = await store.ReadForModelAsync(runId, pid, ct).ConfigureAwait(false);
-                        list.Add(System.Text.Encoding.UTF8.GetString(content.Plaintext.Span));
-                    }
-
-                    return list;
-                },
+                LoadRunImagesAsync = (runId, ct) =>
+                    services.GetRequiredService<SessionImageCarryover>().LoadAsync(runId, ct),
                 LoadProviderContinuationsAsync = (runId, bootstrap, retainedAssistantEventIds, ct) =>
                     services.GetRequiredService<SqliteProviderContinuationReader>()
                         .ReadAsync(runId, bootstrap, retainedAssistantEventIds, ct),

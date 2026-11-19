@@ -25,6 +25,12 @@ internal sealed class ChatSessionPresentation : IDisposable
     internal string SessionId { get; private set; } = "default";
     internal long Generation { get; private set; }
 
+    /// <summary>
+    /// Cancelled when another session opens: work started for this one (document
+    /// extraction, for instance) stops instead of finishing for a session no longer shown.
+    /// </summary>
+    internal CancellationToken SessionToken => _openCancellation?.Token ?? CancellationToken.None;
+
     internal async Task<ChatSessionOpen?> OpenAsync(
         string sessionId,
         Func<bool> canRetainDraft,

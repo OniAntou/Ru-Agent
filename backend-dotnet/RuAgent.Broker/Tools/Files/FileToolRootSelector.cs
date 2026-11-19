@@ -78,7 +78,9 @@ internal static class FileToolRootSelector
             return best;
         }
 
-        throw new UnauthorizedAccessException("outside_workspace");
+        throw FileReadFailureHints.WithHint(
+            new UnauthorizedAccessException("outside_workspace"),
+            FileReadFailureHints.OutsideWorkspace);
     }
 
     private static bool IsFullAccess(AgentPolicyProfile? profile) =>

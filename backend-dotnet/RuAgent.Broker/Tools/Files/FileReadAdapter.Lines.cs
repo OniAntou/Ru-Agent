@@ -17,12 +17,22 @@ public sealed partial class FileReadAdapter
         var count = LineArgument(arguments, "line_count", 200, 1000);
         var target = _resolver.Resolve(path);
         if (target.IsProtected) throw new UnauthorizedAccessException("protected_path");
-        if (target.IsOutsideWorkspace) throw new UnauthorizedAccessException("outside_workspace");
+        if (target.IsOutsideWorkspace)
+            throw FileReadFailureHints.WithHint(new UnauthorizedAccessException("outside_workspace"), FileReadFailureHints.OutsideWorkspace);
         if (!File.Exists(target.CanonicalPath))
         {
             if (Directory.Exists(target.CanonicalPath)) throw new IOException("is_directory");
             throw new FileNotFoundException("file_not_found");
         }
+        // Line addressing is for text. Send images, PDFs and documents to read, which
+        // extracts them, instead of failing them as undecodable bytes.
+        var extension = Path.GetExtension(target.CanonicalPath);
+        if (WorkspaceImageProbe.HasImageExtension(target.CanonicalPath)
+            || string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase)
+            || FileOfficeTextExtractor.IsSupported(extension))
+            throw new FileReadDocumentException(
+                "read_file_text_only",
+                "read_file returns lines of a text file. Call read for this file instead (pages=\"1-10\" selects PDF pages or document parts).");
         // A bounded snapshot avoids returning pages assembled from different file revisions.
         using var stream = _lineReadOpener(target.CanonicalPath);
         HardLinkGuard.RequireFinalPathMatches(stream.SafeFileHandle, target.CanonicalPath);
@@ -38,7 +48,13 @@ public sealed partial class FileReadAdapter
         ct.ThrowIfCancellationRequested();
         string text;
         try { text = StrictUtf8.GetString(bytes.GetBuffer(), 0, (int)bytes.Length); }
-        catch (DecoderFallbackException error) { throw new ArgumentException("invalid_utf8", error); }
+        catch (DecoderFallbackException error)
+        {
+            var head = bytes.GetBuffer().AsSpan(0, (int)Math.Min(bytes.Length, FileReadFailureHints.SniffBytes));
+            if (bytes.GetBuffer().AsSpan(0, (int)bytes.Length).Contains((byte)0))
+                throw new FileReadDocumentException("binary_file_unsupported", FileReadFailureHints.Binary(head, bytes.Length), error);
+            throw FileReadFailureHints.WithHint(new ArgumentException("invalid_utf8", error), FileReadFailureHints.NotUtf8(head));
+        }
         var position = 0;
         var line = 1;
         while (line < first && position < text.Length)

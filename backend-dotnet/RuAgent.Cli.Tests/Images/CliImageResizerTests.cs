@@ -95,8 +95,8 @@ public sealed class CliImageResizerTests
 
         var result = CliImageResizer.ResizeIfNeeded(bytes);
 
-        Assert.Equal(2048, result.Width);
-        Assert.Equal(51, result.Height);
+        Assert.Equal(2576, result.Width);
+        Assert.Equal(64, result.Height);
         Assert.Equal("image/png", result.MimeType);
         Assert.NotSame(bytes, result.Bytes);
     }
@@ -115,16 +115,26 @@ public sealed class CliImageResizerTests
     }
 
     [Fact]
-    public void ResizeIfNeeded_ReencodesWhenOverTheByteCap()
+    public void ResizeIfNeeded_ReencodesAndShrinksToFitTheByteCap()
     {
         var bytes = Jpeg(400, 400, 100);
+        var cap = bytes.Length - 1;
 
-        var result = CliImageResizer.ResizeIfNeeded(bytes, maxBytes: 100);
+        var result = CliImageResizer.ResizeIfNeeded(bytes, maxBytes: cap);
 
         Assert.Equal("image/jpeg", result.MimeType);
         Assert.NotSame(bytes, result.Bytes);
-        Assert.Equal(400, result.Width);
-        Assert.Equal(400, result.Height);
+        Assert.True(result.Bytes.Length <= cap, $"normalized image is {result.Bytes.Length} bytes, cap {cap}");
+        Assert.True(result.Width <= 400);
+        Assert.True(result.Height <= 400);
+    }
+
+    [Fact]
+    public void ResizeIfNeeded_FailsClosedWhenTheByteCapCannotBeMet()
+    {
+        var bytes = Jpeg(400, 400, 100);
+
+        Assert.Throws<InvalidDataException>(() => CliImageResizer.ResizeIfNeeded(bytes, maxBytes: 100));
     }
 
     [Fact]

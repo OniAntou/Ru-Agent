@@ -197,5 +197,12 @@ namespace RuApp.Models
 
         [JsonPropertyName("source_message_id")]
         public string? SourceMessageId { get; set; }
+
+        /// <summary>
+        /// Images the persisted user turn carried. The Host has always returned this;
+        /// the client records it so a reopened turn can say what it cannot display.
+        /// </summary>
+        [JsonPropertyName("image_attachment_count")]
+        public int ImageAttachmentCount { get; set; }
     }
 }

@@ -326,14 +326,15 @@ public sealed partial class ToolExecutionService
         {
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "access_denied"),
-                "Tool access was denied.",
+                FileReadFailureHints.Of(error) ?? "Tool access was denied.",
                 ToolVerificationStates.NotRequired);
         }
         catch (ArgumentException error)
         {
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "invalid_arguments"),
-                error.Message is "read_line_too_long" or "read_line_scan_limit" ? IoRepairHint(error.Message)
+                FileReadFailureHints.Of(error) is { } readHint ? readHint
+                    : error.Message is "read_line_too_long" or "read_line_scan_limit" ? IoRepairHint(error.Message)
                     : error.Message == "edit_overlap" ? "Edits overlap in the original file. Combine them into one exact replacement or use disjoint spans."
                     : error.Message == "invalid_path" ? "Send a plain workspace-relative path string. Do not include XML wrappers such as </rfl:parameter> in path or pattern. Correct the argument; no path was rewritten or guessed."
                     : "Tool arguments were rejected.",

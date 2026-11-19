@@ -18,6 +18,7 @@ internal sealed class TgChatKeyboardBindings
     private readonly Action _completeCommand;
     private readonly Action _paste;
     private readonly Action _copy;
+    private readonly Action? _detachLast;
     private IApplication? _keyboardApp;
 
     public TgChatKeyboardBindings(
@@ -29,7 +30,8 @@ internal sealed class TgChatKeyboardBindings
         Action<int> navigateHistory,
         Action completeCommand,
         Action paste,
-        Action copy)
+        Action copy,
+        Action? detachLast = null)
     {
         _window = window;
         _isBusy = isBusy;
@@ -40,6 +42,7 @@ internal sealed class TgChatKeyboardBindings
         _completeCommand = completeCommand;
         _paste = paste;
         _copy = copy;
+        _detachLast = detachLast;
         window.ClipboardPasteRequested += _paste;
         window.Composer.Input.KeyDown += OnComposerKey;
         window.Composer.Input.DraftInsertionRejected += () =>
@@ -134,6 +137,14 @@ internal sealed class TgChatKeyboardBindings
         else if (key == Key.V.WithCtrl || key == Key.V.WithCtrl.WithShift)
         {
             _paste();
+            key.Handled = true;
+        }
+        else if (key == Key.Backspace && _detachLast is not null
+            && string.IsNullOrEmpty(_window.Composer.Input.Text?.ToString()))
+        {
+            // With nothing left to delete in the prompt, Backspace removes the last
+            // pending attachment, as chat composers usually do.
+            _detachLast();
             key.Handled = true;
         }
         else if (key == Key.O.WithCtrl)

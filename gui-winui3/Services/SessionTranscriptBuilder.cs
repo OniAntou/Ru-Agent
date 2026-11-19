@@ -8,7 +8,8 @@ public sealed record SessionHistoryEntry(
     string Content,
     string? SourceRunId,
     int? MessageIndex = null,
-    string? SourceMessageId = null);
+    string? SourceMessageId = null,
+    int ImageAttachmentCount = 0);
 
 public sealed record SessionHistoryPage(
     string SessionId,
@@ -171,6 +172,10 @@ internal static class SessionTranscriptBuilder
                 SourceMessageIndex = row.MessageIndex ?? i, SessionId = sessionId,
             };
             if (row.Role == "user") AttachedPromptDisplay.Apply(item);
+            if (row.Role == "user" && row.ImageAttachmentCount > 0)
+            {
+                item.MissingImageCount = row.ImageAttachmentCount;
+            }
             if (row.Role == "assistant")
             {
                 SessionRunReplay? replay = null;

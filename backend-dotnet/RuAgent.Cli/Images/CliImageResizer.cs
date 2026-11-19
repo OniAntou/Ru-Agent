@@ -10,15 +10,17 @@ public sealed record CliResizedImage(byte[] Bytes, string MimeType, int Width, i
 
 /// <summary>
 /// Enforces the backend's per-image limits before an attachment is built, ported from the
-/// GUI <c>ImageAttachmentResizer</c>: cap the longest side at 2048, re-encode anything over
-/// the byte cap or in a non-wire format (BMP), keep PNG alpha as PNG and everything else as
-/// JPEG q85. WebP has no GDI+ codec, so it passes through only when the header proves it is
-/// already within both caps.
+/// GUI <c>ImageAttachmentResizer</c>: cap the longest side at 2576 (the Anthropic
+/// high-resolution tier; OpenAI downscales itself), re-encode anything over the byte cap or
+/// in a non-wire format (BMP), keep PNG alpha as PNG and everything else as JPEG. When the
+/// first encode overshoots the byte cap, later attempts trade quality and then dimension
+/// instead of failing a valid photo. WebP has no GDI+ codec, so it passes through only when
+/// the header proves it is already within both caps.
 /// </summary>
 public static class CliImageResizer
 {
-    public const int DefaultMaxDimension = 2048;
-    public const int DefaultMaxBytes = 4 * 1024 * 1024;
+    public const int DefaultMaxDimension = 2576;
+    public const int DefaultMaxBytes = (int)RuAgent.Protocol.Harness.AgentRunLimits.MaxImageBytes;
 
     /// <summary>
     /// Largest source canvas accepted before GDI+ decodes it. A small compressed file can
@@ -66,38 +68,63 @@ public static class CliImageResizer
         // provider adapters accept only png/jpeg/webp. Passing those bytes through unchanged
         // under a different label would hand the model undecodable bytes, so any non-wire
         // format is re-encoded even when it is small.
-        var needsReencode = !(sourceIsPng || sourceIsJpeg);
+        // A JPEG the EXIF rotates was turned upright above; send those pixels rather than
+        // stripping only the tag, which would leave the photo on its side.
+        var needsReencode = !(sourceIsPng || sourceIsJpeg)
+            || (sourceIsJpeg && RuAgent.Client.Attachments.ImageMetadata.JpegOrientation(bytes) != 1);
 
         if (!needsResize && !exceedsBytes && !needsReencode)
         {
-            return new CliResizedImage(bytes, sourceIsPng ? "image/png" : "image/jpeg", originalWidth, originalHeight);
+            // EXIF/XMP/text metadata (GPS, camera serial) never travels with the image.
+            return new CliResizedImage(RuAgent.Client.Attachments.ImageMetadata.Strip(bytes),
+                sourceIsPng ? "image/png" : "image/jpeg", originalWidth, originalHeight);
         }
 
-        var targetWidth = Math.Max(1, (int)Math.Round(originalWidth * scale));
-        var targetHeight = Math.Max(1, (int)Math.Round(originalHeight * scale));
-
-        using var target = new Bitmap(targetWidth, targetHeight);
-        cancellationToken.ThrowIfCancellationRequested();
-        using (var graphics = Graphics.FromImage(target))
+        double attemptScale = scale;
+        long quality = 85;
+        for (var attempt = 0; attempt < 5; attempt++)
         {
-            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-            graphics.SmoothingMode = SmoothingMode.HighQuality;
-            graphics.DrawImage(source, 0, 0, targetWidth, targetHeight);
-        }
+            var targetWidth = Math.Max(1, (int)Math.Round(originalWidth * attemptScale));
+            var targetHeight = Math.Max(1, (int)Math.Round(originalHeight * attemptScale));
 
-        cancellationToken.ThrowIfCancellationRequested();
-        using var output = new MemoryStream();
-        if (sourceIsPng && Image.IsAlphaPixelFormat(source.PixelFormat))
-        {
-            target.Save(output, ImageFormat.Png);
+            using var target = new Bitmap(targetWidth, targetHeight);
             cancellationToken.ThrowIfCancellationRequested();
-            return new CliResizedImage(output.ToArray(), "image/png", targetWidth, targetHeight);
+            using (var graphics = Graphics.FromImage(target))
+            {
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                graphics.SmoothingMode = SmoothingMode.HighQuality;
+                graphics.DrawImage(source, 0, 0, targetWidth, targetHeight);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            using var output = new MemoryStream();
+            if (sourceIsPng && Image.IsAlphaPixelFormat(source.PixelFormat))
+            {
+                target.Save(output, ImageFormat.Png);
+            }
+            else
+            {
+                SaveJpeg(target, output, quality);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (output.Length <= maxBytes)
+            {
+                return new CliResizedImage(
+                    output.ToArray(),
+                    sourceIsPng && Image.IsAlphaPixelFormat(source.PixelFormat) ? "image/png" : "image/jpeg",
+                    targetWidth,
+                    targetHeight);
+            }
+
+            // PNG with alpha cannot lower JPEG quality, so it can only shrink; JPEG also
+            // lowers quality first. Both stay bounded by the attempt count.
+            attemptScale *= 0.82;
+            quality = Math.Max(35, quality - 15);
         }
 
-        SaveJpeg(target, output);
-        cancellationToken.ThrowIfCancellationRequested();
-        return new CliResizedImage(output.ToArray(), "image/jpeg", targetWidth, targetHeight);
+        throw new InvalidDataException("the normalized image still exceeds the byte cap after resizing");
     }
 
     private static bool IsWebp(byte[] bytes) =>
@@ -253,12 +280,12 @@ public static class CliImageResizer
         return new CliResizedImage(bytes, "image/webp", width, height);
     }
 
-    private static void SaveJpeg(Image image, Stream output)
+    private static void SaveJpeg(Image image, Stream output, long quality)
     {
         var encoder = ImageCodecInfo.GetImageEncoders()
             .First(codec => codec.FormatID == ImageFormat.Jpeg.Guid);
         using var parameters = new EncoderParameters(1);
-        parameters.Param[0] = new EncoderParameter(Encoder.Quality, 85L);
+        parameters.Param[0] = new EncoderParameter(Encoder.Quality, quality);
         image.Save(output, encoder, parameters);
     }
 

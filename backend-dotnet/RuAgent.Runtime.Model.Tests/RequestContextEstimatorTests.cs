@@ -40,7 +40,7 @@ public sealed class RequestContextEstimatorTests
     {
         var body = new JsonObject { ["messages"] = new JsonArray(new JsonObject { ["content"] = new string('A', 200_000) }) };
         var counts = RequestContextEstimator.Measure(body.ToJsonString(), 200_000, 1)!;
-        Assert.InRange(counts.Messages, 4096, 4112);
+        Assert.InRange(counts.Messages, 4800, 4816);
     }
 
     [Theory]

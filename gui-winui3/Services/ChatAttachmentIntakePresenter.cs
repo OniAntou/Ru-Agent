@@ -21,7 +21,7 @@ internal static class ChatAttachmentIntakePresenter
         bool document = ChatAttachmentPolicy.IsDocumentFile(fileName);
         if (!image && !text && !document)
             return new(false, false, 0, "unsupported",
-                $"File '{fileName}' is not supported. Only images, text/code files and PDF/Word/PowerPoint/Excel documents are accepted.");
+                $"'{fileName}' can be attached once this chat has a project folder: the agent reads attached files from the workspace. Choose a folder, or attach an image, a text file or a PDF/Word/PowerPoint/Excel document.");
 
         int maximum = image
             ? ChatAttachmentPolicy.MaxImageAttachmentBytes

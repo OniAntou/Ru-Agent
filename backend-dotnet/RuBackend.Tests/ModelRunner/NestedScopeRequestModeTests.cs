@@ -4,6 +4,7 @@ using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 using RuAgent.Runtime.Model;
+using RuBackend.Harness;
 using RuBackend.Harness.ModelRunner;
 using Xunit;
 
@@ -23,7 +24,8 @@ public sealed partial class InProcessModelStepRunnerTests
             CreateProviderBootstrapAsync = (_, _) => Task.FromResult(new ProviderBootstrapData(bootstrap.Backend,
                 bootstrap.Protocol, bootstrap.Endpoint, bootstrap.Model, bootstrap.Credential,
                 contextWindowTokens: bootstrap.ContextWindowTokens)),
-            LoadRunImagesAsync = (_, _) => Task.FromResult<IReadOnlyList<string>>(["data:image/png;base64,aGVsbG8="]),
+            LoadRunImagesAsync = (_, _) =>
+                Task.FromResult(new RunImageSet(["data:image/png;base64,aGVsbG8="], [])),
         };
         var original = Request();
         var context = new ModelContextSnapshot(original.Context.Entries, original.Context.CanonicalUtf8, ["src/file.cs"]);

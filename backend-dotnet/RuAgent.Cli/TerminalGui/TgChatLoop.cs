@@ -16,7 +16,7 @@ public sealed class TgChatLoop : ChatSessionEngine
     {
         _stream = new TranscriptStream(window.Transcript, view.Dispatch);
         _keyboardBindings = new TgChatKeyboardBindings(window, () => IsBusy, () => HasCancelableWork,
-            Submit, Cancel, NavigateHistory, CompleteCommand, Paste, Copy);
+            Submit, Cancel, NavigateHistory, CompleteCommand, Paste, Copy, DetachLast);
         window.IsRunningChanged += (_, args) => { if (!args.Value) Stop(); };
     }
 

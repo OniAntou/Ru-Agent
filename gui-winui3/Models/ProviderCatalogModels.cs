@@ -38,6 +38,13 @@ public sealed class ProviderCatalogModel
     public int? ContextLength { get; init; }
 
     /// <summary>
+    /// Whether the Host would send images to this model as images; null from a Host that
+    /// predates the field.
+    /// </summary>
+    [JsonPropertyName("accepts_images")]
+    public bool? AcceptsImages { get; init; }
+
+    /// <summary>
     /// What the provider publishes for a million tokens, in US dollars.
     /// </summary>
     /// <remarks>

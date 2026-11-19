@@ -144,14 +144,14 @@ public sealed class FileReadImageTests : IDisposable
     }
 
     [Fact]
-    public async Task Image_bytes_without_an_image_extension_keep_the_text_path()
+    public async Task Image_bytes_without_an_image_extension_are_refused_as_binary()
     {
         File.WriteAllBytes(FullPath("shot.bin"), TestImages.Png(10, 10));
 
-        var error = await Assert.ThrowsAsync<ArgumentException>(async () =>
+        var error = await Assert.ThrowsAsync<FileReadDocumentException>(async () =>
             await _adapter.ExecuteAsync(Args("shot.bin"), imageInputAccepted: true, CancellationToken.None));
 
-        Assert.Equal("invalid_utf8", error.Message);
+        Assert.Equal("binary_file_unsupported", error.Code);
     }
 
     [Fact]

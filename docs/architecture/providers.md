@@ -126,6 +126,9 @@ or provider switching is performed. An endpoint that
 requires a key will reject an unauthenticated request; this does not trigger a
 fallback.
 
+Each catalog entry carries `accepts_images`: whether a run pinned to that model would
+send image attachments as images, by the rule the pin uses (the Models.dev declaration,
+else the model-name fallback). Clients use it only to warn before sending.
 Public `GET /models` is Host-owned provider discovery, not a relay of any
 model step's selected-model status. Its bounded cache has a five-minute
 lifetime,
@@ -188,7 +191,7 @@ and native continuation items; dispatch reuses the prepared serialization. The
 pinned output reserve is subtracted once from the exact or assumed window,
 with the context policy's safety margin applied afterward. Admission estimates
 text conservatively at one token per four UTF-8 bytes and assigns a fixed
-4,096-token allowance per image; this is a bounded estimate, not provider-tokenizer
+4,800-token allowance per image; this is a bounded estimate, not provider-tokenizer
 output. Image base64 remains included in the serialized-wire byte cap. If
 compaction changes the request, the Host rebuilds and remeasures it. Workflow
 state is a separate history message, while the final current prompt remains
@@ -248,7 +251,7 @@ drop an image.
 Tool images have their own bound: at most four per request, each a valid
 `ModelImage`. The 32 MiB history bound measures text and excludes their data.
 Admission and `RequestContextEstimator` subtract history image base64 from the
-wire bytes and add the same 4,096-token allowance per image as for user images;
+wire bytes and add the same 4,800-token allowance per image as for user images;
 the Core context estimate adds it for every attached tool image.
 
 ### Runtime context snapshots

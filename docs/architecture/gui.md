@@ -150,7 +150,7 @@ three rows: System prompt, Tool definitions and Messages. `ChatView.Context.cs`
 keeps native painting; `ContextPanelPresenter` formats numeric estimates.
 Categories come from the prepared request, never from subtracting provider usage.
 They are approximate (`~`); the current draft is included in Messages. Images use
-a fixed 4,096-token allowance per image rather than provider image tokenization.
+a fixed 4,800-token allowance per image rather than provider image tokenization.
 Category proportions describe that estimate; the overall fill follows reported
 prompt usage when available, so category sums need not equal the provider total.
 
@@ -563,19 +563,34 @@ It grows with its content up to `ComposerInputHeightPolicy`: 35% of the chat vie
 height, between 180 and 480 px, re-applied on resize, so a long prompt is read in a
 window that follows the app's size rather than a fixed eight-line slot.
 The composed prompt (typed text plus every inlined document) is checked against
-`AgentRunLimits.MaxPromptChars` before the send and before a turn is queued; an
+`AgentRunLimits.MaxPromptChars` (200,000 characters, shared with the Host and the
+terminal) before the send and before a turn is queued; an
 oversized prompt stays in the composer with a named status instead of failing the
 Host's create call. Picker, drop and clipboard images share the same bounded
 preparation path.
 
-Attachments are images, text/code files, or PDF/Word/PowerPoint/Excel documents.
-Images and small text/code files are read and inlined as before. A larger text or
-code file already inside the workspace is attached as a workspace reference: the
-prompt names its relative path and the agent reads the live file with its file
-tool, so the attachment is not limited by the prompt byte bound. PDF and Office
-documents are extracted to bounded plain text locally
-(`AttachmentDocumentExtractor`); a document whose extraction cannot fit the prompt
-is refused at intake rather than accepted and rejected on Send. The workspace
+Any file can be attached ([ADR 0053](../adr/0053-attachments-reach-the-model-as-paths.md)).
+Small UTF-8 text/code files (at most 8 KiB) are inlined, and an image goes to a model
+that reads images as an image. Every other file, of any type or size, is attached as a
+workspace reference: the prompt names its relative path and the agent reads it with
+`read`, which extracts PDF, Office and OpenDocument text and tells the model how to open
+anything else. A file outside the workspace is first copied into
+`<workspace>\.ru\attachments` (`AttachmentStaging`, shared with the terminal; ignored by
+git through the folder's own `.gitignore`, at most 64 MiB, equal bytes reuse a copy), and
+removing its chip before Send deletes the copy. An image attached for a model that reads
+no images is sent by path too. Text that is not UTF-8 (nor UTF-16 with a byte-order mark)
+or holds a NUL byte is sent by path instead of being inlined as replacement characters
+(`TextAttachmentDecoder`). A new chat with no folder has nowhere to copy a file, so it
+keeps the local path: PDF/Office documents are extracted to bounded plain text
+(`AttachmentDocumentExtractor`, at most half the prompt bound), text is inlined, and
+other types are refused with a status that says to choose a folder; a document whose
+extraction cannot fit the prompt is refused at intake, and switching session cancels a
+running extraction.
+An image that needs no resize still loses its EXIF/XMP/text metadata
+(`ImageMetadata`); a JPEG whose EXIF rotates it is re-encoded upright instead.
+Chips decode a 280 px thumbnail; the preview dialog decodes the stored image at
+full size only while it is open. When the Host's catalog says the selected model
+reads no images (`accepts_images: false`), attaching an image says so at once. The workspace
 reference envelope is parsed back into a file chip when history is reopened.
 Folders themselves are not attached; dropping one says to drop its files.
 Signature detection reads the supplied stream directly and leaves it open for

@@ -62,9 +62,12 @@ Custom commands you add appear in the same list; see [Teach Ru your project](tea
 ## Attachments
 
 Attach images with `--image PATH` at startup (up to four), a dropped path or
-`Ctrl+V`. Ru resizes and validates images before sending them, and a model that cannot read images may
-reject them. Text and code files up to 5 MB are added to the prompt as code blocks. Attachments travel
-with the next prompt, and Office documents are not supported as attachments.
+`Ctrl+V`. Ru resizes and validates images before sending them; for a model that reads no images, an
+image file is sent as a path instead. Any other file can be dropped too, whatever its type: text up to
+8 KB is added to the prompt as a code block, and anything else (PDFs, Word or Excel files, archives,
+large logs) is sent as a path the agent opens itself. A file from outside the workspace is first copied
+into `.ruttachments`, which git ignores. Backspace on an empty prompt removes the last attachment.
+Attachments travel with the next prompt.
 
 ## Sessions and paused runs
 

@@ -289,13 +289,32 @@ namespace RuApp.Views
                 : null;
         }
 
+        private static async Task<Microsoft.UI.Xaml.Media.Imaging.BitmapImage?> FullSizePreviewAsync(ImageAttachmentItem item)
+        {
+            if (string.IsNullOrEmpty(item.Base64Data)) return null;
+            try
+            {
+                var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                using var bytes = new MemoryStream(Convert.FromBase64String(item.Base64Data), writable: false);
+                using var stream = bytes.AsRandomAccessStream();
+                await bitmap.SetSourceAsync(stream);
+                return bitmap;
+            }
+            catch (Exception error) when (error is FormatException or System.Runtime.InteropServices.COMException or ArgumentException)
+            {
+                return null;
+            }
+        }
+
         private async void OnImageAttachmentClick(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement fe && fe.Tag is ImageAttachmentItem item && item.PreviewImage is not null && XamlRoot is not null)
             {
                 var image = new Image
                 {
-                    Source = item.PreviewImage,
+                    // Chips hold a small thumbnail; the dialog decodes the stored bytes at full
+                    // size for as long as it is open.
+                    Source = await FullSizePreviewAsync(item) ?? item.PreviewImage,
                     Stretch = Stretch.Uniform,
                     MaxWidth = 800,
                     MaxHeight = 600,

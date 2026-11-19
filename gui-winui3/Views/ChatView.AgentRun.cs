@@ -403,7 +403,14 @@ namespace RuApp.Views
         {
             if (sender is Button btn && btn.Tag is string id)
             {
+                var removed = Composer.Attachments.FirstOrDefault(item => item.Id == id);
                 Composer.RemoveAttachment(_activeSessionId, ChatInputTextBox.Text, id);
+                // A copy staged for this chip alone goes with it; a sent copy stays for the run.
+                if (removed is { IsStagedCopy: true, ReferencePath: { } staged }
+                    && !Composer.Attachments.Any(item => string.Equals(item.ReferencePath, staged, StringComparison.OrdinalIgnoreCase)))
+                {
+                    RuAgent.Client.Attachments.AttachmentStaging.TryRemove(staged, _agentWorkspace);
+                }
             }
         }
         private async void OnChatInputPreviewKeyDown(object sender, KeyRoutedEventArgs e)
@@ -831,10 +838,13 @@ namespace RuApp.Views
                 // request carries the same wire value so the stored selection and
                 // the run agree, but the stored selection stays authoritative.
                 string wirePreset = SessionPresetViewModel.WireName(preset);
-                var imagePayloads = attachments?
-                    .Where(a => a.IsImage && (!string.IsNullOrEmpty(a.Base64Data) || !string.IsNullOrEmpty(a.FilePath)))
-                    .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
-                    .ToList();
+                // The Host accepts only data URLs; an image whose normalized bytes are
+                // gone is refused here instead of failing the whole create call later.
+                if (!ChatComposerViewModel.TryBuildImagePayloads(attachments, out var imagePayloads))
+                {
+                    ShowAgentInlineStatus("An attached image is no longer available in this composer. Remove it and attach the file again.");
+                    return false;
+                }
 
                 cancellationToken.ThrowIfCancellationRequested();
                 submittedSessionId = expectedSubmission?.SessionId ?? _activeSessionId;

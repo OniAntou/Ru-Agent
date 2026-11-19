@@ -91,7 +91,8 @@ public sealed class HarnessModelContextBootstrapper : IHarnessModelContextBootst
             if (imageCount > 0)
             {
                 var fact = $"[Earlier user attachment: {imageCount} image attachment(s) were received with this message. "
-                    + "Image contents are not included in this historical turn. This confirms receipt, not image understanding.]";
+                    + "Up to four recent conversation images are re-attached as visual reference for a vision-capable model; "
+                    + "older image contents are not included. This confirms receipt, not image understanding.]";
                 prompt = string.IsNullOrWhiteSpace(prompt) ? fact : prompt + "\n\n" + fact;
             }
             entries.Add(new HarnessBaseContextEntry(

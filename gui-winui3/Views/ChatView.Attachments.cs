@@ -42,7 +42,7 @@ namespace RuApp.Views
             try
             {
                 var props = await file.GetBasicPropertiesAsync();
-                if (TryAddWorkspaceReference(file, props.Size, sessionId, sessionGeneration))
+                if (await TryAddFileReferenceAsync(file, checked((long)props.Size), forceReference: false, sessionId, sessionGeneration))
                 {
                     return;
                 }
@@ -71,18 +71,35 @@ namespace RuApp.Views
 
                 if (isImage)
                 {
-                    var prepared = await PrepareImageAttachmentAsync(file.Name, bytes);
-                    bytes = prepared.Bytes;
-                    mimeType = prepared.MimeType;
-                    previewImage = prepared.PreviewImage;
+                    try
+                    {
+                        var prepared = await PrepareImageAttachmentAsync(file.Name, bytes);
+                        bytes = prepared.Bytes;
+                        mimeType = prepared.MimeType;
+                        previewImage = prepared.PreviewImage;
+                    }
+                    catch (InvalidDataException error)
+                    {
+                        // Normalization errors are named (bounded decode, dimensions, wire
+                        // format). A generic "file may be damaged" would mislead the user
+                        // about an image that is valid but larger than the wire bound.
+                        ShowAgentInlineStatus($"'{file.Name}' could not be attached: {error.Message}");
+                        return;
+                    }
                 }
                 else if (isDocument)
                 {
+                    var sessionToken = _sessionPresentation.SessionToken;
                     try
                     {
+                        // A long PDF can take seconds; switching session stops it.
                         string extracted = await Task.Run(
-                            () => AttachmentDocumentExtractor.Extract(file.Name, bytes, CancellationToken.None));
+                            () => AttachmentDocumentExtractor.Extract(file.Name, bytes, sessionToken), sessionToken);
                         bytes = System.Text.Encoding.UTF8.GetBytes(extracted);
+                    }
+                    catch (OperationCanceledException) when (sessionToken.IsCancellationRequested)
+                    {
+                        return;
                     }
                     catch (AttachmentExtractionException error)
                     {
@@ -107,7 +124,19 @@ namespace RuApp.Views
                 }
                 else
                 {
-                    item.TextContent = ChatAttachmentPolicy.DecodeText(bytes);
+                    var text = ChatAttachmentPolicy.DecodeText(bytes);
+                    if (text is null)
+                    {
+                        // Not UTF-8: send the path, and `read` tells the model how to decode it.
+                        if (!await TryAddFileReferenceAsync(file, checked((long)props.Size), forceReference: true, sessionId, sessionGeneration))
+                        {
+                            ShowAgentInlineStatus($"{file.Name} is not UTF-8 text. Choose a project folder to attach it as a file the agent reads, or save it as UTF-8.");
+                        }
+
+                        return;
+                    }
+
+                    item.TextContent = text;
                 }
 
                 if (!isImage
@@ -219,43 +248,90 @@ namespace RuApp.Views
                 return false;
             }
 
-            return Composer.TryAddAttachment(sessionId, ChatInputTextBox.Text, attachment);
+            bool added = Composer.TryAddAttachment(sessionId, ChatInputTextBox.Text, attachment);
+            // Say it before Send: a text-only model receives a notice instead of the image
+            // (ADR 0040), which reads like the image was ignored.
+            if (added && attachment.IsImage && ModelSelection.AcceptsImages() == false)
+            {
+                ShowAgentInlineStatus(
+                    $"{ModelSelection.DisplayModel} cannot read images; it will get a note that an image was attached. Pick a vision model to send the image itself.");
+            }
+
+            return added;
         }
 
         /// <summary>
-        /// A large text/code file that already lives in the workspace is attached
-        /// as a reference: the model reads it with the file tool instead of the
-        /// GUI inlining a truncated copy that cannot fit the prompt bound.
+        /// Attaches a file by its workspace path for the model to open with <c>read</c>
+        /// (ADR 0053): any type and any size. A file outside the workspace is copied into
+        /// <c>.ru\attachments</c> first. Only small UTF-8 text is inlined, and an image goes as
+        /// an image to a model that reads images; those return false here unless
+        /// <paramref name="forceReference"/> is set. Without a workspace yet (a new chat with no
+        /// folder) there is nowhere to put the file, so the caller inlines what it can.
         /// </summary>
-        private bool TryAddWorkspaceReference(
+        private async Task<bool> TryAddFileReferenceAsync(
             Windows.Storage.StorageFile file,
-            ulong size,
+            long size,
+            bool forceReference,
             string sessionId,
             long sessionGeneration)
         {
-            const long referenceThresholdBytes = 8 * 1024;
-            if (size <= referenceThresholdBytes
-                || !ChatAttachmentPolicy.IsTextOrCodeFile(file.Name)
-                || !TryGetWorkspaceRelativePath(_agentWorkspace, file.Path, out var relative))
+            const long referenceThresholdBytes = RuAgent.Client.Attachments.AttachmentStaging.InlineTextThresholdBytes;
+            bool isImage = ChatAttachmentPolicy.IsImageFile(file.Name);
+            bool sendsAsImage = isImage
+                && ModelSelection.AcceptsImages() != false
+                && size <= ChatAttachmentPolicy.MaxImageAttachmentBytes;
+            bool inlinesAsText = !isImage && ChatAttachmentPolicy.IsTextOrCodeFile(file.Name) && size <= referenceThresholdBytes;
+            string workspace = _agentWorkspace;
+            if ((!forceReference && (sendsAsImage || inlinesAsText)) || string.IsNullOrWhiteSpace(workspace))
             {
                 return false;
+            }
+
+            bool staged = false;
+            if (!TryGetWorkspaceRelativePath(workspace, file.Path, out var relative))
+            {
+                try
+                {
+                    using var source = (await file.OpenReadAsync()).AsStreamForRead();
+                    var copy = await RuAgent.Client.Attachments.AttachmentStaging.StageAsync(
+                        source, file.Name, workspace, _sessionPresentation.SessionToken);
+                    relative = copy.RelativePath;
+                    size = copy.ByteSize;
+                    staged = true;
+                }
+                catch (RuAgent.Client.Attachments.AttachmentStagingException error)
+                {
+                    ReportAttachmentIntakeFailure($"{file.Name} could not be attached: {error.Message}.", sessionId, sessionGeneration);
+                    return true;
+                }
+                catch (OperationCanceledException)
+                {
+                    return true;
+                }
             }
 
             var item = new ImageAttachmentItem
             {
                 FileName = file.Name,
                 FilePath = file.Path,
-                ByteSize = checked((long)size),
+                ByteSize = size,
                 IsImage = false,
-                MimeType = "text/plain",
+                MimeType = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType,
                 ReferencePath = relative,
+                IsStagedCopy = staged,
             };
-            if (!ChatAttachmentFitsPrompt(item))
+            if (!ChatAttachmentFitsPrompt(item) || !TryAddAttachmentToComposer(item, sessionId, sessionGeneration))
             {
+                if (staged) RuAgent.Client.Attachments.AttachmentStaging.TryRemove(relative, workspace);
                 return true;
             }
 
-            TryAddAttachmentToComposer(item, sessionId, sessionGeneration);
+            if (isImage)
+            {
+                ShowAgentInlineStatus(
+                    $"{ModelSelection.DisplayModel} cannot read images, so {file.Name} is attached as a file path. Pick a vision model to send the image itself.");
+            }
+
             return true;
         }
 
@@ -317,7 +393,7 @@ namespace RuApp.Views
             var resized = await ImageAttachmentResizer.ResizeIfNeededAsync(
                 originalStream,
                 ChatAttachmentPolicy.MimeForExtension(fileName));
-            var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+            var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = ImageAttachmentItem.ThumbnailDecodeWidth };
             using var previewBytes = new MemoryStream(resized.Bytes, writable: false);
             using var previewStream = previewBytes.AsRandomAccessStream();
             await bitmap.SetSourceAsync(previewStream);

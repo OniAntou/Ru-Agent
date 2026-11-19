@@ -300,6 +300,49 @@ public sealed class SettingsApiClient
     /// Returns id/support pairs, bounded and tolerant: an error envelope or an
     /// unparsable body throws so callers fall back to configured models.
     /// </summary>
+    /// <summary>
+    /// Whether the Host would send images to this model as images (<c>accepts_images</c>
+    /// in its catalog), or null when the catalog does not list the model or predates the
+    /// field. Used only to warn before sending; the Host still decides at pin time.
+    /// </summary>
+    public async Task<bool?> GetModelAcceptsImagesAsync(string? backend, string model, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(model);
+        var url = string.IsNullOrWhiteSpace(backend)
+            ? new Uri(_session.BaseUri, "models")
+            : new Uri(_session.BaseUri, "models?backend=" + Uri.EscapeDataString(backend.Trim()));
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) return null;
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            if (!doc.RootElement.TryGetProperty("catalog", out var catalog) || catalog.ValueKind != JsonValueKind.Array)
+                return null;
+            foreach (var entry in catalog.EnumerateArray())
+            {
+                if (entry.ValueKind == JsonValueKind.Object
+                    && entry.TryGetProperty("id", out var id)
+                    && id.ValueKind == JsonValueKind.String
+                    && string.Equals(id.GetString(), model.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    return entry.TryGetProperty("accepts_images", out var accepts)
+                        && accepts.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? accepts.GetBoolean()
+                        : null;
+                }
+            }
+
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<(string Id, bool Supported)>> GetModelsAsync(string? backend, CancellationToken cancellationToken = default)
     {
         var url = string.IsNullOrWhiteSpace(backend)

@@ -26,6 +26,52 @@ public sealed class LineReadProjectionTests
     }
 
     [Fact]
+    public void A_pdf_read_projects_without_a_byte_offset()
+    {
+        // The read result for a PDF is paged by `pages` and carries no `offset`; projecting
+        // it used to fail the whole run as tool_output_projection_invalid.
+        const string source = """{"path":"spec.pdf","kind":"pdf","format":"pdf","page_count":1,"pages":"1","content":"MARKER-PDF-4242","chars_read":15,"truncated":false}""";
+
+        var projected = StructuredToolOutputProjector.Project("read", null, source, 1200,
+            ToolOutputProjectionUnit.Utf16Characters, (_, _) => throw new InvalidOperationException("fits; no clamp expected"));
+
+        Assert.Equal(source, projected);
+    }
+
+    [Theory]
+    [InlineData("docx", "paragraph")]
+    [InlineData("xlsx", "row")]
+    [InlineData("pptx", "slide")]
+    [InlineData("odt", "paragraph")]
+    public void A_document_read_projects_without_a_byte_offset(string format, string unit)
+    {
+        var source = $$"""{"path":"spec.{{format}}","kind":"document","format":"{{format}}","unit":"{{unit}}","part_count":3,"pages":"1-3","content":"MARKER-DOC-77","chars_read":13,"truncated":false}""";
+
+        var projected = StructuredToolOutputProjector.Project("read", null, source, 1200,
+            ToolOutputProjectionUnit.Utf16Characters, (_, _) => throw new InvalidOperationException("fits; no clamp expected"));
+
+        Assert.Equal(source, projected);
+    }
+
+    [Fact]
+    public void A_document_read_past_the_budget_is_clamped_instead_of_failing_the_run()
+    {
+        var content = new string('x', 5_000);
+        var source = $$"""{"path":"big.docx","kind":"document","format":"docx","unit":"paragraph","part_count":900,"pages":"1-400","content":"{{content}}","truncated":true}""";
+        var clamped = false;
+
+        var projected = StructuredToolOutputProjector.Project("read", null, source, 1200,
+            ToolOutputProjectionUnit.Utf16Characters, (text, maximum) =>
+            {
+                clamped = true;
+                return text[..maximum];
+            });
+
+        Assert.True(clamped);
+        Assert.Equal(1200, projected.Length);
+    }
+
+    [Fact]
     public void Complete_visible_line_content_keeps_source_continuation_cursor()
     {
         const string source = """{"content":"first\nsecond\n","path":"a.txt","start_line":40,"line_count":2,"next_line":42}""";

@@ -629,7 +629,7 @@ public sealed partial class ToolExecutionService
                 .Read.ExecuteAsync(arguments, context.ImageInputAccepted, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (FileReadImageException error)
+        catch (FileReadRefusalException error)
         {
             return ToolExecutionOutcome.Failed(error.Code, error.Hint);
         }

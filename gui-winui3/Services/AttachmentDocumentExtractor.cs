@@ -24,7 +24,12 @@ public sealed class AttachmentExtractionException(string code, string message) :
 /// </summary>
 internal static class AttachmentDocumentExtractor
 {
-    internal const int MaxExtractedChars = 12_000;
+    /// <summary>
+    /// Extracted characters kept per document: half the run prompt bound
+    /// (<see cref="RuAgent.Protocol.Harness.AgentRunLimits.MaxPromptChars"/>), so one
+    /// long document still leaves room for the message and a second attachment.
+    /// </summary>
+    internal const int MaxExtractedChars = RuAgent.Protocol.Harness.AgentRunLimits.MaxPromptChars / 2;
     private const int MaxPdfPages = 200;
     private const int MaxCompressedEntryBytes = 32 * 1024 * 1024;
     private const int MaxArchiveEntries = 4_096;

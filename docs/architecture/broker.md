@@ -151,6 +151,19 @@ reconciliation surfaces from Phase 3:
   - `read` returns one file's UTF-8 content with `offset`/`limit` and no discriminator, defaults to
     a 1 MiB source window and accepts up to 4 MiB, fitting serialized output into 4 MiB before
     Broker normalization;
+  - a `.pdf` file returns bounded extracted text (PdfPig parses in process; nothing is rendered):
+    without `pages` a short document is read whole or its first ten pages, and `pages` selects a
+    1-based range of at most twenty pages
+    ([ADR 0050](../adr/0050-read-extracts-pdf-and-refuses-other-documents.md));
+  - Office Open XML and OpenDocument files (`FileOfficeTextExtractor`, BCL ZIP/XML only, DTDs
+    prohibited) return `kind: "document"` text by part (paragraph, spreadsheet row or slide)
+    with `pages` as a part range and the same 60,000-character cap; legacy binary Office and
+    iWork files fail as `document_unsupported`, other binary files as `binary_file_unsupported`
+    and non-UTF-8 text as `invalid_utf8`, each with a hint naming what the bytes are and the
+    command that opens them (`FileReadFailureHints`; the hint travels in the exception's data so
+    codes and types stay stable); `outside_workspace` says how to attach the file, and
+    `read_file` on an image, PDF or document fails as `read_file_text_only`
+    ([ADR 0053](../adr/0053-attachments-reach-the-model-as-paths.md));
   - clipped Unicode or escaped text carries source-byte continuation metadata;
   - `list` enumerates one directory (streaming enumeration, ordinal relative paths,
     hidden/binary/protected skip with counts, result/byte/time caps, bounded `truncated` metadata,
@@ -381,7 +394,7 @@ rows. Case-only renames are refused (`patch_rename_case_only`), because canonica
 paths compare case-insensitively. Git mode and similarity header lines are ignored.
 `read_file` pages whole UTF-8 lines with `start_line`/`line_count` and `next_line`,
 a 4 MiB snapshot scan cap and 32 KiB serialized output cap. `read` retains byte
-paging and image input. A line too large for the output budget returns
+paging, image input and current PDF page-range extraction. A line too large for the output budget returns
 `read_line_too_long` rather than an advancing cursor that skips unseen text.
 
 ## Skill guidance
@@ -438,7 +451,7 @@ Hard-invalid requests remain denied; structured protected paths stay denied in
 `plan` and `standard`. Standard is the
 default; `full_access` requires a GUI confirmation or CLI
 `--confirm-full-access`. The model-visible tool list remains the runtime projection of
-Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
+Protocol definitions, one purpose per tool: `read` (`offset`/`limit`, `pages` for PDF),
 `list` (`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
 `todo_write`, `write_file`, `edit_file`, `file_delete`, `file_restore`,
 `powershell`, `run_process`, `terminal_read`, `terminal_stop`, `skill`,

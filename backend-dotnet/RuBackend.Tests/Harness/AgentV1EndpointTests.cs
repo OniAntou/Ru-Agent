@@ -239,6 +239,34 @@ public sealed class AgentV1EndpointTests
     }
 
     [Fact]
+    public async Task Create_run_refuses_a_prompt_only_above_the_shared_bound()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        async Task<HttpResponseMessage> CreateAsync(int length, string key) => await client.PostAsJsonAsync(
+            "/agent/v1/runs",
+            new
+            {
+                session_id = sessionId,
+                workspace_path = Path.GetTempPath(),
+                prompt = new string('p', length),
+                preset = "standard",
+                idempotency_key = key,
+            });
+
+        // A 20,000-character prompt (an inlined source file) was refused under the old 16,000
+        // bound. Whatever happens after the prompt check (trust, provider), it is not that.
+        using var fits = await CreateAsync(20_000, "prompt-bound-fits");
+        var fitsJson = await fits.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.NotEqual("invalid_prompt", fitsJson.TryGetProperty("error_code", out var fitsCode) ? fitsCode.GetString() : null);
+        using var over = await CreateAsync(RuAgent.Protocol.Harness.AgentRunLimits.MaxPromptChars + 1, "prompt-bound-over");
+        Assert.Equal(HttpStatusCode.BadRequest, over.StatusCode);
+        var json = await over.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("invalid_prompt", json.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
     public async Task Create_run_rejects_five_images_with_image_limit_exceeded()
     {
         using var factory = new BackendWebApplicationFactory();

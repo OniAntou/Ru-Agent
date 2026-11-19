@@ -108,7 +108,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var read = Properties("read");
         Assert.Equal(["path"], Required("read"));
         Assert.Equal(
-            new[] { "limit", "offset", "path" },
+            new[] { "limit", "offset", "pages", "path" },
             read.Select(item => item.Key).OrderBy(key => key, StringComparer.Ordinal));
         Assert.False(read.ContainsKey("op"));
         Assert.False(read.ContainsKey("max_entries"));
@@ -116,6 +116,7 @@ public sealed class AgentToolDefinitionCatalogTests
         Assert.False(read.ContainsKey("max_results"));
         Assert.False(read.ContainsKey("regex"));
         Assert.Equal(4 * 1024 * 1024, read["limit"]!["maximum"]!.GetValue<int>());
+        Assert.Equal(32, read["pages"]!["maxLength"]!.GetValue<int>());
 
         // list keeps read op=list's argument shape and has no required field.
         var list = Properties("list");
@@ -393,6 +394,7 @@ public sealed class AgentToolDefinitionCatalogTests
             {
                 ["limit"] = new JsonObject { ["maximum"] = 4 * 1024 * 1024, ["minimum"] = 1, ["type"] = "integer" },
                 ["offset"] = new JsonObject { ["type"] = "integer", ["minimum"] = 0 },
+                ["pages"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
                 ["path"] = new JsonObject { ["type"] = "string" },
             },
             ["additionalProperties"] = false,

@@ -80,14 +80,14 @@ public sealed class AgentRunCreationService
         var hasImages = request.ImageAttachments is { Count: > 0 };
         if (hasImages)
         {
-            if (request.ImageAttachments!.Count > 4)
+            if (request.ImageAttachments!.Count > AgentRunLimits.MaxImages)
             {
-                return BoundedError(400, "image_limit_exceeded", "Too many images. Maximum is 4.");
+                return BoundedError(400, "image_limit_exceeded", $"Too many images. Maximum is {AgentRunLimits.MaxImages}.");
             }
 
-            const int MaxImageDataUrlChars = 5_600_000;
-            const long MaxSingleImageBytes = 4L * 1024 * 1024;
-            const long MaxTotalImagesBytes = 20L * 1024 * 1024;
+            const int MaxImageDataUrlChars = AgentRunLimits.MaxImageDataUrlChars;
+            const long MaxSingleImageBytes = AgentRunLimits.MaxImageBytes;
+            const long MaxTotalImagesBytes = AgentRunLimits.MaxTotalImageBytes;
 
             long totalDecodedBytes = 0;
             foreach (var url in request.ImageAttachments)
@@ -179,7 +179,8 @@ public sealed class AgentRunCreationService
         }
         else if (prompt.Length > AgentRunLimits.MaxPromptChars)
         {
-            return BoundedError(400, "invalid_prompt", "prompt invalid.");
+            return BoundedError(400, "invalid_prompt",
+                $"prompt exceeds {AgentRunLimits.MaxPromptChars:N0} characters.");
         }
 
         // Session-backed preset ladder: plan / standard / full_access. Empty

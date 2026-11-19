@@ -6,6 +6,7 @@ using RuAgent.Protocol;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 using RuAgent.Runtime.Model;
+using RuBackend.Harness;
 using RuBackend.Harness.ModelRunner;
 using RuBackend.Providers;
 using Xunit;
@@ -388,7 +389,7 @@ public sealed partial class InProcessModelStepRunnerTests
         {
             CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap(acceptsImageInput: true)),
             LoadRunImagesAsync = (_, _) =>
-                Task.FromResult<IReadOnlyList<string>>(["data:image/png;base64,aGVsbG8="]),
+                Task.FromResult(new RunImageSet(["data:image/png;base64,aGVsbG8="], [])),
         };
 
         var result = await runner.RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None);
@@ -397,6 +398,28 @@ public sealed partial class InProcessModelStepRunnerTests
         var image = Assert.Single(provider.Requests[0].Images);
         Assert.Equal("image/png", image.MimeType);
         Assert.Equal("aGVsbG8=", image.Base64Data);
+    }
+
+    [Fact]
+    public async Task Earlier_conversation_images_are_attached_with_a_reference_notice()
+    {
+        var provider = new ScriptedProvider((_, _) =>
+            Deltas(new ModelDelta("mo ta", [], completed: true, finishReason: "stop")));
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
+        {
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap(acceptsImageInput: true)),
+            LoadRunImagesAsync = (_, _) =>
+                Task.FromResult(new RunImageSet(Array.Empty<string>(),
+                    ["data:image/png;base64,aGVsbG8="])),
+        };
+
+        await runner.RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        var request = provider.Requests[0];
+        Assert.Contains("Earlier conversation images re-attached for reference: 1 image",
+            request.Prompt, StringComparison.Ordinal);
+        Assert.Contains("not attachments of the current message", request.Prompt, StringComparison.Ordinal);
+        Assert.Single(request.Images);
     }
 
     [Fact]

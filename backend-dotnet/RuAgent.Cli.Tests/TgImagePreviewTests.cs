@@ -305,6 +305,37 @@ public sealed class TgImagePreviewTests
             (app, window, _) => Assert.DoesNotContain("[image", PreviewRow(app, window)));
     }
 
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("draft", false)]
+    public void Backspace_on_an_empty_prompt_removes_the_last_attachment(string draft, bool detaches)
+    {
+        using var state = new ChatSubmissionState();
+        Render(false, 80,
+            (app, window, loop) =>
+            {
+                Wire(state, loop);
+                state.Add(Image("first.png"));
+                state.Add(new CliTextAttachment("notes.txt", "notes", 5));
+                loop.SetDetachLastHandler(() =>
+                {
+                    state.Detach(state.Count);
+                    loop.RefreshAttachmentLabel();
+                    return Task.CompletedTask;
+                });
+                window.FocusComposer();
+                window.Composer.Input.Text = draft;
+                window.Composer.Input.InsertionPoint = draft.Length;
+                app.InjectKey(Key.Backspace);
+            },
+            (_, window, _) =>
+            {
+                // A non-empty prompt keeps Backspace for text; only an empty one detaches.
+                Assert.Equal(detaches ? 1 : 2, state.Count);
+                Assert.Equal(detaches ? "" : "draf", window.Composer.Input.Text);
+            });
+    }
+
     private static CliImageAttachment Image(string name) =>
         new(name, "image/png", Convert.ToBase64String(ImageBytes), 1, 1, ImageBytes.Length);
 

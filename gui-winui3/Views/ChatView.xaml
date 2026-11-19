@@ -76,6 +76,20 @@
                                 </MenuFlyoutItem>
                             </MenuFlyout>
                         </StackPanel.ContextFlyout>
+                        <!-- A reopened turn keeps the recorded image count but not the
+                             image references yet, so it says so instead of looking empty. -->
+                        <Border Visibility="{x:Bind HasMissingImages, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                HorizontalAlignment="Right"
+                                Background="{StaticResource RuBackdropInsetBrush}"
+                                BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+                                CornerRadius="{StaticResource AppPillCornerRadius}" Padding="10,5"
+                                ToolTipService.ToolTip="The images were stored with this turn but are not displayed after reopening the conversation.">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xEB9F;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                                <TextBlock Text="{x:Bind MissingImagesLabel, Mode=OneWay}" FontSize="11"
+                                           Foreground="{StaticResource RuMutedBrush}" />
+                            </StackPanel>
+                        </Border>
                         <ScrollViewer HorizontalAlignment="Right" MaxWidth="{x:Bind ContentWidth, Mode=OneWay}"
                                       HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Auto"
                                       VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled"

@@ -56,8 +56,12 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
     /// </summary>
     public Action<RunId, ProviderBootstrapData, bool>? ObserveProviderKey { get; init; }
 
-    /// <summary>Loads the run's attached images from the payload store as data URLs.</summary>
-    public Func<RunId, CancellationToken, Task<IReadOnlyList<string>>>? LoadRunImagesAsync { get; init; }
+    /// <summary>
+    /// Loads the run's attached images plus recent earlier conversation images as data
+    /// URLs. Earlier images are reference material and must never fail the run; only the
+    /// run's own attachments are required.
+    /// </summary>
+    public Func<RunId, CancellationToken, Task<RunImageSet>>? LoadRunImagesAsync { get; init; }
 
     public Func<RunId, ProviderBootstrapData, IReadOnlyList<string>, CancellationToken, Task<IReadOnlyList<ProviderContinuation>>>? LoadProviderContinuationsAsync { get; init; }
 
@@ -262,7 +266,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         // Both the note and that response are durable context, so restart cannot extend the window.
         if (HasPendingTruncationRepair(request.Context))
             bootstrap = bootstrap.WithReducedEffort();
-        var images = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
+        var loadedImages = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
+        var images = loadedImages.Images;
         var nativeText = (preparingSnapshot || request.Preparation is InProcessPreparedStep) && images.Count == 0;
         var (prompt, _, modelMessages) = BuildConversation(request.Context, images.Count > 0, nativeText);
         string? pendingSnapshot = null;
@@ -293,6 +298,12 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             prompt = ApplySelectionFeedback(prompt, selectionFeedback);
             if (nativeText) modelMessages = modelMessages!.Append(new ModelTurn("user", selectionFeedback)).ToArray();
         }
+        if (loadedImages.EarlierImageCount > 0)
+        {
+            // The images travel as this request's image parts, so the model must be told
+            // they belong to earlier turns instead of reading them as new attachments.
+            prompt = SessionImageCarryover.AppendEarlierImageNotice(prompt, loadedImages.EarlierImageCount);
+        }
         if (bootstrap.ReplayChatReasoning)
         {
             var continuations = LoadProviderContinuationsAsync is null ? Array.Empty<ProviderContinuation>()
@@ -308,7 +319,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             return new ModelGenerationRequest(prompt, modelMessages!, request.PromptContext,
                 new ModelGenerationSettings(settings["model_tools"] as JsonArray,
                     providerWebSearch: request.PromptContext.ProviderWebSearch), bootstrap,
-                ParseRunImages(images), history.Responses, history.Anthropic,
+                images, history.Responses, history.Anthropic,
                 promptInHistory: nativeText, pendingRuntimeSnapshot: pendingSnapshot,
                 sessionId: request.SessionId);
         }
@@ -382,19 +393,23 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         }
     }
 
-    private async Task<IReadOnlyList<string>> LoadImagesAsync(
+    private sealed record PreparedRunImages(IReadOnlyList<ModelImage> Images, int EarlierImageCount);
+
+    private async Task<PreparedRunImages> LoadImagesAsync(
         RunId runId,
         CancellationToken cancellationToken)
     {
         if (LoadRunImagesAsync is null)
         {
-            return Array.Empty<string>();
+            return new PreparedRunImages(Array.Empty<ModelImage>(), 0);
         }
 
         try
         {
-            return await LoadRunImagesAsync(runId, cancellationToken).ConfigureAwait(false)
-                ?? Array.Empty<string>();
+            var set = await LoadRunImagesAsync(runId, cancellationToken).ConfigureAwait(false)
+                ?? new RunImageSet(Array.Empty<string>(), Array.Empty<string>());
+            var all = set.CurrentRun.Concat(set.Earlier).ToArray();
+            return new PreparedRunImages(ParseRunImages(all), set.Earlier.Count);
         }
         catch (OperationCanceledException)
         {

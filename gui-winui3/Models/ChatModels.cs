@@ -344,6 +344,33 @@ namespace RuApp.Models
 
         public bool HasAttachments => Attachments != null && Attachments.Count > 0;
 
+        private int _missingImageCount;
+
+        /// <summary>
+        /// Image attachments the persisted turn carried that this view cannot render.
+        /// History keeps the count and the encrypted payloads, but the message DTO does
+        /// not carry image references yet, so a reopened turn shows this count instead
+        /// of silently looking like it had no attachment.
+        /// </summary>
+        public int MissingImageCount
+        {
+            get => _missingImageCount;
+            set
+            {
+                if (SetProperty(ref _missingImageCount, value))
+                {
+                    OnPropertyChanged(nameof(HasMissingImages));
+                    OnPropertyChanged(nameof(MissingImagesLabel));
+                }
+            }
+        }
+
+        public bool HasMissingImages => MissingImageCount > 0;
+
+        public string MissingImagesLabel => MissingImageCount == 1
+            ? "1 image attached"
+            : $"{MissingImageCount} images attached";
+
         public bool HasText => !string.IsNullOrWhiteSpace(Content);
 
         public bool ShowTypingDots => Role == "assistant" && IsStreaming && string.IsNullOrEmpty(Content);
@@ -481,6 +508,9 @@ namespace RuApp.Models
             _ = LoadPreviewImageAsync(bytes);
         }
 
+        /// <summary>Decode width for chip thumbnails: twice the widest chip, for high-DPI screens.</summary>
+        public const int ThumbnailDecodeWidth = 280;
+
         public async Task LoadPreviewImageAsync(byte[] bytes)
         {
             try
@@ -492,7 +522,9 @@ namespace RuApp.Models
                     await writer.StoreAsync();
                 }
                 stream.Seek(0);
-                var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                // Chips draw at most 140 px wide; decoding the full 2,576 px image kept about
+                // 25 MB per attachment alive. The preview dialog decodes full size on demand.
+                var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = ThumbnailDecodeWidth };
                 bmp.SetSource(stream);
                 _previewImage = bmp;
                 _thumbnailImage = bmp;
@@ -531,6 +563,12 @@ namespace RuApp.Models
         }
 
         public bool IsReference => !IsImage && !string.IsNullOrEmpty(_referencePath);
+
+        /// <summary>
+        /// Whether <see cref="ReferencePath"/> is a copy this composer made in the workspace's
+        /// <c>.ru\attachments</c> folder; removing the chip before sending removes the copy.
+        /// </summary>
+        public bool IsStagedCopy { get; set; }
 
         public bool IsImage
         {

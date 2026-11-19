@@ -200,4 +200,18 @@ public sealed class ChatSubmissionStateTests
         Assert.Equal(4, accepted);
         Assert.Equal(4, state.ImageCount);
     }
+
+    [Fact]
+    public void Detaching_the_last_pending_attachment_removes_files_before_images()
+    {
+        using var state = new ChatSubmissionState();
+        state.Add(new CliTextAttachment("a.md", "a", 1));
+        state.Add(new CliTextAttachment("b.md", "b", 1, ReferencePath: "docs/b.md"));
+
+        // Backspace on an empty prompt calls Detach(Count): the last listed attachment goes.
+        Assert.Equal("b.md", state.Detach(state.Count));
+        Assert.Equal("a.md", state.Detach(state.Count));
+        Assert.Equal(0, state.Count);
+        Assert.Null(state.Detach(state.Count));
+    }
 }

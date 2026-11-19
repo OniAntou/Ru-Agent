@@ -276,7 +276,7 @@ public sealed class ChatComposerViewModelTests
         var status = ChatComposerViewModel.PromptLimitStatus(prompt);
 
         Assert.NotNull(status);
-        Assert.Contains("16,000", status);
+        Assert.Contains(RuAgent.Protocol.Harness.AgentRunLimits.MaxPromptChars.ToString("N0", System.Globalization.CultureInfo.InvariantCulture), status);
         Assert.Null(ChatComposerViewModel.PromptLimitStatus("short"));
     }
 
@@ -309,6 +309,62 @@ public sealed class ChatComposerViewModelTests
         Assert.Contains("not inlined", prompt);
         Assert.DoesNotContain("```", prompt);
         Assert.Null(ChatComposerViewModel.PromptLimitStatus(prompt));
+    }
+
+    [Fact]
+    public void A_sent_user_bubble_shows_the_typed_text_and_an_attachment_only_turn_shows_none()
+    {
+        Assert.Equal("typed", ChatComposerViewModel.UserMessageContent("typed", "composed envelope"));
+        Assert.Equal(string.Empty, ChatComposerViewModel.UserMessageContent(string.Empty, "composed envelope"));
+        Assert.Equal("composed envelope", ChatComposerViewModel.UserMessageContent(null, "composed envelope"));
+    }
+
+    [Fact]
+    public void The_same_file_is_not_attached_twice()
+    {
+        var text = new ImageAttachmentItem
+        {
+            FileName = "notes.txt",
+            FilePath = @"C:\work\notes.txt",
+            IsImage = false,
+            TextContent = "hello",
+        };
+        Assert.True(_composer.TryAddAttachment("sess-a", string.Empty, text));
+
+        var again = new ImageAttachmentItem
+        {
+            FileName = "notes.txt",
+            FilePath = @"c:\WORK\notes.txt",
+            IsImage = false,
+            TextContent = "hello",
+        };
+
+        Assert.False(_composer.TryAddAttachment("sess-a", string.Empty, again));
+        Assert.Single(_composer.Attachments);
+        Assert.Contains("already attached", _runPanel.StatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Image_payloads_are_data_urls_and_a_missing_image_is_refused_locally()
+    {
+        var image = new ImageAttachmentItem
+        {
+            FileName = "shot.png",
+            IsImage = true,
+            MimeType = "image/png",
+            Base64Data = "AAAA",
+        };
+        var document = new ImageAttachmentItem { FileName = "notes.txt", IsImage = false, TextContent = "x" };
+
+        Assert.True(ChatComposerViewModel.TryBuildImagePayloads([image, document], out var payloads));
+        Assert.Equal("data:image/png;base64,AAAA", Assert.Single(payloads!));
+
+        // An image without normalized bytes used to fall back to a raw file path, which
+        // the Host rejects with invalid_image_mime; the turn is refused before create now.
+        Assert.False(ChatComposerViewModel.TryBuildImagePayloads([image, Image("no-bytes.png")], out _));
+
+        Assert.True(ChatComposerViewModel.TryBuildImagePayloads(null, out var none));
+        Assert.Null(none);
     }
 
     private static ImageAttachmentItem Image(string name) => new() { FileName = name, IsImage = true };

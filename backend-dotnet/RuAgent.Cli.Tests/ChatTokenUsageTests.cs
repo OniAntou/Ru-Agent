@@ -66,7 +66,7 @@ public sealed class ChatTokenUsageTests
     [Fact]
     public void Draft_is_a_separate_estimate_and_counts_text_and_images()
     {
-        Assert.Equal(4099, ChatUsagePresentation.DraftEstimate("hello", 3, 1));
+        Assert.Equal(4803, ChatUsagePresentation.DraftEstimate("hello", 3, 1));
         Assert.Equal(0, ChatUsagePresentation.DraftEstimate("", 0, 0));
     }
 }

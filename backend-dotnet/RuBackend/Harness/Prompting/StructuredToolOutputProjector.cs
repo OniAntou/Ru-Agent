@@ -83,6 +83,14 @@ internal static class StructuredToolOutputProjector
                 return ProjectionDocument.ForLines(root, lineText, firstLine, toolCallId, providerCallId);
             }
 
+            // A PDF or document read (`kind` "pdf" or "document") is paged by `pages`, not by
+            // a byte `offset`, and its text is capped well under a conversation block; it
+            // projects like any other bounded result. Requiring `offset` here failed every
+            // run whose model read a PDF.
+            if (toolId is "read" or "files.read" && root["kind"] is JsonValue kind
+                && kind.TryGetValue<string>(out _) && root["offset"] is null)
+                return null;
+
             if (toolId is "read" or "files.read" && root["content"] is JsonValue readContent
                 && readContent.TryGetValue<string>(out var readText))
             {

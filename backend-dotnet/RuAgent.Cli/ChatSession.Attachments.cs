@@ -113,7 +113,7 @@ public sealed partial class AgentCommands
 
                 attached = true; // The pending state now owns cleanup of this image's temp file.
                 RefreshAttachmentLabels();
-                if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
+                if (await ActiveModelRefusesImagesAsync().ConfigureAwait(false))
                 {
                     await WriteAttachFeedbackAsync(
                         $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
@@ -137,6 +137,57 @@ public sealed partial class AgentCommands
         /// Attachment failures must be visible with a live TUI: stderr lands behind the frame,
         /// so the hint row mirrors the message there (classic mode keeps stderr only).
         /// </summary>
+        /// <summary>
+        /// Whether the Host's catalog says the active model reads no images. Best effort:
+        /// an unreachable catalog or an unlisted model gives no warning, and the Host still
+        /// sends such a model an unavailable-image notice (ADR 0040).
+        /// </summary>
+        async Task<bool> ActiveModelRefusesImagesAsync()
+        {
+            if (activeModel.Length == 0) return false;
+            try
+            {
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                deadline.CancelAfter(TimeSpan.FromSeconds(3));
+                return await _settingsClient.GetModelAcceptsImagesAsync(backendName, activeModel, deadline.Token)
+                    .ConfigureAwait(false) == false;
+            }
+            catch (Exception error) when (error is HttpRequestException or AgentApiException or OperationCanceledException
+                && !cancellationToken.IsCancellationRequested)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Backspace on an empty prompt removes the last pending attachment. The terminal
+        /// keeps no attachment commands, and before this a pending file could only be
+        /// dropped by leaving the session.
+        /// </summary>
+        async Task DetachLastAsync()
+        {
+            // Detach removes the last attachment; texts follow images in the pending order.
+            var texts = submissions.Texts;
+            var removing = submissions.Count > submissions.ImageCount && texts.Count > 0 ? texts[^1] : null;
+            var removed = submissions.Count == 0 ? null : submissions.Detach(submissions.Count);
+            if (removed is null) return;
+            // A copy staged for this attachment alone goes with it; once sent, a copy stays
+            // for the run to read and is pruned later.
+            if (removing is { IsStaged: true, ReferencePath: { } staged }
+                && !submissions.Texts.Any(text => string.Equals(text.ReferencePath, staged, StringComparison.OrdinalIgnoreCase)))
+            {
+                RuAgent.Client.Attachments.AttachmentStaging.TryRemove(staged, canonicalWorkspace);
+            }
+
+            RefreshAttachmentLabels();
+            var remaining = submissions.Count;
+            var message = remaining == 0
+                ? $"detached {removed}"
+                : $"detached {removed} · Backspace again removes the next ({remaining} left)";
+            if (tgMode) ShowPasteFeedback(message);
+            await WriteDiagnosticLineAsync(humanOut, message).ConfigureAwait(false);
+        }
+
         async Task WriteAttachFeedbackAsync(string message)
         {
             if (tgMode)
@@ -149,7 +200,9 @@ public sealed partial class AgentCommands
 
         async Task AttachFileAsync(string path)
         {
-            if (Images.CliImagePolicy.IsImageFile(path))
+            // An image goes to a vision model as an image; a model that reads none gets the
+            // file's path instead of an "image unavailable" notice, and can still use the file.
+            if (Images.CliImagePolicy.IsImageFile(path) && !await ActiveModelRefusesImagesAsync().ConfigureAwait(false))
             {
                 await AttachImageAsync(path).ConfigureAwait(false);
                 return;
@@ -162,6 +215,17 @@ public sealed partial class AgentCommands
             if (attachment is null)
             {
                 await WriteAttachFeedbackAsync(textError ?? "unsupported_attachment: the file could not be loaded").ConfigureAwait(false);
+                return;
+            }
+
+            // Refuse here rather than at send: the composed prompt (every pending file plus
+            // the message) must fit the Host's bound.
+            var composed = Attachments.AttachedPrompt.Compose(string.Empty, [.. submissions.Texts, attachment]).Length;
+            if (composed > ChatSubmissionState.MaxComposedPromptChars)
+            {
+                await WriteAttachFeedbackAsync(
+                    $"attachment_too_large: {attachment.FileName} would make the prompt {composed:N0} characters (limit {ChatSubmissionState.MaxComposedPromptChars:N0}); "
+                    + "shorten the message, or remove an attachment with Backspace on an empty prompt").ConfigureAwait(false);
                 return;
             }
 
@@ -265,12 +329,8 @@ public sealed partial class AgentCommands
                 return false;
             }
 
-            if (!Images.CliImagePolicy.IsImageFile(candidate)
-                && !Images.CliImagePolicy.IsTextOrCodeFile(candidate))
-            {
-                return false;
-            }
-
+            // Any existing file attaches (ADR 0053): the model gets its path and decides how
+            // to read it. The whole line must be the path, so prose cannot attach by accident.
             try
             {
                 return File.Exists(Images.CliImageFiles.ResolvePath(candidate, canonicalWorkspace));

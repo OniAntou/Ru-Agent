@@ -179,7 +179,8 @@ namespace RuApp.Services
                             item.Content,
                             item.SourceRunId,
                             checked(response.StartIndex + index),
-                            item.SourceMessageId));
+                            item.SourceMessageId,
+                            item.ImageAttachmentCount));
                     }
 
                     return new SessionHistoryPage(

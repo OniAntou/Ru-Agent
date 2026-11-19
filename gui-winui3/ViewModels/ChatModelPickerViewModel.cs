@@ -454,6 +454,21 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
         return match?.ContextLength is int length && length > 0 ? length : null;
     }
 
+    /// <summary>
+    /// Whether the selected model reads image attachments, per the Host's catalog; null
+    /// when the catalog does not list it. The Host still decides when the run is pinned.
+    /// </summary>
+    internal bool? AcceptsImages()
+    {
+        if (_grouped is null || string.IsNullOrWhiteSpace(Model)) return null;
+        var state = _grouped.State;
+        string backend = EffectiveBackend;
+        if (string.IsNullOrWhiteSpace(backend) || !state.Catalogs.TryGetValue(backend, out var catalog)) return null;
+        string lookup = EffectiveModel;
+        return catalog.Catalog.FirstOrDefault(entry => string.Equals(entry.Id, lookup, StringComparison.OrdinalIgnoreCase))
+            ?.AcceptsImages;
+    }
+
     /// <summary>The model the composer reports, preferring the grouped catalog's view.</summary>
     internal string DisplayModel => EffectiveModel;
 

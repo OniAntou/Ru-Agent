@@ -85,7 +85,7 @@ public sealed partial class ModelStepServiceTests
         var withImage = service.PrepareRequest(imageRequest, requireExactProjection: true);
 
         Assert.True(withImage.SerializedBodyBytes > 200_000);
-        Assert.InRange(withImage.EstimatedInputTokens - plain.EstimatedInputTokens, 4096, 4112);
+        Assert.InRange(withImage.EstimatedInputTokens - plain.EstimatedInputTokens, 4800, 4816);
         Assert.Equal(4096, plain.OutputTokenCap);
 
         var dispatched = await service.RunPreparedAsync(plain, null, CancellationToken.None);

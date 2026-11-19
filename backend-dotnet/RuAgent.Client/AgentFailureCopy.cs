@@ -183,7 +183,7 @@ public static class AgentFailureCopy
         Add(table, ["image_limit_exceeded"],
             "Too many images",
             "a turn can carry at most 4 images",
-            "remove images with /detach, then retry");
+            "remove images (Backspace on an empty prompt in the terminal), then retry");
         Add(table, ["image_too_large"],
             "Image too large",
             "one image or the whole turn exceeded the size bound",

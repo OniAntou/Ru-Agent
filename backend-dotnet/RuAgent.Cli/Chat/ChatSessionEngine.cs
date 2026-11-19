@@ -15,7 +15,7 @@ public partial class ChatSessionEngine
     public const int MaxQueueDepth = 8;
 
     private const string QueueFullHint = "queue full · enter retries";
-    private const string SubmissionTooLargeHint = "submission too large · shorten or detach files";
+    private const string SubmissionTooLargeHint = "submission too large · shorten, or Backspace on an empty prompt removes a file";
     private const string SubmissionUnavailableHint = "cannot queue this command with pending attachments";
     private const string StateChangeRunHint = "a run is still active · wait for it to finish or press esc before changing session or model";
     private const string StateChangeQueuedHint = "prompts are still queued · wait for them to start before changing session or model";
@@ -51,6 +51,7 @@ public partial class ChatSessionEngine
     private Func<int>? _retryImageCountProvider;
     private Func<Task>? _pasteHandler;
     private Func<string, Task<bool>>? _copyHandler;
+    private Func<Task>? _detachLastHandler;
     private Func<string, bool>? _dropHandler;
     private CancellationTokenSource? _turn;
     private TaskCompletionSource? _turnDone;
@@ -201,6 +202,9 @@ public partial class ChatSessionEngine
 
     /// <summary>Ctrl+V handler (clipboard image/text); wiring happens in the chat command, and the key stays claimed either way.</summary>
     public void SetPasteHandler(Func<Task> handler) => _pasteHandler = handler;
+
+    /// <summary>Removes the last pending attachment (Backspace on an empty prompt).</summary>
+    public void SetDetachLastHandler(Func<Task> handler) => _detachLastHandler = handler;
     public void SetCopyHandler(Func<string, Task<bool>> handler) => _copyHandler = handler;
 
     /// <summary>
@@ -655,6 +659,11 @@ public partial class ChatSessionEngine
 
         TuiDebug.Log("paste", "ctrl+v routed to the paste handler");
         _ = RunHandlerAsync(handler);
+    }
+
+    private protected void DetachLast()
+    {
+        if (_detachLastHandler is { } handler) _ = RunHandlerAsync(handler);
     }
 
     private protected void Copy()

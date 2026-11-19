@@ -70,6 +70,15 @@ public sealed class CliImagePolicyTests
     [Fact]
     public void TooManyImagesStatus_NamesTheSameNumberTheCheckUses() =>
         Assert.Contains($"Maximum {CliImagePolicy.MaxImageCount} images", CliImagePolicy.TooManyImagesStatus, StringComparison.Ordinal);
+
+    [Fact]
+    public void The_single_image_input_cap_grows_without_growing_the_wire_image()
+    {
+        Assert.Equal(100 * 1024 * 1024, CliImagePolicy.MaxImageAttachmentBytes);
+        // The Host, payload store and provider adapters keep the 4 MiB / total 20 MiB bounds.
+        Assert.Equal(4 * 1024 * 1024, CliImagePolicy.MaxDecodedImageBytes);
+        Assert.Equal(20 * 1024 * 1024, CliImagePolicy.MaxTotalImageBytes);
+    }
 }
 
 public sealed class CliImageAttachmentTests

@@ -7,7 +7,13 @@ namespace RuAgent.Protocol.Harness;
 public sealed record ContextTokenBreakdown
 {
     public const string CurrentEstimator = "request-bytes-v1";
-    public const int ImageTokenAllowance = 4096;
+
+    /// <summary>
+    /// Bounded estimate for one image input. Anthropic's high-resolution tier emits at most
+    /// 4,784 visual tokens for one image (2,576 px long edge), so 4,800 never undercounts
+    /// that provider; OpenAI's tile and patch formulas stay below it for the same source.
+    /// </summary>
+    public const int ImageTokenAllowance = 4800;
     public ContextTokenBreakdown(int systemPrompt, int toolDefinitions, int messages)
     {
         if (systemPrompt < 0 || toolDefinitions < 0 || messages < 0

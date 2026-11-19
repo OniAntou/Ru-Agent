@@ -396,6 +396,12 @@ Implementation: [host](docs/architecture/host.md#multimodal-image-payload).
 _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 
 
+**Staged Attachment**:
+A copy of a file the user attached from outside the workspace, made by the client in `<workspace>\.ruttachments` so the model opens it by workspace path with the ordinary file tools. It is the user's own action on their workspace and grants the agent nothing: Broker path rules and presets are unchanged. The folder ignores itself in git, a copy is bounded, removed with its pending attachment, and pruned after 14 days.
+Implementation: [GUI](docs/architecture/gui.md), [TUI](docs/architecture/tui.md), [ADR 0053](docs/adr/0053-attachments-reach-the-model-as-paths.md).
+_Avoid_: Widening read access to a folder outside the workspace, inlining binary bytes, editing the user's `.gitignore`
+
+
 **Tool Image**:
 A workspace PNG, JPEG or WebP image that `read` returned beside its JSON metadata, persisted encrypted for the model-context audience only and attached to its tool result in later requests of the same run. Only a run whose pinned model accepts image input receives one; otherwise the read fails by name.
 Implementation: [host](docs/architecture/host.md#multimodal-image-attachments), [ADR 0026](docs/adr/0026-read-returns-workspace-images.md).

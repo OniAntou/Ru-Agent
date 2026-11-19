@@ -16,6 +16,8 @@ public sealed class ChatAttachmentIntakePresenterTests
     [InlineData("archive.zip", 100, 0, false, "unsupported")]
     [InlineData("large.txt", 5242881, 0, false, "too_large")]
     [InlineData("large.pdf", 16777217, 0, false, "too_large")]
+    [InlineData("photo.png", 104857600, 0, true, null)]
+    [InlineData("photo.png", 104857601, 0, false, "too_large")]
     [InlineData("large.png", 100, 4, false, "image_limit")]
     public void Intake_classifies_type_size_and_image_count(
         string fileName,

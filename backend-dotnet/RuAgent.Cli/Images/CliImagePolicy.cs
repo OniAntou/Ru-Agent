@@ -6,18 +6,24 @@ namespace RuAgent.Cli.Images;
 /// </summary>
 public static class CliImagePolicy
 {
-    public const int MaxImageCount = 4;
-    public const int MaxImageAttachmentBytes = 10 * 1024 * 1024;
+    public const int MaxImageCount = RuAgent.Protocol.Harness.AgentRunLimits.MaxImages;
+
+    /// <summary>
+    /// Largest source file one image attachment may carry. Only the client read and
+    /// decode are bounded by this: the decoded/encoded wire image keeps
+    /// <see cref="MaxDecodedImageBytes"/> and the 2048 px longest side.
+    /// </summary>
+    public const int MaxImageAttachmentBytes = 100 * 1024 * 1024;
     public const int MaxTextAttachmentBytes = 5 * 1024 * 1024;
 
     /// <summary>Backend cap on one decoded image, mirrored so the client refuses early.</summary>
-    public const int MaxDecodedImageBytes = 4 * 1024 * 1024;
+    public const int MaxDecodedImageBytes = (int)RuAgent.Protocol.Harness.AgentRunLimits.MaxImageBytes;
 
     /// <summary>Backend cap on the decoded bytes of one turn's images, mirrored.</summary>
-    public const int MaxTotalImageBytes = 20 * 1024 * 1024;
+    public const int MaxTotalImageBytes = (int)RuAgent.Protocol.Harness.AgentRunLimits.MaxTotalImageBytes;
 
     /// <summary>Backend cap on one data URL, mirrored so the client refuses before POSTing.</summary>
-    public const int MaxDataUrlChars = 5_600_000;
+    public const int MaxDataUrlChars = RuAgent.Protocol.Harness.AgentRunLimits.MaxImageDataUrlChars;
 
     /// <summary>
     /// The line shown when a turn carries too many images. Composed from
@@ -54,22 +60,12 @@ public static class CliImagePolicy
     public static bool IsImageFile(string name)
     {
         var ext = Path.GetExtension(name).ToLowerInvariant();
-        return ext is ".png" or ".jpg" or ".jpeg" or ".webp" or ".bmp";
+        // GIF and TIFF decode through GDI+ and are re-encoded to a wire format, as BMP is.
+        return ext is ".png" or ".jpg" or ".jpeg" or ".webp" or ".bmp" or ".gif" or ".tif" or ".tiff";
     }
 
-    public static bool IsTextOrCodeFile(string name)
-    {
-        var ext = Path.GetExtension(name).ToLowerInvariant();
-        return ext switch
-        {
-            ".txt" or ".md" or ".markdown" or ".json" or ".xml" or ".yaml" or ".yml" or ".csv" or ".tsv"
-            or ".cs" or ".py" or ".js" or ".ts" or ".jsx" or ".tsx" or ".html" or ".htm" or ".css" or ".scss"
-            or ".sql" or ".sh" or ".bat" or ".cmd" or ".ps1" or ".rs" or ".go" or ".cpp" or ".c" or ".h" or ".hpp"
-            or ".java" or ".kt" or ".swift" or ".dart" or ".php" or ".rb" or ".lua" or ".ini" or ".cfg" or ".conf"
-            or ".log" or ".env" or ".toml" or ".proto" or ".graphql" => true,
-            _ => false,
-        };
-    }
+    public static bool IsTextOrCodeFile(string name) =>
+        RuAgent.Client.Attachments.AttachmentFileTypes.IsTextOrCodeFile(name);
 
     public static string MimeForExtension(string name)
     {

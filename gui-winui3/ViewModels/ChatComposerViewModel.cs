@@ -130,6 +130,12 @@ public sealed partial class ChatComposerViewModel : ObservableObject
     /// </summary>
     internal bool TryAddAttachment(string? sessionId, string text, ImageAttachmentItem attachment)
     {
+        if (IsAlreadyAttached(attachment))
+        {
+            _runPanel.ShowLocalStatus($"'{attachment.FileName}' is already attached.");
+            return false;
+        }
+
         if (attachment.IsImage && !CanAcceptImage()) return false;
 
         var next = Attachments.Append(attachment).ToList();
@@ -141,6 +147,18 @@ public sealed partial class ChatComposerViewModel : ObservableObject
 
         Attachments.Add(attachment);
         return true;
+    }
+
+    /// <summary>
+    /// A picked or dropped file that is already in the composer adds nothing: the same
+    /// bytes would be inlined twice, and the chip would appear as a second attachment.
+    /// Clipboard images have no path and are never matched.
+    /// </summary>
+    private bool IsAlreadyAttached(ImageAttachmentItem attachment)
+    {
+        if (string.IsNullOrEmpty(attachment.FilePath)) return false;
+        return Attachments.Any(existing => !string.IsNullOrEmpty(existing.FilePath)
+            && string.Equals(existing.FilePath, attachment.FilePath, StringComparison.OrdinalIgnoreCase));
     }
 
     internal void RemoveAttachment(string? sessionId, string text, string attachmentId)
@@ -226,6 +244,38 @@ public sealed partial class ChatComposerViewModel : ObservableObject
 
         ClearAfterSend(sessionId);
         _runPanel.ShowLocalStatus(AgentComposerPresentation.QueuedStatus);
+        return true;
+    }
+
+    /// <summary>
+    /// The text a sent user bubble shows. <paramref name="displayUserText"/> is what the
+    /// user typed, which is empty for an attachment-only turn (the bubble stays hidden);
+    /// null means the caller has no typed view and the composed prompt is the only text.
+    /// </summary>
+    public static string UserMessageContent(string? displayUserText, string composedText) =>
+        displayUserText ?? composedText;
+
+    /// <summary>
+    /// The create-run image payloads for one turn, one data URL per image. Returns false
+    /// when an image has no normalized bytes: the Host accepts only data URLs, and a raw
+    /// file path would fail the whole create call, so the turn is refused locally instead.
+    /// </summary>
+    public static bool TryBuildImagePayloads(
+        IReadOnlyList<ImageAttachmentItem>? attachments,
+        out IReadOnlyList<string>? payloads)
+    {
+        payloads = null;
+        if (attachments is null || attachments.Count == 0) return true;
+
+        var urls = new List<string>();
+        foreach (var attachment in attachments)
+        {
+            if (!attachment.IsImage) continue;
+            if (string.IsNullOrEmpty(attachment.Base64Data)) return false;
+            urls.Add($"data:{attachment.MimeType};base64,{attachment.Base64Data}");
+        }
+
+        payloads = urls;
         return true;
     }
 

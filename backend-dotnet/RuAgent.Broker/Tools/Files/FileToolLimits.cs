@@ -9,6 +9,15 @@ public static class FileToolLimits
     public const int MaxReadBytes = 4 * 1024 * 1024;
     public const int MaxReadOutputBytes = 4 * 1024 * 1024;
     public const int MaxPathLength = 4096;
+
+    /// <summary>
+    /// Largest file that document extraction reads whole (PDF path). The windowed text read
+    /// keeps <see cref="MaxReadBytes"/>; a document parser needs the complete container.
+    /// </summary>
+    public const int MaxDocumentBytes = 20 * 1024 * 1024;
+
+    /// <summary>Parsing a document is slower than hashing a text window.</summary>
+    public const int MaxDocumentTimeMs = 10_000;
     public const int MaxPatternLength = 512;
     public const int MaxQueryLength = 2048;
     public const int MaxSearchFileSize = 1 * 1024 * 1024;

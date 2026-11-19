@@ -73,7 +73,7 @@ namespace RuApp.Views
                 {
                     Role = "user",
                     ArrivesLive = true,
-                    Content = !string.IsNullOrEmpty(displayUserText) ? displayUserText : text,
+                    Content = ChatComposerViewModel.UserMessageContent(displayUserText, text),
                     SessionId = _activeSessionId,
                     Attachments = attachments != null && attachments.Count > 0
                         ? new ObservableCollection<ImageAttachmentItem>(attachments)

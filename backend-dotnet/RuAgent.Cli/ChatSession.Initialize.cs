@@ -80,8 +80,7 @@ public sealed partial class AgentCommands
             }
 
             if (submissions.ImageCount > 0
-                && activeModel.Length > 0
-                && !Images.CliVisionModels.IsVisionModel(activeModel))
+                && await ActiveModelRefusesImagesAsync().ConfigureAwait(false))
             {
                 var visionWarning =
                     $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model";

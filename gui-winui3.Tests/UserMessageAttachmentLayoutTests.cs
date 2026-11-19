@@ -43,4 +43,16 @@ public sealed class UserMessageAttachmentLayoutTests
             && (string?)element.Attribute("Click") == "OnCopyMessageContentClick");
         Assert.Contains("HasText", GuiSource.AttributeValue(bubble, "Visibility"));
     }
+
+    [Fact]
+    public void A_reopened_image_count_is_rendered_beside_the_attachment_row()
+    {
+        var template = GuiSource.Xml("Views", "ChatView.xaml").Descendants()
+            .Single(element => (string?)element.Attribute(GuiSource.Xaml + "Key") == "UserMessageTemplate");
+
+        Assert.Contains(template.Descendants(), element =>
+            (string?)element.Attribute("Text") == "{x:Bind MissingImagesLabel, Mode=OneWay}");
+        Assert.Contains(template.Descendants(), element =>
+            ((string?)element.Attribute("Visibility"))?.Contains("HasMissingImages", StringComparison.Ordinal) == true);
+    }
 }

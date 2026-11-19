@@ -18,7 +18,8 @@ public sealed class ProviderRoutesTests : IDisposable
         {
           "minimax": {"npm": "@ai-sdk/anthropic", "api": "https://api.minimax.io/anthropic/v1",
             "models": {"MiniMax-M2": {"id": "MiniMax-M2", "limit": {"context": 204800, "output": 131072},
-              "reasoning": true, "reasoning_efforts": ["low", "high"]}}},
+              "reasoning": true, "reasoning_efforts": ["low", "high"]},
+              "MiniMax-VL": {"id": "MiniMax-VL", "attachment": true}}},
           "xai": {"npm": "@ai-sdk/xai", "models": {"grok-4": {"id": "grok-4"}}},
           "perplexity": {"npm": "@ai-sdk/perplexity", "models": {"sonar": {"id": "sonar"}}},
           "google": {"npm": "@ai-sdk/google", "models": {"gemini": {"id": "gemini"}}},
@@ -70,11 +71,14 @@ public sealed class ProviderRoutesTests : IDisposable
         var snapshot = await catalog.GetAsync("models.dev:minimax", Settings("models.dev:minimax", "MiniMax-M2"), true, default);
 
         Assert.Equal("ok", snapshot.Status);
-        var model = Assert.Single(snapshot.Catalog);
-        Assert.Equal("MiniMax-M2", model.Id);
+        var model = Assert.Single(snapshot.Catalog, entry => entry.Id == "MiniMax-M2");
         Assert.Equal(204800, model.ContextLength);
         // Effort levels become chat-completions fields; a Messages gateway gets none.
         Assert.Equal(CatalogReasoningStates.Unknown, model.Reasoning.State);
+        // /models tells clients which models read images, by the rule a run pin uses.
+        var json = snapshot.ToJson()["catalog"]!.AsArray();
+        Assert.False(json.Single(entry => (string?)entry!["id"] == "MiniMax-M2")!["accepts_images"]!.GetValue<bool>());
+        Assert.True(json.Single(entry => (string?)entry!["id"] == "MiniMax-VL")!["accepts_images"]!.GetValue<bool>());
     }
 
     [Fact]

@@ -380,9 +380,18 @@ public sealed partial class ToolExecutionService
         return Succeeded(output, "Workspace patch applied.");
     }
 
-    private async ValueTask<ToolExecutionOutcome> ExecuteLineReadAsync(ToolExecutionContext context, JsonObject arguments, CancellationToken ct) =>
-        ToolExecutionOutcome.Succeeded(await ResolveTools(context, TargetPathOf(arguments)).Read.ExecuteLinesAsync(arguments, ct)
-            .ConfigureAwait(false), ToolVerificationStates.NotRequired, "Workspace file read by line.");
+    private async ValueTask<ToolExecutionOutcome> ExecuteLineReadAsync(ToolExecutionContext context, JsonObject arguments, CancellationToken ct)
+    {
+        try
+        {
+            return ToolExecutionOutcome.Succeeded(await ResolveTools(context, TargetPathOf(arguments)).Read.ExecuteLinesAsync(arguments, ct)
+                .ConfigureAwait(false), ToolVerificationStates.NotRequired, "Workspace file read by line.");
+        }
+        catch (FileReadRefusalException error)
+        {
+            return ToolExecutionOutcome.Failed(error.Code, error.Hint);
+        }
+    }
 
     private ValueTask<ToolExecutionOutcome> ExecuteMultiEditAsync(ToolExecutionContext context, JsonObject arguments, CancellationToken ct)
     {

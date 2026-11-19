@@ -8,9 +8,23 @@ namespace RuApp.Services;
 
 public static class ImageAttachmentResizer
 {
-    public const int DefaultMaxDimension = 2048;
-    public const int DefaultMaxBytes = 4 * 1024 * 1024; // 4MB backend decoded limit
-    public const int DefaultMaxInputBytes = 10 * 1024 * 1024;
+    public const int DefaultMaxDimension = 2576;
+    public const int DefaultMaxBytes = (int)RuAgent.Protocol.Harness.AgentRunLimits.MaxImageBytes; // backend decoded limit
+
+    /// <summary>
+    /// Largest source file one image attachment may carry. This bounds the client read
+    /// and decode only: the wire image is still normalized to
+    /// <see cref="DefaultMaxBytes"/> and <see cref="DefaultMaxDimension"/>, because the
+    /// Host, payload store and provider adapters keep their own 4 MiB bound.
+    /// </summary>
+    public const int DefaultMaxInputBytes = 100 * 1024 * 1024;
+
+    /// <summary>
+    /// Bounded source pixel count. The input-byte bound does not bound decoded memory:
+    /// a highly compressed image can carry enormous dimensions, and the decoder would
+    /// allocate the full surface before the transform runs.
+    /// </summary>
+    public const int DefaultMaxSourcePixels = 64_000_000;
     private const int SignatureBufferLength = 12;
     private static readonly byte[] PngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
 
@@ -39,6 +53,11 @@ public static class ImageAttachmentResizer
             throw new InvalidDataException("Image dimensions are invalid.");
         }
 
+        if (ExceedsPixelBudget(origWidth, origHeight))
+        {
+            throw new InvalidDataException("Image dimensions exceed the supported decode limit.");
+        }
+
         double scale = Math.Min(1.0, (double)maxDimension / Math.Max(origWidth, origHeight));
         bool needsResize = scale < 0.999;
         bool exceedsBytes = (long)inputStream.Size > maxBytes;
@@ -54,77 +73,108 @@ public static class ImageAttachmentResizer
             using var netStream = inputStream.AsStreamForRead();
             using var ms = new MemoryStream((int)inputStream.Size);
             await netStream.CopyToAsync(ms).ConfigureAwait(false);
-            return (ms.ToArray(), mimeType, origWidth, origHeight);
-        }
-
-        uint targetWidth = Math.Max(1, (uint)Math.Round(origWidth * scale));
-        uint targetHeight = Math.Max(1, (uint)Math.Round(origHeight * scale));
-
-        var transform = new BitmapTransform
-        {
-            ScaledWidth = targetWidth,
-            ScaledHeight = targetHeight,
-            InterpolationMode = BitmapInterpolationMode.Fant
-        };
-
-        var pixelData = await decoder.GetPixelDataAsync(
-            BitmapPixelFormat.Bgra8,
-            BitmapAlphaMode.Premultiplied,
-            transform,
-            ExifOrientationMode.RespectExifOrientation,
-            ColorManagementMode.ColorManageToSRgb);
-        var pixels = pixelData.DetachPixelData();
-
-        Guid encoderId;
-        string outMime;
-        bool hasAlpha = decoder.BitmapAlphaMode != BitmapAlphaMode.Ignore;
-
-        if (hasAlpha && sourceMimeType != "image/jpeg")
-        {
-            encoderId = BitmapEncoder.PngEncoderId;
-            outMime = "image/png";
-        }
-        else
-        {
-            encoderId = BitmapEncoder.JpegEncoderId;
-            outMime = "image/jpeg";
-        }
-
-        var outputStream = new InMemoryRandomAccessStream();
-        BitmapPropertySet? propertySet = null;
-        if (encoderId == BitmapEncoder.JpegEncoderId)
-        {
-            propertySet = new BitmapPropertySet
+            byte[] original = ms.ToArray();
+            // An image that needs no resize still loses its EXIF/XMP/text metadata (GPS,
+            // camera serial). A JPEG the EXIF rotates is re-encoded upright below instead:
+            // dropping only the tag would turn it on its side.
+            if (!(RuAgent.Client.Attachments.ImageMetadata.IsJpeg(original)
+                && RuAgent.Client.Attachments.ImageMetadata.JpegOrientation(original) != 1))
             {
-                ["ImageQuality"] = new BitmapTypedValue(0.85f, Windows.Foundation.PropertyType.Single)
-            };
+                return (RuAgent.Client.Attachments.ImageMetadata.Strip(original), mimeType, origWidth, origHeight);
+            }
         }
 
-        var encoder = propertySet is not null
-            ? await BitmapEncoder.CreateAsync(encoderId, outputStream, propertySet)
-            : await BitmapEncoder.CreateAsync(encoderId, outputStream);
-
-        encoder.SetPixelData(
-            BitmapPixelFormat.Bgra8,
-            BitmapAlphaMode.Premultiplied,
-            targetWidth,
-            targetHeight,
-            decoder.DpiX,
-            decoder.DpiY,
-            pixels);
-        await encoder.FlushAsync();
-        if (outputStream.Size > (ulong)maxBytes)
+        // A normalized image must fit the wire byte cap. The first attempt keeps the
+        // 2576 px long edge at JPEG q0.85 (Anthropic's high-resolution tier); later
+        // attempts trade quality, then dimension, rather than failing a valid photo.
+        double attemptScale = scale;
+        double quality = 0.85;
+        for (var attempt = 0; attempt < 5; attempt++)
         {
-            throw new InvalidDataException("Normalized image exceeds the decoded-size limit.");
+            uint targetWidth = Math.Max(1, (uint)Math.Round(origWidth * attemptScale));
+            uint targetHeight = Math.Max(1, (uint)Math.Round(origHeight * attemptScale));
+
+            var transform = new BitmapTransform
+            {
+                ScaledWidth = targetWidth,
+                ScaledHeight = targetHeight,
+                InterpolationMode = BitmapInterpolationMode.Fant
+            };
+
+            var pixelData = await decoder.GetPixelDataAsync(
+                BitmapPixelFormat.Bgra8,
+                BitmapAlphaMode.Premultiplied,
+                transform,
+                ExifOrientationMode.RespectExifOrientation,
+                ColorManagementMode.ColorManageToSRgb);
+            var pixels = pixelData.DetachPixelData();
+
+            Guid encoderId;
+            string outMime;
+            bool hasAlpha = decoder.BitmapAlphaMode != BitmapAlphaMode.Ignore;
+
+            if (hasAlpha && sourceMimeType != "image/jpeg")
+            {
+                encoderId = BitmapEncoder.PngEncoderId;
+                outMime = "image/png";
+            }
+            else
+            {
+                encoderId = BitmapEncoder.JpegEncoderId;
+                outMime = "image/jpeg";
+            }
+
+            var outputStream = new InMemoryRandomAccessStream();
+            BitmapPropertySet? propertySet = null;
+            if (encoderId == BitmapEncoder.JpegEncoderId)
+            {
+                propertySet = new BitmapPropertySet
+                {
+                    ["ImageQuality"] = new BitmapTypedValue((float)quality, Windows.Foundation.PropertyType.Single)
+                };
+            }
+
+            var encoder = propertySet is not null
+                ? await BitmapEncoder.CreateAsync(encoderId, outputStream, propertySet)
+                : await BitmapEncoder.CreateAsync(encoderId, outputStream);
+
+            encoder.SetPixelData(
+                BitmapPixelFormat.Bgra8,
+                BitmapAlphaMode.Premultiplied,
+                targetWidth,
+                targetHeight,
+                decoder.DpiX,
+                decoder.DpiY,
+                pixels);
+            await encoder.FlushAsync();
+            if (outputStream.Size <= (ulong)maxBytes)
+            {
+                outputStream.Seek(0);
+                using var outNetStream = outputStream.AsStreamForRead();
+                using var resultMs = new MemoryStream((int)outputStream.Size);
+                await outNetStream.CopyToAsync(resultMs).ConfigureAwait(false);
+
+                return (resultMs.ToArray(), outMime, targetWidth, targetHeight);
+            }
+
+            // PNG with alpha cannot lower JPEG quality, so it can only shrink; JPEG also
+            // lowers quality first. Both stay bounded by the attempt count.
+            attemptScale *= 0.82;
+            quality = Math.Max(0.35, quality - 0.15);
         }
 
-        outputStream.Seek(0);
-        using var outNetStream = outputStream.AsStreamForRead();
-        using var resultMs = new MemoryStream((int)outputStream.Size);
-        await outNetStream.CopyToAsync(resultMs).ConfigureAwait(false);
-
-        return (resultMs.ToArray(), outMime, targetWidth, targetHeight);
+        throw new InvalidDataException("Normalized image exceeds the decoded-size limit.");
     }
+
+    /// <summary>
+    /// Whether a source image is over the decode budget. Kept separate from the read
+    /// bound so the guard is testable without decoding a crafted image.
+    /// </summary>
+    internal static bool ExceedsPixelBudget(
+        uint width,
+        uint height,
+        int maxPixels = DefaultMaxSourcePixels) =>
+        maxPixels > 0 && (ulong)width * height > (ulong)maxPixels;
 
     private static async Task<string> DetectMimeTypeAsync(IRandomAccessStream stream)
     {

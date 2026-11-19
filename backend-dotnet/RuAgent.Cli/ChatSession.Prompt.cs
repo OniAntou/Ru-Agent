@@ -175,7 +175,7 @@ public sealed partial class AgentCommands
                 HoldSubmissionForRetry(submission);
                 await WriteDiagnosticLineAsync(
                     _err,
-                    $"prompt_too_large: the composed prompt is {promptText.Length} chars (limit {ChatSubmissionState.MaxComposedPromptChars}); detach or shorten attachments; queued work paused; /exit and reopen the session").ConfigureAwait(false);
+                    $"prompt_too_large: the composed prompt is {promptText.Length:N0} chars (limit {ChatSubmissionState.MaxComposedPromptChars:N0}); remove a file with Backspace on an empty prompt or shorten the message, then send again; queued work is paused").ConfigureAwait(false);
                 return;
             }
             var presetCommitted = false;

@@ -81,7 +81,9 @@ public sealed class AttachmentDocumentExtractorTests
     [Fact]
     public void Long_documents_are_truncated_with_an_explicit_marker()
     {
-        var body = string.Concat(Enumerable.Repeat("<w:p><w:r><w:t>line of text</w:t></w:r></w:p>", 2_000));
+        // Enough lines to pass the extract bound (half the run prompt bound).
+        var lines = AttachmentDocumentExtractor.MaxExtractedChars / "line of text".Length + 1_000;
+        var body = string.Concat(Enumerable.Repeat("<w:p><w:r><w:t>line of text</w:t></w:r></w:p>", lines));
         var bytes = Zip(("word/document.xml", $"""
             <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
               <w:body>{body}</w:body>

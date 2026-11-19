@@ -51,6 +51,7 @@ public sealed partial class AgentCommands
             loop.SetAttachmentCountProvider(() => submissions.Count);
             loop.SetImageCountProvider(() => submissions.ImageCount, () => submissions.Retryable?.Images.Length ?? 0);
             loop.SetPasteHandler(() => RunAttachmentAsync(ClipboardAttachAsync));
+            loop.SetDetachLastHandler(() => RunAttachmentAsync(DetachLastAsync));
             loop.SetCopyHandler(Images.CliClipboardTextWriter.TryWriteAsync);
             loop.SetDropHandler(line =>
             {

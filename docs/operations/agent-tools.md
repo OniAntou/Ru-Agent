@@ -133,8 +133,16 @@ retired tool identity. Persisted deny/ask matchers for old tool families remain
 effective for policy preservation, but do not restore those tools as callable
 identities. Profiles do not widen authority. `read` takes `path` with
 optional `offset`/`limit` (source bytes, default 1 MiB, maximum 4 MiB) and reads
-one file. A `.png`, `.jpg`, `.jpeg` or `.webp` file is returned as an image
-when the run's model accepts image input (see [Image reads](#image-reads)).
+one file. A `.pdf` file returns bounded extracted text; optional `pages`
+(`"1-10"`, at most 20 pages per call) selects a 1-based range, and a long
+document read without it returns its first 10 pages plus the next range. Office
+Open XML and OpenDocument files return text by part (paragraphs, rows or slides),
+with `pages` as a part range. Legacy Office files fail as `document_unsupported`,
+other binary files as `binary_file_unsupported` and non-UTF-8 text as
+`invalid_utf8`; each failure names what the file is and the command that opens it
+(see [Document reads](#document-reads)). A `.png`, `.jpg`, `.jpeg` or
+`.webp` file is returned as an image when the run's model accepts image input
+(see [Image reads](#image-reads)).
 Returned JSON is fitted into 4 MiB, including escaping and metadata;
 `offset + bytes_read` continues a truncated Broker page. The Host adjusts
 `next_offset` to the visible page when model context clips it.
@@ -390,6 +398,32 @@ would split a surrogate pair. Their `next_offset` advances by the actual body
 length. An offset inside a pair fails as `web_offset_invalid_boundary`; a
 limit of 1 at an emoji fails as `web_limit_too_small` (retry with at least 2).
 Follow returned cursors rather than adding the requested limit to the offset.
+
+### Document reads
+
+`read` extracts PDF text in process with PdfPig; nothing is rendered or executed
+([ADR 0050](../adr/0050-read-extracts-pdf-and-refuses-other-documents.md)). A
+1-based `pages` range is accepted as `"5"` or `"5-12"` and is capped at 20 pages
+per call. Without `pages`, a document of at most ten pages is read whole; a
+longer one returns its first ten pages and a `notice` naming the next range.
+Extraction stops at 60,000 characters; image-only or scanned PDFs report that no
+text was extractable; encrypted, malformed, oversized (over 20 MiB), or
+timed-out documents fail by name.
+
+Office Open XML (`.docx`, `.xlsx`, `.pptx` and their macro/template variants) and
+OpenDocument (`.odt`, `.ods`, `.odp`) files return `kind: "document"` with
+`format`, `unit` (`paragraph`, `row` or `slide`), `part_count` and `pages`; a
+spreadsheet row carries its sheet name on the sheet's first row. `pages="120-400"`
+selects a part range, text stops at 60,000 characters, and a `notice` names the
+next range. Password-protected, damaged, oversized (over 20 MiB) or timed-out
+documents fail by name. Legacy `.doc`/`.xls`/`.ppt` and iWork files fail as
+`document_unsupported` with a conversion command; other binary files fail as
+`binary_file_unsupported` with what the bytes look like (archive, executable,
+SQLite database, UTF-16 text, …) and the command that opens them; non-UTF-8 text
+fails as `invalid_utf8` with a decoding command; a path outside the workspace
+fails as `outside_workspace` with how to attach the file
+([ADR 0053](../adr/0053-attachments-reach-the-model-as-paths.md)). Every refusal
+keeps the normal path, protected-path, hard-link and final-path checks.
 
 ### Retained terminal output and background tasks
 

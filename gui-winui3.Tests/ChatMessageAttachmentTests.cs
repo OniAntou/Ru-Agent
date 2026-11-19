@@ -518,4 +518,20 @@ public sealed class ChatMessageAttachmentTests
         string cs = GuiSource.ViewText("ChatView");
         Assert.Contains("OnImageAttachmentClick", cs, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void A_binary_file_named_as_text_is_not_inlined()
+    {
+        Assert.Null(ChatAttachmentPolicy.DecodeText([0x48, 0x00, 0x49]));
+        Assert.Equal("ok", ChatAttachmentPolicy.DecodeText("ok"u8.ToArray()));
+    }
+
+    [Fact]
+    public void The_catalog_reports_which_models_read_images()
+    {
+        var model = System.Text.Json.JsonSerializer.Deserialize<RuApp.Models.ProviderCatalogModel>(
+            "{\"id\":\"m\",\"supported\":true,\"accepts_images\":false}");
+        Assert.False(model!.AcceptsImages);
+        Assert.Null(System.Text.Json.JsonSerializer.Deserialize<RuApp.Models.ProviderCatalogModel>("{\"id\":\"m\"}")!.AcceptsImages);
+    }
 }

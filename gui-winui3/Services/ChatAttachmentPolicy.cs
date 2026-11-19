@@ -9,7 +9,7 @@ internal static class ChatAttachmentPolicy
     internal const int MaxImageAttachmentBytes = ImageAttachmentResizer.DefaultMaxInputBytes;
     internal const int MaxTextAttachmentBytes = 5 * 1024 * 1024;
     internal const int MaxDocumentAttachmentBytes = 16 * 1024 * 1024;
-    internal const int MaxImageCount = 4;
+    internal const int MaxImageCount = RuAgent.Protocol.Harness.AgentRunLimits.MaxImages;
 
     /// <summary>
     /// The line shown when a turn carries too many images. Composed from
@@ -45,53 +45,18 @@ internal static class ChatAttachmentPolicy
 
     internal static bool IsDocumentFile(string name) => AttachmentDocumentExtractor.IsSupportedDocument(name);
 
-    internal static bool IsTextOrCodeFile(string name)
-    {
-        string ext = System.IO.Path.GetExtension(name).ToLowerInvariant();
-        if (ext.Length == 0)
-        {
-            return name.Equals("Dockerfile", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("Makefile", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("Rakefile", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("Gemfile", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("LICENSE", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("NOTICE", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("README", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("CHANGELOG", StringComparison.OrdinalIgnoreCase)
-                || name.Equals(".gitignore", StringComparison.OrdinalIgnoreCase)
-                || name.Equals(".gitattributes", StringComparison.OrdinalIgnoreCase)
-                || name.Equals(".dockerignore", StringComparison.OrdinalIgnoreCase)
-                || name.Equals(".editorconfig", StringComparison.OrdinalIgnoreCase)
-                || name.Equals(".npmrc", StringComparison.OrdinalIgnoreCase)
-                || name.Equals(".nvmrc", StringComparison.OrdinalIgnoreCase)
-                || name.Equals(".env", StringComparison.OrdinalIgnoreCase);
-        }
+    internal static bool IsTextOrCodeFile(string name) =>
+        RuAgent.Client.Attachments.AttachmentFileTypes.IsTextOrCodeFile(name);
 
-        return ext switch
-        {
-            ".txt" or ".md" or ".markdown" or ".json" or ".jsonc" or ".xml" or ".yaml" or ".yml"
-            or ".csv" or ".tsv" or ".cs" or ".py" or ".js" or ".ts" or ".jsx" or ".tsx" or ".html" or ".htm"
-            or ".css" or ".scss" or ".sass" or ".less" or ".sql" or ".sh" or ".bash" or ".zsh" or ".bat"
-            or ".cmd" or ".ps1" or ".psm1" or ".psd1" or ".rs" or ".go" or ".cpp" or ".cc" or ".c" or ".h"
-            or ".hpp" or ".java" or ".kt" or ".kts" or ".swift" or ".dart" or ".php" or ".rb" or ".lua"
-            or ".ini" or ".cfg" or ".conf" or ".log" or ".env" or ".toml" or ".proto" or ".graphql"
-            or ".csproj" or ".sln" or ".slnx" or ".props" or ".targets" or ".razor" or ".cshtml" or ".vue"
-            or ".svelte" or ".gradle" or ".groovy" or ".m" or ".mm" or ".scala" or ".sc" or ".sol" or ".asm"
-            or ".s" or ".fs" or ".fsx" or ".vb" or ".r" or ".pl" or ".ex" or ".exs" or ".erl" or ".hrl"
-            or ".clj" or ".cljs" or ".hs" or ".lhs" or ".ml" or ".mli" or ".tex" or ".rst" or ".adoc"
-            or ".properties" or ".editorconfig" or ".gitignore" or ".gitattributes" or ".dockerignore"
-            => true,
-            _ => false
-        };
-    }
-
-    internal static string DecodeText(byte[] bytes)
+    /// <summary>
+    /// The file as prompt text, or null when it is not text: invalid UTF-8 without a
+    /// byte-order mark, or a NUL byte (<see cref="RuAgent.Client.Attachments.TextAttachmentDecoder"/>,
+    /// shared with the terminal). A binary file renamed to .txt used to be inlined as U+FFFD.
+    /// </summary>
+    internal static string? DecodeText(byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
-        using var stream = new System.IO.MemoryStream(bytes, writable: false);
-        using var reader = new System.IO.StreamReader(
-            stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        return reader.ReadToEnd();
+        return RuAgent.Client.Attachments.TextAttachmentDecoder.TryDecode(bytes, out var text, out _) ? text : null;
     }
 
     internal static string MimeForExtension(string name)

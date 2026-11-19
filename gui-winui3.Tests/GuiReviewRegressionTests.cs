@@ -16,7 +16,7 @@ public sealed class GuiReviewRegressionTests
                 Content = new StringContent("""
                     {"status":"ok","session_id":"session-a","start_index":10,"total_messages":14,"next_cursor":"older-token","history_epoch":3,"messages":[
                       {"role":"system","content":"hidden"},
-                      {"role":"user","content":"ask","source_message_id":"msg-ask","source_run_id":"run-a"},
+                      {"role":"user","content":"ask","source_message_id":"msg-ask","source_run_id":"run-a","image_attachment_count":2},
                       {"role":"tool","content":"hidden"},
                       {"role":"assistant","content":"reply","source_message_id":"msg-reply","source_run_id":"run-a"}
                     ]}
@@ -33,6 +33,7 @@ public sealed class GuiReviewRegressionTests
         Assert.NotNull(history);
         Assert.Equal(new int?[] { 11, 13 }, history.Select(row => row.MessageIndex));
         Assert.Equal("msg-ask", history[0].SourceMessageId);
+        Assert.Equal(2, history[0].ImageAttachmentCount);
     }
 
     [Fact]
@@ -93,6 +94,22 @@ public sealed class GuiReviewRegressionTests
         };
         document.ByteSize = System.Text.Encoding.UTF8.GetByteCount(document.TextContent);
         return RuApp.ViewModels.ChatComposerViewModel.BuildEffectivePrompt("em đọc được file này không?", [document]);
+    }
+
+    [Fact]
+    public void A_reopened_user_turn_reports_the_images_it_cannot_display()
+    {
+        var user = Assert.Single(SessionTranscriptBuilder.Build(
+            [new("user", "look at this", null, MessageIndex: 0, ImageAttachmentCount: 2)], [], "session-a"));
+
+        Assert.True(user.HasMissingImages);
+        Assert.Equal(2, user.MissingImageCount);
+        Assert.Equal("2 images attached", user.MissingImagesLabel);
+
+        var keptLooking = SessionTranscriptBuilder.Build(
+            [new("user", "hello", null, MessageIndex: 0)], [], "session-a")[0];
+        Assert.False(keptLooking.HasMissingImages);
+        Assert.Empty(keptLooking.Attachments ?? []);
     }
 
     [Fact]

@@ -324,9 +324,24 @@ local image clipboard, matching Windows Terminal's image-only Ctrl+V signal.
 Only the focused composer may attach an image; pickers, documents, the command
 palette, questions and secret fields consume the signal without changing the
 hidden draft. Non-empty paste payloads remain text and do not read the clipboard.
+Dropped files follow the desktop rules
+([ADR 0053](../adr/0053-attachments-reach-the-model-as-paths.md)): any existing file path
+on its own line attaches, whatever its type. UTF-8 text of at most 8 KiB is inlined;
+every other file is sent as a workspace path the agent reads with `read`, and a file
+outside the workspace is first copied into `.ru\attachments` (`AttachmentStaging`,
+labelled `copied to .ru/attachments/<name>`; Backspace on an empty prompt deletes the
+copy again). An image is sent by path when the Host's catalog says the active model reads
+no images. A folder fails as `attachment_is_folder`, a copy over 64 MiB as
+`attachment_too_large`, and a file that would push the composed prompt past
+`AgentRunLimits.MaxPromptChars` (200,000) is refused when it is attached rather than
+when the prompt is sent. The vision warning comes from the Host's
+`/models` catalog (`accepts_images`), not from a list of model names. GIF and TIFF
+images are accepted and re-encoded like BMP; an image that needs no resize still loses
+its EXIF/XMP/text metadata, and a JPEG its EXIF rotates is re-encoded upright.
 The resizer reads the PNG/JPEG/BMP/WebP container header and rejects a source canvas over
-64 MP before GDI+ allocates the decoded surface; the longest side is then capped at 2048
-and the encoded result at 4 MB.
+64 MP before GDI+ allocates the decoded surface; the longest side is then capped at 2576
+and the encoded result at 4 MB, retrying lower quality and a smaller long edge when the
+first encode exceeds the byte cap.
 
 Attachment handlers are registered to their session before starting. Shutdown
 stops new handlers, cancels the session lifetime and awaits the registered work
@@ -753,7 +768,8 @@ retaining a separate task list.
 Activity/todo/change inspectors, the project-file browser, session tree, rewind,
 Markdown export and separate token/prompt-history reports are absent from the
 interactive command surface. Up/Down prompt recall remains. Headless CLI and RPC
-retain their own capabilities. File intake uses clipboard/drop or `--image`;
+retain their own capabilities. File intake uses clipboard/drop or `--image`, and
+Backspace on an empty prompt removes the last pending attachment;
 a tracked waiting or running chat run reopens on typed `Continue`. `/attach`, `/attachments`, `/paste`,
 `/detach`, `/continue` and `/quit` are absent from dispatch, help and completion.
 `/exit` is the sole quit command. Escape dismisses overlays or interrupts an

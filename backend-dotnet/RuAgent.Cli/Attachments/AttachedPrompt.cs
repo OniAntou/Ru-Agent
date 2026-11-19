@@ -20,6 +20,14 @@ public static class AttachedPrompt
         var builder = new StringBuilder();
         foreach (var document in attachments)
         {
+            if (document.IsReference)
+            {
+                // The same header the desktop app writes; the model reads the file itself.
+                builder.AppendLine($"[Attached workspace file: {document.ReferencePath} ({CliImageAttachment.FormatBytes(document.ByteSize)})]");
+                builder.AppendLine();
+                continue;
+            }
+
             builder.AppendLine($"[Attached file: {document.FileName} ({CliImageAttachment.FormatBytes(document.ByteSize)})]");
             builder.AppendLine($"```{document.Extension}");
             builder.AppendLine(document.TextContent);

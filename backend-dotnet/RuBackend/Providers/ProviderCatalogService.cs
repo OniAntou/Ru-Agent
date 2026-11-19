@@ -201,10 +201,12 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
         var costs = provider.Costs;
         var contexts = provider.Contexts;
         var outputLimits = provider.OutputLimits;
+        var vision = provider.Vision;
         if ((reasoning is null || reasoning.Count == 0)
             && (costs is null || costs.Count == 0)
             && (contexts is null || contexts.Count == 0)
-            && (outputLimits is null || outputLimits.Count == 0))
+            && (outputLimits is null || outputLimits.Count == 0)
+            && (vision is null || vision.Count == 0))
         {
             return models;
         }
@@ -246,6 +248,11 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
                     // free run as billed). A free variant with no exact entry stays unpriced.
                     model = model with { Cost = inheritedCost };
                 }
+            }
+
+            if (model.DeclaresVision is null && TryResolveMetadata(vision, model.Id, out var declaresVision))
+            {
+                model = model with { DeclaresVision = declaresVision };
             }
 
             if (model.ContextLength is null

@@ -7,51 +7,77 @@ namespace RuApp.ViewModels;
 
 /// <summary>
 /// The composer's <c>/advisor</c> command (ADR 0047): the model picker opened to choose the
-/// second model the agent may consult in new runs. The Host owns the setting and pins it into
-/// each new run; this only shows the stored choice and saves a new one.
+/// second model the agent may consult in this chat. Each session has its own advisor, held by
+/// the Host and pinned into the session's new runs; a new chat has none. A choice made before
+/// the chat's session exists waits here and is saved when the first message creates it.
 /// </summary>
 public sealed partial class ChatModelPickerViewModel
 {
-    internal const string AdvisorAppliesSuffix = "Applies to new runs.";
+    internal const string AdvisorAppliesSuffix = "Applies to this chat's next run.";
+
+    private string? _advisorBackend;
+    private string? _advisorModel;
+    private bool _advisorPending;
 
     /// <summary>True while the open picker chooses the advisor rather than the main model.</summary>
     [ObservableProperty] public partial bool IsPickingAdvisor { get; private set; }
 
-    /// <summary>Opens the next picker for the advisor; the picker shows the stored advisor as selected.</summary>
+    /// <summary>Opens the next picker for the advisor; the picker shows the chat's advisor as selected.</summary>
     internal void BeginAdvisorPick() => IsPickingAdvisor = true;
 
-    /// <summary>"model on provider", or null when no advisor is selected.</summary>
+    /// <summary>"model on provider", or null when this chat has no advisor.</summary>
     internal string? AdvisorLabel =>
-        CurrentSettings is { AdvisorBackend: { Length: > 0 } backend, AdvisorModel: { Length: > 0 } model }
+        _advisorBackend is { Length: > 0 } backend && _advisorModel is { Length: > 0 } model
             ? $"{model} on {ProviderDisplayName(backend)}"
             : null;
 
-    /// <summary>Saves the advisor and returns the line to show the user.</summary>
-    internal async Task<string> SelectAdvisorAsync(string model, string backend)
+    /// <summary>Shows the advisor of the session just opened; null for a new chat.</summary>
+    internal void ShowSessionAdvisor(string? backend, string? model)
     {
-        if (await SaveAdvisorAsync(backend, model).ConfigureAwait(true))
+        _advisorBackend = backend;
+        _advisorModel = model;
+        _advisorPending = false;
+    }
+
+    /// <summary>Saves the advisor for this chat and returns the line to show the user.</summary>
+    internal async Task<string> SelectAdvisorAsync(string model, string backend, string? sessionId)
+    {
+        if (await SaveAdvisorAsync(sessionId, backend, model).ConfigureAwait(true))
             return $"Advisor: {model} on {ProviderDisplayName(backend)}. {AdvisorAppliesSuffix}";
         return "Could not save the advisor. The previous choice is unchanged.";
     }
 
-    /// <summary>Turns the advisor off and returns the line to show the user.</summary>
-    internal async Task<string> ClearAdvisorAsync() =>
-        await SaveAdvisorAsync(null, null).ConfigureAwait(true)
+    /// <summary>Turns this chat's advisor off and returns the line to show the user.</summary>
+    internal async Task<string> ClearAdvisorAsync(string? sessionId) =>
+        await SaveAdvisorAsync(sessionId, null, null).ConfigureAwait(true)
             ? $"Advisor off. {AdvisorAppliesSuffix}"
             : "Could not turn the advisor off. The previous choice is unchanged.";
 
-    private async Task<bool> SaveAdvisorAsync(string? backend, string? model)
+    /// <summary>
+    /// Saves a choice made before the session existed to the session just created; false when
+    /// the save failed, and the run then starts without the advisor.
+    /// </summary>
+    internal async Task<bool> ApplyPendingAdvisorAsync(string sessionId)
     {
+        if (!_advisorPending) return true;
+        _advisorPending = false;
+        return _backend is { } api && await api.SaveSessionAdvisorAsync(sessionId, _advisorBackend, _advisorModel).ConfigureAwait(true);
+    }
+
+    private async Task<bool> SaveAdvisorAsync(string? sessionId, string? backend, string? model)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            ShowSessionAdvisor(backend, model);
+            _advisorPending = true;
+            return true;
+        }
+
         if (_backend is not { } api) return false;
         try
         {
-            if (!await api.SaveAdvisorAsync(backend, model).ConfigureAwait(true)) return false;
-            if (CurrentSettings is { } settings)
-            {
-                settings.AdvisorBackend = backend;
-                settings.AdvisorModel = model;
-            }
-
+            if (!await api.SaveSessionAdvisorAsync(sessionId, backend, model).ConfigureAwait(true)) return false;
+            ShowSessionAdvisor(backend, model);
             return true;
         }
         catch (Exception ex)
@@ -68,7 +94,7 @@ public sealed partial class ChatModelPickerViewModel
     /// </summary>
     private (string Backend, string Model) AdvisorMark(IEnumerable<string> listedBackends)
     {
-        if (CurrentSettings is not { AdvisorBackend: { Length: > 0 } stored, AdvisorModel: { Length: > 0 } model })
+        if (_advisorBackend is not { Length: > 0 } stored || _advisorModel is not { Length: > 0 } model)
             return (string.Empty, string.Empty);
         return (listedBackends.FirstOrDefault(choice => SameBackend(choice, stored)) ?? stored, model);
     }

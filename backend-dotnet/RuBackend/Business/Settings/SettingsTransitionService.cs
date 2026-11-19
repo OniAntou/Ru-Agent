@@ -388,15 +388,16 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
         Providers.ComputerUsePolicy.Apply(payload, raw);
         Providers.ProviderWebSearchPolicy.Apply(payload, raw);
         CustomProviders.Apply(payload, raw);
-        Providers.AdvisorPolicy.Apply(payload, raw, NormalizeBackend);
+        // The advisor is chosen per session now (PUT /agent/v1/sessions/{id}/advisor); a
+        // global choice an older build saved is dropped, and a save that still sends one is
+        // refused rather than ignored.
+        if (payload.ContainsKey(Providers.AdvisorPolicy.BackendField) || payload.ContainsKey(Providers.AdvisorPolicy.ModelField))
+            throw new SettingsPayloadException();
+        raw.Remove(Providers.AdvisorPolicy.BackendField);
+        raw.Remove(Providers.AdvisorPolicy.ModelField);
         // Selecting a named custom provider requires its definition in the same settings.
         if (backendValue is not null && CustomProviders.IsCustomBackend(backend)
             && CustomProviders.Find(current with { Raw = raw }, backend) is null)
-            throw new SettingsPayloadException();
-        if (payload.ContainsKey(Providers.AdvisorPolicy.BackendField)
-            && Providers.AdvisorPolicy.Read(current with { Raw = raw }) is { } advisor
-            && CustomProviders.IsCustomBackend(advisor.Backend)
-            && CustomProviders.Find(current with { Raw = raw }, advisor.Backend) is null)
             throw new SettingsPayloadException();
         if (payload.ContainsKey("subagents")) throw new SettingsPayloadException();
         raw.Remove("subagents");
@@ -462,20 +463,12 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
         return updates.Select(pair => new CredentialUpdate(pair.Key, pair.Value)).ToArray();
     }
 
-    private static string NormalizeBackend(string value)
-    {
-        if (ProviderAliases.Normalize(value) is { } named)
-        {
-            return named;
-        }
+    private static string NormalizeBackend(string value) =>
+        TryNormalizeBackend(value) ?? throw new SettingsPayloadException();
 
-        if (CustomProviders.NormalizeBackend(value) is { } custom)
-        {
-            return custom;
-        }
-
-        throw new SettingsPayloadException();
-    }
+    /// <summary>A known provider alias or a custom backend name, normalized; null otherwise.</summary>
+    internal static string? TryNormalizeBackend(string value) =>
+        ProviderAliases.Normalize(value) ?? CustomProviders.NormalizeBackend(value);
 
     /// <summary>
     /// The provider a validated key is for, or null when the payload is not exactly one

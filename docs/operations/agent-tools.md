@@ -1156,9 +1156,10 @@ what a granted application does with the input.
 ## Advisor
 
 The `advisor` tool lets the main model ask a second model for guidance while it works
-([ADR 0047](../adr/0047-advisor-consultation.md)). The user picks the advisor with `/advisor`
-in the terminal UI or in the desktop composer, where `/advisor` opens the model picker to choose
-it and `/advisor off` turns it off; any
+([ADR 0047](../adr/0047-advisor-consultation.md)). Each session has its own advisor, and a new
+session has none. The user picks it with `/advisor` in the terminal UI or in the desktop
+composer, where `/advisor` opens the model picker to choose it and `/advisor off` turns it
+off; it applies to that session's next run. Any
 configured provider works, including one different from the main model's. A new root run
 pins the choice as `_ru_advisor_v1`, with the effort saved for that model by `/reasoning`
 (or the model's default). With no advisor selected the run still sees the tool, so the user

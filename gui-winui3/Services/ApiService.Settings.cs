@@ -73,23 +73,55 @@ namespace RuApp.Services
         }
 
         /// <summary>
-        /// Saves the advisor (ADR 0047): both fields together, two nulls turn it off. It
-        /// applies to new runs. Not a provider change, so <see cref="SettingsSaved"/> stays quiet.
+        /// Saves a session's advisor (ADR 0047): both fields together, two nulls turn it off.
+        /// It applies to the session's next run.
         /// </summary>
-        public async Task<bool> SaveAdvisorAsync(string? backend, string? model)
+        public async Task<bool> SaveSessionAdvisorAsync(string sessionId, string? backend, string? model)
         {
             try
             {
                 var payload = new System.Text.Json.Nodes.JsonObject { ["advisor_backend"] = backend, ["advisor_model"] = model };
-                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
-                bool ok = await HasOkEnvelopeAsync(response);
-                if (!ok) GuiDiagnosticWriter.WriteGuiError("advisor_save", await RejectionCodeAsync(response));
-                return ok;
+                using var response = await _httpClient.PutAsJsonAsync(
+                    $"{_baseUrl}/agent/v1/sessions/{Uri.EscapeDataString(sessionId)}/advisor", payload);
+                if (!response.IsSuccessStatusCode)
+                {
+                    GuiDiagnosticWriter.WriteGuiError("advisor_save", await RejectionCodeAsync(response));
+                    return false;
+                }
+
+                return true;
             }
             catch (Exception ex)
             {
-                LogApiError("SaveAdvisorAsync", ex);
+                LogApiError("SaveSessionAdvisorAsync", ex);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// The advisor of the session being opened, or null when it has none. A read
+        /// failure also reads as none; the picker then shows no advisor rather than a stale one.
+        /// </summary>
+        public async Task<(string Backend, string Model)?> GetSessionAdvisorAsync(string sessionId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var response = await _httpClient.GetAsync(
+                    $"{_baseUrl}/agent/v1/sessions/{Uri.EscapeDataString(sessionId)}/advisor", cancellationToken);
+                if (!response.IsSuccessStatusCode) return null;
+                using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var document = await System.Text.Json.JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                var root = document.RootElement;
+                return root.TryGetProperty("advisor_backend", out var backend) && backend.ValueKind == System.Text.Json.JsonValueKind.String
+                    && root.TryGetProperty("advisor_model", out var model) && model.ValueKind == System.Text.Json.JsonValueKind.String
+                    && backend.GetString() is { Length: > 0 } backendText && model.GetString() is { Length: > 0 } modelText
+                        ? (backendText, modelText)
+                        : null;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogApiError("GetSessionAdvisorAsync", ex);
+                return null;
             }
         }
 

@@ -134,23 +134,25 @@ public sealed class AgentProviderSnapshotFactory(
         current = ProviderIntentSettings.Apply(current,
             await selectionStore.GetIntentAsync(runId, ct).ConfigureAwait(false));
         var proposed = await DescribeSelectionAsync(current, ct).ConfigureAwait(false);
-        proposed = await WithAdvisorAsync(proposed, current, ct).ConfigureAwait(false);
+        proposed = await WithAdvisorAsync(proposed, current, runId, ct).ConfigureAwait(false);
         var stored = await selectionStore.PinAsync(runId, proposed, ct).ConfigureAwait(false);
         var pin = stored.Selection ?? throw new ProviderCatalogException("provider_selection_invalid");
         return await BuildPinnedSnapshotAsync(pin, current, ct).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Adds the advisor marker to a new root pin (ADR 0047). An advisor that cannot be
+    /// Adds the advisor marker to a new root pin (ADR 0047). The advisor is the one the run's
+    /// session selected; a session without one pins "not selected". An advisor that cannot be
     /// resolved now (signed out, catalog unavailable, model not listed) is pinned as
     /// unavailable: the run starts on its own selection, and a consultation reports
     /// <c>advisor_unavailable</c> instead of substituting another model.
     /// </summary>
     private async Task<AgentRunProviderSelection> WithAdvisorAsync(
-        AgentRunProviderSelection proposed, SettingsSnapshot current, CancellationToken ct)
+        AgentRunProviderSelection proposed, SettingsSnapshot current, RunId runId, CancellationToken ct)
     {
         JsonObject marker;
-        if (AdvisorPolicy.Read(current) is not { } advisor) marker = AdvisorPolicy.NotSelectedMarker();
+        if (await selectionStore.GetRunSessionAdvisorAsync(runId, ct).ConfigureAwait(false) is not { } advisor)
+            marker = AdvisorPolicy.NotSelectedMarker();
         else try
         {
             var described = await DescribeSelectionAsync(

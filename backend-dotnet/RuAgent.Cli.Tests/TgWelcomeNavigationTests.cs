@@ -78,8 +78,10 @@ public sealed class TgWelcomeNavigationTests(ITestOutputHelper output)
     [InlineData("/reasoning", "models-error", "none")]
     [InlineData("/reasoning invalid-effort", "normal", "none")]
     [InlineData("/advisor", "normal", "picker")]
-    [InlineData("/advisor off", "normal", "none", true)]
-    [InlineData("/advisor anthropic audit-model-2", "normal", "none", true)]
+    // The welcome screen has no session yet: the advisor choice waits for the session the
+    // first message creates (ADR 0047), so nothing is written here.
+    [InlineData("/advisor off", "normal", "none")]
+    [InlineData("/advisor anthropic audit-model-2", "normal", "none")]
     [InlineData("/advisor two words here", "normal", "none")]
     [InlineData("/computer", "normal", "none")]
     [InlineData("/computer on", "normal", "none", true)]

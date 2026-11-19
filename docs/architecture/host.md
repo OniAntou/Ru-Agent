@@ -83,7 +83,7 @@ file, terminal and network actions stay in the Broker. Behaviour and limits:
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../../backend-dotnet/public-route-contract.json):
-54 HTTP method/path pairs with no WebSocket route (31 `/agent/v1/*` and 23
+56 HTTP method/path pairs with no WebSocket route (33 `/agent/v1/*` and 23
 non-Agent routes); REST and SSE clients authenticate with the desktop secret
 (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE

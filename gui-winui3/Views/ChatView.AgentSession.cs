@@ -97,6 +97,7 @@ namespace RuApp.Views
 
             string validSessionId = created.Id.Trim();
             ActivateSession(validSessionId);
+            await ApplyPendingAdvisorAsync(validSessionId);
             SessionOpened?.Invoke(
                 this,
                 new SessionOpenedEventArgs(

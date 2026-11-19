@@ -3,7 +3,10 @@ using Xunit;
 
 namespace RuApp.Tests;
 
-/// <summary>ADR 0047: the composer's /advisor command picks the advisor with the model picker.</summary>
+/// <summary>
+/// ADR 0047: the composer's /advisor command picks this chat's advisor with the model picker.
+/// Each session has its own; a new chat has none until one is chosen.
+/// </summary>
 public sealed partial class ChatModelPickerViewModelTests
 {
     [Fact]
@@ -13,14 +16,15 @@ public sealed partial class ChatModelPickerViewModelTests
         await viewModel.LoadAsync();
         viewModel.BeginAdvisorPick();
 
-        var status = await viewModel.SelectAdvisorAsync("advisor-model", "models.dev:anthropic");
+        var status = await viewModel.SelectAdvisorAsync("advisor-model", "models.dev:anthropic", "0123456789abcdef0123456789abcdef");
 
         Assert.Equal(("models.dev:anthropic", "advisor-model"), Assert.Single(backend.AdvisorSaves));
+        Assert.Equal("0123456789abcdef0123456789abcdef", Assert.Single(backend.AdvisorSessions));
         Assert.Empty(backend.ModelSaves);
         Assert.Equal(Model, viewModel.ModelLabel);
         Assert.Equal((Backend, Model), grouped.Selection);
         Assert.Contains("advisor-model", status, StringComparison.Ordinal);
-        Assert.EndsWith("Applies to new runs.", status, StringComparison.Ordinal);
+        Assert.EndsWith("Applies to this chat's next run.", status, StringComparison.Ordinal);
         Assert.StartsWith("advisor-model on ", viewModel.AdvisorLabel, StringComparison.Ordinal);
     }
 
@@ -28,18 +32,17 @@ public sealed partial class ChatModelPickerViewModelTests
     public async Task Turning_the_advisor_off_clears_the_pair_and_a_failed_save_keeps_the_previous_choice()
     {
         var (viewModel, backend, _, _) = NewViewModel();
-        backend.Settings.AdvisorBackend = "models.dev:openai";
-        backend.Settings.AdvisorModel = "gpt-advisor";
         await viewModel.LoadAsync();
+        viewModel.ShowSessionAdvisor("models.dev:openai", "gpt-advisor");
         backend.AdvisorSaveSucceeds = false;
 
-        var failed = await viewModel.ClearAdvisorAsync();
+        var failed = await viewModel.ClearAdvisorAsync("0123456789abcdef0123456789abcdef");
 
         Assert.StartsWith("Could not", failed, StringComparison.Ordinal);
         Assert.NotNull(viewModel.AdvisorLabel);
         backend.AdvisorSaveSucceeds = true;
 
-        var cleared = await viewModel.ClearAdvisorAsync();
+        var cleared = await viewModel.ClearAdvisorAsync("0123456789abcdef0123456789abcdef");
 
         Assert.StartsWith("Advisor off.", cleared, StringComparison.Ordinal);
         Assert.Equal((null, null), backend.AdvisorSaves[^1]);
@@ -51,9 +54,8 @@ public sealed partial class ChatModelPickerViewModelTests
     {
         var (viewModel, backend, _, grouped) = NewViewModel();
         grouped.CurrentDefinitions = [.. Models.ProviderGroupDefinitions.All, new(Backend, Backend, "OpenAI", 99)];
-        backend.Settings.AdvisorBackend = Backend;
-        backend.Settings.AdvisorModel = "not-listed-advisor";
         await viewModel.LoadAsync();
+        viewModel.ShowSessionAdvisor(Backend, "not-listed-advisor");
         grouped.Publish(Model, withCatalog: true);
         Models.ProviderModelPickerProjection? tree = null;
         viewModel.PickerProjectionReady += projection => tree = projection;
@@ -70,6 +72,30 @@ public sealed partial class ChatModelPickerViewModelTests
         viewModel.OnPickerOpened();
         rows = tree!.Groups.SelectMany(group => group.Rows).ToArray();
         Assert.True(rows.Single(row => row.ModelId == Model).IsSelected);
+    }
+
+    [Fact]
+    public async Task A_new_chat_has_no_advisor_and_a_choice_waits_for_its_session()
+    {
+        var (viewModel, backend, _, _) = NewViewModel();
+        await viewModel.LoadAsync();
+        viewModel.ShowSessionAdvisor("models.dev:openai", "previous-chat-advisor");
+
+        // Opening a new chat shows none, whatever the previous chat used.
+        viewModel.ShowSessionAdvisor(null, null);
+        Assert.Null(viewModel.AdvisorLabel);
+
+        var status = await viewModel.SelectAdvisorAsync("advisor-model", "models.dev:anthropic", sessionId: null);
+        Assert.Contains("advisor-model", status, StringComparison.Ordinal);
+        Assert.Empty(backend.AdvisorSaves);
+
+        Assert.True(await viewModel.ApplyPendingAdvisorAsync("0123456789abcdef0123456789abcdef"));
+        Assert.Equal("0123456789abcdef0123456789abcdef", Assert.Single(backend.AdvisorSessions));
+        Assert.Equal(("models.dev:anthropic", "advisor-model"), backend.AdvisorSaves[0]);
+
+        // Saved once; the next session does not inherit it.
+        Assert.True(await viewModel.ApplyPendingAdvisorAsync("fedcba9876543210fedcba9876543210"));
+        Assert.Single(backend.AdvisorSaves);
     }
 
     [Theory]

@@ -46,10 +46,17 @@ Existing decisions this touches:
 
 ## Decision
 
-1. **The user selects the advisor; a run pins it.** `/advisor` in the TUI and in
-   the desktop composer (which opens the model picker; `/advisor off` clears it) save the Host settings
-   `advisor_backend` and `advisor_model` as a pair; two nulls clear them, and a half
-   is rejected.
+1. **The user selects each session's advisor; a run pins it.** `/advisor` in the TUI and in
+   the desktop composer (which opens the model picker; `/advisor off` clears it) save the
+   session's advisor through `PUT /agent/v1/sessions/{sessionId}/advisor` as an
+   `advisor_backend`/`advisor_model` pair; two nulls clear it, and a half is rejected.
+   *Amended 2026-11-19 (owner's decision):* the advisor was one global setting; it now
+   belongs to each session, stored in `agent_session_advisors` (schema v38) and deleted
+   with the session. A new session starts with no advisor. A choice made before a chat's
+   session exists waits in the client and is saved when the first message creates the
+   session, so choosing never creates an empty session. A global advisor an older build
+   saved is dropped from settings and never pinned, and a settings save that still sends
+   the fields is refused.
    The advisor may be on a different provider from the main model, and may be the
    same model. When a new root run pins its provider selection, the Host resolves
    the advisor into a secret-free selection (backend, alias, protocol, base URI,
@@ -62,7 +69,7 @@ Existing decisions this touches:
    `advisor_unavailable` (decision 9). With no advisor selected, a new root run
    pins `{"selected":false}`, so it can still consult a model the user names
    (decision 2a). Runs pinned without any marker, including every run pinned
-   before this change, never see the tool. A settings change applies to new runs
+   before this change, never see the tool. A change applies to the session's new runs
    only. The advisor's reasoning effort is the one saved for that model with
    `/reasoning`, or the model's default; it is pinned with the advisor. Credentials
    are read from existing credential storage at call time and never stored in the
@@ -232,8 +239,9 @@ Existing decisions this touches:
 - The Protocol tool catalog gains one row, and Protocol-definition and descriptor
   checks change ([ADR 0038](0038-tool-descriptor-table.md)). The Broker manifest
   does not.
-- The settings payload gains `advisor_backend` and `advisor_model`; the public
-  route list does not change.
+- The session advisor is read and written through `GET` and `PUT
+  /agent/v1/sessions/{sessionId}/advisor` (two public routes, added by the 2026-11-19
+  amendment); the settings payload no longer carries it.
 - AGENTS.md gains the advisor in its "No silent substitution" and data-flow
   wording when the implementation lands, not before.
 

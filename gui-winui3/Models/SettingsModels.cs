@@ -25,18 +25,6 @@ namespace RuApp.Models
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool ComputerUseEnabled { get; set; }
 
-        /// <summary>
-        /// The advisor provider (ADR 0047), as the Host normalized it; null when off or on an
-        /// older Host. Read-only here: the advisor is saved only through its own pair payload.
-        /// </summary>
-        [JsonPropertyName("advisor_backend")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? AdvisorBackend { get; set; }
-
-        [JsonPropertyName("advisor_model")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? AdvisorModel { get; set; }
-
         [JsonPropertyName("custom_model")]
         public string CustomModel { get; set; } = string.Empty;
 

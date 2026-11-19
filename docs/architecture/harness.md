@@ -61,7 +61,7 @@ implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Dat
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
 batch statements. Release migration tests build the original released v18 DDL and frozen
 development DDL independently of current schema creation. The selected upgrade suffix commits atomically
-at v37. Version 29 consolidated earlier development changes; v30
+at v38. Version 29 consolidated earlier development changes; v30
 normalizes retained conversation history and source receipts. Version 31 adds
 context mutation fences and indexed compaction/intent lookup; v32 indexes exact
 execution-request provenance. The schema keeps this index, but verification no longer reads the
@@ -76,6 +76,8 @@ Forks copy the attachment counts so context survives deletion of the source run.
 Version 35 raises the subagent family budget bounds; version 36 makes those counters
 unbounded for the root's current window; version 37 removes the default ceiling on
 concurrent runs in one workspace while keeping a user-chosen cap (0 means no cap).
+Version 38 adds `agent_session_advisors`, the advisor each session's new root runs pin
+(ADR 0047; no row means none, and the row is deleted with the session).
 Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
 v19-v36 databases remain eligible sources; adding a migration extends one ordered

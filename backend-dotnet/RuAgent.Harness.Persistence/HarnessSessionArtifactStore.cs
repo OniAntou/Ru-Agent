@@ -197,7 +197,8 @@ public sealed partial class HarnessSessionArtifactStore : IHarnessSessionArtifac
             await using var deleteSetting = connection.CreateCommand();
             deleteSetting.Transaction = transaction;
             deleteSetting.CommandText =
-                "DELETE FROM agent_session_settings WHERE session_id = $session_id";
+                "DELETE FROM agent_session_settings WHERE session_id = $session_id; "
+                + "DELETE FROM agent_session_advisors WHERE session_id = $session_id";
             deleteSetting.Parameters.AddWithValue("$session_id", sessionId);
             await deleteSetting.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 

@@ -106,6 +106,8 @@ public sealed partial class AgentCommands
                     sessionId = initialDraftSessionId = created;
                     submission = submission?.BindInitialDraft(sessionId, initialDraftSessionId);
                     submissionSessionId = sessionId;
+                    // An advisor chosen before the session existed belongs to it from its first run.
+                    await _slashCommands.ApplyPendingAdvisorAsync(sessionId, ct).ConfigureAwait(false);
                 }
                 catch (Exception)
                 {

@@ -36,6 +36,8 @@ public static partial class AgentV1Endpoints
         app.MapPost("/agent/v1/runs/{runId}/commands", PostCommandAsync);
         app.MapGet("/agent/v1/sessions/{sessionId}/runs", GetSessionRunsAsync);
         app.MapGet("/agent/v1/sessions/{sessionId}/preset", GetSessionPresetAsync);
+        app.MapGet("/agent/v1/sessions/{sessionId}/advisor", GetSessionAdvisorAsync);
+        app.MapPut("/agent/v1/sessions/{sessionId}/advisor", PutSessionAdvisorAsync);
         app.MapGet("/agent/v1/policies", GetPoliciesAsync);
         app.MapPost("/agent/v1/policies", PostPolicyAsync);
         app.MapDelete("/agent/v1/policies/{ruleId}", DeletePolicyAsync);

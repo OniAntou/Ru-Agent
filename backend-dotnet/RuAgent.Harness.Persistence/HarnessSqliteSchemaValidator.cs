@@ -56,6 +56,7 @@ internal static class HarnessSqliteSchemaValidator
                 "permission_profile_version",
                 "version",
             ],
+            ["agent_session_advisors"] = ["session_id", "backend", "model", "updated_at_utc"],
             ["agent_session_work_states"] =
             [
                 "session_id",

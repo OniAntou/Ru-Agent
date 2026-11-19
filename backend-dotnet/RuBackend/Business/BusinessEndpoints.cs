@@ -448,9 +448,9 @@ public static partial class BusinessEndpoints
         result["reasoning_effort"] = reasoningEffort;
         result[RuBackend.Providers.ComputerUsePolicy.SettingField] = RuBackend.Providers.ComputerUsePolicy.IsEnabled(value);
         result[RuBackend.Providers.ProviderWebSearchPolicy.SettingField] = RuBackend.Providers.ProviderWebSearchPolicy.IsEnabled(value);
-        var advisor = RuBackend.Providers.AdvisorPolicy.Read(value);
-        result[RuBackend.Providers.AdvisorPolicy.BackendField] = advisor?.Backend;
-        result[RuBackend.Providers.AdvisorPolicy.ModelField] = advisor?.Model;
+        // The advisor belongs to each session (GET /agent/v1/sessions/{id}/advisor).
+        result.Remove(RuBackend.Providers.AdvisorPolicy.BackendField);
+        result.Remove(RuBackend.Providers.AdvisorPolicy.ModelField);
         foreach (var key in new[]
                  {
                      "api_key",

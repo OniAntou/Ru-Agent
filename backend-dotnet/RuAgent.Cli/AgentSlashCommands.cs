@@ -107,7 +107,7 @@ public sealed partial class AgentSlashCommands
 
         if (slashCmd is "/advisor")
         {
-            await HandleAdvisorAsync(arg, cancellationToken).ConfigureAwait(false);
+            await HandleAdvisorAsync(arg, currentSessionId, cancellationToken).ConfigureAwait(false);
             return true;
         }
 

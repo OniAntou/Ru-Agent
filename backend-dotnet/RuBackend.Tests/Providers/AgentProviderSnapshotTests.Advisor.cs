@@ -9,8 +9,8 @@ using Xunit;
 namespace RuBackend.Tests.Providers;
 
 /// <summary>
-/// ADR 0047: the advisor is resolved once when a new root run pins its selection, and
-/// its marker never reaches the provider's request options.
+/// ADR 0047: the advisor of the run's session is resolved once when a new root run pins its
+/// selection, and its marker never reaches the provider's request options.
 /// </summary>
 public sealed partial class AgentProviderSnapshotTests
 {
@@ -50,6 +50,16 @@ public sealed partial class AgentProviderSnapshotTests
         Assert.NotNull(advisor);
         Assert.False(advisor!.IsSelected);
         Assert.False(bootstrap.RequestOptions?.ContainsKey(AdvisorPolicy.PinField) ?? false);
+    }
+
+    [Fact]
+    public async Task A_global_advisor_an_older_build_saved_is_not_pinned()
+    {
+        var (pinned, _) = await PinWithAdvisorAsync(null, legacyGlobalAdvisor: true);
+
+        var advisor = AdvisorPolicy.ReadPinned(pinned);
+        Assert.NotNull(advisor);
+        Assert.False(advisor!.IsSelected);
     }
 
     [Fact]
@@ -151,15 +161,17 @@ public sealed partial class AgentProviderSnapshotTests
     }
 
     private async Task<(AgentRunProviderSelection? Pinned, RuAgent.Runtime.Adapters.Bootstrap.ProviderBootstrapData Bootstrap)>
-        PinWithAdvisorAsync(string? advisorModel, string advisorBackend = "Custom OpenAI", ICredentialStore? credentialStore = null)
+        PinWithAdvisorAsync(string? advisorModel, string advisorBackend = "Custom OpenAI", ICredentialStore? credentialStore = null,
+            bool legacyGlobalAdvisor = false)
     {
         var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
         var current = await store.ReadAsync(default);
         var raw = current.Raw.DeepClone().AsObject();
-        if (advisorModel is not null)
+        if (legacyGlobalAdvisor)
         {
-            raw[AdvisorPolicy.BackendField] = advisorBackend;
-            raw[AdvisorPolicy.ModelField] = advisorModel;
+            // What an older build saved as the one advisor for every run.
+            raw[AdvisorPolicy.BackendField] = "Custom OpenAI";
+            raw[AdvisorPolicy.ModelField] = "b";
         }
 
         await store.SaveAsync(current with
@@ -169,6 +181,11 @@ public sealed partial class AgentProviderSnapshotTests
         var credentials = credentialStore ?? new Credentials();
         var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System);
         var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
+        if (advisorModel is not null)
+        {
+            await selections.SetSessionAdvisorAsync(run.Run.SessionId.Value,
+                new RuAgent.Harness.Core.RunProviderIntent(advisorBackend, advisorModel), default);
+        }
         await using var factory = new AgentProviderSnapshotFactory(
             store, credentials, catalog, selections, (_, _) => Task.FromResult(false));
 

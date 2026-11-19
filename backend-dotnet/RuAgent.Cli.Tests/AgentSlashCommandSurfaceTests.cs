@@ -359,6 +359,22 @@ public sealed partial class AgentSlashCommandSurfaceTests
         string? modelsDev = null)
     {
         var path = request.RequestUri!.AbsolutePath;
+        if (path.EndsWith("/advisor", StringComparison.Ordinal))
+        {
+            // A session's advisor: PUT records the body and echoes it, GET reads "none".
+            var session = path.Split('/')[^2];
+            if (request.Method == HttpMethod.Put)
+            {
+                var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                posted.Add(body);
+                var sent = System.Text.Json.Nodes.JsonNode.Parse(body)!.AsObject();
+                sent["session_id"] = session;
+                return Json(sent.ToJsonString());
+            }
+
+            return Json($"{{\"session_id\":\"{session}\",\"advisor_backend\":null,\"advisor_model\":null}}");
+        }
+
         if (request.Method == HttpMethod.Post)
         {
             posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());

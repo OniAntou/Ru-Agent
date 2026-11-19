@@ -5,7 +5,7 @@ using Xunit;
 
 namespace RuBackend.Tests.Providers;
 
-/// <summary>ADR 0047: the advisor setting and its run marker.</summary>
+/// <summary>ADR 0047: a session's advisor request and the run marker it becomes.</summary>
 public sealed class AdvisorPolicyTests
 {
     private static string Normalize(string value) => value.ToLowerInvariant() switch
@@ -16,34 +16,27 @@ public sealed class AdvisorPolicyTests
     };
 
     [Fact]
-    public void Settings_save_selects_and_clears_the_advisor_as_a_pair()
+    public void A_session_request_selects_and_clears_the_advisor_as_a_pair()
     {
-        var raw = new JsonObject();
-        AdvisorPolicy.Apply(new JsonObject { ["advisor_backend"] = "anthropic", ["advisor_model"] = " claude-opus-5-5 " }, raw, Normalize);
-        Assert.Equal("Anthropic", raw["advisor_backend"]!.GetValue<string>());
-        Assert.Equal("claude-opus-5-5", raw["advisor_model"]!.GetValue<string>());
+        var selected = AdvisorPolicy.ParseSessionRequest(
+            new JsonObject { ["advisor_backend"] = "anthropic", ["advisor_model"] = " claude-opus-5-5 " }, Normalize);
+        Assert.Equal("Anthropic", selected!.Backend);
+        Assert.Equal("claude-opus-5-5", selected.Model);
 
-        // Unrelated saves leave the advisor alone.
-        AdvisorPolicy.Apply(new JsonObject { ["model"] = "x" }, raw, Normalize);
-        Assert.Equal("claude-opus-5-5", raw["advisor_model"]!.GetValue<string>());
-
-        AdvisorPolicy.Apply(new JsonObject { ["advisor_backend"] = null, ["advisor_model"] = null }, raw, Normalize);
-        Assert.False(raw.ContainsKey("advisor_backend"));
-        Assert.False(raw.ContainsKey("advisor_model"));
+        Assert.Null(AdvisorPolicy.ParseSessionRequest(new JsonObject { ["advisor_backend"] = null, ["advisor_model"] = null }, Normalize));
     }
 
     [Theory]
+    [InlineData("""{}""")]
     [InlineData("""{"advisor_backend":"anthropic"}""")]
     [InlineData("""{"advisor_model":"m"}""")]
     [InlineData("""{"advisor_backend":"anthropic","advisor_model":null}""")]
     [InlineData("""{"advisor_backend":"anthropic","advisor_model":""}""")]
     [InlineData("""{"advisor_backend":"anthropic","advisor_model":7}""")]
     [InlineData("""{"advisor_backend":"nowhere","advisor_model":"m"}""")]
-    public void Settings_save_rejects_a_partial_or_invalid_advisor(string payload)
+    public void A_session_request_rejects_a_partial_or_invalid_advisor(string payload)
     {
-        var raw = new JsonObject { ["advisor_backend"] = "OpenAI", ["advisor_model"] = "gpt-5" };
-        Assert.ThrowsAny<ArgumentException>(() => AdvisorPolicy.Apply(JsonNode.Parse(payload)!.AsObject(), raw, Normalize));
-        Assert.Equal("gpt-5", raw["advisor_model"]!.GetValue<string>());
+        Assert.ThrowsAny<ArgumentException>(() => AdvisorPolicy.ParseSessionRequest(JsonNode.Parse(payload)!.AsObject(), Normalize));
     }
 
     [Fact]

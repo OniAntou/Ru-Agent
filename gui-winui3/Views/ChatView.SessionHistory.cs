@@ -651,6 +651,7 @@ namespace RuApp.Views
                     // re-grades it. A missing or unreadable selection leaves the
                     // current choice untouched.
                     await AdoptStoredSessionPresetAsync(sessionId, openToken);
+                    await AdoptSessionAdvisorAsync(sessionId, openToken);
                 }
             }
             catch (OperationCanceledException)
@@ -691,6 +692,8 @@ namespace RuApp.Views
         /// <summary>Commits the known-empty transcript and its layout without history I/O.</summary>
         private void PresentNewSession()
         {
+            // A new chat starts without an advisor (ADR 0047).
+            ModelSelection.ShowSessionAdvisor(null, null);
             ClearAgentActivities();
             ClearTodoPanel();
             JumpToLatestForNewTurn();

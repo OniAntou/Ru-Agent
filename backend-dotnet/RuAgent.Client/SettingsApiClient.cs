@@ -40,7 +40,7 @@ public sealed record ProviderKeySaveResult(bool Saved, string? Code, string? Mes
 /// Authenticated settings API with bounded reads and envelope validation.
 /// POST /settings returns {status: success|error}, GET /settings returns {status: ok}.
 /// </summary>
-public sealed class SettingsApiClient
+public sealed partial class SettingsApiClient
 {
     private const int MaximumModelsDevProviders = 1000;
     private const int MaximumReasoningOptions = 16;

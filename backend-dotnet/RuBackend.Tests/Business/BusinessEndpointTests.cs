@@ -400,42 +400,59 @@ public sealed partial class BusinessEndpointTests
     }
 
     [Fact]
-    public async Task Advisor_selection_saves_as_a_pair_reads_back_clears_and_rejects_a_half()
+    public async Task Advisor_belongs_to_each_session_and_starts_off()
     {
         using var data = TemporaryBusinessData.Create();
-        await File.WriteAllTextAsync(data.Paths.SettingsFile, "{\"backend\":\"openai\",\"openai_model\":\"gpt-4o\"}");
+        // A global advisor an older build saved is no longer read, shown or kept.
+        await File.WriteAllTextAsync(data.Paths.SettingsFile,
+            "{\"backend\":\"openai\",\"openai_model\":\"gpt-4o\",\"advisor_backend\":\"Anthropic\",\"advisor_model\":\"claude-opus-5-5\"}");
         using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
-        using (var before = await client.GetAsync("/settings"))
+        using (var settings = await client.GetAsync("/settings"))
         {
-            var body = (await before.Content.ReadFromJsonAsync<JsonObject>())!;
-            Assert.True(body.ContainsKey("advisor_backend"));
-            Assert.Null(body["advisor_backend"]);
+            var body = (await settings.Content.ReadFromJsonAsync<JsonObject>())!;
+            Assert.False(body.ContainsKey("advisor_backend"));
+            Assert.False(body.ContainsKey("advisor_model"));
+        }
+
+        using (var refused = await client.PostAsJsonAsync("/settings", new { advisor_backend = "anthropic", advisor_model = "claude-opus-5-5" }))
+            Assert.Equal("error", (await refused.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
+
+        const string first = "0123456789abcdef0123456789abcdef";
+        const string second = "fedcba9876543210fedcba9876543210";
+        using (var fresh = await client.GetAsync($"/agent/v1/sessions/{first}/advisor"))
+        {
+            var body = (await fresh.Content.ReadFromJsonAsync<JsonObject>())!;
+            Assert.Equal(first, body["session_id"]!.GetValue<string>());
             Assert.Null(body["advisor_model"]);
         }
 
-        using (var saved = await client.PostAsJsonAsync("/settings", new { advisor_backend = "anthropic", advisor_model = "claude-opus-5-5" }))
-            Assert.Equal("success", (await saved.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
-        using (var after = await client.GetAsync("/settings"))
+        using (var saved = await client.PutAsJsonAsync($"/agent/v1/sessions/{first}/advisor",
+            new { advisor_backend = "anthropic", advisor_model = " claude-opus-5-5 " }))
         {
-            var body = (await after.Content.ReadFromJsonAsync<JsonObject>())!;
+            Assert.True(saved.IsSuccessStatusCode);
+            var body = (await saved.Content.ReadFromJsonAsync<JsonObject>())!;
             Assert.Equal("Anthropic", body["advisor_backend"]!.GetValue<string>());
             Assert.Equal("claude-opus-5-5", body["advisor_model"]!.GetValue<string>());
-            Assert.Equal("gpt-4o", body["openai_model"]!.GetValue<string>());
         }
 
-        using (var rejected = await client.PostAsJsonAsync("/settings", new { advisor_model = "gpt-5" }))
-            Assert.Equal("error", (await rejected.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
-        using (var unknown = await client.PostAsJsonAsync("/settings", new { advisor_backend = "nowhere", advisor_model = "m" }))
-            Assert.Equal("error", (await unknown.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
-        using (var unchanged = await client.GetAsync("/settings"))
+        using (var other = await client.GetAsync($"/agent/v1/sessions/{second}/advisor"))
+            Assert.Null((await other.Content.ReadFromJsonAsync<JsonObject>())!["advisor_model"]);
+
+        using (var half = await client.PutAsJsonAsync($"/agent/v1/sessions/{first}/advisor", new { advisor_model = "gpt-5" }))
+            Assert.Equal(System.Net.HttpStatusCode.BadRequest, half.StatusCode);
+        using (var unknown = await client.PutAsJsonAsync($"/agent/v1/sessions/{first}/advisor", new { advisor_backend = "nowhere", advisor_model = "m" }))
+            Assert.Equal(System.Net.HttpStatusCode.BadRequest, unknown.StatusCode);
+        using (var badId = await client.GetAsync("/agent/v1/sessions/not-a-session/advisor"))
+            Assert.Equal(System.Net.HttpStatusCode.BadRequest, badId.StatusCode);
+        using (var unchanged = await client.GetAsync($"/agent/v1/sessions/{first}/advisor"))
             Assert.Equal("claude-opus-5-5", (await unchanged.Content.ReadFromJsonAsync<JsonObject>())!["advisor_model"]!.GetValue<string>());
 
-        using (var cleared = await client.PostAsync("/settings", JsonContent.Create(
+        using (var cleared = await client.PutAsync($"/agent/v1/sessions/{first}/advisor", JsonContent.Create(
             new JsonObject { ["advisor_backend"] = null, ["advisor_model"] = null })))
-            Assert.Equal("success", (await cleared.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>());
-        using (var off = await client.GetAsync("/settings"))
+            Assert.True(cleared.IsSuccessStatusCode);
+        using (var off = await client.GetAsync($"/agent/v1/sessions/{first}/advisor"))
             Assert.Null((await off.Content.ReadFromJsonAsync<JsonObject>())!["advisor_model"]);
     }
 

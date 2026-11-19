@@ -21,7 +21,7 @@ public sealed partial class ChatView
                 OpenAdvisorPicker();
                 break;
             case ComposerAdvisorCommand.Off:
-                _ = ApplyAdvisorAsync(ModelSelection.ClearAdvisorAsync());
+                _ = ApplyAdvisorAsync(ModelSelection.ClearAdvisorAsync(AdvisorSessionId()));
                 break;
             default:
                 ShowAgentInlineStatus(AdvisorUsage);
@@ -38,8 +38,34 @@ public sealed partial class ChatView
         ModelSelection.BeginAdvisorPick();
         ShowAgentInlineStatus(ModelSelection.AdvisorLabel is { } current
             ? $"Choose the advisor (now {current}), or send /advisor off."
-            : "Choose the advisor model the agent may consult in new runs.");
+            : "Choose the advisor model the agent may consult in this chat.");
         ChatModelFlyout.ShowAt(ChatModelButton);
+    }
+
+    /// <summary>The open chat's session, or null before its first message creates one.</summary>
+    private string? AdvisorSessionId() =>
+        AgentSessionSelection.IsValid(_activeSessionId) ? _activeSessionId : null;
+
+    /// <summary>
+    /// Shows the advisor of the session being opened. Best effort: a read failure shows none.
+    /// </summary>
+    private async Task AdoptSessionAdvisorAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        var advisor = _apiService is null ? null : await _apiService.GetSessionAdvisorAsync(sessionId, cancellationToken);
+        if (!string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal)) return;
+        ModelSelection.ShowSessionAdvisor(advisor?.Backend, advisor?.Model);
+    }
+
+    /// <summary>
+    /// Saves an advisor chosen before the chat's session existed to the session its first
+    /// message just created. A failure is shown: that run starts without the advisor.
+    /// </summary>
+    private async Task ApplyPendingAdvisorAsync(string sessionId)
+    {
+        if (!await ModelSelection.ApplyPendingAdvisorAsync(sessionId))
+        {
+            ShowAgentInlineStatus("The advisor could not be saved for this chat, so this run has none. Choose it again with /advisor.");
+        }
     }
 
     private async Task ApplyAdvisorAsync(Task<string> save)

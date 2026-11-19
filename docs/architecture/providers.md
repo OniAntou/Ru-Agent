@@ -338,7 +338,8 @@ _Avoid_: current settings as restart fallback
 
 A new root pin also records the advisor ([ADR 0047](../adr/0047-advisor-consultation.md)).
 With no advisor set the marker is `{"selected":false}`, so the run can still consult a
-model the user names. When `advisor_backend` and `advisor_model` are set, the advisor is described
+model the user names. When the run's session has an advisor (`agent_session_advisors`,
+read through the run's session), the advisor is described
 exactly like a selection, with `requireCatalogModel`, and stored as the
 `_ru_advisor_v1` request-option marker (backend, alias, protocol, base URI,
 model, credential account name, the advisor's own reasoning options without Ru

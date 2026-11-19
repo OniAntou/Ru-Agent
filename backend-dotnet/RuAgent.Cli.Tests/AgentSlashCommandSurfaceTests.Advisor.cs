@@ -5,7 +5,10 @@ using Xunit;
 
 namespace RuAgent.Cli.Tests;
 
-/// <summary>ADR 0047: <c>/advisor</c> saves the advisor as a pair and applies to new runs.</summary>
+/// <summary>
+/// ADR 0047: <c>/advisor</c> saves the session's advisor as a pair, for the session's next
+/// run; a chat without a session yet keeps the choice until its first message creates one.
+/// </summary>
 public sealed partial class AgentSlashCommandSurfaceTests
 {
     [Theory]
@@ -24,7 +27,47 @@ public sealed partial class AgentSlashCommandSurfaceTests
         Assert.Equal(2, body.Count);
         Assert.Equal(backend, body["advisor_backend"]!.GetValue<string>());
         Assert.Equal(model, body["advisor_model"]!.GetValue<string>());
-        Assert.Contains("for new runs", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("for this session's next run", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Advisor_BeforeTheSessionExists_WaitsAndIsSavedToTheSessionItsFirstMessageCreates()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var requests = new List<string>();
+        var commands = Create(output, request =>
+        {
+            requests.Add($"{request.Method} {request.RequestUri!.AbsolutePath}");
+            return Router(request, ReasoningCatalog, posted);
+        });
+
+        await commands.TryHandleAsync("/advisor", "anthropic claude-opus-5-5", null, "standard", "D:\\LLM", CancellationToken.None);
+        Assert.Empty(posted);
+        Assert.Contains("from its first message", output.ToString(), StringComparison.Ordinal);
+
+        await commands.ApplyPendingAdvisorAsync("0123456789abcdef0123456789abcdef", CancellationToken.None);
+        var body = JsonNode.Parse(Assert.Single(posted))!.AsObject();
+        Assert.Equal("claude-opus-5-5", body["advisor_model"]!.GetValue<string>());
+        Assert.Contains("PUT /agent/v1/sessions/0123456789abcdef0123456789abcdef/advisor", requests);
+
+        // Applied once: a later session starts without it.
+        await commands.ApplyPendingAdvisorAsync("fedcba9876543210fedcba9876543210", CancellationToken.None);
+        Assert.Single(posted);
+    }
+
+    [Fact]
+    public async Task Advisor_InAnExistingSession_DropsAChoiceLeftPendingFromBefore()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request => Router(request, ReasoningCatalog, posted));
+
+        await commands.TryHandleAsync("/advisor", "anthropic claude-opus-5-5", null, "standard", "D:\\LLM", CancellationToken.None);
+        await commands.TryHandleAsync("/advisor", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None);
+        await commands.ApplyPendingAdvisorAsync("0123456789abcdef0123456789abcdef", CancellationToken.None);
+
+        Assert.Empty(posted);
     }
 
     [Fact]

@@ -245,8 +245,11 @@ public sealed partial class ChatModelPickerViewModelTests
 
         public List<(string? Backend, string? Model)> AdvisorSaves { get; } = new();
 
-        public Task<bool> SaveAdvisorAsync(string? backend, string? model)
+        public List<string> AdvisorSessions { get; } = new();
+
+        public Task<bool> SaveSessionAdvisorAsync(string sessionId, string? backend, string? model)
         {
+            AdvisorSessions.Add(sessionId);
             AdvisorSaves.Add((backend, model));
             return Task.FromResult(AdvisorSaveSucceeds);
         }

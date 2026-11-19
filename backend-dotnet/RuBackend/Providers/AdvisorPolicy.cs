@@ -17,10 +17,11 @@ internal sealed record AdvisorPin(AgentRunProviderSelection? Selection, string? 
 }
 
 /// <summary>
-/// The advisor opt-in (ADR 0047). The user names a signed-in provider and model; when a
-/// new root run pins its selection, the advisor is resolved once and stored in the
-/// <c>_ru_advisor_v1</c> marker, which is removed before any option reaches a provider.
-/// A settings change applies to new runs only.
+/// The advisor opt-in (ADR 0047). Each session names its own advisor, a signed-in provider
+/// and model, or none (where a new session starts); when a new root run pins its selection,
+/// the session's advisor is resolved once and stored in the <c>_ru_advisor_v1</c> marker,
+/// which is removed before any option reaches a provider. A change applies to the session's
+/// new runs only.
 /// </summary>
 internal static class AdvisorPolicy
 {
@@ -30,39 +31,23 @@ internal static class AdvisorPolicy
     internal const string UnavailableCode = "advisor_unavailable";
     private const int MaximumModelChars = 256;
 
-    /// <summary>The configured advisor, or null when none is selected.</summary>
-    internal static (string Backend, string Model)? Read(SettingsSnapshot settings) =>
-        settings.Raw[BackendField] is JsonValue backendValue && backendValue.TryGetValue<string>(out var backend)
-        && settings.Raw[ModelField] is JsonValue modelValue && modelValue.TryGetValue<string>(out var model)
-        && !string.IsNullOrWhiteSpace(backend) && !string.IsNullOrWhiteSpace(model)
-            ? (backend, model)
-            : null;
-
     /// <summary>
-    /// Applies a settings save's advisor choice. Both fields travel together: two strings
-    /// select an advisor and two nulls clear it; anything else is an invalid payload.
+    /// A session advisor request (<c>PUT /agent/v1/sessions/{id}/advisor</c>). Both fields
+    /// travel together: two strings select an advisor and two nulls clear it; anything else
+    /// is invalid. The backend is normalized like a settings save.
     /// </summary>
-    internal static void Apply(JsonObject payload, JsonObject raw, Func<string, string> normalizeBackend)
+    internal static RuAgent.Harness.Core.RunProviderIntent? ParseSessionRequest(JsonObject payload, Func<string, string> normalizeBackend)
     {
-        var hasBackend = payload.TryGetPropertyValue(BackendField, out var backendNode);
-        var hasModel = payload.TryGetPropertyValue(ModelField, out var modelNode);
-        if (!hasBackend && !hasModel) return;
-        if (hasBackend != hasModel) throw new ArgumentException("advisor_backend and advisor_model are saved together.", nameof(payload));
-        if (backendNode is null && modelNode is null)
-        {
-            raw.Remove(BackendField);
-            raw.Remove(ModelField);
-            return;
-        }
-
+        if (!payload.TryGetPropertyValue(BackendField, out var backendNode) || !payload.TryGetPropertyValue(ModelField, out var modelNode))
+            throw new ArgumentException("advisor_backend and advisor_model are sent together.", nameof(payload));
+        if (backendNode is null && modelNode is null) return null;
         if (backendNode is not JsonValue backendValue || !backendValue.TryGetValue<string>(out var backend)
             || modelNode is not JsonValue modelValue || !modelValue.TryGetValue<string>(out var model))
             throw new ArgumentException("advisor_backend and advisor_model must be strings or both null.", nameof(payload));
         model = model.Trim();
         if (model.Length == 0 || model.Length > MaximumModelChars || model.Any(char.IsControl))
             throw new ArgumentException("advisor_model is invalid.", nameof(payload));
-        raw[BackendField] = normalizeBackend(backend.Trim());
-        raw[ModelField] = model;
+        return new RuAgent.Harness.Core.RunProviderIntent(normalizeBackend(backend.Trim()), model);
     }
 
     /// <summary>The settings a resolver uses to describe the advisor as if it were the selected model.</summary>

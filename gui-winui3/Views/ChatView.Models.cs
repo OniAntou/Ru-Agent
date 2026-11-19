@@ -83,7 +83,7 @@ namespace RuApp.Views
             // Read before Hide: closing the picker ends the advisor pick.
             bool advisor = ModelSelection.IsPickingAdvisor;
             ChatModelFlyout.Hide();
-            if (advisor) _ = ApplyAdvisorAsync(ModelSelection.SelectAdvisorAsync(e.Model, e.Backend));
+            if (advisor) _ = ApplyAdvisorAsync(ModelSelection.SelectAdvisorAsync(e.Model, e.Backend, AdvisorSessionId()));
             else _ = ModelSelection.SelectModelAsync(e.Model, e.Backend);
         }
 

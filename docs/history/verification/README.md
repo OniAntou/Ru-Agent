@@ -1,8 +1,10 @@
-﻿# Historical verification evidence
+# Historical verification evidence
 
-These records are dated evidence, not current operating instructions. [Current verification](../../operations/verification.md) owns commands and acceptance boundaries.
+These records are dated evidence, not current operating instructions. [Current verification](../../operations/verification.md) owns commands and acceptance boundaries. Records no current page cites were removed on 2026-11-20; Git history retains them.
 
 - [undated](undated.md)
+- [2026-11-19 GUI attachment review](2026-11-19-gui-attachment-review.md) - composer intake, normalization, PDF/DOCX extraction, history replay; Phase 0 fixes applied and the remaining replay/thumbnail gaps listed
+- [2026-11-18 codebase review](2026-11-18-codebase-review.md) - deep checkout review: two red CI gates and provider-code mappings fixed; payload index, SSE keepalive, GUI lifecycle and crash-window races recorded as follow-ups
 - [2026-11-17](2026-11-17.md) - live hy4-flash-free cohorts: Terminal/SWE 6/9, Everyday 11/11, tool-call trajectories, A/B of the stated-rule check guidance and an advisor probe
 - [2026-11-03 codebase review](2026-11-03-codebase-review.md) - six P2 findings and their submission, history, MCP and terminal-streaming remediations; final .NET matrix 9,593
 - [2026-11-03 native acceptance and TUI performance](2026-11-03-native-acceptance-and-tui-performance.md) - native WinUI navigation/resize, controlled ConPTY latency, repaint/cadence improvements and real-provider task evidence
@@ -12,27 +14,6 @@ These records are dated evidence, not current operating instructions. [Current v
 - [2026-11-02 codebase review](2026-11-02-codebase-review.md) - four findings remediated: opened-handle read validation, GUI model intent/read ordering, and removal of all external session exchange; original reproductions and verification evidence
 - [2026-11-01 review remediation](2026-11-01-review-remediation.md) - R1-R11 lifecycle, restore, UI, computer-target, input validation and CI fixes
 - [2026-11-01](2026-11-01.md) - scratch workspaces for chats without a project, workspace-group delete, full matrix 9,484
-- [2026-10-31](2026-10-31.md) - read notices and token estimate, tool telemetry counters, skill policy denial and the unconfigured-tool code, tokenized skill search, full matrix 9,464
 - [2026-10-31 TUI typing investigation](2026-10-31-tui-typing.md) - historical ConPTY input/repaint measurements; proposed performance changes were not implemented
-- [2026-10-30](2026-10-30.md) - unverified-source-edit hold, LSP race and catalog-registration fixes, coalescer/pager grader corrections, full matrix 13/13 after one recurring UI flake
 - [2026-10-29](2026-10-29.md) - Kilo coding benchmark, triage-driven repairs and grader corrections
-- [2026-10-24](2026-10-24.md)
-- [2026-10-23](2026-10-23.md)
-- [2026-10-20](2026-10-20.md)
-- [2026-10-19](2026-10-19.md)
-- [2026-10-17](2026-10-17.md)
-- [2026-10-16](2026-10-16.md)
-- [2026-10-15](2026-10-15.md)
-- [2026-10-14](2026-10-14.md)
-- [2026-10-13](2026-10-13.md)
-- [2026-10-12](2026-10-12.md)
-- [2026-10-11](2026-10-11.md)
 - [2026-10-10](2026-10-10.md)
-- [2026-10-09](2026-10-09.md)
-- [2026-10-08](2026-10-08.md)
-- [2026-10-06](2026-10-06.md)
-- [2026-10-04](2026-10-04.md)
-- [2026-09-24](2026-09-24.md)
-- [2026-09-09](2026-09-09.md)
-- [2026-09-07](2026-09-07.md)
-- [2026-09-06](2026-09-06.md)

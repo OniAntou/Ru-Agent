@@ -15,8 +15,10 @@ with the root run. The native TUI and GUI use this route so an older Host reject
 request instead of silently ignoring a new field. The legacy create route
 remains available to existing clients.
 
-`POST /settings/provider/key` validates a candidate Models.dev credential before
-committing it, preserving an existing key on rejection or unavailable validation.
+`POST /settings/provider/key` validates a candidate OpenAI, Anthropic,
+Models.dev or custom endpoint credential with the provider before committing it,
+preserving an existing key on rejection or unavailable validation, and records
+the outcome in `provider_key_status`.
 It shares the normal loopback/bearer boundary and settings transaction gate. GUI
 does not fall back to `POST /settings` when an older Host lacks this route.
 

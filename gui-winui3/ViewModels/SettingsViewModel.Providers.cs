@@ -95,10 +95,16 @@ public sealed partial class SettingsViewModel
             CancelDelay(ref _autoSaveDelay);
             CancelDelay(ref _keyProbeDelay);
             // Don't discard a pending key or let it follow the next editor selection.
-            if (!string.IsNullOrWhiteSpace(ModelsDevApiKey))
+            if (HasUnsavedKey)
             {
                 await ProbeKeyAsync();
-                if (!string.IsNullOrWhiteSpace(ModelsDevApiKey)) return;
+                if (HasUnsavedKey) return;
+            }
+            CancelDelay(ref _customKeyProbeDelay);
+            if (HasUnsavedCustomKey)
+            {
+                await ProbeCustomKeyAsync();
+                if (HasUnsavedCustomKey) return;
             }
             if (!await SaveSettingsAsync())
             {
@@ -121,23 +127,29 @@ public sealed partial class SettingsViewModel
         IsLegacyProviderVisible = ProviderChoice is "openai" or "anthropic";
         var rows = _modelsDevKeyIds.Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(id => new ConfiguredProviderRow(ProviderSetupGuidance.ModelsDevPrefix + id,
-                _modelsDevNames.TryGetValue(id, out var name) ? name : id, false, "Key saved"))
+                _modelsDevNames.TryGetValue(id, out var name) ? name : id, false,
+                ProviderKeyStatusText.Saved(_lastSettings, ProviderSetupGuidance.ModelsDevPrefix + id.ToLowerInvariant())))
             .ToList();
         if (_lastSettings?.HasCustomKey == true ||
             string.Equals(_lastSettings?.BackendChoice, "custom", StringComparison.OrdinalIgnoreCase))
         {
             rows.Add(new("custom", "Custom OpenAI server (legacy)", true,
-                _lastSettings?.HasCustomKey == true ? "Key saved" : "Endpoint configured"));
+                _lastSettings?.HasCustomKey == true ? ProviderKeyStatusText.Saved(_lastSettings, "Custom OpenAI") : "Endpoint configured"));
         }
         foreach (var provider in _lastSettings?.CustomProviders ?? new())
         {
             var hasKey = _lastSettings?.CustomProviderKeys?.Contains(provider.Id) == true;
             var models = provider.Models.Count == 1 ? "1 model" : $"{provider.Models.Count} models";
+            var key = hasKey
+                ? ProviderKeyStatusText.Saved(_lastSettings, CustomProviderPolicy.Backend(provider.Id)).ToLowerInvariant()
+                : "no key";
             rows.Add(new(CustomProviderPolicy.Backend(provider.Id), provider.DisplayName, true,
-                $"{CustomProviderPolicy.ProtocolLabel(provider.Protocol)} · {models} · {(hasKey ? "key saved" : "no key")}"));
+                $"{CustomProviderPolicy.ProtocolLabel(provider.Protocol)} · {models} · {key}"));
         }
-        if (_lastSettings?.HasOpenAiKey == true) rows.Add(new("openai", "OpenAI (legacy)", false, "Key saved"));
-        if (_lastSettings?.HasAnthropicKey == true) rows.Add(new("anthropic", "Anthropic (legacy)", false, "Key saved"));
+        if (_lastSettings?.HasOpenAiKey == true)
+            rows.Add(new("openai", "OpenAI (legacy)", false, ProviderKeyStatusText.Saved(_lastSettings, "OpenAI")));
+        if (_lastSettings?.HasAnthropicKey == true)
+            rows.Add(new("anthropic", "Anthropic (legacy)", false, ProviderKeyStatusText.Saved(_lastSettings, "Anthropic")));
         ConfiguredProviders.Clear();
         foreach (var row in rows.OrderBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase))
             ConfiguredProviders.Add(row);

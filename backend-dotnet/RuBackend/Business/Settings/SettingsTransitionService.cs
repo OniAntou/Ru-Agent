@@ -15,6 +15,14 @@ public interface ISettingsTransitionService
     Task<SettingsTransitionResult> RemoveProviderAsync(
         string backendChoice,
         CancellationToken cancellationToken);
+
+    Task RecordKeyStatusAsync(
+        string backend,
+        string account,
+        string usedCredential,
+        string state,
+        Func<SettingsSnapshot, bool> endpointUnchanged,
+        CancellationToken cancellationToken);
 }
 
 public sealed partial class SettingsTransitionService : ISettingsTransitionService
@@ -26,19 +34,25 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
     private const string BackendOpenAi = "OpenAI";
     private const string BackendAnthropic = "Anthropic";
 
+    /// <summary>Set only by the key route; asks for the candidate to be checked before it is stored.</summary>
+    internal const string ValidateKeyField = "validate_provider_key";
+
     private readonly ISettingsStore _settings;
     private readonly ICredentialStore _credentials;
     private readonly ProviderCatalogService? _catalog;
+    private readonly RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor? _secrets;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public SettingsTransitionService(
         ISettingsStore settings,
         ICredentialStore credentials,
-        ProviderCatalogService? catalog = null)
+        ProviderCatalogService? catalog = null,
+        RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor? secrets = null)
     {
         _settings = settings;
         _credentials = credentials;
         _catalog = catalog;
+        _secrets = secrets;
     }
 
     public async Task<SettingsTransitionResult> ApplyAsync(
@@ -52,6 +66,9 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
             var previous = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
             SettingsSnapshot candidate;
             IReadOnlyList<CredentialUpdate> updates;
+            var savedMessage = "Settings saved.";
+            string? savedCode = null;
+            CandidateKeyVerdict? verdict = null;
             try
             {
                 payload = ExpandModelSelection(payload);
@@ -60,17 +77,25 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
                 if (await SendsKeyInsecurelyAsync(previous, candidate, updates, cancellationToken).ConfigureAwait(false))
                     return new(false, "Key not sent: this endpoint uses plain HTTP to another computer. Use HTTPS, or remove the key.",
                         CustomProviders.InsecureEndpointCode);
-                if (payload.ContainsKey("validate_models_dev_key"))
+                if (payload.ContainsKey(ValidateKeyField))
                 {
-                    if (payload["validate_models_dev_key"] is not JsonValue flag || !flag.TryGetValue<bool>(out var validate) || !validate
-                        || payload.Count != 3 || updates.Count != 1 || _catalog is null)
+                    if (payload[ValidateKeyField] is not JsonValue flag || !flag.TryGetValue<bool>(out var validate) || !validate
+                        || updates.Count != 1 || _catalog is null)
                         throw new SettingsPayloadException();
-                    var alias = ProviderSelection.NormalizeModelsDevBackend(OptionalString(payload, "models_dev_provider_id", 64) ?? "")
-                        ?? throw new SettingsPayloadException();
-                    var probe = await _catalog.CheckCandidateCredentialAsync(alias, updates[0].Secret, previous, cancellationToken).ConfigureAwait(false);
-                    if (probe.Status != "ok")
-                        return new(false, "Key not saved; previous credential unchanged.",
-                            probe.ErrorCode == "catalog_unauthorized" ? "provider_key_rejected" : "provider_key_unverified");
+                    var alias = ValidatedKeyAlias(payload, updates[0].Account) ?? throw new SettingsPayloadException();
+                    verdict = await _catalog.VerifyCandidateCredentialAsync(alias, updates[0].Secret, previous, cancellationToken)
+                        .ConfigureAwait(false);
+                    switch (verdict)
+                    {
+                        case CandidateKeyVerdict.Rejected:
+                            return new(false, "Key not saved; previous credential unchanged.", "provider_key_rejected");
+                        case CandidateKeyVerdict.Unavailable:
+                            return new(false, "Key not saved; previous credential unchanged.", "provider_key_unverified");
+                        case CandidateKeyVerdict.Unchecked:
+                            savedMessage = "Key saved, but it could not be checked before use; the first request will.";
+                            savedCode = "provider_key_unchecked";
+                            break;
+                    }
                     cancellationToken.ThrowIfCancellationRequested();
                 }
                 if (payload.ContainsKey("reasoning_effort"))
@@ -91,9 +116,24 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
                     candidate = ProviderReasoningPreferences.Save(candidate, effort, selection);
                 }
             }
+            catch (ProviderKeyFormatException error)
+            {
+                return new SettingsTransitionResult(false, error.Message, error.Code);
+            }
             catch (Exception error) when (error is SettingsPayloadException or ProviderCatalogException or ArgumentException)
             {
                 return new SettingsTransitionResult(false, "Invalid settings payload.", "settings_invalid");
+            }
+
+            // What is known about each key follows this save, in the same write: a moved
+            // endpoint forgets its verdict, and a new key carries the check it just had.
+            ProviderKeyStatus.ForgetMovedEndpoints(previous, candidate, candidate.Raw);
+            foreach (var update in updates)
+            {
+                if (ProviderKeyStatus.BackendForAccount(update.Account) is { } keyed)
+                    ProviderKeyStatus.Set(candidate.Raw, keyed,
+                        verdict == CandidateKeyVerdict.Accepted ? ProviderKeyStatus.Verified : ProviderKeyStatus.Unchecked,
+                        DateTimeOffset.UtcNow);
             }
 
             var snapshots = new List<CredentialSnapshot>();
@@ -123,7 +163,9 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
                     throw;
                 }
 
-                return new SettingsTransitionResult(true, "Settings saved.");
+                // A stored key is redacted from runs from now on, not only after restart.
+                _secrets?.AddStoredSecrets(updates.Select(update => update.Secret));
+                return new SettingsTransitionResult(true, savedMessage, savedCode);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -185,6 +227,7 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
                 ServiceName,
                 account,
                 cancellationToken).ConfigureAwait(false);
+            await ForgetKeyStatusAsync(account).ConfigureAwait(false);
             return new SettingsTransitionResult(true, "Provider signed out.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -200,6 +243,58 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Records what a run learned about a stored key. Nothing is written unless the
+    /// key is still the one the run used, its endpoint is unchanged, and the state is
+    /// new: a verdict about an old key must never land on the key that replaced it.
+    /// </summary>
+    public async Task RecordKeyStatusAsync(
+        string backend,
+        string account,
+        string usedCredential,
+        string state,
+        Func<SettingsSnapshot, bool> endpointUnchanged,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(backend);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        ArgumentNullException.ThrowIfNull(usedCredential);
+        ArgumentNullException.ThrowIfNull(endpointUnchanged);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var current = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
+            if (ProviderKeyStatus.Read(current, backend) == state || !endpointUnchanged(current)) return;
+            var stored = await _credentials.GetAsync(ServiceName, account, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(stored, usedCredential, StringComparison.Ordinal)) return;
+            var raw = current.Raw.DeepClone().AsObject();
+            ProviderKeyStatus.Set(raw, backend, state, DateTimeOffset.UtcNow);
+            await _settings.SaveAsync(current with { Raw = raw }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>Best effort: a signed-out provider keeps no verdict about its old key.</summary>
+    private async Task ForgetKeyStatusAsync(string account)
+    {
+        if (ProviderKeyStatus.BackendForAccount(account) is not { } backend) return;
+        try
+        {
+            var current = await _settings.ReadAsync(CancellationToken.None).ConfigureAwait(false);
+            if (ProviderKeyStatus.Read(current, backend) is null) return;
+            var raw = current.Raw.DeepClone().AsObject();
+            ProviderKeyStatus.Remove(raw, backend);
+            await _settings.SaveAsync(current with { Raw = raw }, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            // The key is gone; a leftover verdict is shown only while a key is stored.
         }
     }
 
@@ -382,12 +477,41 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
         throw new SettingsPayloadException();
     }
 
+    /// <summary>
+    /// The provider a validated key is for, or null when the payload is not exactly one
+    /// provider's key. A named custom provider must already be saved: its endpoint is
+    /// read from the stored definition, never from the same request.
+    /// </summary>
+    private static string? ValidatedKeyAlias(JsonObject payload, string account) => account switch
+    {
+        OpenAiAccount when payload.Count == 2 => "openai",
+        AnthropicAccount when payload.Count == 2 => "anthropic",
+        CustomAccount when payload.Count == 2 => "custom",
+        _ when payload.Count == 3 && payload.ContainsKey("models_dev_provider_id") =>
+            ProviderSelection.NormalizeModelsDevBackend(OptionalString(payload, "models_dev_provider_id", 64) ?? ""),
+        _ when payload.Count == 3 && payload.ContainsKey("custom_provider_id")
+            && !payload.ContainsKey(CustomProviders.SettingField)
+            && OptionalString(payload, "custom_provider_id", 64) is { } id
+            && CustomProviders.IsValidId(id) && account == CustomProviders.CredentialAccount(id) =>
+            CustomProviders.BackendPrefix + id,
+        _ => null,
+    };
+
     private static string? OptionalSecret(JsonObject payload, string key)
     {
         var value = OptionalString(payload, key, 4096);
         // Secrets are stored byte-exact: surrounding whitespace can be part of a
         // pasted key, so only an empty value is rejected here.
-        return string.IsNullOrWhiteSpace(value) ? null : value;
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        // A line break or other control character cannot travel in an HTTP header, so
+        // such a key failed every request later with an unnamed error. Say so now.
+        if (value.Any(char.IsControl))
+            throw new ProviderKeyFormatException("provider_key_malformed",
+                "Key not saved: it contains a line break or another control character.");
+        if (value.Length > WindowsCredentialStore.MaximumSecretCharacters)
+            throw new ProviderKeyFormatException("provider_key_too_long",
+                $"Key not saved: Windows Credential Manager holds at most {WindowsCredentialStore.MaximumSecretCharacters} characters.");
+        return value;
     }
 
     private static string? OptionalString(JsonObject payload, string key, int maximum)
@@ -413,5 +537,11 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
 
     private sealed class SettingsPayloadException : Exception
     {
+    }
+
+    /// <summary>A key the vault or an HTTP header cannot carry; never holds the key.</summary>
+    private sealed class ProviderKeyFormatException(string code, string message) : Exception(message)
+    {
+        public string Code { get; } = code;
     }
 }

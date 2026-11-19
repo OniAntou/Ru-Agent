@@ -17,7 +17,8 @@ public sealed class AgentProviderSnapshotFactory(
     ICredentialStore credentials,
     ProviderCatalogService catalog,
     SqliteAgentRunProviderSelectionStore selectionStore,
-    Func<RunId, CancellationToken, Task<bool>> isTerminal) : IDisposable, IAsyncDisposable
+    Func<RunId, CancellationToken, Task<bool>> isTerminal,
+    RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor? secrets = null) : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan SynchronousDisposeTimeout = TimeSpan.FromSeconds(5);
     private readonly object _cacheGate = new();
@@ -178,7 +179,7 @@ public sealed class AgentProviderSnapshotFactory(
         var key = await ReadCredentialAsync(selected, ct).ConfigureAwait(false);
         var models = await catalog.GetAsync(selected, current, false, ct).ConfigureAwait(false);
         ValidateCredentialRevision(key, models);
-        var options = ProviderReasoningPreferences.Resolve(
+        var options = ProviderReasoningPreferences.ResolveSaved(
             models,
             selected.Model,
             ProviderReasoningPreferences.EffortOverride() ?? ProviderReasoningPreferences.Read(current, selected));
@@ -339,6 +340,9 @@ public sealed class AgentProviderSnapshotFactory(
             : await credentials.GetAsync("Ru", selected.Account, ct).ConfigureAwait(false) ?? "";
         if (selected.RequiresCredential && string.IsNullOrWhiteSpace(key))
             throw new ProviderCatalogException("catalog_unauthorized");
+        // The key lives only in the vault, so the environment-seeded redactor never
+        // knew it; seed it before the run can echo it into a reply or tool result.
+        secrets?.AddStoredSecrets([key]);
         if (selected.Alias == "custom" || selected.IsCustomProvider)
             CustomProviders.RequireCredentialTransport(selected.CompletionUri, key);
         if ((selected.Alias is "openai" or "anthropic") && string.IsNullOrWhiteSpace(selected.Model))
@@ -359,9 +363,10 @@ public sealed class AgentProviderSnapshotFactory(
             _ when CustomProviders.NormalizeBackend(pin.Backend) is { } custom => pin.Backend == custom
                 && pin.Alias == custom
                 && pin.Protocol is ProviderProtocols.ChatCompletions or ProviderProtocols.AnthropicMessages,
+            // A Models.dev provider is pinned with the protocol its route resolved to (ADR 0052).
             _ => ProviderSelection.NormalizeModelsDevBackend(pin.Backend) is { } generic
                 && pin.Alias == generic["models.dev:".Length..]
-                && pin.Protocol == ProviderProtocols.ChatCompletions,
+                && pin.Protocol is ProviderProtocols.ChatCompletions or ProviderProtocols.AnthropicMessages,
         };
         if (!Uri.TryCreate(pin.BaseUri, UriKind.Absolute, out var baseUri)
             || baseUri.Scheme is not ("http" or "https")
@@ -425,7 +430,7 @@ public sealed class AgentProviderSnapshotFactory(
             CloudflareAccountId: "pin-validation");
         if (ProviderSelection.NormalizeModelsDevBackend(pin.Backend) is not null)
         {
-            var provider = new ModelsDevProvider(pin.Alias, pin.Alias, pin.BaseUri, []);
+            var provider = new ModelsDevProvider(pin.Alias, pin.Alias, pin.BaseUri, [], Protocol: pin.Protocol);
             return ProviderSelection.From(settings, [provider]);
         }
 

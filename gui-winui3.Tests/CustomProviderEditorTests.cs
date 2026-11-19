@@ -48,6 +48,39 @@ public sealed class CustomProviderEditorTests
     }
 
     [Fact]
+    public async Task A_refused_key_keeps_the_saved_definition_and_the_key_to_fix()
+    {
+        var backend = new FakeBackend
+        {
+            Result = new CustomProviderSaveResult(false, "provider_key_rejected", string.Empty, DefinitionSaved: true),
+        };
+        var editor = new CustomProviderEditorViewModel(backend);
+        var closed = (bool?)null;
+        editor.Closed += (_, changed) => closed = changed;
+        editor.Open(Settings(Provider("work", "Work vLLM")), null);
+        editor.ProviderId = "home";
+        editor.DisplayName = "Home";
+        editor.BaseUrl = "https://home.example";
+        editor.ApiKey = "home-secret";
+        editor.AddModelCommand.Execute(null);
+        editor.Models[0].Id = "m";
+
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(closed);
+        Assert.False(editor.IsNew);
+        Assert.Equal("home-secret", editor.ApiKey);
+        Assert.Contains("rejected the key", editor.StatusMessage, StringComparison.Ordinal);
+
+        // The next save edits the stored provider instead of adding it twice.
+        backend.Result = null;
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(new[] { "work", "home" }, backend.Saves[^1].Providers.Select(provider => provider.Id));
+        // Cancel after that reports the change, so the overview reloads.
+        Assert.True(closed);
+    }
+
+    [Fact]
     public async Task Saving_a_new_provider_keeps_the_others_and_sends_its_key_once()
     {
         var backend = new FakeBackend();
@@ -214,6 +247,7 @@ public sealed class CustomProviderEditorTests
     private sealed class FakeBackend : ICustomProviderBackend
     {
         public List<Save> Saves { get; } = [];
+        public CustomProviderSaveResult? Result { get; set; }
         public List<string> RemovedKeys { get; } = [];
         public ProviderCatalogSnapshot? Discovery { get; init; }
         public string? DiscoveredBackend { get; private set; }
@@ -223,7 +257,7 @@ public sealed class CustomProviderEditorTests
         public Task<CustomProviderSaveResult> SaveAsync(IReadOnlyList<CustomProviderDto> providers, string? keyProviderId, string? apiKey)
         {
             Saves.Add(new Save(providers, keyProviderId, apiKey));
-            return Task.FromResult(new CustomProviderSaveResult(true, null, "Settings saved."));
+            return Task.FromResult(Result ?? new CustomProviderSaveResult(true, null, "Settings saved."));
         }
 
         public Task<ProviderCatalogSnapshot?> DiscoverAsync(string backend, CancellationToken cancellationToken)

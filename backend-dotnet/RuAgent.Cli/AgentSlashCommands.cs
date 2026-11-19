@@ -217,6 +217,33 @@ public sealed partial class AgentSlashCommands
     }
 
     /// <summary>
+    /// The Host's <c>provider_key_status</c> by canonical backend: what it last learned
+    /// about each stored key. Empty when the Host reports none.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> ReadKeyStatuses(JsonElement settings)
+    {
+        var statuses = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (settings.ValueKind != JsonValueKind.Object
+            || !settings.TryGetProperty("provider_key_status", out var map)
+            || map.ValueKind != JsonValueKind.Object)
+        {
+            return statuses;
+        }
+
+        foreach (var entry in map.EnumerateObject().Take(256))
+        {
+            if (entry.Value.ValueKind == JsonValueKind.Object
+                && entry.Value.TryGetProperty("state", out var state)
+                && state.ValueKind == JsonValueKind.String)
+            {
+                statuses[entry.Name] = state.GetString()!;
+            }
+        }
+
+        return statuses;
+    }
+
+    /// <summary>
     /// The live models.dev catalog for the backend picker, plus the reason it is missing.
     /// A failed lookup must reach the operator: the WinUI settings surface had the same
     /// fetch failure and swallowed it into a silently short list, so the caller prints
@@ -258,7 +285,8 @@ public sealed partial class AgentSlashCommands
             var (providers, providerError) = await ReadModelsDevProvidersAsync(cancellationToken).ConfigureAwait(false);
             var notice = ProviderListNotice(providers, providerError);
 
-            var choices = Tui.TuiSurfaces.BackendChoices(current, keyStates, providers);
+            var choices = Tui.TuiSurfaces.BackendChoices(current, keyStates, providers,
+                settings.HasValue ? ReadKeyStatuses(settings.Value) : null);
             if (Picker is null)
             {
                 await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  " + notice)).ConfigureAwait(false);
@@ -743,28 +771,67 @@ public sealed partial class AgentSlashCommands
             return;
         }
 
-        try
+        if (await StoreProviderKeyAsync(provider, secret, cancellationToken).ConfigureAwait(false))
         {
-            JsonObject body = new();
-            foreach (var (field, value) in ProviderCredential.KeyPayload(provider, secret))
-            {
-                body[field] = value;
-            }
-
-            await _settingsClient.UpdateAsync(body, cancellationToken).ConfigureAwait(false);
             await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Signed in to {provider.DisplayName}")).ConfigureAwait(false);
-        }
-        catch (AgentApiException ex)
-        {
-            await _err.WriteLineAsync(CliErrorText.Format(ex)).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            await _err.WriteLineAsync($"key_error: {ex.Message}").ConfigureAwait(false);
         }
 
         await _humanOut.FlushAsync().ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Stores a key through the Host's checked save, which asks the provider (or the
+    /// custom server) first, and reports a refusal by name. Returns whether the key is
+    /// now stored.
+    /// </summary>
+    /// <remarks>
+    /// Host and transport errors can quote the request, which holds the key, so after a
+    /// secret prompt only codes and fixed text are printed, never an exception message.
+    /// </remarks>
+    private async Task<bool> StoreProviderKeyAsync(ProviderCredentialTarget provider, string secret, CancellationToken ct)
+    {
+        var payload = ProviderCredential.KeyPayload(provider, secret);
+        try
+        {
+            var result = await _settingsClient.SaveVerifiedKeyAsync(payload, ct).ConfigureAwait(false);
+            if (result.Saved)
+            {
+                if (result.Code == "provider_key_unchecked")
+                {
+                    await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
+                        $"  {provider.DisplayName} could not check the key before use; the first request will.")).ConfigureAwait(false);
+                }
+
+                return true;
+            }
+
+            await _err.WriteLineAsync(ProviderKeyRefusal(provider, result.Code)).ConfigureAwait(false);
+            return false;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (AgentApiException ex)
+        {
+            await _err.WriteLineAsync($"{ex.ErrorCode}: could not confirm the key was saved; check /status before trying again.").ConfigureAwait(false);
+            return false;
+        }
+        catch (Exception)
+        {
+            await _err.WriteLineAsync("key_save_failed: could not confirm the key was saved; check /status before trying again.").ConfigureAwait(false);
+            return false;
+        }
+    }
+
+    internal static string ProviderKeyRefusal(ProviderCredentialTarget provider, string? code) => code switch
+    {
+        "provider_key_rejected" => $"provider_key_rejected: {provider.DisplayName} refused this key; the saved key is unchanged.",
+        "provider_key_unverified" => $"provider_key_unverified: could not reach {provider.DisplayName} to check the key; the saved key is unchanged. Try again.",
+        "provider_key_malformed" => "provider_key_malformed: the key contains a line break or another control character; nothing was saved.",
+        "provider_key_too_long" => "provider_key_too_long: the key is longer than Windows Credential Manager holds; nothing was saved.",
+        _ => $"{code ?? "key_save_failed"}: the key was not saved; the saved key is unchanged.",
+    };
 
     private async Task RemoveKeyAsync(string providerArg, CancellationToken cancellationToken)
     {

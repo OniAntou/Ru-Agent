@@ -146,7 +146,7 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
             }
 
             var genericModel = settings.Model?.Trim() ?? string.Empty;
-            return new(generic, provider.Id, "chat_completions", providerUri, genericModel, provider.Id.ToLowerInvariant() + "_api_key");
+            return new(generic, provider.Id, provider.Protocol, providerUri, genericModel, provider.Id.ToLowerInvariant() + "_api_key");
         }
 
         var (alias, protocol, url, model, account) = backend switch

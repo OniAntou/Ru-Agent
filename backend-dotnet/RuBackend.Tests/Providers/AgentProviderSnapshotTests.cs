@@ -107,6 +107,66 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         "Custom OpenAI", "custom", ProviderProtocols.ChatCompletions, baseUri, model, "custom_api_key",
         "{\"ru_tool_profile\":\"coding_v2\"}", null, model, "native");
 
+    [Theory]
+    [InlineData(true, "verified")]
+    [InlineData(false, "rejected")]
+    public async Task A_steps_verdict_is_recorded_for_the_key_it_was_sent_with(bool accepted, string state)
+    {
+        await using var harness = await BackendHarnessTestFixture.CreateAsync();
+        var run = await harness.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + new string('c', 32), new string('c', 32));
+        var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
+        await selections.PinAsync(run.Run.RunId, CustomPin("https://provider.invalid/v1", "a"), default);
+        var transition = new RecordingTransition();
+        var recorder = new ProviderKeyStatusRecorder(selections, transition);
+        var sentWith = new ProviderBootstrapData("Custom OpenAI", ProviderProtocols.ChatCompletions,
+            new Uri("https://provider.invalid/v1/chat/completions"), "a", "synthetic-sent-key");
+
+        await recorder.ObserveAsync(run.Run.RunId, sentWith, accepted);
+
+        var call = Assert.Single(transition.Calls);
+        Assert.Equal(("Custom OpenAI", "custom_api_key", "synthetic-sent-key", state), call);
+    }
+
+    private sealed class RecordingTransition : ISettingsTransitionService
+    {
+        public List<(string Backend, string Account, string Credential, string State)> Calls { get; } = [];
+        public Task<SettingsTransitionResult> ApplyAsync(System.Text.Json.Nodes.JsonObject payload, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+        public Task<SettingsTransitionResult> RemoveProviderAsync(string backendChoice, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+        public Task RecordKeyStatusAsync(string backend, string account, string usedCredential, string state,
+            Func<SettingsSnapshot, bool> endpointUnchanged, CancellationToken cancellationToken)
+        {
+            Calls.Add((backend, account, usedCredential, state));
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task The_key_a_run_reads_from_the_vault_is_redacted_from_then_on()
+    {
+        var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
+        await store.SaveAsync((await store.ReadAsync(default)) with
+        { Backend = "Custom OpenAI", CustomModel = "a", CustomUrl = "https://provider.invalid/v1" }, default);
+        await using var harness = await BackendHarnessTestFixture.CreateAsync();
+        var run = await harness.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + new string('d', 32), new string('d', 32));
+        var credentials = new Credentials { Key = "synthetic-vault-only-key" };
+        var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System);
+        var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
+        await selections.PinAsync(run.Run.RunId, CustomPin("https://provider.invalid/v1", "a"), default);
+        var secrets = new RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor([]);
+        await using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog,
+            selections, (_, _) => Task.FromResult(false), secrets);
+        Assert.Equal("synthetic-vault-only-key", secrets.Redact("synthetic-vault-only-key"));
+
+        await factory.GetAsync(run.Run.RunId, default);
+
+        Assert.Equal(RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor.Replacement,
+            secrets.Redact("synthetic-vault-only-key"));
+    }
+
     [Fact]
     public async Task Same_run_keeps_model_key_and_effort_after_settings_change()
     {
@@ -700,10 +760,10 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
             new HttpClient(new FailingCatalogHandler(HttpStatusCode.Unauthorized)),
             new KeyedCredentials(), TimeProvider.System, cacheFile);
 
-        var candidate = await catalog.CheckCandidateCredentialAsync(
+        var candidate = await catalog.VerifyCandidateCredentialAsync(
             "models.dev:opencode-go", "candidate-key", settings, default);
 
-        Assert.Equal("catalog_unauthorized", candidate.ErrorCode);
+        Assert.Equal(CandidateKeyVerdict.Rejected, candidate);
     }
 
     /// <summary>A gateway catalog that answers for any URL and records the one it received.</summary>

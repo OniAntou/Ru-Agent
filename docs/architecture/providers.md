@@ -81,6 +81,18 @@ Custom OpenAI uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic
 uses `anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
 and `https://api.anthropic.com/v1`. A `models.dev:<provider-id>` backend reads
 `<provider-id>_api_key` and resolves its base URL from the Models.dev catalog.
+Its wire protocol comes from the entry's AI SDK package through the route table
+`ProviderRoutes` ([ADR 0052](../adr/0052-provider-route-table.md)):
+`@ai-sdk/anthropic` entries (MiniMax and other Anthropic-compatible gateways) are
+reached over Anthropic Messages at `{api}/messages` with `x-api-key`, and every
+other entry over chat completions. The table also supplies the root for providers
+Models.dev lists without `api` (xAI, Groq, Mistral, Google's OpenAI-compatible
+root, Cerebras, Together, DeepInfra, Cohere, Venice). Providers that
+need a cloud identity (Bedrock, Vertex, Azure, watsonx, SAP, GitLab) and
+Models.dev's own `openai` and `anthropic` entries are not offered. The protocol is
+pinned with the run. An Anthropic-compatible gateway, Google and Cloudflare list
+their models from Models.dev, with its windows, output limits and prices but no
+reasoning-effort options; a saved effort on such a model runs at its default.
 Provider naming itself lives in one table, `RuAgent.Protocol.Providers.ProviderAliases`:
 the Host, the settings transition, the settings store and both clients normalize a
 typed name through it, so the same name resolves to the same backend and credential

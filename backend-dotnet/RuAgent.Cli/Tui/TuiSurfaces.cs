@@ -135,10 +135,30 @@ public static class TuiSurfaces
     /// signed-out provider called out so its absence from a run is not a surprise.</summary>
     /// <param name="providers">The live models.dev catalog. Null or empty falls back to the
     /// four providers the CLI has always known.</param>
+    /// <summary>
+    /// What the Host last learned about a provider's stored key (<c>provider_key_status</c>
+    /// in <c>/settings</c>, keyed by canonical backend), or null when nothing is known.
+    /// </summary>
+    internal static string? KeyStatusDetail(string choice, IReadOnlyDictionary<string, string>? keyStatus)
+    {
+        if (keyStatus is null || keyStatus.Count == 0) return null;
+        var backend = RuAgent.Protocol.Providers.ProviderAliases.Normalize(choice) ?? choice;
+        return keyStatus.TryGetValue(backend, out var state)
+            ? state switch
+            {
+                "verified" => " · key ok",
+                "unchecked" => " · key not checked yet",
+                "rejected" => " · key refused",
+                _ => null,
+            }
+            : null;
+    }
+
     public static IReadOnlyList<ChoiceItem> BackendChoices(
         string? currentBackend,
         IReadOnlyDictionary<string, bool>? keyStates = null,
-        IReadOnlyList<(string Id, string Name)>? providers = null)
+        IReadOnlyList<(string Id, string Name)>? providers = null,
+        IReadOnlyDictionary<string, string>? keyStatus = null)
     {
         var current = NormalizeBackend(currentBackend);
         var rows = BaseBackends.ToList();
@@ -169,6 +189,12 @@ public static class TuiSurfaces
                 if (keyStates is not null && keyStates.TryGetValue(b.Value, out var hasKey) && !hasKey)
                 {
                     detail += " · no key";
+                }
+                else if (keyStates is not null && keyStates.TryGetValue(b.Value, out var stored) && stored
+                    && KeyStatusDetail(b.Value, keyStatus) is { } status)
+                {
+                    // A verdict means something only while a key is stored.
+                    detail += status;
                 }
 
                 return new ChoiceItem(b.Label, detail, b.Value);

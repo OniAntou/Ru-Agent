@@ -1,3 +1,4 @@
+using System.Net;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
@@ -107,6 +108,33 @@ public sealed partial class InProcessModelStepRunnerTests
         Assert.Equal(AssistantFinishReason.ContentFilter, result.Step.FinishReason);
         Assert.Empty(result.Step.ToolCalls);
         Assert.Equal(12, result.Usage!.InputTokens);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("auth_failed", false)]
+    [InlineData("forbidden", null)]
+    public async Task A_step_reports_what_it_learned_about_the_runs_key(string? failure, bool? observed)
+    {
+        var provider = new ScriptedProvider((_, _) => failure is null
+            ? Deltas(new ModelDelta("ok", [], completed: true, finishReason: "stop"))
+            : Throws(new ModelProviderException(failure, retryable: false)));
+        var seen = new List<bool>();
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
+        {
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
+            ObserveProviderKey = (_, sentWith, accepted) =>
+            {
+                Assert.Equal(Bootstrap().Credential, sentWith.Credential);
+                seen.Add(accepted);
+            },
+        };
+
+        try { await runner.RunStepAsync(Request(), _ => ValueTask.CompletedTask, default); }
+        catch (ModelRunnerProtocolException) when (failure is not null) { }
+
+        // A 403 can be a model or region the key may not use, so it says nothing about the key.
+        Assert.Equal(observed is { } value ? [value] : [], seen);
     }
 
     [Fact]
@@ -409,6 +437,49 @@ public sealed partial class InProcessModelStepRunnerTests
 
         Assert.Equal("recovered after prepare", result.Step.Text);
         Assert.Equal(2, provider.Calls);
+    }
+
+    [Fact]
+    public async Task An_anthropic_gateway_step_posts_messages_with_its_key_header()
+    {
+        // ADR 0052: a Models.dev provider published with @ai-sdk/anthropic is called the way
+        // Anthropic is, at {api}/messages with x-api-key, never at /chat/completions.
+        var gateway = new RecordingGateway();
+        var bootstrap = new ProviderBootstrapData("models.dev:minimax", ProviderProtocols.AnthropicMessages,
+            new Uri("https://api.minimax.io/anthropic/v1/messages"), "MiniMax-M2", "synthetic-gateway-key",
+            maximumOutputTokens: 8_192, contextWindowTokens: 204_800, outputTokenReserve: 8_192);
+        var runner = new InProcessModelStepRunner(new ModelStepService(new AnthropicMessagesModelProvider(new HttpClient(gateway))))
+        {
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(bootstrap),
+        };
+
+        var failure = await Assert.ThrowsAsync<ModelRunnerProtocolException>(() =>
+            runner.RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None));
+
+        Assert.Equal("provider_auth", failure.Code);
+        var sent = Assert.Single(gateway.Requests);
+        Assert.Equal(HttpMethod.Post, sent.Method);
+        Assert.Equal(new Uri("https://api.minimax.io/anthropic/v1/messages"), sent.Uri);
+        Assert.Equal("synthetic-gateway-key", sent.ApiKey);
+        Assert.False(sent.HasAuthorization);
+        Assert.Contains("\"model\":\"MiniMax-M2\"", sent.Body, StringComparison.Ordinal);
+        Assert.Contains("\"max_tokens\"", sent.Body, StringComparison.Ordinal);
+    }
+
+    private sealed class RecordingGateway : HttpMessageHandler
+    {
+        public List<(HttpMethod Method, Uri Uri, string? ApiKey, bool HasAuthorization, string Body)> Requests { get; } = [];
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add((request.Method, request.RequestUri!,
+                request.Headers.TryGetValues("x-api-key", out var key) ? key.Single() : null,
+                request.Headers.Authorization is not null,
+                request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken)));
+            return new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent("{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid key\"}}"),
+            };
+        }
     }
 
     private static InProcessModelStepRunner Runner(

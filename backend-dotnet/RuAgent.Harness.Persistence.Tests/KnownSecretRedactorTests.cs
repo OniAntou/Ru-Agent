@@ -59,4 +59,37 @@ public sealed class KnownSecretRedactorTests
             allocated < input.Length * 128L,
             $"Redaction allocated {allocated} bytes for {input.Length} input characters.");
     }
+
+    [Fact]
+    public void A_stored_key_added_later_is_redacted_from_then_on()
+    {
+        var redactor = new KnownSecretRedactor(["environment-secret"]);
+        Assert.Equal("sk-stored-provider-key", redactor.Redact("sk-stored-provider-key"));
+
+        redactor.AddStoredSecrets(["sk-stored-provider-key"]);
+
+        Assert.Equal(
+            $"{KnownSecretRedactor.Replacement} {KnownSecretRedactor.Replacement}",
+            redactor.Redact("sk-stored-provider-key environment-secret"));
+    }
+
+    [Fact]
+    public void Short_or_blank_stored_values_are_ignored_and_the_shared_empty_redactor_never_learns()
+    {
+        var redactor = new KnownSecretRedactor([]);
+        redactor.AddStoredSecrets(["short", "            ", null]);
+        Assert.Equal("short", redactor.Redact("short"));
+
+        KnownSecretRedactor.Empty.AddStoredSecrets(["sk-stored-provider-key"]);
+        Assert.Equal("sk-stored-provider-key", KnownSecretRedactor.Empty.Redact("sk-stored-provider-key"));
+    }
+
+    [Fact]
+    public void Stored_seeds_stop_at_the_bound_instead_of_throwing()
+    {
+        var redactor = new KnownSecretRedactor([]);
+        redactor.AddStoredSecrets(Enumerable.Range(0, 300).Select(i => $"sk-stored-key-{i:000}"));
+        Assert.Equal(KnownSecretRedactor.Replacement, redactor.Redact("sk-stored-key-000"));
+        Assert.Equal("sk-stored-key-299", redactor.Redact("sk-stored-key-299"));
+    }
 }

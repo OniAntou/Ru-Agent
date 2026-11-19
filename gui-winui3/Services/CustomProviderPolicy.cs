@@ -167,6 +167,12 @@ namespace RuApp.Services
                     "The server's model list is too large to read. Add model IDs by hand instead.",
                 ["catalog_rate_limited"] = "The server is rate limiting requests. Try again shortly.",
                 ["provider_not_active"] = "Save the provider before fetching its models.",
+                ["provider_key_rejected"] =
+                    "The provider was saved, but the server rejected the key (HTTP 401). Check the API key and save again.",
+                ["provider_key_malformed"] =
+                    "The key was not saved: it contains a line break or another control character. Copy it again.",
+                ["provider_key_too_long"] =
+                    "The key was not saved: it is longer than Windows Credential Manager holds. Check that only the key was pasted.",
             };
 
         /// <summary>

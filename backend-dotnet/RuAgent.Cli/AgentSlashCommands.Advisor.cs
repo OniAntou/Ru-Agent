@@ -73,7 +73,7 @@ public sealed partial class AgentSlashCommands
         var (providers, providerError) = await ReadModelsDevProvidersAsync(cancellationToken).ConfigureAwait(false);
         var offDetail = currentModel is null ? "no advisor · current" : "no advisor";
         var providerChoices = new List<Tui.ChoiceItem> { new(AdvisorOffChoice, offDetail, AdvisorOffChoice) };
-        providerChoices.AddRange(Tui.TuiSurfaces.BackendChoices(currentBackend, keyStates, providers));
+        providerChoices.AddRange(Tui.TuiSurfaces.BackendChoices(currentBackend, keyStates, providers, ReadKeyStatuses(settings)));
         var pickedBackend = await Picker(new Tui.ChoiceList("advisor provider", providerChoices,
             footer: $"{ProviderListNotice(providers, providerError)} · applies to new runs"), cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();

@@ -302,27 +302,31 @@ public sealed partial class CustomProviderEditorViewModel : ObservableObject
             var index = _editingId is null ? -1 : _stored.FindIndex(provider => provider.Id == _editingId);
             if (index < 0) list.Add(dto);
             else list.Insert(Math.Min(index, list.Count), dto);
-            var key = ApiKey.Length > 0 ? ApiKey : null;
+            // A copied key often brings a space or line break with it; no key contains one.
+            var typed = ApiKey.Trim();
+            var key = typed.Length > 0 ? typed : null;
             var result = await _backend.SaveAsync(list, key is null ? null : dto.Id, key);
             if (!result.Success)
             {
+                // The definition is stored even when its key was refused: the editor now
+                // edits that saved provider, and the key stays in the box to be fixed.
+                if (result.DefinitionSaved) AdoptSaved(list, dto);
                 SetStatus(CustomProviderPolicy.FailureMessage(result.Code), ProviderConnectionTest.ErrorTone);
                 return false;
             }
 
-            _stored = list;
-            _editingId = dto.Id;
-            _savedOnce = true;
-            IsNew = false;
-            ProviderId = dto.Id;
-            BaseUrl = dto.BaseUrl;
+            AdoptSaved(list, dto);
             if (key is not null)
             {
                 ApiKey = string.Empty;
                 HasSavedKey = true;
             }
 
-            SetStatus("Saved.", ProviderConnectionTest.SuccessTone);
+            if (result.Code == "provider_key_unchecked")
+                SetStatus("Saved. The server could not confirm the key before use; the first request will.",
+                    ProviderConnectionTest.NeutralTone);
+            else
+                SetStatus("Saved.", ProviderConnectionTest.SuccessTone);
             if (closeOnSuccess) Closed?.Invoke(this, true);
             return true;
         }
@@ -330,6 +334,16 @@ public sealed partial class CustomProviderEditorViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    private void AdoptSaved(List<CustomProviderDto> list, CustomProviderDto dto)
+    {
+        _stored = list;
+        _editingId = dto.Id;
+        _savedOnce = true;
+        IsNew = false;
+        ProviderId = dto.Id;
+        BaseUrl = dto.BaseUrl;
     }
 
     private void SetStatus(string message, string tone)

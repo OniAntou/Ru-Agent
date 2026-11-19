@@ -82,6 +82,26 @@ namespace RuApp.Models
         [JsonPropertyName("custom_provider_keys")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<string>? CustomProviderKeys { get; set; }
+
+        /// <summary>
+        /// What the Host last learned about each stored key, by canonical backend
+        /// (<c>OpenAI</c>, <c>models.dev:openrouter</c>, <c>custom:lab</c>,
+        /// <c>Custom OpenAI</c>); read-only. A missing entry means nothing is known yet.
+        /// </summary>
+        [JsonPropertyName("provider_key_status")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Dictionary<string, ProviderKeyStatusDto>? ProviderKeyStatus { get; set; }
+    }
+
+    /// <summary>One entry of <see cref="AppSettingsDto.ProviderKeyStatus"/>.</summary>
+    public sealed class ProviderKeyStatusDto
+    {
+        /// <summary><c>verified</c>, <c>unchecked</c> or <c>rejected</c>.</summary>
+        [JsonPropertyName("state")]
+        public string? State { get; set; }
+
+        [JsonPropertyName("checked_at")]
+        public DateTimeOffset? CheckedAt { get; set; }
     }
 
     /// <summary>

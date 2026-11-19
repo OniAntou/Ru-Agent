@@ -35,6 +35,13 @@ public static class ProviderCatalogRequestFactory
         }
         else if (selection.Alias == "custom" && credential.Length != 0)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential);
+        else if (selection.IsModelsDev && credential.Length != 0
+            && selection.Protocol == RuAgent.Runtime.Adapters.Bootstrap.ProviderProtocols.AnthropicMessages)
+        {
+            // An Anthropic Messages gateway authenticates the way Anthropic does (ADR 0052).
+            request.Headers.TryAddWithoutValidation("x-api-key", RequireCredential(credential));
+            request.Headers.TryAddWithoutValidation("anthropic-version", AnthropicVersion);
+        }
         else if (selection.IsModelsDev && credential.Length != 0)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential);
         return request;

@@ -11,44 +11,109 @@ public sealed class KnownSecretRedactor : ITransientContentRedactor
     public const string Replacement = "[REDACTED]";
     private const int MaximumSecrets = 256;
     private const int MaximumSecretCharacters = 4096;
-    private readonly string[] _secrets;
-    private readonly Regex? _pattern;
-    private readonly int _maximumSecretLength;
+
+    /// <summary>
+    /// The shortest stored credential taken as a seed. Provider keys are far longer;
+    /// a short value would redact ordinary words wherever it happened to appear.
+    /// </summary>
+    public const int MinimumStoredSecretCharacters = 12;
+
+    private readonly string[] _baseSecrets;
+    private readonly HashSet<string> _storedSecrets = new(StringComparer.Ordinal);
+    private readonly object _storedGate = new();
+    private readonly bool _acceptsStoredSecrets;
+    private volatile SeedSet _seeds;
+
+    /// <summary>One immutable seed set; sessions and payloads keep the set they started with.</summary>
+    private sealed record SeedSet(int Count, Regex? Pattern, int MaximumSecretLength);
 
     public KnownSecretRedactor(IEnumerable<string> knownSecrets)
+        : this(knownSecrets, acceptsStoredSecrets: true)
+    {
+    }
+
+    private KnownSecretRedactor(IEnumerable<string> knownSecrets, bool acceptsStoredSecrets)
     {
         ArgumentNullException.ThrowIfNull(knownSecrets);
-        _secrets = knownSecrets
+        _baseSecrets = knownSecrets
             .Where(secret => !string.IsNullOrEmpty(secret))
             .Distinct(StringComparer.Ordinal)
-            .OrderByDescending(secret => secret.Length)
             .ToArray();
-        if (_secrets.Length > MaximumSecrets
-            || _secrets.Any(secret => secret.Length > MaximumSecretCharacters))
+        if (_baseSecrets.Length > MaximumSecrets
+            || _baseSecrets.Any(secret => secret.Length > MaximumSecretCharacters))
         {
             throw new ArgumentException("Known secret set exceeds its bound.", nameof(knownSecrets));
         }
 
-        _maximumSecretLength = _secrets.Length == 0 ? 0 : _secrets[0].Length;
-        _pattern = _secrets.Length == 0
-            ? null
-            : new Regex(
-                string.Join('|', _secrets.Select(Regex.Escape)),
-                RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+        _acceptsStoredSecrets = acceptsStoredSecrets;
+        _seeds = Build(_baseSecrets);
     }
 
-    public static KnownSecretRedactor Empty { get; } = new(Array.Empty<string>());
+    public static KnownSecretRedactor Empty { get; } = new(Array.Empty<string>(), acceptsStoredSecrets: false);
 
-    public KnownSecretRedactionSession CreateSession() =>
-        new(_pattern, _maximumSecretLength);
+    /// <summary>
+    /// Adds credentials the Host read from its vault, such as the provider key a run is
+    /// about to use, so the key is redacted from model output, tool results and live
+    /// frames even though no environment variable carries it. Seeds are only added,
+    /// never dropped: a replaced key still deserves redaction. Values shorter than
+    /// <see cref="MinimumStoredSecretCharacters"/>, longer than the bound, or past the
+    /// seed limit are ignored rather than failing the caller.
+    /// </summary>
+    public void AddStoredSecrets(IEnumerable<string?> secrets)
+    {
+        ArgumentNullException.ThrowIfNull(secrets);
+        if (!_acceptsStoredSecrets) return;
+        lock (_storedGate)
+        {
+            var added = false;
+            foreach (var secret in secrets)
+            {
+                if (secret is null
+                    || secret.Length < MinimumStoredSecretCharacters
+                    || secret.Length > MaximumSecretCharacters
+                    || string.IsNullOrWhiteSpace(secret)
+                    || _baseSecrets.Length + _storedSecrets.Count >= MaximumSecrets)
+                {
+                    continue;
+                }
+
+                added |= _storedSecrets.Add(secret);
+            }
+
+            if (added) _seeds = Build(_baseSecrets.Concat(_storedSecrets));
+        }
+    }
+
+    private static SeedSet Build(IEnumerable<string> secrets)
+    {
+        var ordered = secrets
+            .Distinct(StringComparer.Ordinal)
+            .OrderByDescending(secret => secret.Length)
+            .ToArray();
+        return new SeedSet(
+            ordered.Length,
+            ordered.Length == 0
+                ? null
+                : new Regex(
+                    string.Join('|', ordered.Select(Regex.Escape)),
+                    RegexOptions.CultureInvariant | RegexOptions.NonBacktracking),
+            ordered.Length == 0 ? 0 : ordered[0].Length);
+    }
+
+    public KnownSecretRedactionSession CreateSession() => CreateSession(_seeds);
+
+    private static KnownSecretRedactionSession CreateSession(SeedSet seeds) =>
+        new(seeds.Pattern, seeds.MaximumSecretLength);
 
     ITransientContentRedactionSession ITransientContentRedactor.CreateSession() =>
         CreateSession();
 
-    public string Redact(string value)
+    public string Redact(string value) => Redact(_seeds, value);
+
+    private static string Redact(SeedSet seeds, string value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        var session = CreateSession();
+        var session = CreateSession(seeds);
         return string.Concat(session.Append(value), session.Complete());
     }
 
@@ -56,7 +121,8 @@ public sealed class KnownSecretRedactor : ITransientContentRedactor
         HarnessPayloadEncoding encoding,
         ReadOnlyMemory<byte> plaintext)
     {
-        if (_secrets.Length == 0)
+        var seeds = _seeds;
+        if (seeds.Count == 0)
         {
             return plaintext.ToArray();
         }
@@ -64,13 +130,13 @@ public sealed class KnownSecretRedactor : ITransientContentRedactor
         return encoding switch
         {
             HarnessPayloadEncoding.Utf8Text =>
-                Encoding.UTF8.GetBytes(Redact(StrictUtf8(plaintext))),
-            HarnessPayloadEncoding.Json => RedactJson(plaintext),
+                Encoding.UTF8.GetBytes(Redact(seeds, StrictUtf8(plaintext))),
+            HarnessPayloadEncoding.Json => RedactJson(seeds, plaintext),
             _ => throw new HarnessStoreException("payload_encoding_not_redactable"),
         };
     }
 
-    private byte[] RedactJson(ReadOnlyMemory<byte> plaintext)
+    private static byte[] RedactJson(SeedSet seeds, ReadOnlyMemory<byte> plaintext)
     {
         try
         {
@@ -78,7 +144,7 @@ public sealed class KnownSecretRedactor : ITransientContentRedactor
             using var stream = new MemoryStream();
             using (var writer = new Utf8JsonWriter(stream))
             {
-                WriteRedactedJson(writer, document.RootElement);
+                WriteRedactedJson(seeds, writer, document.RootElement);
             }
 
             return stream.ToArray();
@@ -89,7 +155,7 @@ public sealed class KnownSecretRedactor : ITransientContentRedactor
         }
     }
 
-    private void WriteRedactedJson(Utf8JsonWriter writer, JsonElement element)
+    private static void WriteRedactedJson(SeedSet seeds, Utf8JsonWriter writer, JsonElement element)
     {
         switch (element.ValueKind)
         {
@@ -97,8 +163,8 @@ public sealed class KnownSecretRedactor : ITransientContentRedactor
                 writer.WriteStartObject();
                 foreach (var property in element.EnumerateObject())
                 {
-                    writer.WritePropertyName(Redact(property.Name));
-                    WriteRedactedJson(writer, property.Value);
+                    writer.WritePropertyName(Redact(seeds, property.Name));
+                    WriteRedactedJson(seeds, writer, property.Value);
                 }
 
                 writer.WriteEndObject();
@@ -107,13 +173,13 @@ public sealed class KnownSecretRedactor : ITransientContentRedactor
                 writer.WriteStartArray();
                 foreach (var item in element.EnumerateArray())
                 {
-                    WriteRedactedJson(writer, item);
+                    WriteRedactedJson(seeds, writer, item);
                 }
 
                 writer.WriteEndArray();
                 break;
             case JsonValueKind.String:
-                writer.WriteStringValue(Redact(element.GetString() ?? string.Empty));
+                writer.WriteStringValue(Redact(seeds, element.GetString() ?? string.Empty));
                 break;
             case JsonValueKind.Number:
             case JsonValueKind.True:

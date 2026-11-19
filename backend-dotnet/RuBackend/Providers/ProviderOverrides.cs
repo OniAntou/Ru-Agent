@@ -48,6 +48,56 @@ internal static class ProviderOverrides
     internal const string CloudflareUrlTemplate =
         "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1";
 
+    /// <summary>OpenRouter, whose model list answers anyone, keyed or not.</summary>
+    internal const string OpenRouterId = "openrouter";
+    internal const string OpenRouterHost = "openrouter.ai";
+    internal const string CloudflareHost = "api.cloudflare.com";
+
+    /// <summary>xAI, which answers a wrong key with 400 rather than 401 (live-probed 2026-11-19).</summary>
+    internal const string XaiId = "xai";
+    internal const string XaiHost = "api.x.ai";
+
+    /// <summary>
+    /// An authenticated endpoint that proves a key, for a provider whose catalog
+    /// cannot: OpenRouter's <c>/models</c> answers 200 to a made-up key, and
+    /// Cloudflare's catalog comes from Models.dev, so the key is never sent. Each
+    /// answers 401 for a wrong key, and Cloudflare 400 for a malformed one (live-probed
+    /// 2026-11-19). Null for every other
+    /// provider; the URL is only built while the resolved base still points at the
+    /// provider's own host, so a reused id never receives the key.
+    /// </summary>
+    internal static Uri? KeyCheckUri(ProviderSelection selection)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        if (!selection.IsModelsDev) return null;
+        var host = selection.BaseUri.Host;
+        if (string.Equals(selection.Alias, OpenRouterId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(host, OpenRouterHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return new Uri("https://openrouter.ai/api/v1/key");
+        }
+
+        if (string.Equals(selection.Alias, XaiId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(host, XaiHost, StringComparison.OrdinalIgnoreCase))
+        {
+            // Its list answers 400 "Incorrect API key" to a wrong key, which the catalog
+            // path reads as an outage; the key endpoint gives the same 400 and 200 for a
+            // working key, and the key check reads 400 as a refusal.
+            return new Uri("https://api.x.ai/v1/api-key");
+        }
+
+        if (string.Equals(selection.Alias, CloudflareId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(host, CloudflareHost, StringComparison.OrdinalIgnoreCase))
+        {
+            // {base} is .../accounts/{id}/ai/v1; the account's model search sits at .../ai/models/search.
+            var root = selection.BaseUri.AbsoluteUri.TrimEnd('/');
+            if (!root.EndsWith("/ai/v1", StringComparison.OrdinalIgnoreCase)) return null;
+            return new Uri(root[..^"/v1".Length] + "/models/search?per_page=1");
+        }
+
+        return null;
+    }
+
     internal static bool IsOverridden(string? providerId) =>
         string.Equals(providerId?.Trim(), CloudflareId, StringComparison.OrdinalIgnoreCase);
 

@@ -249,9 +249,9 @@ public sealed class ProviderCatalogTests : IDisposable
 
         // The key-save probe asks the same URL with the candidate credential, so a
         // rejected key still fails closed instead of being written unverified.
-        var candidate = await service.CheckCandidateCredentialAsync(
+        var candidate = await service.VerifyCandidateCredentialAsync(
             "models.dev:opencode-go", "candidate-key", settings, CancellationToken.None);
-        Assert.Equal("catalog_unauthorized", candidate.ErrorCode);
+        Assert.Equal(CandidateKeyVerdict.Rejected, candidate);
         Assert.Equal(new Uri("https://opencode.ai/inference/go/v1/models"), _handler.LastUri);
         Assert.Equal("Bearer candidate-key", _handler.Authorization);
     }

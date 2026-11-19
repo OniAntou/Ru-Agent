@@ -176,7 +176,8 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
     private async Task<IReadOnlyList<CatalogModel>> ApplyModelsDevMetadataAsync(
         ProviderSelection selection,
         IReadOnlyList<CatalogModel> models,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool applyReasoning = true)
     {
         if (!selection.IsModelsDev || selection.Backend.Length <= "models.dev:".Length) return models;
 
@@ -212,7 +213,10 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
         for (int i = 0; i < models.Count; i++)
         {
             var model = models[i];
-            if (string.Equals(model.Reasoning.State, CatalogReasoningStates.Unknown, StringComparison.Ordinal)
+            // Published levels become chat-completions reasoning_effort fields; a list served
+            // from Models.dev (Anthropic Messages gateways among them) gets none.
+            if (applyReasoning
+                && string.Equals(model.Reasoning.State, CatalogReasoningStates.Unknown, StringComparison.Ordinal)
                 && model.Supported
                 && TryResolveMetadata(reasoning, model.Id, out var published)
                 && published.Options.Count > 0)
@@ -596,7 +600,7 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
         const string prefix = "models.dev:";
         if (!selection.IsModelsDev
             || selection.Backend.Length <= prefix.Length
-            || !ProviderOverrides.UsesModelsDevCatalog(selection.Backend[prefix.Length..]))
+            || !ProviderRoutes.UsesModelsDevCatalog(selection.Backend[prefix.Length..], selection.Protocol))
         {
             return false;
         }
@@ -605,9 +609,12 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
         var catalog = await GetModelsDevAsync(ct).ConfigureAwait(false);
         var provider = catalog.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase))
             ?? throw new ProviderCatalogException("catalog_unavailable");
-        var models = provider.Models
-            .Select(modelId => new CatalogModel(modelId, true, "chat_completions", new CatalogReasoning("unknown", [])))
+        IReadOnlyList<CatalogModel> models = provider.Models
+            .Select(modelId => new CatalogModel(modelId, true, selection.Protocol, new CatalogReasoning("unknown", [])))
             .ToArray();
+        // Windows, output limits and prices are published facts about these models;
+        // without them every model ran on the assumed window.
+        models = await ApplyModelsDevMetadataAsync(selection, models, ct, applyReasoning: false).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try

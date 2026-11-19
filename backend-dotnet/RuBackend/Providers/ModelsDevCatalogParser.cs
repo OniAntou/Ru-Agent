@@ -22,15 +22,19 @@ internal static class ModelsDevCatalogParser
 
         foreach (var property in document.RootElement.EnumerateObject())
         {
-            if (property.Value.ValueKind == JsonValueKind.Object
-                && property.Value.TryGetProperty("api", out var api)
-                && api.ValueKind == JsonValueKind.String
-                && api.GetString() is string url
-                && Uri.TryCreate(url, UriKind.Absolute, out var uri)
-                && string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)
-                && uri.UserInfo.Length == 0
-                && uri.Query.Length == 0
-                && uri.Fragment.Length == 0)
+            if (property.Value.ValueKind != JsonValueKind.Object) continue;
+            // The protocol comes from the entry's AI SDK package, and an entry without an
+            // api root can still be reached through the route table (ADR 0052).
+            var published = property.Value.TryGetProperty("api", out var api) && api.ValueKind == JsonValueKind.String
+                ? api.GetString()
+                : null;
+            var npm = property.Value.TryGetProperty("npm", out var package) && package.ValueKind == JsonValueKind.String
+                ? package.GetString()
+                : null;
+            if ((published is null || IsUsableRoot(published))
+                && ProviderRoutes.Resolve(property.Name, npm, published) is { } route
+                && Uri.TryCreate(route.BaseUrl, UriKind.Absolute, out var uri)
+                && IsUsableRoot(route.BaseUrl))
             {
                 var name = property.Name;
                 if (property.Value.TryGetProperty("name", out var rawName)
@@ -55,12 +59,20 @@ internal static class ModelsDevCatalogParser
                     ReadModelVision(property.Value),
                     ReadModelLimits(property.Value, "context"),
                     ReadModelLimits(property.Value, "output"),
-                    ReadReasoningContentReplay(property.Value)));
+                    ReadReasoningContentReplay(property.Value),
+                    route.Protocol));
             }
         }
 
         return result;
     }
+
+    private static bool IsUsableRoot(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)
+        && uri.UserInfo.Length == 0
+        && uri.Query.Length == 0
+        && uri.Fragment.Length == 0;
 
     /// <summary>
     /// Model ids from a Models.dev provider entry. Bounded and validated like

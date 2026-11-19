@@ -29,6 +29,14 @@ public sealed record CatalogModelDetails(
     double? CacheWriteCost);
 
 /// <summary>
+/// The Host's verdict on a checked key save. <paramref name="Code"/> is
+/// <c>provider_key_unchecked</c> on a save the provider could not confirm, and
+/// <c>provider_key_rejected</c>, <c>provider_key_unverified</c>,
+/// <c>provider_key_malformed</c> or <c>provider_key_too_long</c> when nothing was saved.
+/// </summary>
+public sealed record ProviderKeySaveResult(bool Saved, string? Code, string? Message);
+
+/// <summary>
 /// Authenticated settings API with bounded reads and envelope validation.
 /// POST /settings returns {status: success|error}, GET /settings returns {status: ok}.
 /// </summary>
@@ -117,6 +125,60 @@ public sealed class SettingsApiClient
                     ExtractErrorCode(content) ?? "settings_update_failed",
                     ExtractMessage(content) ?? $"Settings update rejected (status={status ?? "null"}).");
             }
+        }
+    }
+
+    /// <summary>
+    /// Stores one provider key only after the Host has checked it with the provider
+    /// (<c>POST /settings/provider/key</c>). A refused or unverifiable key leaves the
+    /// saved one in place and comes back as a result, not an exception; transport and
+    /// envelope failures throw. The reply never carries the key.
+    /// </summary>
+    public async Task<ProviderKeySaveResult> SaveVerifiedKeyAsync(
+        IReadOnlyDictionary<string, string> keyPayload, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(keyPayload);
+        var body = new JsonObject();
+        foreach (var (field, value) in keyPayload) body[field] = value;
+        var url = new Uri(_session.BaseUri, "settings/provider/key");
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException(
+                ExtractErrorCode(content) ?? "settings_update_failed",
+                $"HTTP {(int)response.StatusCode}",
+                (int)response.StatusCode);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("status", out var status)
+                || status.ValueKind != JsonValueKind.String)
+            {
+                throw new AgentApiException("invalid_response", "Missing settings status.");
+            }
+
+            var code = root.TryGetProperty("code", out var codeProp) && codeProp.ValueKind == JsonValueKind.String
+                ? codeProp.GetString()
+                : null;
+            var message = root.TryGetProperty("message", out var messageProp) && messageProp.ValueKind == JsonValueKind.String
+                ? messageProp.GetString()
+                : null;
+            return new ProviderKeySaveResult(status.GetString() == "success", code, message);
+        }
+        catch (JsonException ex)
+        {
+            throw new AgentApiException("invalid_response", ex.Message);
         }
     }
 

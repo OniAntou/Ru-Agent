@@ -13,6 +13,9 @@ public sealed class ProviderSetupTests
     {
         internal bool HasKey, FailSave;
         internal List<JsonElement> Posts = [];
+        internal List<string> PostPaths = [];
+        /// <summary>What the checked key route answers.</summary>
+        internal string KeyVerdict = """{"status":"success","message":"Settings saved."}""";
         internal static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK)
         { Content = new StringContent(json, Encoding.UTF8, "application/json") };
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -20,8 +23,9 @@ public sealed class ProviderSetupTests
             if (request.Method == HttpMethod.Post)
             {
                 using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct)); Posts.Add(body.RootElement.Clone());
+                PostPaths.Add(request.RequestUri!.AbsolutePath);
                 if (FailSave) throw new HttpRequestException("secret-sentinel synthetic transport error");
-                return Json("""{"status":"success"}""");
+                return Json(request.RequestUri!.AbsolutePath == "/settings/provider/key" ? KeyVerdict : """{"status":"success"}""");
             }
             return request.RequestUri!.AbsolutePath switch
             {
@@ -36,7 +40,7 @@ public sealed class ProviderSetupTests
     }
 
     [Fact]
-    public async Task Picker_then_secret_saves_provider_and_key_together_without_early_switch()
+    public async Task Picker_then_secret_checks_the_key_before_switching_provider()
     {
         using var host = new Host(); using var http = new HttpClient(host);
         var output = new StringWriter(); var errors = new StringWriter(); var commands = host.Commands(http, output, errors);
@@ -45,11 +49,46 @@ public sealed class ProviderSetupTests
         commands.SecretPanelPrompt = (title, _) => { steps.Add("key"); Assert.Contains("openrouter", title); Assert.Empty(host.Posts); return Task.FromResult<string?>(" secret-sentinel "); };
         await commands.TryHandleAsync("/provider", null, default);
         Assert.Equal(["provider", "key"], steps);
-        var saved = Assert.Single(host.Posts);
-        Assert.Equal("models.dev:openrouter", saved.GetProperty("backend").GetString());
-        Assert.Equal("models.dev:openrouter", saved.GetProperty("models_dev_provider_id").GetString());
-        Assert.Equal("secret-sentinel", saved.GetProperty("models_dev_api_key").GetString());
+        // The key goes to the checked route alone; the selection follows only once it is stored.
+        Assert.Equal(["/settings/provider/key", "/settings"], host.PostPaths);
+        var key = host.Posts[0];
+        Assert.Equal(2, key.EnumerateObject().Count());
+        Assert.Equal("models.dev:openrouter", key.GetProperty("models_dev_provider_id").GetString());
+        Assert.Equal("secret-sentinel", key.GetProperty("models_dev_api_key").GetString());
+        var selection = Assert.Single(host.Posts[1].EnumerateObject());
+        Assert.Equal("backend", selection.Name);
+        Assert.Equal("models.dev:openrouter", selection.Value.GetString());
         Assert.DoesNotContain("secret-sentinel", output.ToString() + errors.ToString());
+    }
+
+    [Theory]
+    [InlineData("provider_key_rejected", "refused this key")]
+    [InlineData("provider_key_unverified", "could not reach")]
+    [InlineData("provider_key_malformed", "control character")]
+    public async Task Refused_key_switches_nothing_and_says_why(string code, string reason)
+    {
+        using var host = new Host { KeyVerdict = $$"""{"status":"error","message":"Key not saved.","code":"{{code}}"}""" };
+        using var http = new HttpClient(host);
+        var output = new StringWriter(); var errors = new StringWriter(); var commands = host.Commands(http, output, errors);
+        commands.SecretPanelPrompt = (_, _) => Task.FromResult<string?>("secret-sentinel");
+        await commands.TryHandleAsync("/provider", "anthropic", default);
+        Assert.Equal(["/settings/provider/key"], host.PostPaths);
+        Assert.Contains(code, errors.ToString());
+        Assert.Contains(reason, errors.ToString());
+        Assert.DoesNotContain("Provider selected", output.ToString());
+        Assert.DoesNotContain("secret-sentinel", output.ToString() + errors.ToString());
+    }
+
+    [Fact]
+    public async Task Unchecked_key_is_saved_and_says_the_first_request_will_check_it()
+    {
+        using var host = new Host { KeyVerdict = """{"status":"success","message":"Key saved.","code":"provider_key_unchecked"}""" };
+        using var http = new HttpClient(host);
+        var output = new StringWriter(); var commands = host.Commands(http, output, new());
+        commands.SecretPanelPrompt = (_, _) => Task.FromResult<string?>("synthetic-key");
+        await commands.TryHandleAsync("/provider", "models.dev:openrouter", default);
+        Assert.Equal(["/settings/provider/key", "/settings"], host.PostPaths);
+        Assert.Contains("the first request will", output.ToString());
     }
 
     [Theory]
@@ -78,14 +117,37 @@ public sealed class ProviderSetupTests
     [Theory]
     [InlineData("openai", "openai", "openai_api_key")]
     [InlineData("anthropic", "anthropic", "anthropic_api_key")]
-    [InlineData("custom", "custom", "custom_api_key")]
     public async Task Fixed_provider_payload_uses_shared_credential_mapping(string choice, string backend, string field)
     {
         using var host = new Host(); using var http = new HttpClient(host);
         var commands = host.Commands(http, new(), new()); commands.SecretPanelPrompt = (_, _) => Task.FromResult<string?>("synthetic-key");
         await commands.TryHandleAsync("/provider", choice, default);
-        var saved = Assert.Single(host.Posts); Assert.Equal(backend, saved.GetProperty("backend").GetString());
-        Assert.Equal("synthetic-key", saved.GetProperty(field).GetString()); Assert.Equal(2, saved.EnumerateObject().Count());
+        Assert.Equal(["/settings/provider/key", "/settings"], host.PostPaths);
+        var key = Assert.Single(host.Posts[0].EnumerateObject());
+        Assert.Equal(field, key.Name); Assert.Equal("synthetic-key", key.Value.GetString());
+        var selection = Assert.Single(host.Posts[1].EnumerateObject());
+        Assert.Equal(backend, selection.Value.GetString());
+    }
+
+    [Fact]
+    public async Task Custom_endpoint_key_is_checked_before_the_selection_too()
+    {
+        using var host = new Host(); using var http = new HttpClient(host);
+        var commands = host.Commands(http, new(), new()); commands.SecretPanelPrompt = (_, _) => Task.FromResult<string?>("synthetic-key");
+        await commands.TryHandleAsync("/provider", "custom", default);
+        Assert.Equal(["/settings/provider/key", "/settings"], host.PostPaths);
+        var key = Assert.Single(host.Posts[0].EnumerateObject());
+        Assert.Equal("custom_api_key", key.Name); Assert.Equal("synthetic-key", key.Value.GetString());
+        Assert.Equal("custom", Assert.Single(host.Posts[1].EnumerateObject()).Value.GetString());
+    }
+
+    [Fact]
+    public async Task A_keyless_custom_endpoint_selects_without_any_key_request()
+    {
+        using var host = new Host(); using var http = new HttpClient(host);
+        var commands = host.Commands(http, new(), new()); commands.SecretPanelPrompt = (_, _) => Task.FromResult<string?>("");
+        await commands.TryHandleAsync("/provider", "custom", default);
+        Assert.Equal(["/settings"], host.PostPaths);
     }
 
     [Fact]
@@ -117,7 +179,7 @@ public sealed class ProviderSetupTests
         var output = new StringWriter(); var errors = new StringWriter(); var commands = host.Commands(http, output, errors);
         commands.SecretPanelPrompt = (_, _) => Task.FromResult<string?>("secret-sentinel");
         await commands.TryHandleAsync("/provider", "openai", default);
-        Assert.Single(host.Posts); Assert.Contains("provider_setup_failed", errors.ToString());
+        Assert.Single(host.Posts); Assert.Contains("key_save_failed", errors.ToString());
         Assert.DoesNotContain("secret-sentinel", output.ToString() + errors.ToString());
     }
 

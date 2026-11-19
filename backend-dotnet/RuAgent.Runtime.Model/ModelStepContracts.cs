@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 
 namespace RuAgent.Runtime.Model;
@@ -54,6 +55,9 @@ public sealed class PreparedModelStep
     }
 
     internal ModelGenerationRequest Source { get; }
+
+    /// <summary>The provider snapshot this step is sent with: the key and endpoint it uses.</summary>
+    public ProviderBootstrapData ProviderBootstrap => Source.ProviderBootstrap;
     internal ModelRequest Request { get; }
     internal SystemPromptSnapshot Snapshot { get; }
     internal JsonObject Settings { get; }

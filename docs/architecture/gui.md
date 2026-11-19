@@ -838,6 +838,18 @@ provider changes and backend replacement invalidate the request; disposal
 suppresses both its verdict and retries. The view owns debounce timing and
 renders only the current completion. The authenticated Host still validates
 and stores the candidate atomically; this coordinator never writes credentials.
+The box is trimmed before it is sent. A verified key clears the box. An
+unchecked save (`provider_key_unchecked`: the provider cannot tell keys apart
+before use) keeps the text in the box and records it as saved, so finishing a
+hand-typed key re-saves all of it, Back does not treat the saved text as a
+pending edit, and changing provider clears it. `provider_key_malformed` and
+`provider_key_too_long` are phrased in the key status. The Custom OpenAI key box
+follows the same pattern: the settings autosave never carries the key; a quiet
+box saves the URL, then sends the key alone to the checked key route, and Back
+flushes a pending key the same way. The custom provider editor saves the
+definition, then the key through that route, so a refused key leaves the
+definition saved and the editor open. The provider overview words each stored
+key from `provider_key_status` (`ProviderKeyStatusText`).
 Provider inputs are disabled during Back's save/reload operation, so a late load
 cannot overwrite a newly edited value.
 The TUI keeps raw Markdown lines until completion and projects semantic

@@ -784,12 +784,14 @@ public sealed partial class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
+        var paths = new List<string>();
         var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
                 posted.Add(await request.Content!.ReadAsStringAsync());
-                return Json("{\"status\":\"ok\"}");
+                paths.Add(request.RequestUri!.AbsolutePath);
+                return Json("{\"status\":\"success\"}");
             }
 
             return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\"}");
@@ -800,6 +802,8 @@ public sealed partial class AgentSlashCommandSurfaceTests
 
         Assert.True(await commands.TryHandleAsync("/key", "openrouter", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
 
+        // A catalog key is checked with the provider before it is stored.
+        Assert.Equal(["/settings/provider/key"], paths);
         var body = Assert.Single(posted);
         Assert.Contains("sk-panel-key", body, StringComparison.Ordinal);
         Assert.DoesNotContain("sk-bare", body, StringComparison.Ordinal);

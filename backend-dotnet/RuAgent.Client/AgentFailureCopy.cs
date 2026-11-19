@@ -158,6 +158,24 @@ public static class AgentFailureCopy
             "Key not sent over plain HTTP",
             "the endpoint uses http:// to another computer, so the key would travel unencrypted",
             "use an https:// URL, run the server on this computer, or remove the key");
+        // Key saves: the Host checks a key with the provider before storing it, and a
+        // refusal always leaves the saved key in place.
+        Add(table, ["provider_key_rejected"],
+            "Key refused",
+            "the provider refused this key",
+            "check the key and paste it again · the saved key is unchanged");
+        Add(table, ["provider_key_unverified"],
+            "Key not checked",
+            "the provider could not be reached to check the key",
+            "retry in a moment · the saved key is unchanged");
+        Add(table, ["provider_key_malformed"],
+            "Key not saved",
+            "the key contains a line break or another control character",
+            "copy the key again without line breaks");
+        Add(table, ["provider_key_too_long"],
+            "Key not saved",
+            "the key is longer than Windows Credential Manager holds",
+            "check that only the key was pasted");
         Add(table, ["provider_search_paused"],
             "Web search did not finish",
             "the provider paused its search turn too many times",

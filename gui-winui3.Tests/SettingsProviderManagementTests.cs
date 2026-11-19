@@ -195,6 +195,69 @@ public sealed partial class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Back_leaves_after_an_unchecked_save_without_saving_the_key_again()
+    {
+        var backend = new FakeBackend { KeyResult = new("unchecked", "provider_key_unchecked") };
+        using var vm = NewViewModel();
+        await vm.AttachAsync(backend, new FakeCatalog());
+        vm.EditProviderCommand.Execute("models.dev:openai");
+        vm.ModelsDevApiKey = "synthetic-unchecked-key";
+        await backend.WaitForValidationAsync();
+        await Task.Yield();
+        Assert.Equal("synthetic-unchecked-key", vm.ModelsDevApiKey);
+        Assert.False(vm.HasUnsavedKey);
+
+        await vm.ReturnToProvidersCommand.ExecuteAsync(null);
+
+        Assert.True(vm.IsProviderOverviewVisible);
+        Assert.Empty(vm.ModelsDevApiKey);
+        Assert.Single(backend.Validations);
+    }
+
+    [Fact]
+    public async Task Finishing_a_key_after_an_unchecked_save_saves_the_whole_key()
+    {
+        var backend = new FakeBackend { KeyResult = new("unchecked", "provider_key_unchecked") };
+        using var vm = NewViewModel();
+        await vm.AttachAsync(backend, new FakeCatalog());
+        vm.EditProviderCommand.Execute("models.dev:openai");
+        vm.ModelsDevApiKey = "synthetic-half";
+        await backend.WaitForValidationAsync();
+        await Task.Yield();
+
+        vm.ModelsDevApiKey = "synthetic-half-and-the-rest";
+        await backend.WaitForValidationAsync();
+
+        Assert.Equal(2, backend.Validations.Count);
+        Assert.Equal("synthetic-half-and-the-rest", backend.Validations[^1].Key);
+        Assert.False(vm.HasUnsavedKey);
+    }
+
+    [Fact]
+    public async Task The_overview_says_what_the_host_learned_about_each_stored_key()
+    {
+        var settings = new AppSettingsDto
+        {
+            BackendChoice = "openai",
+            HasOpenAiKey = true,
+            HasAnthropicKey = true,
+            HasCustomKey = true,
+            ProviderKeyStatus = new()
+            {
+                ["OpenAI"] = new ProviderKeyStatusDto { State = "rejected" },
+                ["Anthropic"] = new ProviderKeyStatusDto { State = "verified" },
+                ["Custom OpenAI"] = new ProviderKeyStatusDto { State = "unchecked" },
+            },
+        };
+        using var vm = NewViewModel();
+        await vm.AttachAsync(new FakeBackend { Settings = settings }, new FakeCatalog());
+
+        Assert.Equal(ProviderKeyStatusText.Rejected, Assert.Single(vm.ConfiguredProviders, row => row.Choice == "openai").Status);
+        Assert.Equal(ProviderKeyStatusText.Verified, Assert.Single(vm.ConfiguredProviders, row => row.Choice == "anthropic").Status);
+        Assert.Equal(ProviderKeyStatusText.Unchecked, Assert.Single(vm.ConfiguredProviders, row => row.Choice == "custom").Status);
+    }
+
+    [Fact]
     public async Task A_failed_save_keeps_the_editor_and_gives_a_recovery_message()
     {
         using var vm = NewViewModel();

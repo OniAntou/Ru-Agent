@@ -48,6 +48,14 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
     /// </summary>
     public Func<RunId, CancellationToken, Task<ProviderBootstrapData>>? CreateProviderBootstrapAsync { get; init; }
 
+    /// <summary>
+    /// Told, without being awaited, whether a step showed the key it was sent with to work
+    /// (<c>true</c>: the provider answered) or refused it with HTTP 401 (<c>false</c>). The
+    /// snapshot is the one the step used, so the verdict is about that key. It must not
+    /// throw or block.
+    /// </summary>
+    public Action<RunId, ProviderBootstrapData, bool>? ObserveProviderKey { get; init; }
+
     /// <summary>Loads the run's attached images from the payload store as data URLs.</summary>
     public Func<RunId, CancellationToken, Task<IReadOnlyList<string>>>? LoadRunImagesAsync { get; init; }
 
@@ -83,6 +91,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         long publishedSequences = 0;
         string effectiveEffort = "unknown";
         string selectedEffort = "unknown";
+        ProviderBootstrapData? sentWith = null;
 
         while (true)
         {
@@ -99,6 +108,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                     && prepared.EstimatedInputTokens
                         > prepared.MaxPromptTokens - RequestSafetyMarginTokens)
                     throw new ModelStepException("context_limit_reached", retryable: false);
+                sentWith = prepared.ProviderBootstrap;
                 effectiveEffort = prepared.EffectiveReasoningEffort;
                 selectedEffort = prepared.SelectedReasoningEffort;
                 // A retried attempt replaces the previous attempt's answer: tell the
@@ -134,6 +144,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                     throw new OperationCanceledException(cancellationToken);
                 }
 
+                ObserveProviderKey?.Invoke(request.RunId, sentWith, true);
                 var finalStep = new AssistantStep(
                     result.Text,
                     result.ToolCalls,
@@ -168,6 +179,11 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             {
                 // Cancellation can win between provider rejection and the retry filter.
                 cancellationToken.ThrowIfCancellationRequested();
+                // Only a 401 says the key itself is wrong; provider_auth also carries 403,
+                // which can be a model, region or plan the key may not use.
+                if (sentWith is not null && error.Code == "provider_auth"
+                    && error.InnerException is ModelProviderException { Code: "auth_failed" })
+                    ObserveProviderKey?.Invoke(request.RunId, sentWith, false);
                 Console.Error.WriteLine(
                     $"ru.host step_rejected code={error.Code} retryable={error.Retryable}");
                 // The step driver records one durable code, and the provider

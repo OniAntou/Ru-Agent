@@ -60,6 +60,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 
 ## Decisions
 
+- [A provider route table for Models.dev providers](adr/0052-provider-route-table.md)
 - [Native continuation under the same model and a window-sized handoff](adr/0049-native-continuation-and-window-sized-handoff.md)
 - [No Continue gate; a deny settles the call, not the run](adr/0048-no-continue-gate.md)
 - [Advisor: the main model consults a second pinned model on any provider](adr/0047-advisor-consultation.md) (proposed)

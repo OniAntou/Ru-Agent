@@ -265,6 +265,26 @@ public sealed class TuiSurfacesPickerTests
     }
 
     [Fact]
+    public void BackendChoices_ShowWhatTheHostLearnedAboutAStoredKey()
+    {
+        var items = TuiSurfaces.BackendChoices("OpenAI",
+            new Dictionary<string, bool> { ["openai"] = true, ["anthropic"] = true, ["custom"] = false },
+            keyStatus: new Dictionary<string, string>
+            {
+                ["OpenAI"] = "verified",
+                ["Anthropic"] = "rejected",
+                // A leftover verdict for a provider with no key stored is not shown.
+                ["Custom OpenAI"] = "verified",
+            });
+
+        Assert.Contains("key ok", Assert.Single(items, i => i.Value == "openai").Detail, StringComparison.Ordinal);
+        Assert.Contains("key refused", Assert.Single(items, i => i.Value == "anthropic").Detail, StringComparison.Ordinal);
+        var custom = Assert.Single(items, i => i.Value == "custom").Detail;
+        Assert.Contains("no key", custom, StringComparison.Ordinal);
+        Assert.DoesNotContain("key ok", custom, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ModelCatalogChoices_OrdersCurrentFreeSupportedUnsupported()
     {
         var items = TuiSurfaces.ModelCatalogChoices(

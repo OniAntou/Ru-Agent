@@ -29,7 +29,7 @@ public sealed partial class AgentSlashCommands
                 var (providers, error) = await ReadModelsDevProvidersAsync(ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
                 var notice = ProviderListNotice(providers, error);
-                var choices = TuiSurfaces.BackendChoices(ReadBackend(settings), states, providers);
+                var choices = TuiSurfaces.BackendChoices(ReadBackend(settings), states, providers, ReadKeyStatuses(settings));
                 if (Picker is null)
                 {
                     await _humanOut.WriteLineAsync(TuiPalette.DimPaint("  " + notice)).ConfigureAwait(false);
@@ -74,9 +74,10 @@ public sealed partial class AgentSlashCommands
                 return;
             }
             var body = new JsonObject { ["backend"] = provider.Choice };
-            if (secret.Length > 0)
-                foreach (var (field, value) in ProviderCredential.KeyPayload(provider, secret)) body[field] = value;
-            // One request after confirmation: no early provider switch, no automatic POST retry.
+            // The key is checked and stored first; a refused key leaves both the saved key
+            // and the selected provider as they were.
+            if (secret.Length > 0 && !await StoreProviderKeyAsync(provider, secret, ct).ConfigureAwait(false)) return;
+            // One selection request after confirmation: no early provider switch, no automatic POST retry.
             await _settingsClient.UpdateAsync(body, ct).ConfigureAwait(false);
             await _humanOut.WriteLineAsync(TuiPalette.Ok($"✓ Provider selected: {provider.DisplayName}")).ConfigureAwait(false);
         }

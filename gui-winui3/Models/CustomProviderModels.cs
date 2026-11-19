@@ -33,5 +33,9 @@ namespace RuApp.Models
     }
 
     /// <summary>The Host's verdict on a custom provider save.</summary>
-    public sealed record CustomProviderSaveResult(bool Success, string? Code, string Message);
+    /// <param name="DefinitionSaved">
+    /// The provider list was stored even though <paramref name="Success"/> is false: the
+    /// key, checked separately after it, was refused or not confirmed.
+    /// </param>
+    public sealed record CustomProviderSaveResult(bool Success, string? Code, string Message, bool DefinitionSaved = false);
 }

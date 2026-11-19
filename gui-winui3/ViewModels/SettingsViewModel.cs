@@ -343,8 +343,11 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             CustomUrl = settings.CustomUrl ?? string.Empty;
             CloudflareAccountId = settings.CloudflareAccountId ?? string.Empty;
             CustomApiKey = string.Empty;
+            _savedCustomKeyInBox = null;
+            SetCustomKeyStatus(string.Empty, ProviderConnectionTest.NeutralTone);
             CustomApiKeyPlaceholder = settings.HasCustomKey ? "Saved (leave blank to keep unchanged)" : "sk-...";
             ModelsDevApiKey = string.Empty;
+            _savedKeyInBox = null;
             SetKeyStatus(string.Empty, ProviderConnectionTest.NeutralTone);
             // The catalog is known by now, so the stored choice resolves against it.
             SetCurrentProvider(ProviderSetupGuidance.EffectiveStoredChoice(settings.BackendChoice, settings));
@@ -458,6 +461,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     {
         if (!string.Equals(ProviderChoice, choice, StringComparison.OrdinalIgnoreCase))
         {
+            // A key kept in the box after an unchecked save belongs to the provider it was saved for.
+            if (!HasUnsavedKey) ClearSavedKeyInBox();
             _keyProbe.Invalidate();
             SetKeyStatus(string.Empty, ProviderConnectionTest.NeutralTone);
             ShowProviderTest(new ProviderConnectionTest(ProviderConnectionTest.NeutralTone,
@@ -516,7 +521,116 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     partial void OnCustomUrlChanged(string value) => ScheduleAutoSave();
 
-    partial void OnCustomApiKeyChanged(string value) => ScheduleAutoSave();
+    /// <summary>
+    /// The custom key is never part of the autosave: a quiet box first saves the URL,
+    /// then sends the key alone to the checked key route, which asks that server.
+    /// </summary>
+    partial void OnCustomApiKeyChanged(string value)
+    {
+        if (IsLoading) return;
+        CancelDelay(ref _customKeyProbeDelay);
+        SetCustomKeyStatus(string.Empty, ProviderConnectionTest.NeutralTone);
+        if (string.IsNullOrWhiteSpace(value) || value.Trim() == _savedCustomKeyInBox) return;
+        _ = RunAfterDelayAsync(KeyProbeDelay, ProbeCustomKeyAsync, ref _customKeyProbeDelay);
+    }
+
+    /// <summary>The custom key an unchecked save stored while leaving it in the box, or null.</summary>
+    private string? _savedCustomKeyInBox;
+    private CancellationTokenSource? _customKeyProbeDelay;
+    private bool _customKeyProbeRunning;
+    private bool _customKeyProbeAgain;
+
+    /// <summary>Whether the custom key box holds text that has not been stored.</summary>
+    internal bool HasUnsavedCustomKey =>
+        !string.IsNullOrWhiteSpace(CustomApiKey) && CustomApiKey.Trim() != _savedCustomKeyInBox;
+
+    [ObservableProperty] public partial string CustomKeyStatus { get; private set; } = string.Empty;
+    [ObservableProperty] public partial string CustomKeyStatusTone { get; private set; } = ProviderConnectionTest.NeutralTone;
+
+    private void SetCustomKeyStatus(string message, string tone)
+    {
+        CustomKeyStatus = message;
+        CustomKeyStatusTone = tone;
+    }
+
+    private async Task ProbeCustomKeyAsync()
+    {
+        var backend = _backend;
+        string key = CustomApiKey.Trim();
+        if (backend is null || IsLoading || key.Length == 0 || key == _savedCustomKeyInBox) return;
+        if (_customKeyProbeRunning)
+        {
+            // The check in flight is for older text; it reschedules this edit when it ends.
+            _customKeyProbeAgain = true;
+            return;
+        }
+        _customKeyProbeRunning = true;
+        _customKeyProbeAgain = false;
+        try
+        {
+            // The key is checked against the saved URL, so a pending URL edit goes first.
+            CancelDelay(ref _autoSaveDelay);
+            if (!await SaveSettingsAsync())
+            {
+                SetCustomKeyStatus("Could not save the server URL; key not sent. Try again.", ProviderConnectionTest.ErrorTone);
+                return;
+            }
+
+            SetCustomKeyStatus("Checking key…", ProviderConnectionTest.NeutralTone);
+            var result = await backend.ValidateAndSaveCustomKeyAsync(key, CancellationToken.None);
+            if (CustomApiKey.Trim() != key)
+            {
+                _customKeyProbeAgain = true; // edited meanwhile: check the newer text next
+                return;
+            }
+            switch (result.Code)
+            {
+                case "valid":
+                    CustomApiKey = string.Empty;
+                    SetCustomKeyStatus("Saved. The server accepted the key.", ProviderConnectionTest.SuccessTone);
+                    break;
+                case "unchecked":
+                    // Kept, so finishing a hand-typed key re-saves all of it.
+                    _savedCustomKeyInBox = key;
+                    SetCustomKeyStatus("Saved. The server could not confirm the key before use; the first request will.",
+                        ProviderConnectionTest.NeutralTone);
+                    break;
+                case "invalid":
+                    SetCustomKeyStatus("The server rejected this key (HTTP 401); saved key unchanged.", ProviderConnectionTest.ErrorTone);
+                    return;
+                case "insecure":
+                    SetCustomKeyStatus("Key not sent: this URL uses plain http:// to another computer. Use https://.", ProviderConnectionTest.ErrorTone);
+                    return;
+                case "malformed":
+                    SetCustomKeyStatus("Key not saved: it contains a line break or another control character.", ProviderConnectionTest.ErrorTone);
+                    return;
+                case "too_long":
+                    SetCustomKeyStatus("Key not saved: it is longer than Windows Credential Manager holds.", ProviderConnectionTest.ErrorTone);
+                    return;
+                default:
+                    SetCustomKeyStatus("Could not confirm the save. Refresh or try again.", ProviderConnectionTest.ErrorTone);
+                    return;
+            }
+
+            if (_lastSettings is { } stored) stored.HasCustomKey = true;
+            RefreshProviderManagement();
+            _ = RefreshCatalogAsync();
+        }
+        catch (Exception ex)
+        {
+            GuiDiagnosticWriter.WriteCrashEvent(ex);
+            SetCustomKeyStatus("Could not confirm the save. Refresh or try again.", ProviderConnectionTest.ErrorTone);
+        }
+        finally
+        {
+            _customKeyProbeRunning = false;
+            if (_customKeyProbeAgain && HasUnsavedCustomKey && !_disposed)
+            {
+                _customKeyProbeAgain = false;
+                _ = RunAfterDelayAsync(KeyProbeDelay, ProbeCustomKeyAsync, ref _customKeyProbeDelay);
+            }
+        }
+    }
 
     partial void OnCloudflareAccountIdChanged(string value) => ScheduleAutoSave();
 
@@ -596,8 +710,10 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         var backend = _backend;
         if (IsLoading || _keyProbe.IsRunning || backend is null || _catalog is null) return;
         if (!ProviderSetupGuidance.IsModelsDevChoice(ProviderChoice)) return;
-        string key = ModelsDevApiKey;
-        if (string.IsNullOrWhiteSpace(key)) return;
+        // A copied key often brings a space or line break with it, which the provider
+        // then refuses; no key contains one. The terminal trims the same way.
+        string key = ModelsDevApiKey.Trim();
+        if (key.Length == 0 || key == _savedKeyInBox) return;
 
         var pending = _keyProbe.RunAsync(ProviderChoice, key, backend.ValidateAndSaveModelsDevKeyAsync);
         if (_keyProbe.IsRunning) SetKeyStatus("Checking key…", ProviderConnectionTest.NeutralTone);
@@ -613,16 +729,31 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             case "superseded":
                 return;
             case "valid":
-                ModelsDevApiKey = string.Empty;
+            case "unchecked":
+                bool isChecked = completion.Result.Code == "valid";
+                // An unchecked save keeps the box: a pause while typing by hand saved what
+                // was typed so far, and the next keystroke must re-save the whole key, not
+                // start a new one from an empty box.
+                if (isChecked) ModelsDevApiKey = string.Empty;
+                else _savedKeyInBox = key;
                 _modelsDevKeyIds = _modelsDevKeyIds.Append(completion.Target.ModelsDevId!)
                     .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
                 ApplyProviderKeys();
-                SetKeyStatus($"Saved key for {completion.Target.DisplayName}.", ProviderConnectionTest.SuccessTone);
+                SetKeyStatus(isChecked
+                        ? $"Saved key for {completion.Target.DisplayName}."
+                        : $"Saved key for {completion.Target.DisplayName}. This provider cannot check a key before use; the first request will.",
+                    isChecked ? ProviderConnectionTest.SuccessTone : ProviderConnectionTest.NeutralTone);
                 await AdoptShownProviderAsync();
                 _ = RefreshCatalogAsync();
                 break;
             case "invalid":
                 SetKeyStatus("Invalid key; saved key unchanged.", ProviderConnectionTest.ErrorTone);
+                break;
+            case "malformed":
+                SetKeyStatus("Key not saved: it contains a line break or another control character. Copy it again.", ProviderConnectionTest.ErrorTone);
+                break;
+            case "too_long":
+                SetKeyStatus("Key not saved: it is longer than Windows Credential Manager holds. Check that only the key was pasted.", ProviderConnectionTest.ErrorTone);
                 break;
             case "save_failed":
                 SetKeyStatus("Could not confirm the save. Refresh or try again.", ProviderConnectionTest.ErrorTone);
@@ -661,7 +792,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             {
                 BackendChoice = ProviderChoice,
                 CustomUrl = string.IsNullOrWhiteSpace(CustomUrl) ? DefaultCustomUrl : CustomUrl.Trim(),
-                CustomApiKey = CustomApiKey,
+                // The key travels only through the checked key route (ProbeCustomKeyAsync).
+                CustomApiKey = string.Empty,
                 CloudflareAccountId = CloudflareAccountId.Trim(),
             }));
             if (!saved) GuiDiagnosticWriter.WriteGuiError("settings_autosave", "save_failed");
@@ -674,10 +806,28 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// The key an unchecked save stored while leaving it in the box, or null. Keeping it
+    /// lets a hand-typed key be finished and re-saved whole; this field keeps that saved
+    /// text from counting as a pending, unsaved edit.
+    /// </summary>
+    private string? _savedKeyInBox;
+
+    /// <summary>Whether the key box holds text that has not been stored.</summary>
+    internal bool HasUnsavedKey =>
+        !string.IsNullOrWhiteSpace(ModelsDevApiKey) && ModelsDevApiKey.Trim() != _savedKeyInBox;
+
+    private void ClearSavedKeyInBox()
+    {
+        if (_savedKeyInBox is null) return;
+        _savedKeyInBox = null;
+        ModelsDevApiKey = string.Empty;
+    }
+
     private void ClearKeyInput(string alias)
     {
-        if (ProviderSetupGuidance.IsModelsDevChoice(alias)) ModelsDevApiKey = string.Empty;
-        else if (alias == "custom") CustomApiKey = string.Empty;
+        if (ProviderSetupGuidance.IsModelsDevChoice(alias)) { ModelsDevApiKey = string.Empty; _savedKeyInBox = null; }
+        else if (alias == "custom") { CustomApiKey = string.Empty; _savedCustomKeyInBox = null; }
     }
 
     private void SetKeyStatus(string message, string tone)
@@ -751,6 +901,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         _keyProbe.Invalidate();
         CancelDelay(ref _autoSaveDelay);
         CancelDelay(ref _keyProbeDelay);
+        CancelDelay(ref _customKeyProbeDelay);
         if (_catalog is not null) _catalog.StateChanged -= OnCatalogStateChanged;
         _catalog = null;
         _backend = null;

@@ -19,6 +19,9 @@ internal interface ISettingsBackend
 
     Task<ProviderKeyProbeResult> ValidateAndSaveModelsDevKeyAsync(string providerId, string key, CancellationToken cancellationToken);
 
+    /// <summary>The legacy Custom OpenAI key, checked against the saved URL before it is stored.</summary>
+    Task<ProviderKeyProbeResult> ValidateAndSaveCustomKeyAsync(string key, CancellationToken cancellationToken);
+
     Task<bool> RemoveProviderAsync(string backendChoice);
 }
 
@@ -48,6 +51,9 @@ internal sealed class ApiSettingsBackend(ApiService api) : ISettingsBackend
     public Task<ProviderKeyProbeResult> ValidateAndSaveModelsDevKeyAsync(
         string providerId, string key, CancellationToken cancellationToken) =>
         api.ValidateAndSaveModelsDevKeyAsync(providerId, key, cancellationToken);
+
+    public Task<ProviderKeyProbeResult> ValidateAndSaveCustomKeyAsync(string key, CancellationToken cancellationToken) =>
+        api.ValidateAndSaveCustomKeyAsync(key, cancellationToken);
 
     public Task<bool> RemoveProviderAsync(string backendChoice) => api.RemoveProviderAsync(backendChoice);
 }

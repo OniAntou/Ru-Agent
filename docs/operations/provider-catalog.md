@@ -26,20 +26,90 @@ available models" uses it and reports a failure code as its connection test.
 A deleted provider fails as `provider_selection_invalid`, and a model removed
 from the list as `model_unavailable`, for new and pinned runs alike.
 
-Settings sends candidate Models.dev keys to the authenticated
+Settings and the TUI send candidate keys to the authenticated
 `POST /settings/provider/key` route. Under the settings transition gate, Host checks
-the candidate through the normal provider-specific catalog path using temporary,
-read-only credentials and an isolated catalog cache. Only a successful check permits
-the credential/settings write; rejection, an unavailable catalog or cancellation
-before commit leaves the previous key intact. Existing storage rollback still applies.
-Provider-specific catalog overrides retain their existing semantics; a metadata-only
-catalog is not proof that the credential can complete model generation.
+the candidate with the provider using temporary, read-only credentials and an
+isolated catalog cache:
 
-The route accepts only `models_dev_provider_id` and `models_dev_api_key`; it cannot
-also change selection or other settings. Rejections return `provider_key_rejected`,
-unverified candidates return `provider_key_unverified`, and no secret is returned.
-Old Hosts return 404 for this route; GUI never retries it as an ordinary settings
-write. A lost response is reported as an unconfirmed save, not proof of rollback.
+- A provider whose catalog cannot tell keys apart has an authenticated endpoint
+  instead: OpenRouter's `GET /api/v1/key`, and Cloudflare's
+  `GET {account}/ai/models/search`. OpenRouter's `/models` answers 200 to a made-up
+  key, and Cloudflare's catalog comes from Models.dev without the key being sent.
+  The endpoint is used only while the resolved base still points at that provider's
+  own host. There 401, and the 400 Cloudflare gives a malformed token, reject the
+  key; 403 (a real token without that one permission) saves it unchecked.
+- xAI answers a wrong key with 400 on its list, so its key is checked at
+  `GET https://api.x.ai/v1/api-key`, where 400 also refuses it.
+- A provider whose list comes from Models.dev (an Anthropic-compatible gateway,
+  Google) never sends the key with its list, so the check posts an
+  empty body (`{}`) to the generation URL, which nothing can run. Only when the
+  same URL refuses the anonymous body with 401/403 does the keyed answer decide:
+  401 refuses the key, and 400/404/405/415/422 accepts it; anything else saves it
+  unchecked ([ADR 0052](../adr/0052-provider-route-table.md)).
+- Every other provider is checked through its normal catalog path. OpenAI and
+  Anthropic list models only for a valid key. For a Models.dev provider, a
+  successful read is followed by the same `GET {base}/models` with no credential;
+  only an HTTP 401/403 there makes the read proof. A catalog that also answers
+  anonymously (Kilo's does) saves the key with `status: success` and code
+  `provider_key_unchecked`, and both clients say the first model request will
+  check it.
+
+Only an accepted or unchecked key permits the credential/settings write; rejection
+(`provider_key_rejected`), an unavailable check (`provider_key_unverified`) or
+cancellation before commit leaves the previous key intact. Existing storage
+rollback still applies. A catalog read is not proof that the credential can
+complete model generation.
+
+Custom endpoints are checked too: the legacy Custom OpenAI slot against its saved
+URL, and a named custom provider against its saved `base_url`, both with
+`GET {base}/models`. Such a server is often local, offline while it is set up,
+without `/models`, or keyless, so only an HTTP 401 refuses the key; a 2xx whose
+anonymous repeat is refused verifies it, and everything else (403, 404, no
+answer, a list anyone may read) saves it as `provider_key_unchecked`. The
+`provider_insecure_endpoint` rule still refuses a key bound for plain HTTP to
+another computer before any request.
+
+The route accepts only `models_dev_provider_id` + `models_dev_api_key`,
+`custom_provider_id` + `custom_provider_api_key` for a provider already saved, or
+a lone `openai_api_key`, `anthropic_api_key` or `custom_api_key`; it cannot also
+change selection, an endpoint or other settings. No secret is returned. The
+desktop app saves a custom provider's definition first and then its key through
+this route, and never sends the Custom OpenAI key in its settings autosave.
+Every settings save refuses a key with a line break or other control character
+as `provider_key_malformed` (no HTTP header can carry one) and a key longer
+than Windows Credential Manager's 1,280 characters as `provider_key_too_long`, before any request. Surrounding spaces are stored as
+typed; both clients trim a pasted key before sending it. A key stored through
+settings, and the key a run reads for its provider or advisor, are added to the
+Host's known-secret redactor, so they are redacted from replies, tool results,
+stored payloads and live frames without a restart.
+
+### Key status
+
+The Host keeps what it last learned about each stored key in the non-secret
+`provider_key_status` setting, keyed by canonical backend (`OpenAI`,
+`models.dev:openrouter`, `custom:lab`, `Custom OpenAI`), each entry a `state`
+and `checked_at`, never anything derived from the key. `GET /settings` returns
+it; a settings payload cannot set it.
+
+- A checked save records `verified` or `unchecked`; a plain settings save that
+  stores a key records `unchecked`.
+- A completed model step records `verified`, and a step the provider refused with
+  HTTP 401 records `rejected`. A 403 records nothing: it can be a model, region
+  or plan the key may not use. Advisor consultations record nothing.
+- A run's verdict is written only while the stored key is still the one the run
+  used and its endpoint (custom URL, custom `base_url`, Cloudflare account) is
+  unchanged, and only when the state changes. Recording never delays or fails a
+  step.
+- Saving a new key replaces the entry; moving an endpoint or signing out removes
+  it. A missing entry means nothing is known yet, as for keys stored earlier.
+
+The desktop provider overview shows `Key saved · working`,
+`Key saved · not checked yet` or `Key refused by the provider · replace it`; the
+terminal pickers add `· key ok`, `· key not checked yet` or `· key refused`. Both
+show a status only while a key is stored.
+
+Old Hosts return 404 for `POST /settings/provider/key`; GUI never retries it as
+an ordinary settings write. A lost response is reported as an unconfirmed save, not proof of rollback.
 GUI pins the provider/edit generation and cancels superseded requests; late responses
 cannot clear another edit or display its verdict. Explicit Sign out remains separate.
 
@@ -155,7 +225,8 @@ line instead of a silently short list. `/backend` reads the live
 `GET /models-dev` provider list the same way.
 
 The TUI can store and remove keys itself: `/key <provider>` covers `openai`,
-`anthropic`, `custom`, `openrouter`, and `models.dev:<id>`, and
+`anthropic`, `custom`, `openrouter`, and `models.dev:<id>`, checking each key
+through `POST /settings/provider/key` first, and
 `/key remove <provider>` signs out through `POST /settings/provider/remove`.
 A provider that lost its credential stays selectable but is marked `· no key` in
 the `/backend` and `/model` pickers, using the `has_*_key` flags of `/settings`.

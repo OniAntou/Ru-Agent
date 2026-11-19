@@ -362,10 +362,17 @@ existing serialized native panels. The picker uses the live models.dev catalog
 with the same built-in/fallback choices. It closes before the key box opens;
 neither selection nor credential is sent before confirmation. Escape cancels
 without saving. Empty input preserves a known stored credential, or permits a
-keyless custom endpoint; otherwise an API key is required. One existing settings
-POST carries the backend and shared `ProviderCredential.KeyPayload` fields.
-Failures are reported without echoing submitted secrets or automatically retrying.
-Saving confirms persistence, not provider-side key validity.
+keyless custom endpoint; otherwise an API key is required. A typed key goes
+alone to `POST /settings/provider/key`, which checks it with the provider (or the
+custom server) before storing it; only once it is stored does one settings POST
+carry the backend. A refused key (`provider_key_rejected`,
+`provider_key_unverified`, `provider_key_malformed`, `provider_key_too_long`)
+changes neither the key nor the provider. A keyless custom endpoint sends only
+the backend. The provider, backend and advisor pickers add the Host's
+`provider_key_status` to a provider with a stored key (`· key ok`,
+`· key not checked yet`, `· key refused`).
+`/key <provider>` uses the same checked save. Failures print a code and fixed
+text, never an exception message or the submitted secret, and are not retried.
 
 Help, palette and completion advertise only `/provider`; legacy `/backend` and
 `/key` handlers remain callable. `/provider remove <name>` uses the existing signout

@@ -72,6 +72,14 @@ defaults change before provider snapshot resolution. It contains no credentials
 and confers no tool permission; the full resolved provider pin remains immutable.
 Implementation: [GUI submission](docs/architecture/gui.md#model-picker-loading) · [TUI admission](docs/architecture/tui.md#concurrent-session-tabs).
 
+**Provider Key Status**:
+What the Host last learned about one stored provider key: `verified`,
+`unchecked` or `rejected`, with when. A checked key save or a run's model step
+sets it, only for the key and endpoint actually used; it holds nothing derived
+from the key and grants nothing. It informs the user and never selects, blocks
+or substitutes a provider.
+Implementation: [key status](docs/operations/provider-catalog.md#key-status).
+_Avoid_: key validity guarantee, fallback signal
 
 **Conversation Branch**:
 A new conversation identity copied from a selected whole-turn prefix. The source

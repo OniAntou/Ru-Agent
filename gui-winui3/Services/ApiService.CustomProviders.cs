@@ -13,8 +13,10 @@ namespace RuApp.Services
     public partial class ApiService
     {
         /// <summary>
-        /// Replaces the whole provider list, optionally storing one provider's key in the
-        /// same save. The Host validates everything and refuses the save as a whole.
+        /// Replaces the whole provider list, then stores one provider's key through the
+        /// checked key route, which asks that server before storing it. The list is saved
+        /// first so the key is checked against the endpoint just saved; a refused key
+        /// leaves the list saved and the previous key in place.
         /// </summary>
         public async Task<CustomProviderSaveResult> SaveCustomProvidersAsync(
             IReadOnlyList<CustomProviderDto> providers,
@@ -27,11 +29,6 @@ namespace RuApp.Services
                 {
                     ["custom_providers"] = JsonSerializer.SerializeToNode(providers),
                 };
-                if (!string.IsNullOrEmpty(keyProviderId) && !string.IsNullOrEmpty(apiKey))
-                {
-                    payload["custom_provider_id"] = keyProviderId;
-                    payload["custom_provider_api_key"] = apiKey;
-                }
 
                 using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
                 if (!response.IsSuccessStatusCode) return new(false, null, "The Host refused the request.");
@@ -45,7 +42,17 @@ namespace RuApp.Services
                 var message = root.TryGetProperty("message", out var messageValue) && messageValue.ValueKind == JsonValueKind.String
                     ? messageValue.GetString() ?? string.Empty : string.Empty;
                 if (success) SettingsSaved?.Invoke(this, EventArgs.Empty);
-                return new(success, code, message);
+                if (!success || string.IsNullOrEmpty(keyProviderId) || string.IsNullOrEmpty(apiKey))
+                    return new(success, code, message);
+
+                var key = await ValidateAndSaveCustomProviderKeyAsync(keyProviderId, apiKey, CancellationToken.None);
+                return key.Code switch
+                {
+                    "valid" => new(true, null, message),
+                    "unchecked" => new(true, "provider_key_unchecked", message),
+                    "invalid" => new(false, "provider_key_rejected", string.Empty, DefinitionSaved: true),
+                    _ => new(false, key.ErrorCode ?? "provider_key_save_failed", string.Empty, DefinitionSaved: true),
+                };
             }
             catch (Exception ex)
             {

@@ -89,6 +89,23 @@ public static class ProviderReasoningPreferences
         return null;
     }
 
+    /// <summary>
+    /// <see cref="Resolve"/> for the effort saved in settings. A model that publishes no
+    /// levels at all runs at its default: the saved level was chosen under a route that
+    /// offered it (a gateway reached over chat completions before ADR 0052 moved it to
+    /// Messages), and there is no level left to honor. A model that publishes levels but
+    /// not this one still fails as <c>reasoning_unsupported</c>.
+    /// </summary>
+    public static JsonObject ResolveSaved(ProviderCatalogSnapshot snapshot, string model, string effort)
+    {
+        var selected = snapshot.Status == "ok" && !snapshot.Stale
+            ? snapshot.Catalog.FirstOrDefault(item => item.Id == model)
+            : null;
+        return selected is { Supported: true } && selected.WireOptions.Count == 0
+            ? new JsonObject()
+            : Resolve(snapshot, model, effort);
+    }
+
     public static JsonObject Resolve(ProviderCatalogSnapshot snapshot, string model, string effort)
     {
         if (snapshot.Stale || snapshot.Status != "ok") throw new ProviderCatalogException(snapshot.ErrorCode ?? "catalog_unavailable");

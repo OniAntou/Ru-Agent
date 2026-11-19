@@ -53,7 +53,8 @@ public sealed class TgProviderSetupTests
                 if (step == 4 && pending!.IsCompleted)
                 {
                     Assert.True(pending.GetAwaiter().GetResult());
-                    Assert.Equal(cancel ? 0 : 1, host.Posts.Count);
+                    // Saving is the checked key first, then the selection alone.
+                    Assert.Equal(cancel ? 0 : 2, host.Posts.Count);
                     if (!cancel) Assert.Equal("synthetic-native-key", host.Posts[0].GetProperty("openai_api_key").GetString());
                     Assert.Equal("keep draft", window.Composer.Input.Text);
                     Assert.DoesNotContain("synthetic-native-key", output.ToString() + errors.ToString());

@@ -246,6 +246,45 @@ public sealed partial class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task A_pasted_key_is_sent_without_surrounding_whitespace()
+    {
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "models.dev:openai" },
+            KeyResult = new ProviderKeyProbeResult("valid"),
+        };
+        using var viewModel = NewViewModel();
+        await viewModel.AttachAsync(backend, new FakeCatalog());
+
+        viewModel.ModelsDevApiKey = "  sk-synthetic-test-key \r\n";
+        await backend.WaitForValidationAsync();
+
+        Assert.Equal("sk-synthetic-test-key", Assert.Single(backend.Validations).Key);
+    }
+
+    [Fact]
+    public async Task An_unchecked_key_is_saved_but_stays_in_the_box_and_says_why()
+    {
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "models.dev:openai" },
+            KeyResult = new ProviderKeyProbeResult("unchecked", "provider_key_unchecked"),
+        };
+        using var viewModel = NewViewModel();
+        await viewModel.AttachAsync(backend, new FakeCatalog());
+
+        viewModel.ModelsDevApiKey = "sk-synthetic-test-key";
+        await backend.WaitForValidationAsync();
+        await Task.Yield();
+
+        // Kept, so finishing a hand-typed key re-saves all of it rather than its tail.
+        Assert.Equal("sk-synthetic-test-key", viewModel.ModelsDevApiKey);
+        Assert.Contains("the first request will", viewModel.ModelsDevKeyStatus, StringComparison.Ordinal);
+        Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ModelsDevKeyStatusTone);
+        Assert.True(viewModel.IsModelsDevSignOutVisible);
+    }
+
+    [Fact]
     public async Task A_rejected_key_keeps_the_saved_key_and_says_so()
     {
         var backend = new FakeBackend
@@ -283,6 +322,56 @@ public sealed partial class SettingsViewModelTests
         Assert.StartsWith("Signed out of OpenAI", viewModel.ModelsDevKeyStatus, StringComparison.Ordinal);
         Assert.False(viewModel.IsModelsDevSignOutVisible);
         Assert.True(viewModel.IsSignOutEnabled);
+    }
+
+    [Theory]
+    [InlineData("valid", "", "accepted")]
+    [InlineData("unchecked", "sk-synthetic-custom", "first request")]
+    [InlineData("invalid", "sk-synthetic-custom", "rejected")]
+    public async Task A_custom_key_is_checked_by_the_host_and_never_rides_the_autosave(string code, string box, string status)
+    {
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "custom", CustomUrl = "https://lab.example/v1" },
+            CustomKeyResult = new ProviderKeyProbeResult(code),
+        };
+        using var viewModel = NewViewModel();
+        await viewModel.AttachAsync(backend, new FakeCatalog());
+
+        viewModel.CustomApiKey = " sk-synthetic-custom ";
+        await backend.WaitForCustomValidationAsync();
+        await Task.Yield();
+
+        Assert.Equal("sk-synthetic-custom", Assert.Single(backend.CustomKeyValidations));
+        // The URL is saved first, and no settings save ever carries the key.
+        Assert.NotEmpty(backend.Saved);
+        Assert.All(backend.Saved, saved => Assert.Equal(string.Empty, saved.CustomApiKey));
+        Assert.Equal(box, viewModel.CustomApiKey.Trim());
+        Assert.Contains(status, viewModel.CustomKeyStatus, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(code == "invalid", viewModel.HasUnsavedCustomKey);
+    }
+
+    [Fact]
+    public async Task A_custom_key_edited_during_its_check_is_checked_again()
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "custom", CustomUrl = "https://lab.example/v1" },
+            CustomKeyResult = new ProviderKeyProbeResult("unchecked"),
+            CustomKeyGate = gate,
+        };
+        using var viewModel = NewViewModel();
+        await viewModel.AttachAsync(backend, new FakeCatalog());
+
+        viewModel.CustomApiKey = "sk-half";
+        await backend.WaitForCustomValidationAsync();
+        viewModel.CustomApiKey = "sk-half-and-the-rest";
+        backend.CustomKeyGate = null;
+        gate.SetResult();
+        await backend.WaitForCustomValidationAsync();
+
+        Assert.Equal(["sk-half", "sk-half-and-the-rest"], backend.CustomKeyValidations);
     }
 
     [Fact]
@@ -436,6 +525,28 @@ public sealed partial class SettingsViewModelTests
             if (KeyResult.Code == "valid") KeyIds = KeyIds.Append(providerId[ProviderSetupGuidance.ModelsDevPrefix.Length..]).ToArray();
             _validated.TrySetResult();
             return Task.FromResult(KeyResult);
+        }
+
+        public List<string> CustomKeyValidations { get; } = new();
+        public ProviderKeyProbeResult CustomKeyResult { get; set; } = new("valid");
+
+        /// <summary>When set, a custom key check waits for it before answering.</summary>
+        public TaskCompletionSource? CustomKeyGate { get; set; }
+
+        public async Task<ProviderKeyProbeResult> ValidateAndSaveCustomKeyAsync(string key, CancellationToken cancellationToken)
+        {
+            CustomKeyValidations.Add(key);
+            _customValidated.TrySetResult();
+            if (CustomKeyGate is { } gate) await gate.Task;
+            return CustomKeyResult;
+        }
+
+        private TaskCompletionSource _customValidated = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task WaitForCustomValidationAsync()
+        {
+            await _customValidated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            _customValidated = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         public Task<bool> RemoveProviderAsync(string backendChoice)

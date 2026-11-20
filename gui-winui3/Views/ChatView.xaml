@@ -290,6 +290,15 @@
                                                 Item="{x:Bind}" />
                 </Grid>
                 <!--
+                  A running command's newest output line, under its verb while the card is
+                  closed. It shares row 1 with the thinking block: a row is never both.
+                -->
+                <controls:ActivityRowTicker Grid.Row="1"
+                                            x:Name="ActivityTicker"
+                                            Margin="42,2,0,0"
+                                            HorizontalAlignment="Stretch"
+                                            Item="{x:Bind}" />
+                <!--
                   Thinking deliberation as a quote block: canvas fill to set it off the
                   chat, muted text so the reply below stays the visual focus. Closed by
                   default. It uses the full reading column so long reasoning does

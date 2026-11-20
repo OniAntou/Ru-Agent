@@ -84,6 +84,12 @@ public abstract partial class ActivityRowPart : Grid
         _observed = null;
         if (_typographyObserved) TranscriptTypography.Instance.PropertyChanged -= OnTypographyChanged;
         _typographyObserved = false;
+        OnReleased();
+    }
+
+    /// <summary>Stops anything the part runs on its own (timers, clock subscriptions) on unload.</summary>
+    protected virtual void OnReleased()
+    {
     }
 
     private void OnItemChanged(object? sender, PropertyChangedEventArgs e)
@@ -99,12 +105,18 @@ public abstract partial class ActivityRowPart : Grid
 
 /// <summary>
 /// The glyph before an activity row's verb: the kind of work, or the state when the
-/// row failed or waits on the user. It is tinted, never animated; the verb's sweep
-/// already says the row is running.
+/// row failed or waits on the user. While running it only carries the accent tint (the
+/// verb's sweep says the row is running); the moment it settles in view it gives one
+/// small pop, so a finished step registers without reading the words.
 /// </summary>
 public sealed partial class ActivityRowGlyph : ActivityRowPart
 {
+    internal const double SettlePopMilliseconds = 260;
+    private const float SettlePopScale = 1.18f;
+
     private readonly FontIcon _glyph = new() { FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+    private AgentActivityItem? _rendered;
+    private bool _renderedRunning;
 
     public ActivityRowGlyph()
     {
@@ -121,9 +133,60 @@ public sealed partial class ActivityRowGlyph : ActivityRowPart
         ActivityRowGlyphs.Apply(_glyph,
             failed ? "\uE7BA" : item.IsWaiting ? "\uE823" : ActivityRowGlyphs.For(item.Kind, item.ToolDisplay),
             FontSizeFor(mono: false));
-        _glyph.Foreground = Brush(failed ? "RuDangerBrush"
+        var brushKey = failed ? "RuDangerBrush"
             : item.IsWaiting ? "RuWarningBrush"
-            : item.IsRunning ? "RuAccentBrush" : "RuMutedBrush");
+            : item.IsRunning ? "RuAccentBrush" : "RuMutedBrush";
+
+        // Only a settle this part watched happen: a recycled or replayed row binds
+        // already settled and stays still.
+        var sameItem = ReferenceEquals(_rendered, item);
+        var settledNow = sameItem && _renderedRunning && !item.IsRunning;
+        _rendered = item;
+        _renderedRunning = item.IsRunning;
+        if (settledNow && UiTiming.AnimationsEnabled)
+        {
+            UiMotion.FadeBrush(_glyph, IconElement.ForegroundProperty, Brush(brushKey), SettlePopMilliseconds);
+            _fadingKey = brushKey;
+            _fadeEndsTick = Environment.TickCount64 + (long)SettlePopMilliseconds;
+            PlaySettlePop();
+            return;
+        }
+
+        // One frame raises many property changes and each re-renders this part; a later
+        // one must not snap the colour the settle is still fading to.
+        if (sameItem && brushKey == _fadingKey && Environment.TickCount64 < _fadeEndsTick) return;
+        _fadingKey = null;
+        _glyph.Foreground = Brush(brushKey);
+    }
+
+    protected override void OnReleased()
+    {
+        _rendered = null;
+        _renderedRunning = false;
+        _fadingKey = null;
+    }
+
+    private string? _fadingKey;
+    private long _fadeEndsTick;
+
+    private void PlaySettlePop()
+    {
+        if (!UiTiming.AnimationsEnabled) return;
+        try
+        {
+            var visual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(this);
+            visual.CenterPoint = new System.Numerics.Vector3((float)Width / 2, (float)Height / 2, 0f);
+            var pop = visual.Compositor.CreateVector3KeyFrameAnimation();
+            pop.InsertKeyFrame(0f, System.Numerics.Vector3.One);
+            pop.InsertKeyFrame(0.4f, new System.Numerics.Vector3(SettlePopScale, SettlePopScale, 1f));
+            pop.InsertKeyFrame(1f, System.Numerics.Vector3.One);
+            pop.Duration = TimeSpan.FromMilliseconds(SettlePopMilliseconds);
+            visual.StartAnimation("Scale", pop);
+        }
+        catch (Exception error)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[ActivityRowGlyph] Settle pop failed: {error.Message}");
+        }
     }
 }
 
@@ -165,6 +228,8 @@ public sealed partial class ActivityRowTail : ActivityRowPart
         _exit.Child = _exitText;
         Place(_exit, 4);
         SizeChanged += (_, _) => FitSubject();
+        Loaded += (_, _) => WatchHost();
+        Unloaded += (_, _) => UnwatchHost();
     }
 
     protected override void Render(AgentActivityItem item)
@@ -176,7 +241,9 @@ public sealed partial class ActivityRowTail : ActivityRowPart
         _subject.FontSize = FontSizeFor(mono: false);
         ToolTipService.SetToolTip(_subject, subject.Length > 0 ? subject : null);
 
+        FollowClock(item);
         var meta = item.RowMeta;
+        if (LiveClockText(item) is { } clock) meta = meta.Length > 0 ? meta + " · " + clock : clock;
         _meta.Text = meta;
         _meta.Visibility = meta.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         _meta.Foreground = Brush("RuMutedBrush");
@@ -185,8 +252,19 @@ public sealed partial class ActivityRowTail : ActivityRowPart
         _dot.Visibility = subject.Length > 0 || meta.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         var delta = item.HasLineDelta;
-        _added.Text = delta ? item.AddedDeltaText : string.Empty;
-        _removed.Text = delta ? item.RemovedDeltaText : string.Empty;
+        // Counts that appear, or a row that settles with them, while this part watches.
+        var countUp = IsLoaded && ReferenceEquals(_rendered, item) && delta && UiTiming.AnimationsEnabled
+            && (!_renderedDelta || _renderedRunning && !item.IsRunning);
+        _rendered = item;
+        _renderedDelta = delta;
+        _renderedRunning = item.IsRunning;
+        if (countUp) StartCountUp(item);
+        else if (_countUpItem is null || !ReferenceEquals(_countUpItem, item))
+        {
+            StopCountUp();
+            _added.Text = delta ? item.AddedDeltaText : string.Empty;
+            _removed.Text = delta ? item.RemovedDeltaText : string.Empty;
+        }
         _added.Visibility = delta ? Visibility.Visible : Visibility.Collapsed;
         _removed.Visibility = _added.Visibility;
         _added.Foreground = Brush("RuSuccessBrush");
@@ -201,11 +279,144 @@ public sealed partial class ActivityRowTail : ActivityRowPart
         FitSubject();
     }
 
+    internal const double CountUpMilliseconds = 300;
+    private static readonly TimeSpan CountUpFrame = TimeSpan.FromMilliseconds(30);
+
+    private AgentActivityItem? _rendered;
+    private bool _renderedDelta;
+    private bool _renderedRunning;
+    private AgentActivityItem? _countUpItem;
+    private long _countUpStartedTick;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _countUpTimer;
+    private AgentActivityItem? _clockItem;
+    private Action? _clockTick;
+
+    /// <summary>
+    /// The running clock for a row the feed saw start, once it has run a full second:
+    /// faster steps settle before a clock would mean anything, and showing "0s" on
+    /// every read would only flicker.
+    /// </summary>
+    internal static string? LiveClockText(AgentActivityItem item, long nowTick) =>
+        item.LiveElapsedAt(nowTick) is { TotalSeconds: >= 1 } elapsed
+            ? AgentActivityItem.FormatLiveElapsed(elapsed)
+            : null;
+
+    private static string? LiveClockText(AgentActivityItem item) => LiveClockText(item, Environment.TickCount64);
+
+    private void FollowClock(AgentActivityItem item)
+    {
+        // Bind also renders an unloaded part; only a loaded one may hold the shared clock.
+        var wanted = IsLoaded && item.HasLiveClock ? item : null;
+        if (ReferenceEquals(wanted, _clockItem)) return;
+        if (_clockTick is not null) ActivityRowClock.Unsubscribe(_clockTick);
+        _clockTick = null;
+        _clockItem = wanted;
+        if (wanted is null) return;
+        _clockTick = () =>
+        {
+            if (Item is { } current && ReferenceEquals(current, _clockItem)) Render(current);
+        };
+        ActivityRowClock.Subscribe(_clockTick);
+    }
+
+    /// <summary>
+    /// The line delta counts up from zero once, when an edit this part is showing
+    /// settles with its counts. A replayed or recycled row binds with them and is still.
+    /// </summary>
+    private void StartCountUp(AgentActivityItem item)
+    {
+        _countUpItem = item;
+        _countUpStartedTick = Environment.TickCount64;
+        if (_countUpTimer is null)
+        {
+            _countUpTimer = DispatcherQueue.CreateTimer();
+            _countUpTimer.Interval = CountUpFrame;
+            _countUpTimer.Tick += (_, _) => StepCountUp();
+        }
+
+        StepCountUp();
+        _countUpTimer.Start();
+    }
+
+    private void StepCountUp()
+    {
+        if (_countUpItem is not { } item || !ReferenceEquals(item, Item))
+        {
+            StopCountUp();
+            return;
+        }
+
+        var progress = Math.Clamp((Environment.TickCount64 - _countUpStartedTick) / CountUpMilliseconds, 0, 1);
+        var eased = 1 - Math.Pow(1 - progress, 3);
+        _added.Text = $"+{(int)Math.Round((item.Added ?? 0) * eased)}";
+        _removed.Text = $"−{(int)Math.Round((item.Removed ?? 0) * eased)}";
+        if (progress < 1) return;
+        StopCountUp();
+        _added.Text = item.AddedDeltaText;
+        _removed.Text = item.RemovedDeltaText;
+    }
+
+    private void StopCountUp()
+    {
+        _countUpTimer?.Stop();
+        _countUpItem = null;
+    }
+
+    protected override void OnReleased()
+    {
+        StopCountUp();
+        if (_clockTick is not null) ActivityRowClock.Unsubscribe(_clockTick);
+        _clockTick = null;
+        _clockItem = null;
+        _rendered = null;
+        _renderedDelta = false;
+        _renderedRunning = false;
+    }
+
+    private FrameworkElement? _host;
+
+    // The header's width changes with the reading column; follow it, not only this tail.
+    private void WatchHost()
+    {
+        UnwatchHost();
+        _host = Parent as FrameworkElement;
+        if (_host is not null) _host.SizeChanged += OnHostSizeChanged;
+        FitSubject();
+    }
+
+    private void UnwatchHost()
+    {
+        if (_host is not null) _host.SizeChanged -= OnHostSizeChanged;
+        _host = null;
+    }
+
+    private void OnHostSizeChanged(object sender, SizeChangedEventArgs e) => FitSubject();
+
+    private double AvailableWidth()
+    {
+        if (Parent is not FrameworkElement host || host.ActualWidth <= 0) return ActualWidth;
+        try
+        {
+            var left = TransformToVisual(host).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
+            return host.ActualWidth - left;
+        }
+        catch (ArgumentException)
+        {
+            // Not in the same visual tree yet; the next size change fits it.
+            return ActualWidth;
+        }
+    }
+
     // The subject takes whatever width the other parts leave, so a long command or
     // path trims instead of pushing the numbers off the row.
     private void FitSubject()
     {
-        if (ActualWidth <= 0) return;
+        // The header lays this tail out in auto-sized columns, so its own width is the
+        // width of its content: an untrimmed command made the tail as wide as the
+        // command and pushed the numbers and the running clock out of view. The width
+        // that is really available is what the header has left to the right of it.
+        var available = AvailableWidth();
+        if (available <= 0) return;
         double used = 0;
         var visible = 0;
         foreach (var child in Children)
@@ -217,13 +428,89 @@ public sealed partial class ActivityRowTail : ActivityRowPart
             used += child.DesiredSize.Width;
         }
 
-        _subject.MaxWidth = Math.Max(40, ActualWidth - used - ColumnSpacing * Math.Max(0, visible - 1));
+        _subject.MaxWidth = Math.Max(40, available - used - ColumnSpacing * Math.Max(0, visible - 1));
     }
 
     private void Place(FrameworkElement element, int column)
     {
         SetColumn(element, column);
         Children.Add(element);
+    }
+}
+
+/// <summary>
+/// The line under a running command's collapsed row: its newest output line, so a long
+/// build or test shows it is moving without opening the card. It updates at most four
+/// times a second however fast the command prints, and goes away when the command
+/// settles or its card opens (the card shows the same output in full).
+/// </summary>
+public sealed partial class ActivityRowTicker : ActivityRowPart
+{
+    internal static readonly TimeSpan MinimumUpdateInterval = TimeSpan.FromMilliseconds(250);
+
+    private readonly TextBlock _line = Text(mono: true);
+    private long _shownTick;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _pending;
+
+    public ActivityRowTicker()
+    {
+        _line.TextTrimming = TextTrimming.CharacterEllipsis;
+        Children.Add(_line);
+        Visibility = Visibility.Collapsed;
+        // The card carries the output for assistive technology; this line would only
+        // repeat it four times a second.
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+            this, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+    }
+
+    protected override void Render(AgentActivityItem item)
+    {
+        var text = item.TerminalTickerText;
+        if (text.Length == 0)
+        {
+            _pending?.Stop();
+            _line.Text = string.Empty;
+            Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var wait = _shownTick + (long)MinimumUpdateInterval.TotalMilliseconds - Environment.TickCount64;
+        if (wait > 0 && Visibility == Visibility.Visible && IsLoaded)
+        {
+            Schedule(wait);
+            return;
+        }
+
+        Show(text);
+    }
+
+    protected override void OnReleased() => _pending?.Stop();
+
+    private void Show(string text)
+    {
+        _line.Text = text;
+        _line.Foreground = Brush("RuMutedBrush");
+        _line.FontSize = FontSizeFor(mono: true) - 1;
+        _shownTick = Environment.TickCount64;
+        Visibility = Visibility.Visible;
+    }
+
+    private void Schedule(long milliseconds)
+    {
+        if (_pending is null)
+        {
+            _pending = DispatcherQueue.CreateTimer();
+            _pending.IsRepeating = false;
+            _pending.Tick += (_, _) =>
+            {
+                if (Item is { } item && item.TerminalTickerText is { Length: > 0 } latest) Show(latest);
+                else if (Item is { } settled) Render(settled);
+            };
+        }
+
+        if (_pending.IsRunning) return;
+        _pending.Interval = TimeSpan.FromMilliseconds(Math.Max(1, milliseconds));
+        _pending.Start();
     }
 }
 

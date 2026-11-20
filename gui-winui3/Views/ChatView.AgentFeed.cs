@@ -794,6 +794,8 @@ namespace RuApp.Views
 
         // ── Activity text wave animation ──────────────────────────────
         private readonly Dictionary<TextBlock, AgentActivityItem> _activeWaveTextBlocks = new();
+        // Verb labels mid-way through their settle fade (see ApplyActivityTextStyle).
+        private readonly HashSet<TextBlock> _settlingLabels = new();
         private DispatcherQueueTimer? _waveTimer;
         private readonly System.Diagnostics.Stopwatch _waveStopwatch = new();
 
@@ -846,15 +848,19 @@ namespace RuApp.Views
                 return;
 
             // Loading/recycling a visual row is not a new agent event. Replaying
-            // entrance fades here makes settled history flash on every revisit.
+            // entrance fades here makes settled history flash on every revisit, so
+            // only a row the live feed delivered moments ago enters with motion.
             grid.Opacity = 1;
             grid.RenderTransform = null;
+            if (item.TryTakeEntrance(Environment.TickCount64))
+                Services.UiMotion.Enter(grid);
 
             TextBlock? displayText = grid.FindName(ActivityLabelElementName(item)) as TextBlock;
             if (displayText == null) return;
 
             ApplyActivityTextStyle(displayText, item);
             ApplyActivityLiveSetting(grid, item);
+            var wasRunning = item.IsRunning;
 
             PropertyChangedEventHandler handler = null!;
             handler = (s, args) =>
@@ -882,7 +888,8 @@ namespace RuApp.Views
                                 displayText = currentLabel;
                                 grid.Tag = (handler, displayText, ai);
                             }
-                            ApplyActivityTextStyle(displayText, ai);
+                            ApplyActivityTextStyle(displayText, ai, settledInView: wasRunning && !ai.IsRunning);
+                            wasRunning = ai.IsRunning;
                             ApplyActivityLiveSetting(grid, ai);
                         }
                     });
@@ -938,7 +945,12 @@ namespace RuApp.Views
             }
         }
 
-        private void ApplyActivityTextStyle(TextBlock textBlock, AgentActivityItem item)
+        /// <param name="settledInView">
+        /// The row just stopped running while shown: its verb fades from ink to its settled
+        /// tone instead of snapping, then takes the shared theme brush back so a later theme
+        /// change still reaches it.
+        /// </param>
+        private void ApplyActivityTextStyle(TextBlock textBlock, AgentActivityItem item, bool settledInView = false)
         {
             // Applied here rather than bound in markup. A binding inside a DataTemplate has
             // to resolve the resource while the template is being parsed, and this one is
@@ -955,7 +967,32 @@ namespace RuApp.Views
                 var targetBrush = (SolidColorBrush)Application.Current.Resources[
                     Services.ActivityRowTone.BrushKeyFor(item.IsFailed, item.IsWaiting)];
 
-                textBlock.Foreground = targetBrush;
+                if (settledInView && Services.UiTiming.AnimationsEnabled
+                    && Application.Current.Resources[Services.ActivityRowTone.Ink] is SolidColorBrush ink)
+                {
+                    // The sweep left a gradient behind; start the fade from plain ink.
+                    textBlock.Foreground = ink;
+                    Services.UiMotion.FadeBrush(textBlock, TextBlock.ForegroundProperty, targetBrush,
+                        Controls.ActivityRowGlyph.SettlePopMilliseconds);
+                    _settlingLabels.Add(textBlock);
+                    var restore = DispatcherQueue.CreateTimer();
+                    restore.IsRepeating = false;
+                    restore.Interval = TimeSpan.FromMilliseconds(Controls.ActivityRowGlyph.SettlePopMilliseconds + 40);
+                    restore.Tick += (_, _) =>
+                    {
+                        _settlingLabels.Remove(textBlock);
+                        if (!item.IsRunning && ReferenceEquals(textBlock.DataContext, item))
+                            textBlock.Foreground = (SolidColorBrush)Application.Current.Resources[
+                                Services.ActivityRowTone.BrushKeyFor(item.IsFailed, item.IsWaiting)];
+                    };
+                    restore.Start();
+                }
+                // One settle raises several property changes, each restyling the label;
+                // the later ones must not snap the colour the fade is still moving.
+                else if (!_settlingLabels.Contains(textBlock))
+                {
+                    textBlock.Foreground = targetBrush;
+                }
                 // Waiting rows need user action: italic sets them apart without
                 // spending a color that would fail AA on the light theme.
                 textBlock.FontStyle = item.IsWaiting

@@ -258,10 +258,39 @@ before it (danger or warning when the row failed or waits), and `ActivityRowTail
 puts the subject, a mono tail and an `exit N` badge after it. The words come from
 `AgentActivityItem.RowVerb`, `RowSubject` and `RowMeta`; `DisplayText` remains the
 whole sentence for tooltips, automation names and the compact summary. Only the
-subject trims, to whatever width the other parts leave. Rows use
+subject trims, to whatever width the other parts leave of the header's remaining width
+(the tail's own auto-sized width would let a long command push the numbers off the row). Rows use
 `TranscriptTypography.ActivityFontSize`, which equals the message size; muted ink, not
 size, sets them apart. `ChatMessageItem.UpdateActivityGaps` gives each displayed prose
 slice 12px on the side where an activity row sits.
+
+Rows the live feed watched happen also move and keep time
+(`AgentActivityItem.Live.cs`). Only `AgentActivityFeedPresenter` marks a row as
+watched: it records when the row arrived and, when the feed saw it start running,
+when it started. Rows loaded from history carry neither, and a later live frame for
+such a row starts no clock, so a reopened transcript does not replay motion or count
+from the moment it was reopened.
+
+- **Running clock.** The tail adds `· 12s`, then `· 1m 05s`, to a running row once
+  it has run a full second, from one shared once-a-second `ActivityRowClock` that
+  stops when nothing runs. It changes text only, so it keeps ticking with Windows
+  animations off; the settled duration replaces it.
+- **Output line.** `ActivityRowTicker` shows a running command's newest non-empty
+  output line (carriage-return redraws resolved, control characters blanked, 200
+  characters) under its collapsed row, at most four times a second. It hides when the
+  command settles or its card opens, and is hidden from assistive technology because
+  the card carries the same output.
+- **Entrance.** A row delivered by the live feed fades and rises in (`UiMotion.Enter`)
+  the first time it is realized within two seconds of arriving; later realizations
+  and recycling are still.
+- **Settle.** When a shown row stops running, its glyph pops once (scale 1.18 over
+  260 ms) and cross-fades to its settled tint, and its verb fades from ink to its
+  settled tone before taking the shared theme brush back. An edit that settles in view
+  counts its `+N −M` up from zero over 300 ms.
+
+With Windows animations off, the entrance, pop, fades and count-up are skipped; the
+clock and the output line still update, because they change text only. These are parts
+of the row template, so in Compact mode they show only inside an expanded turn.
 
 ## Compact agent activity
 

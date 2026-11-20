@@ -20,14 +20,19 @@ internal sealed class AgentActivityFeedPresenter
         ArgumentNullException.ThrowIfNull(rows);
         if (string.IsNullOrWhiteSpace(activity.ActivityId)) return null;
 
+        var now = Environment.TickCount64;
         if (_items.TryGetValue(activity.ActivityId, out var existing))
         {
+            var wasRunning = existing.IsRunning;
             var changed = existing.UpdateFrom(activity);
+            if (changed) existing.ObserveLiveFrame(created: false, wasRunning, now);
             return new AgentActivityFeedUpdate(existing, Added: false, Changed: changed,
                 TodoPanelItems: activity.Todos is null ? null : LatestTodos(rows));
         }
 
         var item = new AgentActivityItem(activity);
+        // Only this path sees a row happen live; replay and adoption never call it.
+        item.ObserveLiveFrame(created: true, wasRunning: false, now);
         _items.Add(item.ActivityId, item);
         rows.Add(item);
         return new AgentActivityFeedUpdate(item, Added: true, Changed: true,

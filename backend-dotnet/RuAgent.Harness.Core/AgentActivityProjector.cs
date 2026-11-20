@@ -712,8 +712,10 @@ public static class AgentActivityProjector
                 if (proposal.ToolId is "write" or "edit")
                 {
                     added ??= ReadLineCount(arguments, "new_string")
+                        ?? ReadEditsLineCount(arguments, "new_string")
                         ?? ReadLineCount(arguments, "content");
-                    removed ??= ReadLineCount(arguments, "old_string");
+                    removed ??= ReadLineCount(arguments, "old_string")
+                        ?? ReadEditsLineCount(arguments, "old_string");
                 }
 
                 if (proposal.ToolId is "read" or "edit" or "write")
@@ -872,6 +874,35 @@ public static class AgentActivityProjector
             if (value.Length == 0) return 0;
             var count = value.Count(character => character == '\n') + (value.EndsWith('\n') ? 0 : 1);
             return count <= MaximumCount ? count : null;
+        }
+
+        /// <summary>
+        /// The line count summed over an <c>edit_file</c> call's <c>edits</c> array, which
+        /// reaches this projector under the <c>edit</c> family with no top-level strings.
+        /// Without it every multi-edit row lost its line delta. Null when there is no
+        /// array, an entry lacks the string, or the sum leaves the bounded range.
+        /// </summary>
+        private static int? ReadEditsLineCount(JsonElement arguments, string propertyName)
+        {
+            if (!arguments.TryGetProperty("edits", out var edits) || edits.ValueKind != JsonValueKind.Array
+                || edits.GetArrayLength() == 0)
+            {
+                return null;
+            }
+
+            var total = 0;
+            foreach (var edit in edits.EnumerateArray())
+            {
+                if (edit.ValueKind != JsonValueKind.Object || ReadLineCount(edit, propertyName) is not { } lines)
+                {
+                    return null;
+                }
+
+                total += lines;
+                if (total > MaximumCount) return null;
+            }
+
+            return total;
         }
 
         /// <summary>The process exit code a terminal receipt reports, when it reports one.</summary>

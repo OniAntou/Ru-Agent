@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider names, a green checkmark for each signed-in provider, and blank rows between groups
   so the lists breathe; key-verdict text is no longer spelled out.
 
+- **feat(gui)**: The agent activity feed is livelier while a run works. A running row
+  shows a ticking clock after its first second, a running command shows its newest
+  output line under the closed row, new rows fade in, and a finishing row's icon pops
+  and fades to its settled colour while an edit counts its `+N −M` up. Reopened
+  history stays still and shows no invented times; motion follows the Windows
+  animation setting. In Compact mode these appear inside an expanded turn.
+
 - **feat(broker)**: `write_file` replaces a file the session has just read whole without
   `overwrite=true`, while the file still holds what was read. Benchmarks showed models
   calling `write_file` on existing files and paying a `file_exists` failure and a retry. A

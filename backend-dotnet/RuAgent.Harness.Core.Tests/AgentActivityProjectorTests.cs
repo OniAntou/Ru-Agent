@@ -164,12 +164,26 @@ public sealed partial class AgentActivityProjectorTests
     [InlineData("edit", "{\"path\":\"a.py\",\"old_string\":\"x = 1\",\"new_string\":\"x = 2\"}", 1, 1)]
     [InlineData("edit", "{\"path\":\"a.py\",\"old_string\":\"x = 1\\n\",\"new_string\":\"\"}", 0, 1)]
     [InlineData("write", "{\"path\":\"a.py\",\"content\":\"one\\ntwo\\n\"}", 2, null)]
+    // edit_file arrives as the edit family with an edits array: its counts are summed.
+    [InlineData("edit", "{\"path\":\"a.py\",\"edits\":[{\"old_string\":\"a\\nb\",\"new_string\":\"c\"},{\"old_string\":\"x\",\"new_string\":\"y\\nz\\nw\"}]}", 4, 3)]
+    [InlineData("edit", "{\"path\":\"a.py\",\"edits\":[{\"old_string\":\"return a + b\",\"new_string\":\"\"}]}", 0, 1)]
     public void Edit_projection_counts_lines_not_line_breaks(string tool, string arguments, int added, int? removed)
     {
         var activity = AgentActivityProjector.ProjectTool(Proposal(tool, arguments), AgentActivityState.Started);
 
         Assert.Equal(added, activity.Added);
         Assert.Equal(removed, activity.Removed);
+    }
+
+    [Theory]
+    [InlineData("{\"path\":\"a.py\",\"edits\":[]}")]
+    [InlineData("{\"path\":\"a.py\",\"edits\":[{\"old_string\":\"a\"}]}")]
+    [InlineData("{\"path\":\"a.py\",\"edits\":[\"not an object\"]}")]
+    public void A_malformed_edits_array_reports_no_line_delta(string arguments)
+    {
+        var activity = AgentActivityProjector.ProjectTool(Proposal("edit", arguments), AgentActivityState.Started);
+
+        Assert.Null(activity.Added);
     }
 
     [Theory]

@@ -65,6 +65,13 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
 
     public Func<RunId, ProviderBootstrapData, IReadOnlyList<string>, CancellationToken, Task<IReadOnlyList<ProviderContinuation>>>? LoadProviderContinuationsAsync { get; init; }
 
+    /// <summary>
+    /// Told, without being awaited, when one step could not replay its stored history and
+    /// continued on repaired history. The code is the bounded failure the step avoided;
+    /// the callback must not throw or block.
+    /// </summary>
+    public Action<string>? ObserveHistoryRepair { get; init; }
+
     // Tests shrink the backoff; production waits out transient provider limits.
     internal TimeSpan[] StepRetryBackoffsOverride { get; set; } = ModelStepRetryBackoffs;
     internal Func<double> RetryJitterSample { get; set; } = Random.Shared.NextDouble;
@@ -96,17 +103,21 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         string effectiveEffort = "unknown";
         string selectedEffort = "unknown";
         ProviderBootstrapData? sentWith = null;
+        var historyRecoveryAttempted = false;
 
         while (true)
         {
             try
             {
-                var preparedStep = attempt == 0 ? request.Preparation as InProcessPreparedStep : null;
-                if (attempt == 0 && request.Preparation is not null && preparedStep is null)
+                var preparedStep = attempt == 0 && !historyRecoveryAttempted
+                    ? request.Preparation as InProcessPreparedStep
+                    : null;
+                if (attempt == 0 && request.Preparation is not null && preparedStep is null && !historyRecoveryAttempted)
                     throw new ModelRunnerProtocolException("invalid_request", retryable: false);
                 var prepared = preparedStep?.StepRequest
                     ?? _stepService.PrepareRequest(
-                        await BuildGenerationRequestAsync(request, selectionFeedbackCode, cancellationToken)
+                        await BuildGenerationRequestAsync(request, selectionFeedbackCode, cancellationToken,
+                                forceHistoryRecovery: historyRecoveryAttempted)
                             .ConfigureAwait(false), request.ModelStepId.Value, requireExactProjection: false, contextScope: request.RunId.Value);
                 if (prepared.EstimatedInputTokens >= 0
                     && prepared.EstimatedInputTokens
@@ -179,6 +190,17 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 selectionFeedbackCode = error.Code;
                 attempt++;
             }
+            catch (ModelStepException error) when (!historyRecoveryAttempted
+                && IsRecoverableHistoryFailure(error.Code))
+            {
+                // The first pass could still hand an unprojectable stored history to the
+                // step service before dispatch. Rebuild it in repaired form once.
+                historyRecoveryAttempted = true;
+                ReportHistoryRepair(error.Code);
+                Console.Error.WriteLine(
+                    $"ru.host history_repaired code={error.Code} attempt={attempt + 1}");
+                continue;
+            }
             catch (ModelStepException error)
             {
                 // Cancellation can win between provider rejection and the retry filter.
@@ -221,8 +243,22 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         ArgumentNullException.ThrowIfNull(request);
         var generationRequest = await BuildGenerationRequestAsync(request, null, cancellationToken, preparingSnapshot: true)
             .ConfigureAwait(false);
-        var stepRequest = _stepService.PrepareRequest(
-            generationRequest, request.ModelStepId.Value, requireExactProjection: true, contextScope: request.RunId.Value);
+        PreparedModelStep stepRequest;
+        try
+        {
+            stepRequest = _stepService.PrepareRequest(
+                generationRequest, request.ModelStepId.Value, requireExactProjection: true, contextScope: request.RunId.Value);
+        }
+        catch (ModelStepException error) when (IsRecoverableHistoryFailure(error.Code))
+        {
+            ReportHistoryRepair(error.Code);
+            generationRequest = await BuildGenerationRequestAsync(request, null, cancellationToken,
+                    preparingSnapshot: true, forceHistoryRecovery: true)
+                .ConfigureAwait(false);
+            stepRequest = _stepService.PrepareRequest(
+                generationRequest, request.ModelStepId.Value, requireExactProjection: true, contextScope: request.RunId.Value);
+        }
+
         if (stepRequest.EstimatedInputTokens < 0 || stepRequest.MaxPromptTokens <= 0)
             throw new ModelStepException("provider_request_projection_unavailable", retryable: false);
         return new InProcessPreparedStep(stepRequest, generationRequest.PendingRuntimeSnapshot, HistoryWindowFill(generationRequest));
@@ -259,7 +295,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         ModelStepRequest request,
         string? selectionFeedbackCode,
         CancellationToken cancellationToken,
-        bool preparingSnapshot = false)
+        bool preparingSnapshot = false,
+        bool forceHistoryRecovery = false)
     {
         var bootstrap = await LoadProviderBootstrapAsync(request.RunId, cancellationToken).ConfigureAwait(false);
         // Reduce effort only while a truncation note is awaiting its next assistant response.
@@ -269,28 +306,63 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         var loadedImages = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
         var images = loadedImages.Images;
         var nativeText = (preparingSnapshot || request.Preparation is InProcessPreparedStep) && images.Count == 0;
-        var (prompt, _, modelMessages) = BuildConversation(request.Context, images.Count > 0, nativeText);
+        IReadOnlyList<ModelTurn>? modelMessages = null;
+        string prompt;
+        NativeHistory history;
         string? pendingSnapshot = null;
-        if (nativeText)
+        try
         {
-            var resultIds = modelMessages!.Where(turn => turn.Role == "tool" && turn.ToolCallId is not null)
-                .Select(turn => turn.ToolCallId!).ToHashSet(StringComparer.Ordinal);
-            var runtime = SystemPromptComposer.Compose(request.PromptContext, resultIds, deferRuntimeContext: true).RuntimeContext;
-            var workflow = request.Context.Entries.LastOrDefault(entry => entry.SourceId == SessionWorkState.ContextSourceId)?.Content;
-            var rendered = RuntimeContextSnapshot.Render(runtime, workflow);
-            if (RuntimeContextSnapshot.Fits(rendered))
+            // A bounded second chance after a rejection the first repair could not see:
+            // fall straight into the repaired-history path below.
+            if (forceHistoryRecovery)
             {
-                pendingSnapshot = RuntimeContextSnapshot.Pending(request.Context, rendered,
-                    modelMessages!.Where(turn => turn.Role == "user").Select(turn => turn.Content).ToHashSet(StringComparer.Ordinal));
-                (prompt, _, modelMessages) = BuildConversation(request.Context, false, true, pendingSnapshot);
+                throw new ModelRunnerProtocolException("model_history_invalid");
             }
-            else
+
+            (prompt, _, modelMessages) = BuildConversation(request.Context, images.Count > 0, nativeText);
+            if (nativeText)
             {
-                // Large/image context retains the existing separately bounded projection.
-                // Do not truncate data or relax the history limits to enable caching.
-                nativeText = false;
-                (prompt, _, modelMessages) = BuildConversation(request.Context, false);
+                var resultIds = modelMessages!.Where(turn => turn.Role == "tool" && turn.ToolCallId is not null)
+                    .Select(turn => turn.ToolCallId!).ToHashSet(StringComparer.Ordinal);
+                var runtime = SystemPromptComposer.Compose(request.PromptContext, resultIds, deferRuntimeContext: true).RuntimeContext;
+                var workflow = request.Context.Entries.LastOrDefault(entry => entry.SourceId == SessionWorkState.ContextSourceId)?.Content;
+                var rendered = RuntimeContextSnapshot.Render(runtime, workflow);
+                if (RuntimeContextSnapshot.Fits(rendered))
+                {
+                    pendingSnapshot = RuntimeContextSnapshot.Pending(request.Context, rendered,
+                        modelMessages!.Where(turn => turn.Role == "user").Select(turn => turn.Content).ToHashSet(StringComparer.Ordinal));
+                    (prompt, _, modelMessages) = BuildConversation(request.Context, false, true, pendingSnapshot);
+                }
+                else
+                {
+                    // Large/image context retains the existing separately bounded projection.
+                    // Do not truncate data or relax the history limits to enable caching.
+                    nativeText = false;
+                    (prompt, _, modelMessages) = BuildConversation(request.Context, false);
+                }
             }
+            if (bootstrap.ReplayChatReasoning)
+            {
+                var continuations = LoadProviderContinuationsAsync is null ? Array.Empty<ProviderContinuation>()
+                    : await LoadProviderContinuationsAsync(request.RunId, bootstrap,
+                        RetainedAssistantEventIds(request.Context, modelMessages!), cancellationToken).ConfigureAwait(false);
+                modelMessages = ChatCompletionsHistoryProjector.Project(modelMessages!, continuations, bootstrap.Model);
+            }
+            history = await BuildNativeHistoryAsync(request, bootstrap, modelMessages!, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ModelRunnerProtocolException error) when (IsRecoverableHistoryFailure(error.Code))
+        {
+            // Stored history is the only input this Host cannot replace with a named
+            // provider failure. A stored batch can be unpaired by an interrupted source,
+            // a provider that reused call ids, or a pinned replay shape this build cannot
+            // project. The run keeps going on repaired history instead of ending with a
+            // code the user cannot act on; the original code is reported to diagnostics.
+            ReportHistoryRepair(error.Code);
+            nativeText = false;
+            pendingSnapshot = null;
+            (prompt, modelMessages) = RecoverConversationOrLastResort(request.Context, images.Count > 0, error.Code);
+            history = new NativeHistory(Array.Empty<JsonObject>(), Array.Empty<JsonObject>());
         }
         if (selectionFeedbackCode is not null
             && BuildSelectionFeedback(selectionFeedbackCode) is { } selectionFeedback)
@@ -304,15 +376,6 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             // they belong to earlier turns instead of reading them as new attachments.
             prompt = SessionImageCarryover.AppendEarlierImageNotice(prompt, loadedImages.EarlierImageCount);
         }
-        if (bootstrap.ReplayChatReasoning)
-        {
-            var continuations = LoadProviderContinuationsAsync is null ? Array.Empty<ProviderContinuation>()
-                : await LoadProviderContinuationsAsync(request.RunId, bootstrap,
-                    RetainedAssistantEventIds(request.Context, modelMessages!), cancellationToken).ConfigureAwait(false);
-            modelMessages = ChatCompletionsHistoryProjector.Project(modelMessages!, continuations, bootstrap.Model);
-        }
-        var history = await BuildNativeHistoryAsync(request, bootstrap, modelMessages!, cancellationToken)
-            .ConfigureAwait(false);
         var settings = BuildSettings(request.PromptContext);
         try
         {

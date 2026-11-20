@@ -393,6 +393,11 @@ internal static class PublicHostServiceRegistration
                 LoadProviderContinuationsAsync = (runId, bootstrap, retainedAssistantEventIds, ct) =>
                     services.GetRequiredService<SqliteProviderContinuationReader>()
                         .ReadAsync(runId, bootstrap, retainedAssistantEventIds, ct),
+                // A step whose stored history cannot be projected keeps running on repaired
+                // history; the avoided code is recorded instead of ending the run with it.
+                ObserveHistoryRepair = code => services.GetRequiredService<IDiagnosticEmitter>().TryEmit(
+                    "warning", "rubackend.harness.modelhistory", "model_history_repaired",
+                    status: "recovered", errorCode: code),
             });
         // A scripted model replaces the in-process provider call entirely when requested,
         // so the whole product can be exercised without a provider key. Registered before

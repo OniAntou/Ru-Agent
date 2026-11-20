@@ -664,6 +664,13 @@ model. `SqliteProviderContinuationReader` replays recorded provider items for re
 the run and of the one source its marker names. Any failed condition, including a source that
 cannot be projected, falls back to the text handoff.
 
+Stored history is also repaired when a step is built. If a retained tool batch cannot be paired
+(an interrupted source, a reused provider call id, or a reasoning replay this build cannot
+project), `ModelHistoryRepair` keeps every complete batch and drops only the unpaired structure;
+when even that projection cannot be built, the step continues on text-only dialogue. The avoided
+bounded code is emitted as `model_history_repaired` in Host diagnostics instead of ending the run
+with `model_history_invalid`.
+
 ## Tool Output Projection
 
 A bounded, untrusted model-visible view of a durable Broker receipt. Structured

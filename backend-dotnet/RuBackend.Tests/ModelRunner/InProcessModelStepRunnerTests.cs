@@ -505,6 +505,46 @@ public sealed partial class InProcessModelStepRunnerTests
         }
     }
 
+    [Fact]
+    public async Task Unpaired_stored_history_is_repaired_before_dispatch_instead_of_failing()
+    {
+        var provider = new ScriptedProvider((_, _) => Deltas(
+            new ModelDelta("ok", [], completed: true, finishReason: "stop")));
+        var repairs = new List<string>();
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
+        {
+            StepRetryBackoffsOverride = [TimeSpan.Zero],
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
+            ObserveHistoryRepair = repairs.Add,
+        };
+        using var arguments = System.Text.Json.JsonDocument.Parse("{}");
+        var context = new ModelContextSnapshot(
+            [
+                ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "Read a file"),
+                ModelContextEntry.Assistant("src-2", 2, new AssistantStep(
+                    null,
+                    [new ModelToolCall("call_a", "read", "1.0.0", arguments.RootElement.Clone())],
+                    AssistantFinishReason.ToolCalls,
+                    16)),
+                ModelContextEntry.Text("src-3", 3, ModelContextRole.User, "prompt"),
+            ],
+            Array.Empty<byte>());
+        var request = new ModelStepRequest(
+            new RunId("run_" + new string('a', 32)),
+            new ModelStepId("step_" + new string('b', 32)),
+            context,
+            SystemPromptContext.Empty,
+            AgentPermissionPreset.Standard,
+            policySnapshotVersion: 1,
+            policySnapshotSha256: new string('c', 64));
+
+        var result = await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        Assert.Equal("ok", result.Step.Text);
+        Assert.Equal(1, provider.Calls);
+        Assert.Equal(["model_history_invalid"], repairs);
+    }
+
     private static InProcessModelStepRunner Runner(
         ScriptedProvider provider, ProviderBootstrapData? bootstrap = null) =>
         new(new ModelStepService(provider))

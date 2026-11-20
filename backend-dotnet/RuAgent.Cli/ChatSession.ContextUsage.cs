@@ -15,6 +15,9 @@ public sealed partial class AgentCommands
         private string? contextMetadataRun;
         private int contextMetadataAttempts;
 
+        /// <summary>The prepared transient estimate for the request the context meter shows.</summary>
+        private (string Run, AgentUsageEstimateModel Estimate)? preparedContext;
+
         private async Task ApplyUsageFrameAsync(string runId, SseFrame frame, CancellationToken ct)
         {
             if (frame.IsTransient) return;
@@ -35,7 +38,7 @@ public sealed partial class AgentCommands
                 && !SessionUsageReplayPolicy.IsContextReading(envelope.SafeSummary);
             if (envelope.TotalTokens is not null || envelope.InputTokens is not null || envelope.OutputTokens is not null)
             {
-                // A usage report supersedes the prepared request estimate /status context shows.
+                // A usage report supersedes the prepared request estimate the context meter shows.
                 if (envelope.EventType == "model.usage_recorded" && !separateRequestUsage && preparedContext?.Run == envelope.RunId)
                     preparedContext = null;
                 usage.ApplyBilling(envelope.InputTokens, envelope.OutputTokens);
@@ -162,7 +165,7 @@ public sealed partial class AgentCommands
         private void ApplyUsageEstimate(SseFrame frame, string runId)
         {
             if (!AgentUsageEstimateModel.TryParse(frame, out var estimate) || estimate is null) return;
-            // Kept for /status context until the step's usage report arrives.
+            // Kept for the context meter until the step's usage report arrives.
             if (preparedContext?.Run != runId || estimate.TransientSequence > preparedContext.Value.Estimate.TransientSequence)
                 preparedContext = (runId, estimate);
             if (usage.ObserveEstimate(estimate)) PaintContextUsage();

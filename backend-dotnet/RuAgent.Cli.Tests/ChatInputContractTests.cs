@@ -9,7 +9,7 @@ public sealed class ChatInputContractTests
     [Fact]
     public void AutoComplete_ReturnsExactMatch_WhenPrefixMatchesSingleCandidate()
     {
-        var candidates = new[] { "/help", "/model", "/backend", "/status" };
+        var candidates = new[] { "/help", "/model", "/backend", "/preset" };
 
         var result1 = ChatCommandCatalog.AutoComplete("/he", candidates);
         Assert.Equal("/help", result1);

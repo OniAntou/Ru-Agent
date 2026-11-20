@@ -7,12 +7,11 @@ public static class ChatCommandCatalog
 
     public static readonly SlashCommandInfo[] KnownCommands =
     [
-        new("/model", "Switch or show the active model", "/model [name]"),
-        new("/provider", "Choose a provider, then enter its API key", "/provider [name] | /provider remove <name>"),
+        new("/model", "Switch model across signed-in providers", "/model [name]"),
+        new("/provider", "Choose a provider, enter its key, then pick a model", "/provider [name] | /provider remove <name>"),
         new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
         new("/advisor", "Choose a model the agent may consult in new runs", "/advisor [off | <model> | <provider> <model>]"),
         new("/computer", "Show or set computer use for new turns", "/computer [on|off]"),
-        new("/status", "Inspect status, context and token usage", "/status [overview|context|usage]"),
         new("/preset", "Choose permissions or manage remembered rules", "/preset [plan|standard|full_access|rules]"),
         new("/new", "Start a new session", "/new"),
         new("/sessions", "Browse saved sessions and reopen by id", "/sessions [query|id:<session-id>]"),
@@ -24,7 +23,7 @@ public static class ChatCommandCatalog
     ];
 
     private static readonly HashSet<string> RemovedCommands = new(StringComparer.OrdinalIgnoreCase)
-        { "/delete", "/resume", "/retry", "/release", "/clear", "/skills", "/skill", "/follow", "/changes", "/history", "/rewind" };
+        { "/delete", "/resume", "/retry", "/release", "/clear", "/skills", "/skill", "/follow", "/changes", "/history", "/rewind", "/status" };
 
     internal static bool IsRemovedCommand(string line) => RemovedCommands.Contains(
         line.TrimStart().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "");
@@ -32,7 +31,7 @@ public static class ChatCommandCatalog
     private static readonly HashSet<string> ReportCommands =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "/status", "/help", "/subagents",
+            "/help", "/subagents",
         };
 
     /// <summary>True when <paramref name="slashCmd"/> is a report-only command.</summary>

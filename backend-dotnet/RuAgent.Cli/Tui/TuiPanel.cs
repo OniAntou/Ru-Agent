@@ -7,7 +7,7 @@ public sealed record PanelRow(string Label, string? Detail = null, bool FullWidt
 public sealed record PanelSection(string? Title, IReadOnlyList<PanelRow> Rows);
 
 /// <summary>
-/// The framed information surface used by <c>/help</c> and <c>/status</c>: same border
+/// The framed information surface used by <c>/help</c>: same border
 /// language as the composer, label/detail columns, and every line exactly the requested
 /// width so a panel can never wrap and push the transcript out of alignment.
 /// </summary>

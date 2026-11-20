@@ -10,14 +10,10 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TgDocumentAnsiTests
 {
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Native_reports_have_one_frame_and_keep_unboxed_rows_in_the_transcript(bool help)
+    [Fact]
+    public void Native_reports_have_one_frame_and_keep_unboxed_rows_in_the_transcript()
     {
-        var body = help ? TuiSurfaces.Help(80, framed: false)
-            : TuiSurfaces.Status(80, new TuiStatusSnapshot("session-test", "standard", "provider",
-                "vision-model", "C:\\workspace", 0, null, 0, true), framed: false);
+        var body = TuiSurfaces.Help(80, framed: false);
         Assert.All(body, row =>
         {
             Assert.True(TuiText.VisibleWidth(row) <= 80);
@@ -25,13 +21,13 @@ public sealed class TgDocumentAnsiTests
             Assert.DoesNotContain("╭", row);
             Assert.DoesNotContain("╯", row);
         });
-        Render((_, window) => window.ShowDocument(help ? "help" : "status", body),
+        Render((_, window) => window.ShowDocument("help", body),
             (app, window) =>
             {
                 var screen = string.Join('\n', TgSnapshot.Capture(app));
                 Assert.DoesNotContain("│", screen);
                 Assert.DoesNotContain("╭", screen);
-                Assert.Contains(help ? "/preset" : "standard", screen);
+                Assert.Contains("/preset", screen);
                 window.HideDocument();
                 foreach (var row in body) window.Transcript.Append(TuiText.Strip(row), TranscriptStyle.Prose);
             },
@@ -47,14 +43,17 @@ public sealed class TgDocumentAnsiTests
     [InlineData(TuiColorLevel.Basic16)]
     [InlineData(TuiColorLevel.Palette256)]
     [InlineData(TuiColorLevel.TrueColor)]
-    public void Status_output_shows_values_without_literal_terminal_escapes(TuiColorLevel level)
+    public void Report_output_shows_values_without_literal_terminal_escapes(TuiColorLevel level)
     {
         using var color = TuiPalette.PinLevel(level);
-        var body = TuiSurfaces.Status(68, new TuiStatusSnapshot(
-            "session-test", "standard", "models.dev:openrouter", "vision-model",
-            "C:\\project", 2, 1234, 3, true));
+        var body = TuiPanel.Compose(68, "report",
+            [
+                new PanelSection("session", [new PanelRow("session", "session-test"), new PanelRow("preset", "standard")]),
+                new PanelSection("model", [new PanelRow("backend", "models.dev:openrouter"), new PanelRow("model", "vision-model")]),
+                new PanelSection("run", [new PanelRow("tokens", "1234")]),
+            ]);
         Assert.Contains(body, row => row.Contains('\u001b'));
-        Render((_, window) => window.ShowDocument("status", body),
+        Render((_, window) => window.ShowDocument("report", body),
             (app, _) =>
             {
                 var screen = string.Join('\n', TgSnapshot.Capture(app));
@@ -81,7 +80,7 @@ public sealed class TgDocumentAnsiTests
             {
                 var screen = string.Join('\n', TgSnapshot.Capture(app));
                 Assert.DoesNotContain("[38;", screen);
-                Assert.Contains("/status", screen);
+                Assert.Contains("/model", screen);
                 window.Document.ScrollTo(int.MaxValue);
             },
             (app, window) =>

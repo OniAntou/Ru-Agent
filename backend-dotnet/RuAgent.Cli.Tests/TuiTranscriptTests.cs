@@ -215,7 +215,7 @@ public sealed class TuiTranscriptTests
         Assert.Equal(3, lines.Count);
         Assert.Contains("Run stopped", lines[0], StringComparison.Ordinal);
         Assert.DoesNotContain("some_new_code", string.Join("\n", lines), StringComparison.Ordinal);
-        Assert.Contains("/status", lines[2], StringComparison.Ordinal);
+        Assert.Contains("logs", lines[2], StringComparison.Ordinal);
     }
 
     [Theory]

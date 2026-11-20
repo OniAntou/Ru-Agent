@@ -140,7 +140,7 @@ public sealed class ChatSessionWorkflowTests
             })),
             output,
             errors,
-            new StringReader("/sessions compiler\n/new\n/status\n/exit\n"));
+            new StringReader("/sessions compiler\n/new\n/help\n/exit\n"));
 
         var exit = await commands.ChatAsync(
             new ChatCommand("C:\\workspace", CurrentSession, "standard", Json: true),
@@ -149,7 +149,6 @@ public sealed class ChatSessionWorkflowTests
         Assert.Equal(0, exit);
         Assert.Contains("Compiler cleanup", errors.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Recipe notes", errors.ToString(), StringComparison.Ordinal);
-        Assert.Contains(NewSession, errors.ToString(), StringComparison.Ordinal);
         Assert.Contains(("POST", "/sessions/new"), requests);
     }
 
@@ -179,14 +178,13 @@ public sealed class ChatSessionWorkflowTests
             })),
             output,
             errors,
-            new StringReader("/sessions id:sess_missing\n/status\n/exit\n"));
+            new StringReader("/sessions id:sess_missing\n/help\n/exit\n"));
 
         var exit = await commands.ChatAsync(
             new ChatCommand("C:\\workspace", CurrentSession, "standard", Json: true),
             CancellationToken.None);
 
         Assert.Equal(0, exit);
-        Assert.Contains(CurrentSession, errors.ToString(), StringComparison.Ordinal);
         Assert.Contains("could not load this session's history", errors.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("session_get_failed", errors.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("/sessions/sess_missing/rewind", requests, StringComparer.Ordinal);

@@ -9,13 +9,6 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgWorkspaceHeadingTests
 {
     [Fact]
-    public void Non_git_folder_is_a_workspace_and_path_spaces_are_preserved()
-    {
-        Assert.Equal(@"C:\work\My  Project", TuiWorkspaceHeading.DisplayPath(@"C:\work\My  Project"));
-        Assert.DoesNotContain('\u001b', TuiWorkspaceHeading.DisplayPath("C:\\work\\\u001b[31mproject\u001b[0m"));
-    }
-
-    [Fact]
     public void Parsing_retains_cwd_without_claiming_an_explicit_workspace()
     {
         var implicitChat = Assert.IsType<ChatCommand>(AgentCliParser.Parse(["agent", "chat"]).Command);
@@ -90,13 +83,21 @@ public sealed class TgWorkspaceHeadingTests
     [InlineData(24, true)]
     [InlineData(60, true)]
     [InlineData(32, false)]
-    public void Status_shows_all_path_chunks_without_truncation(int width, bool framed)
+    public void Report_panels_show_all_path_chunks_without_truncation(int width, bool framed)
     {
         var path = @"C:\Users\tester\Documents\" + new string('x', 150) + @"\Ru-Agent";
-        var snapshot = new TuiStatusSnapshot("s", "standard", "b", "m", path, 0, null, 0, null);
-        var rows = TuiSurfaces.Status(width, snapshot, framed).Select(TuiText.Strip).ToArray();
-        var chunks = TuiText.HardWrapLine(path, width - (framed ? 6 : 2));
-        foreach (var chunk in chunks) Assert.Contains(rows, row => row.Contains(chunk, StringComparison.Ordinal));
+        var pathWidth = width - (framed ? 6 : 2);
+        var pathRows = TuiText.HardWrapLine(path, pathWidth)
+            .Select(line => new PanelRow(line, FullWidth: true))
+            .ToArray();
+        var rows = TuiPanel.Compose(width, "report", [new Tui.PanelSection("workspace path", pathRows)], framed: framed)
+            .Select(TuiText.Strip)
+            .ToArray();
+        foreach (var chunk in TuiText.HardWrapLine(path, pathWidth))
+        {
+            Assert.Contains(rows, row => row.Contains(chunk, StringComparison.Ordinal));
+        }
+
         if (framed) Assert.All(rows, row => Assert.Equal(width, TuiText.VisibleWidth(row)));
     }
 

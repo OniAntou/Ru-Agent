@@ -1,7 +1,12 @@
 namespace RuAgent.Cli.Tui;
 
 /// <summary>One selectable entry: what it shows, and the value it hands back.</summary>
-public sealed record ChoiceItem(string Label, string Detail, string Value, bool Enabled = true);
+public sealed record ChoiceItem(
+    string Label,
+    string Detail,
+    string Value,
+    bool Enabled = true,
+    TuiToken? DetailTone = null);
 
 public enum ChoiceOutcome
 {
@@ -27,7 +32,8 @@ public sealed class ChoiceList
     private List<ChoiceItem> _items;
     private int _matchedCount;
 
-    public ChoiceList(string title, IReadOnlyList<ChoiceItem> items, int selected = 0, string? footer = null, bool showRowCount = false)
+    public ChoiceList(string title, IReadOnlyList<ChoiceItem> items, int selected = 0, string? footer = null,
+        bool showRowCount = false, bool showCounter = true, bool hideFooter = false)
     {
         ArgumentNullException.ThrowIfNull(items);
         if (items.Count == 0)
@@ -42,6 +48,8 @@ public sealed class ChoiceList
         Selected = FirstEnabled(Math.Clamp(selected, 0, _items.Count - 1));
         Footer = footer;
         ShowRowCount = showRowCount;
+        ShowCounter = showCounter;
+        HideFooter = hideFooter;
     }
 
     public string Title { get; }
@@ -53,6 +61,14 @@ public sealed class ChoiceList
     /// <summary>Whether a caller-supplied footer carries the total row count. Opt-in:
     /// the model picker wants it, fixed footers like the approval prompt do not.</summary>
     public bool ShowRowCount { get; }
+
+    /// <summary>Whether the card chrome appends the <c>selected/total</c> ratio. Opt-out:
+    /// the grouped model and provider pickers read better without a row counter.</summary>
+    public bool ShowCounter { get; }
+
+    /// <summary>Whether the card chrome shows a footer row at all. Used by the grouped
+    /// model/provider pickers, whose heading rows already carry the context.</summary>
+    public bool HideFooter { get; }
 
     /// <summary>The substring typed so far; empty until the operator starts filtering.</summary>
     public string Filter { get; private set; } = string.Empty;
@@ -237,11 +253,13 @@ public sealed class ChoiceList
         // appends the row count, so a short list is distinguishable from a clipped one.
         var footer = Filter.Length > 0
             ? $"filter: {Filter} · {MatchedCount}/{TotalCount}"
-            : string.IsNullOrWhiteSpace(Footer)
-                ? "↑↓ · enter"
-                : ShowRowCount
-                    ? $"{Footer} · {TotalCount} rows"
-                    : Footer;
-        return SlashDropdown.Compose(width, Title, items, Selected, maxVisible, footer);
+            : HideFooter
+                ? string.Empty
+                : string.IsNullOrWhiteSpace(Footer)
+                    ? "↑↓ · enter"
+                    : ShowRowCount
+                        ? $"{Footer} · {TotalCount} rows"
+                        : Footer;
+        return SlashDropdown.Compose(width, Title, items, Selected, maxVisible, footer, showCounter: ShowCounter);
     }
 }

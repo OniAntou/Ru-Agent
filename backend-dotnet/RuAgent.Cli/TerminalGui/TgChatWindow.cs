@@ -458,11 +458,14 @@ public sealed partial class TgChatWindow : Window
         IReadOnlyList<ChoiceItem> items,
         int selected = 0,
         string? footer = null,
-        bool allowDelete = false)
+        bool allowDelete = false,
+        bool showCounter = true,
+        bool hideFooter = false)
     {
         SetApprovalWaiting(false);
         var safeTitle = ChatDisplayText.Sanitize(title, 120);
-        var list = new ChoiceList(safeTitle, items, selected, footer);
+        var list = new ChoiceList(safeTitle, items, selected, footer,
+            showCounter: showCounter, hideFooter: hideFooter);
         _approval = null;
         _choices = list;
         _choicesAllowDelete = allowDelete;
@@ -477,8 +480,9 @@ public sealed partial class TgChatWindow : Window
 
             lastLayout = layout;
             lastCard = TuiCard.ComposeListFitting(width, height, safeTitle, "esc",
-                CardItems(list), list.Selected, PickerFooter(list),
-                list.Filter.Length == 0 ? SearchHint : $"{SearchHint} {list.Filter}");
+                CardItems(list), list.Selected, hideFooter ? string.Empty : PickerFooter(list),
+                list.Filter.Length == 0 ? SearchHint : $"{SearchHint} {list.Filter}",
+                showCounter: showCounter);
             return lastCard;
         });
     }
@@ -490,7 +494,8 @@ public sealed partial class TgChatWindow : Window
             .Select(item => new CardItem(
                 ChatDisplayText.Sanitize(item.Label, 160),
                 string.IsNullOrEmpty(item.Detail) ? null : ChatDisplayText.Sanitize(item.Detail, 240),
-                item.Enabled))
+                item.Enabled,
+                RightTone: item.DetailTone))
             .ToList();
 
     /// <summary>The picker footer: the caller's copy, or the shared navigation hints.</summary>

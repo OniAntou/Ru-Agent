@@ -229,7 +229,7 @@ public sealed partial class TuiTranscript
     /// Resets the logical transcript state for <c>/clear</c> without writing a turn
     /// separator. The Terminal.Gui view clears its own rows; this drops the renderer's
     /// retained details, tool counters, buffered prose and markdown state so the next
-    /// <c>/status</c>, Ctrl+O or stream starts from an empty session view. A parked run is
+    /// <c>/help</c>, Ctrl+O or stream starts from an empty session view. A parked run is
     /// session state, not transcript state, so its pause flag is retained.
     /// </summary>
     public void ClearView()

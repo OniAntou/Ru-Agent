@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Client;
 
@@ -49,9 +49,6 @@ public sealed partial class AgentSlashCommands
     /// CLI falls back to <see cref="SecretPrompt"/>.
     /// </summary>
     public Func<string, CancellationToken, Task<string?>>? SecretPanelPrompt { get; set; }
-
-    /// <summary>Live run counters for the status card. Wired by the CLI; may be absent in tests.</summary>
-    public Func<Tui.TuiStatusSnapshot?>? SnapshotProvider { get; set; }
 
     public int PanelWidth { get; set; } = Tui.TuiViewport.FallbackWidth;
     public bool FramelessReports { get; set; }
@@ -114,12 +111,6 @@ public sealed partial class AgentSlashCommands
         if (slashCmd is "/computer")
         {
             await HandleComputerUseAsync(arg, cancellationToken).ConfigureAwait(false);
-            return true;
-        }
-
-        if (slashCmd is "/status")
-        {
-            await HandleStatusAsync(currentSessionId, preset, workspacePath, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
@@ -526,6 +517,17 @@ public sealed partial class AgentSlashCommands
             {
                 var root = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
                 var backend = ReadBackend(root);
+                var reading = await ReadModelCatalogAsync(root, cancellationToken).ConfigureAwait(false);
+                var keyStates = reading.KeyStates;
+
+                // Two or more connected providers: one picker across their catalogs, so a
+                // model of another signed-in provider is reachable without switching first.
+                if (reading.Groups.Count > 1)
+                {
+                    await ShowGroupedModelChoicesAsync(root, reading.Groups, keyStates, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
                 var configured = KnownBackends
                     .Select(b => (b.Backend, ReadModel(root, b.Backend)))
                     .ToList();
@@ -534,29 +536,32 @@ public sealed partial class AgentSlashCommands
                     configured.Insert(0, (backend ?? string.Empty, ReadModel(root, backend)));
                 }
 
-                var keyStates = await ReadAllKeyStatesAsync(root, cancellationToken).ConfigureAwait(false);
-                IReadOnlyList<Tui.ChoiceItem>? candidates = null;
-                string? catalogError = null;
-                try
+                IReadOnlyList<(string Id, bool Supported)>? catalog = reading.Groups.Count == 1
+                    ? reading.Groups[0].Models
+                    : null;
+                string? catalogError = reading.Groups.Count == 1 ? reading.Groups[0].Error : null;
+                if (catalog is null)
                 {
-                    var catalog = await _settingsClient.GetModelsAsync(backend, cancellationToken).ConfigureAwait(false);
-                    if (catalog.Count > 0)
+                    try
                     {
-                        candidates = Tui.TuiSurfaces.ModelCatalogChoices(backend, ReadModel(root, backend), catalog, keyStates);
+                        catalog = await _settingsClient.GetModelsAsync(backend, cancellationToken).ConfigureAwait(false);
+                        if (catalog.Count == 0)
+                        {
+                            catalogError = "model list empty";
+                        }
                     }
-                    else
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                    catch (Exception ex)
                     {
-                        catalogError = "model list empty";
+                        // Live catalog is best-effort; configured models still answer. The
+                        // reason is kept so a short fallback list cannot read as a live catalog.
+                        catalogError = CliErrorText.ShortMessage(ex.Message);
                     }
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch (Exception ex)
-                {
-                    // Live catalog is best-effort; configured models still answer. The
-                    // reason is kept so a short fallback list cannot read as a live catalog.
-                    catalogError = CliErrorText.ShortMessage(ex.Message);
                 }
 
+                IReadOnlyList<Tui.ChoiceItem>? candidates = catalog is { Count: > 0 }
+                    ? Tui.TuiSurfaces.ModelCatalogChoices(backend, ReadModel(root, backend), catalog, keyStates)
+                    : null;
                 candidates ??= Tui.TuiSurfaces.ModelChoices(backend, configured, keyStates);
                 var catalogNotice = catalogError is null ? null
                     : $"catalog unavailable ({catalogError}) - showing configured models";
@@ -814,12 +819,12 @@ public sealed partial class AgentSlashCommands
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: could not confirm the key was saved; check /status before trying again.").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{ex.ErrorCode}: could not confirm the key was saved; check the logs before trying again.").ConfigureAwait(false);
             return false;
         }
         catch (Exception)
         {
-            await _err.WriteLineAsync("key_save_failed: could not confirm the key was saved; check /status before trying again.").ConfigureAwait(false);
+            await _err.WriteLineAsync("key_save_failed: could not confirm the key was saved; check the logs before trying again.").ConfigureAwait(false);
             return false;
         }
     }
@@ -913,50 +918,6 @@ public sealed partial class AgentSlashCommands
         await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
-    private async Task HandleStatusAsync(string? currentSessionId, string? preset, string? workspacePath, CancellationToken cancellationToken)
-    {
-        JsonElement? settings = null;
-        try
-        {
-            settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            // The card falls back to the cached snapshot the CLI provides.
-        }
-
-        WriteStatusCard(currentSessionId, preset, workspacePath, settings);
-        await _humanOut.FlushAsync().ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// The <c>/status</c> card: what the session is, what
-    /// it is running on, and what this run has done so far.
-    /// </summary>
-    private void WriteStatusCard(string? currentSessionId, string? preset, string? workspacePath, JsonElement? settings)
-    {
-        var backend = settings is { } s ? ReadBackend(s) : null;
-        var model = settings is { } s2 ? ReadModel(s2, backend) : null;
-        var hasKey = settings is { } s3 ? ReadApiKeyState(s3, backend) : null;
-        var snapshot = SnapshotProvider?.Invoke();
-
-        var card = new Tui.TuiStatusSnapshot(
-            SessionId: currentSessionId ?? snapshot?.SessionId ?? "not started",
-            Preset: preset ?? "standard",
-            Backend: backend ?? snapshot?.Backend ?? "unknown",
-            Model: model ?? snapshot?.Model ?? string.Empty,
-            Workspace: workspacePath ?? snapshot?.Workspace ?? string.Empty,
-            Turn: snapshot?.Turn ?? 0,
-            TotalTokens: snapshot?.TotalTokens,
-            ToolsSettled: snapshot?.ToolsSettled ?? 0,
-            ApiKeyConfigured: hasKey ?? snapshot?.ApiKeyConfigured);
-
-        foreach (var line in Tui.TuiSurfaces.Status(PanelWidth, card, !FramelessReports))
-        {
-            _humanOut.WriteLine(line);
-        }
-    }
-
     private void WriteHelpPanel()
     {
         foreach (var line in Tui.TuiSurfaces.Help(PanelWidth, !FramelessReports))
@@ -966,3 +927,4 @@ public sealed partial class AgentSlashCommands
     }
 
 }
+

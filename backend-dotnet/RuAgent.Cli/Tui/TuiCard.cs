@@ -34,17 +34,31 @@ public enum CardRowKind
 }
 
 /// <summary>One card row: a role, the left label, and optional right-aligned text.</summary>
-public sealed record CardRow(CardRowKind Kind, string Label, string? Right = null);
+public sealed record CardRow(CardRowKind Kind, string Label, string? Right = null, TuiToken? RightTone = null);
 
 /// <summary>A selectable card entry, optionally filed under a group heading.</summary>
-public sealed record CardItem(string Label, string? Right = null, bool Enabled = true, string? Group = null);
+public sealed record CardItem(
+    string Label,
+    string? Right = null,
+    bool Enabled = true,
+    string? Group = null,
+    TuiToken? RightTone = null);
 
 /// <summary>
 /// A composed card row: the text is already padded to the card width, so a view only has to
 /// paint the background behind it and place it. That keeps every card identical whichever
-/// view draws it.
+/// view draws it. A right-aligned segment may carry its own tone (the signed-in checkmark);
+/// <see cref="RightStart"/> is its first character in <see cref="Text"/> and
+/// <see cref="RightColumn"/> its display column, which differ when the label holds wide
+/// characters.
 /// </summary>
-public sealed record CardLine(string Text, CardRowKind Kind, int Width);
+public sealed record CardLine(
+    string Text,
+    CardRowKind Kind,
+    int Width,
+    int? RightStart = null,
+    TuiToken? RightTone = null,
+    int? RightColumn = null);
 
 /// <summary>
 /// A floating card: no border glyphs, the filled surface is the frame. Rows carry a role
@@ -92,7 +106,8 @@ public static class TuiCard
         int maxVisible,
         string? footer,
         string? search = null,
-        bool fillWidth = false) =>
+        bool fillWidth = false,
+        bool showCounter = true) =>
         Compose(
             width,
             title,
@@ -100,7 +115,9 @@ public static class TuiCard
             ListRows(items, selected, maxVisible, search),
             footer,
             // A clipped list says where the cursor sits; a short one needs no ratio.
-            items.Count > maxVisible ? $"{Math.Clamp(selected, 0, items.Count - 1) + 1}/{items.Count}" : null,
+            showCounter && items.Count > maxVisible
+                ? $"{Math.Clamp(selected, 0, items.Count - 1) + 1}/{items.Count}"
+                : null,
             fillWidth);
 
     /// <summary>
@@ -115,10 +132,11 @@ public static class TuiCard
         IReadOnlyList<CardItem> items,
         int selected,
         string? footer,
-        string? search = null)
+        string? search = null,
+        bool showCounter = true)
     {
         var standardVisible = Math.Max(1, maxRows - TuiCardFrameRows);
-        var standard = ComposeList(width, title, hint, items, selected, standardVisible, footer, search);
+        var standard = ComposeList(width, title, hint, items, selected, standardVisible, footer, search, showCounter: showCounter);
         if (standard.Count <= maxRows)
         {
             return standard;
@@ -136,7 +154,9 @@ public static class TuiCard
         rows.Add(new CardRow(
             CardRowKind.Footer,
             footer ?? string.Empty,
-            items.Count > compactVisible ? $"{Math.Clamp(selected, 0, items.Count - 1) + 1}/{items.Count}" : null));
+            showCounter && items.Count > compactVisible
+                ? $"{Math.Clamp(selected, 0, items.Count - 1) + 1}/{items.Count}"
+                : null));
         return rows.Select(row => Row(Math.Clamp(width, MinWidth, MaxWidth), row)).ToList();
     }
 
@@ -203,12 +223,23 @@ public static class TuiCard
             ? TuiText.Tail(row.Label, labelRoom)
             : TuiText.Truncate(row.Label, labelRoom);
         text += TuiText.Pad(label, labelRoom);
+        int? rightStart = null;
+        int? rightColumn = null;
         if (right.Length > 0)
         {
-            text = TuiText.Pad(text, inner - TuiText.VisibleWidth(right)) + right;
+            text = TuiText.Pad(text, inner - TuiText.VisibleWidth(right));
+            rightColumn = TuiText.VisibleWidth(text);
+            rightStart = text.Length;
+            text += right;
         }
 
-        return new CardLine(TuiText.Pad(text, width), row.Kind, width);
+        return new CardLine(
+            TuiText.Pad(text, width),
+            row.Kind,
+            width,
+            row.RightTone is null ? null : rightStart,
+            row.RightTone,
+            row.RightTone is null ? null : rightColumn);
     }
 
     /// <summary>
@@ -267,7 +298,7 @@ public static class TuiCard
             var kind = !items[i].Enabled
                 ? CardRowKind.Disabled
                 : i == selected ? CardRowKind.Selected : CardRowKind.Item;
-            all.Add(new CardRow(kind, items[i].Label, items[i].Right));
+            all.Add(new CardRow(kind, items[i].Label, items[i].Right, items[i].RightTone));
         }
 
         var window = Window(all.Count, SelectedRow(all), Math.Max(1, maxVisible));

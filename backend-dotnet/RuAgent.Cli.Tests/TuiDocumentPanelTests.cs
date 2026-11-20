@@ -20,7 +20,7 @@ public sealed class TuiDocumentPanelTests
     [Fact]
     public void ReportCommands_AreTheReadOnlyOnes()
     {
-        foreach (var command in new[] { "/status", "/help" })
+        foreach (var command in new[] { "/help" })
         {
             Assert.True(ChatCommandCatalog.IsReportCommand(command), command);
         }

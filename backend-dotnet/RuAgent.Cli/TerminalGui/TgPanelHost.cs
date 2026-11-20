@@ -109,9 +109,31 @@ public sealed class TgPanelHost : View
         var top = Math.Max(0, (Viewport.Height - lines.Count) / 2);
         for (var i = 0; i < lines.Count && top + i < Viewport.Height; i++)
         {
-            SetAttribute(TgCard.Attribute(lines[i].Kind));
+            var line = lines[i];
+            if (line.RightTone is { } tone
+                && line.RightStart is { } start
+                && start > 0
+                && start < line.Text.Length)
+            {
+                // The trailing segment (a signed-in checkmark) keeps the row background but
+                // carries its own colour. The selection bar is light, so it takes the dim
+                // green: the normal green would wash out on it. Columns and character
+                // indexes differ when the label holds wide characters.
+                var column = line.RightColumn ?? start;
+                Move(left, top + i);
+                SetAttribute(TgCard.Attribute(line.Kind));
+                AddStr(line.Text[..start]);
+                Move(left + column, top + i);
+                SetAttribute(line.Kind == CardRowKind.Selected
+                    ? TgPalette.Attr(TuiToken.AuroraDim, TgPalette.CardSelectionRgb())
+                    : TgPalette.Attr(tone, TgPalette.CardBgRgb()));
+                AddStr(line.Text[start..]);
+                continue;
+            }
+
+            SetAttribute(TgCard.Attribute(line.Kind));
             Move(left, top + i);
-            AddStr(lines[i].Text);
+            AddStr(line.Text);
         }
     }
 

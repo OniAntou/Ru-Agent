@@ -1180,8 +1180,8 @@ history (the agent's model, preset, tool purposes, instructions and runtime refe
 user messages, the agent's text, tool calls and their bounded results, runtime snapshots and
 compaction summaries), sends it in one tool-less request, and returns the advice as the tool
 result. Ru's base agent prompt is the request's system prompt, so it is not quoted twice. Each
-consultation's tokens are recorded as a usage report under the advisor's model: `/status usage`
-bills them on that model's rates and never counts them as the run's context. Provider-native blocks (reasoning, encrypted content, provider
+consultation's tokens are recorded as a usage report under the advisor's model: the desktop
+usage view bills them on that model's rates and never counts them as the run's context. Provider-native blocks (reasoning, encrypted content, provider
 search blocks) and images never cross; each omitted image leaves a placeholder line. The
 advisor's provider therefore receives the file contents, terminal and MCP output the run has
 read: selecting an advisor is consent to that for new runs.

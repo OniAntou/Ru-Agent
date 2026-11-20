@@ -8,7 +8,7 @@ public sealed class SlashDropdownTests : IDisposable
     private readonly IDisposable _levelPin;
     private static readonly DropdownItem[] Items =
     [
-        new("/model", "Switch or show the active model", "/model [name]"),
+        new("/model", "Switch model across signed-in providers", "/model [name]"),
         new("/compact", "Compact the context"),
         new("/clear", "Clear the screen"),
     ];

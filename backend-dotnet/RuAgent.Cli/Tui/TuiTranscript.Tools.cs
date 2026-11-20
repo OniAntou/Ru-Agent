@@ -94,10 +94,10 @@ public sealed partial class TuiTranscript
                 {
                     // A failure is never hidden, even when its code has no sentence yet. The
                     // code itself is a machine token; the transcript says what happened and
-                    // leaves the token to the debug log (/status and the Host log carry it too).
+                    // leaves the token to the debug log (the Host log carries it too).
                     if (activity.State != AgentActivityState.Failed) return;
                     TuiDebug.Log("activity", $"failed status code={activity.SafeCode}");
-                    status = "stopped unexpectedly · run /status or check the logs";
+                    status = "stopped unexpectedly · check the logs";
                 }
 
                 Notice(status, activity.State == AgentActivityState.Failed ? TuiToken.Err : TuiToken.Line);

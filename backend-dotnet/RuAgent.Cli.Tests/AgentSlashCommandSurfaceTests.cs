@@ -85,39 +85,6 @@ public sealed partial class AgentSlashCommandSurfaceTests
         Assert.DoesNotContain("/quit", text, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Status_RendersTheCardWithSettingsAndCounters()
-    {
-        var output = new StringWriter();
-        var commands = Create(output);
-        commands.SnapshotProvider = () => new TuiStatusSnapshot(
-            "sess_1", "standard", "Kilo Gateway", "kilocode/gpt-5-codex", "D:\\LLM", 3, 12400, 4, true);
-
-        Assert.True(await commands.TryHandleAsync("/status", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
-
-        var text = output.ToString();
-        Assert.Contains("╭─ status", text, StringComparison.Ordinal);
-        Assert.Contains("12400", text, StringComparison.Ordinal);
-        Assert.Contains("gpt-4o", text, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Status_StripsTerminalControlsFromSettingsValues()
-    {
-        using var _ = TuiPalette.PinLevel(TuiColorLevel.None);
-        var output = new StringWriter();
-        var commands = Create(
-            output,
-            settingsJson: "{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt\\u0007-4o\",\"has_openai_api_key\":true}");
-
-        Assert.True(await commands.TryHandleAsync("/status", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
-
-        var text = output.ToString();
-        Assert.DoesNotContain('\u001b', text);
-        Assert.DoesNotContain('\u0007', text);
-        Assert.Contains("gpt", text, StringComparison.Ordinal);
-    }
-
     [Theory]
     [InlineData("/activity")]
     [InlineData("/todos")]
@@ -933,19 +900,6 @@ public sealed partial class AgentSlashCommandSurfaceTests
         var commands = Create(new StringWriter());
 
         Assert.False(await commands.TryHandleAsync("/nope", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task Status_WithoutASnapshotProvider_StillRenders()
-    {
-        var output = new StringWriter();
-        var commands = Create(output);
-
-        await commands.TryHandleAsync("/status", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None);
-
-        var text = output.ToString();
-        Assert.Contains("╭─ status", text, StringComparison.Ordinal);
-        Assert.Contains("sess_1", text, StringComparison.Ordinal);
     }
 
     private sealed class FakeHandler : HttpMessageHandler

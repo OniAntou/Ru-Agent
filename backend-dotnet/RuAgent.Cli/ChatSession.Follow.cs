@@ -115,7 +115,7 @@ public sealed partial class AgentCommands
                 // clearing the screen or appending an older prefix after a newer tail.
                 await WriteDiagnosticLineAsync(
                         _err,
-                        $"assistant_text_truncated: {streamed.Length} of {full.Length} characters reached this terminal. The full reply is in the session; /status or reopen it to read all of it.")
+                        $"assistant_text_truncated: {streamed.Length} of {full.Length} characters reached this terminal. The full reply is in the session; reopen it to read all of it.")
                     .ConfigureAwait(false);
                 Tui.TuiDebug.Log("recover", $"head missing: {streamed.Length} of {full.Length}");
                 return;

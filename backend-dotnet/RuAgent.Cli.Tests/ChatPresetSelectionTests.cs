@@ -147,10 +147,10 @@ public sealed class ChatPresetSelectionTests
     }
 
     [Theory]
-    [InlineData("/preset plan", "plan", null)]
-    [InlineData("/preset standard", "standard", null)]
-    [InlineData("/preset full_access", "standard", "full_access_confirmation_required")]
-    public async Task Chat_command_updates_status_without_creating_a_model_run(string input, string expected, string? error)
+    [InlineData("/preset plan", null)]
+    [InlineData("/preset standard", null)]
+    [InlineData("/preset full_access", "full_access_confirmation_required")]
+    public async Task Chat_command_applies_without_creating_a_model_run(string input, string? error)
     {
         var process = System.Diagnostics.Process.GetCurrentProcess();
         var host = PublicHostSession.FromDescriptor(new RuntimeDescriptor(1, "http://127.0.0.1:8000/",
@@ -160,10 +160,10 @@ public sealed class ChatPresetSelectionTests
         using var http = new HttpClient(handler);
         using var output = new StringWriter();
         using var errors = new StringWriter();
-        using var reader = new StringReader(input + "\n/status\n/exit\n");
+        using var reader = new StringReader(input + "\n/help\n/exit\n");
         using var commands = new AgentCommands(host, http, output, errors, reader);
         Assert.Equal(0, await commands.ChatAsync(Current, CancellationToken.None));
-        Assert.Contains(expected, TuiText.Strip(output.ToString()));
+        Assert.Contains("╭─ help", TuiText.Strip(output.ToString()), StringComparison.Ordinal);
         Assert.DoesNotContain("/agent/v1/runs", handler.Posts);
         Assert.DoesNotContain("/agent/v1/policies", handler.Posts);
         if (error is not null) Assert.Contains(error, errors.ToString());

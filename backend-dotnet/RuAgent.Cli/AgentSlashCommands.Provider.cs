@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using RuAgent.Client;
 using RuAgent.Cli.Tui;
 
@@ -28,19 +28,27 @@ public sealed partial class AgentSlashCommands
             {
                 var (providers, error) = await ReadModelsDevProvidersAsync(ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
-                var notice = ProviderListNotice(providers, error);
-                var choices = TuiSurfaces.BackendChoices(ReadBackend(settings), states, providers, ReadKeyStatuses(settings));
+                var choices = TuiSurfaces.ProviderChoices(ReadBackend(settings), states, providers);
+                // The minimal surface carries no provider count or row ratio; only a failed
+                // catalog earns a footer, so the operator knows which list they are seeing.
+                var unavailable = error is null ? null : "models.dev list unavailable - showing known providers";
                 if (Picker is null)
                 {
-                    await _humanOut.WriteLineAsync(TuiPalette.DimPaint("  " + notice)).ConfigureAwait(false);
+                    if (unavailable is not null)
+                    {
+                        await _humanOut.WriteLineAsync(TuiPalette.DimPaint("  " + unavailable)).ConfigureAwait(false);
+                    }
+
                     foreach (var line in TuiPanel.Compose(PanelWidth, "provider",
                         [new PanelSection(null, choices.Select(item => new PanelRow(item.Label, item.Detail)).ToList())],
-                        "/provider <name> · select provider, then enter API key"))
+                        null))
                         await _humanOut.WriteLineAsync(line).ConfigureAwait(false);
                     return;
                 }
-                selected = await Picker(new ChoiceList("provider · choose before entering API key", choices,
-                    footer: $"{notice} · ↑↓ select · enter apply"), ct).ConfigureAwait(false);
+                selected = await Picker(new ChoiceList("provider", choices,
+                    footer: unavailable,
+                    showCounter: false,
+                    hideFooter: unavailable is null), ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
                 if (selected is null) return;
                 if (!choices.Any(item => item.Enabled && item.Value == selected))
@@ -80,12 +88,18 @@ public sealed partial class AgentSlashCommands
             // One selection request after confirmation: no early provider switch, no automatic POST retry.
             await _settingsClient.UpdateAsync(body, ct).ConfigureAwait(false);
             await _humanOut.WriteLineAsync(TuiPalette.Ok($"✓ Provider selected: {provider.DisplayName}")).ConfigureAwait(false);
+            await _humanOut.FlushAsync().ConfigureAwait(false);
+            // models.dev backends share one model field, so the previous provider's model is
+            // usually absent here. Choose one now instead of leaving a model the new
+            // provider cannot serve pinned in settings.
+            await PromptModelForBackendAsync(provider.Choice, provider.DisplayName, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception)
         {
             // Host/transport errors can contain submitted content. Never echo them after a secret prompt.
-            await _err.WriteLineAsync("provider_setup_failed: could not confirm settings; check /status before trying again.").ConfigureAwait(false);
+            await _err.WriteLineAsync("provider_setup_failed: could not confirm settings; check the logs before trying again.").ConfigureAwait(false);
         }
     }
 }
+

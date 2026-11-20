@@ -72,7 +72,7 @@ public sealed class ChatJsonStdoutPurityTests
         var calls = new List<string>();
         var outWriter = new StringWriter();
         var errWriter = new StringWriter();
-        var reader = new ScriptedThrowingReader("/status\n/exit\n");
+        var reader = new ScriptedThrowingReader("/help\n/exit\n");
         var commands = CreateCommands(request =>
         {
             calls.Add(request.Method.ToString());
@@ -87,8 +87,8 @@ public sealed class ChatJsonStdoutPurityTests
 
         Assert.Equal(0, exit);
         AssertStdoutIsNdjson(outWriter.ToString());
-        Assert.DoesNotContain("╭─ status", outWriter.ToString(), StringComparison.Ordinal);
-        Assert.Contains("╭─ status", errWriter.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("╭─ help", outWriter.ToString(), StringComparison.Ordinal);
+        Assert.Contains("╭─ help", errWriter.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("POST", calls);
         // Exactly the two scripted prompt lines: the slash handler never reads stdin,
         // and the reader throws if anything asks for a line beyond the script.

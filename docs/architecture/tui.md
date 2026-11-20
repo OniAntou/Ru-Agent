@@ -62,7 +62,7 @@ compatibility and Broker permissions are unchanged by this client refactor.
 Failure, approval and activity copy resolve through the shared client tables
 (`AgentFailureCopy`, `AgentApprovalCopy`): the transcript never prints a bare wire
 token such as `checkpoint_incomplete` or `external_directory_required`. A code the
-copy table does not know gets a human sentence with a `/status` and log pointer;
+copy table does not know gets a human sentence with a log pointer;
 the token itself stays in the Host log and `RU_TUI_DEBUG` diagnostics. Protocol
 mismatch, run-cancel failure and session-replay notices follow the same rule.
 `--json`, NDJSON and RPC are machine surfaces and keep their codes.
@@ -184,7 +184,7 @@ session result, with no extra lookup. Native durable-turn and fallback text repl
 omit technical replay summaries while preserving conversation rows, truncation
 warnings and retained-run recovery. Plain output retains the replay summaries.
 
-Local slash controls such as model/provider/status/help/preset do not materialize
+Local slash controls such as model/provider/help/preset do not materialize
 a conversation; native local
 commands keep the welcome screen instead of appending a user-message card or
 advertising model work. Short results stay in the hint row until the next input;
@@ -390,8 +390,12 @@ Picker capability belongs to the input adapter, rather than `Console.IsInputRedi
 An absent picker enables the line adapter's text listing; a null answer from an
 opened picker is cancellation. Model/backend/reasoning handlers return at that
 boundary without appending a text option panel or saving settings. Esc restores
-composer focus. The native provider and model pickers show catalog availability in
-the footer. A report opened over the welcome screen stays in its document panel.
+composer focus. The native pickers stay chrome-light: the grouped model and
+provider surfaces print no footer caption or row ratio, blank rows separate the
+provider groups (and the fixed providers from the catalog), the provider picker
+uses friendly names and a green checkmark for every signed-in provider, and a
+missing models.dev list is named in that picker's footer instead of a provider
+count. A report opened over the welcome screen stays in its document panel.
 An open conversation keeps the report in the transcript after the panel closes.
 
 Panel and picker labels coming from a remote catalog (provider names, model ids) are
@@ -403,7 +407,11 @@ An already running terminal keeps its loaded binary until it exits.
 
 `/provider [name]` combines provider selection and masked credential entry in the
 existing serialized native panels. The picker uses the live models.dev catalog
-with the same built-in/fallback choices. It closes before the key box opens;
+with the same built-in/fallback choices, shows friendly provider names, marks a
+provider that already has a stored key with a green `✓` on the right, and prints
+no key verdicts, provider count or row ratio; a failed catalog list is named in
+its footer. Blank rows separate the fixed providers from the catalog and the
+signed-in providers from the remaining tail. It closes before the key box opens;
 neither selection nor credential is sent before confirmation. Escape cancels
 without saving. Empty input preserves a known stored credential, or permits a
 keyless custom endpoint; otherwise an API key is required. A typed key goes
@@ -418,6 +426,30 @@ the backend. The provider, backend and advisor pickers add the Host's
 `/key <provider>` uses the same checked save. Failures print a code and fixed
 text, never an exception message or the submitted secret, and are not retried.
 
+After a successful switch, `/provider` continues into that provider's model
+catalog so the previous provider's model is not left pinned. The step is skipped
+when the stored model already appears in the new catalog; a catalog with a single
+supported model is chosen without a picker; a missing catalog prints a bounded
+notice that points at `/model` instead of failing the provider switch. This
+matters for `models.dev:*` backends because they share one `model` setting, so a
+provider change normally invalidates the stored id.
+
+`/model` without an argument groups the live catalogs of the active backend and
+of every provider the operator signed in to: fixed providers with a stored key
+and every `models.dev:*` id reported by `/settings/models-dev-keys`. The active
+backend leads, each provider is a heading, and the rows keep the single-provider
+ordering (current, free, supported, then dimmed unsupported). Choosing a model
+from another group saves the provider and the model in one `POST /settings`
+(`backend_choice` + `selected_model`), which the Host expands into that
+provider's own model field. The fan-out is bounded at eight providers and four
+concurrent catalog reads; a provider whose catalog fails keeps its heading with
+explicit `catalog unavailable` text. The grouped surface prints no footer caption
+or row ratio and leaves one blank row between provider groups, so headings and
+rows breathe. One connected provider keeps the historic single-catalog picker,
+and a cancelled grouped picker prints nothing and changes nothing. Line/JSON
+adapters keep their rules: JSON refuses the bare form, and the sequential path
+prints the same groups as sections.
+
 Help, palette and completion advertise only `/provider`; legacy `/backend` and
 `/key` handlers remain callable. `/provider remove <name>` uses the existing signout
 endpoint. It is a configuration repair command for paused queues and does not
@@ -431,8 +463,8 @@ select directly. `full_access` always requires a separate interactive confirmati
 whose default is to keep the current selection. Escape changes nothing. The selected
 `full_access` profile treats structured protected paths as ordinary allowed targets;
 hard-invalid requests remain denied by the Broker. The selected
-preset and confirmation stay in the chat's next-turn intent, update the header permission label and
-`/status`, and flow through the existing versioned session-policy update, snapshot
+preset and confirmation stay in the chat's next-turn intent and update the header permission label.
+They flow through the existing versioned session-policy update, snapshot
 and rollback at run creation. The command does not mutate a live run or confer tool
 authority. Busy/queued transitions and retained runs block changes; pending attachments
 remain with the draft. Noninteractive Full Access selection is refused.
@@ -462,38 +494,11 @@ transcript rows remain unboxed and can reflow without splitting border columns.
 
 ### Context and token reports
 
-Native `/status` selects Overview, Context or Session usage; explicit
-`/status overview|context|usage` bypasses the picker. Line/JSON keeps the bare
-overview behavior. Sections remain read-only local commands: no new conversation,
-run, permission update or model request is created. The existing queue/paused
-controls and document modal request gate retain ownership of input and attachments.
-Reports follow the existing queue and take a snapshot at command execution; they
-do not add a parallel control operation or a live-refresh timer.
-
-`ChatTokenUsage` parses optional provider counts and normalizes inclusive cached
-input into disjoint billing buckets. Missing counts/accounting/rates remain unknown,
-including partial pricing; zero requires an explicit measured zero. `ChatUsageReader`
-binds every run and durable event to the selected conversation, de-duplicates payload
-references and verifies event order. Replays use `live=0`; limits are eight recent
-listed runs, 8,192 events, 256 distinct usage reports and 8,388,608 UTF-16 code units of replay/payload text
-per run. The section read has a 20-second deadline; optional price lookup is limited
-to two seconds per run. No history/payload read is triggered by typing or drawing.
-
-Context reads only the latest run's newest usage payload after its last compaction,
-without reading historical billing payloads or prices. System/tools/messages are
-request-size estimates, distinct from provider prompt tokens and cumulative billing.
-A retained run owns its published window/reserve; next-turn catalog selection cannot
-replace them. A compaction with no newer usage keeps the reading unknown. A live
-prepared-request estimate may fill an otherwise unreported matching run; compaction
-and usage frames clear it. The unsent draft estimate uses the GUI's rough 3.5
-characters-per-token ratio plus the Protocol image allowance and is labelled separately.
-
-Session usage sums step billing while peak is the largest individual reported step.
-The display states the recent-run scope, incomplete fields and priced coverage.
-Prices use recorded provider/model identities with current catalog rates, never
-the currently selected next-turn model. JSON sections emit `context` or
-`session_usage` records, with diagnostics on stderr. `ChatUsagePresentation` builds
-plain document rows; the existing modal performs wrapping, scrolling and resize.
+The terminal header's compact usage cluster remains the only token report: it
+shows the latest request's prompt input and running cost when the catalog publishes
+them. Request occupancy still comes from the provider's per-request report; the
+run-cumulative billing totals in durable envelopes are not request occupancy.
+Missing reports leave the cluster without a percentage rather than inventing zero.
 
 Document modal bounds follow the wrapped body height plus card chrome, capped by
 the available window height. The wrap cache is shared by measurement and drawing;
@@ -567,8 +572,7 @@ approval, token accounting or command behavior changes.
 ### Workspace display
 
 The native header does not display a workspace path or a no-project placeholder.
-Workspace selection, execution cwd and permissions are unchanged. `/status`
-retains a sanitized full workspace path, wrapped to fit the panel. Feedback and
+Workspace selection, execution cwd and permissions are unchanged. Feedback and
 attachment labels do not populate a workspace heading.
 
 ### Welcome sky

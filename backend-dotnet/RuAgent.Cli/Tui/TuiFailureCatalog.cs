@@ -37,7 +37,7 @@ public static class TuiFailureCatalog
             key,
             "Run stopped",
             "something interrupted the turn before it could finish",
-            @"send a new message to retry · run /status or check the logs under %LOCALAPPDATA%\Ru\logs for details");
+            @"send a new message to retry · check the logs under %LOCALAPPDATA%\Ru\logs for details");
     }
 
     public static bool TryGet(string? code, out TuiFailureInfo info)

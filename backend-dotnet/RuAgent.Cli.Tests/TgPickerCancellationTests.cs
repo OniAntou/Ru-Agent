@@ -48,10 +48,8 @@ public sealed class TgPickerCancellationTests
     [InlineData("/provider", false)]
     [InlineData("/provider", true)]
     [InlineData("/preset")]
-    [InlineData("/status")]
     [InlineData("/sessions")]
     [InlineData("/help")]
-    [InlineData("/status overview")]
     [InlineData("/help", false, true)]
     public async Task Escape_closes_slash_panels_and_restores_composer_focus(
         string command, bool catalogUnavailable = false, bool inChat = false)
@@ -67,7 +65,7 @@ public sealed class TgPickerCancellationTests
         Exception? failure = null; var stage = 0; var beforeCancel = 0;
         double? pickerOpenedAt = null;
         var typedProviderFilter = false;
-        var report = command is "/help" or "/status overview";
+        var report = command is "/help";
         app.AddTimeout(TimeSpan.FromMilliseconds(120), () =>
         {
             try
@@ -92,7 +90,22 @@ public sealed class TgPickerCancellationTests
                         }
                         var screen = string.Join('\n', TgSnapshot.Capture(app));
                         Assert.Contains("Search o", screen, StringComparison.OrdinalIgnoreCase);
-                        Assert.Contains(catalogUnavailable ? "models.dev list unavailable" : "providers from models.dev", screen);
+                        if (command == "/backend")
+                        {
+                            Assert.Contains(
+                                catalogUnavailable ? "models.dev list unavailable" : "providers from models.dev",
+                                screen);
+                        }
+                        else if (catalogUnavailable)
+                        {
+                            // The minimal /provider surface only names a failed list.
+                            Assert.Contains("models.dev list unavailable", screen);
+                        }
+                        else
+                        {
+                            // A successful /provider list prints no provider count.
+                            Assert.DoesNotContain("providers from models.dev", screen);
+                        }
                     }
                     if (command == "/model")
                     {

@@ -150,17 +150,6 @@ public sealed partial class AgentCommands
                 : tgMode
                     ? TgPanelRequests.RequestSecretAsync(tgWindow!, providerDisplay, ct)
                     : Tui.ConsoleSecretInput.ReadAsync(_out, $"API key for {ChatDisplayText.Sanitize(providerDisplay, 64)}: ", ct);
-
-            _slashCommands.SnapshotProvider = () => new Tui.TuiStatusSnapshot(
-                SessionId: string.IsNullOrEmpty(sessionId) ? "not started" : sessionId,
-                Preset: cmd.Preset,
-                Backend: backendName,
-                Model: activeModel,
-                Workspace: canonicalWorkspace,
-                Turn: turn,
-                TotalTokens: lastTotalTokens,
-                ToolsSettled: sessionRenderer.Transcript.ToolsSettled,
-                ApiKeyConfigured: null);
         }
     }
 }

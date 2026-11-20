@@ -49,12 +49,11 @@ Type `/` to see suggestions, or press `Ctrl+P`.
 
 | Command | What it does |
 | --- | --- |
-| `/model [name]` | Switch or show the active model |
-| `/provider [name]` | Choose a provider, then enter its API key |
+| `/model [name]` | Switch model across every provider you signed in to |
+| `/provider [name]` | Choose a provider, enter its key, then pick a model |
 | `/reasoning [effort]` | Show or set the active model's reasoning effort |
 | `/advisor [off\|<model>\|<provider> <model>]` | Choose a model the agent may consult in this session (a new session has none) |
 | `/computer [on\|off]` | Show or set computer use for new turns |
-| `/status [overview\|context\|usage]` | Inspect status, context and token usage |
 | `/preset [plan\|standard\|full_access\|rules]` | Choose permissions or manage remembered rules |
 | `/new` | Start a new session |
 | `/sessions [query\|id:<session-id>]` | Browse saved sessions and reopen one by id |
@@ -64,6 +63,11 @@ Type `/` to see suggestions, or press `Ctrl+P`.
 | `/help`, `/exit` | List every command, quit |
 
 Custom commands you add appear in the same list; see [Teach Ru your project](teach-ru.md).
+
+`/model` groups the live catalog of the active provider together with every provider you signed
+in to, so a model of another provider is one pick away: choosing it switches the provider too.
+`/provider` selects the provider, stores its checked key, then opens that provider's model list,
+so switching never leaves the previous provider's model behind.
 
 ## Attachments
 

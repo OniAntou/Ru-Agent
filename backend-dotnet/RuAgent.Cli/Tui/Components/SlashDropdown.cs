@@ -21,7 +21,8 @@ public static class SlashDropdown
         IReadOnlyList<DropdownItem> items,
         int selected,
         int maxVisible,
-        string? footer)
+        string? footer,
+        bool showCounter = true)
     {
         var w = Math.Clamp(width, MinWidth, MaxWidth);
         var lines = new List<string> { Top(w, title) };
@@ -40,7 +41,7 @@ public static class SlashDropdown
             }
         }
 
-        lines.Add(Footer(w, footer, items.Count == 0 ? 0 : selected + 1, items.Count));
+        lines.Add(Footer(w, footer, items.Count == 0 ? 0 : selected + 1, items.Count, showCounter));
         return lines;
     }
 
@@ -81,7 +82,8 @@ public static class SlashDropdown
     }
 
     /// <summary>The closing border, also usable stand-alone for list footers.</summary>
-    public static string Footer(int width, string? footer, int current, int total) => Bottom(width, footer, current, total);
+    public static string Footer(int width, string? footer, int current, int total, bool showCounter = true) =>
+        Bottom(width, footer, current, total, showCounter);
 
     /// <summary>Visible slice that always contains the selection.</summary>
     public static (int Start, int End) Window(int count, int selected, int maxVisible)
@@ -145,11 +147,13 @@ public static class SlashDropdown
         return TuiPalette.Paint("│", TuiToken.Line) + " " + body + " " + TuiPalette.Paint("│", TuiToken.Line);
     }
 
-    private static string Bottom(int width, string? footer, int current, int total)
+    private static string Bottom(int width, string? footer, int current, int total, bool showCounter = true)
     {
         var inner = width - 2;
         var counter = total > 0 ? $"{current}/{total}" : "0/0";
-        var hint = string.IsNullOrWhiteSpace(footer) ? counter : Clean(footer, 160) + " · " + counter;
+        var hint = string.IsNullOrWhiteSpace(footer)
+            ? (showCounter ? counter : string.Empty)
+            : showCounter ? Clean(footer, 160) + " · " + counter : Clean(footer, 160);
 
         string left = string.Empty;
         string right = " " + hint + " ─";

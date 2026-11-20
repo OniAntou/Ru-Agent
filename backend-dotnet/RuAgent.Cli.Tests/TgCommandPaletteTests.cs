@@ -15,11 +15,11 @@ public sealed class TgCommandPaletteTests
     {
         var palette = new TgCommandPalette(ChatCommandCatalog.KnownCommands);
 
-        palette.SetQuery("/sta");
+        palette.SetQuery("/pre");
 
-        Assert.Equal(["/status"], palette.Matches.Select(command => command.Command));
+        Assert.Equal(["/preset"], palette.Matches.Select(command => command.Command));
         palette.Move(1);
-        Assert.Equal("/status", palette.SelectedCommand);
+        Assert.Equal("/preset", palette.SelectedCommand);
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public sealed class TgCommandPaletteTests
         {
             app.InjectKey(Key.P.WithCtrl);
             app.InjectKey(new Key('/'));
-            app.InjectKey(new Key('s'));
+            app.InjectKey(new Key('p'));
             app.InjectKey(Key.Esc);
             return false;
         });
@@ -62,16 +62,16 @@ public sealed class TgCommandPaletteTests
         {
             app.InjectKey(Key.P.WithCtrl);
             app.InjectKey(new Key('/'));
-            app.InjectKey(new Key('s'));
-            app.InjectKey(new Key('t'));
-            app.InjectKey(new Key('a'));
+            app.InjectKey(new Key('p'));
+            app.InjectKey(new Key('r'));
+            app.InjectKey(new Key('e'));
             app.InjectKey(Key.CursorDown);
             app.InjectKey(Key.Enter);
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(450), () =>
         {
-            Assert.Equal("/status ", window.Composer.Input.Text?.ToString());
+            Assert.Equal("/preset ", window.Composer.Input.Text?.ToString());
             Assert.False(window.IsCommandPaletteOpen);
             app.RequestStop();
             return false;
@@ -100,9 +100,9 @@ public sealed class TgCommandPaletteTests
             loop.Submit();
             app.InjectKey(Key.P.WithCtrl);
             app.InjectKey(new Key('/'));
-            app.InjectKey(new Key('s'));
-            app.InjectKey(new Key('t'));
-            app.InjectKey(new Key('a'));
+            app.InjectKey(new Key('p'));
+            app.InjectKey(new Key('r'));
+            app.InjectKey(new Key('e'));
             app.InjectKey(Key.Enter);
             return false;
         });

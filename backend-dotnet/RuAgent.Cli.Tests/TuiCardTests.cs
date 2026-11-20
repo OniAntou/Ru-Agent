@@ -23,6 +23,53 @@ public sealed class TuiCardTests
     }
 
     [Fact]
+    public void Compose_ShowCounterFalse_OmitsTheSelectedRatio()
+    {
+        var withCounter = string.Join('\n', TuiCard.ComposeList(60, "model", "esc", Items(30), 0, 8, null)
+            .Select(line => line.Text));
+        var withoutCounter = string.Join('\n', TuiCard.ComposeList(
+                60, "model", "esc", Items(30), 0, 8, null, showCounter: false)
+            .Select(line => line.Text));
+
+        Assert.Contains("1/30", withCounter, StringComparison.Ordinal);
+        Assert.DoesNotContain("/30", withoutCounter, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compose_RightTone_AnchorsTheColouredSegmentAtTheRightColumn()
+    {
+        var lines = TuiCard.ComposeList(
+            40,
+            "provider",
+            "esc",
+            [new CardItem("OpenCode Go", "✓", true, null, TuiToken.Ok)],
+            0,
+            8,
+            null);
+
+        var row = Assert.Single(lines, line => line.Kind == CardRowKind.Selected);
+        Assert.Equal(TuiToken.Ok, row.RightTone);
+        Assert.NotNull(row.RightStart);
+        Assert.Equal("✓", row.Text[row.RightStart!.Value..].TrimEnd());
+        Assert.Equal(TuiText.VisibleWidth(row.Text[..row.RightStart.Value]), row.RightColumn);
+    }
+
+    [Fact]
+    public void ChoiceList_HideFooterSuppressesTheCaptionAndCounter()
+    {
+        var list = new ChoiceList(
+            "model",
+            [new ChoiceItem("a", string.Empty, "a"), new ChoiceItem("b", string.Empty, "b")],
+            hideFooter: true,
+            showCounter: false);
+
+        var rendered = string.Join('\n', list.Render(40));
+
+        Assert.DoesNotContain("↑↓", rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("1/2", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compose_OpensWithTheTitleAndItsHintOnOneRow()
     {
         var lines = TuiCard.ComposeList(60, "model", "esc", Items(3), 0, 8, null)

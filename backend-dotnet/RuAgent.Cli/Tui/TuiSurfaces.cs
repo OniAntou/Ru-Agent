@@ -1,21 +1,8 @@
 namespace RuAgent.Cli.Tui;
 
-/// <summary>Everything the <c>/status</c> card shows. Assembled by the CLI, rendered here.</summary>
-public sealed record TuiStatusSnapshot(
-    string SessionId,
-    string Preset,
-    string Backend,
-    string Model,
-    string Workspace,
-    int Turn,
-    long? TotalTokens,
-    int ToolsSettled,
-    bool? ApiKeyConfigured);
-
 /// <summary>
-/// Pure builders for the TUI surfaces: the <c>/help</c> panel, the <c>/status</c> card and the
-/// picker contents. Keeping them free of I/O is what makes them testable, and keeps the panel
-/// grammar in one place.
+/// Pure builders for the TUI surfaces: the <c>/help</c> panel and the picker contents. Keeping
+/// them free of I/O is what makes them testable, and keeps the panel grammar in one place.
 /// </summary>
 public static class TuiSurfaces
 {
@@ -24,7 +11,7 @@ public static class TuiSurfaces
     /// <summary>Groups used by both the help panel and the slash dropdown's vocabulary.</summary>
     private static readonly (string Title, string[] Commands)[] HelpGroups =
     [
-        ("session", ["/new", "/sessions", "/status", "/preset", "/computer"]),
+        ("session", ["/new", "/sessions", "/preset", "/computer"]),
         ("model & provider", ["/model", "/provider", "/reasoning", "/advisor"]),
         ("terminal", ["/help", "/update", "/exit"]),
     ];
@@ -64,51 +51,6 @@ public static class TuiSurfaces
         }
 
         return TuiPanel.Compose(width, "help", sections, PanelHint, framed);
-    }
-
-    /// <summary>The session card, one section for what, one for where, one for the run.</summary>
-    public static IReadOnlyList<string> Status(int width, TuiStatusSnapshot snapshot, bool framed = true)
-    {
-        ArgumentNullException.ThrowIfNull(snapshot);
-
-        var session = new List<PanelRow>
-        {
-            new("session", Shorten(snapshot.SessionId, 20)),
-            new("preset", string.IsNullOrWhiteSpace(snapshot.Preset) ? "standard" : snapshot.Preset),
-        };
-
-        var model = new List<PanelRow>
-        {
-            new("backend", string.IsNullOrWhiteSpace(snapshot.Backend) ? "unknown" : snapshot.Backend),
-            new("model", string.IsNullOrWhiteSpace(snapshot.Model) ? "not set" : snapshot.Model),
-        };
-
-        if (snapshot.ApiKeyConfigured is { } configured)
-        {
-            model.Add(new PanelRow("api key", configured ? "configured" : "missing"));
-        }
-
-        var run = new List<PanelRow>
-        {
-            new("turns", snapshot.Turn.ToString()),
-            new("tools", snapshot.ToolsSettled.ToString()),
-            new("tokens", snapshot.TotalTokens is { } tokens ? tokens.ToString() : "—"),
-            new("workspace", ShortenPath(snapshot.Workspace)),
-        };
-
-        var pathWidth = Math.Max(1, Math.Clamp(width, TuiPanel.MinWidth, TuiPanel.MaxWidth) - (framed ? 6 : 2));
-        var pathRows = TuiText.HardWrapLine(TuiWorkspaceHeading.DisplayPath(snapshot.Workspace), pathWidth)
-            .Select(line => new PanelRow(line, FullWidth: true)).ToArray();
-        return TuiPanel.Compose(
-            width,
-            "status",
-            [
-                new PanelSection("session", session),
-                new PanelSection("model", model),
-                new PanelSection("run", run),
-                new PanelSection("workspace path", pathRows),
-            ],
-            PanelHint, framed);
     }
 
     /// <summary>Backends the CLI can switch between, in the order the docs list them.</summary>
@@ -203,41 +145,172 @@ public static class TuiSurfaces
     }
 
     /// <summary>
-    /// Live models.dev rows under the base ones: the current provider, then the ones
-    /// already signed in, then the rest by id. The rows an operator can act on sit above
-    /// the long tail, which is why the current provider is duplicated in priority order
-    /// rather than swapped — the list has to stay deduplicated.
+    /// Live models.dev rows under the base ones: the current provider, then the ones already
+    /// signed in, then the rest by id. The order keeps the rows an operator can act on above
+    /// the long tail; ids stay deduplicated.
     /// </summary>
-    private static List<(string Value, string Label, string Detail)> ProviderRows(
+    private static List<(string Id, string Name)> OrderedModelsDevEntries(
         string current,
         IReadOnlyDictionary<string, bool>? keyStates,
         IReadOnlyList<(string Id, string Name)> providers)
     {
-        var all = new List<(string Value, string Label, string Detail)>(providers.Count);
+        var all = new List<(string Id, string Name)>(providers.Count);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (id, name) in providers)
         {
-            if (string.IsNullOrWhiteSpace(id) || !seen.Add("models.dev:" + id.Trim()))
+            var trimmed = id?.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed) || !seen.Add(trimmed))
             {
                 continue;
             }
 
-            all.Add(($"models.dev:{id}", $"models.dev:{id}", "Models.dev: " + name));
+            all.Add((trimmed, name?.Trim() ?? string.Empty));
         }
 
-        var isCurrent = new Func<(string Value, string Label, string Detail), bool>(
-            row => string.Equals(row.Value, current, StringComparison.OrdinalIgnoreCase));
-        var isSignedIn = new Func<(string Value, string Label, string Detail), bool>(
-            row => keyStates is not null && keyStates.TryGetValue(row.Value, out var hasKey) && hasKey);
+        bool IsCurrent((string Id, string Name) entry) =>
+            string.Equals("models.dev:" + entry.Id, current, StringComparison.OrdinalIgnoreCase);
+        bool IsSignedIn((string Id, string Name) entry) =>
+            keyStates is not null && keyStates.TryGetValue("models.dev:" + entry.Id, out var hasKey) && hasKey;
 
-        var ordered = new List<(string Value, string Label, string Detail)>(all.Count);
-        ordered.AddRange(all.Where(isCurrent));
-        ordered.AddRange(all.Where(row => !isCurrent(row) && isSignedIn(row)));
-        ordered.AddRange(all
-            .Where(row => !isCurrent(row) && !isSignedIn(row))
-            .OrderBy(row => row.Value, StringComparer.Ordinal));
-        return ordered;
+        return all
+            .Where(IsCurrent)
+            .Concat(all.Where(entry => !IsCurrent(entry) && IsSignedIn(entry)))
+            .Concat(all
+                .Where(entry => !IsCurrent(entry) && !IsSignedIn(entry))
+                .OrderBy(entry => entry.Id, StringComparer.Ordinal))
+            .ToList();
     }
+
+    private static List<(string Value, string Label, string Detail)> ProviderRows(
+        string current,
+        IReadOnlyDictionary<string, bool>? keyStates,
+        IReadOnlyList<(string Id, string Name)> providers) =>
+        OrderedModelsDevEntries(current, keyStates, providers)
+            .Select(entry => (
+                $"models.dev:{entry.Id}",
+                $"models.dev:{entry.Id}",
+                "Models.dev: " + entry.Name))
+            .ToList();
+
+    /// <summary>
+    /// The minimal <c>/provider</c> rows: friendly names and a green checkmark on the right of
+    /// every provider that already has a stored key. No key verdicts are spelled out — the
+    /// checkmark answers "signed in?", and a blank right side means "not signed in yet".
+    /// The value stays the canonical choice, so selection and explicit arguments are unchanged.
+    /// </summary>
+    public static IReadOnlyList<ChoiceItem> ProviderChoices(
+        string? currentBackend,
+        IReadOnlyDictionary<string, bool>? keyStates = null,
+        IReadOnlyList<(string Id, string Name)>? providers = null)
+    {
+        var current = NormalizeBackend(currentBackend);
+        var baseRows = BaseBackends.ToList();
+        var baseIndex = baseRows.FindIndex(row => string.Equals(row.Value, current, StringComparison.OrdinalIgnoreCase));
+        if (baseIndex > 0)
+        {
+            (baseRows[0], baseRows[baseIndex]) = (baseRows[baseIndex], baseRows[0]);
+        }
+
+        var items = new List<ChoiceItem>(baseRows.Count + (providers?.Count ?? FallbackBackends.Length) + 2);
+        foreach (var (value, _, detail) in baseRows)
+        {
+            items.Add(ProviderRow(
+                string.Equals(value, "custom", StringComparison.OrdinalIgnoreCase) ? "Custom" : detail,
+                value,
+                current,
+                keyStates));
+        }
+
+        if (providers is { Count: > 0 })
+        {
+            AppendProviderSection(
+                items,
+                current,
+                keyStates,
+                OrderedModelsDevEntries(current, keyStates, providers)
+                    .Select(entry => ($"models.dev:{entry.Id}", entry.Name))
+                    .ToList());
+        }
+        else
+        {
+            AppendProviderSection(
+                items,
+                current,
+                keyStates,
+                FallbackBackends.Select(row => (row.Value, row.Detail)).ToList());
+        }
+
+        return items;
+    }
+
+    /// <summary>One provider row: a checkmark when signed in, otherwise the current label.</summary>
+    private static ChoiceItem ProviderRow(
+        string label,
+        string value,
+        string current,
+        IReadOnlyDictionary<string, bool>? keyStates)
+    {
+        var signedIn = keyStates is not null
+            && keyStates.TryGetValue(value, out var hasKey)
+            && hasKey;
+        var detail = signedIn
+            ? "✓"
+            : string.Equals(value, current, StringComparison.OrdinalIgnoreCase) ? "current" : string.Empty;
+        return new ChoiceItem(label, detail, value, DetailTone: signedIn ? TuiToken.Ok : null);
+    }
+
+    /// <summary>
+    /// Adds the models.dev block under the fixed providers. A blank row separates the fixed
+    /// providers from the catalog and the already-signed-in providers from the long tail, so
+    /// the picker reads as groups instead of one dense wall.
+    /// </summary>
+    private static void AppendProviderSection(
+        List<ChoiceItem> items,
+        string current,
+        IReadOnlyDictionary<string, bool>? keyStates,
+        IReadOnlyList<(string Value, string Detail)> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        if (items.Count > 0)
+        {
+            items.Add(BlankChoice());
+        }
+
+        var inTail = false;
+        foreach (var (value, detail) in entries)
+        {
+            var signedIn = keyStates is not null
+                && keyStates.TryGetValue(value, out var hasKey)
+                && hasKey;
+            var isCurrent = string.Equals(value, current, StringComparison.OrdinalIgnoreCase);
+            if (!signedIn && !isCurrent && !inTail)
+            {
+                // The signed-in block just ended; one blank row gives the catalog tail room.
+                inTail = true;
+                if (items[^1].Value.Length != 0)
+                {
+                    items.Add(BlankChoice());
+                }
+            }
+
+            const string prefix = "Models.dev: ";
+            var label = detail.StartsWith(prefix, StringComparison.Ordinal)
+                ? detail[prefix.Length..]
+                : detail;
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                label = value;
+            }
+
+            items.Add(ProviderRow(label, value, current, keyStates));
+        }
+    }
+
+    private static ChoiceItem BlankChoice() => new(string.Empty, string.Empty, string.Empty, Enabled: false);
 
     /// <summary>
     /// Reasoning-effort rows for the active model: <c>default</c> always leads, then the
@@ -384,6 +457,171 @@ public static class TuiSurfaces
         return items;
     }
 
+    /// <summary>One provider's catalog in the grouped model picker.</summary>
+    /// <param name="Backend">Canonical backend the Host stored (for display and reads).</param>
+    /// <param name="WireChoice">Value a settings write sends as <c>backend_choice</c>.</param>
+    /// <param name="Display">Provider label shown as the list heading.</param>
+    /// <param name="Error">Why the catalog is missing or empty; null when it loaded.</param>
+    /// <param name="IsCurrent">True for the active backend, the only one that may mark a model current.</param>
+    public sealed record ModelGroup(
+        string Backend,
+        string WireChoice,
+        string Display,
+        IReadOnlyList<(string Id, bool Supported)> Models,
+        string? Error = null,
+        bool IsCurrent = false);
+
+    /// <summary>Where a grouped picker row points: a model on one provider.</summary>
+    public sealed record ModelChoiceTarget(string Backend, string WireChoice, string Model);
+
+    /// <summary>
+    /// One group in display order: the current model when it belongs to this catalog, then
+    /// free supported models, the remaining supported ones, and unsupported models last.
+    /// </summary>
+    public static IReadOnlyList<(string Id, bool Supported)> OrderedGroupModels(
+        string? currentModel,
+        ModelGroup group)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var ordered = new List<(string Id, bool Supported)>();
+        void Add(string? id, bool supported)
+        {
+            var value = id?.Trim();
+            if (string.IsNullOrWhiteSpace(value) || !seen.Add(value))
+            {
+                return;
+            }
+
+            ordered.Add((value, supported));
+        }
+
+        var current = group.IsCurrent && !string.IsNullOrWhiteSpace(currentModel)
+            ? currentModel.Trim()
+            : null;
+        if (current is not null
+            && group.Models.Any(model => model.Supported
+                && string.Equals(model.Id?.Trim(), current, StringComparison.Ordinal)))
+        {
+            Add(current, true);
+        }
+
+        foreach (var model in group.Models
+                     .Where(model => model.Supported && IsFreeModel(model.Id))
+                     .OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase))
+        {
+            Add(model.Id, true);
+        }
+
+        foreach (var model in group.Models
+                     .Where(model => model.Supported && !IsFreeModel(model.Id))
+                     .OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase))
+        {
+            Add(model.Id, true);
+        }
+
+        foreach (var model in group.Models
+                     .Where(model => !model.Supported)
+                     .OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase))
+        {
+            Add(model.Id, false);
+        }
+
+        return ordered;
+    }
+
+    /// <summary>The right-hand tags for one model row, shared by the picker and the panel.</summary>
+    public static string GroupModelDetail(
+        string id,
+        bool supported,
+        bool isCurrent,
+        string wireChoice,
+        IReadOnlyDictionary<string, bool>? keyStates = null)
+    {
+        var parts = new List<string>(3);
+        if (isCurrent)
+        {
+            parts.Add("current");
+        }
+
+        if (IsFreeModel(id))
+        {
+            parts.Add("free");
+        }
+
+        if (!supported)
+        {
+            parts.Add("unsupported");
+        }
+        else if (keyStates is not null
+                 && keyStates.TryGetValue(wireChoice, out var hasKey)
+                 && !hasKey)
+        {
+            parts.Add("no key");
+        }
+
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// Rows for <c>/model</c> across every signed-in provider: a disabled heading per provider
+    /// followed by its models. Row values are positional targets (<c>#n</c>) so one pick can
+    /// carry both the provider and the model; the caller resolves it with
+    /// <paramref name="keyStates"/> against the returned target list.
+    /// </summary>
+    /// <remarks>
+    /// Providers are displayed in the order the caller supplied (the active backend first).
+    /// Headings are disabled so arrow keys and digits skip them; a filter that matches only a
+    /// heading still cannot confirm it.
+    /// </remarks>
+    public static (IReadOnlyList<ChoiceItem> Items, IReadOnlyList<ModelChoiceTarget> Targets) GroupedModelChoices(
+        string? currentModel,
+        IReadOnlyList<ModelGroup> groups,
+        IReadOnlyDictionary<string, bool>? keyStates = null)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        var items = new List<ChoiceItem>();
+        var targets = new List<ModelChoiceTarget>();
+        var first = true;
+        foreach (var group in groups)
+        {
+            if (!first)
+            {
+                // One blank row between provider groups so headings and rows breathe.
+                items.Add(BlankChoice());
+            }
+
+            first = false;
+            var supported = group.Models.Count(model => model.Supported);
+            var heading = group.Error is null
+                ? $"{supported} models"
+                : "catalog unavailable";
+            if (group.IsCurrent)
+            {
+                heading += " · current";
+            }
+
+            items.Add(new ChoiceItem(group.Display, heading, string.Empty, Enabled: false));
+            if (group.Error is not null && group.Models.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var (id, isSupported) in OrderedGroupModels(currentModel, group))
+            {
+                var isCurrent = group.IsCurrent
+                    && !string.IsNullOrWhiteSpace(currentModel)
+                    && string.Equals(id, currentModel.Trim(), StringComparison.Ordinal);
+                var detail = GroupModelDetail(id, isSupported, isCurrent, group.WireChoice, keyStates);
+                var value = "#" + targets.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                targets.Add(new ModelChoiceTarget(group.Backend, group.WireChoice, id));
+                items.Add(new ChoiceItem(id, detail, value, isSupported));
+            }
+        }
+
+        return (items, targets);
+    }
+
     /// <summary>OpenRouter marks free-tier models with a <c>:free</c> id suffix.</summary>
     public static bool IsFreeModel(string? id) =>
         !string.IsNullOrWhiteSpace(id) && id.Trim().EndsWith(":free", StringComparison.OrdinalIgnoreCase);
@@ -412,18 +650,4 @@ public static class TuiSurfaces
 
     private static string Shorten(string value, int maximum) =>
         value.Length <= maximum ? value : TuiText.SafeCut(value, maximum - 1) + "…";
-
-    /// <summary>Workspace path trimmed from the left so the leaf stays readable.</summary>
-    private static string ShortenPath(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return "—";
-        }
-
-        var trimmed = path.TrimEnd('\\', '/');
-        var leafIndex = trimmed.LastIndexOfAny(['\\', '/']);
-        var leaf = leafIndex >= 0 && leafIndex < trimmed.Length - 1 ? trimmed[(leafIndex + 1)..] : trimmed;
-        return leafIndex > 0 ? "…" + Path.DirectorySeparatorChar + leaf : leaf;
-    }
 }

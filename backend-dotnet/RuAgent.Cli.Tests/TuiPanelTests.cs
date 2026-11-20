@@ -123,7 +123,7 @@ public sealed class TuiHelpPanelTests
     {
         var text = string.Join("\n", TuiSurfaces.Help(120).Select(TuiText.Strip));
 
-        Assert.Contains("Switch or show the active model", text, StringComparison.Ordinal);
+        Assert.Contains("Switch model across signed-in providers", text, StringComparison.Ordinal);
         Assert.Contains("Quit", text, StringComparison.Ordinal);
     }
 
@@ -134,60 +134,6 @@ public sealed class TuiHelpPanelTests
         {
             Assert.All(TuiSurfaces.Help(width), line => Assert.Equal(width, TuiText.VisibleWidth(line)));
         }
-    }
-}
-
-public sealed class TuiStatusCardTests
-{
-    private static TuiStatusSnapshot Snapshot() => new(
-        SessionId: "a20261842de34c8b99ab5fc312a6f5e4",
-        Preset: "standard",
-        Backend: "Kilo Gateway",
-        Model: "kilocode/gpt-5-codex",
-        Workspace: "D:\\LLM",
-        Turn: 3,
-        TotalTokens: 12400,
-        ToolsSettled: 4,
-        ApiKeyConfigured: true);
-
-    [Fact]
-    public void Status_ShowsTheRunFacts()
-    {
-        var text = string.Join("\n", TuiSurfaces.Status(100, Snapshot()).Select(TuiText.Strip));
-
-        Assert.Contains("a20261842de34c8b99a…", text, StringComparison.Ordinal);
-        Assert.Contains("standard", text, StringComparison.Ordinal);
-        Assert.Contains("Kilo Gateway", text, StringComparison.Ordinal);
-        Assert.Contains("kilocode/gpt-5-codex", text, StringComparison.Ordinal);
-        Assert.Contains("12400", text, StringComparison.Ordinal);
-        Assert.Contains("…\\LLM", text, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Status_ReportsAMissingKeyOnlyWhenItIsKnown()
-    {
-        var missing = Snapshot() with { ApiKeyConfigured = false };
-        var unknown = Snapshot() with { ApiKeyConfigured = null };
-
-        Assert.Contains("missing", string.Join("\n", TuiSurfaces.Status(100, missing).Select(TuiText.Strip)), StringComparison.Ordinal);
-        Assert.DoesNotContain("missing", string.Join("\n", TuiSurfaces.Status(100, unknown).Select(TuiText.Strip)), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Status_WithoutATokenTallyShowsADash()
-    {
-        var text = string.Join("\n", TuiSurfaces.Status(100, Snapshot() with { TotalTokens = null }).Select(TuiText.Strip));
-
-        Assert.Contains("—", text, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData(24)]
-    [InlineData(40)]
-    [InlineData(80)]
-    public void Status_FramesItselfAtEveryWidth(int width)
-    {
-        Assert.All(TuiSurfaces.Status(width, Snapshot()), line => Assert.Equal(width, TuiText.VisibleWidth(line)));
     }
 }
 
@@ -399,6 +345,43 @@ public sealed class TuiSurfacesPickerTests
         Assert.Equal(7, items.Count);
         Assert.Contains(items, i => i.Value == "models.dev:openrouter");
         Assert.Contains(items, i => i.Value == "models.dev:kilo");
+    }
+
+    [Fact]
+    public void ProviderChoices_MarksSignedInProvidersWithACheckmark()
+    {
+        var items = TuiSurfaces.ProviderChoices(
+            "models.dev:kilo",
+            new Dictionary<string, bool>
+            {
+                ["openai"] = false,
+                ["models.dev:kilo"] = true,
+                ["models.dev:opencode-go"] = true,
+            },
+            [("kilo", "Kilo Gateway"), ("opencode-go", "OpenCode Go")]);
+
+        Assert.Equal("OpenAI", items[0].Label);
+        Assert.Equal(string.Empty, items[0].Detail);
+        Assert.Contains("", items.Select(item => item.Label));
+        var kilo = Assert.Single(items, i => i.Value == "models.dev:kilo");
+        Assert.Equal("✓", kilo.Detail);
+        Assert.Equal(TuiToken.Ok, kilo.DetailTone);
+        var go = Assert.Single(items, i => i.Value == "models.dev:opencode-go");
+        Assert.Equal("✓", go.Detail);
+        Assert.DoesNotContain(items, item => item.Detail.Contains("key ok", StringComparison.Ordinal));
+        Assert.DoesNotContain(items, item => item.Detail.Contains("no key", StringComparison.Ordinal));
+        Assert.DoesNotContain(items, item => item.Detail.Contains("Models.dev:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ProviderChoices_FallsBackToFriendlyNamesAndKeepsTheCheckmark()
+    {
+        var items = TuiSurfaces.ProviderChoices("openai", null, []);
+
+        Assert.Equal(8, items.Count);
+        Assert.Contains(items, item => item.Label == "Kilo Gateway" && item.Value == "models.dev:kilo");
+        Assert.Contains(items, item => item.Label == "OpenCode Zen" && item.Value == "models.dev:opencode");
+        Assert.DoesNotContain(items, item => item.Label.StartsWith("models.dev:", StringComparison.Ordinal));
     }
 
     [Fact]

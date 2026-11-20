@@ -99,7 +99,7 @@ public sealed class TuiFailureCatalogTests : IDisposable
         Assert.Equal("some_future_code", info.Code);
         Assert.Equal("Run stopped", info.Title);
         Assert.DoesNotContain("some_future_code", info.Cause, StringComparison.Ordinal);
-        Assert.Contains("/status", info.Fix, StringComparison.Ordinal);
+        Assert.Contains("logs", info.Fix, StringComparison.Ordinal);
     }
 
     [Fact]

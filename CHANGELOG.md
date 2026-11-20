@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Remove `/status` from the terminal. The slash command and its
+  Overview/Context/Session-usage reports are gone from the chat surface and `/help`; typing
+  `/status` now reports an unknown command. The header usage cluster, headless `ru agent
+  status`, the RPC status methods and the desktop usage view are unchanged.
+
+- **feat(tui)**: `/model` groups the live catalogs of the active provider and of every
+  provider the account signed in to (fixed providers with a stored key and every
+  `models.dev:*` id), so a model of another provider is reachable in one pick; choosing it
+  saves the provider and model together. `/provider` now continues into the new provider's
+  model list after the switch (skipped when the stored model already fits, auto-selected when
+  the catalog has one model), so a switch no longer leaves the previous provider's model
+  pinned. One connected provider keeps the existing single-catalog picker. The grouped model
+  picker and `/provider` panel are chrome-light: no footer caption, no row counter, friendly
+  provider names, a green checkmark for each signed-in provider, and blank rows between groups
+  so the lists breathe; key-verdict text is no longer spelled out.
+
 - **feat(broker)**: `write_file` replaces a file the session has just read whole without
   `overwrite=true`, while the file still holds what was read. Benchmarks showed models
   calling `write_file` on existing files and paying a `file_exists` failure and a retry. A

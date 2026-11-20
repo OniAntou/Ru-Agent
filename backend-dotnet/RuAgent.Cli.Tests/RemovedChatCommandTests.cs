@@ -29,6 +29,8 @@ public sealed class RemovedChatCommandTests
     [InlineData("/skills add-root C:\\skills")]
     [InlineData("/skill review")]
     [InlineData("/SKILL review inspect src/main.cs")]
+    [InlineData("/status")]
+    [InlineData("/status overview")]
     public async Task RemovedCommands_AreUndiscoverableAndCannotExecute(string command)
     {
         var slashCommand = command.Split(' ', 2)[0].ToLowerInvariant();
@@ -50,14 +52,13 @@ public sealed class RemovedChatCommandTests
         using var http = new HttpClient(handler);
         var output = new StringWriter();
         var errors = new StringWriter();
-        using var input = new StringReader(command + "\n/status\n/exit\n");
+        using var input = new StringReader(command + "\n/help\n/exit\n");
         using var commands = new AgentCommands(host, http, output, errors, input);
 
         var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
 
         Assert.Equal(0, exit);
         Assert.Contains("unknown command " + slashCommand, errors.ToString(), StringComparison.Ordinal);
-        Assert.Contains("sess_123", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("Goodbye!", output.ToString(), StringComparison.Ordinal);
         // Opening an existing chat activates its session; removed commands must add no mutations.
         Assert.Equal(["POST /sessions/sess_123/activate"], handler.Mutations);

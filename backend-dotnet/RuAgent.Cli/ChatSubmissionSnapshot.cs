@@ -29,7 +29,6 @@ internal sealed record ChatSubmissionSnapshot(
             || command.Equals("/computer", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/advisor", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/help", StringComparison.OrdinalIgnoreCase)
-            || command.Equals("/status", StringComparison.OrdinalIgnoreCase)
             || command.Equals("/exit", StringComparison.OrdinalIgnoreCase);
     }
 

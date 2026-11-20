@@ -47,7 +47,7 @@ public sealed class ChatDraftSessionTests
     [Theory]
     [InlineData("")]
     [InlineData("/exit\n")]
-    [InlineData("/model\n/provider\n/status\n/help\n/preset plan\n/tasks\n/changes\n/rewind\n/subagents\n/follow\n/exit\n")]
+    [InlineData("/model\n/provider\n/help\n/preset plan\n/tasks\n/changes\n/rewind\n/subagents\n/follow\n/exit\n")]
     public async Task Opening_chat_and_local_slash_commands_create_no_saved_session(string input)
     {
         using var host = new Host(); using var http = new HttpClient(host);
@@ -55,7 +55,6 @@ public sealed class ChatDraftSessionTests
         using var commands = new AgentCommands(ChatTestSession.Value, http, output, errors, new StringReader(input));
         Assert.Equal(0, await commands.ChatAsync(new ChatCommand(Path.GetTempPath(), null, "standard", false), default));
         Assert.DoesNotContain(host.Requests, request => request.Contains("/sessions/") || request.Contains("/agent/v1/"));
-        if (input.Contains("/status")) Assert.Contains("not started", output.ToString());
     }
 
     [Fact]

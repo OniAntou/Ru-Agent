@@ -23,7 +23,9 @@ public static class TgPanelRequests
         CancellationToken cancellationToken) =>
         RunAsync(
             window,
-            () => window.ShowPicker(list.Title, list.Items, list.Selected, list.Footer),
+            () => window.ShowPicker(
+                list.Title, list.Items, list.Selected, list.Footer,
+                showCounter: list.ShowCounter, hideFooter: list.HideFooter),
             confirmed: value => value,
             delete: null,
             cancelled: null,

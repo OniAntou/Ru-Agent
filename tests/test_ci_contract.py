@@ -37,20 +37,31 @@ def test_ci_never_hides_findings_behind_permanent_escapes() -> None:
     A gate that can be marked non-blocking (or short-circuited to success) stops
     being a gate. The two advisory dependency audits are the only permitted
     short-circuits: they are matched by their exact command line, and any other
-    ``|| true`` or ``|| exit 0`` anywhere in the workflow fails this test.
+    ``|| true`` or ``|| exit 0`` anywhere in a workflow fails this test.
+    ``release.yml`` runs the same gates, so it is inspected too: a release-only
+    escape would otherwise silently tolerate a failing package or smoke step.
     """
-    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "continue-on-error" not in workflow
-    assert "if: false" not in workflow
+    workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+    assert workflows
+    for workflow_path in workflows:
+        workflow = workflow_path.read_text(encoding="utf-8")
+        assert "continue-on-error" not in workflow, workflow_path.name
+        assert "if: false" not in workflow, workflow_path.name
 
-    escapes = sorted(
-        line.strip().removeprefix("run: ")
-        for line in workflow.splitlines()
-        if "|| true" in line or "|| exit 0" in line
-    )
-    assert escapes == sorted(ADVISORY_AUDIT_SHORT_CIRCUITS), (
-        f"only the two advisory audit steps may short-circuit; found {escapes!r}"
-    )
+        escapes = sorted(
+            line.strip().removeprefix("run: ")
+            for line in workflow.splitlines()
+            if "|| true" in line or "|| exit 0" in line
+        )
+        expected = (
+            sorted(ADVISORY_AUDIT_SHORT_CIRCUITS)
+            if workflow_path.name == "ci.yml"
+            else []
+        )
+        assert escapes == expected, (
+            f"only the documented advisory audit steps may short-circuit; "
+            f"{workflow_path.name} has {escapes!r}"
+        )
 
 
 def test_ci_uses_reusable_dotnet_runner_and_keeps_build_steps() -> None:

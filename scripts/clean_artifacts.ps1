@@ -115,23 +115,28 @@ if (-not $Apply) {
 }
 
 $failed = 0
+$removed = 0
+$skipped = 0
 foreach ($item in $candidates) {
     # TOCTOU guard: a long-running job could have written into a listed
     # directory between the listing and this deletion. Repeat the content
     # probe and delete only when the directory still looks retired.
     $recheck = GetDirectoryProfile $item.Dir
     if (-not $recheck.Readable) {
+        $skipped++
         Write-Output ("skipped (unreadable at deletion time) {0}" -f $item.Dir.Name)
         continue
     }
 
     if ($recheck.LastActivity -ge $cutoff) {
+        $skipped++
         Write-Output ("skipped (content refreshed since listing) {0}" -f $item.Dir.Name)
         continue
     }
 
     try {
         Remove-Item -LiteralPath $item.Dir.FullName -Recurse -Force
+        $removed++
         Write-Output ("removed {0}" -f $item.Dir.Name)
     } catch {
         # One locked directory must not stop the sweep; report and continue.
@@ -140,4 +145,8 @@ foreach ($item in $candidates) {
     }
 }
 
-Write-Output ("done: removed {0}, blocked {1}." -f ($candidates.Count - $failed), $failed)
+Write-Output ("done: removed {0}, skipped {1}, blocked {2}." -f $removed, $skipped, $failed)
+if ($failed -gt 0) {
+    # Automation cannot see the per-directory failure lines, only this exit code.
+    exit 1
+}

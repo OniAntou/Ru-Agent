@@ -1,3 +1,8 @@
+---
+status: accepted
+date: 2026-11-21
+---
+
 # Folderless chats stage attachments in their scratch workspace
 
 ## Status

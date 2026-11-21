@@ -19,11 +19,20 @@ LEGACY_OWNERSHIP_FIELDS = {
 # a self-consistency check of the JSON: the contract previously could not notice a
 # route the app maps but never declared.
 _ENDPOINT_SOURCE_DIR = ("backend-dotnet", "RuBackend")
-_MAP_CALL = re.compile(
-    r'\.Map(Get|Post|Put|Delete|Methods)\s*\(\s*"(?P<path>/[^"]*)"',
+# Any route registration, so an unrecognised shape can fail loudly instead of
+# being skipped: a guard that ignores what it cannot parse cannot see a route.
+_ANY_MAP_CALL = re.compile(
+    r'\.Map(Get|Post|Put|Delete|Methods)\s*\(',
     re.IGNORECASE,
 )
-_MAP_METHODS = re.compile(r"new\[\]\s*\{\s*HttpMethods\.(?P<method>\w+)")
+# The literal path may be the first positional argument or the `path:` (or
+# `pattern:`) named argument.
+_MAP_CALL = re.compile(
+    r'\.Map(Get|Post|Put|Delete|Methods)\s*\(\s*(?:(?:path|pattern)\s*:\s*)?"(?P<path>/[^"]*)"',
+    re.IGNORECASE,
+)
+_MAP_METHODS = re.compile(r"new\s*\[\s*\]\s*\{([^}]*)\}", re.DOTALL)
+_HTTP_METHOD = re.compile(r"HttpMethods\.(\w+)")
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 # Wildcard patterns are deliberate non-contract surface: the CORS-style OPTIONS
 # catch-all and anything else that matches every path. They are excluded from the
@@ -121,19 +130,35 @@ def mapped_routes(repo_root: Path) -> tuple[set[tuple[str, str]], list[str]]:
         if "bin" in source.parts or "obj" in source.parts:
             continue
         text = _strip_comments(source.read_text(encoding="utf-8"))
-        for match in _MAP_CALL.finditer(text):
-            verb = match.group(1).upper()
-            path = match.group("path")
+        for match in _ANY_MAP_CALL.finditer(text):
+            parsed = _MAP_CALL.match(text, match.start())
+            if parsed is None:
+                snippet = text[match.start():match.start() + 120].splitlines()[0]
+                raise ValueError(
+                    f"unrecognized route registration in {source.name}: {snippet!r}"
+                )
+            verb = parsed.group(1).upper()
+            path = parsed.group("path")
             if _WILDCARD_MARKER in path:
                 wildcards.append(f"{verb} {path}")
                 continue
             if verb == "METHODS":
-                methods = _MAP_METHODS.search(text, match.end())
-                if methods is None:
+                block = _MAP_METHODS.search(text, parsed.end())
+                if block is None:
                     raise ValueError(
                         f"MapMethods without HttpMethods in {source.name}: {path!r}"
                     )
-                routes.add((methods.group("method").upper(), path))
+                methods = [
+                    method.group(1).upper()
+                    for method in _HTTP_METHOD.finditer(block.group(1))
+                ]
+                if not methods:
+                    raise ValueError(
+                        f"MapMethods without HttpMethods in {source.name}: {path!r}"
+                    )
+                # Every method in the array is registered, so recording only the
+                # first would hide the others from the declared-route direction.
+                routes.update((method, path) for method in methods)
                 continue
             routes.add((verb, path))
     return routes, wildcards

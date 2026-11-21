@@ -37,6 +37,7 @@ EXPECTED_HTTP_ROUTES = {
     ("GET", "/sessions/search"),
     ("GET", "/sessions/{sessionId}/messages"),
     ("POST", "/sessions/new"),
+    ("POST", "/sessions/{sessionId}/workspace/scratch"),
     ("POST", "/sessions/{sessionId}/activate"),
     ("DELETE", "/sessions/{sessionId}"),
     ("POST", "/sessions/{sessionId}/rewind"),
@@ -77,7 +78,7 @@ EXPECTED_WEBSOCKET_ROUTES: set[tuple[str, str]] = set()
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (56, 0)
+    assert validate_route_contract(repo_root) == (57, 0)
     contract = load_route_contract(repo_root)
 
     assert {
@@ -126,7 +127,7 @@ def test_every_mapped_route_is_declared_and_every_declared_route_is_mapped() -> 
     mapped_count, wildcards = validate_mapped_routes_are_declared(repo_root)
     contract = load_route_contract(repo_root)
 
-    assert mapped_count == len(contract) == 56
+    assert mapped_count == len(contract) == 57
     # The OPTIONS catch-all is the one deliberate exception, and it stays visible.
     assert wildcards == ["METHODS /{**path}"]
 
@@ -194,3 +195,52 @@ def test_commented_out_map_calls_are_not_treated_as_registrations(tmp_path: Path
 
     assert routes == {("GET", "/status")}
     assert wildcards == []
+
+
+def test_every_method_of_a_multi_method_registration_is_recorded(tmp_path: Path) -> None:
+    source_dir = tmp_path / "backend-dotnet" / "RuBackend"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "Multi.cs").write_text(
+        'app.MapMethods("/agent/v1/multi", new[] { HttpMethods.Get, HttpMethods.Post }, Handler);\n',
+        encoding="utf-8",
+    )
+
+    routes, wildcards = mapped_routes(tmp_path)
+
+    # Recording only the first method would hide POST /agent/v1/multi from the
+    # "mapped route is declared" direction of the contract check.
+    assert routes == {("GET", "/agent/v1/multi"), ("POST", "/agent/v1/multi")}
+    assert wildcards == []
+
+
+def test_named_path_argument_is_a_registration(tmp_path: Path) -> None:
+    source_dir = tmp_path / "backend-dotnet" / "RuBackend"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "Named.cs").write_text(
+        'app.MapGet(path: "/agent/v1/named", Handler);\n'
+        'app.MapPost(pattern: "/agent/v1/patterned", Handler);\n',
+        encoding="utf-8",
+    )
+
+    routes, wildcards = mapped_routes(tmp_path)
+
+    assert routes == {
+        ("GET", "/agent/v1/named"),
+        ("POST", "/agent/v1/patterned"),
+    }
+    assert wildcards == []
+
+
+def test_an_unrecognized_registration_fails_instead_of_being_skipped(
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "backend-dotnet" / "RuBackend"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "Computed.cs").write_text(
+        'var path = "/agent/v1/computed";\n'
+        'app.MapGet(path, Handler);\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unrecognized route registration"):
+        mapped_routes(tmp_path)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from check_shared_workspace_detection import run_gate
+from check_shared_workspace_detection import KNOWN_EVENTS, main, run_gate
 
 
 def test_shared_workspace_fixture_covers_external_and_conflict_paths() -> None:
@@ -39,3 +39,28 @@ def test_gate_reports_real_failures(tmp_path: Path) -> None:
 
     assert summary["failed"] == 1
     assert summary["scenarios"] == 1
+
+    # Automation reads the exit code, not the JSON: a failed scenario must not
+    # exit 0.
+    assert main(["--fixture", str(broken)]) == 1
+
+
+def test_fixture_event_vocabulary_stays_known_and_keeps_the_binary_conflict(
+    tmp_path: Path,
+) -> None:
+    fixture = Path(__file__).resolve().parent / "fixtures" / "shared-workspace-scenarios.json"
+    scenarios = json.loads(fixture.read_text(encoding="utf-8"))
+    unknown = sorted({item["expected"] for item in scenarios} - KNOWN_EVENTS)
+    assert unknown == []
+    binary = [item for item in scenarios if item["name"] == "binary_overlap"]
+    assert binary
+    assert binary[0]["expected"] == "concurrent_binary_conflict"
+
+    # An event name outside the vocabulary is a scenario failure, not a pass.
+    broken = tmp_path / "shared-workspace-unknown-event.json"
+    broken.write_text(
+        json.dumps([{"name": "bad", "writer": "unknown_external", "path": "a.txt",
+                     "expected": "not_an_event"}]),
+        encoding="utf-8",
+    )
+    assert run_gate(broken)["failed"] == 1

@@ -112,7 +112,7 @@ public sealed class ProviderCatalogController : IAsyncDisposable
     /// </summary>
     /// <param name="force">Refresh even while a successful catalog is fresh.</param>
     /// <param name="bypassManualThrottle">
-    /// Skip the 30-second manual-refresh throttle. An explicit connection test and a
+    /// Skip the 30-second manual-refresh throttle. An explicit model fetch and a
     /// just-saved key are answers the user is waiting for, so they may not be served by
     /// a refresh this class suppressed; the host's own retry throttle still applies.
     /// </param>
@@ -137,7 +137,7 @@ public sealed class ProviderCatalogController : IAsyncDisposable
                     return _restartAfterCancellation;
                 }
 
-                // An explicit connection test or the refresh after a saved key may not be
+                // An explicit model fetch or the refresh after a saved key may not be
                 // answered by a request that started before that key existed. Cancel the
                 // old flight and start a new one: the old answer would otherwise be cached
                 // as a rejection of the key the user just stored.

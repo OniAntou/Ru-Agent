@@ -5,12 +5,12 @@ using Xunit;
 namespace RuApp.Tests;
 
 /// <summary>
-/// What the connection test tells the user.
+/// What an explicit provider model fetch tells the user.
 /// </summary>
 /// <remarks>
 /// This is the entire feedback the button produces, so every branch is asserted.
-/// A branch that fell through to a blank line would look like the test did nothing,
-/// and a wrong "works" would be worse than no test at all.
+/// A branch that fell through to a blank line would look like the fetch did nothing,
+/// and a wrong list count would be worse than no fetch at all.
 /// </remarks>
 public sealed class ProviderConnectionTestPresentationTests
 {
@@ -35,7 +35,7 @@ public sealed class ProviderConnectionTestPresentationTests
 
         Assert.Equal(ProviderConnectionTest.SuccessTone, test.Tone);
         Assert.Contains("42", test.Message, StringComparison.Ordinal);
-        Assert.Contains("works", test.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("models available", test.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public sealed class ProviderConnectionTestPresentationTests
 
         Assert.Equal(ProviderConnectionTest.NeutralTone, testing.Tone);
         Assert.False(string.IsNullOrWhiteSpace(testing.Message));
-        Assert.Equal("Test connection", ProviderConnectionTestPresentation.ButtonLabel);
+        Assert.Contains("models", testing.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

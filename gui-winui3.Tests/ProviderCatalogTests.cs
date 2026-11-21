@@ -229,7 +229,7 @@ public sealed class ProviderCatalogTests
         Assert.False(await controller.RefreshAsync(force: true));
         Assert.Equal(1, calls);
 
-        // An explicit connection test, or the refresh that follows a saved key, may not be
+        // An explicit model fetch, or the refresh that follows a saved key, may not be
         // served by a refresh this controller suppressed: bypassing the throttle fetches now.
         release = new TaskCompletionSource<ProviderCatalogSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         var bypassed = controller.RefreshAsync(force: true, bypassManualThrottle: true);
@@ -267,7 +267,7 @@ public sealed class ProviderCatalogTests
         var first = controller.RefreshAsync(force: true);
         Assert.Equal(1, calls);
 
-        // A connection test must not reuse the request that started before the key
+        // A model fetch must not reuse the request that started before the key
         // was saved: bypassing the throttle restarts it instead of awaiting its verdict.
         var restarted = controller.RefreshAsync(force: true, bypassManualThrottle: true);
         Assert.Equal(2, calls);

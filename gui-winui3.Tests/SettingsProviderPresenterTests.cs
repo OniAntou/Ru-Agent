@@ -64,12 +64,12 @@ public sealed class SettingsProviderPresenterTests
     }
 
     [Fact]
-    public async Task Connection_test_saves_pending_values_before_refreshing_and_reads_the_result()
+    public async Task Fetch_models_saves_pending_values_before_refreshing_and_reads_the_result()
     {
         var order = new List<string>();
         var state = new ProviderCatalogState { Status = "ok", Backend = "kilo" };
 
-        var result = await SettingsProviderPresenter.TestConnectionAsync(
+        var result = await SettingsProviderPresenter.FetchProviderModelsAsync(
             () => { order.Add("save"); return Task.FromResult(true); },
             () => { order.Add("refresh"); return Task.FromResult(true); },
             () => { order.Add("read"); return state; });
@@ -80,10 +80,10 @@ public sealed class SettingsProviderPresenterTests
     }
 
     [Fact]
-    public async Task Connection_test_does_not_refresh_when_saving_pending_values_fails()
+    public async Task Fetch_models_does_not_refresh_when_saving_pending_values_fails()
     {
         bool refreshed = false;
-        var result = await SettingsProviderPresenter.TestConnectionAsync(
+        var result = await SettingsProviderPresenter.FetchProviderModelsAsync(
             () => Task.FromResult(false),
             () => { refreshed = true; return Task.FromResult(true); },
             () => new ProviderCatalogState { Status = "ok" });
@@ -94,11 +94,11 @@ public sealed class SettingsProviderPresenterTests
     }
 
     [Fact]
-    public async Task Connection_test_reports_a_suppressed_refresh_instead_of_a_stale_state()
+    public async Task Fetch_models_reports_a_suppressed_refresh_instead_of_a_stale_state()
     {
         // A refresh the catalog suppressed (throttled, canceled) must be visible to the
         // caller: the state it read is then whatever the editor already had.
-        var result = await SettingsProviderPresenter.TestConnectionAsync(
+        var result = await SettingsProviderPresenter.FetchProviderModelsAsync(
             () => Task.FromResult(true),
             () => Task.FromResult(false),
             () => new ProviderCatalogState { Status = "error", ErrorCode = "catalog_unauthorized" });

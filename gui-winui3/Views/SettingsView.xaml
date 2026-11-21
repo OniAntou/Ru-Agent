@@ -843,8 +843,9 @@
                                 <Button Content="Remove saved key" Command="{x:Bind ViewModel.SignOutCommand}"
                                         IsEnabled="{x:Bind ViewModel.IsSignOutEnabled, Mode=OneWay}" />
                             </StackPanel>
-                            <!-- Provider API key row: the key comes before the test. -->
+                            <!-- Provider API key row: the key comes before the model fetch. -->
                             <StackPanel x:Name="ModelsDevApiKeyRow" Spacing="16" Visibility="{x:Bind ViewModel.IsModelsDevKeyVisible, Mode=OneWay}">
+                                <TextBlock Text="Authentication" Style="{StaticResource SettingLabelStyle}" />
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
                                 <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
@@ -889,6 +890,7 @@
 
                             <!-- Custom Endpoint URL Row -->
                             <StackPanel x:Name="CustomEndpointRow" Spacing="16" Visibility="{x:Bind ViewModel.IsCustomProviderVisible, Mode=OneWay}">
+                                <TextBlock Text="Authentication" Style="{StaticResource SettingLabelStyle}" />
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
                                 <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
@@ -943,40 +945,77 @@
                                 </Grid>
                             </StackPanel>
                             <!--
-                              A stored key is not a working key; this asks the endpoint.
-                              The status sits in the same grid so it reads as the result
-                              of the button beside it.
+                              A fetched list is the provider's answer; it is read-only because
+                              model selection stays in the chat picker.
                             -->
-                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                    <TextBlock Text="Connection" Style="{StaticResource SettingLabelStyle}" />
-                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
-                                        <FontIcon x:Name="ProviderTestStatusIcon"
-                                                  Glyph="{x:Bind ToneGlyph(ViewModel.ProviderTestTone), Mode=OneWay}"
-                                                  FontSize="12"
-                                                  Foreground="{x:Bind ToneBrush(ViewModel.ProviderTestTone), Mode=OneWay}"
-                                                  VerticalAlignment="Center" />
-                                        <TextBlock x:Name="ProviderTestStatusText"
-                                                   Grid.Column="1"
-                                                   Text="{x:Bind ViewModel.ProviderTestMessage, Mode=OneWay}"
-                                                   Foreground="{x:Bind ToneBrush(ViewModel.ProviderTestTone), Mode=OneWay}"
-                                                   ToolTipService.ToolTip="{x:Bind ViewModel.ProviderTestErrorCode, Mode=OneWay}"
+                            <StackPanel x:Name="ProviderModelsSection" Spacing="8">
+                                <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                        <TextBlock Text="Models" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="Fetch the list this provider serves. The list is read-only; choose the model in chat."
                                                    Style="{StaticResource SettingDescStyle}"
-                                                   TextWrapping="Wrap"
-                                                   AutomationProperties.LiveSetting="Polite" />
-                                    </Grid>
-                                </StackPanel>
-                                <Button x:Name="ProviderTestButton"
-                                        Grid.Column="1"
-                                        Width="260"
-                                        MinHeight="36"
-                                        Content="Test connection"
-                                        HorizontalAlignment="Stretch"
-                                        HorizontalContentAlignment="Center"
-                                        Style="{StaticResource RuPrimaryButtonStyle}"
-                                        AutomationProperties.Name="Test provider connection"
-                                        Command="{x:Bind ViewModel.TestConnectionCommand}" />
-                            </Grid>
+                                                   TextWrapping="Wrap" />
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                                            <FontIcon x:Name="ProviderModelsStatusIcon"
+                                                      Glyph="{x:Bind ToneGlyph(ViewModel.ProviderModelsStatusTone), Mode=OneWay}"
+                                                      FontSize="12"
+                                                      Foreground="{x:Bind ToneBrush(ViewModel.ProviderModelsStatusTone), Mode=OneWay}"
+                                                      VerticalAlignment="Center" />
+                                            <TextBlock x:Name="ProviderModelsStatusText"
+                                                       Grid.Column="1"
+                                                       Text="{x:Bind ViewModel.ProviderModelsStatus, Mode=OneWay}"
+                                                       Foreground="{x:Bind ToneBrush(ViewModel.ProviderModelsStatusTone), Mode=OneWay}"
+                                                       ToolTipService.ToolTip="{x:Bind ViewModel.ProviderModelsErrorCode, Mode=OneWay}"
+                                                       Style="{StaticResource SettingDescStyle}"
+                                                       TextWrapping="Wrap"
+                                                       AutomationProperties.LiveSetting="Polite" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <Button x:Name="FetchModelsButton"
+                                            Grid.Column="1"
+                                            Width="260"
+                                            MinHeight="36"
+                                            Content="Fetch available models"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Center"
+                                            Style="{StaticResource RuPrimaryButtonStyle}"
+                                            AutomationProperties.Name="Fetch available models"
+                                            IsEnabled="{x:Bind ViewModel.IsProviderModelsFetchEnabled, Mode=OneWay}"
+                                            Command="{x:Bind ViewModel.FetchAvailableModelsCommand}" />
+                                </Grid>
+
+                                <ScrollViewer x:Name="ProviderModelsList"
+                                              MaxHeight="240"
+                                              VerticalScrollBarVisibility="Auto"
+                                              Visibility="{x:Bind ViewModel.HasProviderModels, Mode=OneWay}">
+                                    <ItemsControl ItemsSource="{x:Bind ViewModel.ProviderModels}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:ProviderModelRow">
+                                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12" Padding="4,6"
+                                                      BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,0,1">
+                                                    <TextBlock Text="{x:Bind Id}"
+                                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                                               FontSize="13"
+                                                               Foreground="{StaticResource RuInkBrush}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{x:Bind ContextDetail}"
+                                                               FontSize="12"
+                                                               Foreground="{StaticResource RuMutedBrush}"
+                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2"
+                                                               Text="{x:Bind UnsupportedLabel}"
+                                                               FontSize="12"
+                                                               Foreground="{StaticResource RuDangerBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Visibility="{x:Bind IsUnsupported}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </StackPanel>
 
                             <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
                             <TextBlock Text="Keys are stored in Windows Credential Manager and sent only to the provider you choose."

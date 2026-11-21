@@ -265,7 +265,7 @@ public sealed partial class SettingsViewModelTests
         vm.EditProviderCommand.Execute("custom");
         await vm.ReturnToProvidersCommand.ExecuteAsync(null);
         Assert.True(vm.IsProviderEditorOpen);
-        Assert.Contains("Could not save", vm.ProviderTestMessage);
+        Assert.Contains("Could not save", vm.ProviderModelsStatus);
         Assert.True(vm.IsProviderNavigationEnabled);
     }
 }

@@ -10,7 +10,7 @@ namespace RuApp.ViewModels;
 
 /// <summary>
 /// State and decisions of the settings editor: theme and preset choices, the provider
-/// picker, provider credentials, autosave and the connection test. The view renders
+/// picker, provider credentials, autosave and the explicit model fetch. The view renders
 /// these values and forwards input; it decides nothing.
 /// </summary>
 /// <remarks>
@@ -102,14 +102,19 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] public partial bool IsModelsDevSignOutVisible { get; private set; }
 
-    [ObservableProperty] public partial string ProviderTestMessage { get; private set; } = "Not tested yet. The test checks the key and loads the model list.";
+    /// <summary>Models returned by the explicit fetch; read-only, selection stays in chat.</summary>
+    public ObservableCollection<ProviderModelRow> ProviderModels { get; } = new();
 
-    [ObservableProperty] public partial string ProviderTestTone { get; private set; } = ProviderConnectionTest.NeutralTone;
+    [ObservableProperty] public partial string ProviderModelsStatus { get; private set; } = "No models fetched yet.";
 
-    /// <summary>The catalog's raw code for the last test, kept out of the reading path.</summary>
-    [ObservableProperty] public partial string? ProviderTestErrorCode { get; private set; }
+    [ObservableProperty] public partial string ProviderModelsStatusTone { get; private set; } = ProviderConnectionTest.NeutralTone;
 
-    [ObservableProperty] public partial bool IsProviderTestEnabled { get; private set; } = true;
+    /// <summary>The catalog's raw code for the last fetch, kept out of the reading path.</summary>
+    [ObservableProperty] public partial string? ProviderModelsErrorCode { get; private set; }
+
+    [ObservableProperty] public partial bool IsProviderModelsFetchEnabled { get; private set; } = true;
+
+    public bool HasProviderModels => ProviderModels.Count > 0;
 
     [ObservableProperty] public partial bool IsSignOutEnabled { get; private set; } = true;
 
@@ -187,6 +192,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         ChangeProviderChoice(ProviderSetupGuidance.NormalizeProviderChoice(row.Value));
         IsProviderEditorOpen = true;
         ProviderFilter = string.Empty;
+        ResetProviderModels();
         ProviderPickerCommitted?.Invoke();
         _catalog?.SetBackend(ProviderChoice);
         _ = RefreshCatalogAsync();
@@ -194,92 +200,115 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Asks the selected provider whether it answers. Pending edits are saved first:
-    /// the Host answers from stored settings, so testing before a debounced save
-    /// lands would prove the previous key.
+    /// Fetches the selected provider's model list. Pending edits are saved first, then the
+    /// catalog is refreshed without reusing a pre-save request; the returned list is
+    /// read-only because model selection still belongs to the chat picker.
     /// </summary>
     [RelayCommand]
-    private async Task TestConnectionAsync()
+    private async Task FetchAvailableModelsAsync()
     {
         var catalog = _catalog;
         if (_backend is null || catalog is null)
         {
-            ShowProviderTest(new ProviderConnectionTest(
+            ShowProviderModelsStatus(new ProviderConnectionTest(
                 ProviderConnectionTest.ErrorTone, "The backend is not ready yet. Try again in a moment."));
             return;
         }
 
         CancelDelay(ref _autoSaveDelay);
-        IsProviderTestEnabled = false;
-        ShowProviderTest(ProviderConnectionTestPresentation.Testing());
+        IsProviderModelsFetchEnabled = false;
+        ProviderModels.Clear();
+        OnPropertyChanged(nameof(HasProviderModels));
+        ShowProviderModelsStatus(ProviderConnectionTestPresentation.Testing());
         try
         {
             // The Host answers from stored state. A key typed less than one debounce ago
             // is not stored yet, and an in-flight key check must finish before the catalog
-            // can be asked: otherwise the test proves the previous (or no) key.
+            // is asked: otherwise the fetch proves the previous (or no) key.
             if (!await SettlePendingKeyAsync())
             {
-                ShowProviderTest(new ProviderConnectionTest(
+                ShowProviderModelsStatus(new ProviderConnectionTest(
                     ProviderConnectionTest.ErrorTone,
-                    "The API key has not been saved yet. Check the key, then test the connection again."));
+                    "The API key has not been saved yet. Check the key, then fetch the list again."));
                 return;
             }
-            // The test is an explicit question about the provider shown, so it may not be
-            // answered from a catalog the editor already had: the manual throttle is
-            // bypassed and a suppressed refresh is reported instead of a stale verdict.
-            var run = await SettingsProviderPresenter.TestConnectionAsync(
+
+            // An explicit fetch may not be answered by a catalog request that started
+            // before the key or settings it is meant to prove.
+            var run = await SettingsProviderPresenter.FetchProviderModelsAsync(
                 SaveSettingsAsync,
                 () => catalog.RefreshAsync(force: true, bypassManualThrottle: true),
                 () => catalog.State);
             GuiDiagnosticWriter.AppendTraceLine(
-                $"[provider-test] backend={ProviderChoice} refreshed={run.Refreshed} code={run.State?.ErrorCode ?? "none"}");
+                $"[provider-models] backend={ProviderChoice} refreshed={run.Refreshed} code={run.State?.ErrorCode ?? "none"}");
             if (run.State is null)
             {
                 // Saving failed, so the Host would answer from settings that never landed.
-                ShowProviderTest(ProviderConnectionTestPresentation.Project(null));
+                ShowProviderModelsStatus(ProviderConnectionTestPresentation.Project(null));
             }
             else if (!run.Refreshed)
             {
-                ShowProviderTest(new ProviderConnectionTest(
+                ShowProviderModelsStatus(new ProviderConnectionTest(
                     ProviderConnectionTest.NeutralTone,
                     "Could not refresh the provider list. Try again in a moment."));
             }
-            else
+            else if (!run.State.IsSuccess)
             {
-                var outcome = NameTheProvider(ProviderConnectionTestPresentation.Project(run.State));
+                var outcome = ProviderConnectionTestPresentation.Project(run.State);
                 if (ProviderConnectionTestPresentation.DiagnosticCode(outcome, run.State) is { } errorCode)
                 {
                     // The message alone cannot tell a blocked network from a bad key next
                     // time: record the catalog code locally.
-                    GuiDiagnosticWriter.WriteGuiError("provider_test", errorCode);
+                    GuiDiagnosticWriter.WriteGuiError("provider_models", errorCode);
                 }
 
-                ShowProviderTest(outcome, run.State.ErrorCode);
+                ShowProviderModelsStatus(outcome, run.State.ErrorCode);
+            }
+            else
+            {
+                ApplyFetchedModels(run.State);
+                int count = ProviderModels.Count;
+                ShowProviderModelsStatus(new ProviderConnectionTest(
+                        count == 0 ? ProviderConnectionTest.NeutralTone : ProviderConnectionTest.SuccessTone,
+                        count == 0
+                            ? "Connected. The provider lists no models."
+                            : $"Connected. {count:N0} model{(count == 1 ? string.Empty : "s")} available."),
+                    run.State.ErrorCode);
             }
         }
         catch (Exception ex)
         {
             GuiDiagnosticWriter.WriteCrashEvent(ex);
-            ShowProviderTest(new ProviderConnectionTest(
-                ProviderConnectionTest.ErrorTone, "The test could not run. Open Tools → Activity Log to check."));
+            ShowProviderModelsStatus(new ProviderConnectionTest(
+                ProviderConnectionTest.ErrorTone, "The fetch could not run. Open Tools → Activity Log to check."));
         }
         finally
         {
-            IsProviderTestEnabled = true;
+            IsProviderModelsFetchEnabled = true;
         }
     }
 
-    /// <summary>
-    /// Names the provider the verdict is about. The editor shows several Models.dev
-    /// providers whose names differ by a suffix ("OpenCode" and "OpenCode Go"), so a
-    /// bare "the provider rejected the key" left the reader guessing which one was tested.
-    /// </summary>
-    private ProviderConnectionTest NameTheProvider(ProviderConnectionTest test)
+    private void ApplyFetchedModels(ProviderCatalogState state)
     {
-        var name = ProviderButtonText.Trim();
-        return name.Length == 0 || name == NoProviderLabel
-            ? test
-            : test with { Message = $"{name}: {test.Message}" };
+        ProviderModels.Clear();
+        if (state.Catalog.Count > 0)
+        {
+            foreach (var model in state.Catalog)
+            {
+                if (!string.IsNullOrWhiteSpace(model.Id))
+                    ProviderModels.Add(new ProviderModelRow(model));
+            }
+        }
+        else
+        {
+            foreach (string id in state.Models)
+            {
+                if (!string.IsNullOrWhiteSpace(id))
+                    ProviderModels.Add(new ProviderModelRow(new ProviderCatalogModel { Id = id }));
+            }
+        }
+
+        OnPropertyChanged(nameof(HasProviderModels));
     }
 
     /// <summary>
@@ -361,6 +390,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             SetKeyStatus(string.Empty, ProviderConnectionTest.NeutralTone);
             // The catalog is known by now, so the stored choice resolves against it.
             SetCurrentProvider(ProviderSetupGuidance.EffectiveStoredChoice(settings.BackendChoice, settings));
+            ResetProviderModels();
             _catalog?.SetBackend(ProviderChoice);
             ProviderOverviewMessage = _modelsDevLoadFailed
                 ? "The provider list is unavailable. Your saved providers are still shown. Choose Retry to reload."
@@ -475,8 +505,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             if (!HasUnsavedKey) ClearSavedKeyInBox();
             _keyProbe.Invalidate();
             SetKeyStatus(string.Empty, ProviderConnectionTest.NeutralTone);
-            ShowProviderTest(new ProviderConnectionTest(ProviderConnectionTest.NeutralTone,
-                "Not tested yet. The test checks the key and loads the model list."));
+            ResetProviderModels();
         }
 
         ProviderChoice = choice;
@@ -897,12 +926,21 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         ModelsDevKeyStatusTone = tone;
     }
 
-    private void ShowProviderTest(ProviderConnectionTest result, string? errorCode = null)
+    private void ShowProviderModelsStatus(ProviderConnectionTest result, string? errorCode = null)
     {
-        ProviderTestMessage = result.Message;
-        ProviderTestTone = result.Tone;
+        ProviderModelsStatus = result.Message;
+        ProviderModelsStatusTone = result.Tone;
         string code = errorCode?.Trim() ?? string.Empty;
-        ProviderTestErrorCode = code.Length is > 0 and <= 64 ? code : null;
+        ProviderModelsErrorCode = code.Length is > 0 and <= 64 ? code : null;
+    }
+
+    /// <summary>The list starts empty on every provider/open; only an explicit fetch fills it.</summary>
+    private void ResetProviderModels()
+    {
+        ProviderModels.Clear();
+        OnPropertyChanged(nameof(HasProviderModels));
+        ShowProviderModelsStatus(new ProviderConnectionTest(
+            ProviderConnectionTest.NeutralTone, "No models fetched yet."));
     }
 
     /// <summary>
@@ -921,13 +959,13 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             // provider" sent a new user to check their network instead of the key box.
             if (IsCurrentProviderKeyMissing() && IsMissingKeyShapedFailure(state.ErrorCode))
             {
-                ShowProviderTest(new ProviderConnectionTest(
+                ShowProviderModelsStatus(new ProviderConnectionTest(
                     ProviderConnectionTest.NeutralTone, $"Add a {ProviderButtonText} API key above to load its models."),
                     state.ErrorCode);
                 return;
             }
 
-            ShowProviderTest(outcome, state.ErrorCode);
+            ShowProviderModelsStatus(outcome, state.ErrorCode);
         });
     }
 

@@ -58,7 +58,7 @@ Only an accepted or unchecked key permits the credential/settings write; rejecti
 (`provider_key_rejected`), an unavailable check (`provider_key_unverified`) or
 cancellation before commit leaves the previous key intact. Existing storage
 rollback still applies. A catalog read is not proof that the credential can
-complete model generation. The desktop connection test settles a pending key
+complete model generation. The desktop model fetch settles a pending key
 first: it waits for an in-flight check, runs a debounced one when the box still
 holds unsaved text, then forces a new catalog request instead of reusing one that
 started before the key was stored.

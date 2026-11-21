@@ -20,7 +20,7 @@ public sealed class CatalogFailureCopyParityTests
         {
             Assert.True(
                 AgentFailureCopy.Table.ContainsKey(code),
-                $"'{code}' is phrased by the connection test but missing from AgentFailureCopy.");
+                $"'{code}' is phrased by the provider model fetch but missing from AgentFailureCopy.");
         }
     }
 

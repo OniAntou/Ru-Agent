@@ -67,7 +67,7 @@ public sealed partial class MainWindow
                 shortcut: KeyboardShortcutCatalog.KeysFor(KeyboardShortcutCatalog.OpenSettings), glyph: ""),
             new("settings-providers", "Models & Providers", "Settings",
                 () => { OpenSettingsPopup(); _settingsView?.ShowProviders(); },
-                hint: "Provider, API key and connection test",
+                hint: "Provider, API key and model list",
                 canRun: () => _settingsView is not null, glyph: ""),
             new("settings-updates", "Check for updates", "Settings",
                 () => { OpenSettingsPopup(); _settingsView?.ShowUpdates(); },

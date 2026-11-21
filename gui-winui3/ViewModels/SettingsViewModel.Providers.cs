@@ -106,7 +106,7 @@ public sealed partial class SettingsViewModel
             }
             if (!await SaveSettingsAsync())
             {
-                ShowProviderTest(new ProviderConnectionTest(ProviderConnectionTest.ErrorTone,
+                ShowProviderModelsStatus(new ProviderConnectionTest(ProviderConnectionTest.ErrorTone,
                     "Could not save changes. Try again before leaving this provider."));
                 return;
             }

@@ -21,6 +21,7 @@ public sealed class CliImagePolicyTests
     [InlineData("Main.cs", true)]
     [InlineData("data.json", true)]
     [InlineData("run.ps1", true)]
+    [InlineData("logo.svg", true)]
     [InlineData("cat.png", false)]
     [InlineData("archive.zip", false)]
     public void IsTextOrCodeFile_ClassifiesByExtension(string name, bool expected) =>

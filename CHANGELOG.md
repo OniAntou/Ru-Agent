@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(attachments)**: An `.svg` file is recognized as text/code instead of an unsupported
+  type. A desktop chat with a project folder already attached it by workspace path, but a new
+  chat with no folder only accepts images, text/code and PDF/Office documents, and the missing
+  `.svg` entry made a normal SVG fail intake ("unsupported") even though it is UTF-8 XML. The
+  picker, paste/drop, terminal inline handling and both clients' shared file-type table now
+  treat it as text; a layout SVG is still not sent as an image.
+
 - **fix(gui)**: Test connection now saves a provider key that is still inside its one-second
   debounce, and an explicit refresh restarts a catalog request that started before the key was
   stored instead of reusing its verdict. Pasting a key and testing immediately used to report

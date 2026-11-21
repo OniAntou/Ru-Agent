@@ -369,6 +369,7 @@ public sealed class ChatMessageAttachmentTests
     [InlineData("notes.md", false, true, false)]
     [InlineData("main.cs", false, true, false)]
     [InlineData("data.csv", false, true, false)]
+    [InlineData("logo.svg", false, true, false)]
     [InlineData("photo.PNG", true, false, false)]
     [InlineData("photo.GIF", true, false, false)]
     [InlineData("scan.TIFF", true, false, false)]

@@ -69,6 +69,7 @@ public sealed class AttachmentHelpersTests
     [InlineData("Dockerfile", true)]
     [InlineData("app.vue", true)]
     [InlineData("settings.jsonc", true)]
+    [InlineData("logo.svg", true)]
     [InlineData("archive.zip", false)]
     public void Both_clients_share_one_text_file_list(string name, bool expected) =>
         Assert.Equal(expected, AttachmentFileTypes.IsTextOrCodeFile(name));

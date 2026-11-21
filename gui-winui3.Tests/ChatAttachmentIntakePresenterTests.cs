@@ -9,6 +9,7 @@ public sealed class ChatAttachmentIntakePresenterTests
     [InlineData("image.PNG", 100, 0, true, null)]
     [InlineData("image.GIF", 100, 0, true, null)]
     [InlineData("source.cs", 100, 0, true, null)]
+    [InlineData("logo.svg", 100, 0, true, null)]
     [InlineData("report.docx", 100, 0, true, null)]
     [InlineData("book.xlsx", 100, 0, true, null)]
     [InlineData("deck.pptx", 100, 0, true, null)]

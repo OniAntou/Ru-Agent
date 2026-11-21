@@ -31,7 +31,7 @@ public static class AttachmentFileTypes
 
         return ext switch
         {
-            ".txt" or ".md" or ".markdown" or ".json" or ".jsonc" or ".xml" or ".yaml" or ".yml"
+            ".txt" or ".md" or ".markdown" or ".json" or ".jsonc" or ".xml" or ".svg" or ".yaml" or ".yml"
             or ".csv" or ".tsv" or ".cs" or ".py" or ".js" or ".ts" or ".jsx" or ".tsx" or ".html" or ".htm"
             or ".css" or ".scss" or ".sass" or ".less" or ".sql" or ".sh" or ".bash" or ".zsh" or ".bat"
             or ".cmd" or ".ps1" or ".psm1" or ".psd1" or ".rs" or ".go" or ".cpp" or ".cc" or ".c" or ".h"

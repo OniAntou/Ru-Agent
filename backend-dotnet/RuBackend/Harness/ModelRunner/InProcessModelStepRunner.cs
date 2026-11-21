@@ -102,6 +102,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         long publishedSequences = 0;
         string effectiveEffort = "unknown";
         string selectedEffort = "unknown";
+        string? lastProviderRetryCode = null;
         ProviderBootstrapData? sentWith = null;
         var historyRecoveryCode = (string?)null;
 
@@ -169,7 +170,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                     result.Usage,
                     result.ToolCalls.Count == 0 ? result.ResponsesMessages : null);
                 return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText,
-                    result.ProviderContinuation, attempt + 1, effectiveEffort, selectedEffort);
+                    result.ProviderContinuation, attempt + 1, effectiveEffort, selectedEffort,
+                    lastProviderRetryCode);
             }
             catch (ModelStepException error) when (ProviderRetryPolicy.CanRetry(
                 error.Retryable, error.RetryAfter, attempt, cancellationToken.IsCancellationRequested))
@@ -189,6 +191,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 // A model-formatting rejection is handed back to the model on the
                 // next attempt instead of failing the run closed.
                 selectionFeedbackCode = error.Code;
+                lastProviderRetryCode = error.Code;
                 attempt++;
             }
             catch (ModelStepException error) when (historyRecoveryCode is null

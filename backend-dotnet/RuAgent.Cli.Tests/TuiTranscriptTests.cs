@@ -856,11 +856,13 @@ public sealed class TuiTranscriptTests
         var (transcript, output) = Create();
         transcript.BeginTurn();
         transcript.ApplyActivity(Activity(AgentActivityKind.Compaction, AgentActivityState.Completed, count: 12, durationMs: 1400));
-        transcript.ApplyActivity(Activity(AgentActivityKind.Retry, AgentActivityState.Started, fileName: "README.md", count: 2));
+        transcript.ApplyActivity(Activity(AgentActivityKind.Retry, AgentActivityState.Started,
+            fileName: "README.md", count: 2, safeCode: "tool_transport_error"));
 
         var rows = Rows(output);
         Assert.Contains(rows, row => row.Contains("context compacted · 12 items · 1.4s", StringComparison.Ordinal));
-        Assert.Contains(rows, row => row.Contains("retrying README.md", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Contains("retrying after a tool transport error · README.md",
+            StringComparison.Ordinal));
     }
 
     [Fact]

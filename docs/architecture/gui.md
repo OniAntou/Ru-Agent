@@ -268,6 +268,16 @@ Rows the live feed watched happen also move and keep time
 (`AgentActivityItem.Live.cs`). Only `AgentActivityFeedPresenter` marks a row as
 watched: it records when the row arrived and, when the feed saw it start running,
 when it started. Rows loaded from history carry neither, and a later live frame for
+
+Retry rows name their cause. The Host keeps the bounded cause in the activity's
+`safe_code` — `tool_transport_error` for the one read-only transport retry,
+`provider_rate_limited`/`provider_timeout`/`provider_server_error` and `protocol_failure`
+for provider retries, `repeated_tool_call`, `model_output_truncated`,
+`model_commentary_only`, `unverified_after_tool_failure`, `empty_model_reply`,
+`invalid_selection`, `context_window_exceeded` and the other recovery-note markers — and
+`AgentRetryCopy` turns it into "Retried after a truncated reply" for both the desktop row
+and the terminal notice. A legacy or future code keeps its raw token instead of being
+replaced by a generic cause.
 such a row starts no clock, so a reopened transcript does not replay motion or count
 from the moment it was reopened.
 

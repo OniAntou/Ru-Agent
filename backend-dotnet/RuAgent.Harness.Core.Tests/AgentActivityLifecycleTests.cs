@@ -69,6 +69,38 @@ public sealed class AgentActivityLifecycleTests
     }
 
     [Fact]
+    public async Task Provider_retry_publishes_its_cause_before_the_step_completes()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(new ModelStepResult(
+            new AssistantStep("done", [], AssistantFinishReason.Stop, 1),
+            SystemPromptComposer.Compose(SystemPromptContext.Empty).Receipt,
+            providerAttempts: 2,
+            lastProviderRetryCode: "provider_rate_limited"));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, new FakeToolGateway(), store, sink);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        var retry = Assert.Single(
+            sink.Items,
+            item => item.Activity.Kind == AgentActivityKind.Retry);
+        Assert.Equal("provider_rate_limited", retry.Activity.SafeCode);
+        Assert.Equal(2, retry.Activity.Count);
+        // The retry row sits between the thinking row it interrupted and its completion.
+        var started = sink.Items.FindIndex(item =>
+            item.Activity.Kind == AgentActivityKind.Thinking
+            && item.Activity.State == AgentActivityState.Started);
+        var completed = sink.Items.FindIndex(item =>
+            item.Activity.Kind == AgentActivityKind.Thinking
+            && item.Activity.State == AgentActivityState.Completed);
+        Assert.True(started < sink.Items.IndexOf(retry));
+        Assert.True(sink.Items.IndexOf(retry) < completed);
+    }
+
+    [Fact]
     public async Task Thinking_completed_carries_reasoning_as_detail()
     {
         var model = new FakeModelStepRunner();
@@ -174,7 +206,7 @@ public sealed class AgentActivityLifecycleTests
             sink.Items,
             item => item.Activity.Kind == AgentActivityKind.Retry).Activity;
         Assert.Equal(AgentActivityState.Completed, retry.State);
-        Assert.Equal("retrying", retry.SafeCode);
+        Assert.Equal("tool_transport_error", retry.SafeCode);
         Assert.Equal(2, retry.Count);
         Assert.Equal("README.md", retry.FileName);
         Assert.Equal(2, gateway.ExecuteAttempts.Count);

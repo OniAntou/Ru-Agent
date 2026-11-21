@@ -306,14 +306,22 @@ public sealed class AgentActivityItemTests
         var retryStarted = new AgentActivityItem(Activity(
             AgentActivityState.Started,
             kind: AgentActivityKind.Retry,
-            count: 2));
-        Assert.Equal("Retrying (attempt 2)", retryStarted.DisplayText);
+            count: 2,
+            safeCode: "model_output_truncated"));
+        Assert.Equal("Retrying after a truncated reply (attempt 2)", retryStarted.DisplayText);
 
         var retryCompleted = new AgentActivityItem(Activity(
             AgentActivityState.Completed,
             kind: AgentActivityKind.Retry,
-            count: 2));
-        Assert.Equal("Retried", retryCompleted.DisplayText);
+            count: 2,
+            safeCode: "tool_transport_error"));
+        Assert.Equal("Retried after a tool transport error", retryCompleted.DisplayText);
+
+        var retryUnknown = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Retry,
+            safeCode: "future_retry_cause"));
+        Assert.Equal("Retried after an earlier failure (future_retry_cause)", retryUnknown.DisplayText);
     }
 
     [Fact]

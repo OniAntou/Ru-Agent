@@ -260,7 +260,7 @@ internal sealed partial class AgentRunStepHandlers
         AgentActivityProjector.PublishSafe(
             _activitySink,
             run.RunId,
-            AgentActivityProjector.ProjectRetry(modelStepId, priorNoteCount + 1));
+            AgentActivityProjector.ProjectRetry(modelStepId, priorNoteCount + 1, causeSafeCode: noteCode));
         return new AgentRunStepResult(committed, Array.Empty<ToolExecutionReceipt>());
     }
 
@@ -323,7 +323,7 @@ internal sealed partial class AgentRunStepHandlers
         AgentActivityProjector.PublishSafe(
             _activitySink,
             run.RunId,
-            AgentActivityProjector.ProjectRetry(modelStepId, priorNoteCount + 1));
+            AgentActivityProjector.ProjectRetry(modelStepId, priorNoteCount + 1, causeSafeCode: errorCode));
         return new AgentRunStepResult(committed, Array.Empty<ToolExecutionReceipt>());
     }
 
@@ -339,6 +339,7 @@ internal sealed partial class AgentRunStepHandlers
         ModelStepId modelStepId,
         AssistantStep step,
         string? receiptCode,
+        int priorNoteCount,
         int droppedCount,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
@@ -416,6 +417,11 @@ internal sealed partial class AgentRunStepHandlers
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
+        AgentActivityProjector.PublishSafe(
+            _activitySink,
+            run.RunId,
+            AgentActivityProjector.ProjectRetry(modelStepId, priorNoteCount + 1,
+                causeSafeCode: "repeated_tool_call"));
         return new AgentRunStepResult(committed, Array.Empty<ToolExecutionReceipt>());
     }
 

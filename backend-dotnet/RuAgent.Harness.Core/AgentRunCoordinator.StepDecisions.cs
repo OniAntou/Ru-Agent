@@ -101,6 +101,7 @@ public sealed partial class AgentRunCoordinator
                     modelStepId,
                     step,
                     receiptCode,
+                    ConsecutiveToolCallGuard.RepairNoteCount(context),
                     invocation.ModelDroppedCount,
                     invocation.PromptReceiptPayload,
                     invocation.PromptComposedEvent,

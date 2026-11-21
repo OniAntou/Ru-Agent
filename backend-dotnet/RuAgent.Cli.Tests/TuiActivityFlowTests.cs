@@ -111,7 +111,7 @@ public sealed class TuiActivityFlowTests
 
     [Theory]
     [InlineData(AgentActivityKind.Compaction, "Compacting context")]
-    [InlineData(AgentActivityKind.Retry, "Retrying request")]
+    [InlineData(AgentActivityKind.Retry, "Retrying after an earlier failure")]
     public void Maintenance_work_keeps_its_own_phase(AgentActivityKind kind, string expected)
     {
         var (renderer, _) = Create();
@@ -158,13 +158,13 @@ public sealed class TuiActivityFlowTests
     }
 
     [Fact]
-    public void A_tool_retry_names_the_tool_work_instead_of_a_model_request()
+    public void A_tool_retry_names_the_tool_work_and_its_cause()
     {
         var (renderer, _) = Create();
         renderer.Transcript.ApplyActivity(Activity("retry", AgentActivityKind.Retry, "Read", AgentActivityState.Started) with
-        { FileName = "src/Session.cs", Count = 2 });
+        { FileName = "src/Session.cs", Count = 2, SafeCode = "tool_transport_error" });
         var phase = renderer.PresentActivity(100);
-        Assert.Equal("Retrying tool", phase.Action);
+        Assert.Equal("Retrying after a tool transport error", phase.Action);
         Assert.Contains("src/Session.cs", phase.Target);
     }
 

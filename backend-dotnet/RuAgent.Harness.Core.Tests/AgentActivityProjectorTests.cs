@@ -610,7 +610,8 @@ public sealed partial class AgentActivityProjectorTests
             "edit",
             "{\"path\":\"D:\\\\LLM\\\\ChatView.xaml\",\"old_string\":\"a\",\"new_string\":\"b\"}");
 
-        var activity = AgentActivityProjector.ProjectRetry(proposal, attempt: 2);
+        var activity = AgentActivityProjector.ProjectRetry(proposal, attempt: 2,
+            causeSafeCode: "tool_transport_error");
 
         Assert.Equal("act_44444444444444444444444444444444_retry", activity.ActivityId);
         Assert.Equal(AgentActivityKind.Retry, activity.Kind);
@@ -618,7 +619,7 @@ public sealed partial class AgentActivityProjectorTests
         Assert.Equal("ChatView.xaml", activity.FileName);
         Assert.Equal("Edit", activity.ToolDisplay);
         Assert.Equal(2, activity.Count);
-        Assert.Equal("retrying", activity.SafeCode);
+        Assert.Equal("tool_transport_error", activity.SafeCode);
     }
 
     /// <summary>

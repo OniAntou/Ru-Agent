@@ -258,13 +258,14 @@ public sealed class TuiInteractiveTests
             renderer.BeginTurn();
 
             renderer.RenderFrame(ActivityFrame(AgentActivityKind.Compaction, AgentActivityState.Completed, count: 12, durationMs: 1400));
-            renderer.RenderFrame(ActivityFrame(AgentActivityKind.Retry, AgentActivityState.Started, fileName: "README.md"));
+            renderer.RenderFrame(ActivityFrame(AgentActivityKind.Retry, AgentActivityState.Started,
+                fileName: "README.md", safeCode: "tool_transport_error"));
 
             var output = sw.ToString();
             Assert.Contains("context compacted", output, StringComparison.Ordinal);
             Assert.Contains("12 items", output, StringComparison.Ordinal);
             Assert.Contains("1.4s", output, StringComparison.Ordinal);
-            Assert.Contains("retrying README.md", output, StringComparison.Ordinal);
+            Assert.Contains("retrying after a tool transport error · README.md", output, StringComparison.Ordinal);
         }
     }
 
@@ -302,7 +303,8 @@ public sealed class TuiInteractiveTests
         string? fileName = null,
         int? count = null,
         int? durationMs = null,
-        string? toolDisplay = null) => new(
+        string? toolDisplay = null,
+        string safeCode = "succeeded") => new(
         null,
         "agent.activity",
         JsonSerializer.Serialize(new
@@ -316,7 +318,7 @@ public sealed class TuiInteractiveTests
                 file_name = fileName,
                 count,
                 duration_ms = durationMs,
-                safe_code = "succeeded",
+                safe_code = safeCode,
                 tool_display = toolDisplay,
             }),
         }),

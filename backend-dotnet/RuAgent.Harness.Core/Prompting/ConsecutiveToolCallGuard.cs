@@ -159,7 +159,7 @@ public static class ConsecutiveToolCallGuard
         return true;
     }
 
-    private static int RepairNoteCount(ModelContextSnapshot context)
+    internal static int RepairNoteCount(ModelContextSnapshot context)
     {
         var count = 0;
         var oldest = AgentRecoveryNotes.WindowStart(context);

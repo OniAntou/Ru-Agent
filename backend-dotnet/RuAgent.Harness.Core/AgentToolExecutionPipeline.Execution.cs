@@ -84,7 +84,8 @@ internal sealed partial class AgentToolExecutionPipeline
                     AgentActivityProjector.PublishSafe(
                         _activitySink,
                         runId,
-                        AgentActivityProjector.ProjectRetry(retryProposal, attempt + 1));
+                        AgentActivityProjector.ProjectRetry(retryProposal, attempt + 1,
+                            causeSafeCode: "tool_transport_error"));
                 }
             }
             catch (ToolTransportException)

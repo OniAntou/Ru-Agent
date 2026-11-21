@@ -45,7 +45,8 @@ internal sealed partial class AgentRunStepHandlers
         var next = run.Advance(run.Status, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow,
             events.Length, _time.UtcNow);
         var committed = await CommitAsync(run, next, events, [payload], [], ct).ConfigureAwait(false);
-        AgentActivityProjector.PublishSafe(_activitySink, run.RunId, AgentActivityProjector.ProjectRetry(stepId, priorNotes + 1));
+        AgentActivityProjector.PublishSafe(_activitySink, run.RunId, AgentActivityProjector.ProjectRetry(
+            stepId, priorNotes + 1, causeSafeCode: "context_window_exceeded"));
         return new AgentRunStepResult(committed, []);
     }
 }

@@ -65,14 +65,22 @@ public sealed partial class TuiTranscript
             case AgentActivityKind.Retry:
                 if (_fullScreenCards)
                 {
-                    var action = string.IsNullOrWhiteSpace(activity.ToolDisplay) ? "Retrying request" : "Retrying tool";
+                    var action = AgentRetryCopy.Started(activity.SafeCode, null);
                     var target = HasToolContext(activity) ? BuildTarget(activity) : null;
-                    var attempt = activity.Count is > 0 ? $" · attempt {activity.Count}" : string.Empty;
-                    Notice(action.ToLowerInvariant() + (target is null ? string.Empty : " · " + target) + attempt, TuiToken.Warn);
+                    var parts = new List<string> { action.ToLowerInvariant() };
+                    if (target is not null) parts.Add(target);
+                    if (activity.Count is > 0) parts.Add($"attempt {activity.Count}");
+                    Notice(string.Join(" · ", parts), TuiToken.Warn);
                     _status.SetActivity(action, target);
                     _status.SetState(TuiRunState.Retrying);
                 }
-                else Notice($"retrying {RetryTarget(activity)}", TuiToken.Warn);
+                else
+                {
+                    var target = RetryTarget(activity);
+                    var reason = AgentRetryCopy.Notice(activity.SafeCode);
+                    Notice(string.IsNullOrWhiteSpace(target) ? reason : $"{reason} · {target}",
+                        TuiToken.Warn);
+                }
                 return;
 
             case AgentActivityKind.Status:

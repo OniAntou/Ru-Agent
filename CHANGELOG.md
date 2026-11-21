@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(activity)**: Retry rows now say why the run is trying again. The Host puts the bounded
+  cause in the activity's safe code — `tool_transport_error` for the read-only transport retry,
+  `provider_rate_limited`/`provider_timeout`/`provider_server_error`/`provider_transport_error` and
+  `protocol_failure` for provider retries, `repeated_tool_call`, `model_output_truncated`,
+  `model_commentary_only`, `unverified_after_tool_failure`, `empty_model_reply`,
+  `invalid_selection`, `context_window_exceeded`, and the other recovery-note markers — and the
+  terminal and desktop resolve it through the shared `AgentRetryCopy` ("Retried after a truncated
+  reply"). A legacy or unknown code keeps its raw token instead of a generic cause.
+
 - **fix(harness)**: Repaired history keeps the newest complete batch when a provider reuses call
   ids, rebuilds the provider reasoning replay for exactly the batches it keeps, and falls back to
   structure-free dialogue with one Host recovery note when that replay cannot be matched. A second

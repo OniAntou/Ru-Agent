@@ -437,13 +437,19 @@ public sealed partial class AgentRunCoordinatorTests
         var gateway = new FakeToolGateway();
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
-        var coordinator = Coordinator(model, gateway, store, contextSource: source);
+        var activities = new RecordingActivitySink();
+        var coordinator = Coordinator(model, gateway, store, contextSource: source, activitySink: activities);
 
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
         Assert.Equal(HarnessRunState.Running, result.Run.State);
         Assert.Null(result.ErrorCode);
         Assert.Empty(gateway.ExecuteAttempts);
+        var retry = Assert.Single(
+            activities.Activities,
+            activity => activity.Kind == AgentActivityKind.Retry);
+        Assert.Equal("repeated_tool_call", retry.SafeCode);
+        Assert.Equal(1, retry.Count);
         var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
         Assert.Contains(events, item =>
             item.Kind == HarnessEventKind.ModelStepCompleted
@@ -827,6 +833,7 @@ public sealed partial class AgentRunCoordinatorTests
             activities.Activities,
             activity => activity.Kind == AgentActivityKind.Retry);
         Assert.Equal(1, retry.Count);
+        Assert.Equal("unverified_after_tool_failure", retry.SafeCode);
     }
 
     [Fact]
@@ -1133,6 +1140,7 @@ public sealed partial class AgentRunCoordinatorTests
             activities.Activities,
             activity => activity.Kind == AgentActivityKind.Retry);
         Assert.Equal(1, retry.Count);
+        Assert.Equal("empty_model_reply", retry.SafeCode);
     }
 
     [Fact]
@@ -1303,6 +1311,7 @@ public sealed partial class AgentRunCoordinatorTests
         Assert.Equal(AgentRecoveryNotes.MaximumModelRepairableNotes, retries.Length);
         Assert.Equal(1, retries[0].Count);
         Assert.Equal(2, retries[1].Count);
+        Assert.All(retries, retry => Assert.Equal(code, retry.SafeCode));
 
         var error = await Assert.ThrowsAsync<ModelRepairableStepException>(() =>
             coordinator.RunOneStepAsync(RunId(), CancellationToken.None));

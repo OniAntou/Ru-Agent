@@ -413,6 +413,7 @@ public static class AgentActivityProjector
     public static AgentActivity ProjectRetry(
         ToolProposal proposal,
         int attempt,
+        string causeSafeCode = "retrying",
         AgentActivityState state = AgentActivityState.Completed,
         int? durationMs = null)
     {
@@ -431,18 +432,20 @@ public static class AgentActivityProjector
             metadata.Added,
             metadata.Removed,
             ClampDuration(durationMs),
-            SafeCodeFor(state, "retrying"),
+            SafeCodeFor(state, causeSafeCode),
             ToolDisplay: ToolDisplayFor(proposal));
     }
 
     /// <summary>
     /// Projects a model-step retry: the run is stepping again after a bounded
     /// recovery note, so unlike the tool-proposal overload there is no tool to
-    /// describe. The row keeps the same retry kind, count and safe code.
+    /// describe. The row keeps the same retry kind, count and the cause code the
+    /// caller names, so the reader can tell why the step is running again.
     /// </summary>
     public static AgentActivity ProjectRetry(
         ModelStepId modelStepId,
         int attempt,
+        string causeSafeCode = "retrying",
         AgentActivityState state = AgentActivityState.Completed,
         int? durationMs = null) =>
         new(
@@ -451,7 +454,7 @@ public static class AgentActivityProjector
             state,
             Count: ClampCount(attempt),
             DurationMs: ClampDuration(durationMs),
-            SafeCode: SafeCodeFor(state, "retrying"));
+            SafeCode: SafeCodeFor(state, causeSafeCode));
 
     /// <summary>Safe code of an <c>agent_wait</c> row while the root is parked on its children.</summary>
     public const string SubagentWaitingCode = "waiting_subagents";

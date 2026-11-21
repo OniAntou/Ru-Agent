@@ -271,6 +271,19 @@ internal sealed class AgentModelInvocation
                 modelResult.Usage, step.ResponsesMessages);
         }
         assistantStream.Complete();
+        if (modelResult.ProviderAttempts > 1)
+        {
+            // The step succeeded after retrying the provider. The row names the bounded
+            // failure that made the earlier attempt unusable, so a visible pause is not
+            // mistaken for a slow model.
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectRetry(
+                    modelStepId,
+                    modelResult.ProviderAttempts,
+                    causeSafeCode: modelResult.LastProviderRetryCode ?? "provider_retry"));
+        }
         AgentActivityProjector.PublishSafe(
             _activitySink,
             run.RunId,

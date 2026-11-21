@@ -389,7 +389,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         AgentActivityKind.Compaction => Count is { } compacting
             ? (compacting == 1 ? "Compacting 1 context item" : $"Compacting {compacting} context items")
             : "Compacting context",
-        AgentActivityKind.Retry => Count is { } attempt ? $"Retrying (attempt {attempt})" : "Retrying",
+        AgentActivityKind.Retry => AgentRetryCopy.Started(SafeCode, Count),
         AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
         AgentActivityKind.Status => StatusWaitingText(SafeCode),
         AgentActivityKind.Advisor => "Consulting the advisor",
@@ -433,7 +433,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         AgentActivityKind.Compaction => Count is { } compacted
             ? (compacted == 1 ? "Compacted 1 context item" : $"Compacted {compacted} context items")
             : "Compacted context",
-        AgentActivityKind.Retry => "Retried",
+        AgentActivityKind.Retry => AgentRetryCopy.Completed(SafeCode),
         AgentActivityKind.Status => StatusText(SafeCode),
         AgentActivityKind.Advisor => "Consulted the advisor",
         _ => "Completed",

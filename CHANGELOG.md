@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: Repaired history keeps the newest complete batch when a provider reuses call
+  ids, rebuilds the provider reasoning replay for exactly the batches it keeps, and falls back to
+  structure-free dialogue with one Host recovery note when that replay cannot be matched. A second
+  bounded pass always reduces structure instead of repeating the same repair, and provider
+  continuation reader failures (`ProviderCatalogException`) are now recognized alongside the
+  conversation builder's own codes.
+
 - **fix(harness)**: More Host-side step input failures no longer end a run. A missing prompt in
   stored context, an oversized history or request, and oversized reasoning replay rebuild on
   repaired text-only history (or a plain continuation prompt); a provider finish reason the

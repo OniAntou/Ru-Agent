@@ -594,6 +594,28 @@ public sealed partial class InProcessModelStepRunnerTests
         Assert.Equal(2, provider.Calls);
     }
 
+    [Fact]
+    public async Task Unreadable_provider_replay_falls_back_to_structure_free_history()
+    {
+        var provider = new ScriptedProvider((_, _) => Deltas(
+            new ModelDelta("ok", [], completed: true, finishReason: "stop")));
+        var repairs = new List<string>();
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
+        {
+            StepRetryBackoffsOverride = [TimeSpan.Zero],
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap(replayChatReasoning: true)),
+            LoadProviderContinuationsAsync = (_, _, _, _) =>
+                throw new ProviderCatalogException("provider_continuation_missing"),
+            ObserveHistoryRepair = repairs.Add,
+        };
+
+        var result = await runner.RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        Assert.Equal("ok", result.Step.Text);
+        Assert.Equal(1, provider.Calls);
+        Assert.Equal(["provider_continuation_missing"], repairs);
+    }
+
     private static InProcessModelStepRunner Runner(
         ScriptedProvider provider, ProviderBootstrapData? bootstrap = null) =>
         new(new ModelStepService(provider))
@@ -605,7 +627,8 @@ public sealed partial class InProcessModelStepRunnerTests
     private static ProviderBootstrapData Bootstrap(
         bool acceptsImageInput = false,
         int? contextWindowTokens = 32_768,
-        int? outputTokenReserve = null) => new(
+        int? outputTokenReserve = null,
+        bool replayChatReasoning = false) => new(
         "Kilo",
         "chat_completions",
         new Uri("https://step-provider.invalid/v1"),
@@ -613,6 +636,7 @@ public sealed partial class InProcessModelStepRunnerTests
         "step-secret",
         contextWindowTokens: contextWindowTokens,
         outputTokenReserve: outputTokenReserve,
+        replayChatReasoning: replayChatReasoning,
         acceptsImageInput: acceptsImageInput);
 
     private static ModelStepRequest Request(SystemPromptContext? promptContext = null) => new(

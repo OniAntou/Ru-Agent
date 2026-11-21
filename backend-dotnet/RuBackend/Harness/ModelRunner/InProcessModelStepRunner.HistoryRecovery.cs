@@ -2,6 +2,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Models;
+using RuBackend.Providers;
 
 namespace RuBackend.Harness.ModelRunner;
 
@@ -20,6 +21,18 @@ public sealed partial class InProcessModelStepRunner
             or "model_history_too_large" or "provider_continuation_too_large"
             or "request_too_large" or "invalid_request" or "missing_user_prompt";
 
+    /// <summary>
+    /// The same bounded code can arrive from the Host's own conversation builder
+    /// (<see cref="ModelRunnerProtocolException"/>) or from the provider-continuation
+    /// reader (<see cref="ProviderCatalogException"/>), so recovery must recognize both.
+    /// </summary>
+    private static string? RecoverableStepInputCode(Exception error) => error switch
+    {
+        ModelRunnerProtocolException runner when IsRecoverableStepInputFailure(runner.Code) => runner.Code,
+        ProviderCatalogException catalog when IsRecoverableStepInputFailure(catalog.Code) => catalog.Code,
+        _ => null,
+    };
+
     private void ReportHistoryRepair(string code)
     {
         try
@@ -32,17 +45,33 @@ public sealed partial class InProcessModelStepRunner
         }
     }
 
+    private const string HistoryRepairNote =
+        "[host recovery note] Earlier tool calls and their results could not be replayed and were "
+        + "left out of this request. Check the current workspace state before repeating an action.";
+
     private static (string Prompt, IReadOnlyList<ModelTurn> Messages) RecoverConversation(
-        ModelContextSnapshot context, bool hasImages, string errorCode)
+        ModelContextSnapshot context, bool hasImages, string errorCode, bool forceStructureFree = false)
     {
-        if (errorCode == "model_history_invalid")
+        // A provider-continuation failure means replayed reasoning cannot be matched;
+        // keeping assistant tool calls without their replay is the unsafe shape, so
+        // those fall straight through to the structure-free form. A second recovery
+        // pass must also reduce structure differently from the first failure.
+        if (!forceStructureFree
+            && errorCode is not ("provider_continuation_invalid" or "provider_continuation_missing"
+                or "provider_continuation_too_large"))
         {
             try
             {
                 var sanitized = ModelHistoryRepair.Sanitize(context.Entries);
-                var reparsed = new ModelContextSnapshot(sanitized, ReadOnlyMemory<byte>.Empty);
-                var (prompt, _, messages) = BuildConversation(reparsed, hasImages);
-                return (prompt, messages!);
+                // A ceiling failure that dropped nothing is the same size after repair;
+                // go straight to the structure-free form instead of failing it twice.
+                var sizeFailure = errorCode is "request_too_large" or "model_history_too_large";
+                if (errorCode != "missing_user_prompt" && !(sizeFailure && !sanitized.DroppedAny))
+                {
+                    var reparsed = new ModelContextSnapshot(sanitized.Entries, ReadOnlyMemory<byte>.Empty);
+                    var (prompt, _, messages) = BuildConversation(reparsed, hasImages);
+                    return (prompt, messages!);
+                }
             }
             catch (Exception error) when (error is ModelRunnerProtocolException
                 or ArgumentException or InvalidOperationException)
@@ -61,11 +90,11 @@ public sealed partial class InProcessModelStepRunner
     /// the run, even if a future repair path itself throws.
     /// </summary>
     private static (string Prompt, IReadOnlyList<ModelTurn> Messages) RecoverConversationOrLastResort(
-        ModelContextSnapshot context, bool hasImages, string errorCode)
+        ModelContextSnapshot context, bool hasImages, string errorCode, bool forceStructureFree = false)
     {
         try
         {
-            return RecoverConversation(context, hasImages, errorCode);
+            return RecoverConversation(context, hasImages, errorCode, forceStructureFree);
         }
         catch (Exception error) when (error is not (OperationCanceledException or OutOfMemoryException))
         {
@@ -78,8 +107,8 @@ public sealed partial class InProcessModelStepRunner
         RecoverConversationOrLastResort(context, hasImages, "model_history_invalid");
 
     internal static (string Prompt, IReadOnlyList<ModelTurn> Messages) RecoverConversationForCodeForTests(
-        ModelContextSnapshot context, string errorCode, bool hasImages = false) =>
-        RecoverConversationOrLastResort(context, hasImages, errorCode);
+        ModelContextSnapshot context, string errorCode, bool hasImages = false, bool forceStructureFree = false) =>
+        RecoverConversationOrLastResort(context, hasImages, errorCode, forceStructureFree);
 
     internal static (string Prompt, IReadOnlyList<ModelTurn> Messages) BuildTextOnlyConversationForTests(
         IReadOnlyList<ModelContextEntry> entries, bool hasImages = false) =>
@@ -94,7 +123,6 @@ public sealed partial class InProcessModelStepRunner
         IReadOnlyList<ModelContextEntry> entries,
         bool hasImages)
     {
-        var systems = new List<ModelTurn>();
         var units = new List<List<ModelTurn>>();
         var userBlocks = new List<string>();
         foreach (var entry in entries)
@@ -109,7 +137,7 @@ public sealed partial class InProcessModelStepRunner
                 FlushUserUnits(units, userBlocks);
                 if (ConversationText(entry.Content) is { } system)
                 {
-                    systems.Add(new ModelTurn("system", system));
+                    units.Add([new ModelTurn("system", system)]);
                 }
 
                 continue;
@@ -152,10 +180,8 @@ public sealed partial class InProcessModelStepRunner
             units.Add([new ModelTurn("user", userBlocks[index])]);
         }
 
-        if (systems.Count > 0)
-        {
-            units.InsertRange(0, systems.Select(turn => new List<ModelTurn> { turn }));
-        }
+        // The structure below is gone; say so once, immediately before the request.
+        units.Add([new ModelTurn("user", HistoryRepairNote)]);
 
         var messages = FitModelMessagesToBudget(units);
         var prompt = userBlocks.Count > 0

@@ -33,20 +33,21 @@ public sealed class InProcessModelHistoryRecoveryTests
     }
 
     [Fact]
-    public void Duplicate_provider_call_id_across_batches_drops_only_the_later_batch()
+    public void Duplicate_provider_call_id_keeps_the_newer_batch()
     {
         var context = Snapshot(
             User("old-user", 1, "Read the file"),
             AssistantCalls("first-batch", 2, ("call_dup", "read")),
-            Receipt("first-receipt", 3, "internal-first", "call_dup"),
+            Receipt("first-receipt", 3, "internal-first", "call_dup", "old result"),
             AssistantCalls("second-batch", 4, ("call_dup", "read")),
-            Receipt("second-receipt", 5, "internal-second", "call_dup"),
+            Receipt("second-receipt", 5, "internal-second", "call_dup", "new result"),
             User("current-user", 6, "Continue this task"));
 
         var (prompt, messages) = InProcessModelStepRunner.RecoverConversationForTests(context);
 
         Assert.Equal("Continue this task", prompt);
-        Assert.Single(messages, message => message.Role == "tool");
+        var tool = Assert.Single(messages, message => message.Role == "tool");
+        Assert.Equal("new result", tool.Content);
         var call = Assert.Single(messages, message => message.ToolCalls.Count > 0);
         Assert.Equal("call_dup", Assert.Single(call.ToolCalls).Id);
     }
@@ -88,26 +89,116 @@ public sealed class InProcessModelHistoryRecoveryTests
         Assert.Contains(messages, message => message.Role == "user" && message.Content == "Earlier request");
         Assert.Contains(messages, message => message.Role == "assistant" && message.Content == "Earlier answer");
         Assert.Contains(messages, message => message.Content.Contains("compacted earlier work", StringComparison.Ordinal));
+        Assert.Contains(messages, message => message.Content.Contains("could not be replayed", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void Request_ceiling_failure_continues_on_text_only_dialogue()
+    public void Size_failure_without_droppable_structure_goes_text_only()
     {
         var context = Snapshot(
             User("old-user", 1, "Earlier request"),
-            ModelContextEntry.Assistant("answer", 2,
-                new AssistantStep("Earlier answer", [], AssistantFinishReason.Stop, 1)),
-            AssistantCalls("batch", 3, ("call_a", "read")),
-            Receipt("batch-receipt", 4, "internal-batch", "call_a"),
-            User("current-user", 5, "New request"));
+            AssistantCalls("batch", 2, ("call_a", "read")),
+            Receipt("batch-receipt", 3, "internal-batch", "call_a"),
+            User("current-user", 4, "New request"));
 
         var (prompt, messages) = InProcessModelStepRunner.RecoverConversationForCodeForTests(
             context, "request_too_large");
 
         Assert.Equal("New request", prompt);
         Assert.DoesNotContain(messages, message => message.Role == "tool");
-        Assert.DoesNotContain(messages, message => message.ToolCalls.Count > 0);
-        Assert.Contains(messages, message => message.Role == "assistant" && message.Content == "Earlier answer");
+        Assert.Contains(messages, message => message.Content.Contains("could not be replayed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Size_failure_with_unpaired_history_keeps_complete_batches()
+    {
+        var context = Snapshot(
+            User("old-user", 1, "Earlier request"),
+            AssistantCalls("valid-batch", 2, ("call_a", "read")),
+            Receipt("valid-receipt", 3, "internal-valid", "call_a"),
+            AssistantCalls("unpaired-batch", 4, ("call_b", "read")),
+            User("current-user", 5, "New request"));
+
+        var (prompt, messages) = InProcessModelStepRunner.RecoverConversationForCodeForTests(
+            context, "request_too_large");
+
+        Assert.Equal("New request", prompt);
+        Assert.Single(messages, message => message.Role == "tool");
+        Assert.Single(messages, message => message.ToolCalls.Count > 0);
+        Assert.DoesNotContain(messages, message => message.Content.Contains("could not be replayed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Missing_prompt_falls_back_to_text_only_with_the_repair_note()
+    {
+        var context = Snapshot(
+            ModelContextEntry.Text("system-note", 1, ModelContextRole.System, "Working state"));
+
+        var (prompt, messages) = InProcessModelStepRunner.RecoverConversationForCodeForTests(
+            context, "missing_user_prompt");
+
+        Assert.Equal("Continue.", prompt);
+        Assert.DoesNotContain(messages, message => message.Role == "tool");
+        Assert.Contains(messages, message => message.Content.Contains("could not be replayed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Recovered_newer_batch_binds_provider_replay_to_its_own_event()
+    {
+        var olderEvent = "event:evt_" + new string('a', 32);
+        var newerEvent = "event:evt_" + new string('b', 32);
+        var context = Snapshot(
+            User("old-user", 1, "Read the file"),
+            AssistantCalls(olderEvent, 2, ("call_dup", "read")),
+            Receipt("older-receipt", 3, "internal-older", "call_dup", "old result"),
+            AssistantCalls(newerEvent, 4, ("call_dup", "read")),
+            Receipt("newer-receipt", 5, "internal-newer", "call_dup", "new result"),
+            User("current-user", 6, "Continue this task"));
+
+        var (_, messages) = InProcessModelStepRunner.RecoverConversationForTests(context);
+        var eventIds = InProcessModelStepRunner.RetainedAssistantEventIdsForTests(context, messages);
+
+        Assert.Equal([newerEvent[6..]], eventIds);
+    }
+
+    [Fact]
+    public void Forced_second_recovery_reduces_structure_even_with_complete_batches()
+    {
+        var context = Snapshot(
+            User("old-user", 1, "Earlier request"),
+            AssistantCalls("batch", 2, ("call_a", "read")),
+            Receipt("batch-receipt", 3, "internal-batch", "call_a"),
+            User("current-user", 4, "New request"));
+
+        var (prompt, messages) = InProcessModelStepRunner.RecoverConversationForCodeForTests(
+            context, "request_too_large", forceStructureFree: true);
+
+        Assert.Equal("New request", prompt);
+        Assert.DoesNotContain(messages, message => message.Role == "tool");
+        Assert.Contains(messages, message => message.Content.Contains("could not be replayed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Text_only_fallback_preserves_dialogue_order_and_notes_the_omission()
+    {
+        var entries = new[]
+        {
+            User("old-user", 1, "Earlier request"),
+            ModelContextEntry.Text("note", 2, ModelContextRole.System, "Recovery note"),
+            ModelContextEntry.Assistant("answer", 3,
+                new AssistantStep("Earlier answer", [], AssistantFinishReason.Stop, 1)),
+            User("current-user", 4, "New request"),
+        };
+
+        var (prompt, messages) = InProcessModelStepRunner.BuildTextOnlyConversationForTests(entries);
+
+        Assert.Equal("New request", prompt);
+        Assert.Collection(messages,
+            message => Assert.Equal(("user", "Earlier request"), (message.Role, message.Content)),
+            message => Assert.Equal(("system", "Recovery note"), (message.Role, message.Content)),
+            message => Assert.Equal(("assistant", "Earlier answer"), (message.Role, message.Content)),
+            message => Assert.Equal("user", message.Role));
+        Assert.Contains("could not be replayed", messages[^1].Content, StringComparison.Ordinal);
     }
 
     private static ModelContextSnapshot Snapshot(params ModelContextEntry[] entries) =>
@@ -137,7 +228,8 @@ public sealed class InProcessModelHistoryRecoveryTests
         string sourceId,
         long sequence,
         string toolCallId,
-        string providerCallId) =>
+        string providerCallId,
+        string content = "result") =>
         ModelContextEntry.ToolResult(
             sourceId,
             sequence,
@@ -150,7 +242,7 @@ public sealed class InProcessModelHistoryRecoveryTests
                 null,
                 sideEffectsPossible: false,
                 providerCallId: providerCallId),
-            "result");
+            content);
 
     private static JsonElement Json(string value) => JsonDocument.Parse(value).RootElement.Clone();
 }

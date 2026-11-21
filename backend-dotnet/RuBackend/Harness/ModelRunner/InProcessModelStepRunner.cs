@@ -103,21 +103,22 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         string effectiveEffort = "unknown";
         string selectedEffort = "unknown";
         ProviderBootstrapData? sentWith = null;
-        var historyRecoveryAttempted = false;
+        var historyRecoveryCode = (string?)null;
 
         while (true)
         {
             try
             {
-                var preparedStep = attempt == 0 && !historyRecoveryAttempted
+                var preparedStep = attempt == 0 && historyRecoveryCode is null
                     ? request.Preparation as InProcessPreparedStep
                     : null;
-                if (attempt == 0 && request.Preparation is not null && preparedStep is null && !historyRecoveryAttempted)
+                if (attempt == 0 && request.Preparation is not null && preparedStep is null && historyRecoveryCode is null)
                     throw new ModelRunnerProtocolException("invalid_request", retryable: false);
                 var prepared = preparedStep?.StepRequest
                     ?? _stepService.PrepareRequest(
                         await BuildGenerationRequestAsync(request, selectionFeedbackCode, cancellationToken,
-                                forceHistoryRecovery: historyRecoveryAttempted)
+                                forceHistoryRecovery: historyRecoveryCode is not null,
+                                forcedRecoveryCode: historyRecoveryCode)
                             .ConfigureAwait(false), request.ModelStepId.Value, requireExactProjection: false, contextScope: request.RunId.Value);
                 if (prepared.EstimatedInputTokens >= 0
                     && prepared.EstimatedInputTokens
@@ -190,13 +191,13 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 selectionFeedbackCode = error.Code;
                 attempt++;
             }
-            catch (ModelStepException error) when (!historyRecoveryAttempted
+            catch (ModelStepException error) when (historyRecoveryCode is null
                 && IsRecoverableStepInputFailure(error.Code))
             {
-                // The first pass could still hand an unprojectable stored history to the
-                // step service before dispatch. Rebuild it in repaired form once.
-                historyRecoveryAttempted = true;
-                ReportHistoryRepair(error.Code);
+                // The first pass could still hand an unprojectable stored input to the
+                // step service before dispatch. Rebuild it in repaired form once; the
+                // rebuilt request reports the original code to diagnostics.
+                historyRecoveryCode = error.Code;
                 Console.Error.WriteLine(
                     $"ru.host history_repaired code={error.Code} attempt={attempt + 1}");
                 continue;
@@ -251,9 +252,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         }
         catch (ModelStepException error) when (IsRecoverableStepInputFailure(error.Code))
         {
-            ReportHistoryRepair(error.Code);
             generationRequest = await BuildGenerationRequestAsync(request, null, cancellationToken,
-                    preparingSnapshot: true, forceHistoryRecovery: true)
+                    preparingSnapshot: true, forceHistoryRecovery: true, forcedRecoveryCode: error.Code)
                 .ConfigureAwait(false);
             stepRequest = _stepService.PrepareRequest(
                 generationRequest, request.ModelStepId.Value, requireExactProjection: true, contextScope: request.RunId.Value);
@@ -296,7 +296,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         string? selectionFeedbackCode,
         CancellationToken cancellationToken,
         bool preparingSnapshot = false,
-        bool forceHistoryRecovery = false)
+        bool forceHistoryRecovery = false,
+        string? forcedRecoveryCode = null)
     {
         var bootstrap = await LoadProviderBootstrapAsync(request.RunId, cancellationToken).ConfigureAwait(false);
         // Reduce effort only while a truncation note is awaiting its next assistant response.
@@ -316,7 +317,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             // fall straight into the repaired-history path below.
             if (forceHistoryRecovery)
             {
-                throw new ModelRunnerProtocolException("model_history_invalid");
+                throw new ModelRunnerProtocolException(forcedRecoveryCode ?? "model_history_invalid");
             }
 
             (prompt, _, modelMessages) = BuildConversation(request.Context, images.Count > 0, nativeText);
@@ -351,18 +352,43 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             history = await BuildNativeHistoryAsync(request, bootstrap, modelMessages!, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (ModelRunnerProtocolException error) when (IsRecoverableStepInputFailure(error.Code))
+        catch (Exception error) when (RecoverableStepInputCode(error) is not null)
         {
             // Stored history is the only input this Host cannot replace with a named
             // provider failure. A stored batch can be unpaired by an interrupted source,
             // a provider that reused call ids, or a pinned replay shape this build cannot
             // project. The run keeps going on repaired history instead of ending with a
             // code the user cannot act on; the original code is reported to diagnostics.
-            ReportHistoryRepair(error.Code);
+            var recoveryCode = RecoverableStepInputCode(error)!;
+            ReportHistoryRepair(recoveryCode);
             nativeText = false;
             pendingSnapshot = null;
-            (prompt, modelMessages) = RecoverConversationOrLastResort(request.Context, images.Count > 0, error.Code);
+            (prompt, modelMessages) = RecoverConversationOrLastResort(request.Context, images.Count > 0,
+                recoveryCode, forceStructureFree: forceHistoryRecovery);
             history = new NativeHistory(Array.Empty<JsonObject>(), Array.Empty<JsonObject>());
+            try
+            {
+                // Recovered batches keep their assistant tool turns only when their
+                // provider replay still matches. Rebuild that replay too, so a repaired
+                // request never omits reasoning a pinned provider expects.
+                if (bootstrap.ReplayChatReasoning)
+                {
+                    var continuations = LoadProviderContinuationsAsync is null ? Array.Empty<ProviderContinuation>()
+                        : await LoadProviderContinuationsAsync(request.RunId, bootstrap,
+                            RetainedAssistantEventIds(request.Context, modelMessages!), cancellationToken).ConfigureAwait(false);
+                    modelMessages = ChatCompletionsHistoryProjector.Project(modelMessages!, continuations, bootstrap.Model);
+                }
+                history = await BuildNativeHistoryAsync(request, bootstrap, modelMessages!, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception replayError) when (RecoverableStepInputCode(replayError) is not null)
+            {
+                // The repaired batches still have no replayable provider items. Drop the
+                // tool structure entirely for this step; unpaired replay is worse.
+                (prompt, modelMessages) = RecoverConversationOrLastResort(
+                    request.Context, images.Count > 0, "provider_continuation_missing");
+                history = new NativeHistory(Array.Empty<JsonObject>(), Array.Empty<JsonObject>());
+            }
         }
         if (selectionFeedbackCode is not null
             && BuildSelectionFeedback(selectionFeedbackCode) is { } selectionFeedback)
@@ -584,24 +610,82 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         ModelContextSnapshot context,
         IReadOnlyList<ModelTurn> projectedMessages)
     {
-        var projectedCallIds = projectedMessages.SelectMany(message => message.ToolCalls)
-            .Select(call => call.Id).ToHashSet(StringComparer.Ordinal);
-        var steps = context.Entries.Where(entry => entry.Kind == ModelContextEntryKind.AssistantStep
-            && entry.AssistantStep?.ToolCalls.Count > 0
-            && entry.AssistantStep.ToolCalls.Any(call => projectedCallIds.Contains(call.ProviderCallId!))).ToArray();
-        var eventIds = new List<string>(steps.Length);
-        foreach (var step in steps)
+        var projectedBatches = projectedMessages
+            .Where(message => message.Role == "assistant" && message.ToolCalls.Count > 0)
+            .ToArray();
+        if (projectedBatches.Length == 0)
         {
-            if (step.AssistantStep!.ToolCalls.Any(call => !projectedCallIds.Contains(call.ProviderCallId!)))
+            return Array.Empty<string>();
+        }
+
+        var contextSteps = context.Entries
+            .Where(entry => entry.Kind == ModelContextEntryKind.AssistantStep
+                && entry.AssistantStep?.ToolCalls.Count > 0)
+            .ToArray();
+        var used = new bool[contextSteps.Length];
+        var eventIds = new List<string>(projectedBatches.Length);
+        foreach (var batch in projectedBatches)
+        {
+            // A repaired history can meet two recorded batches with the same provider
+            // call ids. The projected turn is the one the sanitizer kept, so match from
+            // the newest recorded step backwards; an older unpaired batch is ignored
+            // instead of making replay fail.
+            var matched = -1;
+            for (var index = contextSteps.Length - 1; index >= 0; index--)
+            {
+                if (!used[index] && BatchMatches(batch, contextSteps[index].AssistantStep!))
+                {
+                    matched = index;
+                    break;
+                }
+            }
+
+            if (matched < 0)
+            {
                 throw new ModelRunnerProtocolException("provider_continuation_invalid");
-            if (!step.SourceId.StartsWith("event:evt_", StringComparison.Ordinal)
-                || step.SourceId.Length != 42)
+            }
+
+            used[matched] = true;
+            var sourceId = contextSteps[matched].SourceId;
+            if (!sourceId.StartsWith("event:evt_", StringComparison.Ordinal) || sourceId.Length != 42)
+            {
                 throw new ModelRunnerProtocolException("provider_continuation_invalid");
-            eventIds.Add(step.SourceId[6..]);
+            }
+
+            eventIds.Add(sourceId[6..]);
         }
 
         return eventIds;
     }
+
+    private static bool BatchMatches(ModelTurn turn, AssistantStep step)
+    {
+        if (turn.ToolCalls.Count != step.ToolCalls.Count
+            || !string.Equals(turn.Content, step.Text ?? string.Empty, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        for (var index = 0; index < turn.ToolCalls.Count; index++)
+        {
+            var call = turn.ToolCalls[index];
+            var recorded = step.ToolCalls[index];
+            if (!string.Equals(call.Id, recorded.ProviderCallId, StringComparison.Ordinal)
+                || !string.Equals(call.Name, recorded.ToolId, StringComparison.Ordinal)
+                || !string.Equals(call.Arguments.GetRawText(), recorded.Arguments.GetRawText(),
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    internal static IReadOnlyList<string> RetainedAssistantEventIdsForTests(
+        ModelContextSnapshot context,
+        IReadOnlyList<ModelTurn> projectedMessages) =>
+        RetainedAssistantEventIds(context, projectedMessages);
 
     private static (string Prompt, IReadOnlyList<ModelTurn> Messages) BuildTypedConversation(
         ModelContextSnapshot context,

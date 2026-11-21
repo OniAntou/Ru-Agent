@@ -22,7 +22,10 @@ longer ships or starts an in-process conversational model. Switching providers
 must preserve bounded context, cancellation, streamed visible-text
 normalization, and public error mapping by ASP.NET Core. Stale `llama.cpp` or
 GGUF settings migrate to `models.dev:opencode` and retired `opencode`/`kilo`
-choices migrate to their `models.dev:` equivalents (keys must be re-entered).
+choices migrate to their `models.dev:` equivalents. Their stored keys are copied
+forward on the first Host start of an updated build (old `mini_gpt` service and
+pre-models.dev `Ru` accounts); a key is re-entered only when no old entry exists,
+the entry is unusable, or the user already saved a new one.
 Cloud generation requests omit provider-specific `Temperature`, `Top-K`, and
 `Max New Tokens` controls; legacy stored values are ignored and stripped rather
 than forwarded to a provider.

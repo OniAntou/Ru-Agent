@@ -77,6 +77,13 @@ internal static class PublicHostServiceRegistration
     {
         services.AddSingleton<ISettingsStore, SettingsStore>();
         services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
+        // One-shot per data root: older builds stored their keys under service
+        // mini_gpt or under the pre-models.dev Ru account names. This copies them
+        // into the accounts the current build reads before any client asks.
+        services.AddSingleton(services => new LegacyCredentialMigration(
+            services.GetRequiredService<ICredentialStore>(),
+            services.GetRequiredService<DataPaths>(),
+            services.GetService<ILogger<LegacyCredentialMigration>>()));
         services.AddHttpClient("ProviderCatalog")
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddSingleton(services => new ProviderCatalogService(

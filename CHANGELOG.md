@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(settings)**: Updating from an older Ru build no longer asks for the provider key again.
+  On the first Host start the new build copies keys left by the Python build in the `mini_gpt`
+  Credential Manager service and by the first .NET build in the pre-models.dev `Ru` accounts
+  (`api_key`, `kilo_gateway_api_key`) into the current `opencode_api_key`/`kilo_api_key` accounts,
+  verifies each copy on read-back, then removes the old entry. A key the user already re-entered
+  is never overwritten; a failed copy or delete leaves the source untouched and retries on the
+  next start, and completion is recorded once per data root.
+
 - **feat(activity)**: Retry rows now say why the run is trying again. The Host puts the bounded
   cause in the activity's safe code — `tool_transport_error` for the read-only transport retry,
   `provider_rate_limited`/`provider_timeout`/`provider_server_error`/`provider_transport_error` and

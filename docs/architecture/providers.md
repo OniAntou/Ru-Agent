@@ -81,6 +81,15 @@ Custom OpenAI uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic
 uses `anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
 and `https://api.anthropic.com/v1`. A `models.dev:<provider-id>` backend reads
 `<provider-id>_api_key` and resolves its base URL from the Models.dev catalog.
+One startup migration (`LegacyCredentialMigration`) brings keys forward from the
+accounts earlier releases actually wrote: the Python build's `mini_gpt` Credential
+Manager service (`api_key`, `kilo_gateway_api_key`, `gemini_vision_api_key`) and the
+first .NET build's pre-models.dev `Ru` accounts (`api_key`, `kilo_gateway_api_key`,
+plus the plaintext field in a surviving `~/.minigpt/settings.json`). Each key is
+copied into its current account only when that account is empty, verified on read-back,
+and the old entry is removed after a successful copy; a key the user already re-entered
+wins. A failed copy or delete leaves the source intact and retries on the next Host
+start; completion is recorded once per data root.
 Its wire protocol comes from the entry's AI SDK package through the route table
 `ProviderRoutes` ([ADR 0052](../adr/0052-provider-route-table.md)):
 `@ai-sdk/anthropic` entries (MiniMax and other Anthropic-compatible gateways) are

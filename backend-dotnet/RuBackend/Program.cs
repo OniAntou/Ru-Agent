@@ -162,6 +162,28 @@ catch (DatabaseMaintenanceException exception)
 using var heldProfileLease = profileLease;
 using var releaseProfileOnStop = app.Lifetime.ApplicationStopped.Register(profileLease.Dispose);
 
+// Copy provider keys that older Ru builds left in the vault under their old
+// service/account names. The keys are already on this machine; without this a
+// user updating from a pre-models.dev build is asked to paste them again.
+try
+{
+    var legacyCredentials = app.Services.GetRequiredService<LegacyCredentialMigration>();
+    var migration = await legacyCredentials.MigrateAsync(CancellationToken.None).ConfigureAwait(false);
+    if (migration.MigratedAccounts.Count > 0)
+    {
+        app.Logger.LogInformation(
+            "Migrated {Count} legacy provider credential(s) into the current vault accounts.",
+            migration.MigratedAccounts.Count);
+    }
+}
+catch (Exception migrationError)
+{
+    // The Host must start and the user can re-enter a key; never fail startup.
+    app.Logger.LogWarning(
+        migrationError,
+        "Legacy provider credential migration failed; existing keys were left untouched.");
+}
+
 // Never HTML: without this any unhandled exception becomes a 500 text/html
 // page, which the GUI and TUI cannot parse. Every failure below this point
 // is a JSON envelope instead, and the throw is still logged with its route.

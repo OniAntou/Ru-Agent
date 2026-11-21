@@ -9,6 +9,12 @@ namespace RuAgent.Hosting;
 public sealed class RuntimeDescriptorWriter
 {
     private const int MaximumDescriptorBytes = 1 * 1024 * 1024;
+    // A client reading the descriptor opens it with FileShare.Read, which does not
+    // permit the publishing replace: File.Move fails with a sharing violation until
+    // that read closes. The read is short, so a bounded retry publishes instead of
+    // failing the Host startup for a race with its own clients.
+    private const int ReplaceAttempts = 5;
+    private static readonly TimeSpan ReplaceRetryDelay = TimeSpan.FromMilliseconds(50);
     private readonly string _descriptorPath;
 
     public RuntimeDescriptorWriter(string descriptorPath)
@@ -46,7 +52,7 @@ public sealed class RuntimeDescriptorWriter
         {
             // Atomic replace: move temp over target
             // Ensure atomic via File.Move with overwrite (NET 6+)
-            File.Move(tempPath, _descriptorPath, overwrite: true);
+            await ReplaceAsync(tempPath, cancellationToken).ConfigureAwait(false);
 
             if (OperatingSystem.IsWindows())
             {
@@ -56,6 +62,29 @@ public sealed class RuntimeDescriptorWriter
         finally
         {
             try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Publishes the prepared temp file over the descriptor, retrying briefly when a
+    /// concurrent reader holds the destination. The last attempt's exception is the
+    /// genuine publish failure; the caller's <c>finally</c> removes the temp file.
+    /// </summary>
+    private async Task ReplaceAsync(string tempPath, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(tempPath, _descriptorPath, overwrite: true);
+                return;
+            }
+            catch (Exception error) when (
+                (error is IOException or UnauthorizedAccessException)
+                && attempt < ReplaceAttempts)
+            {
+                await Task.Delay(ReplaceRetryDelay, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 

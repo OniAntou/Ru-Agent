@@ -338,10 +338,24 @@ if (isManagedRuntime)
         Environment.Exit(5);
     }
 
-    if (!await ManagedRuntimeBootstrapper.PublishDescriptorAsync(bootstrap!, boundAddress).ConfigureAwait(false))
+    try
     {
-        Console.Error.WriteLine("{\"error_code\":\"public_host_already_running\"}");
-        Environment.Exit(3);
+        if (!await ManagedRuntimeBootstrapper.PublishDescriptorAsync(bootstrap!, boundAddress).ConfigureAwait(false))
+        {
+            Console.Error.WriteLine("{\"error_code\":\"public_host_already_running\"}");
+            Environment.Exit(3);
+        }
+    }
+    catch (Exception publishError)
+    {
+        // A descriptor that cannot be published leaves the host undiscoverable, so
+        // this is a managed startup failure: report it as a bounded code (exit 6)
+        // instead of letting the exception tear the process down unannounced.
+        Console.Error.WriteLine("{\"error_code\":\"public_host_descriptor_publish_failed\"}");
+        app.Logger.LogError(publishError, "runtime descriptor could not be published; stopping the managed host");
+        try { bootstrap!.DescriptorWriter.Cleanup(); } catch (Exception cleanupError) { app.Logger.LogWarning(cleanupError, "Descriptor cleanup failed during publish failure."); }
+        try { await bootstrap!.SingleInstance.DisposeAsync().ConfigureAwait(false); } catch (Exception cleanupError) { app.Logger.LogWarning(cleanupError, "Single-instance release failed during publish failure."); }
+        Environment.Exit(6);
     }
 }
 

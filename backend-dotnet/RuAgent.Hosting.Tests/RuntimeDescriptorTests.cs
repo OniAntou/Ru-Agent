@@ -137,6 +137,59 @@ public sealed class RuntimeDescriptorTests : IDisposable
     }
 
     [Fact]
+    public async Task PublishingIsBoundedAndKeepsTheDescriptorWhenAReaderHoldsIt()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return; // The sharing violation this regression covers is Windows-only.
+        }
+
+        var path = Path.Combine(_root, "held.json");
+        var writer = new RuntimeDescriptorWriter(path);
+        await writer.WriteAsync(CreateValidDescriptor());
+        var before = File.ReadAllText(path);
+
+        using var reader = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var error = await Assert.ThrowsAnyAsync<Exception>(
+            () => writer.WriteAsync(CreateValidDescriptor()));
+
+        // A bounded retry ends as the real failure: it must not hang, and it must not
+        // leave a temp file or a half-written descriptor while the read occupies the path.
+        Assert.True(error is IOException or UnauthorizedAccessException, error.GetType().FullName);
+        Assert.Equal(before, File.ReadAllText(path));
+        Assert.Empty(Directory.GetFiles(_root, "*.tmp-*"));
+    }
+
+    [Fact]
+    public async Task PublishingSucceedsWhenAConcurrentReaderReleasesTheDescriptor()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return; // The sharing violation this regression covers is Windows-only.
+        }
+
+        var path = Path.Combine(_root, "released.json");
+        var writer = new RuntimeDescriptorWriter(path);
+        var first = CreateValidDescriptor();
+        await writer.WriteAsync(first);
+        var replacement = first with { InstanceNonce = PublicHostRuntimeOptions.GenerateNonce() };
+
+        var reader = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var write = writer.WriteAsync(replacement);
+        // The writer cannot replace a descriptor a reader holds, so without the
+        // bounded retry this call would already have failed. Release the read inside
+        // the retry window: the publish must then complete instead of failing startup.
+        await Task.Delay(75);
+        Assert.False(write.IsCompleted);
+        reader.Dispose();
+        await write;
+
+        Assert.True(writer.TryReadValid(out var read, out _));
+        Assert.Equal(replacement.InstanceNonce, read!.InstanceNonce);
+        Assert.Empty(Directory.GetFiles(_root, "*.tmp-*"));
+    }
+
+    [Fact]
     public async Task TryWriteIfUnclaimed_refuses_to_clobber_a_live_descriptor()
     {
         var path = Path.Combine(_root, "unclaimed.json");

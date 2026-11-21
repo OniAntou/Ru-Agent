@@ -107,6 +107,16 @@ public sealed class MessageRailPolicyTests
     }
 
     [Fact]
+    public void Long_titles_do_not_split_an_astral_character_at_the_cut()
+    {
+        string title = new string('a', 118) + "\U0001F600" + "b";
+
+        var preview = MessageRailPolicy.Preview(title, isUser: true);
+
+        Assert.Equal(new string('a', 118) + "…", preview.Title);
+    }
+
+    [Fact]
     public void Long_text_is_trimmed_and_an_empty_reply_reads_as_work_in_progress()
     {
         var preview = MessageRailPolicy.Preview(new string('a', 500) + "\n" + new string('b', 900), isUser: true);

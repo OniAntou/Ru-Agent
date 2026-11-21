@@ -161,6 +161,18 @@ public sealed class AgentTurnQueueTests
     }
 
     [Fact]
+    public void Preview_does_not_split_an_astral_character_at_the_cut()
+    {
+        // 46 'a' + one surrogate pair + 'b' is 49 units; the 47-unit cut must step back
+        // to the pair's start rather than keep half of it.
+        string display = new string('a', 46) + "\U0001F600" + "b";
+
+        string label = AgentTurnQueuePolicy.PreviewLabel(display);
+
+        Assert.Equal(new string('a', 46) + "…", label);
+    }
+
+    [Fact]
     public void Preview_falls_back_to_the_prompt_and_then_to_the_attachment_wording()
     {
         Assert.Equal("the prompt", AgentTurnQueuePolicy.PreviewLabel(null, "the prompt"));

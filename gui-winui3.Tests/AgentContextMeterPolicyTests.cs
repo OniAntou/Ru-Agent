@@ -166,6 +166,20 @@ public sealed class AgentContextMeterPolicyTests
     }
 
     [Fact]
+    public void The_context_popup_image_allowance_comes_from_the_shared_constant()
+    {
+        // The popup used to hardcode 4,096 while the estimate charged 4,800.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var messages = GuiSource.Require(document, "ContextMessagesLabel");
+        Assert.False(GuiSource.HasAttribute(messages, "ToolTipService.ToolTip"));
+        Assert.DoesNotContain("4,096", GuiSource.Text("Views", "ChatView.xaml"), StringComparison.Ordinal);
+        Assert.Contains(
+            "ContextPanelPresenter.ImagesTooltip",
+            GuiSource.ViewText("ChatView"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_fill_shrinks_with_the_budget_share_not_the_track()
     {
         // The bar must mirror the percentage against the budget: a near-empty

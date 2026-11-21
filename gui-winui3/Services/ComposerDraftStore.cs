@@ -191,6 +191,8 @@ public sealed class ComposerDraftStore
         clone.Base64Data = attachment.Base64Data;
         clone.TextContent = attachment.TextContent;
         clone.ReferencePath = attachment.ReferencePath;
+        // Removing a restored chip must still delete the copy staged for it.
+        clone.IsStagedCopy = attachment.IsStagedCopy;
         clone.IsImage = attachment.IsImage;
         return clone;
     }

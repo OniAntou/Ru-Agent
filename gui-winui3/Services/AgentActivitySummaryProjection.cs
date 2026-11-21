@@ -149,6 +149,8 @@ internal static class AgentActivitySummaryProjection
     private static string Normalize(string text)
     {
         var line = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return line.Length > LiveDetailMaxChars ? line[..(LiveDetailMaxChars - 1)].TrimEnd() + "…" : line;
+        return line.Length > LiveDetailMaxChars
+            ? TextTruncation.TakeAtMost(line, LiveDetailMaxChars - 1).TrimEnd() + "…"
+            : line;
     }
 }

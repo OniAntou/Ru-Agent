@@ -177,6 +177,9 @@ namespace RuApp.Views
             Presets = new SessionPresetViewModel(new HostSessionPresetBackend(() => _apiService, () => _agentController));
             Composer.TextReplaced += OnComposerTextReplaced;
             this.InitializeComponent();
+            // From the shared allowance constant: the popup must not claim a number the
+            // estimate does not charge.
+            ToolTipService.SetToolTip(ContextMessagesLabel, ContextPanelPresenter.ImagesTooltip);
             InitializeConversationWidth();
             RunPanel.PropertyChanged += OnRunPanelPropertyChanged;
             RunPanel.ApprovalArrived += OnRunPanelApprovalArrived;

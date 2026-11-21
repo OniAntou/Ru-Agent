@@ -71,7 +71,7 @@ public static class AgentTurnQueuePolicy
 
         return flattened.Length <= MaxLabelLength
             ? flattened
-            : string.Concat(flattened.AsSpan(0, MaxLabelLength - 1), "…");
+            : string.Concat(TextTruncation.TakeAtMost(flattened, MaxLabelLength - 1), "…");
     }
 }
 

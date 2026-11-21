@@ -470,6 +470,33 @@ public sealed partial class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Test_connection_does_not_paint_a_stale_verdict_into_another_provider()
+    {
+        var backend = new FakeBackend { Settings = new AppSettingsDto { BackendChoice = "models.dev:openai" } };
+        var catalog = new FakeCatalog
+        {
+            NextState = new ProviderCatalogState { Status = "ok", Models = ["m1"] },
+            RefreshGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        using var viewModel = NewViewModel();
+        await viewModel.AttachAsync(backend, catalog);
+
+        Task test = viewModel.TestConnectionCommand.ExecuteAsync(null);
+        await catalog.WaitForRefreshAsync();
+        viewModel.SelectProviderCommand.Execute(
+            viewModel.ProviderRows.Single(row => row.Value == "models.dev:anthropic"));
+        string afterSwitch = viewModel.ProviderTestMessage;
+
+        catalog.RefreshGate.SetResult();
+        await test;
+
+        Assert.Equal("models.dev:anthropic", viewModel.ProviderChoice);
+        Assert.Equal(afterSwitch, viewModel.ProviderTestMessage);
+        Assert.DoesNotContain("Could not refresh", viewModel.ProviderTestMessage, StringComparison.Ordinal);
+        Assert.True(viewModel.IsProviderTestEnabled);
+    }
+
+    [Fact]
     public async Task A_background_catalog_failure_is_shown_but_a_background_success_is_not()
     {
         var catalog = new FakeCatalog();
@@ -657,17 +684,30 @@ public sealed partial class SettingsViewModelTests
 
         public Action? OnRefresh { get; set; }
 
+        /// <summary>When set, a catalog refresh waits for it before answering.</summary>
+        public TaskCompletionSource? RefreshGate { get; set; }
+
+        private TaskCompletionSource _refreshStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public ProviderCatalogState State { get; private set; } = new();
 
         public void SetBackend(string backend) => Backend = backend;
 
-        public Task<bool> RefreshAsync(bool force = false, bool bypassManualThrottle = false)
+        public async Task<bool> RefreshAsync(bool force = false, bool bypassManualThrottle = false)
         {
             if (force) ForcedRefreshes++;
             LastRefreshBypassedThrottle = bypassManualThrottle;
             OnRefresh?.Invoke();
+            _refreshStarted.TrySetResult();
+            if (RefreshGate is { } gate) await gate.Task;
             State = NextState;
-            return Task.FromResult(true);
+            return true;
+        }
+
+        public async Task WaitForRefreshAsync()
+        {
+            await _refreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            _refreshStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         public void Raise(ProviderCatalogState state) => _stateChanged?.Invoke(this, state);

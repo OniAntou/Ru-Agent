@@ -94,6 +94,6 @@ public sealed class AgentNotificationPolicy
     private static string Shorten(string? title)
     {
         var text = string.IsNullOrWhiteSpace(title) ? "Session" : title.Trim();
-        return text.Length <= MaxTitleChars ? text : text[..(MaxTitleChars - 1)] + "…";
+        return text.Length <= MaxTitleChars ? text : TextTruncation.TakeAtMost(text, MaxTitleChars - 1) + "…";
     }
 }

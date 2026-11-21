@@ -80,4 +80,13 @@ public sealed class ContextPanelPresenterTests
         Assert.Null(meter.ContextTokens);
         Assert.False(meter.ObserveEstimate("run", "session", estimate));
     }
+
+    [Fact]
+    public void The_images_tooltip_states_the_allowance_the_estimate_actually_charges()
+    {
+        string expected = ContextTokenBreakdown.ImageTokenAllowance.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+        Assert.Contains(expected + "-token allowance", ContextPanelPresenter.ImagesTooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain("4,096", ContextPanelPresenter.ImagesTooltip, StringComparison.Ordinal);
+    }
 }

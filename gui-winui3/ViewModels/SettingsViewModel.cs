@@ -209,6 +209,14 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // The verdict belongs to the provider that was tested. Switching providers (or
+        // replacing the backend) while the request is in flight must cancel the read, not
+        // paint the old answer into the new provider's status line.
+        string testedChoice = ProviderChoice;
+        bool OwnsTest() => !_disposed
+            && ReferenceEquals(catalog, _catalog)
+            && string.Equals(testedChoice, ProviderChoice, StringComparison.OrdinalIgnoreCase);
+
         CancelDelay(ref _autoSaveDelay);
         IsProviderTestEnabled = false;
         ShowProviderTest(ProviderConnectionTestPresentation.Testing());
@@ -219,11 +227,17 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             // can be asked: otherwise the test proves the previous (or no) key.
             if (!await SettlePendingKeyAsync())
             {
-                ShowProviderTest(new ProviderConnectionTest(
-                    ProviderConnectionTest.ErrorTone,
-                    "The API key has not been saved yet. Check the key, then test the connection again."));
+                if (OwnsTest())
+                {
+                    ShowProviderTest(new ProviderConnectionTest(
+                        ProviderConnectionTest.ErrorTone,
+                        "The API key has not been saved yet. Check the key, then test the connection again."));
+                }
+
                 return;
             }
+
+            if (!OwnsTest()) return;
             // The test is an explicit question about the provider shown, so it may not be
             // answered from a catalog the editor already had: the manual throttle is
             // bypassed and a suppressed refresh is reported instead of a stale verdict.
@@ -231,8 +245,9 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
                 SaveSettingsAsync,
                 () => catalog.RefreshAsync(force: true, bypassManualThrottle: true),
                 () => catalog.State);
+            if (!OwnsTest()) return;
             GuiDiagnosticWriter.AppendTraceLine(
-                $"[provider-test] backend={ProviderChoice} refreshed={run.Refreshed} code={run.State?.ErrorCode ?? "none"}");
+                $"[provider-test] backend={testedChoice} refreshed={run.Refreshed} code={run.State?.ErrorCode ?? "none"}");
             if (run.State is null)
             {
                 // Saving failed, so the Host would answer from settings that never landed.
@@ -260,8 +275,11 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             GuiDiagnosticWriter.WriteCrashEvent(ex);
-            ShowProviderTest(new ProviderConnectionTest(
-                ProviderConnectionTest.ErrorTone, "The test could not run. Open Tools → Activity Log to check."));
+            if (OwnsTest())
+            {
+                ShowProviderTest(new ProviderConnectionTest(
+                    ProviderConnectionTest.ErrorTone, "The test could not run. Open Tools → Activity Log to check."));
+            }
         }
         finally
         {

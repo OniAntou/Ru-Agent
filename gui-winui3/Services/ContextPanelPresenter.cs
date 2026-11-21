@@ -1,3 +1,4 @@
+using System.Globalization;
 using RuAgent.Protocol.Harness;
 using RuApp.Models;
 
@@ -8,6 +9,15 @@ internal sealed record ContextPanelReading(string System, string Tools, string M
 
 internal static class ContextPanelPresenter
 {
+    /// <summary>
+    /// The Messages row's tooltip. The allowance is read from the shared constant so the
+    /// number the user reads is the number the estimate charges.
+    /// </summary>
+    internal static string ImagesTooltip =>
+        "Estimates include the current draft. Images use a fixed "
+        + ContextTokenBreakdown.ImageTokenAllowance.ToString("N0", CultureInfo.InvariantCulture)
+        + "-token allowance per image, not provider image tokenization.";
+
     internal static ContextPanelReading Project(
         ContextTokenBreakdown? breakdown,
         int draftTokens,

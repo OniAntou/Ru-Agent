@@ -151,6 +151,28 @@ public sealed class ComposerDraftStoreTests
     }
 
     [Fact]
+    public void A_restored_draft_keeps_the_staged_copy_flag_so_removing_the_chip_cleans_it_up()
+    {
+        // Removing a chip deletes the copy staged in .ru\attachments only while the
+        // attachment still says it is one; a draft restored from the store must say so.
+        var store = new ComposerDraftStore();
+        var attachment = new ImageAttachmentItem
+        {
+            FileName = "notes.txt",
+            FilePath = @"C:\elsewhere\notes.txt",
+            ReferencePath = ".ru/attachments/notes.txt",
+            IsStagedCopy = true,
+            IsImage = false,
+        };
+
+        Assert.True(store.TrySave("session-a", string.Empty, new[] { attachment }));
+
+        var restored = Assert.Single(store.RestoreAttachments("session-a"));
+        Assert.True(restored.IsStagedCopy);
+        Assert.Equal(attachment.ReferencePath, restored.ReferencePath);
+    }
+
+    [Fact]
     public void Oversized_draft_is_rejected_without_replacing_the_retained_draft()
     {
         var store = new ComposerDraftStore();

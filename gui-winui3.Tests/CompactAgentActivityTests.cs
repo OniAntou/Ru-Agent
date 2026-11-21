@@ -218,6 +218,25 @@ public sealed class CompactAgentActivityTests
     }
 
     [Fact]
+    public void A_live_title_does_not_split_an_astral_character_at_the_cut()
+    {
+        // "Exploring " (10) + 148 'a' + pair + 'b' is 161 units; the 159-unit cut would
+        // land between the pair's halves.
+        string fileName = new string('a', 148) + "\U0001F600" + "b";
+        var activity = new AgentActivityItem(new AgentActivityModel(
+            "explore", AgentActivityKind.Explore, AgentActivityState.Started,
+            fileName, null, null, null, null, null, null, null, "succeeded", null, null, null));
+        var message = new ChatMessageItem
+        {
+            Role = "assistant", IsStreaming = true, AgentActivities = new() { activity }
+        };
+
+        var summary = AgentActivitySummaryProjection.ForMessage(message);
+
+        Assert.Equal("Exploring " + new string('a', 148) + "…", summary.Title);
+    }
+
+    [Fact]
     public void Summary_reports_failures_and_waiting_without_counting_duplicate_narration()
     {
         var message = new ChatMessageItem

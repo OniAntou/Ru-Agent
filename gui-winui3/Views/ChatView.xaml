@@ -1690,7 +1690,7 @@
                                                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                                                     <Border Width="7" Height="7" CornerRadius="{StaticResource AppMicroPillCornerRadius}" Background="{StaticResource RuInfoBrush}" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="1" Text="Messages" Foreground="{StaticResource RuInkBrush}" />
-                                                    <TextBlock x:Name="ContextMessagesLabel" Grid.Column="2" Text="—" FontFamily="{StaticResource RuMonoFontFamily}" Foreground="{StaticResource RuInkBrush}" ToolTipService.ToolTip="Estimates include the current draft. Images use a fixed 4,096-token allowance per image, not provider image tokenization." />
+                                                    <TextBlock x:Name="ContextMessagesLabel" Grid.Column="2" Text="—" FontFamily="{StaticResource RuMonoFontFamily}" Foreground="{StaticResource RuInkBrush}" />
                                                 </Grid>
                                             </StackPanel>
                                             <TextBlock x:Name="ContextEstimateNote" Text="Breakdown available after the next request"

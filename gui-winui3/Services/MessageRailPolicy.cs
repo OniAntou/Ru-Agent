@@ -128,7 +128,7 @@ namespace RuApp.Services
         }
 
         private static string Truncate(string text, int maxLength)
-            => text.Length <= maxLength ? text : text[..(maxLength - 1)].TrimEnd() + "…";
+            => text.Length <= maxLength ? text : TextTruncation.TakeAtMost(text, maxLength - 1).TrimEnd() + "…";
 
         // Headings, quotes, bullets, numbered items and task boxes at the line start.
         [GeneratedRegex(@"^(?:#{1,6}\s+|>\s*|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)+")]

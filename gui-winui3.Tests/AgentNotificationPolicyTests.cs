@@ -92,6 +92,17 @@ public sealed class AgentNotificationPolicyTests
     }
 
     [Fact]
+    public void Shortened_titles_do_not_split_an_astral_character_at_the_cut()
+    {
+        var policy = new AgentNotificationPolicy();
+        string title = new string('a', 58) + "\U0001F600" + "b";
+
+        var notification = policy.ObserveWait("s1", title, "ap_astral", null);
+
+        Assert.Equal(new string('a', 58) + "…", notification!.Body);
+    }
+
+    [Fact]
     public void Preferences_default_to_flash_and_sound_without_windows_notifications()
     {
         var path = Path.Combine(Path.GetTempPath(), "ru-notify-" + Guid.NewGuid().ToString("N") + ".json");

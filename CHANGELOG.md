@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(attachments)**: A desktop chat with no project folder can attach any file, not only
+  images, text/code and PDF/Office documents. Before staging a non-image attachment the app
+  asks the Host for the session's scratch workspace
+  (`POST /sessions/{sessionId}/workspace/scratch`), copies the file into its
+  `.ru/attachments` folder and sends the workspace path with the first run; the Host still
+  classifies the folder as scratch from its ownership marker. The path always comes from the
+  Host, images keep their image path, and an abandoned empty draft cleans the scratch folder
+  with the session. This closes the last "choose a folder" refusal for folderless chats
+  ([ADR 0054](docs/adr/0054-folderless-attachments-use-scratch-workspace.md)); the public
+  route contract grows to 57 entries.
+
 - **fix(attachments)**: An `.svg` file is recognized as text/code instead of an unsupported
   type. A desktop chat with a project folder already attached it by workspace path, but a new
   chat with no folder only accepts images, text/code and PDF/Office documents, and the missing

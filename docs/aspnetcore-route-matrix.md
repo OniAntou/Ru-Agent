@@ -2,7 +2,7 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-56 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
+57 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
 public owner, and every entry is `aspnet-direct`. The 33 Agent v1 routes under
 `/agent/v1/*` (including the run-independent skills catalog/preferences and the user plugin list, settings and pinned GitHub install)
 and the `POST /host/shutdown` route are active alongside the
@@ -24,8 +24,10 @@ does not fall back to `POST /settings` when an older Host lacks this route.
 
 Session history adds `/sessions/page` for paged summaries,
 `/sessions/{sessionId}/messages` for bounded retained-message pages and
-`/sessions/search` for literal full-text hits. These share bearer/loopback checks
-and do not expose database maintenance over HTTP.
+`/sessions/search` for literal full-text hits. `POST /sessions/{sessionId}/workspace/scratch`
+allocates the marked Host-owned scratch folder a folderless chat needs before its first
+run, so a client can stage an attachment there and send the same path with the run. These
+share bearer/loopback checks and do not expose database maintenance over HTTP.
 
 Each entry contains:
 

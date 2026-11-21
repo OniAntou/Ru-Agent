@@ -1,0 +1,105 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using RuBackend.Business;
+using Xunit;
+
+namespace RuBackend.Tests.Business;
+
+public sealed class ScratchWorkspaceEndpointTests : IDisposable
+{
+    private readonly string _root;
+    private readonly DataPaths _paths;
+    private readonly BackendWebApplicationFactory _factory;
+    private readonly HttpClient _client;
+
+    public ScratchWorkspaceEndpointTests()
+    {
+        _root = Path.Combine(Path.GetTempPath(), "ru-scratch-endpoint-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_root);
+        _paths = new DataPaths(
+            Path.Combine(_root, "settings.json"),
+            Path.Combine(_root, "sessions"),
+            Path.Combine(_root, "activity.jsonl"));
+        _factory = new BackendWebApplicationFactory(dataPaths: _paths);
+        _client = _factory.CreateAuthenticatedClient();
+    }
+
+    [Fact]
+    public async Task Folderless_session_gets_a_host_owned_scratch_workspace_before_its_first_run()
+    {
+        string sessionId = await CreateSessionAsync();
+
+        using var response = await _client.PostAsync(
+            $"/sessions/{sessionId}/workspace/scratch", content: null);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("ok", payload.GetProperty("status").GetString());
+        Assert.Equal("scratch", payload.GetProperty("workspace_kind").GetString());
+        string path = payload.GetProperty("workspace_path").GetString()!;
+        Assert.Equal(
+            Path.Combine(_paths.BusinessDataRoot, "workspaces", sessionId),
+            path);
+        Assert.True(Directory.Exists(path));
+        Assert.True(File.Exists(Path.Combine(path, ".ru-scratch.json")));
+
+        // Re-opening a draft before its first send asks again; the Host must not allocate
+        // a second workspace or relabel the existing one.
+        using var second = await _client.PostAsync(
+            $"/sessions/{sessionId}/workspace/scratch", content: null);
+        var secondPayload = await second.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(path, secondPayload.GetProperty("workspace_path").GetString());
+    }
+
+    [Fact]
+    public async Task Scratch_workspace_is_deleted_when_an_empty_draft_is_cleaned_up()
+    {
+        string sessionId = await CreateSessionAsync();
+        using var ensure = await _client.PostAsync(
+            $"/sessions/{sessionId}/workspace/scratch", content: null);
+        string path = (await ensure.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("workspace_path").GetString()!;
+        Assert.True(Directory.Exists(path));
+
+        using var cleanup = await _client.DeleteAsync($"/sessions/{sessionId}?if_empty=true");
+        var cleanupPayload = await cleanup.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("ok", cleanupPayload.GetProperty("status").GetString());
+        Assert.False(Directory.Exists(path));
+    }
+
+    [Fact]
+    public async Task The_scratch_route_refuses_an_unknown_or_malformed_session()
+    {
+        using var unknown = await _client.PostAsync(
+            $"/sessions/{new string('a', 32)}/workspace/scratch", content: null);
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        Assert.Equal(
+            "session_not_found",
+            (await unknown.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+
+        using var malformed = await _client.PostAsync(
+            "/sessions/not-a-session/workspace/scratch", content: null);
+        Assert.Equal(HttpStatusCode.BadRequest, malformed.StatusCode);
+        Assert.Equal(
+            "invalid_session_id",
+            (await malformed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+    }
+
+    private async Task<string> CreateSessionAsync()
+    {
+        using var response = await _client.PostAsync("/sessions/new", content: null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("session_id").GetString()!;
+    }
+
+    public void Dispose()
+    {
+        _client.Dispose();
+        _factory.Dispose();
+        SqliteTestPools.ClearHarnessDatabase(_paths.AgentHarnessDatabase);
+        try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
+    }
+}

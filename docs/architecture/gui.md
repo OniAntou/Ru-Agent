@@ -619,12 +619,17 @@ git through the folder's own `.gitignore`, at most 64 MiB, equal bytes reuse a c
 removing its chip before Send deletes the copy. An image attached for a model that reads
 no images is sent by path too. Text that is not UTF-8 (nor UTF-16 with a byte-order mark)
 or holds a NUL byte is sent by path instead of being inlined as replacement characters
-(`TextAttachmentDecoder`). A new chat with no folder has nowhere to copy a file, so it
-keeps the local path: PDF/Office documents are extracted to bounded plain text
-(`AttachmentDocumentExtractor`, at most half the prompt bound), text is inlined, and
-other types are refused with a status that says to choose a folder; a document whose
-extraction cannot fit the prompt is refused at intake, and switching session cancels a
-running extraction.
+(`TextAttachmentDecoder`). A new chat with no folder asks the Host for its
+scratch workspace before staging a non-image file
+(`POST /sessions/{sessionId}/workspace/scratch`), then behaves like a chat with a
+folder: the file is inlined or attached by workspace path, and the first run sends
+that same Host-created path ([ADR 0054](../adr/0054-folderless-attachments-use-scratch-workspace.md)).
+Until the Host answers, the earlier local path remains the fallback: PDF/Office
+documents are extracted to bounded plain text (`AttachmentDocumentExtractor`, at
+most half the prompt bound), small text is inlined, and a failed scratch allocation
+keeps the status that says which types are accepted; a document whose extraction
+cannot fit the prompt is refused at intake, and switching session cancels a running
+extraction.
 An image that needs no resize still loses its EXIF/XMP/text metadata
 (`ImageMetadata`); a JPEG whose EXIF rotates it is re-encoded upright instead.
 Chips decode a 280 px thumbnail; the preview dialog decodes the stored image at

@@ -397,6 +397,16 @@ public sealed class ChatMessageAttachmentTests
     }
 
     [Fact]
+    public void A_folderless_chat_asks_for_scratch_before_staging_a_non_image_file()
+    {
+        Assert.True(ChatAttachmentPolicy.NeedsScratchWorkspace("archive.zip", workspace: null));
+        Assert.True(ChatAttachmentPolicy.NeedsScratchWorkspace("logo.svg", workspace: ""));
+        Assert.True(ChatAttachmentPolicy.NeedsScratchWorkspace("paper.pdf", workspace: " "));
+        Assert.False(ChatAttachmentPolicy.NeedsScratchWorkspace("photo.PNG", workspace: null));
+        Assert.False(ChatAttachmentPolicy.NeedsScratchWorkspace("archive.zip", workspace: @"C:\project"));
+    }
+
+    [Fact]
     public void The_image_cap_is_the_policy_constant()
     {
         // Pins the value itself, so a change on either side is deliberate.

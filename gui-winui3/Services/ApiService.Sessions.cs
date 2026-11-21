@@ -100,6 +100,51 @@ namespace RuApp.Services
         }
 
         /// <summary>
+        /// Asks the Host for the canonical scratch workspace of a folderless chat. The client
+        /// never constructs this path: it stages an attached file inside the folder the Host
+        /// created and sends the same path with the run.
+        /// </summary>
+        public async Task<ScratchWorkspacePath?> EnsureScratchWorkspaceAsync(
+            string sessionId,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Post,
+                    $"{_baseUrl}/sessions/{Uri.EscapeDataString(sessionId)}/workspace/scratch");
+                request.Headers.Add("X-Ru-Client-Source", "gui");
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+                if (json.ValueKind != JsonValueKind.Object
+                    || json.TryGetProperty("status", out var status) && status.GetString() != "ok"
+                    || !json.TryGetProperty("workspace_path", out var pathElement)
+                    || pathElement.GetString() is not { Length: > 0 } path
+                    || !json.TryGetProperty("workspace_kind", out var kindElement)
+                    || kindElement.GetString() != "scratch")
+                {
+                    return null;
+                }
+
+                return new ScratchWorkspacePath(path, "scratch");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("EnsureScratchWorkspaceAsync", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Asks the Host to remove a session if, and only if, it still has no messages: the
         /// cleanup for New Chat drafts that were abandoned before their first prompt.
         /// </summary>

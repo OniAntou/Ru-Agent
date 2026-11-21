@@ -45,6 +45,13 @@ internal static class ChatAttachmentPolicy
 
     internal static bool IsDocumentFile(string name) => AttachmentDocumentExtractor.IsSupportedDocument(name);
 
+    /// <summary>
+    /// Whether intake must first ask the Host for the folderless chat's scratch workspace.
+    /// Images keep their image path; every other attached file can be staged there by path.
+    /// </summary>
+    internal static bool NeedsScratchWorkspace(string name, string? workspace) =>
+        string.IsNullOrWhiteSpace(workspace) && !IsImageFile(name);
+
     internal static bool IsTextOrCodeFile(string name) =>
         RuAgent.Client.Attachments.AttachmentFileTypes.IsTextOrCodeFile(name);
 

@@ -54,6 +54,16 @@ out of Recents. Project groups represent chosen folders or explicit sidebar
 placement. This changes presentation only; per-session scratch allocation,
 ownership checks, workspace trust and cleanup keep their existing contracts.
 
+### Allocation-timing amendment: attachments before the first run (2026-11-21)
+
+A folderless chat that attaches a non-image file needs the scratch folder before its
+first run, because the attachment is staged inside the folder the model will read.
+`POST /sessions/{sessionId}/workspace/scratch` lets the client ask for the same marked
+Host-owned path before the run; the run then sends that path. Allocation stays lazy
+(first non-image attachment or first run), the marker rules are unchanged, and the
+folder still follows the session's deletion and orphan sweep. See
+[ADR 0054](0054-folderless-attachments-use-scratch-workspace.md).
+
 ## Context
 
 The desktop app previously derived a new chat's workspace from the application

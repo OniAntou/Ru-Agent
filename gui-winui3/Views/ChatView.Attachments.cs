@@ -42,6 +42,23 @@ namespace RuApp.Views
             try
             {
                 var props = await file.GetBasicPropertiesAsync();
+                // A folderless chat has no workspace yet, but the Host can allocate the
+                // Ru-owned scratch workspace before the first run. Ask for it before a
+                // non-image file is classified, so any type can be staged by path instead
+                // of falling back to "choose a folder". Images keep their image path.
+                if (ChatAttachmentPolicy.NeedsScratchWorkspace(file.Name, _agentWorkspace))
+                {
+                    try
+                    {
+                        await EnsureScratchWorkspaceForAttachmentsAsync(
+                            sessionId, sessionGeneration, _sessionPresentation.SessionToken);
+                    }
+                    catch (OperationCanceledException) when (_sessionPresentation.SessionToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+                }
+
                 if (await TryAddFileReferenceAsync(file, checked((long)props.Size), forceReference: false, sessionId, sessionGeneration))
                 {
                     return;
@@ -154,6 +171,44 @@ namespace RuApp.Views
                     $"Could not attach '{file.Name}'. Check that the file is readable and the image is not damaged.",
                     sessionId, sessionGeneration);
             }
+        }
+
+        /// <summary>
+        /// A chat with no project folder still needs a real workspace before it can stage
+        /// an arbitrary attachment. The Host owns the path: it creates the session-scoped
+        /// scratch folder and returns it, and the client only uses that path. The same
+        /// path is sent with the first run, where the Host's marker still classifies it
+        /// as scratch for trust and display.
+        /// </summary>
+        private async Task<bool> EnsureScratchWorkspaceForAttachmentsAsync(
+            string sessionId,
+            long sessionGeneration,
+            CancellationToken cancellationToken)
+        {
+            if (!string.IsNullOrWhiteSpace(_agentWorkspace)) return true;
+            if (_apiService is null || !AgentSessionSelection.IsValid(sessionId)) return false;
+
+            ScratchWorkspacePath? scratch;
+            try
+            {
+                scratch = await _apiService.EnsureScratchWorkspaceAsync(sessionId, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            if (scratch is null || string.IsNullOrWhiteSpace(scratch.Path)) return false;
+            if (!ChatAttachmentIntakePresenter.OwnsSession(
+                    sessionId, sessionGeneration, _activeSessionId, _sessionOpenGeneration))
+            {
+                return false;
+            }
+
+            SetRequestedWorkspace(scratch.Path, isScratch: true);
+            SetAgentWorkspace(scratch.Path, isScratch: true);
+            _requestedWorkspaceBySession[sessionId] = scratch.Path;
+            UpdateChatHeaderWorkspace();
+            return true;
         }
 
         /// <summary>

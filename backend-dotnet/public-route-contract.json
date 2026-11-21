@@ -24,6 +24,7 @@
   {"method":"GET","path":"/sessions/search","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.SessionHistory.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"GET","path":"/sessions/{sessionId}/messages","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.SessionHistory.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetSessionHistoryPageAsync"]},
   {"method":"POST","path":"/sessions/new","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.CreateSessionAsync"]},
+  {"method":"POST","path":"/sessions/{sessionId}/workspace/scratch","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.EnsureScratchWorkspaceAsync"]},
   {"method":"POST","path":"/sessions/{sessionId}/activate","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ActivateSessionAsync"]},
   {"method":"DELETE","path":"/sessions/{sessionId}","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.DeleteSessionAsync"]},
   {"method":"POST","path":"/sessions/{sessionId}/fork","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":[]},

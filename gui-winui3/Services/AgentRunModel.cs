@@ -2,6 +2,9 @@ using RuAgent.Protocol.Harness;
 
 namespace RuApp.Services;
 
+/// <summary>The Host-created scratch workspace path for a folderless chat.</summary>
+public sealed record ScratchWorkspacePath(string Path, string Kind);
+
 public sealed record AgentRunModel(
     string RunId,
     string SessionId,

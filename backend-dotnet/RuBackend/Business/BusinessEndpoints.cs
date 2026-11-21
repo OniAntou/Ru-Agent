@@ -28,6 +28,7 @@ public static partial class BusinessEndpoints
         app.MapGet("/sessions", ListSessionsAsync);
         MapSessionHistory(app);
         app.MapPost("/sessions/new", CreateSessionAsync);
+        app.MapPost("/sessions/{sessionId}/workspace/scratch", EnsureScratchWorkspaceAsync);
         app.MapPost("/sessions/{sessionId}/activate", ActivateSessionAsync);
         app.MapPost("/sessions/{sessionId}/rewind", RewindSessionAsync);
         app.MapPost("/sessions/{sessionId}/fork", ForkSessionAsync);
@@ -285,6 +286,52 @@ public static partial class BusinessEndpoints
         }
     }
 
+    /// <summary>
+    /// Allocates the Ru-owned scratch workspace a folderless chat works in. A chat with
+    /// no project has no path to stage a file before its first run, so the client asks
+    /// the Host for the canonical path here and stages its attachment into that folder.
+    /// The run later sends the same path; workspace kind still comes from the Host marker.
+    /// </summary>
+    private static async Task<IResult> EnsureScratchWorkspaceAsync(
+        string sessionId,
+        ISessionStore sessions,
+        ScratchWorkspaceStore scratchWorkspaces,
+        ILoggerFactory loggers,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!ScratchWorkspaceStore.IsValidSessionId(sessionId))
+            {
+                return Results.BadRequest(new { status = "error", code = "invalid_session_id" });
+            }
+
+            if (await sessions.GetAsync(sessionId, cancellationToken).ConfigureAwait(false) is null)
+            {
+                return Results.NotFound(new { status = "error", code = "session_not_found" });
+            }
+
+            var path = scratchWorkspaces.Ensure(sessionId);
+            return Results.Ok(new
+            {
+                status = "ok",
+                workspace_path = path,
+                workspace_kind = "scratch",
+            });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            LogFailure(loggers, "scratch workspace ensure", error);
+            return Results.Json(
+                new { status = "error", code = "scratch_workspace_unavailable" },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
     private static async Task<IResult> ActivateSessionAsync(
         string sessionId,
         ISessionStore sessions,
@@ -328,6 +375,7 @@ public static partial class BusinessEndpoints
         HttpRequest request,
         IHarnessSessionDeletionCoordinator deletion,
         ISessionStore sessions,
+        ScratchWorkspaceStore scratchWorkspaces,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
@@ -339,6 +387,13 @@ public static partial class BusinessEndpoints
             if (string.Equals(request.Query["if_empty"], "true", StringComparison.OrdinalIgnoreCase))
             {
                 var cleaned = await sessions.CleanupEmptyAsync(sessionId, cancellationToken).ConfigureAwait(false);
+                if (cleaned && ScratchWorkspaceStore.IsValidSessionId(sessionId))
+                {
+                    // A draft that staged an attachment before its first run owns a
+                    // scratch folder too; the full deletion path removes it, this
+                    // empty-row cleanup must not leave it behind.
+                    scratchWorkspaces.TryDelete(sessionId);
+                }
                 return Results.Ok(new { status = cleaned ? "ok" : "error" });
             }
 

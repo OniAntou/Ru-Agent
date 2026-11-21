@@ -43,9 +43,11 @@ model nothing to act on: `invalid_utf8` reached it as "Tool arguments were rejec
      ordinary workspace folder. Only `.ru\hooks.json` and `.ru\mcp.json` directly under
      `.ru` are protected, and a copy whose name the Broker protects anywhere (harness keys,
      databases, runtime descriptors) is renamed `attached-<name>`.
-3. **A new desktop chat with no folder** has nowhere to put a copy. It keeps the earlier
-   behavior: local document extraction, inlined text, and a refusal that says to choose a
-   folder.
+3. **A new desktop chat with no folder** asks the Host for its session-scoped scratch
+   workspace before staging a non-image file, then follows the same path rules as a chat
+   with a folder ([ADR 0054](0054-folderless-attachments-use-scratch-workspace.md)). If the
+   Host cannot allocate it, the earlier behavior remains as a fallback: local document
+   extraction, inlined text, and a refusal that says to choose a folder.
 4. **`read` extracts Office Open XML and OpenDocument text.**
    - Covered formats: `.docx`/`.docm`/`.dotx`, `.xlsx`/`.xlsm`/`.xltx`,
      `.pptx`/`.pptm`/`.potx`/`.ppsx`, `.odt`, `.ods`, `.odp`.

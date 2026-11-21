@@ -352,8 +352,8 @@ _Avoid_: repository-stored authority
 
 
 **Scratch Workspace**:
-A Ru-owned workspace under the Ru data root for a chat that never chose a project folder. Ownership requires a matching session marker and canonical path to the non-reparse session directory; path shape alone does not establish ownership. It is ordinary workspace territory for trust, policy and tools; the GUI places its chats in Recents unless the user explicitly changes sidebar placement. It is deleted after successful or confirmed-absent session deletion and reclaimed by a startup sweeper.
-Implementation: [host](docs/architecture/host.md), [ADR 0041](docs/adr/0041-scratch-workspaces.md).
+A Ru-owned workspace under the Ru data root for a chat that never chose a project folder. Ownership requires a matching session marker and canonical path to the non-reparse session directory; path shape alone does not establish ownership. It is ordinary workspace territory for trust, policy and tools; the GUI places its chats in Recents unless the user explicitly changes sidebar placement. It is allocated lazily for the first non-image attachment or the first run, whichever comes first; it is deleted after successful or confirmed-absent session deletion and reclaimed by a startup sweeper.
+Implementation: [host](docs/architecture/host.md), [ADR 0041](docs/adr/0041-scratch-workspaces.md), [ADR 0054](docs/adr/0054-folderless-attachments-use-scratch-workspace.md).
 _Avoid_: install directory or drive root as a default workspace, project-derived authority
 
 
@@ -397,8 +397,8 @@ _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 
 
 **Staged Attachment**:
-A copy of a file the user attached from outside the workspace, made by the client in `<workspace>\.ru\attachments` so the model opens it by workspace path with the ordinary file tools. It is the user's own action on their workspace and grants the agent nothing: Broker path rules and presets are unchanged. The folder ignores itself in git, a copy is bounded, removed with its pending attachment, and pruned after 14 days.
-Implementation: [GUI](docs/architecture/gui.md), [TUI](docs/architecture/tui.md), [ADR 0053](docs/adr/0053-attachments-reach-the-model-as-paths.md).
+A copy of a file the user attached from outside the workspace, made by the client in `<workspace>\.ru\attachments` so the model opens it by workspace path with the ordinary file tools. A folderless chat gets the Host-owned scratch workspace first, then stages into it. It is the user's own action on their workspace and grants the agent nothing: Broker path rules and presets are unchanged. The folder ignores itself in git, a copy is bounded, removed with its pending attachment, and pruned after 14 days.
+Implementation: [GUI](docs/architecture/gui.md), [TUI](docs/architecture/tui.md), [ADR 0053](docs/adr/0053-attachments-reach-the-model-as-paths.md), [ADR 0054](docs/adr/0054-folderless-attachments-use-scratch-workspace.md).
 _Avoid_: Widening read access to a folder outside the workspace, inlining binary bytes, editing the user's `.gitignore`
 
 

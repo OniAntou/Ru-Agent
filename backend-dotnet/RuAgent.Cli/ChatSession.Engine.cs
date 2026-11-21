@@ -12,6 +12,9 @@ public sealed partial class AgentCommands
             chatEngine = loop;
             loop.SetTaskCommandHandler((argument, token) => RunCommandControlAsync("tasks", () => ShowTasksAsync(argument, token), token));
             loop.SetRetainedContinuationClassifier(IsRetainedContinuation);
+            // A paused queue left by a failed submission resumes only when the operator
+            // sends again while that failed submission is still held for retry.
+            loop.SetPausedQueueRetryProbe(() => submissions.Retryable is not null);
             loop.SetShutdownSettlement(() => Task.WhenAll(
                 runSession.WaitForRunSettlementAsync(), attachmentTasks.StopAsync()));
             loop.SetSubmissionSnapshotFactory(line => submissions.CreateSnapshot(

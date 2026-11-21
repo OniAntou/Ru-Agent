@@ -159,6 +159,80 @@ public sealed class ChatSessionEngineTests
     }
 
     [Fact]
+    public async Task An_explicit_prompt_resumes_a_paused_queue_left_by_a_failed_turn()
+    {
+        using var diagnostics = new StringWriter();
+        var view = new PlainChatView(diagnostics, "");
+        var engine = new ChatSessionEngine(view);
+        var seen = new List<string>();
+        engine.SetPromptHandler((line, _) =>
+        {
+            lock (seen) seen.Add(line);
+            return Task.CompletedTask;
+        });
+        // A failed turn left a retry hold and paused the queue: nothing will drain it
+        // on its own. The retry probe stands in for ChatSubmissionState.Retryable.
+        engine.SetPausedQueueRetryProbe(() => true);
+        engine.PauseQueuedSubmissions();
+
+        view.InputText = "retry after fixing the key";
+        engine.Submit();
+
+        await WaitUntilAsync(() => { lock (seen) return seen.Count == 1; });
+        Assert.Equal(["retry after fixing the key"], seen);
+        Assert.DoesNotContain("prompt queued", diagnostics.ToString());
+        engine.Stop();
+        await engine.Completion;
+    }
+
+    [Fact]
+    public async Task A_resumed_paused_queue_runs_the_explicit_retry_before_older_queued_prompts()
+    {
+        using var diagnostics = new StringWriter();
+        var view = new PlainChatView(diagnostics, "");
+        var engine = new ChatSessionEngine(view);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var seen = new List<string>();
+        engine.SetPromptHandler(async (line, ct) =>
+        {
+            lock (seen) seen.Add(line);
+            if (line == "first") await release.Task.WaitAsync(ct);
+        });
+
+        view.InputText = "first";
+        engine.Submit();
+        await WaitUntilAsync(() => { lock (seen) return seen.Count == 1; });
+        view.InputText = "queued";
+        engine.Submit();
+        engine.SetPausedQueueRetryProbe(() => true);
+        engine.PauseQueuedSubmissions();
+        release.TrySetResult();
+        await WaitUntilAsync(() => !engine.IsBusy);
+
+        view.InputText = "retry";
+        engine.Submit();
+
+        await WaitUntilAsync(() => { lock (seen) return seen.Count == 3; });
+        Assert.Equal(["first", "retry", "queued"], seen);
+        engine.Stop();
+        await engine.Completion;
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("condition was not reached");
+            }
+
+            await Task.Delay(10);
+        }
+    }
+
+    [Fact]
     public async Task EmptyEofDoesNotCreateASubmission()
     {
         var view = new PlainChatView(TextWriter.Null, ""); var engine = new ChatSessionEngine(view);

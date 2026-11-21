@@ -41,6 +41,7 @@ public partial class ChatSessionEngine
     private Func<string, bool>? _stateChangingCommandClassifier;
     private Func<string, bool>? _localCommandClassifier;
     private Func<string, bool>? _retainedContinuationClassifier;
+    private Func<bool>? _retryHoldProbe;
     private Action<ChatSubmissionSnapshot>? _submissionAccepted;
     private Action<ChatSubmissionSnapshot>? _submissionDiscarded;
     private Func<Task>? _shutdownSettlement;
@@ -145,8 +146,14 @@ public partial class ChatSessionEngine
         _stateChangingCommandClassifier = classifier;
 
     internal void SetLocalCommandClassifier(Func<string, bool> classifier) => _localCommandClassifier = classifier;
-
     internal void SetRetainedContinuationClassifier(Func<string, bool> classifier) => _retainedContinuationClassifier = classifier;
+
+    /// <summary>
+    /// True while a failed submission is held for an explicit retry. An explicit
+    /// submission in that state is the operator following the retry instruction, so it
+    /// may clear a paused queue that would otherwise never drain.
+    /// </summary>
+    internal void SetPausedQueueRetryProbe(Func<bool> probe) => _retryHoldProbe = probe;
 
     internal void PauseQueuedSubmissions()
     {
@@ -318,12 +325,29 @@ public partial class ChatSessionEngine
 
         var queued = false;
         var refused = false;
+        var resumedPausedQueue = false;
         lock (_queueGate)
         {
             // Stop may arrive while snapshot validation runs. Until admission the
             // draft and attachments still belong to their existing owner.
             if (_stopped) return;
-            var mustQueue = _busy || _queuePaused || _queued.Count > 0;
+            if (_queuePaused && !_busy && !isRepairCommandWhilePaused && !retainedContinuation
+                && _retryHoldProbe?.Invoke() == true)
+            {
+                // A held failed submission means the operator is following the retry
+                // instruction ("…then send again"). Without this the pause set by that
+                // failure could never be cleared once its turn ended: the drain refuses
+                // while paused and every later prompt was queued into a queue that never
+                // moves. Resume so this submission runs; earlier queued submissions
+                // drain after it.
+                _queuePaused = false;
+                resumedPausedQueue = true;
+            }
+
+            // `_queued.Count > 0` normally means a running turn is mid-drain between
+            // StartTurn calls. A resumed paused queue is the exception: the explicit
+            // retry submission starts first.
+            var mustQueue = _busy || _queuePaused || (!resumedPausedQueue && _queued.Count > 0);
             if (mustQueue && !isRepairCommandWhilePaused)
             {
                 if (_queued.Count >= MaxQueueDepth)

@@ -545,6 +545,55 @@ public sealed partial class InProcessModelStepRunnerTests
         Assert.Equal(["model_history_invalid"], repairs);
     }
 
+    [Fact]
+    public async Task Missing_prompt_in_stored_context_is_recovered_with_a_continuation_prompt()
+    {
+        var provider = new ScriptedProvider((_, _) => Deltas(
+            new ModelDelta("ok", [], completed: true, finishReason: "stop")));
+        var repairs = new List<string>();
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
+        {
+            StepRetryBackoffsOverride = [TimeSpan.Zero],
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
+            ObserveHistoryRepair = repairs.Add,
+        };
+        var context = new ModelContextSnapshot(
+            [ModelContextEntry.Text("src-1", 1, ModelContextRole.System, "Working state")],
+            Array.Empty<byte>());
+        var request = new ModelStepRequest(
+            new RunId("run_" + new string('a', 32)),
+            new ModelStepId("step_" + new string('b', 32)),
+            context,
+            SystemPromptContext.Empty,
+            AgentPermissionPreset.Standard,
+            policySnapshotVersion: 1,
+            policySnapshotSha256: new string('c', 64));
+
+        var result = await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        Assert.Equal("ok", result.Step.Text);
+        Assert.Equal(1, provider.Calls);
+        Assert.Equal(["missing_user_prompt"], repairs);
+    }
+
+    [Fact]
+    public async Task Unknown_finish_reason_is_retried_as_a_malformed_response()
+    {
+        var provider = new ScriptedProvider((_, attempt) => Deltas(new ModelDelta(
+            "answer", [], completed: true, finishReason: attempt == 1 ? "mystery" : "stop")));
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
+        {
+            StepRetryBackoffsOverride = [TimeSpan.Zero],
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
+        };
+
+        var result = await runner.RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        Assert.Equal("answer", result.Step.Text);
+        Assert.Equal(AssistantFinishReason.Stop, result.Step.FinishReason);
+        Assert.Equal(2, provider.Calls);
+    }
+
     private static InProcessModelStepRunner Runner(
         ScriptedProvider provider, ProviderBootstrapData? bootstrap = null) =>
         new(new ModelStepService(provider))

@@ -90,6 +90,26 @@ public sealed class InProcessModelHistoryRecoveryTests
         Assert.Contains(messages, message => message.Content.Contains("compacted earlier work", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Request_ceiling_failure_continues_on_text_only_dialogue()
+    {
+        var context = Snapshot(
+            User("old-user", 1, "Earlier request"),
+            ModelContextEntry.Assistant("answer", 2,
+                new AssistantStep("Earlier answer", [], AssistantFinishReason.Stop, 1)),
+            AssistantCalls("batch", 3, ("call_a", "read")),
+            Receipt("batch-receipt", 4, "internal-batch", "call_a"),
+            User("current-user", 5, "New request"));
+
+        var (prompt, messages) = InProcessModelStepRunner.RecoverConversationForCodeForTests(
+            context, "request_too_large");
+
+        Assert.Equal("New request", prompt);
+        Assert.DoesNotContain(messages, message => message.Role == "tool");
+        Assert.DoesNotContain(messages, message => message.ToolCalls.Count > 0);
+        Assert.Contains(messages, message => message.Role == "assistant" && message.Content == "Earlier answer");
+    }
+
     private static ModelContextSnapshot Snapshot(params ModelContextEntry[] entries) =>
         new(entries, Array.Empty<byte>());
 

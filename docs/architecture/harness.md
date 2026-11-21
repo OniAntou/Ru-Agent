@@ -667,7 +667,9 @@ cannot be projected, falls back to the text handoff.
 Stored history is also repaired when a step is built. If a retained tool batch cannot be paired
 (an interrupted source, a reused provider call id, or a reasoning replay this build cannot
 project), `ModelHistoryRepair` keeps every complete batch and drops only the unpaired structure;
-when even that projection cannot be built, the step continues on text-only dialogue. The avoided
+when even that projection cannot be built, the step continues on text-only dialogue. The same
+recovery covers a missing prompt, a history or request above its message/byte ceiling, and an
+oversized reasoning replay; a plain continuation prompt is the final bounded fallback. The avoided
 bounded code is emitted as `model_history_repaired` in Host diagnostics instead of ending the run
 with `model_history_invalid`.
 

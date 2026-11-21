@@ -191,7 +191,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                 attempt++;
             }
             catch (ModelStepException error) when (!historyRecoveryAttempted
-                && IsRecoverableHistoryFailure(error.Code))
+                && IsRecoverableStepInputFailure(error.Code))
             {
                 // The first pass could still hand an unprojectable stored history to the
                 // step service before dispatch. Rebuild it in repaired form once.
@@ -249,7 +249,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             stepRequest = _stepService.PrepareRequest(
                 generationRequest, request.ModelStepId.Value, requireExactProjection: true, contextScope: request.RunId.Value);
         }
-        catch (ModelStepException error) when (IsRecoverableHistoryFailure(error.Code))
+        catch (ModelStepException error) when (IsRecoverableStepInputFailure(error.Code))
         {
             ReportHistoryRepair(error.Code);
             generationRequest = await BuildGenerationRequestAsync(request, null, cancellationToken,
@@ -351,7 +351,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             history = await BuildNativeHistoryAsync(request, bootstrap, modelMessages!, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (ModelRunnerProtocolException error) when (IsRecoverableHistoryFailure(error.Code))
+        catch (ModelRunnerProtocolException error) when (IsRecoverableStepInputFailure(error.Code))
         {
             // Stored history is the only input this Host cannot replace with a named
             // provider failure. A stored batch can be unpaired by an interrupted source,
@@ -524,7 +524,9 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         "tool_calls" => AssistantFinishReason.ToolCalls,
         "length" => AssistantFinishReason.Length,
         "content_filter" => AssistantFinishReason.ContentFilter,
-        _ => throw new ModelRunnerProtocolException("invalid_step"),
+        // An unknown terminal reason is a malformed response, not a user action: the
+        // next request is a fresh draw, so the bounded provider retry owns it.
+        _ => throw new ModelStepException("protocol_failure", retryable: true),
     };
 
     /// <summary>

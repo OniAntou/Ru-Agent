@@ -6,16 +6,19 @@ using RuAgent.Runtime.Adapters.Models;
 namespace RuBackend.Harness.ModelRunner;
 
 /// <summary>
-/// Bounded recovery for a step whose stored history cannot be projected as a valid
-/// provider conversation. Stored history is Host input, so a single unpaired batch
-/// must not become a terminal run failure the user cannot act on. The sanitized
-/// projection keeps every complete batch; when even that cannot be projected, the
-/// text-only fallback keeps the dialogue and drops only tool-call structure.
+/// Bounded recovery for a step whose stored input cannot become a valid provider
+/// conversation: an unpaired batch, a reused call id, a missing prompt, or a
+/// history/request above its ceiling. Stored input is Host data, so it must not
+/// become a terminal run failure the user cannot act on. The repaired projection
+/// keeps every complete batch; when even that cannot be built, the text-only
+/// fallback keeps the dialogue and drops only tool-call structure.
 /// </summary>
 public sealed partial class InProcessModelStepRunner
 {
-    private static bool IsRecoverableHistoryFailure(string code) =>
-        code is "model_history_invalid" or "provider_continuation_invalid" or "provider_continuation_missing";
+    private static bool IsRecoverableStepInputFailure(string code) =>
+        code is "model_history_invalid" or "provider_continuation_invalid" or "provider_continuation_missing"
+            or "model_history_too_large" or "provider_continuation_too_large"
+            or "request_too_large" or "invalid_request" or "missing_user_prompt";
 
     private void ReportHistoryRepair(string code)
     {
@@ -73,6 +76,10 @@ public sealed partial class InProcessModelStepRunner
     internal static (string Prompt, IReadOnlyList<ModelTurn> Messages) RecoverConversationForTests(
         ModelContextSnapshot context, bool hasImages = false) =>
         RecoverConversationOrLastResort(context, hasImages, "model_history_invalid");
+
+    internal static (string Prompt, IReadOnlyList<ModelTurn> Messages) RecoverConversationForCodeForTests(
+        ModelContextSnapshot context, string errorCode, bool hasImages = false) =>
+        RecoverConversationOrLastResort(context, hasImages, errorCode);
 
     internal static (string Prompt, IReadOnlyList<ModelTurn> Messages) BuildTextOnlyConversationForTests(
         IReadOnlyList<ModelContextEntry> entries, bool hasImages = false) =>

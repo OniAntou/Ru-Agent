@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: More Host-side step input failures no longer end a run. A missing prompt in
+  stored context, an oversized history or request, and oversized reasoning replay rebuild on
+  repaired text-only history (or a plain continuation prompt); a provider finish reason the
+  adapter does not know is now a retryable malformed response instead of a terminal
+  `invalid_step`.
+
 - **fix(harness)**: A step whose stored history cannot be projected — an unpaired tool call, a
   provider-reused call id, or unavailable reasoning replay — now repairs that history (keeping
   every complete batch, or falling back to text-only dialogue) instead of ending the run with

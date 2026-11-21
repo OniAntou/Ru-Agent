@@ -3,7 +3,7 @@ using RuApp.Models;
 namespace RuApp.Services;
 
 /// <summary>
-/// The outcome of a provider model fetch, ready to show.
+/// The outcome of a provider connection test, ready to show.
 /// </summary>
 /// <remarks>
 /// Tone is a small closed set rather than a brush, so this stays free of XAML and
@@ -17,7 +17,7 @@ internal sealed record ProviderConnectionTest(string Tone, string Message)
 }
 
 /// <summary>
-/// Turns a provider catalog result into what a model fetch tells the user.
+/// Turns a provider catalog result into what a connection test tells the user.
 /// </summary>
 /// <remarks>
 /// A key is stored, not proven. The only way to know it works is to ask the endpoint,
@@ -26,18 +26,19 @@ internal sealed record ProviderConnectionTest(string Tone, string Message)
 ///
 /// Kept out of the view so every branch is asserted: these messages are the entire
 /// feedback a user gets, and a branch that fell through to a blank line would look
-/// like the fetch did nothing.
+/// like the test did nothing.
 /// </remarks>
 internal static class ProviderConnectionTestPresentation
 {
-    internal const string TestingMessage = "Asking the provider for its models…";
+    internal const string ButtonLabel = "Test connection";
+    internal const string TestingMessage = "Testing…";
 
     /// <summary>The message shown while the request is in flight.</summary>
     internal static ProviderConnectionTest Testing() =>
         new(ProviderConnectionTest.NeutralTone, TestingMessage);
 
     /// <summary>
-    /// Reads a finished catalog result as a fetch outcome.
+    /// Reads a finished catalog result as a test outcome.
     /// </summary>
     internal static ProviderConnectionTest Project(ProviderCatalogState? state)
     {
@@ -45,7 +46,7 @@ internal static class ProviderConnectionTestPresentation
         {
             return new ProviderConnectionTest(
                 ProviderConnectionTest.ErrorTone,
-                "Could not reach the backend to fetch this provider's models.");
+                "Could not reach the backend to test this provider.");
         }
 
         if (state.IsSuccess)
@@ -57,8 +58,8 @@ internal static class ProviderConnectionTestPresentation
                 state.Models.Count switch
                 {
                     0 => "The endpoint answered, but it lists no models. Load one before sending a message.",
-                    1 => "1 model available.",
-                    _ => $"{state.Models.Count} models available.",
+                    1 => "Connection works. 1 model available.",
+                    _ => $"Connection works. {state.Models.Count} models available.",
                 });
         }
 
@@ -68,11 +69,11 @@ internal static class ProviderConnectionTestPresentation
     }
 
     /// <summary>
-    /// Whether a refresh that just failed is worth reporting as a fetch outcome.
+    /// Whether a refresh that just failed is worth reporting as a connection test.
     /// </summary>
     /// <remarks>
     /// The catalog also refreshes on a timer. Without this, an unrelated background
-    /// failure while the settings pane is open would land in the fetch status line,
+    /// failure while the settings pane is open would land in the test's status line,
     /// as if the user had asked for it.
     /// </remarks>
     internal static bool ReportsFailure(ProviderConnectionTest? test) =>
@@ -100,7 +101,7 @@ internal static class ProviderConnectionTestPresentation
             ["catalog_unauthorized"] =
                 "The provider rejected the API key. Check that it is correct, complete, and still active.",
             ["catalog_rate_limited"] =
-                "The provider is rate-limiting this key. Wait a moment, then fetch again.",
+                "The provider is rate-limiting this key. Wait a moment, then test again.",
             ["catalog_http_error"] =
                 "The provider returned an error. Check the key and the selected model.",
             ["catalog_timeout"] =
@@ -110,7 +111,7 @@ internal static class ProviderConnectionTestPresentation
             ["catalog_malformed"] =
                 "The provider answered in a shape Ru could not read. Check the endpoint URL.",
             ["provider_not_active"] =
-                "No provider is selected. Choose one above, then fetch again.",
+                "No provider is selected. Choose one above, then test again.",
             // The host folds a rejected credential into this code before it ever
             // reaches the provider.
             ["catalog_configuration_error"] =

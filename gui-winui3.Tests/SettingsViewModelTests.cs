@@ -79,17 +79,17 @@ public sealed partial class SettingsViewModelTests
         catalog.Raise(new ProviderCatalogState { Status = "error", ErrorCode = "catalog_unavailable" });
         foreach (var action in dispatched.ToArray()) action();
 
-        Assert.Equal("Add a 302.AI API key above to load its models.", viewModel.ProviderModelsStatus);
-        Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ProviderModelsStatusTone);
+        Assert.Equal("Add a 302.AI API key above to load its models.", viewModel.ProviderTestMessage);
+        Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ProviderTestTone);
 
         // A timeout is not a missing key, even for a provider without one.
         catalog.Raise(new ProviderCatalogState { Status = "error", ErrorCode = "catalog_timeout" });
         foreach (var action in dispatched.ToArray()) action();
-        Assert.Contains("did not answer in time", viewModel.ProviderModelsStatus, StringComparison.Ordinal);
+        Assert.Contains("did not answer in time", viewModel.ProviderTestMessage, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Fetching_models_asks_for_a_fresh_unthrottled_refresh_and_lists_the_result()
+    public async Task Test_connection_asks_for_a_fresh_unthrottled_refresh_and_names_the_provider()
     {
         var backend = new FakeBackend { Settings = new AppSettingsDto { BackendChoice = "models.dev:opencode-go" } };
         var catalog = new FakeCatalog
@@ -104,105 +104,15 @@ public sealed partial class SettingsViewModelTests
         using var viewModel = NewViewModel();
         await viewModel.AttachAsync(backend, catalog);
 
-        await viewModel.FetchAvailableModelsCommand.ExecuteAsync(null);
+        await viewModel.TestConnectionCommand.ExecuteAsync(null);
 
         Assert.True(catalog.LastRefreshBypassedThrottle);
-        Assert.Equal("Connected. 1 model available.", viewModel.ProviderModelsStatus);
-        Assert.Equal(ProviderConnectionTest.SuccessTone, viewModel.ProviderModelsStatusTone);
-        var model = Assert.Single(viewModel.ProviderModels);
-        Assert.Equal("glm-5.3-flash", model.Id);
-        Assert.True(viewModel.HasProviderModels);
+        Assert.Contains("Connection works. 1 model available.", viewModel.ProviderTestMessage, StringComparison.Ordinal);
+        Assert.StartsWith("opencode-go: ", viewModel.ProviderTestMessage, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Fetched_models_are_read_only_rows_with_context_and_support_state()
-    {
-        var backend = new FakeBackend { Settings = new AppSettingsDto { BackendChoice = "models.dev:openrouter" } };
-        var catalog = new FakeCatalog
-        {
-            NextState = new ProviderCatalogState
-            {
-                Status = "ok",
-                Backend = "models.dev:openrouter",
-                Catalog =
-                [
-                    new ProviderCatalogModel { Id = "model-a", Supported = true, ContextLength = 128_000 },
-                    new ProviderCatalogModel { Id = "model-b", Supported = false },
-                ],
-            },
-        };
-        using var viewModel = NewViewModel();
-        await viewModel.AttachAsync(backend, catalog);
-
-        await viewModel.FetchAvailableModelsCommand.ExecuteAsync(null);
-
-        Assert.Collection(
-            viewModel.ProviderModels,
-            row =>
-            {
-                Assert.Equal("model-a", row.Id);
-                Assert.Contains("128", row.ContextDetail, StringComparison.Ordinal);
-                Assert.Contains("tokens", row.ContextDetail, StringComparison.Ordinal);
-                Assert.False(row.IsUnsupported);
-            },
-            row =>
-            {
-                Assert.Equal("model-b", row.Id);
-                Assert.Empty(row.ContextDetail);
-                Assert.True(row.IsUnsupported);
-                Assert.Equal("unsupported", row.UnsupportedLabel);
-            });
-    }
-
-    [Fact]
-    public async Task Reopening_a_provider_clears_the_fetched_list()
-    {
-        var backend = new FakeBackend { Settings = new AppSettingsDto { BackendChoice = "models.dev:openrouter" } };
-        var catalog = new FakeCatalog
-        {
-            NextState = new ProviderCatalogState { Status = "ok", Models = ["model-a"] },
-        };
-        using var viewModel = NewViewModel();
-        await viewModel.AttachAsync(backend, catalog);
-        await viewModel.FetchAvailableModelsCommand.ExecuteAsync(null);
-        Assert.Single(viewModel.ProviderModels);
-
-        viewModel.SelectProviderCommand.Execute(new ProviderRow("models.dev:openrouter", "OpenRouter"));
-
-        Assert.Empty(viewModel.ProviderModels);
-        Assert.Equal("No models fetched yet.", viewModel.ProviderModelsStatus);
-    }
-
-    [Fact]
-    public async Task A_failed_fetch_clears_the_list_and_reports_the_error()
-    {
-        var backend = new FakeBackend { Settings = new AppSettingsDto { BackendChoice = "models.dev:openrouter" } };
-        var catalog = new FakeCatalog
-        {
-            NextState = new ProviderCatalogState { Status = "ok", Models = ["model-a"] },
-        };
-        using var viewModel = NewViewModel();
-        await viewModel.AttachAsync(backend, catalog);
-        await viewModel.FetchAvailableModelsCommand.ExecuteAsync(null);
-        Assert.Single(viewModel.ProviderModels);
-
-        catalog.NextState = new ProviderCatalogState
-        {
-            Status = "error",
-            Backend = "models.dev:openrouter",
-            ErrorCode = "catalog_unauthorized",
-        };
-        await viewModel.FetchAvailableModelsCommand.ExecuteAsync(null);
-
-        Assert.Empty(viewModel.ProviderModels);
-        Assert.Equal(ProviderConnectionTest.ErrorTone, viewModel.ProviderModelsStatusTone);
-        Assert.Contains("API key", viewModel.ProviderModelsStatus, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("catalog_unauthorized", viewModel.ProviderModelsErrorCode);
-        Assert.True(viewModel.IsProviderModelsFetchEnabled);
-    }
-
-    [Fact]
-    public async Task Fetching_models_saves_a_key_still_waiting_for_its_debounce()
+    public async Task Test_connection_saves_a_key_still_waiting_for_its_debounce()
     {
         var backend = new FakeBackend
         {
@@ -222,17 +132,16 @@ public sealed partial class SettingsViewModelTests
         await viewModel.AttachAsync(backend, catalog);
 
         viewModel.ModelsDevApiKey = "sk-synthetic-test-key";
-        // The debounce has not run yet; the explicit fetch has to save the key first.
-        await viewModel.FetchAvailableModelsCommand.ExecuteAsync(null);
+        // The debounce has not run yet; the explicit test has to save the key first.
+        await viewModel.TestConnectionCommand.ExecuteAsync(null);
 
         Assert.Equal("sk-synthetic-test-key", Assert.Single(backend.Validations).Key);
         Assert.True(catalog.LastRefreshBypassedThrottle);
-        Assert.Contains("Connected", viewModel.ProviderModelsStatus, StringComparison.Ordinal);
-        Assert.Single(viewModel.ProviderModels);
+        Assert.Contains("Connection works", viewModel.ProviderTestMessage, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Fetching_models_waits_for_an_inflight_key_check_before_refreshing()
+    public async Task Test_connection_waits_for_an_inflight_key_check_before_refreshing()
     {
         var backend = new FakeBackend
         {
@@ -254,16 +163,15 @@ public sealed partial class SettingsViewModelTests
         viewModel.ModelsDevApiKey = "sk-synthetic-test-key";
         await backend.WaitForValidationAsync();
 
-        var fetch = viewModel.FetchAvailableModelsCommand.ExecuteAsync(null);
+        var test = viewModel.TestConnectionCommand.ExecuteAsync(null);
         await Task.Yield();
-        Assert.False(fetch.IsCompleted);
+        Assert.False(test.IsCompleted);
 
         backend.KeyGate.SetResult();
-        await fetch;
+        await test;
 
         Assert.Equal("sk-synthetic-test-key", Assert.Single(backend.Validations).Key);
-        Assert.Contains("Connected", viewModel.ProviderModelsStatus, StringComparison.Ordinal);
-        Assert.Single(viewModel.ProviderModels);
+        Assert.Contains("Connection works", viewModel.ProviderTestMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -546,7 +454,7 @@ public sealed partial class SettingsViewModelTests
     }
 
     [Fact]
-    public async Task The_fetch_saves_before_it_refreshes_and_reports_the_outcome()
+    public async Task The_connection_test_saves_before_it_refreshes_and_reports_the_outcome()
     {
         var backend = new FakeBackend();
         var catalog = new FakeCatalog { NextState = new ProviderCatalogState { Status = "ok", Models = ["m1"] } };
@@ -554,12 +462,11 @@ public sealed partial class SettingsViewModelTests
         using var viewModel = NewViewModel();
         await viewModel.AttachAsync(backend, catalog);
 
-        await viewModel.FetchAvailableModelsCommand.ExecuteAsync(null);
+        await viewModel.TestConnectionCommand.ExecuteAsync(null);
 
         Assert.True(catalog.ForcedRefreshes > 0);
-        Assert.Equal("Connected. 1 model available.", viewModel.ProviderModelsStatus);
-        Assert.Equal("m1", Assert.Single(viewModel.ProviderModels).Id);
-        Assert.True(viewModel.IsProviderModelsFetchEnabled);
+        Assert.NotEqual(ProviderConnectionTestPresentation.TestingMessage, viewModel.ProviderTestMessage);
+        Assert.True(viewModel.IsProviderTestEnabled);
     }
 
     [Fact]
@@ -573,17 +480,15 @@ public sealed partial class SettingsViewModelTests
         await viewModel.AttachAsync(
             new FakeBackend { Settings = new AppSettingsDto { BackendChoice = "models.dev:openai" }, KeyIds = ["openai"] },
             catalog);
-        string initial = viewModel.ProviderModelsStatus;
-        Assert.Equal("No models fetched yet.", initial);
+        string initial = viewModel.ProviderTestMessage;
 
         catalog.Raise(new ProviderCatalogState { Status = "ok", Models = ["m1"] });
         Assert.Empty(dispatched);
 
         catalog.Raise(new ProviderCatalogState { Status = "error", ErrorCode = "catalog_unreachable" });
-        Assert.Equal(initial, viewModel.ProviderModelsStatus);
-        Assert.Empty(viewModel.ProviderModels);
+        Assert.Equal(initial, viewModel.ProviderTestMessage);
         Assert.Single(dispatched)();
-        Assert.Equal(ProviderConnectionTest.ErrorTone, viewModel.ProviderModelsStatusTone);
+        Assert.Equal(ProviderConnectionTest.ErrorTone, viewModel.ProviderTestTone);
     }
 
     [Fact]

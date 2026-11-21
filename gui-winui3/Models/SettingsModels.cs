@@ -93,29 +93,6 @@ namespace RuApp.Models
     }
 
     /// <summary>
-    /// One model returned by an explicit provider fetch, rendered read-only in Settings.
-    /// The chat picker remains the only place a model is selected.
-    /// </summary>
-    public sealed class ProviderModelRow
-    {
-        public ProviderModelRow(ProviderCatalogModel model)
-        {
-            ArgumentNullException.ThrowIfNull(model);
-            Id = model.Id ?? string.Empty;
-            ContextDetail = model.ContextLength is { } tokens ? $"{tokens:N0} tokens" : string.Empty;
-            IsUnsupported = !model.Supported;
-        }
-
-        public string Id { get; }
-
-        public string ContextDetail { get; }
-
-        public bool IsUnsupported { get; }
-
-        public string UnsupportedLabel => IsUnsupported ? "unsupported" : string.Empty;
-    }
-
-    /// <summary>
     /// Maps a backend choice to the model id stored on <see cref="AppSettingsDto"/>.
     /// Single home for the backend -&gt; model switch previously duplicated
     /// across ChatView and MainWindow.

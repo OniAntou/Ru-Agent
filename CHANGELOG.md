@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **feat(gui)**: The provider editor is grouped into Authentication and Models. `Test connection`
-  is gone; `Fetch available models` saves pending edits, force-refreshes the provider catalog and
-  shows a read-only list of model IDs, context windows and unsupported entries. The list starts
-  empty on every provider and is filled only by that explicit fetch; model selection still stays
-  in the chat picker. The action reuses the pending-key and catalog-restart ordering that fixed
-  the false key rejection, and no backend route changes.
-
 - **feat(attachments)**: A desktop chat with no project folder can attach any file, not only
   images, text/code and PDF/Office documents. Before staging a non-image attachment the app
   asks the Host for the session's scratch workspace

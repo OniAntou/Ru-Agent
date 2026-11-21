@@ -10,7 +10,7 @@ In the **desktop app**, open **Settings → Models & Providers**:
 1. Pick the **Active Provider**.
 2. Paste your **API key**. It is stored in Windows Credential Manager and sent only to the provider you
    chose.
-3. Select **Fetch available models** to confirm Ru can reach the provider and see its list.
+3. Select **Test connection** to confirm Ru can reach the provider.
 4. Close Settings and pick a model beside the message box.
 
 In the **terminal UI**, use slash commands (type `/` to see them):

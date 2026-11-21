@@ -100,7 +100,7 @@ public sealed class SettingsPresenterTests
     }
 
     [Fact]
-    public async Task Fetch_models_waits_for_the_latest_coalesced_save_before_refreshing()
+    public async Task Connection_test_waits_for_the_latest_coalesced_save_before_refreshing()
     {
         var presenter = new SettingsPresenter();
         var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -113,7 +113,7 @@ public sealed class SettingsPresenterTests
             return true;
         });
 
-        Task<ProviderModelsFetchRun> connection = SettingsProviderPresenter.FetchProviderModelsAsync(
+        Task<ProviderConnectionTestRun> connection = SettingsProviderPresenter.TestConnectionAsync(
             async () =>
             {
                 bool saved = await presenter.SaveAsync(() =>
@@ -136,7 +136,7 @@ public sealed class SettingsPresenterTests
     }
 
     [Fact]
-    public async Task Fetch_models_does_not_refresh_after_its_coalesced_save_fails()
+    public async Task Connection_test_does_not_refresh_after_its_coalesced_save_fails()
     {
         var presenter = new SettingsPresenter();
         var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -146,7 +146,7 @@ public sealed class SettingsPresenterTests
             return true;
         });
         bool refreshed = false;
-        Task<ProviderModelsFetchRun> connection = SettingsProviderPresenter.FetchProviderModelsAsync(
+        Task<ProviderConnectionTestRun> connection = SettingsProviderPresenter.TestConnectionAsync(
             () => presenter.SaveAsync(() => Task.FromResult(false)),
             () => { refreshed = true; return Task.FromResult(true); },
             () => null);

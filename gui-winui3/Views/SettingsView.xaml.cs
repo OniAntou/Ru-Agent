@@ -14,7 +14,7 @@ namespace RuApp.Views
 {
     /// <summary>
     /// Renders <see cref="SettingsViewModel"/>. Decisions about providers, keys, autosave
-    /// and the model fetch live in the view model; this class owns only what needs
+    /// and the connection test live in the view model; this class owns only what needs
     /// WinUI: brushes, flyouts, layout measurement and the transcript-size specimens.
     /// </summary>
     public sealed partial class SettingsView : UserControl, IDisposable

@@ -18,11 +18,11 @@ internal sealed record ProviderFilterProjection(
 internal readonly record struct ProviderPickerLayout(double Height);
 
 /// <summary>
-/// What an explicit model fetch learned: the catalog state after the refresh,
+/// What an explicit connection test learned: the catalog state after the refresh,
 /// and whether a refresh actually ran. A suppressed refresh must not be read as a
-/// fresh model list, so the caller distinguishes the two.
+/// fresh verdict, so the caller distinguishes the two.
 /// </summary>
-internal sealed record ProviderModelsFetchRun(ProviderCatalogState? State, bool Refreshed);
+internal sealed record ProviderConnectionTestRun(ProviderCatalogState? State, bool Refreshed);
 
 /// <summary>
 /// Provider-list and provider-action decisions shared by the settings surface.
@@ -120,18 +120,18 @@ internal static class SettingsProviderPresenter
         return modelsDevKeyIds.Contains(id, StringComparer.OrdinalIgnoreCase);
     }
 
-    internal static async Task<ProviderModelsFetchRun> FetchProviderModelsAsync(
+    internal static async Task<ProviderConnectionTestRun> TestConnectionAsync(
         Func<Task<bool>> savePendingSettings,
         Func<Task<bool>> refreshCatalog,
         Func<ProviderCatalogState?> readState)
     {
         if (!await savePendingSettings())
         {
-            return new ProviderModelsFetchRun(null, Refreshed: false);
+            return new ProviderConnectionTestRun(null, Refreshed: false);
         }
 
         bool refreshed = await refreshCatalog();
-        return new ProviderModelsFetchRun(readState(), refreshed);
+        return new ProviderConnectionTestRun(readState(), refreshed);
     }
 
     internal static async Task<bool> SignOutAsync(

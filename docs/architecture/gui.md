@@ -509,7 +509,7 @@ updates instead of touching `DispatcherQueue`. It exposes strings, booleans and
 collections only; the view maps tones to brushes and glyphs through `x:Bind`
 functions and keeps flyouts, measurement and composition effects.
 `SettingsViewModel` owns the provider picker, credentials, autosave, key probe,
-sign-out and the explicit model fetch. A credential stays in a key property only until it
+sign-out and connection test. A credential stays in a key property only until it
 is saved, validated or removed. Every provider-dependent value (label, key rows,
 sign-out) is derived in one place from the current choice, so resolving an unset
 or legacy stored choice cannot leave a stale label or a hidden key row.
@@ -518,11 +518,9 @@ provider form on entry. Add Provider uses the searchable, virtualized catalog
 without its custom row; Add custom Provider opens the existing OpenAI-compatible
 endpoint directly. Edit opens the same inline editor. Its Back action flushes
 pending settings/key validation before returning; failed saves or rejected keys
-stay in the editor. The editor's Models section starts empty and
-`Fetch available models` saves pending edits, force-refreshes the catalog and
-shows a read-only model list; a stored key alone does not fill it. The custom
-endpoint remains the single existing custom configuration; model selection stays
-in the chat composer. Provider management state lives in
+stay in the editor. Stored-key status does not imply a successful connection
+test. The custom endpoint remains the single existing custom configuration;
+model selection stays in the chat composer. Provider management state lives in
 `SettingsViewModel.Providers.cs`, without adding a backend route or credential store.
 Existing legacy credentials remain listed under their original identity; editing
 them does not replace them with a Models.dev provider. New credentials use the

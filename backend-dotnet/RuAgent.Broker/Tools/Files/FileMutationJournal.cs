@@ -6,8 +6,15 @@ public sealed class FileMutationJournal : IDisposable
     public const int MaxTotalBytes = 16 * 1024 * 1024;
 
     private readonly List<JournalEntry> _entries = new();
+    private readonly int _maxEntries;
     private long _totalBytes;
     private bool _disposed;
+
+    public FileMutationJournal(int maxEntries = MaxEntries)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxEntries);
+        _maxEntries = maxEntries;
+    }
 
     private sealed record JournalEntry(
         string CanonicalPath,
@@ -24,7 +31,7 @@ public sealed class FileMutationJournal : IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(beforeHash);
-        if (_entries.Count >= MaxEntries)
+        if (_entries.Count >= _maxEntries)
         {
             throw new InvalidOperationException("journal_too_large");
         }

@@ -95,7 +95,10 @@ public sealed class FilePatchAdapter
             throw;
         }
 
-        var journal = new FileMutationJournal();
+        // A rename journals both its target and its source, so the parser's file bound
+        // implies up to twice as many journal records. Sizing the journal for the patch
+        // keeps a legal multi-rename patch from failing midway as an internal overflow.
+        var journal = new FileMutationJournal(UnifiedPatchParser.MaxFiles * 2);
         var results = new List<JsonObject>();
         try
         {

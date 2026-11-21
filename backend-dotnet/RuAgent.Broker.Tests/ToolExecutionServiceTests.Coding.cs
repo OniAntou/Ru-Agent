@@ -130,6 +130,48 @@ public sealed partial class ToolExecutionServiceTests
     }
 
     [Fact]
+    public async Task Patch_with_more_than_thirty_two_renames_journals_both_paths_per_rename()
+    {
+        var fixture = CreateFullAccessService("ru-coding-many-renames-");
+        var workspace = Path.Combine(fixture.Root, "workspace");
+        const int renameCount = 33;
+        var patch = new System.Text.StringBuilder();
+        for (var index = 0; index < renameCount; index++)
+        {
+            var from = $"from-{index}.txt";
+            var to = $"to-{index}.txt";
+            File.WriteAllText(Path.Combine(workspace, from), $"content-{index}\n");
+            patch.Append("diff --git a/").Append(from).Append(" b/").Append(to).Append('\n')
+                .Append("similarity index 100%\n")
+                .Append("rename from ").Append(from).Append('\n')
+                .Append("rename to ").Append(to).Append('\n');
+        }
+
+        try
+        {
+            // Every rename records its target plus its source in the rollback journal,
+            // so 33 renames need 66 records; the old 64-entry journal failed with a
+            // generic adapter_error even though the parser accepts up to 64 files.
+            var result = await fixture.Service.ExecuteAuthenticatedV2Async(new AgentEnvelope(
+                AgentEnvelopeCodec.ProtocolVersionV2, "many-renames", AgentMessageTypes.ToolExecute,
+                fixture.SessionId, null, 30_000, new JsonObject
+                {
+                    ["tool_id"] = "apply_patch", ["tool_version"] = "1.0.0", ["run_id"] = fixture.RunId,
+                    ["capability_class"] = "internal", ["arguments"] = new JsonObject { ["patch"] = patch.ToString() },
+                }), default);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+            Assert.Equal(renameCount * 2, result.Output["files"]!.AsArray().Count);
+            for (var index = 0; index < renameCount; index++)
+            {
+                Assert.False(File.Exists(Path.Combine(workspace, $"from-{index}.txt")));
+                Assert.Equal($"content-{index}\n", File.ReadAllText(Path.Combine(workspace, $"to-{index}.txt")));
+            }
+        }
+        finally { await fixture.Service.DisposeAsync(); Directory.Delete(fixture.Root, true); }
+    }
+
+    [Fact]
     public async Task Coding_tools_create_then_atomically_edit_without_discriminators()
     {
         var fixture = CreateFullAccessService("ru-coding-tools-");

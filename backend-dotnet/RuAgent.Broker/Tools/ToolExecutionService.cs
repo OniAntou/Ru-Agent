@@ -484,7 +484,10 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         // The run-mode schema makes the argument vector optional.
         if (node is null) return Array.Empty<string>();
 
-        if (node is not JsonArray values || values.Count > 64)
+        // These are the same Protocol bounds the advertised schema and policy evaluation
+        // enforce. A stricter cap here would reject a call after its single-use approval
+        // token was already consumed, spending the authorization without running anything.
+        if (node is not JsonArray values || values.Count > TerminalLimits.MaxArguments)
         {
             throw new ToolExecutionException("invalid_arguments");
         }
@@ -492,7 +495,9 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         var result = new List<string>(values.Count);
         foreach (var value in values)
         {
-            if (value is not JsonValue item || !item.TryGetValue<string>(out var text) || text.Length > 1024)
+            if (value is not JsonValue item
+                || !item.TryGetValue<string>(out var text)
+                || text.Length > TerminalLimits.MaxArgumentChars)
             {
                 throw new ToolExecutionException("invalid_arguments");
             }

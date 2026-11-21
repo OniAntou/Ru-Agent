@@ -956,6 +956,105 @@ public sealed partial class ToolExecutionServiceTests
         }
     }
 
+    /// <summary>
+    /// The executor's argv bounds are the Protocol schema bounds. A stricter executor cap
+    /// would reject a call that schema validation and policy evaluation already accepted,
+    /// after its single-use authorization token had been consumed.
+    /// </summary>
+    [Fact]
+    public async Task Run_process_accepts_the_protocol_argument_bounds()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-argv-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var session = CreateSession(Path.Combine(root, "session"));
+        const string sessionId = "session-protocol-argv-bounds";
+        session.Open(
+            sessionId,
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
+                StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            // Exactly the Protocol maximum: 128 argument entries (well past the old 64).
+            var manyArguments = new List<string> { "/c", "echo" };
+            manyArguments.AddRange(Enumerable.Repeat("x", 126));
+            var many = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-argv-many-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["executable"] = "cmd.exe",
+                    ["arguments"] = new JsonArray(manyArguments.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()),
+                    ["timeout_ms"] = 30_000,
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, many.Status);
+            Assert.Equal(0, many.Output["exit_code"]!.GetValue<int>());
+
+            // One argument far past the old 1,024-character cap, still inside 4,096.
+            var longArgument = new string('a', 1_500);
+            var one = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-argv-long-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["executable"] = "cmd.exe",
+                    ["arguments"] = new JsonArray("/c", "echo", longArgument),
+                    ["timeout_ms"] = 30_000,
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, one.Status);
+            Assert.Equal(0, one.Output["exit_code"]!.GetValue<int>());
+            Assert.Contains(longArgument, one.Output["stdout_head"]!.GetValue<string>(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            await DeleteBackgroundRootAsync(root);
+        }
+    }
+
+    /// <summary>
+    /// Above the Protocol maximum the executor still fails the call with the named
+    /// invalid_arguments code rather than attempting a launch.
+    /// </summary>
+    [Fact]
+    public async Task Run_process_rejects_more_than_the_protocol_argument_count()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-argv-over-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var session = CreateSession(Path.Combine(root, "session"));
+        const string sessionId = "session-protocol-argv-over";
+        session.Open(
+            sessionId,
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
+                StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            var overArgumentCount = new List<string> { "/c", "echo" };
+            overArgumentCount.AddRange(Enumerable.Repeat("x", 127));
+            var result = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-argv-over-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["executable"] = "cmd.exe",
+                    ["arguments"] = new JsonArray(overArgumentCount.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()),
+                    ["timeout_ms"] = 30_000,
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.Equal("invalid_arguments", result.ErrorCode);
+        }
+        finally
+        {
+            await DeleteBackgroundRootAsync(root);
+        }
+    }
+
     private static async Task DeleteBackgroundRootAsync(string root)
     {
         // The killed process tree releases its working-directory handle a

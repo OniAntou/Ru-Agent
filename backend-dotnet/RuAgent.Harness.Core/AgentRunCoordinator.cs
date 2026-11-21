@@ -315,11 +315,22 @@ public sealed partial class AgentRunCoordinator
         // accepted model input and its context entries remain pinned to this step.
         var beforeFreshness = await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false);
         if (beforeFreshness.Version != run.Version || beforeFreshness.State != HarnessRunState.Running)
+        {
+            // The step was suppressed, so its streamed prose is still provisional:
+            // retract it before returning, exactly like every other suppressed path
+            // (harness.md "streamed text remains provisional until the Harness accepts
+            // the step"). Otherwise the client appends the discarded text to the next
+            // accepted step.
+            invocation.RetractAssistantText();
             return AgentRunStepResult.Blocked(beforeFreshness, "run_changed_during_generation");
+        }
         var freshContext = await _contextAssembler.AssembleAsync(run.RunId, cancellationToken).ConfigureAwait(false);
         var afterFreshness = await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false);
         if (afterFreshness.Version != beforeFreshness.Version || afterFreshness.State != HarnessRunState.Running)
+        {
+            invocation.RetractAssistantText();
             return AgentRunStepResult.Blocked(afterFreshness, "run_changed_during_generation");
+        }
         context = new ModelContextSnapshot(context.Entries, context.CanonicalUtf8,
             context.ObservedFilePaths, freshContext.VerificationEvidence);
 
@@ -332,6 +343,7 @@ public sealed partial class AgentRunCoordinator
         catch (InvalidOperationException error) when (error.Message == "run_version_conflict")
         {
             var current = await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+            invocation.RetractAssistantText();
             return AgentRunStepResult.Blocked(current, "run_changed_during_generation");
         }
     }

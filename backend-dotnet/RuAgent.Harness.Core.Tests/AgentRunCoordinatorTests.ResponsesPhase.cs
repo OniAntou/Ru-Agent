@@ -5,6 +5,7 @@ using RuAgent.Harness.Core.Tests.Prompting;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Tests.Fakes;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Harness.Core.Tests;
@@ -107,7 +108,7 @@ public sealed partial class AgentRunCoordinatorTests
     public async Task Run_version_change_during_final_generation_blocks_stale_final()
     {
         var model = new FakeModelStepRunner();
-        model.Enqueue(FinalStep("The task is complete."));
+        model.Enqueue(FinalStep("The task is complete."), "The task is complete.");
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
         var concurrentModel = new ConcurrentRunChangingModelStepRunner(model, async () =>
@@ -124,13 +125,21 @@ public sealed partial class AgentRunCoordinatorTests
                     HarnessEventKind.RunNoteAdded, safeCode: "concurrent_update")], [], []), CancellationToken.None);
             Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
         });
+        var observed = new List<HarnessTransientFrame>();
+        var coordinator = Coordinator(concurrentModel, new FakeToolGateway(), store,
+            frames: new TransientFrameBuffer(32, observed.Add));
 
-        var result = await Coordinator(concurrentModel, new FakeToolGateway(), store)
-            .RunOneStepAsync(RunId(), CancellationToken.None);
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
         Assert.Equal("run_changed_during_generation", result.ErrorCode);
         Assert.Equal(HarnessRunState.Running, result.Run.State);
         Assert.Empty(store.Commits.SelectMany(commit => commit.ConversationOutbox));
+        // The suppressed step's prose is provisional: it must be retracted so the
+        // client does not append it to the next accepted step's text.
+        var deltas = observed.Where(frame => frame.Kind == TransientFrameKind.AssistantDelta).ToArray();
+        Assert.NotEmpty(deltas);
+        Assert.Equal("The task is complete.", deltas[0].Content);
+        Assert.True(deltas[^1].IsReset, "stale streamed text was not retracted");
     }
 
     [Fact]

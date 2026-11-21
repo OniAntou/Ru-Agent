@@ -91,12 +91,11 @@ public static class ConsecutiveToolCallGuard
         }
 
         var index = context.Entries.Count - 1;
-        // Progress and advice are not tool actions. Look through them to the
-        // original result without crossing a user turn.
-        while (index >= 0 && (AgentRecoveryNotes.IsCommentaryProgress(context.Entries[index])
-            || context.Entries[index].Kind == ModelContextEntryKind.Text
-            && context.Entries[index].Role == ModelContextRole.System
-            && context.Entries[index].Content?.StartsWith(RepairNotePrefix, StringComparison.Ordinal) == true))
+        // Progress, repetition advice and ordinary recovery notes are not tool
+        // actions. Look through them to the original result without crossing a
+        // user turn. The recovery note matters: R4c appends one after a failed
+        // call, and a trailing note used to hide the receipt from this guard.
+        while (index >= 0 && IsSkippableTrailingEntry(context.Entries[index]))
         {
             index--;
         }
@@ -176,6 +175,20 @@ public static class ConsecutiveToolCallGuard
 
         return count;
     }
+
+    /// <summary>
+    /// A trailing system note that carries neither tool action nor model tool
+    /// evidence: streamed progress, a repetition note or any bounded recovery note.
+    /// Sibling guards (<see cref="FailedToolCycleGuard"/>,
+    /// <see cref="FailedToolCompletionGuard"/>) skip the same two prefixes.
+    /// </summary>
+    private static bool IsSkippableTrailingEntry(ModelContextEntry entry) =>
+        AgentRecoveryNotes.IsCommentaryProgress(entry)
+        || entry.Kind == ModelContextEntryKind.Text
+        && entry.Role == ModelContextRole.System
+        && entry.Content is { } content
+        && (content.StartsWith(RepairNotePrefix, StringComparison.Ordinal)
+            || content.StartsWith(AgentRecoveryNotes.NotePrefix, StringComparison.Ordinal));
 
     private static bool PrecededBySameInfraFailure(
         ModelContextSnapshot context,

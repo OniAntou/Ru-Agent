@@ -27,6 +27,26 @@ public sealed class ConsecutiveToolCallGuardTests
     }
 
     [Fact]
+    public void Trailing_recovery_note_does_not_hide_the_failed_call()
+    {
+        var call = Call("{\"path\":\"a.cs\"}");
+        var entries = InfraFailureContext(call, "edit_no_match").Entries.ToList();
+        entries.Add(ModelContextEntry.Text(
+            "recovery-note",
+            entries[^1].Sequence + 1,
+            ModelContextRole.System,
+            AgentRecoveryNotes.BuildUnverifiedNote("edit_no_match")));
+
+        var result = ConsecutiveToolCallGuard.Inspect(
+            new ModelContextSnapshot(entries, "[]"u8.ToArray()),
+            [call],
+            out var receiptCode);
+
+        Assert.Equal(RepetitionGuardVerdict.Advise, result);
+        Assert.Equal("edit_no_match", receiptCode);
+    }
+
+    [Fact]
     public void Identical_completed_call_is_repeated_regardless_of_object_property_order()
     {
         var prior = Call("{\"path\":\"README.md\",\"offset\":0}");

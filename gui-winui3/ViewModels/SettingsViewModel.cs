@@ -40,6 +40,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private bool _modelsDevLoadFailed;
     private CancellationTokenSource? _autoSaveDelay;
     private CancellationTokenSource? _keyProbeDelay;
+    private Task? _keyProbeOperation;
     private bool _disposed;
 
     internal SettingsViewModel(Action<Action> dispatch, Func<TimeSpan, CancellationToken, Task>? delay = null)
@@ -209,11 +210,20 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         }
 
         CancelDelay(ref _autoSaveDelay);
-        CancelDelay(ref _keyProbeDelay);
         IsProviderTestEnabled = false;
         ShowProviderTest(ProviderConnectionTestPresentation.Testing());
         try
         {
+            // The Host answers from stored state. A key typed less than one debounce ago
+            // is not stored yet, and an in-flight key check must finish before the catalog
+            // can be asked: otherwise the test proves the previous (or no) key.
+            if (!await SettlePendingKeyAsync())
+            {
+                ShowProviderTest(new ProviderConnectionTest(
+                    ProviderConnectionTest.ErrorTone,
+                    "The API key has not been saved yet. Check the key, then test the connection again."));
+                return;
+            }
             // The test is an explicit question about the provider shown, so it may not be
             // answered from a catalog the editor already had: the manual throttle is
             // bypassed and a suppressed refresh is reported instead of a stale verdict.
@@ -694,6 +704,26 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     /// </summary>
     private async Task ProbeKeyAsync()
     {
+        if (_keyProbeOperation is { IsCompleted: false } running)
+        {
+            await running;
+            return;
+        }
+
+        var operation = RunProbeKeySafeAsync();
+        _keyProbeOperation = operation;
+        try
+        {
+            await operation;
+        }
+        finally
+        {
+            if (ReferenceEquals(_keyProbeOperation, operation)) _keyProbeOperation = null;
+        }
+    }
+
+    private async Task RunProbeKeySafeAsync()
+    {
         try
         {
             await ProbeKeyCoreAsync();
@@ -703,6 +733,37 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             GuiDiagnosticWriter.WriteCrashEvent(ex);
             SetKeyStatus("Could not verify the connection; saved key unchanged. Try again.", ProviderConnectionTest.NeutralTone);
         }
+    }
+
+    /// <summary>
+    /// Makes the key box agree with the vault before an explicit action reads stored
+    /// state: waits for an in-flight check, then runs the debounced one if the text is
+    /// still unsaved. Returns false when the key could not be saved.
+    /// </summary>
+    private async Task<bool> SettlePendingKeyAsync()
+    {
+        CancelDelay(ref _keyProbeDelay);
+        var failed = false;
+        if (_keyProbeOperation is { } inFlight)
+        {
+            try
+            {
+                await inFlight;
+            }
+            catch (Exception ex)
+            {
+                failed = true;
+                GuiDiagnosticWriter.WriteCrashEvent(ex);
+            }
+        }
+
+        CancelDelay(ref _keyProbeDelay);
+        if (!failed && HasUnsavedKey)
+        {
+            await ProbeKeyAsync();
+        }
+
+        return !failed && !HasUnsavedKey;
     }
 
     private async Task ProbeKeyCoreAsync()

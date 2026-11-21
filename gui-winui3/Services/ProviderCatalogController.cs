@@ -119,6 +119,7 @@ public sealed class ProviderCatalogController : IAsyncDisposable
     public Task<bool> RefreshAsync(bool force = false, bool bypassManualThrottle = false)
     {
         CancellationTokenSource requestCts;
+        CancellationTokenSource? supersededRequest = null;
         TaskCompletionSource<bool> completion;
         string backend;
         long generation;
@@ -128,10 +129,22 @@ public sealed class ProviderCatalogController : IAsyncDisposable
             if (_disposed || string.IsNullOrEmpty(_backend)) return Task.FromResult(false);
             if (_flight is not null)
             {
-                if (_requestCts?.IsCancellationRequested != true) return _flight;
-                if (_restartAfterCancellation is not null) return _restartAfterCancellation;
-                _restartAfterCancellation = RestartAfterCancellationAsync(_flight, force, bypassManualThrottle);
-                return _restartAfterCancellation;
+                if (!bypassManualThrottle)
+                {
+                    if (_requestCts?.IsCancellationRequested != true) return _flight;
+                    if (_restartAfterCancellation is not null) return _restartAfterCancellation;
+                    _restartAfterCancellation = RestartAfterCancellationAsync(_flight, force, bypassManualThrottle);
+                    return _restartAfterCancellation;
+                }
+
+                // An explicit connection test or the refresh after a saved key may not be
+                // answered by a request that started before that key existed. Cancel the
+                // old flight and start a new one: the old answer would otherwise be cached
+                // as a rejection of the key the user just stored.
+                supersededRequest = _requestCts;
+                _requestCts = null;
+                _flight = null;
+                _generation++;
             }
             if (force && !bypassManualThrottle && _lastForcedRefreshUtc.HasValue &&
                 _clock.UtcNow - _lastForcedRefreshUtc.Value < ManualRefreshThrottle)
@@ -146,6 +159,7 @@ public sealed class ProviderCatalogController : IAsyncDisposable
             _flight = completion.Task;
         }
 
+        Cancel(supersededRequest);
         _ = RunAsync(backend, generation, force, requestCts, completion);
         return completion.Task;
     }

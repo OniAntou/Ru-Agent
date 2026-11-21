@@ -112,6 +112,69 @@ public sealed partial class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Test_connection_saves_a_key_still_waiting_for_its_debounce()
+    {
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "models.dev:opencode-go" },
+            KeyResult = new ProviderKeyProbeResult("valid"),
+        };
+        var catalog = new FakeCatalog
+        {
+            NextState = new ProviderCatalogState
+            {
+                Status = "ok",
+                Backend = "models.dev:opencode-go",
+                Models = ["glm-5.3-flash"],
+            },
+        };
+        using var viewModel = NewViewModel();
+        await viewModel.AttachAsync(backend, catalog);
+
+        viewModel.ModelsDevApiKey = "sk-synthetic-test-key";
+        // The debounce has not run yet; the explicit test has to save the key first.
+        await viewModel.TestConnectionCommand.ExecuteAsync(null);
+
+        Assert.Equal("sk-synthetic-test-key", Assert.Single(backend.Validations).Key);
+        Assert.True(catalog.LastRefreshBypassedThrottle);
+        Assert.Contains("Connection works", viewModel.ProviderTestMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Test_connection_waits_for_an_inflight_key_check_before_refreshing()
+    {
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "models.dev:opencode-go" },
+            KeyResult = new ProviderKeyProbeResult("valid"),
+            KeyGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var catalog = new FakeCatalog
+        {
+            NextState = new ProviderCatalogState
+            {
+                Status = "ok",
+                Backend = "models.dev:opencode-go",
+                Models = ["glm-5.3-flash"],
+            },
+        };
+        using var viewModel = NewViewModel();
+        await viewModel.AttachAsync(backend, catalog);
+        viewModel.ModelsDevApiKey = "sk-synthetic-test-key";
+        await backend.WaitForValidationAsync();
+
+        var test = viewModel.TestConnectionCommand.ExecuteAsync(null);
+        await Task.Yield();
+        Assert.False(test.IsCompleted);
+
+        backend.KeyGate.SetResult();
+        await test;
+
+        Assert.Equal("sk-synthetic-test-key", Assert.Single(backend.Validations).Key);
+        Assert.Contains("Connection works", viewModel.ProviderTestMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_signed_in_provider_leads_the_picker_and_offers_sign_out()
     {
         var backend = new FakeBackend
@@ -490,6 +553,9 @@ public sealed partial class SettingsViewModelTests
 
         public List<(string ProviderId, string Key)> Validations { get; } = new();
 
+        /// <summary>When set, a models.dev key check waits for it before answering.</summary>
+        public TaskCompletionSource? KeyGate { get; set; }
+
         public List<string> Removed { get; } = new();
 
         public int SettingsReads { get; private set; }
@@ -519,12 +585,13 @@ public sealed partial class SettingsViewModelTests
             return Task.FromResult(SaveResult);
         }
 
-        public Task<ProviderKeyProbeResult> ValidateAndSaveModelsDevKeyAsync(string providerId, string key, CancellationToken cancellationToken)
+        public async Task<ProviderKeyProbeResult> ValidateAndSaveModelsDevKeyAsync(string providerId, string key, CancellationToken cancellationToken)
         {
             Validations.Add((providerId, key));
             if (KeyResult.Code == "valid") KeyIds = KeyIds.Append(providerId[ProviderSetupGuidance.ModelsDevPrefix.Length..]).ToArray();
             _validated.TrySetResult();
-            return Task.FromResult(KeyResult);
+            if (KeyGate is { } gate) await gate.Task;
+            return KeyResult;
         }
 
         public List<string> CustomKeyValidations { get; } = new();

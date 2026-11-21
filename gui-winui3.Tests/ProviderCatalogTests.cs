@@ -249,6 +249,41 @@ public sealed class ProviderCatalogTests
     }
 
     [Fact]
+    public async Task Explicit_bypass_refresh_restarts_an_inflight_request()
+    {
+        var calls = 0;
+        var releases = new List<TaskCompletionSource<ProviderCatalogSnapshot?>>();
+        await using var controller = new ProviderCatalogController(
+            new ProviderCatalogService((_, _, _) =>
+            {
+                Interlocked.Increment(ref calls);
+                var release = new TaskCompletionSource<ProviderCatalogSnapshot?>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                releases.Add(release);
+                return release.Task;
+            }));
+
+        controller.SetBackend("zen");
+        var first = controller.RefreshAsync(force: true);
+        Assert.Equal(1, calls);
+
+        // A connection test must not reuse the request that started before the key
+        // was saved: bypassing the throttle restarts it instead of awaiting its verdict.
+        var restarted = controller.RefreshAsync(force: true, bypassManualThrottle: true);
+        Assert.Equal(2, calls);
+        Assert.NotSame(first, restarted);
+
+        releases[0].TrySetResult(ProviderCatalogSnapshot.Success(
+            "zen", "old-identity", "old-model", "default", new[] { "old-model" }));
+        Assert.False(await first);
+
+        releases[1].TrySetResult(ProviderCatalogSnapshot.Success(
+            "zen", "new-identity", "new-model", "default", new[] { "new-model" }));
+        Assert.True(await restarted);
+        Assert.Equal(new[] { "new-model" }, controller.State.Models);
+    }
+
+    [Fact]
     public async Task Controller_polls_only_when_active_and_only_after_five_minutes()
     {
         var now = new TestClock(DateTimeOffset.Parse("2026-09-01T00:00:00Z"));

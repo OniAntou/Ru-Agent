@@ -93,12 +93,10 @@ public sealed partial class SettingsViewModel
         try
         {
             CancelDelay(ref _autoSaveDelay);
-            CancelDelay(ref _keyProbeDelay);
             // Don't discard a pending key or let it follow the next editor selection.
-            if (HasUnsavedKey)
+            if (!await SettlePendingKeyAsync())
             {
-                await ProbeKeyAsync();
-                if (HasUnsavedKey) return;
+                return;
             }
             CancelDelay(ref _customKeyProbeDelay);
             if (HasUnsavedCustomKey)

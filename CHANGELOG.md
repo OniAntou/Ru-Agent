@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Test connection now saves a provider key that is still inside its one-second
+  debounce, and an explicit refresh restarts a catalog request that started before the key was
+  stored instead of reusing its verdict. Pasting a key and testing immediately used to report
+  "The provider rejected the API key" while the key box still held the unsaved text; Back saved
+  the key first, so the next test passed. The test now waits for an in-flight key check and for the
+  key to be stored, then asks the provider with that key.
+
 - **fix(settings)**: Updating from an older Ru build no longer asks for the provider key again.
   On the first Host start the new build copies keys left by the Python build in the `mini_gpt`
   Credential Manager service and by the first .NET build in the pre-models.dev `Ru` accounts

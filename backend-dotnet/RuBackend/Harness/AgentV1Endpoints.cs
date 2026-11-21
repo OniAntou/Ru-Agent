@@ -112,6 +112,12 @@ public static partial class AgentV1Endpoints
         {
             return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
         }
+        catch (DecoderFallbackException)
+        {
+            // The bounded body reader decodes strict UTF-8; malformed bytes are a
+            // client error, not an unhandled exception (500).
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
 
         if (request is null)
         {
@@ -149,6 +155,12 @@ public static partial class AgentV1Endpoints
         }
         catch (JsonException)
         {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+        catch (DecoderFallbackException)
+        {
+            // The bounded body reader decodes strict UTF-8; malformed bytes are a
+            // client error, not an unhandled exception (500).
             return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
         }
 

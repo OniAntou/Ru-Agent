@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using RuBackend.Business;
+using RuBackend.Business.Sessions;
 using Xunit;
 
 namespace RuBackend.Tests.Business;
@@ -67,6 +69,32 @@ public sealed class ScratchWorkspaceEndpointTests : IDisposable
 
         Assert.Equal("ok", cleanupPayload.GetProperty("status").GetString());
         Assert.False(Directory.Exists(path));
+    }
+
+    [Fact]
+    public async Task Scratch_workspace_is_kept_when_if_empty_cleanup_preserves_a_started_chat()
+    {
+        string sessionId = await CreateSessionAsync();
+        using var ensure = await _client.PostAsync(
+            $"/sessions/{sessionId}/workspace/scratch", content: null);
+        string path = (await ensure.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("workspace_path").GetString()!;
+        var sessions = _factory.Services.GetRequiredService<ISessionStore>();
+        Assert.True(await sessions.AppendAsync(
+            sessionId,
+            [new SessionMessage("user", "first prompt")],
+            CancellationToken.None));
+
+        // A late draft-cleanup races the first accepted prompt: the store preserves the
+        // started chat, and its scratch workspace must survive with it. Deleting the folder
+        // here would destroy the files the accepted run and its staged attachments use.
+        using var cleanup = await _client.DeleteAsync($"/sessions/{sessionId}?if_empty=true");
+        var cleanupPayload = await cleanup.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("ok", cleanupPayload.GetProperty("status").GetString());
+        Assert.NotNull(await sessions.GetAsync(sessionId, CancellationToken.None));
+        Assert.True(Directory.Exists(path));
+        Assert.True(File.Exists(Path.Combine(path, ".ru-scratch.json")));
     }
 
     [Fact]

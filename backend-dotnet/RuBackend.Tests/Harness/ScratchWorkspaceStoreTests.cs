@@ -63,6 +63,38 @@ public sealed class ScratchWorkspaceStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Concurrent_first_allocations_for_one_session_agree_on_the_owned_folder()
+    {
+        var store = Store;
+
+        // The intake and run paths may ask for the same session's scratch folder at the same
+        // time. A loser must wait for the winner's marker instead of refusing the unmarked
+        // folder that the winner is still creating.
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var sessionId = Guid.NewGuid().ToString("N");
+            using var start = new Barrier(16);
+            var allocations = Enumerable.Range(0, 16)
+                .Select(_ => Task.Factory.StartNew(
+                    () =>
+                    {
+                        start.SignalAndWait();
+                        return store.Ensure(sessionId);
+                    },
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default))
+                .ToArray();
+
+            var paths = await Task.WhenAll(allocations);
+
+            Assert.Single(paths.Distinct(StringComparer.OrdinalIgnoreCase));
+            Assert.True(store.Exists(sessionId));
+            Assert.True(File.Exists(Path.Combine(paths[0], ScratchWorkspaceStore.MarkerFileName)));
+        }
+    }
+
+    [Fact]
     public void TryDelete_removes_a_marked_folder_and_is_idempotent()
     {
         var store = Store;

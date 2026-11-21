@@ -22,8 +22,7 @@ public sealed class RequestSizeMiddleware
         // Both create routes carry the same optional provider/image payload and share
         // one endpoint reader; a path-only check here used to cap /runs/selected at the
         // general 8 MiB limit while /runs was allowed the larger bound.
-        if (context.Request.Path.Equals("/agent/v1/runs", StringComparison.OrdinalIgnoreCase)
-            || context.Request.Path.Equals("/agent/v1/runs/selected", StringComparison.OrdinalIgnoreCase))
+        if (IsAgentRunCreatePath(context.Request.Path))
         {
             maxBytes = Math.Max(maxBytes, _options.Value.AgentRunMaxRequestBodyBytes);
         }
@@ -71,6 +70,25 @@ public sealed class RequestSizeMiddleware
         }
 
         await _next(context);
+    }
+
+    /// <summary>
+    /// Routing ignores trailing slashes, so "/agent/v1/runs/" (and a repeated-slash
+    /// variant) still reaches the same create endpoint as "/agent/v1/runs" and must
+    /// inherit its larger body bound. The match stays segment-exact so a lookalike
+    /// path such as "/agent/v1/runsXYZ" never widens its cap.
+    /// </summary>
+    private static bool IsAgentRunCreatePath(PathString path)
+    {
+        var value = path.Value;
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        value = value.TrimEnd('/');
+        return value.Equals("/agent/v1/runs", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("/agent/v1/runs/selected", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task RejectAsync(HttpContext context)

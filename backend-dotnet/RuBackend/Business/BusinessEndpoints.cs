@@ -387,7 +387,13 @@ public static partial class BusinessEndpoints
             if (string.Equals(request.Query["if_empty"], "true", StringComparison.OrdinalIgnoreCase))
             {
                 var cleaned = await sessions.CleanupEmptyAsync(sessionId, cancellationToken).ConfigureAwait(false);
-                if (cleaned && ScratchWorkspaceStore.IsValidSessionId(sessionId))
+                // "cleaned" is the store's "no orphaned empty row remains" answer, which is also
+                // true for a populated session it deliberately preserved. The scratch folder may
+                // only follow a session that is really gone: deleting it for a started chat would
+                // destroy the workspace its first prompt and staged attachments already use.
+                if (cleaned
+                    && ScratchWorkspaceStore.IsValidSessionId(sessionId)
+                    && await sessions.GetAsync(sessionId, cancellationToken).ConfigureAwait(false) is null)
                 {
                     // A draft that staged an attachment before its first run owns a
                     // scratch folder too; the full deletion path removes it, this

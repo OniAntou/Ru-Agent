@@ -21,6 +21,11 @@ public sealed class ScratchWorkspaceStore
 
     private readonly ILogger<ScratchWorkspaceStore>? _logger;
 
+    // One allocation at a time: a second first-time allocation for the same session would
+    // otherwise observe the winner's directory before its ownership marker is written and
+    // refuse it as unowned. Allocation is rare and short, so serializing it is cheap.
+    private readonly object _ensureGate = new();
+
     public ScratchWorkspaceStore(DataPaths paths, ILogger<ScratchWorkspaceStore>? logger = null)
         : this(paths.BusinessDataRoot, logger)
     {
@@ -46,6 +51,14 @@ public sealed class ScratchWorkspaceStore
     public string Ensure(string sessionId)
     {
         var path = PathFor(sessionId);
+        lock (_ensureGate)
+        {
+            return EnsureCore(path, sessionId);
+        }
+    }
+
+    private string EnsureCore(string path, string sessionId)
+    {
         if (Directory.Exists(path))
         {
             if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)

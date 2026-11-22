@@ -52,7 +52,6 @@ public sealed class ProviderRow : INotifyPropertyChanged
             ref _isSelected,
             value,
             nameof(IsSelected),
-            nameof(CheckVisibility),
             nameof(NameWeight));
     }
 
@@ -64,14 +63,12 @@ public sealed class ProviderRow : INotifyPropertyChanged
 
     public Visibility RowVisibility => IsVisible ? Visibility.Visible : Visibility.Collapsed;
 
-    public Visibility CheckVisibility => IsSelected ? Visibility.Visible : Visibility.Collapsed;
-
     public Visibility KeyDotVisibility => HasKey ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>
-    /// The selected row reads as selected from weight plus the trailing check. A third
-    /// signal (a dimming opacity on every other row) only lowered the contrast of the
-    /// normal state, which is the state the user reads most.
+    /// The selected row reads as selected from weight alone. A trailing check duplicated
+    /// the provider already named by the picker button and read as decoration beside the
+    /// key dot, which is the only trailing signal that carries meaning.
     /// </summary>
     public Windows.UI.Text.FontWeight NameWeight => IsSelected ? FontWeights.SemiBold : FontWeights.Normal;
 

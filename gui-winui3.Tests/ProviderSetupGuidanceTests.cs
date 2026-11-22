@@ -485,6 +485,21 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
+    public void Provider_rows_do_not_show_a_selected_check()
+    {
+        // The picker button already names the selected provider and the selected row is
+        // bold, so a trailing check only duplicated that state and drew attention away
+        // from the key dot, which is the one trailing signal with meaning.
+        string markup = GuiSource.Text("Views", "SettingsView.xaml");
+        Assert.DoesNotContain("CheckVisibility", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Selected provider", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("CheckVisibility", GuiSource.Text("Models", "ProviderRow.cs"), StringComparison.Ordinal);
+
+        // The stored-key dot stays.
+        Assert.Contains("KeyDotVisibility", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ModelsDev_key_box_saves_itself_without_a_button()
     {
         // No save button: the box is bound to the view model, which probes and stores

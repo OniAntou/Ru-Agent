@@ -740,11 +740,6 @@
                                                                                  Fill="{StaticResource RuSuccessBrush}"
                                                                                  Visibility="{x:Bind KeyDotVisibility, Mode=OneWay}"
                                                                                  AutomationProperties.Name="Key stored" />
-                                                                        <FontIcon Glyph="&#xE73E;"
-                                                                                  FontSize="11.5"
-                                                                                  Foreground="{StaticResource RuInkBrush}"
-                                                                                  Visibility="{x:Bind CheckVisibility, Mode=OneWay}"
-                                                                                  AutomationProperties.Name="Selected provider" />
                                                                     </StackPanel>
                                                                 </Grid>
                                                             </DataTemplate>

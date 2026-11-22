@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: The provider picker no longer draws a trailing checkmark on the selected row.
+  The picker button already names the chosen provider and that row stays bold, so the check
+  duplicated the same state and read as decoration beside the green stored-key dot, which is
+  unchanged.
+
 - **feat(attachments)**: A desktop chat with no project folder can attach any file, not only
   images, text/code and PDF/Office documents. Before staging a non-image attachment the app
   asks the Host for the session's scratch workspace

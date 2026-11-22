@@ -102,7 +102,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] public partial bool IsModelsDevSignOutVisible { get; private set; }
 
-    [ObservableProperty] public partial string ProviderTestMessage { get; private set; } = "Not tested yet. The test checks the key and loads the model list.";
+    [ObservableProperty] public partial string ProviderTestMessage { get; private set; } = ProviderConnectionTestPresentation.NotTestedMessage;
 
     [ObservableProperty] public partial string ProviderTestTone { get; private set; } = ProviderConnectionTest.NeutralTone;
 
@@ -493,8 +493,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             if (!HasUnsavedKey) ClearSavedKeyInBox();
             _keyProbe.Invalidate();
             SetKeyStatus(string.Empty, ProviderConnectionTest.NeutralTone);
-            ShowProviderTest(new ProviderConnectionTest(ProviderConnectionTest.NeutralTone,
-                "Not tested yet. The test checks the key and loads the model list."));
+            ShowProviderTest(ProviderConnectionTestPresentation.NotTested());
         }
 
         ProviderChoice = choice;
@@ -915,8 +914,17 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         ModelsDevKeyStatusTone = tone;
     }
 
-    private void ShowProviderTest(ProviderConnectionTest result, string? errorCode = null)
+    /// <summary>Whether the shown test status came from a background catalog update.</summary>
+    /// <remarks>
+    /// An explicit "Test connection" owns the status line and a background success may not
+    /// overwrite it. A background notice, by contrast, must not outlive the state it
+    /// described: the next successful catalog refresh clears it.
+    /// </remarks>
+    private bool _providerTestFromBackground;
+
+    private void ShowProviderTest(ProviderConnectionTest result, string? errorCode = null, bool background = false)
     {
+        _providerTestFromBackground = background;
         ProviderTestMessage = result.Message;
         ProviderTestTone = result.Tone;
         string code = errorCode?.Trim() ?? string.Empty;
@@ -924,30 +932,75 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Shows a background catalog failure, but never a background success: the catalog
-    /// also refreshes on a timer, and a result appearing unasked would read as the user's own.
+    /// Accepts background catalog updates. A failure is recorded for diagnostics, but it
+    /// is not painted into the connection-test line: that line answers the user's own
+    /// "Test connection" request. In particular, the empty placeholder the catalog
+    /// publishes when the backend is set or invalidated carries no error code and is not
+    /// a provider failure at all; treating it as one put a red "could not reach the
+    /// provider" on the Connection row every time Settings opened.
     /// </summary>
     private void OnCatalogStateChanged(object? sender, ProviderCatalogState state)
     {
-        var outcome = ProviderConnectionTestPresentation.Project(state);
-        if (!ProviderConnectionTestPresentation.ReportsFailure(outcome)) return;
         var catalog = sender as IProviderCatalogSession ?? _catalog;
+        bool placeholder = !state.IsSuccess && string.IsNullOrWhiteSpace(state.ErrorCode);
+
+        if (placeholder)
+        {
+            // Only the missing-key hint is meaningful before a refresh has answered; the
+            // placeholder says nothing about the provider or the network.
+            if (!IsCurrentProviderKeyMissing()) return;
+            _dispatch(() =>
+            {
+                if (!OwnsCatalogState(catalog, state)) return;
+                ShowProviderTest(MissingKeyHint(), state.ErrorCode, background: true);
+            });
+            return;
+        }
+
+        var outcome = ProviderConnectionTestPresentation.Project(state);
+        if (!ProviderConnectionTestPresentation.ReportsFailure(outcome))
+        {
+            // A background success never overwrites an explicit verdict, but it does clear
+            // a notice a previous background update put there.
+            if (!_providerTestFromBackground) return;
+            _dispatch(() =>
+            {
+                if (!OwnsCatalogState(catalog, state)) return;
+                ShowProviderTest(ProviderConnectionTestPresentation.NotTested());
+            });
+            return;
+        }
+
         _dispatch(() =>
         {
-            if (_disposed || (catalog is not null && !ReferenceEquals(catalog, _catalog))) return;
+            if (!OwnsCatalogState(catalog, state)) return;
             // A provider with no key cannot list its models; saying "could not reach the
             // provider" sent a new user to check their network instead of the key box.
             if (IsCurrentProviderKeyMissing() && IsMissingKeyShapedFailure(state.ErrorCode))
             {
-                ShowProviderTest(new ProviderConnectionTest(
-                    ProviderConnectionTest.NeutralTone, $"Add a {ProviderButtonText} API key above to load its models."),
-                    state.ErrorCode);
+                ShowProviderTest(MissingKeyHint(), state.ErrorCode, background: true);
                 return;
             }
 
-            ShowProviderTest(outcome, state.ErrorCode);
+            // A background refresh is not the user's test. Record the code so a real
+            // problem stays diagnosable instead of presenting a transient failure as the
+            // key verdict.
+            GuiDiagnosticWriter.WriteGuiError("provider_catalog", state.ErrorCode!);
         });
     }
+
+    /// <summary>
+    /// True when a catalog event still describes the provider this editor shows. The
+    /// shared controller publishes states for whichever backend it was pointed at last.
+    /// </summary>
+    private bool OwnsCatalogState(IProviderCatalogSession? catalog, ProviderCatalogState state) =>
+        !_disposed
+        && (catalog is null || ReferenceEquals(catalog, _catalog))
+        && (string.IsNullOrWhiteSpace(state.Backend)
+            || string.Equals(state.Backend, ProviderChoice, StringComparison.OrdinalIgnoreCase));
+
+    private ProviderConnectionTest MissingKeyHint() =>
+        new(ProviderConnectionTest.NeutralTone, $"Add a {ProviderButtonText} API key above to load its models.");
 
     /// <summary>
     /// Failures a missing key produces. A timeout, a rate limit or an unreadable answer

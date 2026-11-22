@@ -32,10 +32,16 @@ internal static class ProviderConnectionTestPresentation
 {
     internal const string ButtonLabel = "Test connection";
     internal const string TestingMessage = "Testing…";
+    internal const string NotTestedMessage =
+        "Not tested yet. The test checks the key and loads the model list.";
 
     /// <summary>The message shown while the request is in flight.</summary>
     internal static ProviderConnectionTest Testing() =>
         new(ProviderConnectionTest.NeutralTone, TestingMessage);
+
+    /// <summary>The neutral starting point, before the user or a test says anything.</summary>
+    internal static ProviderConnectionTest NotTested() =>
+        new(ProviderConnectionTest.NeutralTone, NotTestedMessage);
 
     /// <summary>
     /// Reads a finished catalog result as a test outcome.

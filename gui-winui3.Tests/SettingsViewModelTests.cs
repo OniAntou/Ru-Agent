@@ -82,10 +82,101 @@ public sealed partial class SettingsViewModelTests
         Assert.Equal("Add a 302.AI API key above to load its models.", viewModel.ProviderTestMessage);
         Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ProviderTestTone);
 
-        // A timeout is not a missing key, even for a provider without one.
+        // A later background failure may not overwrite the hint: the connection line
+        // answers the user's own test, not a timer or a retry.
         catalog.Raise(new ProviderCatalogState { Status = "error", ErrorCode = "catalog_timeout" });
         foreach (var action in dispatched.ToArray()) action();
-        Assert.Contains("did not answer in time", viewModel.ProviderTestMessage, StringComparison.Ordinal);
+        Assert.Equal("Add a 302.AI API key above to load its models.", viewModel.ProviderTestMessage);
+        Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ProviderTestTone);
+    }
+
+    [Fact]
+    public async Task A_placeholder_catalog_state_does_not_report_a_network_failure()
+    {
+        // SetBackend/Invalidate publish an empty state whose default status is "error" and
+        // whose error code is null. It used to project as catalog_unavailable and put a red
+        // "could not reach the provider" on the Connection row on every Settings open,
+        // before any refresh had even run.
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "openai", HasOpenAiKey = true },
+        };
+        var catalog = new FakeCatalog();
+        var dispatched = new List<Action>();
+        using var viewModel = new SettingsViewModel(dispatched.Add, (_, _) => Task.CompletedTask);
+        await viewModel.AttachAsync(backend, catalog);
+
+        catalog.Raise(ProviderCatalogState.Empty("openai"));
+        foreach (var action in dispatched.ToArray()) action();
+
+        Assert.Equal(ProviderConnectionTestPresentation.NotTested().Message, viewModel.ProviderTestMessage);
+        Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ProviderTestTone);
+    }
+
+    [Fact]
+    public async Task A_background_catalog_failure_does_not_become_the_connection_verdict()
+    {
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "openai", HasOpenAiKey = true },
+        };
+        var catalog = new FakeCatalog();
+        var dispatched = new List<Action>();
+        using var viewModel = new SettingsViewModel(dispatched.Add, (_, _) => Task.CompletedTask);
+        await viewModel.AttachAsync(backend, catalog);
+
+        catalog.Raise(new ProviderCatalogState
+        {
+            Status = "error",
+            Backend = "openai",
+            ErrorCode = "catalog_unavailable",
+        });
+        foreach (var action in dispatched.ToArray()) action();
+
+        // The background /models poll failing says nothing about the key or the endpoint
+        // the rest of the product is already using; the connection row stays untouched.
+        Assert.Equal(ProviderConnectionTestPresentation.NotTested().Message, viewModel.ProviderTestMessage);
+        Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ProviderTestTone);
+
+        // An explicit test still reports the catalog verdict.
+        catalog.NextState = new ProviderCatalogState
+        {
+            Status = "ok",
+            Backend = "openai",
+            Models = ["gpt-4o"],
+        };
+        await viewModel.TestConnectionCommand.ExecuteAsync(null);
+        Assert.Contains("Connection works", viewModel.ProviderTestMessage, StringComparison.Ordinal);
+
+        // A later background success may not overwrite the verdict the user asked for.
+        catalog.Raise(new ProviderCatalogState { Status = "ok", Backend = "openai", Models = ["gpt-4o"] });
+        foreach (var action in dispatched.ToArray()) action();
+        Assert.Contains("Connection works", viewModel.ProviderTestMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_background_success_clears_a_background_key_hint()
+    {
+        var catalog = new FakeCatalog();
+        var dispatched = new List<Action>();
+        using var viewModel = new SettingsViewModel(dispatched.Add, (_, _) => Task.CompletedTask);
+        await viewModel.AttachAsync(new FakeBackend { Settings = new AppSettingsDto { BackendChoice = string.Empty } }, catalog);
+
+        catalog.Raise(new ProviderCatalogState { Status = "error", ErrorCode = "catalog_unavailable" });
+        foreach (var action in dispatched.ToArray()) action();
+        Assert.Contains("API key above", viewModel.ProviderTestMessage, StringComparison.Ordinal);
+
+        catalog.Raise(new ProviderCatalogState
+        {
+            Status = "ok",
+            Backend = "models.dev:302ai",
+            Models = ["m1"],
+        });
+        foreach (var action in dispatched.ToArray()) action();
+
+        // The hint described a state that has now passed; it must not outlive it.
+        Assert.Equal(ProviderConnectionTestPresentation.NotTested().Message, viewModel.ProviderTestMessage);
+        Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ProviderTestTone);
     }
 
     [Fact]
@@ -497,7 +588,7 @@ public sealed partial class SettingsViewModelTests
     }
 
     [Fact]
-    public async Task A_background_catalog_failure_is_shown_but_a_background_success_is_not()
+    public async Task A_background_catalog_failure_is_logged_but_not_shown_as_a_test()
     {
         var catalog = new FakeCatalog();
         var dispatched = new List<Action>();
@@ -512,10 +603,13 @@ public sealed partial class SettingsViewModelTests
         catalog.Raise(new ProviderCatalogState { Status = "ok", Models = ["m1"] });
         Assert.Empty(dispatched);
 
+        // The automatic /models poll is not the user's Test connection: its failure is
+        // recorded for diagnostics but leaves the connection row (and its tone) alone.
         catalog.Raise(new ProviderCatalogState { Status = "error", ErrorCode = "catalog_unreachable" });
         Assert.Equal(initial, viewModel.ProviderTestMessage);
         Assert.Single(dispatched)();
-        Assert.Equal(ProviderConnectionTest.ErrorTone, viewModel.ProviderTestTone);
+        Assert.Equal(initial, viewModel.ProviderTestMessage);
+        Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ProviderTestTone);
     }
 
     [Fact]

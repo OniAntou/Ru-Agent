@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: The provider editor no longer shows a red "Could not reach the provider" without a
+  Test connection. The catalog controller publishes an empty placeholder (default status `error`,
+  no error code) whenever it is pointed at a provider or invalidated; the settings view projected
+  that placeholder as `catalog_unavailable` and painted the connection row, and a later success
+  never cleared it. The Connection line now answers only the user's explicit test plus the neutral
+  missing-key hint: background catalog failures are logged for diagnostics, a background success
+  clears any background notice, and events for another backend are ignored.
+
 - **docs(repo)**: Trim stale documentation. Removed the dated verification archive
   (16 files) and the 2026-10-28 coding-agent capability snapshot, whose claims were
   historical evidence rather than current contracts; Git history preserves both. Every

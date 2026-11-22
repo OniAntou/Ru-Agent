@@ -30,4 +30,6 @@ SQLite migration checks use the genuine released v18 DDL plus frozen development
 
 ## Historical evidence
 
-[Dated verification archive](../history/verification/README.md) preserves prior results and their original limitations. Historical counts and retired worker/media acceptance commands are not current gates. New changes should link scoped evidence rather than append an ever-growing chronology to this page.
+Dated reviews and verification snapshots are not current gates and are kept in
+Git history rather than in the checkout. New changes link scoped evidence in
+their task/commit record instead of appending an ever-growing chronology here.

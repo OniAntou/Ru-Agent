@@ -267,20 +267,14 @@ Timeouts and intervention outcomes leave completeness unknown when only a
 pre-cancellation, nonterminal cursor was observed; catching up to that older
 cursor does not establish complete terminal evidence.
 
-The dated [Step 5 Preview Free pilot](../../docs/history/verification/2026-10-09.md#step-5-preview-free-coding-pilot-2026-10-09)
-records actual runtime fingerprints and separates candidate correctness,
-unattended completion, scope violations and provider/policy interruptions.
-The [post-refactor Nemotron rerun](../../docs/history/verification/2026-10-10.md#post-refactor-live-coding-rerun-2026-10-10)
-records another nine-task native trial with an isolated Host and the existing
-selected model. Its 0/9 result includes three completed runs without patches;
-run completion alone is not task acceptance. The two dated trials use different
+Dated trials are preserved in Git history and are not current scores. A
+post-refactor Nemotron rerun recorded a nine-task native trial with an isolated
+Host and the then-selected model; its 0/9 result included three completed runs
+without patches, because run completion alone is not task acceptance. A
+post-terminal-fix SWE rerun repeated the three SWE tasks with matching
+instructions, baselines, preset and 300-second deadlines; all three timed out and
+Python/TypeScript produced empty patches. The trials used different
 provider/model and runtime conditions and are not a controlled comparison.
-
-The [post-terminal-fix SWE rerun](../../docs/history/verification/2026-10-11.md#post-terminal-fix-swe-rerun-2026-10-11)
-repeats the three SWE tasks with matching instructions/baselines and the same
-Step 5 model, preset and 300-second deadlines. All three timed out, resolving
-0/3; Python and TypeScript produced empty patches. One attempt per task does
-not establish a causal effect of the fixes.
 
 ## Running live trials correctly
 

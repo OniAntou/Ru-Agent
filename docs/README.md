@@ -1,15 +1,9 @@
 # Ru documentation
 
 Current operating documentation and accepted architecture decisions live here.
-Isolated [historical verification evidence](history/verification/README.md)
-records old snapshots without making them current operating instructions.
-Completed implementation plans and design drafts belong in Git history.
-
-Open plans may sit under `docs/plans/` with a `status: pending` or
-`status: in-progress` marker. Generated plans and specs under
-`docs/superpowers/` must be removed before verification/integration.
-`test_completed_implementation_archives_are_not_kept_in_the_checkout` checks
-these locations so obsolete drafts cannot accumulate in the checkout.
+Dated reviews, verification snapshots and completed implementation plans belong
+in Git history; `tests/test_current_documentation.py` keeps these locations from
+accumulating stale drafts.
 
 ## Guides
 
@@ -45,7 +39,6 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [Browser DOM and DevTools automation through MCP](operations/browser-automation.md)
 - [Skill setup, invocation and continuity](operations/skills.md)
 - [Workspace project memory](operations/project-memory.md)
-- [Coding-agent capability and acceptance map](operations/coding-agent-capabilities.md)
 - [Custom Terminal/SWE/Everyday coding benchmark](../tools/coding-benchmark/README.md)
 - [Logging and diagnostics](operations/logging.md)
 - [Python dependency ownership](operations/python-dependency-ownership.md)
@@ -116,30 +109,6 @@ reviews and verification records.
 Agent permissions use the canonical, session-scoped `plan` / `standard` /
 `full_access` profiles defined by the Protocol catalog and described in
 [tool policy](operations/agent-tools.md); [CONTEXT.md](../CONTEXT.md) defines the
-domain terms. This index does not restate the matrix. Under
-`full_access` everything else runs automatically, and structured protected
-paths are allowed like any other target. Workspace trust is explicit once per
-canonical identity: the
-GUI confirms it and CLI `run`/`chat` use `--trust-workspace`. Full Access
-requires the GUI gate or CLI `--confirm-full-access`.
-
-The canonical profiles do not synthesize `web_approval_required`; that legacy
-reason remains available to an explicit ask rule. Current approval reasons also
-include `external_directory_required`, `terminal_external_cwd_requires_approval`,
-`terminal_timeout_requires_approval`, `rule_asks`, and
-`terminal_protected_path_requires_approval` (never reusable as `allow_always`).
-Legacy command-classification reasons are retained for recorded activity.
-`allow_always` remembers a bounded pattern as a durable project rule: a
-terminal command prefix (resolved executable plus at most two leading non-flag
-argv tokens, with the exact launch directory), or an approved external folder
-as a path pattern covering its subtree ([ADR 0018](adr/0018-approval-patterns-and-durable-folder-grants.md)).
-Flag-first invocations and shell-mode scripts stay exact, and `rule_asks` /
-`terminal_protected_path_requires_approval` never become a reusable rule.
-A folder grant can stay session-scoped (the Broker grant) or be remembered for
-the project; workspace trust follows the canonical identity. Terminal children in both `standard` and `full_access` run as the
-current Windows user without OS filesystem or network confinement. Standard authorizes workspace launch directories under
-[ADR 0017](adr/0017-workspace-terminal-policy.md); the structured protections hold in `plan` and `standard`. Hard timeout,
-output cap, cancellation, process-tree cleanup, credential storage and
-diagnostic redaction remain enforced.
+domain terms. This index does not restate the matrix.
 
 - [Subagents](operations/subagents.md): coding/review task browser, explicit model requests, main-agent controls and guarded integration.

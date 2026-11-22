@@ -62,7 +62,6 @@ def test_current_documentation_local_links_resolve() -> None:
             ROOT / "backend-dotnet/README.md", ROOT / "backend-dotnet/RuAgent.Cli/README.md",
             *sorted((ROOT / "docs/operations").glob("*.md")),
             *CURRENT_COMPONENT_DOCS,
-            *sorted((ROOT / "docs/history").rglob("*.md")),
             *sorted((ROOT / "docs/adr").glob("*.md")),
         )
         if path.exists()

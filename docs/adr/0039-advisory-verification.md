@@ -23,7 +23,7 @@ reconciliation, checkpoint journal and migration rollback) passed external
 grading but failed run completion. Activity traces and source inspection show
 that deleting a temporary verification script left its retained check stale, and
 that later passing checks did not satisfy it. Each repair added more machinery.
-See the [2026-10-29 verification record](../history/verification/2026-10-29.md).
+The dated record is preserved in Git history.
 
 Verification is quality evidence, not an authority boundary. It grants or denies
 no execution, so the fail-closed rule in [AGENTS.md](../../AGENTS.md) does not
@@ -117,8 +117,8 @@ Test policy: any deleted or rewritten test must map to surviving coverage for:
     repair-family and supersedes paragraphs.
   - [agent-tools.md](../operations/agent-tools.md#declaring-terminal-checks): the
     temporary-script and `supersedes` guidance.
-- The [2026-10-29 verification record](../history/verification/2026-10-29.md) is a
-  rationale record and is not changed.
+- The dated 2026-10-29 verification record is a rationale record and is
+  preserved in Git history.
 - Still in force: [ADR 0008](0008-shared-workspace-coordination.md) (workspace
   change journal, kept by decision 7);
   [ADR 0027](0027-pinned-coding-tool-profiles.md) (run pinning; no schema field

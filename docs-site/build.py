@@ -278,10 +278,8 @@ def navigation(staged_root: Path) -> list:
             page("Logging and diagnostics", "docs/operations/logging.md"),
         ]),
         ("Quality", [
-            page("Coding-agent capabilities", "docs/operations/coding-agent-capabilities.md"),
             page("Coding benchmark", "tools/coding-benchmark/README.md"),
             page("Current verification", "docs/operations/verification.md"),
-            page("Historical evidence", "docs/history/verification/README.md"),
         ]),
         ("Contributing", [
             page("Contributing", "CONTRIBUTING.md"),

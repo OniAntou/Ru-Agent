@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **docs(repo)**: Trim stale documentation. Removed the dated verification archive
+  (16 files) and the 2026-10-28 coding-agent capability snapshot, whose claims were
+  historical evidence rather than current contracts; Git history preserves both. Every
+  reference was repaired, the docs-site navigation follows, and AGENTS.md is rewritten
+  down to the execution-boundary, verification and git rules with pointers to
+  CONTEXT.md, CONTRIBUTING.md and the architecture pages instead of restating policy.
+
 - **fix(gui)**: The provider picker no longer draws a trailing checkmark on the selected row.
   The picker button already names the chosen provider and that row stays bold, so the check
   duplicated the same state and read as decoration beside the green stored-key dot, which is

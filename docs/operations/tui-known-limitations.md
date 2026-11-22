@@ -1,8 +1,8 @@
 # TUI: known limitations and how to debug it
 
 Current terminal limits, debugging guidance and dated runtime observations.
-The [capability and acceptance map](coding-agent-capabilities.md) separates
-source/test evidence from native-terminal and live-provider acceptance.
+Source/test evidence stays separate from native-terminal and live-provider
+acceptance.
 
 ## Telling a bad key apart from a bad model
 
@@ -76,14 +76,13 @@ portable newline paths; Shift+Enter depends on terminal key reporting. Explicit
 copy returns retained text, including any code gutters, rather than original
 tool payloads. See the [CLI controls](../../backend-dotnet/RuAgent.Cli/README.md).
 
-The [2026-10-31 typing investigation](../history/verification/2026-10-31-tui-typing.md)
-identified redundant whole-window redraws during slash-menu edits and the native
-loop's default iteration cap. The current implementation skips closed/stable-menu
-parent redraws, preserves unchanged match selection and uses a 60-iteration native
-input/render cap while retaining the welcome animation's independent clock.
-[Controlled native measurements](../history/verification/2026-11-03-native-acceptance-and-tui-performance.md)
-use real ConPTY input and production views with pinned logical viewports; they do
-not measure the physical Windows Terminal font/compositor or IME composition.
+A 2026-10-31 typing investigation identified redundant whole-window redraws
+during slash-menu edits and the native loop's default iteration cap. The current
+implementation skips closed/stable-menu parent redraws, preserves unchanged match
+selection and uses a 60-iteration native input/render cap while retaining the
+welcome animation's independent clock. Controlled ConPTY measurements with
+production views and pinned logical viewports do not measure the physical Windows
+Terminal font/compositor or IME composition.
 
 ### The live row and the animation clock
 

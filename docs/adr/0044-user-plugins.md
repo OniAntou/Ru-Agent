@@ -23,7 +23,7 @@ the extension points Ru already has. Today each lives in its own fixed place:
 - MCP servers: `McpConfiguration`, the user's `~/.ru/mcp.json` only (ADR 0025).
 
 Several documents state that plugins are not loaded or discoverable
-(`runtime-behavior.md`, `harness.md`, `coding-agent-capabilities.md`, `CONTEXT.md`).
+(`runtime-behavior.md`, `harness.md`, `CONTEXT.md`).
 Hooks and MCP servers run programs as the user, so a plugin is executable content
 and needs the boundaries the owner chose: full contents, with consent.
 
@@ -105,7 +105,7 @@ and needs the boundaries the owner chose: full contents, with consent.
 - Skill ids stay un-namespaced to keep `/skill <id>` and existing preferences
   working; shadowing is reported instead.
 - This amends "plugins are not loaded" in `runtime-behavior.md`, `harness.md`,
-  `coding-agent-capabilities.md`, `CONTEXT.md` and the CLI README, and extends
+  `CONTEXT.md` and the CLI README, and extends
   ADR 0025 (a second, user-level MCP source behind consent) and ADR 0036 (a second
   managed package kind).
 

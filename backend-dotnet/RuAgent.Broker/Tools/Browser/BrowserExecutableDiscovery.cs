@@ -1,9 +1,9 @@
-﻿namespace RuAgent.Broker.Tools.Browser;
+namespace RuAgent.Broker.Tools.Browser;
 
 /// <summary>The automation protocol family a discovered browser speaks.</summary>
 public enum BrowserFamily
 {
-    /// <summary>Chrome DevTools Protocol: Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Arc, â€¦</summary>
+    /// <summary>Chrome DevTools Protocol: Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Arc, …</summary>
     Chromium,
 
     /// <summary>WebDriver BiDi: Firefox 129 and newer expose it directly.</summary>

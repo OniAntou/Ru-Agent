@@ -31,6 +31,7 @@ internal static class ToolDescriptorMapping
         AgentToolAdapter.Terminal => "terminal",
         AgentToolAdapter.Web => "web",
         AgentToolAdapter.Connector => "connector",
+        AgentToolAdapter.Browser => "browser",
         AgentToolAdapter.HostIntercepted => throw new InvalidOperationException("host_intercepted_tool_has_no_adapter"),
         _ => throw new InvalidOperationException("unmapped_tool_adapter"),
     };

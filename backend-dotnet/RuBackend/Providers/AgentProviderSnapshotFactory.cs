@@ -221,6 +221,9 @@ public sealed class AgentProviderSnapshotFactory(
         else if (await ChatReasoningReplayPolicy.DeclaredByCatalogAsync(catalog, selected, ct).ConfigureAwait(false))
             options[ChatReasoningReplayPolicy.CatalogPinField] = true;
         options[RuAgent.Protocol.AgentToolProfiles.PinField] = AgentToolProfilePin.SelectNew();
+        // The built-in browser tool is advertised to every new root run (ADR 0055); runs pinned
+        // before this marker never see it.
+        BrowserPolicy.PinNew(options);
         if (await ImageInputPolicy.AcceptsAsync(catalog, selected, ct).ConfigureAwait(false))
         {
             options[ImageInputPolicy.PinField] = true;
@@ -271,6 +274,7 @@ public sealed class AgentProviderSnapshotFactory(
         var replayChatReasoning = ChatReasoningReplayPolicy.TakePinnedCapability(options, selected);
         var acceptsImageInput = ImageInputPolicy.TakePinnedCapability(options);
         _ = ComputerUsePolicy.TakePinnedCapability(options);
+        _ = BrowserPolicy.TakePinnedCapability(options);
         _ = ProviderWebSearchPolicy.TakePinnedCapability(options);
         _ = AdvisorPolicy.TakePinnedCapability(options);
         AgentToolProfilePin.ValidateAndRemove(options);

@@ -159,6 +159,8 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         _spools.RemoveSession(sessionId);
         // App grants for computer use end with the Agent session (ADR 0031).
         _computer?.RemoveSession(sessionId);
+        // A session's browser page ends with the Agent session (ADR 0055).
+        _browser?.RemoveSession(sessionId);
     }
 
     /// <summary>
@@ -211,6 +213,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ["web_fetch"] = ExecuteWebFetchAsync,
             ["mcp"] = ExecuteMcpAsync,
             ["computer"] = ExecuteComputerAsync,
+            ["browser"] = ExecuteBrowserAsync,
         };
 
         // Native orchestration consumes exact authorization through Runtime callbacks.

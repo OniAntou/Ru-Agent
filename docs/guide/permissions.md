@@ -66,6 +66,18 @@ any app without asking. Ru's own windows, terminals, and sign-in or elevation pr
 never reachable. Press **Ctrl+Alt+Backspace** (or **Ctrl+Alt+Pause** on keyboards that have it) to stop it at once. See
 [Computer use](../operations/agent-tools.md#computer-use).
 
+## Browser
+
+The built-in browser tool is available to new Agent runs; no setting turns it on. It launches
+an installed Chromium browser (Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Arc) or Mozilla
+Firefox and drives one isolated page per session, with no cookies or sign-ins and no MCP server
+or Node.js. `RU_BROWSER_EXE` pins a specific browser when several are installed. In `standard`,
+Ru asks once before it opens the browser; that answer lets this session navigate, click, type
+and run page JavaScript, so later browser actions are not asked again. `plan` never opens a
+browser, and subagents do not receive the tool. Treat page content as untrusted: a page or a
+script can address the Agent but grants no permission. See
+[Browser](../operations/agent-tools.md#browser).
+
 ## Notifications
 
 **Settings → Notifications** tells you when a run finishes (or stops on an error) and when Ru

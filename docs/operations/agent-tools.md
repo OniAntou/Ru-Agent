@@ -289,6 +289,7 @@ they do not make a retired public identity executable.
 | `advisor` (optional `model`, `effort`) | advertised only to a root run pinned with the advisor marker; never to subagents | Host-intercepted: the Broker never receives the call. One tool-less request to the pinned advisor model with the run quoted as a transcript; the advice is an ordinary read-only receipt, and every failure is a named `advisor_*` result the run continues past. See [Advisor](#advisor) |
 | `mcp` (`op=list_servers`, `list_tools`, `call`) | advertised while `~/.ru/mcp.json` declares an enabled server; never to subagents | `list_servers` reads the user's file and is automatic; `list_tools` and `call` start or call a server and take the `ExternalTerminal` decision: `plan` deny, `standard` ask (`mcp_call_requires_approval`), `full_access` automatic; "Always allow" remembers one server and op/tool (`call` with its tool name, or `list_tools`), never a whole server or another op; the card names the server and tool. See [MCP servers](#mcp-servers) |
 | `computer` (`action=list`, `request_access`, `focus`, `screenshot`, `inspect`, `click`, `move`, `drag`, `scroll`, `type`, `key`, `wait`) | advertised only to a root run that pinned the computer-use opt-in with image input; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `request_access` takes the `ExternalTerminal` decision: `standard` ask (`computer_access_requires_approval`), `full_access` automatic; other actions are allowed by policy and checked against the session's app grants when they run. Protected apps are refused in every preset (`computer_app_protected`). See [Computer use](#computer-use) |
+| `browser` (`action=open`, `navigate`, `snapshot`, `click`, `type`, `fill`, `press`, `eval`, `wait`, `console`, `network`, `close`) | advertised to a root run that pinned the built-in browser marker; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `open` takes the `ExternalTerminal` decision: `standard` ask (`browser_open_requires_approval`), `full_access` automatic; later actions take the `WorkspaceTerminal` decision and fail closed with `browser_not_open` until this session opened a page through that approval. Chromium family over CDP, Firefox over WebDriver BiDi; `RU_BROWSER_EXE` pins one. See [Browser](#browser) |
 | connector libraries | not advertised | experimental/unwired |
 
 Large structured tool results are projected into bounded prompt references while
@@ -1162,6 +1163,61 @@ model never to do that, but this is guidance, not confinement (see ADR 0031, ame
 cancels the controlling run. Observation actions report no side effects and may repeat;
 input actions are not structured source edits and do not change verification (ADR 0039). Ru does not confine
 what a granted application does with the input.
+
+## Browser
+
+[ADR 0055](../adr/0055-built-in-browser-tool-through-the-broker.md) defines this surface. Ru
+launches an installed Chromium browser (Microsoft Edge, Google Chrome, Brave, Vivaldi, Opera,
+Chromium or Arc) and drives it over the Chrome DevTools Protocol, or launches Mozilla Firefox
+(129 or newer) and drives it over WebDriver BiDi, so the Agent can read a page and act on it
+without an external MCP browser server. The Chromium family is preferred when several browsers
+are installed; `RU_BROWSER_EXE` pins one browser explicitly. The tool is advertised to a new
+root run that pinned the built-in marker; a run pinned before the marker never sees it, and
+subagents and `run_code` never receive it.
+
+- `open` starts the browser with an ephemeral `--user-data-dir` under
+  `%LOCALAPPDATA%\Ru\browser` (Chromium family) or `-profile` under the same root (Firefox) and,
+  optionally, navigates to `url`. The profile holds no cookies or sign-ins and is deleted on
+  `close` and on Host exit. One browser process serves the Host, one page serves each agent
+  session.
+- The Chromium family (Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Arc) is preferred when
+  several browsers are installed and is driven over CDP. Firefox 129 or newer is driven over
+  its built-in WebDriver BiDi server (no geckodriver or Selenium); an older Firefox fails as
+  `browser_launch_failed`. `RU_BROWSER_EXE` pins a specific executable when needed.
+- `navigate` loads an absolute `http` or `https` URL. `file:`, `javascript:`, `data:` and other
+  schemes are refused (`browser_invalid_url`). Loopback and private addresses are allowed so a
+  local development server can be driven.
+- `snapshot` returns the title, URL, visible page text and the interactive elements with refs
+  (`e1`, `e2`, …), role, name, value and state. Take a new snapshot after navigation or when
+  the page changes. At most 150 elements and 20,000 text characters are returned.
+- `click` clicks a snapshot ref with a trusted CDP pointer event; `type` focuses a ref (or the
+  focused element when `ref` is omitted) and inserts text; `fill` sets an input, textarea or
+  contenteditable value and dispatches `input`/`change`; `press` sends `Enter`, `Tab`,
+  `Escape`, `Backspace`, `Delete`, arrows, `Home`, `End`, `PageUp`, `PageDown`, `Insert` or
+  `Space`.
+- `eval` runs one JavaScript expression in the page and returns its JSON value. `console` and
+  `network` return bounded recent console entries and network requests. `wait` pauses 100 to
+  10,000 ms. `close` closes the session's page; calling it again is a no-op.
+- `batch` runs 1 to 10 page actions in one tool call: `steps` is an array of objects with the
+  same fields as a single action. `open` and `close` cannot be nested, and a batch needs the
+  page opened by a prior `open`. Steps run in order on that page and stop at the first failure;
+  the failure detail names the step (`Step 2 (click): …`). Use it to fill a form, click and
+  verify in one model step instead of paying one model step per action; take a snapshot
+  before a batch when the steps need refs. The whole batch is one policy decision: `plan`
+  denies it, `standard` allows it after `open` under the same session grant as a single
+  action, and `full_access` allows it.
+- Named failures include `browser_unavailable` (no Edge/Chrome found), `browser_launch_failed`,
+  `browser_not_open`, `browser_invalid_url`, `browser_element_not_found`, `browser_ref_invalid`,
+  `browser_navigation_failed`, `browser_timeout`, `browser_eval_failed`, `browser_key_invalid`
+  and `browser_arguments_invalid`.
+
+`plan` denies every browser action. In `standard`, `open` asks once and the approved call
+starts the session's page; later actions are allowed by policy and fail closed until that page
+exists. The approval is single-use and is not remembered as a durable rule in v1. The browser
+runs with the user's rights, and `eval` runs arbitrary page JavaScript, so treat a snapshot or
+a page's content as untrusted; the approval on `open` is the boundary. Ru does not confine what
+a visited page does. The MCP recipe below still exists for Playwright's full API, Chrome
+performance traces and Lighthouse audits.
 
 ## Advisor
 

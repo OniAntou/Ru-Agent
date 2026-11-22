@@ -407,6 +407,20 @@ public sealed partial class PolicyContextFactory
                     }
 
                     break;
+                case "browser":
+                    // Browser actions carry no path (ADR 0055). open takes the external-terminal
+                    // decision; the rest are session-scoped and fail closed at execution without a
+                    // page opened through the approved call.
+                    op = OptionalText(arguments, "action");
+                    if (op is null || !BrowserActions.All.Contains(op))
+                    {
+                        throw new PolicyContextException(
+                            "malformed_call",
+                            hint: "browser action must be one of: " + string.Join(", ", BrowserActions.All) + ".");
+                    }
+
+                    resolvedExecutable = "browser:" + op;
+                    break;
                 case var control when SubagentContractValidator.IsControlTool(control):
                     op = control;
                     break;
@@ -492,7 +506,7 @@ public sealed partial class PolicyContextFactory
             SessionId: _sessionId,
             WorkingDirectory: terminalWorkingDirectory,
             TerminalAnalysis: terminalAnalysis,
-            ToolOp: toolId is "read" or "write" or "mcp" ? ReadOpOf(toolId, arguments) : toolId == "computer" ? OptionalText(arguments, "action") : null,
+            ToolOp: toolId is "read" or "write" or "mcp" ? ReadOpOf(toolId, arguments) : toolId is "computer" or "browser" ? OptionalText(arguments, "action") : null,
             BashMode: toolId == "bash" ? OptionalText(arguments, "mode") : null,
             Background: background)
         {
@@ -560,6 +574,8 @@ public sealed partial class PolicyContextFactory
         // Every computer action, including a screenshot, reaches outside the workspace:
         // plan denies them all through its read-only gate (ADR 0031).
         "computer" => PolicyOperationClasses.Mutation,
+        // Every browser action reaches outside the workspace (ADR 0055): plan denies them all.
+        "browser" => PolicyOperationClasses.Mutation,
         _ when SubagentContractValidator.IsControlTool(toolId) => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
@@ -625,7 +641,7 @@ public sealed partial class PolicyContextFactory
     private static bool IsTargetFreeOp(string toolId, string op) =>
         toolId is "help" or "run_code"
         || toolId is "todo_write" or "skill"
-        || toolId is "web_search" or "web_fetch" or "mcp" or "computer"
+        || toolId is "web_search" or "web_fetch" or "mcp" or "computer" or "browser"
         || SubagentContractValidator.IsControlTool(toolId)
         // A spool read names a session-scoped output id, not a path; a task
         // kill names a session-scoped task id. The execution leg still fails

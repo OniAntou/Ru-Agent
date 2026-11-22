@@ -28,7 +28,7 @@ public sealed class PolicyFamilyGoldenTests
         "read", "list", "help", "todo_write", "grep", "glob", "web_search", "web_fetch", "skill", "ask_user",
         "mcp", "computer", "agent_spawn", "agent_send", "agent_wait", "agent_cancel", "agent_apply",
         "run_code", "apply_patch", "read_file", "write_file", "edit_file", "file_delete",
-        "file_restore", "powershell", "run_process", "terminal_read", "terminal_stop", "advisor",
+        "file_restore", "powershell", "run_process", "terminal_read", "terminal_stop", "advisor", "browser",
     ];
 
     // Adapter-family names that are also used as rule and call ids, plus one id no row declares.
@@ -183,6 +183,7 @@ A run_process bash
 A terminal_read bash
 A terminal_stop bash
 A advisor -
+A browser -
 A bash -
 A write -
 A edit -
@@ -217,6 +218,7 @@ M run_process run_process *
 M terminal_read terminal_read *
 M terminal_stop terminal_stop *
 M advisor advisor *
+M browser browser *
 M bash powershell *
 M bash run_process *
 M bash terminal_read *

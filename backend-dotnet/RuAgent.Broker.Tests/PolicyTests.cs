@@ -1218,6 +1218,33 @@ public sealed partial class PolicyEvaluationTests
         Assert.Equal(reason, evaluation.ReasonCode);
     }
 
+    [Theory]
+    [InlineData("plan", "open", "deny", "plan_preset_read_only")]
+    [InlineData("plan", "snapshot", "deny", "plan_preset_read_only")]
+    [InlineData("standard", "open", "ask", "browser_open_requires_approval")]
+    [InlineData("standard", "navigate", "allow", "browser_action_session_granted")]
+    [InlineData("standard", "snapshot", "allow", "browser_action_session_granted")]
+    [InlineData("standard", "click", "allow", "browser_action_session_granted")]
+    [InlineData("standard", "eval", "allow", "browser_action_session_granted")]
+    [InlineData("standard", "close", "allow", "browser_action_session_granted")]
+    [InlineData("standard", "batch", "allow", "browser_action_session_granted")]
+    [InlineData("plan", "batch", "deny", "plan_preset_read_only")]
+    [InlineData("full_access", "batch", "allow", "full_access_allow")]
+    [InlineData("full_access", "open", "allow", "full_access_allow")]
+    [InlineData("full_access", "click", "allow", "full_access_allow")]
+    public void Browser_actions_follow_the_preset(string preset, string action, string decision, string reason)
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
+        var arguments = new JsonObject { ["action"] = action };
+        if (action is "open" or "navigate") arguments["url"] = "https://example.com";
+
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot, factory.Create("browser", "1.0.0", arguments), PolicyRequestInvariants.Valid, Now);
+
+        Assert.Equal(decision, evaluation.Decision);
+        Assert.Equal(reason, evaluation.ReasonCode);
+    }
+
     [Fact]
     public void Computer_access_to_a_protected_app_is_denied_even_in_full_access_with_an_allow_rule()
     {

@@ -277,12 +277,18 @@ internal static class PublicHostServiceRegistration
             new RuAgent.Broker.Tools.Computer.WindowsDesktopController(),
             services.GetRequiredService<RuAgent.Broker.Tools.Computer.ComputerStopHotkey>()));
         services.AddHostedService<RuBackend.Harness.ComputerUseStopService>();
+        // Built-in browser tool (ADR 0055): one isolated browser process per Host; the first
+        // approved action=open starts it and Host disposal closes it with its ephemeral profile.
+        // AutoBrowserEngine picks the Chromium family (CDP) or Firefox (WebDriver BiDi) once.
+        services.AddSingleton(_ => new RuAgent.Broker.Tools.Browser.BrowserUseService(
+            new RuAgent.Broker.Tools.Browser.AutoBrowserEngine()));
         services.AddSingleton(services => new InProcessExecutionAuthority(
             services.GetRequiredService<DataPaths>(),
             services.GetRequiredService<ILogger<InProcessExecutionAuthority>>(),
             mcpServers: services.GetRequiredService<RuAgent.Broker.Tools.Mcp.McpServerHost>(),
             programJournal: services.GetRequiredService<HarnessPayloadStore>(),
-            computer: services.GetRequiredService<RuAgent.Broker.Tools.Computer.ComputerUseService>()));
+            computer: services.GetRequiredService<RuAgent.Broker.Tools.Computer.ComputerUseService>(),
+            browser: services.GetRequiredService<RuAgent.Broker.Tools.Browser.BrowserUseService>()));
         services.AddSingleton<IToolGatewayFactory>(services =>
             new InProcessToolGatewayFactory(
                 services.GetRequiredService<InProcessExecutionAuthority>().Runtime,

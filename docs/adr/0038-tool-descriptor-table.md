@@ -32,7 +32,7 @@ differently.
 ## Decision
 
 1. `RuAgent.Protocol/Tools/AgentToolDescriptorTable.cs` is the one explicit registry of
-   model-visible tools, with one row per tool in model order (29 rows). Each row carries
+   model-visible tools, with one row per tool in model order (30 rows). Each row carries
    its ordinal, version, description, primary and extra scopes, risk, approval
    requirement, adapter, workspace requirement, access class, output bound, input schema
    builder and example. Every value a security decision depends on is a literal on its row.

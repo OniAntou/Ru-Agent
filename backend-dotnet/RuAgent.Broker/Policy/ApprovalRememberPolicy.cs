@@ -118,7 +118,7 @@ public static class ApprovalRememberPolicy
         "computer" => ApprovalIdentityClass.ComputerGrant,
         "apply_patch" or "file_restore" or "run_code" or "terminal_read" or "terminal_stop"
             or "help" or "todo_write" or "web_search" or "web_fetch" or "skill" or "ask_user" or "advisor"
-            or "agent_spawn" or "agent_send" or "agent_wait" or "agent_cancel" or "agent_apply"
+            or "agent_spawn" or "agent_send" or "agent_wait" or "agent_cancel" or "agent_apply" or "browser"
             => ApprovalIdentityClass.NotRememberable,
         _ => ApprovalIdentityClass.Unknown,
     };

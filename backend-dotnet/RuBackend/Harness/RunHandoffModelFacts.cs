@@ -80,6 +80,7 @@ public sealed class AgentRunHandoffModelFacts(
             && string.Equals(current.CallingMode, source.CallingMode, StringComparison.Ordinal)
             && string.Equals(ToolProfile(current), ToolProfile(source), StringComparison.Ordinal)
             && ComputerUsePolicy.IsPinned(current) == ComputerUsePolicy.IsPinned(source)
+            && BrowserPolicy.IsPinned(current) == BrowserPolicy.IsPinned(source)
             && ProviderWebSearchPolicy.IsPinned(current) == ProviderWebSearchPolicy.IsPinned(source);
     }
 

@@ -26,6 +26,7 @@ public enum AgentToolAdapter
     Terminal,
     Web,
     Connector,
+    Browser,
     HostIntercepted,
 }
 

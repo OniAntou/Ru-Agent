@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(broker)**: Ru can drive a browser itself. A new built-in `browser` tool opens an
+  installed browser with an isolated ephemeral profile and speaks the browser's protocol
+  directly: Chromium family (Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Arc) over the
+  Chrome DevTools Protocol, and Mozilla Firefox 129+ over its built-in WebDriver BiDi — no
+  MCP server, Node.js, Playwright driver or geckodriver. Chromium is preferred when several
+  browsers are installed and `RU_BROWSER_EXE` pins one explicitly. The Agent can navigate,
+  read a visible-DOM snapshot with element refs, click and type real trusted input, fill
+  inputs, press keys, run page JavaScript, and read bounded console and network entries.
+  `plan` denies every action; in `standard`, `open` asks once per session and later actions
+  fail closed until that page is open; `full_access` starts it without asking. The tool is
+  advertised only to root runs pinned with the new marker, and subagents never receive it
+  ([ADR 0055](docs/adr/0055-built-in-browser-tool-through-the-broker.md)).
+
+- **feat(broker)**: A `browser` call can now batch 1 to 10 page actions with
+  `action=batch` and a `steps` array, so filling a form, clicking and verifying costs one tool
+  call (two including `open`) instead of one model step per action. Steps run in order on the
+  already-open page and stop at the first failure with the failing step named; `open` and
+  `close` stay separate because they carry the session approval and lifetime.
+
 - **fix(gui)**: The provider editor no longer shows a red "Could not reach the provider" without a
   Test connection. The catalog controller publishes an empty placeholder (default status `error`,
   no error code) whenever it is pointed at a provider or invalidated; the settings view projected

@@ -37,6 +37,7 @@ public sealed class AgentToolDefinitionCatalogTests
         "terminal_read",
         "terminal_stop",
         "advisor",
+        "browser",
     ];
 
     private static readonly string[] RetiredIds =
@@ -82,7 +83,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(29, definitions.Count);
+        Assert.Equal(30, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }

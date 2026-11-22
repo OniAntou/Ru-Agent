@@ -41,6 +41,7 @@ public sealed class ToolManifestGoldenLockTests
         new("agent_spawn", "1.0.0", "builtin", RiskClass.Read, "system.read", false, false, 4194304, 30000, "builtin", false),
         new("agent_wait", "1.0.0", "builtin", RiskClass.Read, "system.read", false, false, 4194304, 30000, "builtin", false),
         new("apply_patch", "1.0.0", "desktop", RiskClass.Reversible, "workspace.write", true, true, 4194304, 30000, "builtin", false),
+        new("browser", "1.0.0", "browser", RiskClass.External, "terminal.execute", true, false, 4194304, 30000, "builtin", false),
         new("computer", "1.0.0", "desktop", RiskClass.External, "terminal.execute", true, false, 4194304, 30000, "builtin", false),
         new("edit_file", "1.0.0", "desktop", RiskClass.Reversible, "workspace.write", true, true, 4194304, 30000, "builtin", false),
         new("file_delete", "1.0.0", "desktop", RiskClass.Reversible, "workspace.write", true, true, 4194304, 30000, "builtin", false),
@@ -106,6 +107,7 @@ public sealed class ToolManifestGoldenLockTests
         new("terminal_read", "terminal.execute"),
         new("terminal_stop", "terminal.execute"),
         new("advisor", ""),
+        new("browser", "terminal.execute"),
         new("future_tool", ""),
     ];
 
@@ -205,7 +207,7 @@ public sealed class ToolManifestGoldenLockTests
     [Fact]
     public void Trusted_adapter_set_is_locked()
     {
-        var accepted = new[] { "builtin", "desktop", "terminal", "web", "connector" };
+        var accepted = new[] { "builtin", "desktop", "terminal", "web", "connector", "browser" };
         foreach (var adapter in accepted)
         {
             var registry = new ToolRegistry();

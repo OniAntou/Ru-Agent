@@ -121,7 +121,10 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         // pinned to that composition.
         _runtimeAvailability = runtimeAvailability ?? new Prompting.AgentToolRuntimeAvailability(
             WebSearchEnabled: true,
-            WebFetchEnabled: true);
+            WebFetchEnabled: true,
+            // A non-provider-backed model (the scripted/dev seam) has no provider pin, so it gets
+            // the built-in browser tool directly; real runs are gated by the pinned marker.
+            BrowserEnabled: true);
         _workspaceCoordinatorStore = workspaceCoordinatorStore ?? throw new ArgumentNullException(nameof(workspaceCoordinatorStore));
         _brokerGateways = brokerGateways ?? throw new ArgumentNullException(nameof(brokerGateways));
         _runModelMetadataResolver = pinnedModelMetadataResolver;
@@ -160,6 +163,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             availability = availability with
             {
                 ToolProfile = metadata.ToolProfile, ComputerUseEnabled = metadata.ComputerUse, AdvisorEnabled = metadata.Advisor,
+                BrowserEnabled = metadata.Browser,
             };
             providerWebSearchPinned = metadata.ProviderWebSearch;
             advisorSelected = metadata.AdvisorSelected;

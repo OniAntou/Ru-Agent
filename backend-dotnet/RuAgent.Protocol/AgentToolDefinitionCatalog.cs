@@ -213,6 +213,34 @@ public static partial class AgentToolDefinitionCatalog
         ("apps", ArraySchema(maxItems: ComputerLimits.MaxRequestedApps, itemMaxLength: ComputerLimits.MaxAppNameChars)),
         ("app", StringSchema(maxLength: ComputerLimits.MaxAppNameChars, minLength: 1)),
         ("ms", IntegerSchema(ComputerLimits.MinWaitMilliseconds, ComputerLimits.MaxWaitMilliseconds)));
+    // Bounds mirror BrowserLimits in RuAgent.Protocol; the Broker adapter is the authority.
+    internal static JsonObject BrowserSchema() => ObjectSchema(
+        ["action"],
+        ("action", EnumSchema(BrowserActions.All.ToArray())),
+        ("url", StringSchema(maxLength: BrowserLimits.MaxUrlChars)),
+        ("ref", StringSchema(maxLength: BrowserLimits.MaxRefChars)),
+        ("text", StringSchema(maxLength: BrowserLimits.MaxTextChars)),
+        ("key", StringSchema(maxLength: BrowserLimits.MaxKeyChars)),
+        ("expression", StringSchema(maxLength: BrowserLimits.MaxExpressionChars)),
+        ("ms", IntegerSchema(BrowserLimits.MinWaitMilliseconds, BrowserLimits.MaxWaitMilliseconds)),
+        ("headless", BooleanSchema()),
+        ("steps", new JsonObject
+        {
+            ["type"] = "array",
+            ["minItems"] = 1,
+            ["maxItems"] = BrowserLimits.MaxBatchSteps,
+            ["items"] = BrowserStepSchema(),
+        }));
+
+    private static JsonObject BrowserStepSchema() => ObjectSchema(
+        ["action"],
+        ("action", EnumSchema(BrowserActions.Batchable.ToArray())),
+        ("url", StringSchema(maxLength: BrowserLimits.MaxUrlChars)),
+        ("ref", StringSchema(maxLength: BrowserLimits.MaxRefChars)),
+        ("text", StringSchema(maxLength: BrowserLimits.MaxTextChars)),
+        ("key", StringSchema(maxLength: BrowserLimits.MaxKeyChars)),
+        ("expression", StringSchema(maxLength: BrowserLimits.MaxExpressionChars)),
+        ("ms", IntegerSchema(BrowserLimits.MinWaitMilliseconds, BrowserLimits.MaxWaitMilliseconds)));
     internal static JsonObject SkillSchema() => ObjectSchema(
         [],
         ("name", StringSchema(minLength: 1, maxLength: 96)),

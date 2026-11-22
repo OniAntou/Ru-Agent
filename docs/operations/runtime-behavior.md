@@ -571,7 +571,7 @@ reviewed examples, or public payload metadata.
 The tools above are the model surface. `read`, `list`, `grep`,
 `glob`, and `help` are separate definitions. Modern file and terminal operations
 have their own schemas, alongside `todo_write`, `skill`, `web_search`,
-`web_fetch`, and the Host-intercepted `ask_user`. Managed startup constructs an enabled WebOptions instance with
+`web_fetch`, `browser`, and the Host-intercepted `ask_user`. Managed startup constructs an enabled WebOptions instance with
 Google HTML as the primary search engine `https://www.google.com/search`, raced
 against the fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek); the bounded
 responses carry an explicit `untrusted` marker and
@@ -588,7 +588,12 @@ switch; Broker
 policy remains authoritative for each call. MCP servers declared in the user's
 `~/.ru/mcp.json` are reached through the `mcp` tool, advertised only while one is
 declared (see [Agent tools](agent-tools.md#mcp-servers)); the mail/calendar/task
-connector libraries are not production-composed or advertised as Agent tools.
+connector libraries are not production-composed or advertised as Agent tools. The built-in
+`browser` tool is advertised to a root run pinned with its marker and drives an installed
+Chromium-family browser or Firefox through `BrowserUseService` (CDP or WebDriver BiDi);
+`RU_BROWSER_EXE` pins one browser, `open` takes the external-terminal decision, later actions
+fail closed without that session's page, and no user profile or cookie store is read
+([Browser](agent-tools.md#browser)).
 
 ### Typed commands
 

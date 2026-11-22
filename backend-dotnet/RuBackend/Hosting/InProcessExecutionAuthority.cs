@@ -33,6 +33,7 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
     private int _disposed;
     private readonly RuAgent.Broker.Tools.Mcp.McpServerHost? _mcpServers;
     private readonly RuAgent.Broker.Tools.Computer.ComputerUseService? _computer;
+    private readonly RuAgent.Broker.Tools.Browser.BrowserUseService? _browser;
     private readonly object _lifetimeGate = new();
     private readonly RuAgent.Protocol.Programs.IProgramJournal? _programJournal;
 
@@ -43,10 +44,12 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
         Func<string, string?>? readEnvironment = null,
         RuAgent.Broker.Tools.Mcp.McpServerHost? mcpServers = null,
         RuAgent.Protocol.Programs.IProgramJournal? programJournal = null,
-        RuAgent.Broker.Tools.Computer.ComputerUseService? computer = null)
+        RuAgent.Broker.Tools.Computer.ComputerUseService? computer = null,
+        RuAgent.Broker.Tools.Browser.BrowserUseService? browser = null)
     {
         _mcpServers = mcpServers;
         _computer = computer;
+        _browser = browser;
         _programJournal = programJournal;
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(logger);
@@ -116,6 +119,7 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
             tools.CleanStaleSpoolFiles();
             if (_mcpServers is not null) tools.UseMcpServers(_mcpServers);
             if (_computer is not null) tools.UseComputer(_computer);
+            if (_browser is not null) tools.UseBrowser(_browser);
             _tools = tools;
             _composedRuntime = new BrokerExecutionRuntime(
                 session,

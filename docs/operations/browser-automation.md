@@ -1,9 +1,13 @@
 # Browser DOM and DevTools automation through MCP
 
-Ru has no built-in browser tool. `web_fetch` returns page text, and `computer` works on
-screenshots, UI Automation elements and synthetic input. To let the Agent read a page's DOM,
-console and network log, or click and type by element, attach a browser automation MCP
-server. It is reached through the existing `mcp` tool
+Ru's built-in `browser` tool ([ADR 0055](../adr/0055-built-in-browser-tool-through-the-broker.md),
+[Agent tools](agent-tools.md#browser)) already drives an isolated page in an installed Chromium
+browser (Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Arc) over CDP, or in Firefox over
+WebDriver BiDi: `open`, `navigate`, `snapshot`, `click`, `type`, `fill`, `press`, `eval`,
+`console`, `network` and `close`. It needs no external program beyond the browser itself. Use
+this page when you need capabilities it does not offer, such as Playwright's full API, Chrome
+performance traces or Lighthouse audits: attach a third-party browser automation MCP server. It
+is reached through the existing `mcp` tool
 ([ADR 0025](../adr/0025-mcp-servers-through-the-broker.md),
 [MCP servers](agent-tools.md#mcp-servers)), so this adds no tool definition, no manifest
 change and no new execution path.
@@ -32,7 +36,8 @@ browser.
   or sign-ins.
 - `--headless` hides the window. Remove it to watch the browser.
 - `--image-responses omit` matches what Ru can return: MCP results carry text, structured
-  content and resource links, and images are counted but not returned. The Agent verifies a
+  content and resource links, and images are counted but not returned. The built-in `browser`
+  tool returns text snapshots for the same reason. The Agent verifies a
   page with `browser_snapshot`, `browser_console_messages` and `browser_network_requests`,
   not with screenshots.
 - Replace `@latest` with a version you have reviewed. `npx -y` otherwise runs whatever the
@@ -78,12 +83,13 @@ without giving up the prompts that matter:
 - **Navigation is not scoped per site.** The approval card shows the server and tool, not the
   arguments, so approving `browser_navigate` does not show the URL, and an "Always allow" rule
   covers every URL. The arguments are still bound to the single-use approval and recorded in
-  the run.
+  the run. The built-in `browser` tool has the same limitation at a different point: only
+  `open` asks, and later navigation in that session is not prompted again.
 - **`WebPolicy` does not apply.** `web_fetch` refuses loopback and private addresses
   (`web_private_host`). A browser started by an MCP server is a separate program running as
   you: it can open `http://localhost:…` (which is what makes it useful for a dev server) and
-  also any other address your machine can reach. Ru does not confine what a server does once
-  it runs.
+  also any other address your machine can reach. Ru does not confine what either path does
+  once it runs, and the built-in browser allows loopback for the same reason.
 - **Origin lists are advisory.** Playwright's `--allowed-origins` and `--blocked-origins` are
   documented by its authors as not a security boundary and not applied to redirects. They
   reduce accidents; they do not contain a hostile page. Chrome DevTools MCP's
@@ -94,5 +100,8 @@ without giving up the prompts that matter:
 - **Configuration stays yours.** `mcp.json` is read only from your user profile and is a
   protected path, so the Agent cannot add or change a server in `plan` or `standard`.
 
-A built-in `browser` tool with per-origin grants and `WebPolicy` on every request would close
-the first three gaps. It needs its own ADR and a tool-manifest change and is not planned here.
+Per-origin grants and `WebPolicy` on every navigation are implemented by neither path. The
+built-in tool's boundary is the approved `open`, its isolated ephemeral profile and its named,
+bounded actions; an MCP server's boundary is its own program and the per-call approvals above.
+A first-class `browser` MCP with per-origin grants remains an option for users who need
+Playwright's API.

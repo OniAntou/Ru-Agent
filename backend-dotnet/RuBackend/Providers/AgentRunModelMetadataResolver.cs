@@ -15,7 +15,8 @@ public sealed record AgentRunModelMetadata(
     bool ProviderWebSearch = false,
     bool ImageInputAccepted = false,
     bool Advisor = false,
-    bool AdvisorSelected = false);
+    bool AdvisorSelected = false,
+    bool Browser = false);
 
 public interface IAgentRunModelMetadataResolver
 {
@@ -52,7 +53,8 @@ public sealed class AgentRunModelMetadataResolver(
                 // Any marker, even "none selected": the user may still name a model (ADR 0047).
                 advisor is not null,
                 // Only a resolved selection is recommended; an unavailable one would just fail.
-                advisor?.Selection is not null);
+                advisor?.Selection is not null,
+                BrowserPolicy.IsPinned(selection));
         }
         catch (HarnessStoreException error)
         {

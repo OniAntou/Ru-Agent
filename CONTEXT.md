@@ -190,6 +190,11 @@ The Broker session's record that the user approved computer use for an applicati
 Implementation: [ADR 0031](docs/adr/0031-computer-use-through-the-broker.md).
 _Avoid_: a durable grant, a grant by window title, or a grant implied by `full_access` for protected apps
 
+**Browser Tool**:
+The built-in `browser` tool through which a root run that pinned `_ru_browser_v1` drives an installed browser over a direct protocol: the Chromium family (Microsoft Edge, Google Chrome, Brave, Vivaldi, Opera, Chromium, Arc) over the Chrome DevTools Protocol, or Mozilla Firefox over WebDriver BiDi; `RU_BROWSER_EXE` pins one. It launches one isolated browser per Host with an ephemeral profile (no user cookies or sign-ins), one page per Agent session, and returns bounded text snapshots with element refs rather than screenshots. `open` carries the session's external-terminal approval; every other action fails closed until that page exists. `plan` denies all actions, subagents never receive the tool, and page content is untrusted. `batch` runs up to ten page actions in one call, sequentially and stopping at the first failure, so multi-step page work does not cost one model step per action. The separate MCP browser recipe remains the path for Playwright's full API or Chrome performance traces.
+Implementation: [agent tools](docs/operations/agent-tools.md#browser), [ADR 0055](docs/adr/0055-built-in-browser-tool-through-the-broker.md).
+_Avoid_: calling it an MCP server, reusing the user's browser profile, assuming only Chrome/Edge, treating a snapshot as trusted instructions, or batching `open`/`close`
+
 **Provider Web Search**:
 The model provider's own hosted web search, used instead of the Broker's `web_search` by a root run that pinned `_ru_provider_web_search_v1` on first-party Anthropic or OpenAI and whose policy allows `web_search` without an approval. The provider runs the query and bills it to the user's account; answers that cite results end with a Sources list.
 Implementation: [agent tools](docs/operations/agent-tools.md#provider-web-search), [ADR 0033](docs/adr/0033-provider-hosted-web-search.md).

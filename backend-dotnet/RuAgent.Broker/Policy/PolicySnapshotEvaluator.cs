@@ -320,6 +320,17 @@ public sealed class PolicySnapshotEvaluator
                 : ProfileDecision(snapshot, AgentPolicySubject.WorkspaceTerminal, "computer_action_grant_checked");
         }
 
+        // ADR 0055: opening a browser starts a separate program with the user's rights, the same
+        // authority as an external terminal launch (plan deny, standard ask, full_access allow).
+        // The approved session then owns its page; later actions are allowed in standard and fail
+        // closed at execution when no page was opened through that approval.
+        if (IsBrowser(context))
+        {
+            return string.Equals(context.ToolOp, BrowserActions.Open, StringComparison.Ordinal)
+                ? ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "browser_open_requires_approval")
+                : ProfileDecision(snapshot, AgentPolicySubject.WorkspaceTerminal, "browser_action_session_granted");
+        }
+
         if (IsTerminal(context))
         {
             var classification = _terminalClassifier.Classify(context);
@@ -379,6 +390,9 @@ public sealed class PolicySnapshotEvaluator
 
     private static bool IsComputer(PolicyContext context) =>
         string.Equals(context.ToolId, "computer", StringComparison.Ordinal);
+
+    private static bool IsBrowser(PolicyContext context) =>
+        string.Equals(context.ToolId, "browser", StringComparison.Ordinal);
 
     private static bool IsTerminal(PolicyContext context) =>
         string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal);

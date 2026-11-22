@@ -14,6 +14,7 @@ using RuAgent.Broker.Tools.Help;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using RuAgent.Broker.Tools.Computer;
+using RuAgent.Broker.Tools.Browser;
 using RuAgent.Broker.Skills;
 using RuAgent.Broker.Tools.Mcp;
 
@@ -616,6 +617,24 @@ public sealed partial class ToolExecutionService
 
     private static HttpClient CreateWebHttpClient() =>
         new(WebConnectionPolicy.CreateHandler(), disposeHandler: true);
+
+    private BrowserUseService? _browser;
+
+    /// <summary>Connects the Host's browser service; without it every <c>browser</c> call fails by name.</summary>
+    public void UseBrowser(BrowserUseService browser) => _browser = browser ?? throw new ArgumentNullException(nameof(browser));
+
+    private async ValueTask<ToolExecutionOutcome> ExecuteBrowserAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
+    {
+        if (_browser is not { } browser)
+        {
+            return ToolExecutionOutcome.Failed("browser_unavailable", "Browser control is not available in this host.");
+        }
+
+        return await browser.ExecuteAsync(context.RunId, context.SessionId, arguments, cancellationToken).ConfigureAwait(false);
+    }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteReadAsync(
         ToolExecutionContext context,

@@ -505,6 +505,22 @@ public sealed partial class AgentActivityProjectorTests
     }
 
     [Fact]
+    public void Edit_file_batch_preview_is_read_from_the_edits_array()
+    {
+        // edit_file advertises an `edits` array; only the adapter's single old/new pair
+        // was read, so every modern edit_file row reached Changes with no preview to open.
+        var proposal = Proposal(
+            "edit_file",
+            "{\"path\":\"notes.txt\",\"edits\":[{\"old_string\":\"one\",\"new_string\":\"1\"},{\"old_string\":\"two\",\"new_string\":\"2\"}]}");
+
+        var started = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+
+        Assert.Equal(AgentActivityKind.Edit, started.Kind);
+        Assert.Equal("Edit", started.ToolDisplay);
+        AssertPreview(started.Detail, "one\ntwo", "1\n2");
+    }
+
+    [Fact]
     public void Edit_preview_rejects_control_chars_and_stays_bounded()
     {
         var control = Proposal(

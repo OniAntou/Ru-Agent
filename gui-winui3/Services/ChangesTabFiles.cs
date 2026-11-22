@@ -1,16 +1,28 @@
 using System.IO;
+using RuAgent.Protocol.Harness;
+using RuApp.Models;
 
 namespace RuApp.Services;
 
 /// <summary>
-/// File helpers for the Changes tab: which rows are agent scratch files, and where a
-/// row's workspace-relative path lands on disk. Pure except for the existence check,
-/// so the rules are testable.
+/// File helpers for the Changes tab: which rows are agent scratch files, where a row's
+/// workspace-relative path lands on disk, and which recorded activities removed a file.
+/// Pure except for the existence check, so the rules are testable.
 /// </summary>
 public static class ChangesTabFiles
 {
     private static readonly string[] ScratchPrefixes = [".tmp", "tmp_", "_tmp", "~$"];
     private static readonly string[] ScratchExtensions = [".tmp", ".bak", ".orig", ".rej", ".swp"];
+
+    /// <summary>
+    /// True when the activity is the agent's completed deletion of a file. The changes
+    /// surfaces describe what still stands, so a file whose latest edit is a deletion is
+    /// not listed or counted (a later write or restore brings it back).
+    /// </summary>
+    public static bool IsDeletion(AgentActivityItem activity) =>
+        activity.Kind == AgentActivityKind.Edit
+        && activity.State == AgentActivityState.Completed
+        && string.Equals(activity.ToolDisplay, "Delete", StringComparison.Ordinal);
 
     /// <summary>
     /// True for the throwaway files agents write while working (probe scripts, patch

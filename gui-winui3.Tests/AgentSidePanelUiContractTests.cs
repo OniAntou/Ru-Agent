@@ -336,4 +336,26 @@ public sealed class AgentSidePanelUiContractTests
         Assert.Contains("ChangesTabFiles.Resolve(_workspacePath, row.RelativePath)",
             GuiSource.MethodBody(code, "OnChangeRevealClick"), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void An_edit_without_a_recorded_preview_does_not_print_a_placeholder()
+    {
+        // A binary/image edit has no before/after text to show. The expanded entry used to
+        // narrate that absence ("No preview was recorded for this edit."); absent evidence
+        // is now simply omitted, leaving the edit's own label and counts.
+        string markup = GuiSource.Text("Controls", "AgentSidePanelControl.xaml");
+        Assert.DoesNotContain("No preview was recorded", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("HasNoPreview", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("HasNoPreview", GuiSource.Text("Models", "ChangesTabRow.cs"), StringComparison.Ordinal);
+
+        // Expanding a file shows one combined comparison (oldest -> newest version),
+        // never the per-edit list.
+        Assert.DoesNotContain("ItemsSource=\"{x:Bind Edits}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("BeforeText=\"{x:Bind PreviewBeforeText", markup, StringComparison.Ordinal);
+        Assert.Contains("AfterText=\"{x:Bind PreviewAfterText", markup, StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{x:Bind HasPreview, Converter={StaticResource BoolToVisibilityConverter}}\"",
+            markup,
+            StringComparison.Ordinal);
+    }
 }

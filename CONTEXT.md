@@ -389,8 +389,10 @@ _Avoid_: treating the background-task list as the agent's todo plan
 **Turn Change Summary**:
 The read-only card beneath a settled assistant turn, grouping its completed edit
 activities by recorded file path. Line totals sum recorded edits rather than a
-net Git diff. The reader preserves each edit's before/after preview; missing
-evidence remains unavailable. It never modifies files or grants authority.
+net Git diff. Opening a file compares its oldest recorded version with its newest
+in one diff; a record with no text before/after has nothing to expand. A file
+whose latest recorded edit is a deletion is not a changed file. It never
+modifies files or grants authority.
 Implementation: [GUI turn summary](docs/architecture/gui.md#turn-change-summary).
 _Avoid_: mixing session-wide edits or current filesystem content into an older turn.
 

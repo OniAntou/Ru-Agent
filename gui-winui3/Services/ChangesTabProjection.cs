@@ -25,7 +25,10 @@ public static class ChangesTabProjection
 {
     public const int MaxRows = 100;
 
-    /// <summary>Edits kept per file row; the row's totals still cover all of them.</summary>
+    /// <summary>
+    /// Edits kept per file row for identity and reveal lookup; the row draws one
+    /// comparison between the file's oldest and newest recorded version instead.
+    /// </summary>
     public const int MaxEditsPerRow = 25;
 
     /// <summary>Shown for an edit whose activity named no file (an apply_patch call).</summary>
@@ -68,8 +71,6 @@ public static class ChangesTabProjection
         // A failed, denied or still running edit changed nothing (yet): listing it
         // showed every retry of a stale edit as another +0 −0 row.
         var completed = edits.Where(edit => edit.State == AgentActivityState.Completed).ToList();
-        int added = completed.Sum(edit => edit.Added ?? 0);
-        int removed = completed.Sum(edit => edit.Removed ?? 0);
 
         // A basename-only edit (made through an absolute path) joins the relative
         // path with its name when exactly one exists; otherwise it groups by name.
@@ -85,7 +86,22 @@ public static class ChangesTabProjection
                 ? pathsByName.TryGetValue(name, out var paths) && paths.Length == 1 ? paths[0] : name
                 : UnnamedFile);
 
-        var groups = completed
+        // The tab lists what still stands. Walk each file's edits in order: a deletion
+        // removes it, a later write or restore brings it back. A deleted file is then
+        // neither a row nor part of the totals.
+        var deleted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var edit in completed)
+        {
+            string file = FileKey(edit);
+            if (ChangesTabFiles.IsDeletion(edit)) deleted.Add(file);
+            else deleted.Remove(file);
+        }
+
+        var live = completed.Where(edit => !deleted.Contains(FileKey(edit))).ToList();
+        int added = live.Sum(edit => edit.Added ?? 0);
+        int removed = live.Sum(edit => edit.Removed ?? 0);
+
+        var groups = live
             .Select((edit, order) => (Edit: edit, Order: order))
             .GroupBy(item => FileKey(item.Edit), StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(group => group.Max(item => item.Order))
@@ -115,6 +131,12 @@ public static class ChangesTabProjection
             newestFirst[^1] = focused;
         }
 
+        // The row compares the file's recorded versions. Prefer the first and last edit
+        // that actually carries a preview: an edit whose detail is unavailable (an
+        // older/other tool shape) must not hide a comparison the rest of the row has.
+        var previewEdits = fileEdits.Where(edit => edit.HasEditPreview).ToArray();
+        var beforeSource = previewEdits.Length > 0 ? previewEdits[0] : fileEdits[0];
+        var afterSource = previewEdits.Length > 0 ? previewEdits[^1] : fileEdits[^1];
         return new ChangesTabRow(
             fileEdits[^1].FileName is { Length: > 0 } name ? name.Replace('\\', '/') : UnnamedFile,
             SumKnown(fileEdits.Select(edit => edit.Added)),
@@ -122,7 +144,13 @@ public static class ChangesTabProjection
             newestFirst.Select(edit => new ChangesTabEdit(edit.ActivityId, edit.EditBeforeText, edit.EditAfterText,
                 edit.LineStart, edit.Added, edit.Removed, edit.FileName)).ToArray(),
             fileEdits[0].ActivityId,
-            relativePath);
+            relativePath,
+            // One comparison, not a log of every edit: the earliest recorded version that
+            // has evidence against the latest one, taken before the per-row cap narrows
+            // the stored edit window.
+            previewBeforeText: beforeSource.EditBeforeText,
+            previewAfterText: afterSource.EditAfterText,
+            previewStartLine: beforeSource.LineStart);
     }
 
     /// <summary>The sum of the known counts, or null when no edit of the file reported one.</summary>

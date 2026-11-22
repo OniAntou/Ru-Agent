@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: The Changes tab and the turn summary no longer list a file the agent deleted:
+  a file whose latest recorded edit is a deletion leaves the rows and the totals, and a later
+  write or restore brings it back. The Changes tab compares a file's oldest recorded version
+  with its newest in one diff instead of listing every edit; a file without a text before/after
+  has nothing to expand and no longer prints "No preview was recorded for this edit."
+
+- **fix(harness)**: An `edit_file` row carries its before/after preview again. Only the
+  adapter's single `old_string`/`new_string` pair was read, so modern edits reached the
+  Changes tab with nothing to open; the `edits` array is now encoded too (bounded, joined in
+  order). The tab also falls back to the nearest recorded preview when one end is missing.
+
 - **feat(broker)**: Ru can drive a browser itself. A new built-in `browser` tool opens an
   installed browser with an isolated ephemeral profile and speaks the browser's protocol
   directly: Chromium family (Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Arc) over the

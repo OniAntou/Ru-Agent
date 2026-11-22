@@ -7,7 +7,6 @@ namespace RuApp.Services;
 public sealed record TurnChangeEdit(string ActivityId, string BeforeText, string AfterText,
     int? StartLine, bool HasPreview)
 {
-    public bool HasNoPreview => !HasPreview;
     public string Location => StartLine is > 0 ? $"Line {StartLine}" : "Recorded edit";
 }
 
@@ -55,20 +54,52 @@ public static class TurnChangesProjection
 
         // Resolve replay duplicates before filtering: a later failure must not
         // resurrect an older success with the same identity.
-        var latest = new Dictionary<string, AgentActivityItem>(StringComparer.Ordinal);
+        var ordered = new List<AgentActivityItem>();
+        var positions = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var activity in message.AgentActivities)
-            if (!string.IsNullOrWhiteSpace(activity.ActivityId)) latest[activity.ActivityId] = activity;
+        {
+            if (string.IsNullOrWhiteSpace(activity.ActivityId)) continue;
+            if (positions.TryGetValue(activity.ActivityId, out int position))
+                ordered[position] = activity;
+            else
+            {
+                positions.Add(activity.ActivityId, ordered.Count);
+                ordered.Add(activity);
+            }
+        }
 
-        var files = latest.Values
+        var edits = ordered
             .Where(activity => activity.Kind == AgentActivityKind.Edit
                 && activity.State == AgentActivityState.Completed
                 && !string.IsNullOrWhiteSpace(activity.FileName))
-            .GroupBy(activity => activity.FileName!.Replace('\\', '/'), StringComparer.OrdinalIgnoreCase)
-            .Select(group => new TurnChangedFile(group.Key,
-                SumKnown(group.Select(edit => (long?)edit.Added)),
-                SumKnown(group.Select(edit => (long?)edit.Removed)),
-                group.Select(edit => new TurnChangeEdit(edit.ActivityId, edit.EditBeforeText,
-                    edit.EditAfterText, edit.LineStart, edit.HasEditPreview)).ToArray()))
+            .ToArray();
+        string FileKey(AgentActivityItem edit) => edit.FileName!.Replace('\\', '/');
+
+        // The card describes what the turn left standing: a file whose last recorded
+        // edit is a deletion is not a changed file, at filesystem independence and
+        // without reading the working tree.
+        var deleted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var edit in edits)
+        {
+            string file = FileKey(edit);
+            if (ChangesTabFiles.IsDeletion(edit)) deleted.Add(file);
+            else deleted.Remove(file);
+        }
+
+        var files = edits
+            .Where(edit => !deleted.Contains(FileKey(edit)))
+            .GroupBy(FileKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                // A deletion activity carries no line counts; counting it would turn a
+                // file that was deleted and later written into an unknown total.
+                var counted = group.Where(edit => !ChangesTabFiles.IsDeletion(edit)).ToArray();
+                return new TurnChangedFile(group.Key,
+                    SumKnown(counted.Select(edit => (long?)edit.Added)),
+                    SumKnown(counted.Select(edit => (long?)edit.Removed)),
+                    group.Select(edit => new TurnChangeEdit(edit.ActivityId, edit.EditBeforeText,
+                        edit.EditAfterText, edit.LineStart, edit.HasEditPreview)).ToArray());
+            })
             .ToArray();
         return new(files, SumKnown(files.Select(file => file.Added)), SumKnown(files.Select(file => file.Removed)));
     }

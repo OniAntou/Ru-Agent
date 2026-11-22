@@ -14,10 +14,6 @@ public sealed record ChangesTabEdit(
     string? FileName = null)
 {
     public bool HasPreview => BeforeText.Length > 0 || AfterText.Length > 0;
-    public bool HasNoPreview => !HasPreview;
-    public string LocationText => StartLine is > 0 ? $"Line {StartLine}" : "Edit";
-    public string AddedText => TurnChangesProjection.FormatCount(Added, "+");
-    public string RemovedText => TurnChangesProjection.FormatCount(Removed, "−");
 }
 
 /// <summary>
@@ -33,7 +29,8 @@ public sealed record ChangesTabEdit(
 public sealed class ChangesTabRow : INotifyPropertyChanged
 {
     public ChangesTabRow(string fileName, int? added, int? removed, IReadOnlyList<ChangesTabEdit> edits,
-        string? firstActivityId = null, string? relativePath = null)
+        string? firstActivityId = null, string? relativePath = null,
+        string? previewBeforeText = null, string? previewAfterText = null, int? previewStartLine = null)
     {
         FileName = fileName;
         RelativePath = relativePath;
@@ -44,6 +41,14 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
         Removed = removed;
         Edits = edits;
         FirstActivityId = firstActivityId ?? (edits.Count > 0 ? edits[^1].ActivityId : string.Empty);
+        // The row compares the file's oldest recorded version with its newest instead of
+        // listing every edit. Callers project both ends from the full edit list; the
+        // newest-first Edits list is only the identity/cap window and a test fallback.
+        PreviewBeforeText = previewBeforeText
+            ?? (edits.Count > 0 ? edits[^1].BeforeText : string.Empty);
+        PreviewAfterText = previewAfterText
+            ?? (edits.Count > 0 ? edits[0].AfterText : string.Empty);
+        PreviewStartLine = previewStartLine ?? (edits.Count > 0 ? edits[^1].StartLine : null);
     }
 
     public string FileName { get; }
@@ -68,8 +73,23 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
 
     public int? Removed { get; }
 
-    /// <summary>Newest first.</summary>
+    /// <summary>Newest first; the row's identity and reveal window, not its display list.</summary>
     public IReadOnlyList<ChangesTabEdit> Edits { get; }
+
+    /// <summary>Before text of the file's oldest recorded edit.</summary>
+    public string PreviewBeforeText { get; }
+
+    /// <summary>After text of the file's newest recorded edit.</summary>
+    public string PreviewAfterText { get; }
+
+    /// <summary>The line the oldest edit started at, for the combined preview.</summary>
+    public int? PreviewStartLine { get; }
+
+    /// <summary>
+    /// Whether the row has a version comparison to show. An image or other edit with no
+    /// text before/after has nothing to draw, so it is not expandable.
+    /// </summary>
+    public bool HasPreview => PreviewBeforeText.Length > 0 || PreviewAfterText.Length > 0;
 
     /// <summary>The file's first edit in the session: with the name, it identifies the row across refreshes.</summary>
     public string FirstActivityId { get; }
@@ -115,7 +135,8 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
         get => _isExpanded;
         set
         {
-            if (_isExpanded == value)
+            // A row with no recorded version comparison has nothing to expand.
+            if (_isExpanded == value || (value && !HasPreview))
             {
                 return;
             }

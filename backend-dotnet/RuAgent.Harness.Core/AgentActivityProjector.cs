@@ -356,6 +356,42 @@ public static class AgentActivityProjector
                 return null;
             }
 
+            // edit_file (and the adapter's edit family) may carry either one old/new
+            // pair or an `edits` array of them. Only the single-pair form was read, so
+            // every modern edit_file row had no preview and the Changes tab had nothing
+            // to open. Each pair is bounded by the codec; the joins give the reader the
+            // replaced spans in order rather than dropping the row's evidence.
+            if (arguments.TryGetProperty("edits", out var editsNode)
+                && editsNode.ValueKind == JsonValueKind.Array)
+            {
+                var oldParts = new List<string>();
+                var newParts = new List<string>();
+                foreach (var entry in editsNode.EnumerateArray())
+                {
+                    if (oldParts.Count >= 64
+                        || entry.ValueKind != JsonValueKind.Object
+                        || !entry.TryGetProperty("old_string", out var oldValue)
+                        || oldValue.ValueKind != JsonValueKind.String
+                        || !entry.TryGetProperty("new_string", out var newValue)
+                        || newValue.ValueKind != JsonValueKind.String)
+                    {
+                        return null;
+                    }
+
+                    oldParts.Add(oldValue.GetString() ?? string.Empty);
+                    newParts.Add(newValue.GetString() ?? string.Empty);
+                }
+
+                if (oldParts.Count == 0 || (oldParts.All(string.IsNullOrEmpty) && newParts.All(string.IsNullOrEmpty)))
+                {
+                    return null;
+                }
+
+                return RuAgent.Protocol.Harness.AgentEditPreviewCodec.Encode(
+                    string.Join("\n", oldParts),
+                    string.Join("\n", newParts));
+            }
+
             if (!arguments.TryGetProperty("old_string", out var oldNode)
                 || oldNode.ValueKind != JsonValueKind.String
                 || !arguments.TryGetProperty("new_string", out var newNode)

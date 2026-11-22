@@ -108,6 +108,35 @@ public sealed class TurnChangesProjectionTests
     }
 
     [Fact]
+    public void A_file_deleted_in_the_turn_is_not_summarized()
+    {
+        // The card describes what the turn left standing; a completed file_delete is
+        // not a changed file and is absent from the list and the totals.
+        var summary = TurnChangesProjection.ForMessage(Message(
+            Edit("write", "old.txt", 5, 1),
+            Delete("delete", "old.txt"),
+            Edit("keep", "keep.txt", 2, 0)));
+
+        var file = Assert.Single(summary.Files);
+        Assert.Equal("keep.txt", file.Path);
+        Assert.Equal(2, summary.Added);
+        Assert.Equal(0, summary.Removed);
+    }
+
+    [Fact]
+    public void A_file_deleted_then_written_again_is_summarized()
+    {
+        var summary = TurnChangesProjection.ForMessage(Message(
+            Edit("one", "again.txt", 1, 0),
+            Delete("delete", "again.txt"),
+            Edit("two", "again.txt", 3, 0)));
+
+        var file = Assert.Single(summary.Files);
+        Assert.Equal("again.txt", file.Path);
+        Assert.Equal(4, summary.Added);
+    }
+
+    [Fact]
     public void A_summary_is_a_snapshot_of_recorded_edits_not_current_filesystem_content()
     {
         var edit = Edit("one", "a.cs", 1, 0);
@@ -192,6 +221,9 @@ public sealed class TurnChangesProjectionTests
 
     private static AgentActivityItem Edit(string id, string path, int? added, int? removed,
         AgentActivityState state = AgentActivityState.Completed) => new(Wire(id, path, added, removed) with { State = state });
+
+    private static AgentActivityItem Delete(string id, string path) =>
+        new(Wire(id, path, null, null) with { ToolDisplay = "Delete" });
 
     private static AgentActivityModel Wire(string id, string path, int? added, int? removed) => new(
         id, AgentActivityKind.Edit, AgentActivityState.Completed, path, null, null, null,

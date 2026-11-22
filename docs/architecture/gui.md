@@ -775,7 +775,9 @@ Large tables render at most 50 rows (including the header) and eight columns;
 the preview states its visible and total counts. Copy and the full-table dialog
 use the complete TSV content. Edit activity previews use Protocol's bounded
 `AgentEditPreviewCodec` (`@@json` plus a two-string JSON array), preserving
-literal backslashes and delimiters. The live publisher redacts decoded values
+literal backslashes and delimiters. The adapter's single `old_string`/`new_string`
+pair and the `edit_file` `edits` array are both encoded; multiple replacements
+join in order inside the codec bound. The live publisher redacts decoded values
 before re-encoding; the GUI also reads legacy `@@ old ==> new` session details.
 
 GUI conversation ownership lives in the WinUI-independent
@@ -1062,11 +1064,14 @@ _Avoid_: treating an HTTP 200 response as a successful delete
 
 `TurnChangesProjection` builds a snapshot from one settled assistant message's
 edit activities. The latest activity identity wins before filtering; only
-completed edits with a file path count. Paths group case-insensitively with slash
+completed edits with a file path count. A file whose latest recorded edit in the
+turn is a deletion is not a changed file and is omitted. Paths group
+case-insensitively with slash
 normalization, without filesystem access or authority resolution. Counts sum
 recorded edit operations using 64-bit totals, not a net Git diff; missing or
-invalid counts display `—` rather than a false zero. Each file retains its own
-ordered edit previews and line offsets instead of concatenating unrelated hunks.
+invalid counts display `—` rather than a false zero. Each file keeps its own
+totals and edit identities; opening it shows one comparison between that file's
+oldest and newest recorded version instead of a per-edit log.
 
 `TurnChangesSummaryControl` sits after the reply text in the assistant template.
 It hides while streaming or without edits, shows four files initially and expands
@@ -1078,12 +1083,15 @@ The existing run-owned transcript replay restores old turns without adopting the
 next run's edits. The session-wide Changes tab keeps its independent projection:
 `ChangesTabProjection` lists completed edits only (failed, denied, waiting and
 running edits changed nothing and are not listed or counted), one row per file,
-most recently edited file first. Rows group by the edit's `relative_path`; an edit
+most recently edited file first. A file whose latest recorded edit is a deletion
+is omitted from the rows and the totals; a later write or restore brings it back.
+Rows group by the edit's `relative_path`; an edit
 made through an absolute path carries only its basename and joins the one relative
 path with that name when exactly one exists, otherwise it groups by name alone. A row sums its edits' known line counts
 (`—` when none reported one), shows "N edits" when there are several, and expands
-to that file's edits newest first, each with its line, counts and diff, at most
-25 per row. A row shows its folder under the name, and its menu opens a preview,
+to one diff between that file's oldest recorded version and its newest; a file
+with no recorded text before/after has nothing to expand. Up to 25 edit identities
+per row are retained for reveal and navigation, while totals cover every edit. A row shows its folder under the name, and its menu opens a preview,
 reveals the file in File Explorer or copies its path; preview and reveal resolve the
 relative path against the session workspace and refuse anything outside it, so a
 bare basename never opens a file. Agent scratch files (`.tmp*`, `tmp_*`, `_tmp*`,
@@ -1099,8 +1107,8 @@ scrolls it sideways, since the strip hides its scrollbar to stay one line tall.
 File clicks and View changes raise a navigation request to the owning chat view.
 The view validates the current session/message and opens the existing right-panel
 Changes tab. There is no separate turn reader, file picker or back navigation.
-Clicking a file expands and scrolls to the row holding its latest recorded edit in
-the normal session list. An older selected edit's file can replace the oldest
+Clicking a file scrolls to the row holding its latest recorded edit in
+the normal session list and expands it when it has a text comparison. An older selected edit's file can replace the oldest
 visible row within the 100-row cap, and the edit itself stays within its row's
 25-edit cap; session totals still cover every edit. Live refreshes retain expanded
 diffs. Explicit turn navigation opens an overlay on narrow windows instead of

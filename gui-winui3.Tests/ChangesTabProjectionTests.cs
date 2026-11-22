@@ -109,7 +109,7 @@ public sealed class ChangesTabProjectionTests
     [Fact]
     public void Refreshing_unchanged_edits_keeps_the_open_diff_and_sends_no_collection_reset()
     {
-        var activity = Edit("file.txt", added: 2);
+        var activity = Edit("file.txt", added: 2, detail: "@@ before ==> after");
         var rows = new System.Collections.ObjectModel.ObservableCollection<ChangesTabRow>();
         ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { activity }).Rows);
         var retained = rows[0];
@@ -130,12 +130,12 @@ public sealed class ChangesTabProjectionTests
     [Fact]
     public void Another_edit_of_an_open_file_keeps_its_row_expanded()
     {
-        var first = Edit("file.txt", added: 1);
+        var first = Edit("file.txt", added: 1, detail: "@@ a ==> b");
         var rows = new System.Collections.ObjectModel.ObservableCollection<ChangesTabRow>();
         ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { first }).Rows);
         rows[0].IsExpanded = true;
 
-        ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { first, Edit("file.txt", added: 2) }).Rows);
+        ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { first, Edit("file.txt", added: 2, detail: "@@ b ==> c") }).Rows);
 
         Assert.True(rows[0].IsExpanded);
         Assert.Equal(2, rows[0].Edits.Count);
@@ -146,10 +146,10 @@ public sealed class ChangesTabProjectionTests
     public void Another_session_with_the_same_file_name_does_not_inherit_expansion()
     {
         var rows = new System.Collections.ObjectModel.ObservableCollection<ChangesTabRow>();
-        ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { Edit("file.txt", added: 1) }).Rows);
+        ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { Edit("file.txt", added: 1, detail: "@@ a ==> b") }).Rows);
         rows[0].IsExpanded = true;
 
-        ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { Edit("file.txt", added: 1) }).Rows);
+        ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { Edit("file.txt", added: 1, detail: "@@ a ==> b") }).Rows);
 
         Assert.False(rows[0].IsExpanded);
     }
@@ -227,7 +227,7 @@ public sealed class ChangesTabProjectionTests
     }
 
     [Fact]
-    public void Rows_carry_each_edit_preview_and_the_expansion_starts_folded()
+    public void Rows_carry_the_oldest_and_newest_versions_and_the_expansion_starts_folded()
     {
         var projection = ChangesTabProjection.Project(new[]
         {
@@ -239,14 +239,95 @@ public sealed class ChangesTabProjectionTests
         Assert.Equal(3, row.Added);
         Assert.Equal(1, row.Removed);
         Assert.Equal(42, edit.StartLine);
-        Assert.Equal("Line 42", edit.LocationText);
-        Assert.Equal("old-line", edit.BeforeText);
-        Assert.Equal("new-line", edit.AfterText);
-        Assert.True(edit.HasPreview);
+        Assert.Equal(42, row.PreviewStartLine);
+        Assert.Equal("old-line", row.PreviewBeforeText);
+        Assert.Equal("new-line", row.PreviewAfterText);
+        Assert.True(row.HasPreview);
         Assert.False(row.IsExpanded);
 
         row.IsExpanded = true;
         Assert.Equal("", row.ExpansionGlyph);
+    }
+
+    [Fact]
+    public void A_file_edited_several_times_compares_only_its_oldest_and_newest_versions()
+    {
+        var projection = ChangesTabProjection.Project(new[]
+        {
+            Edit("server.py", added: 3, removed: 1, lineStart: 10, detail: "@@ one ==> two"),
+            Edit("server.py", added: 2, removed: 2, lineStart: 40, detail: "@@ two ==> three"),
+            Edit("server.py", added: 1, removed: 4, lineStart: 90, detail: "@@ three ==> four"),
+        });
+
+        var row = Assert.Single(projection.Rows);
+        Assert.Equal(3, row.Edits.Count);
+
+        // One combined comparison, not a log of each edit: the first recorded version
+        // against the latest one, starting where the first edit started.
+        Assert.Equal("one", row.PreviewBeforeText);
+        Assert.Equal("four", row.PreviewAfterText);
+        Assert.Equal(10, row.PreviewStartLine);
+        Assert.True(row.HasPreview);
+    }
+
+    [Fact]
+    public void A_file_whose_newest_edit_has_no_evidence_still_opens_with_the_available_preview()
+    {
+        // An edit shape whose detail was not recorded (older builds, another tool) must
+        // not hide the preview an earlier edit of the same file carries.
+        var projection = ChangesTabProjection.Project(new[]
+        {
+            Edit("notes.txt", added: 5, detail: "@@ one ==> two"),
+            Edit("notes.txt", added: 1),
+        });
+
+        var row = Assert.Single(projection.Rows);
+        Assert.True(row.HasPreview);
+        Assert.Equal("one", row.PreviewBeforeText);
+        Assert.Equal("two", row.PreviewAfterText);
+    }
+
+    [Fact]
+    public void A_row_without_a_text_version_has_nothing_to_expand()
+    {
+        // An image or other edit with no recorded text before/after cannot show a diff.
+        var row = ChangesTabProjection.Project(new[] { Edit("con-ngua-minh-hoa.png") }).Rows[0];
+
+        Assert.False(row.HasPreview);
+        row.IsExpanded = true;
+        Assert.False(row.IsExpanded);
+    }
+
+    [Fact]
+    public void A_file_deleted_later_is_not_a_row_and_not_counted()
+    {
+        // The agent created/edited the file and then deleted it in the same session.
+        // The Changes list describes what still stands, so the deleted file disappears
+        // from both the rows and the totals.
+        var projection = ChangesTabProjection.Project(new[]
+        {
+            Edit("old.txt", added: 5, removed: 1, detail: "@@ a ==> b"),
+            Delete("old.txt"),
+            Edit("keep.txt", added: 2),
+        });
+
+        var row = Assert.Single(projection.Rows);
+        Assert.Equal("keep.txt", row.FileName);
+        Assert.Equal(2, projection.Added);
+        Assert.Equal(0, projection.Removed);
+    }
+
+    [Fact]
+    public void A_file_deleted_then_written_again_is_listed()
+    {
+        var projection = ChangesTabProjection.Project(new[]
+        {
+            Edit("again.txt", added: 1, detail: "@@ a ==> b"),
+            Delete("again.txt"),
+            Edit("again.txt", added: 3, detail: "@@ b ==> c"),
+        });
+
+        Assert.Equal(4, Assert.Single(projection.Rows).Added);
     }
 
     [Fact]
@@ -336,6 +417,13 @@ public sealed class ChangesTabProjectionTests
             detail: detail,
             relativePath: relativePath));
 
+    private static AgentActivityItem Delete(string fileName) =>
+        new(Activity(
+            AgentActivityState.Completed,
+            AgentActivityKind.Edit,
+            fileName: fileName,
+            toolDisplay: "Delete"));
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind,
@@ -345,7 +433,8 @@ public sealed class ChangesTabProjectionTests
         int? removed = null,
         string? symbol = null,
         string? detail = null,
-        string? relativePath = null) =>
+        string? relativePath = null,
+        string? toolDisplay = null) =>
         new(
             "act_" + System.Guid.NewGuid().ToString("N"),
             kind,
@@ -359,7 +448,7 @@ public sealed class ChangesTabProjectionTests
             removed,
             null,
             "succeeded",
-            null,
+            toolDisplay,
             null,
             1,
             detail,

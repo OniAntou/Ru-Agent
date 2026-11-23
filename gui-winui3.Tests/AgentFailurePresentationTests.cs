@@ -288,6 +288,33 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
+    public void A_create_with_unknown_outcome_keeps_the_last_named_response()
+    {
+        // The tester's session reported only "agent_create_outcome_unknown": the
+        // code of the response that refused the create had been dropped by the
+        // time the reconciliation failed.
+        string status = AgentFailurePresentation.RenderCreateOutcomeUnknownStatus(
+            "scratch_workspace_unavailable", "retry reconciliation");
+
+        Assert.Contains("scratch_workspace_unavailable", status, StringComparison.Ordinal);
+        Assert.Contains("retry reconciliation", status, StringComparison.Ordinal);
+        Assert.DoesNotContain("(last response: agent_create_outcome_unknown)", status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_create_with_no_named_response_still_says_what_to_do()
+    {
+        string status = AgentFailurePresentation.RenderCreateOutcomeUnknownStatus(null);
+
+        Assert.Contains("Use Stop", status, StringComparison.Ordinal);
+        Assert.DoesNotContain("last response", status, StringComparison.Ordinal);
+
+        // The synthetic wrapper code adds nothing a user can act on.
+        string wrapped = AgentFailurePresentation.RenderCreateOutcomeUnknownStatus("agent_create_outcome_unknown");
+        Assert.DoesNotContain("last response", wrapped, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_start_failure_without_a_code_still_says_something_actionable()
     {
         string rendered = AgentFailurePresentation.RenderStartFailure(errorCode: null, message: null);

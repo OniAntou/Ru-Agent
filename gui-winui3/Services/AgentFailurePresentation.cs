@@ -185,6 +185,22 @@ internal static class AgentFailurePresentation
     }
 
     /// <summary>
+    /// Status while a create's outcome is unknown. The last response the Host named
+    /// is the only handle a report has, so it survives into a later reconciliation
+    /// failure instead of being dropped there.
+    /// </summary>
+    internal static string RenderCreateOutcomeUnknownStatus(string? lastResponse, string next = "reconcile and cancel")
+    {
+        string? code = ReadableMessage(lastResponse);
+        bool namesItself = code is not null
+            && !string.Equals(code, "agent_create_outcome_unknown", StringComparison.Ordinal);
+
+        return namesItself
+            ? $"Create outcome unknown: agent_create_outcome_unknown (last response: {code}). Use Stop to {next}."
+            : $"Create outcome unknown: agent_create_outcome_unknown. Use Stop to {next}.";
+    }
+
+    /// <summary>
     /// The exception message is often a raw response body. JSON is not copy: this
     /// keeps a plain message as-is, extracts the envelope's own message, and drops
     /// a body that has nothing readable in it.

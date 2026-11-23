@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: A run that stopped on an exception now keeps the name that
+  exception carries instead of collapsing into `runtime_drive_failed`: a store fault
+  reports the store's own code (`harness_store_unavailable`, or
+  `agent_store_unavailable` for a raw database failure), a protocol fault reports its
+  protocol code, and a tool-transport fault reports the code it carries. The fallback
+  stays for a genuinely unclassified fault, so the family is visible from the run's
+  terminal code without reading the host log.
+
+- **fix(gui)**: The blocked state after a create whose outcome could not be confirmed
+  now keeps the last code the Host named. A repeated reconciliation failure used to
+  report only `agent_create_outcome_unknown`, dropping the refusal the user needed to
+  report; it now reads `(last response: <code>)` alongside the retry instruction.
+
 - **fix(host)**: A background chat that has no project folder no longer dies when
   the agent rewrites its own ownership marker. Every later turn failed with
   `scratch_workspace_unavailable`, because allocation accepted an existing

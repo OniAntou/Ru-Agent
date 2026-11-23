@@ -878,6 +878,36 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
                 : "retained_approval_rehydration_failed";
         }
 
+        // A failure that names itself keeps that name. The catch-all used to hide
+        // the family: a store fault, a protocol fault and an unknown driver bug all
+        // arrived as runtime_drive_failed, so nothing told an operator which one to
+        // chase without the host log.
+        if (error is RuAgent.Harness.Persistence.HarnessStoreException storeFailure
+            && IsStableTerminalCode(storeFailure.Code))
+        {
+            return storeFailure.Code;
+        }
+
+        if (error is RuAgent.Protocol.AgentProtocolException protocolFailure
+            && IsStableTerminalCode(protocolFailure.Code))
+        {
+            return protocolFailure.Code;
+        }
+
+        // The transport exception carries its code as the message by contract; prose
+        // must not be mistaken for one.
+        if (error is RuAgent.Harness.Core.ToolTransportException transportFailure
+            && IsStableTerminalCode(transportFailure.Message))
+        {
+            return transportFailure.Message;
+        }
+
+        // A raw database failure is the store being unavailable, not a driver bug.
+        if (error is System.Data.Common.DbException)
+        {
+            return "agent_store_unavailable";
+        }
+
         // Terminal codes must satisfy AgentRun/HarnessEventIntent validation:
         // 1..64 chars, starts [a-z], rest [a-z0-9_.]. Never embed raw messages.
         if (error is RuBackend.Harness.ModelRunner.ModelRunnerUnavailableException)

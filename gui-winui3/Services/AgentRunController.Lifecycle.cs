@@ -11,6 +11,10 @@ public sealed partial class AgentRunController
     private TaskCompletionSource? _pendingCreateSettled;
     private long _runOwnershipGeneration;
     private bool _isPendingCreateOutcomeUnknown;
+    // The last response a create could name before its outcome became unknown. Kept
+    // so a later reconciliation failure still tells the user which code to report
+    // instead of dropping it.
+    private string? _pendingCreateFailureCode;
     private CancellationTokenSource? _subscriptionCts;
 
     internal bool HasPendingCreateOutcomeUnknown
@@ -97,6 +101,7 @@ public sealed partial class AgentRunController
                 {
                     _pendingCreateRequest = null;
                     _isPendingCreateOutcomeUnknown = false;
+                    _pendingCreateFailureCode = null;
                 }
                 wasCancelled = token.IsCancellationRequested || !ReferenceEquals(_subscriptionCts, cts);
                 if (!wasCancelled)
@@ -130,6 +135,7 @@ public sealed partial class AgentRunController
                 {
                     _pendingCreateRequest = null;
                     _isPendingCreateOutcomeUnknown = false;
+                    _pendingCreateFailureCode = null;
                 }
                 if (ReferenceEquals(_subscriptionCts, cts))
                 {
@@ -156,6 +162,7 @@ public sealed partial class AgentRunController
                 if (ReferenceEquals(_pendingCreateRequest, requestSnapshot))
                 {
                     _isPendingCreateOutcomeUnknown = true;
+                    _pendingCreateFailureCode = ex.ErrorCode;
                 }
 
                 if (ReferenceEquals(_subscriptionCts, cts))
@@ -167,7 +174,7 @@ public sealed partial class AgentRunController
             RunOnUi(() =>
             {
                 if (!ReferenceEquals(_pendingCreateRequest, requestSnapshot)) return;
-                _statusText = CreateOutcomeUnknownStatus(ex.ErrorCode);
+                _statusText = AgentFailurePresentation.RenderCreateOutcomeUnknownStatus(ex.ErrorCode);
                 _isBusy = false;
                 _isCancelRequested = false;
                 RefreshCommands();
@@ -187,6 +194,7 @@ public sealed partial class AgentRunController
                 {
                     _pendingCreateRequest = null;
                     _isPendingCreateOutcomeUnknown = false;
+                    _pendingCreateFailureCode = null;
                 }
             }
 
@@ -237,10 +245,6 @@ public sealed partial class AgentRunController
         return request with { ImageAttachments = Array.AsReadOnly(attachments) };
     }
 
-    private static string CreateOutcomeUnknownStatus(string errorCode) =>
-        string.Equals(errorCode, "agent_create_outcome_unknown", StringComparison.Ordinal)
-            ? "Create outcome unknown: agent_create_outcome_unknown. Use Stop to reconcile and cancel."
-            : $"Create outcome unknown: agent_create_outcome_unknown (last response: {errorCode}). Use Stop to reconcile and cancel.";
 
     private void PublishCreatedRun(
         AgentRunModel run,
@@ -497,6 +501,7 @@ public sealed partial class AgentRunController
             if (!ReferenceEquals(_pendingCreateRequest, pendingCreate)) return false;
             _pendingCreateRequest = null;
             _isPendingCreateOutcomeUnknown = false;
+            _pendingCreateFailureCode = null;
             _currentRunId = run.RunId;
             return true;
         }
@@ -528,18 +533,20 @@ public sealed partial class AgentRunController
         Exception error)
     {
         bool outcomeUnknown;
+        string? lastResponse;
         lock (_gate)
         {
             if (_runOwnershipGeneration != ownershipGeneration) return;
             outcomeUnknown = ReferenceEquals(_pendingCreateRequest, pendingCreate);
             _isPendingCreateOutcomeUnknown = outcomeUnknown;
+            lastResponse = _pendingCreateFailureCode;
         }
 
         RunOnUi(() =>
         {
             if (!OwnsReconciliation(ownershipGeneration)) return;
             _statusText = outcomeUnknown
-                ? "Create outcome unknown: agent_create_outcome_unknown. Use Stop to retry reconciliation."
+                ? AgentFailurePresentation.RenderCreateOutcomeUnknownStatus(lastResponse, "retry reconciliation")
                 : $"Cancel error: {error.Message}";
             _isBusy = false;
             _isCancelRequested = false;

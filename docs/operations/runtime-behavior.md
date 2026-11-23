@@ -63,7 +63,9 @@ A failed Stop reconciliation retains the identity for another attempt.
 An unusable success response, a server error, or an HTTP error after a lost
 acknowledgement also retains that identity, while preserving its original
 error code. A definitive first-attempt client error does not trigger this
-unknown-outcome state.
+unknown-outcome state. The status keeps the last code the Host named, so a
+repeated reconciliation failure still reports which refusal it saw instead of
+collapsing into `agent_create_outcome_unknown` alone.
 
 Opening a session adopts its newest non-terminal run, so a run that outlived
 the host is not invisible: WinUI re-arms Stop for it (`AdoptRunAsync`; a running
@@ -79,6 +81,14 @@ code, and a new message starts a fresh run that carries the session's handoff
 (ADR 0023), or the previous run's native history when the model is unchanged
 (ADR 0049). Startup recovery fails a run an older build parked for Continue with the
 code it parked on (`continue_removed` when none was recorded).
+
+A run that stops on an exception keeps the name that exception carries: a store
+fault ends it with the store's own code (`harness_store_unavailable`, or
+`agent_store_unavailable` for a raw database failure), a protocol fault with its
+protocol code, and a tool-transport fault with the code it carries.
+`runtime_drive_failed` is only the fallback for a genuinely unclassified fault, so
+an operator can tell the family apart from the run's terminal code without the
+host log; the host still records the throwing type and method for that fallback.
 
 Startup recovery compares the durable event stream with dispatch boundaries: a
 crash before any dispatch fails the run as `recovery_pre_dispatch`, an incomplete

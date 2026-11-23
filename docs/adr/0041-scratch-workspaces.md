@@ -64,6 +64,32 @@ Host-owned path before the run; the run then sends that path. Allocation stays l
 folder still follows the session's deletion and orphan sweep. See
 [ADR 0054](0054-folderless-attachments-use-scratch-workspace.md).
 
+### Marker-recovery amendment: the marker is not the only witness (2026-11-24)
+
+A scratch workspace is ordinary policy territory, so the agent's own file tools
+can rewrite any file inside it, including `.ru-scratch.json`. A field report had a
+session whose first run rewrote that marker; every later turn then failed with
+`scratch_workspace_unavailable`, because allocation recognized ownership only by
+the marker and a damaged marker had no recovery path.
+
+The Host now also records each allocation outside the workspace, in
+`<data root>/workspaces/.owners/<session id>.json`, naming the session and the
+exact canonical workspace path. Allocation accepts an existing folder when it is
+not a reparse point and either witness proves ownership, then repairs whichever
+witness was lost: a marker damaged inside the workspace is rewritten from the
+record, and a workspace allocated before records existed gains its record on the
+next allocation. A folder neither witness claims is still never adopted. A
+readable marker naming another session is a conflict: it is neither relabelled nor
+deleted, even when a record exists.
+
+Deletion uses the same proof, so a deleted session's folder is no longer stranded
+by a damaged marker, and the orphan sweep drops records whose session and folder
+are both gone. A client that echoes the Host-owned scratch path back is resolved
+through the session's own recorded allocation, so a repair happens before the
+path is classified. The failure copy names the cause (a link, a marker changed
+outside Ru, or a permission/free-space problem) and says to rename or delete the
+folder, instead of repeating a raw response body.
+
 ## Context
 
 The desktop app previously derived a new chat's workspace from the application

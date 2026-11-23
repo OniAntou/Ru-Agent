@@ -132,6 +132,80 @@ public sealed class ScratchWorkspaceProvenanceTests
         Assert.False(scratch.Exists(missingSessionId));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_damaged_ownership_marker_is_repaired_before_the_next_turn(bool deletedMarker)
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var (sessionId, _) = await CreateSessionAsync(fixture);
+        var scratch = new ScratchWorkspaceStore(fixture.RootPath);
+        var service = new AgentV1ServiceTestBuilder(fixture).WithScratchWorkspaces(scratch).Build().Creation;
+
+        // An earlier turn allocated this session's workspace; the agent's own file
+        // tools then damaged the marker, as both runs in the report did.
+        var path = scratch.Ensure(sessionId);
+        await File.WriteAllTextAsync(Path.Combine(path, "work.txt"), "keep");
+        var marker = Path.Combine(path, ScratchWorkspaceStore.MarkerFileName);
+        if (deletedMarker)
+        {
+            File.Delete(marker);
+        }
+        else
+        {
+            await File.WriteAllTextAsync(marker, "{\n  \"note\": \"rewritten inside the workspace\"\n}");
+        }
+
+        var created = await service.CreateRunAsync(Request(sessionId, string.Empty), CancellationToken.None);
+
+        Assert.Equal(201, created.StatusCode);
+        var run = Assert.IsType<CreateAgentRunResponse>(created.Body);
+        Assert.Equal("scratch", run.WorkspaceKind);
+        Assert.Equal(Path.GetFullPath(path), Path.GetFullPath(run.WorkspacePath!));
+        Assert.Equal("keep", await File.ReadAllTextAsync(Path.Combine(path, "work.txt")));
+        Assert.Contains(sessionId, await File.ReadAllTextAsync(marker), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_unrecoverable_scratch_folder_reports_what_the_user_can_do()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var (sessionId, _) = await CreateSessionAsync(fixture);
+        var scratch = new ScratchWorkspaceStore(fixture.RootPath);
+        var service = new AgentV1ServiceTestBuilder(fixture).WithScratchWorkspaces(scratch).Build().Creation;
+        // A direction Ru never allocated under this session: no record, foreign marker.
+        var path = scratch.PathFor(sessionId);
+        Directory.CreateDirectory(path);
+        await File.WriteAllTextAsync(
+            Path.Combine(path, ScratchWorkspaceStore.MarkerFileName),
+            "{\"note\":\"placed by hand\"}");
+
+        var result = await service.CreateRunAsync(Request(sessionId, string.Empty), CancellationToken.None);
+
+        Assert.Equal(503, result.StatusCode);
+        var error = Assert.IsType<AgentErrorResponse>(result.Body);
+        Assert.Equal("scratch_workspace_unavailable", error.ErrorCode);
+        Assert.Contains("Rename or delete that folder", error.Message!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_busy_session_reports_the_conflict_instead_of_a_workspace_error()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var (sessionId, _) = await CreateSessionAsync(fixture);
+        var scratch = new ScratchWorkspaceStore(fixture.RootPath);
+        var service = new AgentV1ServiceTestBuilder(fixture).WithScratchWorkspaces(scratch).Build().Creation;
+
+        var first = await service.CreateRunAsync(Request(sessionId, string.Empty), CancellationToken.None);
+        Assert.Equal(201, first.StatusCode);
+
+        var second = await service.CreateRunAsync(Request(sessionId, string.Empty), CancellationToken.None);
+
+        Assert.Equal(409, second.StatusCode);
+        var conflict = Assert.IsType<AgentErrorResponse>(second.Body);
+        Assert.Equal("workspace_busy", conflict.ErrorCode);
+    }
+
     private static CreateAgentRunRequest Request(string sessionId, string workspacePath) => new(
         sessionId,
         workspacePath,

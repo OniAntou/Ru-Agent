@@ -98,6 +98,44 @@ public sealed class ScratchWorkspaceEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task The_scratch_route_repairs_a_marker_the_agent_damaged()
+    {
+        string sessionId = await CreateSessionAsync();
+        using var first = await _client.PostAsync($"/sessions/{sessionId}/workspace/scratch", content: null);
+        string path = (await first.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("workspace_path").GetString()!;
+        var marker = Path.Combine(path, ".ru-scratch.json");
+        await File.WriteAllTextAsync(marker, "{\"note\":\"rewritten inside the workspace\"}");
+
+        using var second = await _client.PostAsync($"/sessions/{sessionId}/workspace/scratch", content: null);
+        var payload = await second.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Equal(path, payload.GetProperty("workspace_path").GetString());
+        Assert.Contains(sessionId, await File.ReadAllTextAsync(marker), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_scratch_route_refuses_a_marker_it_cannot_repair_and_says_what_to_do()
+    {
+        string sessionId = await CreateSessionAsync();
+        // A folder Ru never allocated: no record, and a marker it does not own.
+        var path = Path.Combine(_paths.BusinessDataRoot, "workspaces", sessionId);
+        Directory.CreateDirectory(path);
+        await File.WriteAllTextAsync(Path.Combine(path, ".ru-scratch.json"), "{\"note\":\"placed by hand\"}");
+
+        using var response = await _client.PostAsync($"/sessions/{sessionId}/workspace/scratch", content: null);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("scratch_workspace_unavailable", payload.GetProperty("code").GetString());
+        Assert.Contains(
+            "Rename or delete that folder",
+            payload.GetProperty("message").GetString()!,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_scratch_route_refuses_an_unknown_or_malformed_session()
     {
         using var unknown = await _client.PostAsync(

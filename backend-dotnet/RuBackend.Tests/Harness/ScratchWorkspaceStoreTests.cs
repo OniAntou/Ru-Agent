@@ -190,6 +190,99 @@ public sealed class ScratchWorkspaceStoreTests : IDisposable
         Assert.True(File.Exists(Path.Combine(first, "keep.txt")));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Ensure_repairs_a_marker_the_agent_damaged(bool deletedMarker)
+    {
+        var store = Store;
+        var sessionId = Session('b');
+        var path = store.Ensure(sessionId);
+        File.WriteAllText(Path.Combine(path, "work.txt"), "keep");
+        var marker = Path.Combine(path, ScratchWorkspaceStore.MarkerFileName);
+        if (deletedMarker)
+        {
+            File.Delete(marker);
+        }
+        else
+        {
+            File.WriteAllText(marker, "{\"note\":\"rewritten inside the workspace\"}");
+        }
+
+        var again = store.Ensure(sessionId);
+
+        // The record the Host keeps outside the workspace still proves this exact
+        // folder was allocated to the session, so its data survives and the
+        // human-visible marker is repaired instead of the session dying.
+        Assert.Equal(path, again);
+        Assert.Equal("keep", File.ReadAllText(Path.Combine(path, "work.txt")));
+        Assert.Contains(sessionId, File.ReadAllText(marker), StringComparison.Ordinal);
+        Assert.True(store.OwnsCanonicalWorkspace(path, sessionId));
+    }
+
+    [Fact]
+    public void Ensure_still_refuses_a_damaged_marker_that_no_record_claims()
+    {
+        var store = Store;
+        var sessionId = Session('c');
+        var path = store.PathFor(sessionId);
+        Directory.CreateDirectory(path);
+        var marker = Path.Combine(path, ScratchWorkspaceStore.MarkerFileName);
+        File.WriteAllText(marker, "{\"note\":\"placed by hand\"}");
+        File.WriteAllText(Path.Combine(path, "keep.txt"), "user data");
+
+        Assert.Throws<IOException>(() => store.Ensure(sessionId));
+        Assert.Equal("{\"note\":\"placed by hand\"}", File.ReadAllText(marker));
+        Assert.Equal("user data", File.ReadAllText(Path.Combine(path, "keep.txt")));
+    }
+
+    [Fact]
+    public void TryDelete_removes_a_folder_whose_marker_was_damaged_and_drops_its_record()
+    {
+        var store = Store;
+        var sessionId = Session('d');
+        var path = store.Ensure(sessionId);
+        var marker = Path.Combine(path, ScratchWorkspaceStore.MarkerFileName);
+        File.Delete(marker);
+
+        Assert.True(store.TryDelete(sessionId));
+
+        Assert.False(Directory.Exists(path));
+        Assert.False(File.Exists(store.RecordPathFor(sessionId)));
+    }
+
+    [Fact]
+    public void The_record_never_sits_inside_the_workspace()
+    {
+        var store = Store;
+        var sessionId = Session('e');
+
+        var path = store.Ensure(sessionId);
+        var record = store.RecordPathFor(sessionId);
+
+        Assert.True(File.Exists(record));
+        Assert.False(record.StartsWith(path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(ScratchWorkspaceStore.OwnersDirectoryName,
+            Path.GetFileName(Path.GetDirectoryName(record)!));
+    }
+
+    [Fact]
+    public void DeleteOrphans_drops_records_whose_folder_is_already_gone()
+    {
+        var store = Store;
+        var live = Session('1');
+        var dead = Session('2');
+        store.Ensure(live);
+        store.Ensure(dead);
+        Directory.Delete(store.PathFor(dead), recursive: true);
+
+        store.DeleteOrphans(id => id == live);
+
+        Assert.False(File.Exists(store.RecordPathFor(dead)));
+        Assert.True(File.Exists(store.RecordPathFor(live)));
+        Assert.True(Directory.Exists(store.PathFor(live)));
+    }
+
     [Fact]
     public void Ensure_refuses_to_claim_an_existing_unmarked_user_folder()
     {

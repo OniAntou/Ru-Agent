@@ -165,6 +165,17 @@ public sealed class AgentRunCreationService
             return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
         }
 
+        // A client echoes the Host-owned scratch path it was given, either from the
+        // previous run or from the pre-run scratch endpoint. Resolve that path
+        // through this session's own allocation: a marker the agent's tools damaged
+        // is repaired there instead of the folder looking like a user project.
+        if (!allocateScratchWorkspace
+            && _scratchWorkspaces is not null
+            && _scratchWorkspaces.IsRecordedScratchPathFor(workspacePath, sessionIdRaw))
+        {
+            allocateScratchWorkspace = true;
+        }
+
         var prompt = request.Prompt ?? string.Empty;
         if (string.IsNullOrWhiteSpace(prompt))
         {
@@ -228,7 +239,7 @@ public sealed class AgentRunCreationService
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
             {
                 _logger?.LogWarning(error, "scratch workspace could not be created");
-                return BoundedError(503, "scratch_workspace_unavailable", "Scratch workspace could not be created.");
+                return BoundedError(503, Workspace.ScratchWorkspaceFailure.Code, Workspace.ScratchWorkspaceFailure.CopyFor(error));
             }
         }
 

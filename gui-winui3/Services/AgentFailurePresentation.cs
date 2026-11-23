@@ -129,7 +129,11 @@ internal static class AgentFailurePresentation
     /// </summary>
     internal static string RenderStartFailure(string? errorCode, string? message, string? blockingRunId = null, string? blockingStatus = null)
     {
-        string code = errorCode?.Trim() ?? string.Empty;
+        // The API client carries a failed response body as the exception message,
+        // so a JSON envelope must never reach the status line: read its message, or
+        // drop it.
+        string code = ReadableMessage(errorCode) ?? string.Empty;
+        string? detail = ReadableMessage(message);
         if (code.Length == 0)
         {
             return "Coding Agent could not start. Open Tools → Activity Log to check.";
@@ -162,16 +166,58 @@ internal static class AgentFailurePresentation
             case "agent_store_unavailable":
             case "harness_store_unavailable":
                 return "Agent database is temporarily unavailable. Check permissions or restart.";
+            case "scratch_workspace_unavailable":
+                // The Host names the cause in bounded copy (a link, a lost marker,
+                // permissions), which is the part a user can act on.
+                return detail
+                    ?? "Ru could not prepare a workspace for this chat. Send the message again; if it repeats, restart Ru and check the logs.";
         }
 
         // An unmapped code still names itself: it is the only handle support has.
         // The server message is only repeated when it adds something the code does
         // not already say.
-        bool messageAddsDetail = !string.IsNullOrWhiteSpace(message)
-            && !string.Equals(message, code, StringComparison.OrdinalIgnoreCase);
+        bool messageAddsDetail = !string.IsNullOrWhiteSpace(detail)
+            && !string.Equals(detail, code, StringComparison.OrdinalIgnoreCase);
 
         return messageAddsDetail
-            ? $"Coding Agent could not start ({code}: {message}). Open Tools → Activity Log to check."
+            ? $"Coding Agent could not start ({code}: {detail}). Open Tools → Activity Log to check."
             : $"Coding Agent could not start ({code}). Open Tools → Activity Log to check.";
+    }
+
+    /// <summary>
+    /// The exception message is often a raw response body. JSON is not copy: this
+    /// keeps a plain message as-is, extracts the envelope's own message, and drops
+    /// a body that has nothing readable in it.
+    /// </summary>
+    private static string? ReadableMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return null;
+        }
+
+        string trimmed = message.Trim();
+        if (trimmed[0] != '{')
+        {
+            return trimmed;
+        }
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(trimmed);
+            if (document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                && document.RootElement.TryGetProperty("message", out var inner)
+                && inner.ValueKind == System.Text.Json.JsonValueKind.String
+                && inner.GetString() is { Length: > 0 } text
+                && text.Trim().Length > 0)
+            {
+                return text.Trim();
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+        }
+
+        return null;
     }
 }

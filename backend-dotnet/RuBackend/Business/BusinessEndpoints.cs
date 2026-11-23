@@ -327,7 +327,12 @@ public static partial class BusinessEndpoints
         {
             LogFailure(loggers, "scratch workspace ensure", error);
             return Results.Json(
-                new { status = "error", code = "scratch_workspace_unavailable" },
+                new
+                {
+                    status = "error",
+                    code = ScratchWorkspaceFailure.Code,
+                    message = ScratchWorkspaceFailure.CopyFor(error),
+                },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }

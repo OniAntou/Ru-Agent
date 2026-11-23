@@ -251,6 +251,43 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
+    public void A_scratch_workspace_failure_shows_the_hosts_actionable_sentence()
+    {
+        string copy = "Ru can no longer confirm that this chat owns its workspace folder, because its .ru-scratch.json marker was changed outside Ru. Rename or delete that folder and send again.";
+
+        string rendered = AgentFailurePresentation.RenderStartFailure("scratch_workspace_unavailable", copy);
+
+        Assert.Equal(copy, rendered);
+    }
+
+    [Fact]
+    public void A_scratch_workspace_failure_without_a_message_still_says_what_to_do()
+    {
+        string rendered = AgentFailurePresentation.RenderStartFailure("scratch_workspace_unavailable", message: null);
+
+        Assert.Contains("send the message again", rendered, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_json_response_body_never_reaches_the_status_line()
+    {
+        // The API client carries the failed response body as the exception message;
+        // the raw envelope reported in the field was exactly this shape.
+        const string body = "{\"error_code\":\"scratch_workspace_unavailable\",\"message\":\"Ru could not prepare a workspace for this chat.\"}";
+
+        string rendered = AgentFailurePresentation.RenderStartFailure("scratch_workspace_unavailable", body);
+
+        Assert.Equal("Ru could not prepare a workspace for this chat.", rendered);
+        Assert.DoesNotContain("{", rendered, StringComparison.Ordinal);
+
+        // A body with nothing readable in it adds nothing instead of leaking JSON.
+        string opaque = AgentFailurePresentation.RenderStartFailure(
+            "some_new_code", "{\"error_code\":\"some_new_code\"}");
+        Assert.DoesNotContain("{", opaque, StringComparison.Ordinal);
+        Assert.Contains("some_new_code", opaque, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_start_failure_without_a_code_still_says_something_actionable()
     {
         string rendered = AgentFailurePresentation.RenderStartFailure(errorCode: null, message: null);

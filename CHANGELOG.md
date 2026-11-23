@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(host)**: A background chat that has no project folder no longer dies when
+  the agent rewrites its own ownership marker. Every later turn failed with
+  `scratch_workspace_unavailable`, because allocation accepted an existing
+  workspace only while `.ru-scratch.json` matched, and that file is inside the
+  agent's own workspace (a field session was left unusable after two runs edited
+  it). Each allocation is now also recorded outside the workspace in
+  `workspaces/.owners/<session id>.json`, naming the session and the exact path:
+  allocation accepts a folder either witness proves, repairs whichever witness was
+  lost, keeps the folder's files, still refuses a folder neither claims or a marker
+  naming another session, and deletion and the orphan sweep use the same proof. A
+  failed allocation now answers bounded copy naming the cause (a link, a marker
+  changed outside Ru, permissions or free space) and what to do, and the client no
+  longer prints a raw JSON response body as the failure message.
+
 - **feat(broker)**: `terminal_read` takes an optional `wait_ms` (1 to 120,000) and waits
   for a background task's state or output to move before paging it, so a launch no longer
   costs one poll per model step. The read answers at once when the task already stopped,

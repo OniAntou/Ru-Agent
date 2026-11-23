@@ -412,6 +412,11 @@ public sealed class AgentSidePanelUiContractTests
         Assert.Contains("HorizontalScrollMode = ScrollMode.Enabled", source, StringComparison.Ordinal);
         Assert.Contains("HorizontalScrollBarVisibility = ScrollBarVisibility.Auto", source, StringComparison.Ordinal);
 
+        // The block draws its own unified header and tints every changed line, a new file
+        // included, so it reads like the diffs other agents print.
+        Assert.Contains("DiffEngine.Header(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("additionsOnly", source, StringComparison.Ordinal);
+
         // The gutter is sized to the widest number. A fixed 44 px column left a dead band
         // on the left of every diff, which read as an indent the code did not have.
         Assert.DoesNotContain("GridLength(44", source, StringComparison.Ordinal);
@@ -433,10 +438,9 @@ public sealed class AgentSidePanelUiContractTests
         Assert.DoesNotContain("HasNoPreview", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("HasNoPreview", GuiSource.Text("Models", "ChangesTabRow.cs"), StringComparison.Ordinal);
 
-        // Expanding a file shows one hunk per recorded edit, each naming its own line and
-        // counts, so the numbers on the row are the sum of what is drawn.
+        // Expanding a file shows one hunk per recorded edit, each drawing its own unified
+        // header, so the numbers on the row are the sum of what is drawn.
         Assert.Contains("ItemsSource=\"{x:Bind PreviewEdits, Mode=OneWay}\"", markup, StringComparison.Ordinal);
-        Assert.Contains("Text=\"{x:Bind Caption}\"", markup, StringComparison.Ordinal);
         Assert.Contains("BeforeText=\"{x:Bind BeforeText}\"", markup, StringComparison.Ordinal);
         Assert.Contains("AfterText=\"{x:Bind AfterText}\"", markup, StringComparison.Ordinal);
         Assert.Contains(

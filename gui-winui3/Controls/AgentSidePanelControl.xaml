@@ -869,18 +869,11 @@
                                                 Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="models:ChangesTabEdit">
-                                                        <StackPanel Margin="0,0,0,8">
-                                                            <TextBlock Text="{x:Bind Caption}"
-                                                                       Visibility="{x:Bind CaptionVisibility}"
-                                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                                       FontSize="10.5"
-                                                                       Foreground="{StaticResource RuMutedBrush}"
-                                                                       Margin="0,0,0,2" />
-                                                            <controls:FileEditPreviewControl BeforeText="{x:Bind BeforeText}"
-                                                                                             AfterText="{x:Bind AfterText}"
-                                                                                             StartLine="{x:Bind StartLine}"
-                                                                                             SyntaxFile="{x:Bind FileName}" />
-                                                        </StackPanel>
+                                                        <controls:FileEditPreviewControl Margin="0,0,0,8"
+                                                                                         BeforeText="{x:Bind BeforeText}"
+                                                                                         AfterText="{x:Bind AfterText}"
+                                                                                         StartLine="{x:Bind StartLine}"
+                                                                                         SyntaxFile="{x:Bind FileName}" />
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>

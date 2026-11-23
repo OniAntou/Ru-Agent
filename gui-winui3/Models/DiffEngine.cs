@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace RuApp.Models
 {
@@ -121,6 +122,32 @@ namespace RuApp.Models
 
             return result;
         }
+
+        /// <summary>
+        /// The unified-diff header for a fragment: where the comparison starts and how many
+        /// lines it covers on each side, e.g. "@@ -42,3 +42,4 @@". A single-line range drops
+        /// the count, and an empty side names the line before it, as `git diff` does.
+        /// </summary>
+        public static string Header(IReadOnlyList<DiffLine> lines, int startLine = 1)
+        {
+            ArgumentNullException.ThrowIfNull(lines);
+            int oldCount = 0, newCount = 0;
+            foreach (var line in lines)
+            {
+                if (!line.IsAdded) oldCount++;
+                if (!line.IsRemoved) newCount++;
+            }
+
+            int start = Math.Max(1, startLine);
+            return "@@ -" + Range(start, oldCount) + " +" + Range(start, newCount) + " @@";
+        }
+
+        private static string Range(int start, int count) => count switch
+        {
+            0 => Math.Max(0, start - 1).ToString(CultureInfo.InvariantCulture) + ",0",
+            1 => start.ToString(CultureInfo.InvariantCulture),
+            _ => start.ToString(CultureInfo.InvariantCulture) + "," + count.ToString(CultureInfo.InvariantCulture),
+        };
 
         private static List<string> SplitLines(string? text)
         {

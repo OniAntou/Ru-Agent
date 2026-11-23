@@ -11,15 +11,12 @@ using Windows.UI;
 namespace RuApp.Controls
 {
     /// <summary>
-    /// The diff body of an edit row: the changed lines with their numbers and a +/−
-    /// marker, syntax-colored by the file's language, on the shared code surface.
-    /// A diff that only adds lines (a new file) is not tinted line by line: a wall of
-    /// green hid the code, so only the gutter bar marks the additions.
+    /// The diff body of one edit: a unified-diff header, then the changed lines with their
+    /// numbers, a +/− marker and a syntax-colored body. Every changed line is tinted, a new
+    /// file included, so the block reads like the other diff views.
     ///
-    /// It carries no header of its own. The row above it already names the file and
-    /// counts the changes, and a second header repeating them inside the panel pushed
-    /// the diff down for nothing. The row header is now the toggle, which also gives
-    /// the reader a way back to a folded diff.
+    /// It names its own range instead of carrying a caption, and it has no header row of
+    /// its own: the file name and the totals live in the row that expands it.
     /// </summary>
     public sealed partial class FileEditPreviewControl : UserControl
     {
@@ -147,12 +144,23 @@ namespace RuApp.Controls
             var language = CodeHighlighter.LanguageForFile(SyntaxFile);
             var oldSpans = CodeHighlighter.HighlightLines(BeforeText, language);
             var newSpans = CodeHighlighter.HighlightLines(AfterText, language);
-            bool additionsOnly = lines.All(line => !line.IsRemoved);
 
             var successBrush = GetThemeBrush("RuSuccessBrush", FallbackSuccessBrush);
             var dangerBrush = GetThemeBrush("RuDangerBrush", FallbackDangerBrush);
             var mutedBrush = GetThemeBrush("RuMutedBrush", FallbackMutedBrush);
             var inkBrush = GetThemeBrush("RuInkBrush", FallbackInkBrush);
+
+            // The block names its own range the way every other diff does, so a hunk needs no
+            // caption invented beside it.
+            _previewLinesPanel.Children.Add(new TextBlock
+            {
+                Text = DiffEngine.Header(lines, StartLine.GetValueOrDefault(1)),
+                FontFamily = MonoFont,
+                FontSize = 11,
+                Foreground = mutedBrush,
+                Opacity = 0.8,
+                Margin = new Thickness(0, 2, 0, 4)
+            });
 
             // The gutter hugs the widest number: the fixed 44 px column it used to carry left
             // a dead band on the left of every diff, which read as an indent over the code.
@@ -230,7 +238,9 @@ namespace RuApp.Controls
                 }
                 else if (line.IsAdded)
                 {
-                    row.Background = additionsOnly ? TransparentBrush : AddedBackgroundBrush;
+                    // Every changed line is tinted, a new file included: a diff nobody can
+                    // color-code reads as plain text beside the other agents' output.
+                    row.Background = AddedBackgroundBrush;
                     lineBar.Background = successBrush;
                 }
                 else

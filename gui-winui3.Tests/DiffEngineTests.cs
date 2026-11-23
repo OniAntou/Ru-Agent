@@ -39,6 +39,18 @@ namespace RuApp.Tests
             Assert.Equal("beta", result[1].Text);
         }
 
+        [Theory]
+        [InlineData(1, "a\nb", "a\nc", "@@ -1,2 +1,2 @@")]
+        [InlineData(7, "a", "b", "@@ -7 +7 @@")]
+        [InlineData(42, "", "only", "@@ -41,0 +42 @@")]
+        [InlineData(5, "alpha\nbeta", "", "@@ -5,2 +4,0 @@")]
+        public void Header_names_both_sides_of_a_fragment_like_git(int startLine, string before, string after, string expected)
+        {
+            var lines = DiffEngine.Compute(before, after, startLine);
+
+            Assert.Equal(expected, DiffEngine.Header(lines, startLine));
+        }
+
         [Fact]
         public void Compute_produces_unified_diff_matching_reference_image()
         {

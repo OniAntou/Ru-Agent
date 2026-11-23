@@ -1089,8 +1089,7 @@ Rows group by the edit's `relative_path`; an edit
 made through an absolute path carries only its basename and joins the one relative
 path with that name when exactly one exists, otherwise it groups by name alone. A row sums the line counts of the
 hunks it draws (`—` when none reported one), shows "N edits" when there are several, and expands
-to one hunk per recorded edit, newest first, each captioned with its own line and
-`+`/`−` counts — so the numbers beside a file always add up to the blocks under it,
+to one hunk per recorded edit, newest first, each drawing its own unified-diff header — so the numbers beside a file always add up to the blocks under it,
 and the session totals are the sum of those hunks. A file with no recorded text
 before/after has nothing to expand and keeps the counts its tool reported. Up to 25 edit identities
 per row are retained for reveal and navigation, while totals are that sum. A row shows its folder under the name, and its menu opens a preview,
@@ -1219,11 +1218,14 @@ names each take a theme color. `CodeHighlighter` covers C#, Python, PowerShell,
 JSON, XML/XAML/HTML, SQL, shell, YAML, diff, JavaScript/TypeScript, the C family,
 Java/Kotlin, Go, Rust, TOML/INI and CSS; other files stay plain. Edit diffs
 (`FileEditPreviewControl`) color each line from its own side of the edit, show a
-+/− marker, and tint lines only when the edit removes something: an add-only edit
-(a new file) marks additions with the gutter bar alone. The diff is a flat code
-surface, not a card — no border and no rounding — and it reads like the Preview
-tab: one source line per row, scrolled sideways when it is wider than the panel,
-with the horizontal bar under the block instead of inside a card.
++/− marker, and tint every changed line — a new file included; only unchanged
+lines stay plain. Each block prints its own unified-diff header
+(`DiffEngine.Header`, e.g. `@@ -42,3 +42,4 @@`) instead of a caption beside it,
+so it reads the way `git diff` and the other coding agents print a change. The
+diff is a flat code surface, not a card — no border and no rounding — and it
+reads like the Preview tab: one source line per row, scrolled sideways when it is
+wider than the panel, with the horizontal bar under the block instead of inside a
+card.
 
 Office-like documents use the extension's registered Windows preview handler
 through `CLSCTX_LOCAL_SERVER`, never an in-process handler DLL or Office editing

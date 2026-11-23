@@ -241,7 +241,6 @@ public sealed class ChangesTabProjectionTests
         Assert.Equal(42, hunk.StartLine);
         Assert.Equal("old-line", hunk.BeforeText);
         Assert.Equal("new-line", hunk.AfterText);
-        Assert.Equal("line 42 · +3 −1", hunk.Caption);
         Assert.True(row.HasPreview);
         Assert.False(row.IsExpanded);
 

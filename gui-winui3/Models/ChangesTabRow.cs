@@ -1,6 +1,4 @@
 using System.ComponentModel;
-using System.Globalization;
-using Microsoft.UI.Xaml;
 using RuApp.Services;
 
 namespace RuApp.Models;
@@ -16,42 +14,6 @@ public sealed record ChangesTabEdit(
     string? FileName = null)
 {
     public bool HasPreview => BeforeText.Length > 0 || AfterText.Length > 0;
-
-    /// <summary>
-    /// Where this edit landed and what it reported, e.g. "line 42 · +3 −1". Each hunk names
-    /// its own place, because a row now shows one hunk per edit instead of one comparison.
-    /// </summary>
-    public string Caption
-    {
-        get
-        {
-            var parts = new List<string>();
-            if (StartLine is { } line)
-            {
-                parts.Add("line " + line.ToString(CultureInfo.InvariantCulture));
-            }
-
-            var counts = new List<string>();
-            if (Added is int added && added > 0)
-            {
-                counts.Add("+" + added.ToString("N0", CultureInfo.InvariantCulture));
-            }
-
-            if (Removed is int removed && removed > 0)
-            {
-                counts.Add("−" + removed.ToString("N0", CultureInfo.InvariantCulture));
-            }
-
-            if (counts.Count > 0)
-            {
-                parts.Add(string.Join(" ", counts));
-            }
-
-            return string.Join(" · ", parts);
-        }
-    }
-
-    public Visibility CaptionVisibility => Caption.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 }
 
 /// <summary>

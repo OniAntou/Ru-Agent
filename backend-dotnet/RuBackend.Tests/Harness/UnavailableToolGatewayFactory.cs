@@ -12,7 +12,7 @@ internal sealed class UnavailableToolGatewayFactory : IToolGatewayFactory
     public Task<IToolGateway> CreateAsync(string workspaceRoot, PolicySnapshot policySnapshot,
         RunId runId, string? agentSessionId, CancellationToken cancellationToken) =>
         Task.FromException<IToolGateway>(new InvalidOperationException("test_gateway_unavailable"));
-    public Task<System.Text.Json.Nodes.JsonObject> ListSessionTasksAsync(string runId, string? killExecutionId,
+    public Task<System.Text.Json.Nodes.JsonObject> ListSessionTasksAsync(string runId, RuAgent.Protocol.SessionTaskRequest request,
         CancellationToken cancellationToken) =>
         Task.FromException<System.Text.Json.Nodes.JsonObject>(new InvalidOperationException("test_gateway_unavailable"));
     public Task<(bool Authorized, string? AuthorizationToken, Broker::RuAgent.Broker.Policy.ApprovalRememberPlan? RememberPlan)> RespondApprovalAsync(string runId, string hostApprovalId,

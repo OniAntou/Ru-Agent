@@ -903,9 +903,10 @@
                             <ItemsControl x:Name="AgentTasksList" ItemsSource="{x:Bind Tasks, Mode=OneWay}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="models:AgentTaskRow">
-                                        <Grid ColumnSpacing="12" Margin="0,0,0,14">
+                                        <Grid ColumnSpacing="8" Margin="0,0,0,14">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0" Spacing="5">
@@ -922,6 +923,14 @@
                                                            Foreground="{StaticResource RuMutedBrush}" />
                                             </StackPanel>
                                             <Button Grid.Column="1"
+                                                    Content="Log"
+                                                    Tag="{x:Bind ExecutionId}"
+                                                    Click="OnTaskLogClick"
+                                                    Padding="10,4" CornerRadius="{StaticResource AppControlCornerRadius}"
+                                                    VerticalAlignment="Center"
+                                                    ToolTipService.ToolTip="Read this task's retained output"
+                                                    AutomationProperties.Name="View background task output" />
+                                            <Button Grid.Column="2"
                                                     Content="{x:Bind StopText, Mode=OneWay}"
                                                     IsEnabled="{x:Bind CanStop, Mode=OneWay}"
                                                     Tag="{x:Bind ExecutionId}"

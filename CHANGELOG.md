@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(broker)**: `terminal_read` takes an optional `wait_ms` (1 to 120,000) and waits
+  for a background task's state or output to move before paging it, so a launch no longer
+  costs one poll per model step. The read answers at once when the task already stopped,
+  reports `waited_ms` and `changed`, fails closed for unknown or foreign ids, and obeys run
+  cancellation; the wait owns its bound, so the fixed control-RPC deadline no longer cuts
+  it, while `terminal_stop` and the lifetime cap keep ending the task. The launch tools now
+  say to keep working and read once instead of waiting.
+
+- **feat(host)**: `/tasks` gains `read <execution_id> [offset] [limit]`: one bounded page
+  of a task's retained output, the tail page (8,000 characters) when no offset is named,
+  with `has_before`/`truncated` telling a client which neighbouring page to ask for next.
+  It answers the command code `task_output`, reuses the same already-redacted spool text
+  and paging rule as `terminal_read`, never crosses sessions, and rejects a request that
+  combines kill and read. The CLI prints the page with its paging hints and `--json`
+  reports the same bounds.
+
+- **feat(gui)**: Every background-task row offers Log, a bounded reader for that task's
+  output: the tail first, with Earlier and Later walking the pages the Host names. The
+  dialog is presentation over the `/tasks` command, so it adds no route, no Broker path and
+  no output the session did not already receive; a stale or unreadable page keeps the
+  dialog open and says so instead of inventing text.
+
 - **feat(gui)**: The side panel's file preview opens the source types the highlighter
   already knows instead of refusing them: Go, Rust, Java/Kotlin, the C family, project
   and build files (`.csproj`, `.props`, `.scss`, `.diff`, `.mjs`), plus well-known names

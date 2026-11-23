@@ -1198,24 +1198,56 @@ public sealed class BrokerExecutionRuntimeTests
         var executionId = execution.Receipt.Output["execution_id"]!.GetValue<string>();
         Assert.Equal("running", execution.Receipt.Output["state"]!.GetValue<string>());
 
-        var listed = await fixture.Runtime.SessionTasksAsync(sessionId, killExecutionId: null, default);
+        var listed = await fixture.Runtime.SessionTasksAsync(sessionId, new SessionTaskRequest(), default);
         Assert.Null(listed.Refusal);
         Assert.Equal(ToolResultStatuses.Succeeded, listed.Status);
         Assert.Contains(
             listed.Payload!["tasks"]!.AsArray(),
             task => string.Equals(task!["execution_id"]!.GetValue<string>(), executionId, StringComparison.Ordinal));
 
-        var unknown = await fixture.Runtime.SessionTasksAsync(sessionId, "req-no-such-task", default);
+        var unknown = await fixture.Runtime.SessionTasksAsync(
+            sessionId,
+            new SessionTaskRequest(KillExecutionId: "req-no-such-task"),
+            default);
         Assert.Equal(ToolResultStatuses.Failed, unknown.Status);
         Assert.Equal("unknown_background_task", unknown.ErrorCode);
 
-        var killed = await fixture.Runtime.SessionTasksAsync(sessionId, executionId, default);
+        // The read leg pages the same session-owned id and fails closed for one
+        // it does not know; the two verbs never combine in one request.
+        var page = await fixture.Runtime.SessionTasksAsync(
+            sessionId,
+            new SessionTaskRequest(ReadExecutionId: executionId),
+            default);
+        Assert.Null(page.Refusal);
+        Assert.Equal(ToolResultStatuses.Succeeded, page.Status);
+        Assert.Equal(executionId, page.Payload!["execution_id"]!.GetValue<string>());
+        Assert.True(page.Payload["page"]!.GetValueKind() == System.Text.Json.JsonValueKind.String);
+        Assert.True(page.Payload["total_chars"]!.GetValue<int>() >= 0);
+
+        var unknownRead = await fixture.Runtime.SessionTasksAsync(
+            sessionId,
+            new SessionTaskRequest(ReadExecutionId: "req-no-such-task"),
+            default);
+        Assert.Equal(ToolResultStatuses.Failed, unknownRead.Status);
+        Assert.Equal("unknown_spool_output", unknownRead.ErrorCode);
+
+        var mixed = await fixture.Runtime.SessionTasksAsync(
+            sessionId,
+            new SessionTaskRequest(KillExecutionId: executionId, ReadExecutionId: executionId),
+            default);
+        Assert.Equal(ToolResultStatuses.Failed, mixed.Status);
+        Assert.Equal("invalid_arguments", mixed.ErrorCode);
+
+        var killed = await fixture.Runtime.SessionTasksAsync(
+            sessionId,
+            new SessionTaskRequest(KillExecutionId: executionId),
+            default);
         Assert.Equal(ToolResultStatuses.Succeeded, killed.Status);
         Assert.True(killed.Payload!["killed"]!.GetValue<bool>());
 
         for (var attempt = 0; attempt < 100; attempt++)
         {
-            var polled = await fixture.Runtime.SessionTasksAsync(sessionId, killExecutionId: null, default);
+            var polled = await fixture.Runtime.SessionTasksAsync(sessionId, new SessionTaskRequest(), default);
             var entry = polled.Payload!["tasks"]!.AsArray()
                 .FirstOrDefault(task => string.Equals(task!["execution_id"]!.GetValue<string>(), executionId, StringComparison.Ordinal));
             if (entry is not null && string.Equals(entry["state"]!.GetValue<string>(), "killed", StringComparison.Ordinal))
@@ -1242,7 +1274,7 @@ public sealed class BrokerExecutionRuntimeTests
 
         var rejected = await fixture.Runtime.SessionTasksAsync(
             sessionId,
-            new string('x', TerminalLimits.MaxExecutionIdChars + 1),
+            new SessionTaskRequest(KillExecutionId: new string('x', TerminalLimits.MaxExecutionIdChars + 1)),
             default);
 
         Assert.Equal(ToolResultStatuses.Failed, rejected.Status);

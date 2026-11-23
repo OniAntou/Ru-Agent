@@ -109,6 +109,13 @@ public static class TerminalLimits
     public const int MaxSpoolPageChars = 64 * 1024;
 
     /// <summary>
+    /// Longest wait one <c>terminal_read</c> may request for a background task
+    /// to change. That read owns the wait, so the control-RPC deadline does not
+    /// cut it; a longer wait belongs in a later read.
+    /// </summary>
+    public const int TerminalReadMaxWaitMs = 120_000;
+
+    /// <summary>
     /// Longest spool identifier a read may name.
     /// </summary>
     public const int MaxExecutionIdChars = 256;

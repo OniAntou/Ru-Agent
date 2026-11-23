@@ -883,7 +883,12 @@ superseded. Background tasks offer an explicit refresh action and refresh every 
 seconds while the surface is visible and the run or a background process is active.
 Their optional `command` metadata is bounded
 and credential-redacted by the existing terminal redactor before retention; it does
-not change execution authority. GUI task refreshes bind completion to session
+not change execution authority. Each row also offers Log: one bounded page of that
+task's retained output through the same `/tasks` command (`read <execution_id>
+[offset] [limit]`), the tail page first, with Earlier/Later walking the neighbouring
+windows the reply names. That reader is presentation over the command channel, so it
+adds no Host route, no Broker path and no output the session did not already receive.
+GUI task refreshes bind completion to session
 generation, the selected run and newest request. Interactive-terminal output/exit
 callbacks carry shell lifetime versions;
 workspace replacement and shutdown invalidate queued callbacks. Model selection

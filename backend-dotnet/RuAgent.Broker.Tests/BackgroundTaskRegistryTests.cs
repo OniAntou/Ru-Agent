@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using RuAgent.Broker.Tools.Terminal;
@@ -252,5 +253,126 @@ public sealed class BackgroundTaskRegistryTests
         registry.CancelSession("session");
 
         Assert.False(callbackWaitTimedOut);
+    }
+
+    [Fact]
+    public async Task Wait_reports_output_that_arrives_after_the_revision()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session", "t1", 60_000, isBackground: true, out _));
+        Assert.True(registry.TryGetRevision("session", "t1", out var revision));
+
+        var waiting = registry.WaitForRevisionAsync("session", "t1", revision, 10_000, CancellationToken.None);
+        registry.Append("session", "t1", "first line");
+
+        var result = await waiting;
+
+        Assert.NotNull(result);
+        Assert.True(result.Changed);
+        Assert.Equal("first line", result.Snapshot.Text);
+        Assert.Equal(BackgroundTaskState.Running, result.Snapshot.State);
+        Assert.True(result.Revision > revision);
+    }
+
+    [Fact]
+    public async Task Wait_returns_a_finished_task_at_once_without_a_change()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session", "t1", 60_000, isBackground: true, out _));
+        registry.Append("session", "t1", "partial");
+        var revisionBeforeCompletion = ReadRevision(registry, "t1");
+        registry.Complete("session", "t1", ToolResultStatuses.Succeeded, 7, "final text");
+        var completedRevision = ReadRevision(registry, "t1");
+
+        var result = await registry.WaitForRevisionAsync(
+            "session", "t1", completedRevision, 10_000, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.False(result.Changed);
+        Assert.Equal(BackgroundTaskState.Exited, result.Snapshot.State);
+        Assert.Equal(7, result.Snapshot.ExitCode);
+        Assert.Equal("final text", result.Snapshot.Text);
+        Assert.True(completedRevision > revisionBeforeCompletion);
+
+        // The completion itself is a change for a caller that waited before it.
+        var waitedFromTheOlderRevision = await registry.WaitForRevisionAsync(
+            "session", "t1", revisionBeforeCompletion, 10_000, CancellationToken.None);
+        Assert.True(waitedFromTheOlderRevision!.Changed);
+        Assert.Equal(BackgroundTaskState.Exited, waitedFromTheOlderRevision.Snapshot.State);
+    }
+
+    [Fact]
+    public async Task Wait_times_out_without_a_change_and_the_task_keeps_running()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session", "t1", 60_000, isBackground: true, out _));
+        Assert.True(registry.TryGetRevision("session", "t1", out var revision));
+        var clock = Stopwatch.StartNew();
+
+        var result = await registry.WaitForRevisionAsync("session", "t1", revision, 200, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.False(result.Changed);
+        Assert.Equal(revision, result.Revision);
+        Assert.Equal(BackgroundTaskState.Running, result.Snapshot.State);
+        // The timeout must actually wait instead of answering a no-op immediately.
+        Assert.True(clock.ElapsedMilliseconds >= 150, $"waited only {clock.ElapsedMilliseconds} ms");
+    }
+
+    [Fact]
+    public async Task Wait_fails_closed_for_an_unknown_task_and_after_eviction()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session", "t1", 60_000, isBackground: true, out _));
+        var revision = ReadRevision(registry, "t1");
+        Assert.False(registry.TryGetRevision("session", "missing", out _));
+
+        Assert.Null(await registry.WaitForRevisionAsync("session", "missing", revision, 10, CancellationToken.None));
+
+        // Eviction runs on the next start, so the cap plus two is what actually
+        // pushes the oldest completed task out. A stale id must then fail closed
+        // instead of waiting on some other task.
+        for (var index = 0; index < BackgroundTaskRegistry.MaxCompletedEntriesPerSession + 2; index++)
+        {
+            var id = $"done-{index}";
+            Assert.True(registry.TryStart("session", id, 60_000, isBackground: true, out _));
+            registry.Complete("session", id, ToolResultStatuses.Succeeded, 0, "done");
+        }
+
+        Assert.False(registry.TryGetRevision("session", "done-0", out _));
+        Assert.Null(await registry.WaitForRevisionAsync("session", "done-0", 0, 10, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Wait_observes_caller_cancellation()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session", "t1", 60_000, isBackground: true, out _));
+        Assert.True(registry.TryGetRevision("session", "t1", out var revision));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            registry.WaitForRevisionAsync("session", "t1", revision, 30_000, cancellation.Token));
+    }
+
+    [Fact]
+    public async Task Wait_sees_a_change_that_lands_before_the_wait_starts()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session", "t1", 60_000, isBackground: true, out _));
+        Assert.True(registry.TryGetRevision("session", "t1", out var revision));
+        registry.Append("session", "t1", "already here");
+
+        var result = await registry.WaitForRevisionAsync("session", "t1", revision, 10_000, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.True(result.Changed);
+        Assert.Equal("already here", result.Snapshot.Text);
+    }
+
+    private static long ReadRevision(BackgroundTaskRegistry registry, string executionId)
+    {
+        Assert.True(registry.TryGetRevision("session", executionId, out var revision));
+        return revision;
     }
 }

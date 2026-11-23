@@ -207,7 +207,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ["file_restore"] = (context, arguments, _) => ExecuteRestore(context, arguments),
             ["powershell"] = ExecuteTerminalShellAsync,
             ["run_process"] = ExecuteTerminalRunAsync,
-            ["terminal_read"] = (context, arguments, _) => ValueTask.FromResult(ExecuteTerminalReadOutput(context, arguments)),
+            ["terminal_read"] = ExecuteTerminalReadOutputAsync,
             ["terminal_stop"] = (context, arguments, _) => ValueTask.FromResult(ExecuteTerminalKill(context, arguments)),
             ["web_search"] = ExecuteWebSearchAsync,
             ["web_fetch"] = ExecuteWebFetchAsync,

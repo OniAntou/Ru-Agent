@@ -403,7 +403,7 @@ public sealed partial class HarnessSessionDeletionCoordinatorTests
 
         public Task<System.Text.Json.Nodes.JsonObject> ListSessionTasksAsync(
             string runId,
-            string? killExecutionId,
+            RuAgent.Protocol.SessionTaskRequest request,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 

@@ -570,6 +570,141 @@ public sealed partial class ToolExecutionServiceTests
     }
 
     [Fact]
+    public async Task Terminal_read_waits_for_a_background_task_change()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-wait-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var session = CreateSession(Path.Combine(root, "session"));
+        const string sessionId = "session-terminal-wait";
+        session.Open(
+            sessionId,
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
+                StringComparer.Ordinal));
+        var registry = new BackgroundTaskRegistry();
+        var service = new ToolExecutionService(
+            session,
+            workspaceRoot,
+            terminalSpool: new TerminalOutputSpool(Path.Combine(root, "spool")),
+            backgroundTaskRegistry: registry);
+        try
+        {
+            const string executionId = "req-wait-task";
+            Assert.True(registry.TryStart(sessionId, executionId, 60_000, isBackground: true, out _));
+
+            var reading = service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-wait-read-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["execution_id"] = executionId,
+                    ["wait_ms"] = 5_000,
+                }, toolId: "terminal_read"),
+                CancellationToken.None);
+            registry.Append(sessionId, executionId, "compiled ok");
+
+            var page = await reading;
+            Assert.Equal(ToolResultStatuses.Succeeded, page.Status);
+            Assert.Equal("compiled ok", page.Output["page"]!.GetValue<string>());
+            Assert.Equal("running", page.Output["state"]!.GetValue<string>());
+            Assert.True(page.Output["changed"]!.GetValue<bool>());
+            Assert.InRange(page.Output["waited_ms"]!.GetValue<int>(), 0, 5_000);
+
+            // A finished task answers at once and reports the settled state
+            // rather than burning the wait window.
+            registry.Complete(sessionId, executionId, ToolResultStatuses.Succeeded, 0, "compiled ok");
+            var settled = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-wait-settled-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["execution_id"] = executionId,
+                    ["wait_ms"] = 5_000,
+                }, toolId: "terminal_read"),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Succeeded, settled.Status);
+            Assert.Equal("exited", settled.Output["state"]!.GetValue<string>());
+            Assert.Equal(0, settled.Output["exit_code"]!.GetValue<int>());
+            Assert.False(settled.Output["changed"]!.GetValue<bool>());
+
+            // An unknown id still fails closed instead of waiting on nothing.
+            var unknown = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-wait-unknown-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["execution_id"] = "req-no-such-spool",
+                    ["wait_ms"] = 5_000,
+                }, toolId: "terminal_read"),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Failed, unknown.Status);
+            Assert.Equal("unknown_spool_output", unknown.ErrorCode);
+        }
+        finally
+        {
+            service.Dispose();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Session_task_read_pages_the_tail_by_default_and_fails_closed()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-task-read-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var session = CreateSession(Path.Combine(root, "session"));
+        const string sessionId = "session-task-read";
+        session.Open(
+            sessionId,
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));
+        var registry = new BackgroundTaskRegistry();
+        var service = new ToolExecutionService(
+            session,
+            workspaceRoot,
+            terminalSpool: new TerminalOutputSpool(Path.Combine(root, "spool")),
+            backgroundTaskRegistry: registry);
+        try
+        {
+            const string executionId = "req-read-task";
+            const string text = "line one\nline two\nline three";
+            Assert.True(registry.TryStart(sessionId, executionId, 60_000, isBackground: true, out _));
+            registry.Append(sessionId, executionId, text);
+            registry.Complete(sessionId, executionId, ToolResultStatuses.Succeeded, 0, text);
+
+            // No offset asks for the tail, which is what a reader wants first.
+            var tail = service.HandleSessionTasks(sessionId, new SessionTaskRequest(ReadExecutionId: executionId));
+            Assert.Equal(text, tail["page"]!.GetValue<string>());
+            Assert.Equal(0, tail["offset"]!.GetValue<int>());
+            Assert.Equal(text.Length, tail["total_chars"]!.GetValue<int>());
+            Assert.False(tail["has_before"]!.GetValue<bool>());
+            Assert.False(tail["truncated"]!.GetValue<bool>());
+            Assert.Equal("exited", tail["state"]!.GetValue<string>());
+            Assert.Equal(0, tail["exit_code"]!.GetValue<int>());
+
+            var head = service.HandleSessionTasks(sessionId,
+                new SessionTaskRequest(ReadExecutionId: executionId, Offset: 0, Limit: 5));
+            Assert.Equal("line ", head["page"]!.GetValue<string>());
+            Assert.True(head["truncated"]!.GetValue<bool>());
+            Assert.False(head["has_before"]!.GetValue<bool>());
+
+            var middle = service.HandleSessionTasks(sessionId,
+                new SessionTaskRequest(ReadExecutionId: executionId, Offset: 9, Limit: 8));
+            Assert.Equal("line two", middle["page"]!.GetValue<string>());
+            Assert.True(middle["has_before"]!.GetValue<bool>());
+            Assert.True(middle["truncated"]!.GetValue<bool>());
+
+            var error = Assert.Throws<ArgumentException>(() =>
+                service.HandleSessionTasks(sessionId, new SessionTaskRequest(ReadExecutionId: "req-no-such-task")));
+            Assert.Equal("unknown_spool_output", error.Message);
+            Assert.Throws<ArgumentException>(() =>
+                service.HandleSessionTasks(sessionId, new SessionTaskRequest(ReadExecutionId: executionId, Limit: 0)));
+        }
+        finally
+        {
+            service.Dispose();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Terminal_timeout_over_the_hard_maximum_denies_before_the_adapter()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-terminal-max-" + Guid.NewGuid().ToString("N"));
@@ -640,9 +775,9 @@ public sealed partial class ToolExecutionServiceTests
             Assert.Equal(runRequestId, started.Output["execution_id"]!.GetValue<string>());
             Assert.Equal("running", started.Output["state"]!.GetValue<string>());
             Assert.Equal(runRequestId, started.Output["spool_id"]!.GetValue<string>());
-            var listed = Assert.Single(service.HandleSessionTasks(sessionId, null)["tasks"]!.AsArray());
+            var listed = Assert.Single(service.HandleSessionTasks(sessionId, new SessionTaskRequest())["tasks"]!.AsArray());
             Assert.Contains("bg-hello", listed!["command"]!.GetValue<string>());
-            Assert.DoesNotContain("command", service.HandleSessionTasks("foreign-session", null).ToJsonString());
+            Assert.DoesNotContain("command", service.HandleSessionTasks("foreign-session", new SessionTaskRequest()).ToJsonString());
 
             // While the task runs, a read reports the live state. The output
             // itself may still be in flight under a loaded test host; the
@@ -711,7 +846,7 @@ public sealed partial class ToolExecutionServiceTests
             await service.RemoveSessionAsync(sessionId);
 
             Assert.True(process.HasExited);
-            Assert.Empty(service.HandleSessionTasks(sessionId, null)["tasks"]!.AsArray());
+            Assert.Empty(service.HandleSessionTasks(sessionId, new SessionTaskRequest())["tasks"]!.AsArray());
         }
         finally
         {

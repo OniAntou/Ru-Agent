@@ -36,9 +36,14 @@ public sealed partial class ToolExecutionService
     /// text. No new capability: the session already received these bytes.
     /// Output past the in-memory window pages from the session spool file. A
     /// running background task pages live text and carries its state and exit
-    /// code.
+    /// code. <c>wait_ms</c> delays the read until the task's state or output
+    /// moves, so an agent that launched background work keeps doing other work
+    /// and reads once instead of polling per step.
     /// </summary>
-    private ToolExecutionOutcome ExecuteTerminalReadOutput(ToolExecutionContext context, JsonObject arguments)
+    private async ValueTask<ToolExecutionOutcome> ExecuteTerminalReadOutputAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
     {
         var spoolId = ReadOptionalString(arguments, "execution_id");
         if (string.IsNullOrWhiteSpace(spoolId)
@@ -51,67 +56,49 @@ public sealed partial class ToolExecutionService
         // Ranges are already enforced by schema validation; these are backstops.
         var offset = ReadOptionalInt(arguments, "offset") ?? 0;
         var limit = ReadOptionalInt(arguments, "limit") ?? DefaultSpoolPageChars;
+        var waitMs = ReadOptionalInt(arguments, "wait_ms") ?? 0;
         if (offset < 0 || offset > TerminalLimits.MaxSpoolFileChars
-            || limit < 1 || limit > TerminalLimits.MaxSpoolPageChars)
+            || limit < 1 || limit > TerminalLimits.MaxSpoolPageChars
+            || waitMs < 0 || waitMs > TerminalLimits.TerminalReadMaxWaitMs)
         {
             throw new ArgumentException("invalid_arguments");
         }
 
-        BackgroundTaskSnapshot? task = null;
-        string page;
-        int totalChars;
-        string? spoolPath = null;
-        var isTruncated = false;
-        if (_backgroundTasks.TryRead(context.SessionId, spoolId, out var snapshot))
+        var waited = false;
+        var changed = false;
+        var waitedMs = 0;
+        if (waitMs > 0 && _backgroundTasks.TryGetRevision(context.SessionId, spoolId, out var revision))
         {
-            task = snapshot;
-            if (snapshot.State == BackgroundTaskState.Running
-                || !_spools.TryReadPage(context.SessionId, spoolId, offset, limit, out var completed))
-            {
-                // A running task pages its live window; a finished task whose
-                // spool is gone falls back to the same window, empty or not.
-                page = SlicePage(snapshot.Text, offset, limit);
-                totalChars = snapshot.Text.Length;
-                // The window is a head, not the complete capture. Carry the
-                // registry's truncation fact so the caller does not verify
-                // against an incomplete log that looks complete.
-                isTruncated = snapshot.TextTruncated;
-            }
-            else
-            {
-                page = completed.Text;
-                totalChars = completed.TotalChars;
-                spoolPath = completed.FilePath;
-                isTruncated = completed.Truncated;
-            }
+            waited = true;
+            var clock = Stopwatch.StartNew();
+            var result = await _backgroundTasks
+                .WaitForRevisionAsync(context.SessionId, spoolId, revision, waitMs, cancellationToken)
+                .ConfigureAwait(false);
+            waitedMs = (int)Math.Min(int.MaxValue, clock.ElapsedMilliseconds);
+            changed = result?.Changed ?? false;
         }
-        else if (_spools.TryReadPage(context.SessionId, spoolId, offset, limit, out var stored))
-        {
-            page = stored.Text;
-            totalChars = stored.TotalChars;
-            spoolPath = stored.FilePath;
-            isTruncated = stored.Truncated;
-        }
-        else
+
+        if (!TryReadRetainedPage(context.SessionId, spoolId, offset, limit, out var retained))
         {
             throw new ArgumentException("unknown_spool_output");
         }
 
+        var task = retained.Task;
         var output = new JsonObject
         {
             ["spool_id"] = spoolId,
-            ["offset"] = offset,
+            ["offset"] = retained.Offset,
             ["limit"] = limit,
-            ["total_chars"] = totalChars,
-            ["page"] = page,
-            ["truncated"] = offset + page.Length < totalChars,
+            ["total_chars"] = retained.TotalChars,
+            ["page"] = retained.Text,
+            ["truncated"] = retained.Offset + retained.Text.Length < retained.TotalChars,
         };
-        if (spoolPath is not null)
+        if (retained.SpoolPath is not null)
         {
-            output["spool_path"] = spoolPath;
+            output["spool_path"] = retained.SpoolPath;
         }
 
-        if (isTruncated)
+        if (retained.Truncated)
         {
             output["spool_truncated"] = true;
         }
@@ -130,6 +117,12 @@ public sealed partial class ToolExecutionService
             }
         }
 
+        if (waited)
+        {
+            output["waited_ms"] = waitedMs;
+            output["changed"] = changed;
+        }
+
         return ToolExecutionOutcome.Succeeded(output, ToolVerificationStates.NotRequired, "Terminal output page.");
     }
 
@@ -138,6 +131,156 @@ public sealed partial class ToolExecutionService
         var start = Math.Min(offset, text.Length);
         return text.Substring(start, Math.Min(limit, text.Length - start));
     }
+
+    /// <summary>
+    /// One retained-output page for a session-owned task or spool id: the text,
+    /// the effective start, the recorded total and the task view when the
+    /// registry still knows the id. A null offset selects the tail page, which
+    /// is what a human reader wants; the model's read always names an offset and
+    /// keeps head-based paging. Both callers share this one rule, so the console
+    /// and the model never disagree about a task's text.
+    /// </summary>
+    private bool TryReadRetainedPage(
+        string sessionId,
+        string executionId,
+        int? offset,
+        int limit,
+        out RetainedOutputPage page)
+    {
+        page = null!;
+        BackgroundTaskSnapshot? task = null;
+        if (_backgroundTasks.TryRead(sessionId, executionId, out var snapshot))
+        {
+            task = snapshot;
+            if (snapshot.State == BackgroundTaskState.Running)
+            {
+                // A running task pages its live window: the spool file is still
+                // being written and its tail is not yet flushed.
+                page = SliceLive(task, snapshot.Text, offset, limit, snapshot.TextTruncated);
+                return true;
+            }
+        }
+
+        // A finished task or a plain foreground call pages from the spool when
+        // it exists: the file retains more than the in-memory window.
+        if (_spools.TryReadPage(sessionId, executionId, 0, 1, out var head))
+        {
+            var start = offset ?? Math.Max(0, head.TotalChars - limit);
+            if (_spools.TryReadPage(sessionId, executionId, start, limit, out var stored))
+            {
+                page = new RetainedOutputPage(
+                    task,
+                    stored.Text,
+                    Math.Clamp(start, 0, stored.TotalChars),
+                    stored.TotalChars,
+                    stored.FilePath,
+                    head.Truncated);
+                return true;
+            }
+        }
+
+        if (task is null)
+        {
+            return false;
+        }
+
+        // The spool is gone for a task the registry still holds: the window is
+        // a head, not the complete capture, and the caller must see that.
+        page = SliceLive(task, task.Text, offset, limit, task.TextTruncated);
+        return true;
+    }
+
+    private static RetainedOutputPage SliceLive(
+        BackgroundTaskSnapshot task,
+        string text,
+        int? offset,
+        int limit,
+        bool truncated)
+    {
+        var start = offset ?? Math.Max(0, text.Length - limit);
+        return new RetainedOutputPage(
+            task,
+            SlicePage(text, start, limit),
+            Math.Clamp(start, 0, text.Length),
+            text.Length,
+            null,
+            truncated);
+    }
+
+    /// <summary>Default page one typed task read returns when the caller names none.</summary>
+    private const int SessionTaskPageChars = 8_000;
+
+    /// <summary>
+    /// One bounded page of a session-owned task's retained output for the typed
+    /// command channel. It reuses the model's paging rule and returns already
+    /// redacted text, so it grants no capability the session did not already
+    /// receive.
+    /// </summary>
+    private JsonObject ReadSessionTaskOutput(string sessionId, SessionTaskRequest request)
+    {
+        var executionId = request.ReadExecutionId!;
+        var limit = request.Limit ?? SessionTaskPageChars;
+        if (limit < 1 || limit > TerminalLimits.MaxSpoolPageChars
+            || (request.Offset is { } requestedOffset
+                && (requestedOffset < 0 || requestedOffset > TerminalLimits.MaxSpoolFileChars)))
+        {
+            throw new ArgumentException("invalid_arguments");
+        }
+
+        if (!TryReadRetainedPage(sessionId, executionId, request.Offset, limit, out var retained))
+        {
+            throw new ArgumentException("unknown_spool_output");
+        }
+
+        var output = new JsonObject
+        {
+            ["execution_id"] = executionId,
+            ["offset"] = retained.Offset,
+            ["limit"] = limit,
+            ["total_chars"] = retained.TotalChars,
+            ["page"] = retained.Text,
+            ["truncated"] = retained.Offset + retained.Text.Length < retained.TotalChars,
+            ["has_before"] = retained.Offset > 0,
+        };
+        if (retained.SpoolPath is not null)
+        {
+            output["spool_path"] = retained.SpoolPath;
+        }
+
+        if (retained.Truncated)
+        {
+            output["spool_truncated"] = true;
+        }
+
+        if (retained.Task is { } task)
+        {
+            output["state"] = BackgroundStateWire(task.State);
+            if (task.IsBackground)
+            {
+                output["background"] = true;
+            }
+
+            if (task.Command.Length > 0)
+            {
+                output["command"] = task.Command;
+            }
+
+            if (task.ExitCode is { } exitCode)
+            {
+                output["exit_code"] = exitCode;
+            }
+        }
+
+        return output;
+    }
+
+    private sealed record RetainedOutputPage(
+        BackgroundTaskSnapshot? Task,
+        string Text,
+        int Offset,
+        int TotalChars,
+        string? SpoolPath,
+        bool Truncated);
 
     /// <summary>
     /// Stops one background task the same session started. No new capability:
@@ -175,15 +318,21 @@ public sealed partial class ToolExecutionService
     };
 
     /// <summary>
-    /// Session task listing for the Host: bounded task snapshots and an optional
-    /// kill. Unknown or foreign ids fail closed with the same codes as mode kill.
+    /// Session task control for the Host: the bounded task list, an optional
+    /// kill, or one bounded output page. Unknown or foreign ids fail closed with
+    /// the same codes as the tool legs.
     /// </summary>
-    public JsonObject HandleSessionTasks(string sessionId, string? killExecutionId)
+    public JsonObject HandleSessionTasks(string sessionId, SessionTaskRequest request)
     {
-        var killed = false;
-        if (!string.IsNullOrWhiteSpace(killExecutionId))
+        if (!string.IsNullOrWhiteSpace(request.ReadExecutionId))
         {
-            killed = _backgroundTasks.Kill(sessionId, killExecutionId) switch
+            return ReadSessionTaskOutput(sessionId, request);
+        }
+
+        var killed = false;
+        if (!string.IsNullOrWhiteSpace(request.KillExecutionId))
+        {
+            killed = _backgroundTasks.Kill(sessionId, request.KillExecutionId) switch
             {
                 BackgroundKillOutcome.Killing => true,
                 BackgroundKillOutcome.NotRunning => throw new ArgumentException("background_task_not_running"),

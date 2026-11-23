@@ -284,12 +284,13 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
     }
 
     /// <summary>
-    /// Lists the run session's bounded background tasks and optionally stops one.
-    /// Returns a failed payload when the run has no live gateway.
+    /// Lists the run session's bounded background tasks, stops one, or pages one
+    /// task's retained output. Returns a failed payload when the run has no live
+    /// gateway.
     /// </summary>
     public async Task<JsonObject> ListSessionTasksAsync(
         string runId,
-        string? killExecutionId,
+        RuAgent.Protocol.SessionTaskRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
@@ -302,7 +303,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
             };
         }
 
-        return await gateway.ListSessionTasksAsync(killExecutionId, cancellationToken).ConfigureAwait(false);
+        return await gateway.ListSessionTasksAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

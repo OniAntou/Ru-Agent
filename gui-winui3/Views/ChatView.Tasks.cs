@@ -1,6 +1,10 @@
 using System;
+using System.Globalization;
 using System.Threading.Tasks;
 using System.Threading;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using RuApp.Models;
 using RuApp.Services;
 using RuAgent.Client;
@@ -166,6 +170,203 @@ public sealed partial class ChatView
     {
         _taskObservation.Apply(AgentTaskProjection.Project(data));
         RenderTaskObservation();
+    }
+
+    /// <summary>
+    /// Opens one task's retained output. The Host pages it through the same
+    /// typed command that lists tasks, so the view still never talks to the
+    /// Broker and the model and the reader see the same redacted text.
+    /// </summary>
+    private async void OnSidePanelTaskLogRequested(object? sender, string executionId)
+    {
+        var controller = _agentController;
+        var runId = ResolveSidePanelTaskRunId();
+        if (controller is null || string.IsNullOrWhiteSpace(runId))
+        {
+            return;
+        }
+
+        long generation = _sessionOpenGeneration;
+        try
+        {
+            // No offset asks the Host for the tail page: the end of a log is
+            // what a reader needs first when a task failed.
+            var page = await LoadTaskOutputAsync(controller, runId, executionId, offset: null).ConfigureAwait(true);
+            if (generation != _sessionOpenGeneration)
+            {
+                return;
+            }
+
+            if (page is null)
+            {
+                SidePanel.SetTasksStatus("Could not read this task's output. Refresh to check its state.");
+                return;
+            }
+
+            await ShowTaskOutputDialogAsync(controller, runId, executionId, page).ConfigureAwait(true);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Task output failed: {error.GetType().Name}");
+            SidePanel.SetTasksStatus("Could not read this task's output.");
+        }
+    }
+
+    private async Task<AgentTaskOutput?> LoadTaskOutputAsync(
+        AgentRunController controller,
+        string runId,
+        string executionId,
+        int? offset)
+    {
+        var command = "/tasks read " + executionId
+            + (offset is { } start ? " " + start.ToString(CultureInfo.InvariantCulture) : string.Empty);
+        var response = await controller.DispatchCommandAsync(runId, command).ConfigureAwait(true);
+        return string.Equals(response.Status, "succeeded", StringComparison.Ordinal)
+            ? AgentTaskOutputProjection.Project(response.Data)
+            : null;
+    }
+
+    /// <summary>
+    /// The bounded reader: one page at a time, with Earlier/Later walking the
+    /// neighbouring windows the response names. The dialog stays open while it
+    /// pages, so the reader keeps its scroll position context.
+    /// </summary>
+    private async Task ShowTaskOutputDialogAsync(
+        AgentRunController controller,
+        string runId,
+        string executionId,
+        AgentTaskOutput page)
+    {
+        if (XamlRoot is null)
+        {
+            return;
+        }
+
+        var header = new TextBlock
+        {
+            Text = page.Header,
+            FontSize = 11.5,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var body = new TextBox
+        {
+            Text = FormatTaskOutput(page),
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            IsSpellCheckEnabled = false,
+            TextWrapping = TextWrapping.NoWrap,
+            FontFamily = TaskLogFont(),
+            MinWidth = 560,
+            MaxWidth = 760,
+        };
+        var dialog = new ContentDialog
+        {
+            Title = "Task output",
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    header,
+                    new ScrollViewer
+                    {
+                        Content = body,
+                        MaxHeight = 420,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    },
+                },
+            },
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+        ApplyTaskOutputButtons(dialog, page);
+
+        var paging = false;
+        async void Page(int offset)
+        {
+            if (paging)
+            {
+                return;
+            }
+
+            paging = true;
+            try
+            {
+                var next = await LoadTaskOutputAsync(controller, runId, executionId, offset).ConfigureAwait(true);
+                if (next is null)
+                {
+                    header.Text = "That page is no longer retained.";
+                    return;
+                }
+
+                page = next;
+                header.Text = page.Header;
+                body.Text = FormatTaskOutput(page);
+                ApplyTaskOutputButtons(dialog, page);
+            }
+            catch (Exception error)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Task output page failed: {error.GetType().Name}");
+                header.Text = "Could not load that page.";
+            }
+            finally
+            {
+                paging = false;
+            }
+        }
+
+        dialog.PrimaryButtonClick += (_, args) =>
+        {
+            args.Cancel = true;
+            Page(Math.Max(0, page.Offset - page.Limit));
+        };
+        dialog.SecondaryButtonClick += (_, args) =>
+        {
+            args.Cancel = true;
+            Page(page.NextOffset);
+        };
+
+        try
+        {
+            await ContentDialogGate.ShowAsync(dialog).ConfigureAwait(true);
+        }
+        catch (Exception error)
+        {
+            // WinUI throws when another dialog is already open; an async void
+            // handler would take the dispatcher down with it.
+            GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Task output dialog failed: {error.GetType().Name}");
+            SidePanel.SetTasksStatus("Could not open the task output.");
+        }
+    }
+
+    private static void ApplyTaskOutputButtons(ContentDialog dialog, AgentTaskOutput page)
+    {
+        dialog.PrimaryButtonText = page.HasBefore ? "Earlier" : string.Empty;
+        dialog.SecondaryButtonText = page.HasMore ? "Later" : string.Empty;
+    }
+
+    private static string FormatTaskOutput(AgentTaskOutput page) =>
+        page.Page.Length > 0 ? page.Page : "(no retained output)";
+
+    /// <summary>Monospace when the app resource is available; the system default otherwise.</summary>
+    private static FontFamily TaskLogFont()
+    {
+        try
+        {
+            if (Application.Current?.Resources.TryGetValue("RuMonoFontFamily", out var value) == true
+                && value is FontFamily family)
+            {
+                return family;
+            }
+        }
+        catch (Exception)
+        {
+            // Resource lookup is cosmetic; fall through to the default family.
+        }
+
+        return new FontFamily("Consolas");
     }
 
     // Task data stays "unavailable", never "empty". With no live run and nothing known, the

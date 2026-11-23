@@ -107,7 +107,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
 
         var tasks = await _fixture.Factory.ListSessionTasksAsync(
             _runId.Value,
-            killExecutionId: null,
+            new RuAgent.Protocol.SessionTaskRequest(),
             CancellationToken.None);
         Assert.Equal("succeeded", tasks["status"]!.GetValue<string>());
 
@@ -117,7 +117,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
 
         var unknown = await _fixture.Factory.ListSessionTasksAsync(
             "run_" + new string('b', 32),
-            killExecutionId: null,
+            new RuAgent.Protocol.SessionTaskRequest(),
             CancellationToken.None);
         Assert.Equal("failed", unknown["status"]!.GetValue<string>());
         Assert.Equal("broker_gateway_unavailable", unknown["error_code"]!.GetValue<string>());

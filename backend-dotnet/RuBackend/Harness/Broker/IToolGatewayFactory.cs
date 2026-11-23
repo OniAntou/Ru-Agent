@@ -71,7 +71,7 @@ public interface IToolGatewayFactory : IAsyncDisposable
 
     Task<JsonObject> ListSessionTasksAsync(
         string runId,
-        string? killExecutionId,
+        RuAgent.Protocol.SessionTaskRequest request,
         CancellationToken cancellationToken);
 
     /// <summary>

@@ -38,6 +38,7 @@ namespace RuApp.Controls
         public event EventHandler<SidePanelTabMove>? TabMoved;
 
         public event EventHandler<string>? TaskStopRequested;
+        public event EventHandler<string>? TaskLogRequested;
         public event EventHandler? TasksRefreshRequested;
 
         public event EventHandler<double>? WidthChanged;
@@ -266,6 +267,14 @@ namespace RuApp.Controls
             if (sender is FrameworkElement { Tag: string executionId })
             {
                 TaskStopRequested?.Invoke(this, executionId);
+            }
+        }
+
+        private void OnTaskLogClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { Tag: string executionId })
+            {
+                TaskLogRequested?.Invoke(this, executionId);
             }
         }
 

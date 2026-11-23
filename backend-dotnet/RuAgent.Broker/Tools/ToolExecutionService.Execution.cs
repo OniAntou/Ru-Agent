@@ -220,8 +220,12 @@ public sealed partial class ToolExecutionService
     }
 
     // Launch lifetime is owned by the terminal runner, independently of the
-    // envelope's control-RPC deadline. Output reads and stops keep that deadline.
+    // envelope's control-RPC deadline. A read that asks to wait bounds itself
+    // with wait_ms, so the fixed deadline would cut that wait short.
     private static bool IsTerminalLaunch(string toolId) => toolId is "powershell" or "run_process";
+
+    private static bool OwnsToolDeadline(string toolId) =>
+        toolId is "powershell" or "run_process" or "terminal_read";
 
     private async Task<ToolResult> ExecuteBindingAsync(
         AgentEnvelope request,
@@ -280,7 +284,7 @@ public sealed partial class ToolExecutionService
         };
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (!IsTerminalLaunch(ReadString(request.Payload, "tool_id")))
+        if (!OwnsToolDeadline(ReadString(request.Payload, "tool_id")))
         {
             deadline.CancelAfter(Math.Clamp(context.DeadlineMs, 1, 300_000));
         }

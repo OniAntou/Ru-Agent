@@ -174,11 +174,12 @@ public sealed partial class InProcessToolGateway
     }
 
     /// <summary>
-    /// Lists the run session's bounded background tasks and optionally stops
-    /// one, in the exact payload shape the wire reply carries.
+    /// Lists the run session's bounded background tasks, stops one, or pages one
+    /// task's retained output, in the exact payload shape the wire reply
+    /// carries.
     /// </summary>
     public async Task<JsonObject> ListSessionTasksAsync(
-        string? killExecutionId,
+        RuAgent.Protocol.SessionTaskRequest request,
         CancellationToken cancellationToken)
     {
         string ownerSessionId;
@@ -188,7 +189,7 @@ public sealed partial class InProcessToolGateway
         }
 
         var result = await _runtime
-            .SessionTasksAsync(ownerSessionId, killExecutionId, cancellationToken)
+            .SessionTasksAsync(ownerSessionId, request, cancellationToken)
             .ConfigureAwait(false);
 
         if (result.Refusal is not null)

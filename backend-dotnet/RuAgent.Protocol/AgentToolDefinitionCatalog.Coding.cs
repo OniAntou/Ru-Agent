@@ -33,7 +33,7 @@ public static partial class AgentToolDefinitionCatalog
 
     internal static JsonObject TerminalProcessSchema() => TerminalCommandSchema(false);
 
-    internal static JsonObject TerminalReadSchema() => ObjectSchema(["execution_id"], ("execution_id", StringSchema(TerminalLimits.MaxExecutionIdChars, 1)), ("offset", IntegerSchema(0, TerminalLimits.MaxSpoolFileChars)), ("limit", IntegerSchema(1, TerminalLimits.MaxSpoolPageChars)));
+    internal static JsonObject TerminalReadSchema() => ObjectSchema(["execution_id"], ("execution_id", StringSchema(TerminalLimits.MaxExecutionIdChars, 1)), ("offset", IntegerSchema(0, TerminalLimits.MaxSpoolFileChars)), ("limit", IntegerSchema(1, TerminalLimits.MaxSpoolPageChars)), ("wait_ms", WithDescription(IntegerSchema(1, TerminalLimits.TerminalReadMaxWaitMs), "Optional: wait up to this long for a background task's state or output to change before reading. Returns earlier on a change and at once when the task already stopped.")));
 
     internal static JsonObject TerminalStopSchema() => ObjectSchema(["execution_id"], ("execution_id", StringSchema(TerminalLimits.MaxExecutionIdChars, 1)));
 

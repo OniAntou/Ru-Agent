@@ -19,7 +19,10 @@ public sealed record AgentCommand(
     string? SkillId = null,
     JsonObject? JsonInput = null,
     string? TaskKillId = null,
-    string? SkillArguments = null);
+    string? SkillArguments = null,
+    string? TaskReadId = null,
+    int? TaskReadOffset = null,
+    int? TaskReadLimit = null);
 
 public sealed record AgentCommandParseResult(
     AgentCommand? Command,
@@ -87,24 +90,84 @@ public static class AgentActionRouter
         }
 
         const string killPrefix = "kill ";
-        if (!remainder.StartsWith(killPrefix, StringComparison.OrdinalIgnoreCase))
+        if (remainder.StartsWith(killPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return Invalid("Tasks accepts no arguments or \"kill <execution_id>\".");
+            var executionId = remainder[killPrefix.Length..].Trim();
+            if (executionId.Length == 0
+                || executionId.Length > MaxExecutionIdLength
+                || executionId.Contains('\0')
+                || executionId.Any(char.IsWhiteSpace))
+            {
+                return Invalid("Task kill requires one execution id.");
+            }
+
+            return new AgentCommandParseResult(
+                new AgentCommand(AgentCommandKind.Tasks, TaskKillId: executionId),
+                null,
+                "Task stop requested.");
         }
 
-        var executionId = remainder[killPrefix.Length..].Trim();
+        const string readPrefix = "read ";
+        if (remainder.StartsWith(readPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return ParseTaskRead(remainder[readPrefix.Length..].Trim());
+        }
+
+        return Invalid("Tasks accepts no arguments, \"kill <execution_id>\" or \"read <execution_id> [offset] [limit]\".");
+    }
+
+    /// <summary>
+    /// Parses the output-read form. An omitted offset asks for the tail page,
+    /// which is what a reader wants when a task failed; pagination stays inside
+    /// the same bounds as <c>terminal_read</c>.
+    /// </summary>
+    private static AgentCommandParseResult ParseTaskRead(string remainder)
+    {
+        var parts = remainder.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length is < 1 or > 3)
+        {
+            return Invalid("Task read accepts an execution id, then an optional offset and limit.");
+        }
+
+        var executionId = parts[0];
         if (executionId.Length == 0
             || executionId.Length > MaxExecutionIdLength
             || executionId.Contains('\0')
             || executionId.Any(char.IsWhiteSpace))
         {
-            return Invalid("Task kill requires one execution id.");
+            return Invalid("Task read requires one execution id.");
+        }
+
+        int? offset = null;
+        if (parts.Length > 1)
+        {
+            if (!int.TryParse(parts[1], System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var parsedOffset)
+                || parsedOffset < 0 || parsedOffset > TerminalLimits.MaxSpoolFileChars)
+            {
+                return Invalid("Task read offset must be a whole number inside the retained output.");
+            }
+
+            offset = parsedOffset;
+        }
+
+        int? limit = null;
+        if (parts.Length > 2)
+        {
+            if (!int.TryParse(parts[2], System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var parsedLimit)
+                || parsedLimit < 1 || parsedLimit > TerminalLimits.MaxSpoolPageChars)
+            {
+                return Invalid("Task read limit must be from 1 to " + TerminalLimits.MaxSpoolPageChars + ".");
+            }
+
+            limit = parsedLimit;
         }
 
         return new AgentCommandParseResult(
-            new AgentCommand(AgentCommandKind.Tasks, TaskKillId: executionId),
+            new AgentCommand(AgentCommandKind.Tasks, TaskReadId: executionId, TaskReadOffset: offset, TaskReadLimit: limit),
             null,
-            "Task stop requested.");
+            "Task output requested.");
     }
 
     private static AgentCommandParseResult ParseCompact(string remainder)

@@ -29,6 +29,25 @@ public sealed class AgentActionRouterTests
         Assert.DoesNotContain("req-background-1", result.SafeMessage, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("/tasks read exec_bg_1", "exec_bg_1", null, null)]
+    [InlineData("/tasks read exec_bg_1 8000", "exec_bg_1", 8000, null)]
+    [InlineData("/tasks read exec_bg_1 8000 4000", "exec_bg_1", 8000, 4000)]
+    [InlineData("/TASKS READ exec_bg_1", "exec_bg_1", null, null)]
+    public void Parser_parses_task_read_with_optional_window(string text, string executionId, int? offset, int? limit)
+    {
+        var result = AgentActionRouter.Parse(text);
+
+        Assert.True(result.Success);
+        Assert.Equal(AgentCommandKind.Tasks, result.Command!.Kind);
+        Assert.Equal(executionId, result.Command.TaskReadId);
+        Assert.Equal(offset, result.Command.TaskReadOffset);
+        Assert.Equal(limit, result.Command.TaskReadLimit);
+        Assert.Null(result.Command.TaskKillId);
+        // The command never echoes the id back in prose it might be rendered into.
+        Assert.DoesNotContain(executionId, result.SafeMessage, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Parser_parses_skill_name_without_retaining_command_text()
     {
@@ -47,6 +66,12 @@ public sealed class AgentActionRouterTests
     [InlineData("/skill ../bad-id")]
     [InlineData("/tasks kill")]
     [InlineData("/tasks stop req-1")]
+    [InlineData("/tasks read")]
+    [InlineData("/tasks read exec 0 0")]
+    [InlineData("/tasks read exec 0 65537")]
+    [InlineData("/tasks read exec -1")]
+    [InlineData("/tasks read exec 0 4000 5")]
+    [InlineData("/tasks read a b")]
     public void Parser_rejects_malformed_commands_without_an_action(string text)
     {
         var result = AgentActionRouter.Parse(text);

@@ -177,7 +177,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
         // execution service's session teardown, which reaps its child tasks).
         Assert.False(_fixture.Session.Owns(sessionId));
         Assert.False(_fixture.Session.TryGetRunLease(runId.Value, out _));
-        var tasks = await _fixture.Factory.ListSessionTasksAsync(runId.Value, null, CancellationToken.None);
+        var tasks = await _fixture.Factory.ListSessionTasksAsync(runId.Value, new RuAgent.Protocol.SessionTaskRequest(), CancellationToken.None);
         Assert.Equal("broker_gateway_unavailable", tasks["error_code"]!.GetValue<string>());
     }
 

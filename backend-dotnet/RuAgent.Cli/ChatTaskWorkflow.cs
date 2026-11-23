@@ -11,6 +11,22 @@ internal sealed record ChatBackgroundTask(string ExecutionId, string State, int?
     internal string Detail => $"{State} · {ExecutionId}" + (ExitCode is { } code ? $" · exit {code}" : "");
 }
 
+/// <summary>One bounded page of a task's retained output, as the Host reports it.</summary>
+internal sealed record ChatTaskOutput(
+    string ExecutionId,
+    string State,
+    int? ExitCode,
+    int Offset,
+    int Limit,
+    int TotalChars,
+    string Page,
+    bool HasBefore,
+    bool HasMore)
+{
+    internal string Header => $"Task {ExecutionId} · {State}" + (ExitCode is { } code ? $" · exit {code}" : "")
+        + $" · chars {Offset}–{Offset + Page.Length} of {TotalChars}";
+}
+
 /// <summary>Presentation and exact session/run binding; the Host/Broker owns all task control.</summary>
 internal sealed class ChatTaskWorkflow(AgentApiClient client)
 {
@@ -19,14 +35,20 @@ internal sealed class ChatTaskWorkflow(AgentApiClient client)
     {
         var parts = (argument ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
         string? kill = null;
+        string? read = null;
+        int? readOffset = null;
+        int? readLimit = null;
         string? explicitRun = null;
         if (parts.Length == 1 && parts[0].StartsWith("run_", StringComparison.Ordinal)) explicitRun = parts[0];
         else if (parts.Length > 0)
         {
             var parsed = AgentActionRouter.Parse("/tasks " + argument);
             if (!parsed.Success || parsed.Command!.Kind != AgentCommandKind.Tasks)
-                throw new AgentApiException("invalid_task_arguments", "Use /tasks [run-id] or /tasks kill <execution-id>.");
+                throw new AgentApiException("invalid_task_arguments", "Use /tasks [run-id], /tasks kill <execution-id> or /tasks read <execution-id> [offset] [limit].");
             kill = parsed.Command.TaskKillId;
+            read = parsed.Command.TaskReadId;
+            readOffset = parsed.Command.TaskReadOffset;
+            readLimit = parsed.Command.TaskReadLimit;
         }
 
         var run = explicitRun ?? preferredRun;
@@ -41,6 +63,12 @@ internal sealed class ChatTaskWorkflow(AgentApiClient client)
 
         while (true)
         {
+            if (read is not null)
+            {
+                await ReadAsync(sessionId, run, read, readOffset, readLimit, output, json, ct).ConfigureAwait(false);
+                return;
+            }
+
             var rows = await ListAsync(sessionId, run, ct).ConfigureAwait(false);
             if (kill is not null)
             {
@@ -57,7 +85,9 @@ internal sealed class ChatTaskWorkflow(AgentApiClient client)
             {
                 await output.WriteLineAsync($"Background tasks · {run}").ConfigureAwait(false);
                 foreach (var row in rows) await output.WriteLineAsync($"{row.Detail} · {row.Command}").ConfigureAwait(false);
-                await output.WriteLineAsync(rows.Count == 0 ? "No background tasks." : "Stop with /tasks kill <execution-id>.").ConfigureAwait(false);
+                await output.WriteLineAsync(rows.Count == 0
+                    ? "No background tasks."
+                    : "Stop with /tasks kill <execution-id> · read output with /tasks read <execution-id>.").ConfigureAwait(false);
                 return;
             }
             var items = rows.Select(row => new ChoiceItem(string.IsNullOrWhiteSpace(row.Command) ? row.ExecutionId : row.Command,
@@ -115,6 +145,61 @@ internal sealed class ChatTaskWorkflow(AgentApiClient client)
         return Project(response.Data);
     }
 
+    /// <summary>
+    /// Prints one bounded page of a task's output. The Host owns the paging
+    /// window; this adapter only renders what it returned.
+    /// </summary>
+    private async Task ReadAsync(string session, string run, string executionId, int? offset, int? limit,
+        TextWriter output, bool json, CancellationToken ct)
+    {
+        await ValidateSessionAsync(session, run, ct).ConfigureAwait(false);
+        var command = "/tasks read " + executionId
+            + (offset is { } start ? " " + start.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")
+            + (limit is { } count ? " " + count.ToString(System.Globalization.CultureInfo.InvariantCulture) : "");
+        var response = await client.DispatchCommandAsync(run, command, ct).ConfigureAwait(false);
+        EnsureSucceeded(response.Status, response.Code, "task_output");
+        var page = ProjectPage(response.Data);
+        if (json)
+        {
+            await output.WriteLineAsync(JsonSerializer.Serialize(new
+            {
+                v = 1,
+                type = "task_output",
+                run_id = run,
+                execution_id = page.ExecutionId,
+                state = page.State,
+                exit_code = page.ExitCode,
+                offset = page.Offset,
+                limit = page.Limit,
+                total_chars = page.TotalChars,
+                has_before = page.HasBefore,
+                truncated = page.HasMore,
+                page = page.Page,
+            })).ConfigureAwait(false);
+            return;
+        }
+
+        await output.WriteLineAsync(page.Header).ConfigureAwait(false);
+        if (page.Page.Length > 0)
+        {
+            await output.WriteLineAsync(page.Page).ConfigureAwait(false);
+        }
+        else
+        {
+            await output.WriteLineAsync("(no retained output)").ConfigureAwait(false);
+        }
+
+        if (page.HasBefore)
+        {
+            await output.WriteLineAsync($"Earlier output: /tasks read {page.ExecutionId} 0").ConfigureAwait(false);
+        }
+
+        if (page.HasMore)
+        {
+            await output.WriteLineAsync($"Later output: /tasks read {page.ExecutionId} {page.Offset + page.Page.Length}").ConfigureAwait(false);
+        }
+    }
+
     private async Task ValidateSessionAsync(string session, string run, CancellationToken ct)
     {
         var snapshot = await client.GetRunAsync(run, ct).ConfigureAwait(false);
@@ -122,10 +207,10 @@ internal sealed class ChatTaskWorkflow(AgentApiClient client)
             throw new AgentApiException("run_session_mismatch", "Task run belongs to another session.");
     }
 
-    private static void EnsureSucceeded(string status, string code)
+    private static void EnsureSucceeded(string status, string code, string expectedCode = "tasks")
     {
         if (status != "succeeded") throw new AgentApiException("tasks_failed", ChatDisplayText.Sanitize(code, 128));
-        if (code != "tasks") throw new AgentApiException("tasks_invalid_response", "Unexpected command result.");
+        if (code != expectedCode) throw new AgentApiException("tasks_invalid_response", "Unexpected command result.");
     }
 
     internal static IReadOnlyList<ChatBackgroundTask> Project(object? data)
@@ -149,6 +234,40 @@ internal sealed class ChatTaskWorkflow(AgentApiClient client)
         }
         return rows.OrderByDescending(row => row.CanStop).ToArray();
     }
+
+    internal static ChatTaskOutput ProjectPage(object? data)
+    {
+        if (data is not JsonElement { ValueKind: JsonValueKind.Object } root)
+            throw new AgentApiException("tasks_invalid_response", "Task output is unavailable.");
+        var id = Read(root, "execution_id");
+        if (!root.TryGetProperty("page", out var pageValue) || pageValue.ValueKind != JsonValueKind.String
+            || id.Length == 0 || id.Any(char.IsControl))
+            throw new AgentApiException("tasks_invalid_response", "Task output is unavailable.");
+        var page = pageValue.GetString() ?? "";
+        var offset = ReadInt(root, "offset") ?? 0;
+        var total = ReadInt(root, "total_chars") ?? offset + page.Length;
+        var limit = ReadInt(root, "limit") ?? page.Length;
+        var state = Read(root, "state");
+        if (state is not ("running" or "exited" or "killed" or "expired" or "failed")) state = "unknown";
+        return new(
+            id,
+            state,
+            ReadInt(root, "exit_code"),
+            Math.Clamp(offset, 0, total),
+            Math.Max(0, limit),
+            Math.Max(total, page.Length),
+            page,
+            ReadBool(root, "has_before"),
+            ReadBool(root, "truncated"));
+    }
+
+    private static int? ReadInt(JsonElement item, string name) =>
+        item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
+            ? number
+            : null;
+
+    private static bool ReadBool(JsonElement item, string name) =>
+        item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
 
     private static string Read(JsonElement item, string name) =>
         item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";

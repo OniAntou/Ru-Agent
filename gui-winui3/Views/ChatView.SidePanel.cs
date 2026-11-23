@@ -40,6 +40,7 @@ public sealed partial class ChatView
         SidePanel.TabClosed += OnSidePanelTabClosed;
         SidePanel.TabMoved += OnSidePanelTabMoved;
         SidePanel.TaskStopRequested += OnSidePanelTaskStopRequested;
+        SidePanel.TaskLogRequested += OnSidePanelTaskLogRequested;
         SidePanel.TasksRefreshRequested += OnSidePanelTasksRefreshRequested;
         SidePanel.WidthChanged += OnSidePanelWidthChanged;
         SidePanel.WidthCommitted += OnSidePanelWidthCommitted;

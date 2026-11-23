@@ -255,7 +255,7 @@ public sealed partial class SubagentCodingPublicationTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         public Task<IToolGateway> CreateAsync(string workspaceRoot, PolicySnapshot policySnapshot, RunId runId,
             string? agentSessionId, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<JsonObject> ListSessionTasksAsync(string runId, string? killExecutionId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<JsonObject> ListSessionTasksAsync(string runId, RuAgent.Protocol.SessionTaskRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<(bool Authorized, string? AuthorizationToken, Broker::RuAgent.Broker.Policy.ApprovalRememberPlan? RememberPlan)> RespondApprovalAsync(string runId, string hostApprovalId,
             string command, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<bool> RevokeSessionGrantsAsync(string sessionId, CancellationToken cancellationToken) => throw new NotSupportedException();

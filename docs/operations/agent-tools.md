@@ -447,6 +447,14 @@ other policy checks and a bounded lifetime (30-minute default, 24-hour ceiling).
 A foreground command exceeding its approved window moves to the background
 with `moved_to_background` and the same execution ID/lifetime.
 
+`terminal_read` takes an optional `wait_ms` (1 to 120,000): the read waits until
+the task's state or output moves, then pages, so an agent that launched
+background work keeps doing other work and collects the result in one call
+instead of polling once per step. A task that already stopped answers at once
+with `changed=false`; the deadline answering without a change also reports
+`changed=false`, and both carry `waited_ms`. That wait owns its own bound: the
+control-RPC deadline does not cut it, while run cancellation still does.
+
 ### Session folder grants and terminal approval
 
 Terminal launch resolves the executable or shell runtime before registering a
@@ -745,13 +753,19 @@ metadata and skill-body budgets. These files also grant no execution authority.
 
 `POST /agent/v1/runs/{runId}/commands` accepts only the bounded commands
 `/compact normal|aggressive`, `/help`, `/skills`, `/skill <id> [arguments]`, and
-`/tasks [kill <execution_id>]`.
+`/tasks [kill <execution_id> | read <execution_id> [offset] [limit]]`.
 The shared `AgentActionRouter` rejects unknown or malformed slash commands with
 stable `command_unknown`/`command_invalid` codes, without creating a prompt,
 history entry, or outbox message. `/compact` reuses the durable compaction
 contract; `/help` is static; `/skills` and `/skill` are session-scoped; `/tasks`
-lists the session's background tasks and stops one on request. The CLI
-adapter uses the same parser and renders only bounded result metadata.
+lists the session's background tasks, stops one, or pages one task's retained
+output. A read answers the command code `task_output` with
+`execution_id`, `state`, `exit_code`, `offset`, `limit`, `total_chars`, `page`,
+`has_before` and `truncated`; an omitted offset asks for the tail page (8,000
+characters) and the limit stays inside `TerminalLimits.MaxSpoolPageChars`. The
+page is the same already-redacted text `terminal_read` returns, it never crosses
+sessions, and one request never combines kill and read. The CLI adapter uses the
+same parser and renders only bounded result metadata.
 
 ## Web tool gates
 

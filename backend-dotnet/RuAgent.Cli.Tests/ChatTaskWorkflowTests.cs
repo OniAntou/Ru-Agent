@@ -23,6 +23,8 @@ public sealed class ChatTaskWorkflowTests
         internal bool UncertainKill;
         internal int Lists;
         internal Func<int, string>? StateForList;
+        internal string Page = "npm run dev\nready on http://127.0.0.1:5173";
+        internal string ExpectedRead = "/tasks read " + ExecutionId;
         internal static HttpResponseMessage Json(object value, HttpStatusCode status = HttpStatusCode.OK) => new(status)
         { Content = new StringContent(JsonSerializer.Serialize(value), Encoding.UTF8, "application/json") };
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -43,6 +45,13 @@ public sealed class ChatTaskWorkflowTests
             var command = body.RootElement.GetProperty("text").GetString()!;
             Commands.Add(command);
             if (GatewayUnavailable) return Json(new { error_code = "broker_gateway_unavailable", message = "Broker unavailable" }, HttpStatusCode.ServiceUnavailable);
+            if (command.StartsWith("/tasks read ", StringComparison.Ordinal))
+            {
+                Assert.StartsWith(ExpectedRead, command, StringComparison.Ordinal);
+                return Json(new { run_id = RunId, status = "succeeded", code = "task_output", run_version = 5,
+                    data = new { execution_id = ExecutionId, state = State, exit_code = (int?)null, offset = 0, limit = 8000,
+                        total_chars = Page.Length + 40, page = Page, has_before = false, truncated = true } });
+            }
             if (command == "/tasks") { Lists++; State = StateForList?.Invoke(Lists) ?? State; }
             else
             {
@@ -160,5 +169,69 @@ public sealed class ChatTaskWorkflowTests
         await new ChatTaskWorkflow(api).ExecuteAsync(SessionId, RunId, stop ? "kill " + ExecutionId : null, null, output, true, default);
         using var result = JsonDocument.Parse(output.ToString());
         Assert.Equal(stop ? "task_stop" : "tasks", result.RootElement.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task Read_prints_the_page_with_paging_hints()
+    {
+        using var host = new Host(); using var http = new HttpClient(host); using var api = new AgentApiClient(Session, http);
+        var output = new StringWriter();
+        await new ChatTaskWorkflow(api).ExecuteAsync(SessionId, RunId, "read " + ExecutionId, null, output, false, default);
+
+        Assert.Equal(["/tasks read " + ExecutionId], host.Commands);
+        var text = output.ToString();
+        Assert.Contains("ready on http://127.0.0.1:5173", text); Assert.Contains("chars 0–", text);
+        // The response said more output follows, so the adapter names the next page.
+        Assert.Contains("Later output: /tasks read " + ExecutionId + " " + host.Page.Length, text);
+        Assert.DoesNotContain("Earlier output", text);
+    }
+
+    [Fact]
+    public async Task Read_json_reports_the_task_output_type_and_bounds()
+    {
+        using var host = new Host(); using var http = new HttpClient(host); using var api = new AgentApiClient(Session, http);
+        var output = new StringWriter();
+        await new ChatTaskWorkflow(api).ExecuteAsync(SessionId, RunId, "read " + ExecutionId + " 0 4000", null, output, true, default);
+
+        Assert.Equal(["/tasks read " + ExecutionId + " 0 4000"], host.Commands);
+        using var result = JsonDocument.Parse(output.ToString());
+        var root = result.RootElement;
+        Assert.Equal("task_output", root.GetProperty("type").GetString());
+        Assert.Equal(ExecutionId, root.GetProperty("execution_id").GetString());
+        Assert.True(root.GetProperty("truncated").GetBoolean());
+        Assert.False(root.GetProperty("has_before").GetBoolean());
+        Assert.Equal(host.Page, root.GetProperty("page").GetString());
+    }
+
+    [Theory]
+    [InlineData("read")]
+    [InlineData("read a b")]
+    [InlineData("read " + ExecutionId + " -1")]
+    [InlineData("read " + ExecutionId + " 0 0")]
+    [InlineData("read " + ExecutionId + " 0 65537")]
+    [InlineData("read " + ExecutionId + " 0 1 2")]
+    public async Task Malformed_or_out_of_bounds_reads_never_dispatch(string argument)
+    {
+        using var host = new Host(); using var http = new HttpClient(host); using var api = new AgentApiClient(Session, http);
+        await Assert.ThrowsAsync<AgentApiException>(() =>
+            new ChatTaskWorkflow(api).ExecuteAsync(SessionId, RunId, argument, null, new StringWriter(), false, default));
+        Assert.DoesNotContain(host.Commands, command => command.StartsWith("/tasks read", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Output_projection_clamps_bounds_and_rejects_a_missing_page()
+    {
+        var error = Assert.Throws<AgentApiException>(() =>
+            ChatTaskWorkflow.ProjectPage(JsonSerializer.SerializeToElement(new { execution_id = ExecutionId })));
+        Assert.Equal("tasks_invalid_response", error.ErrorCode);
+
+        var page = ChatTaskWorkflow.ProjectPage(JsonSerializer.SerializeToElement(new
+        {
+            execution_id = ExecutionId, state = "exited", exit_code = 2, offset = 10, limit = 5,
+            total_chars = 9, page = "abcde", has_before = true, truncated = false,
+        }));
+        Assert.Equal(2, page.ExitCode); Assert.Equal("exited", page.State);
+        // Inconsistent bounds are clamped to the text that actually arrived.
+        Assert.Equal(9, page.Offset); Assert.Equal(9, page.TotalChars); Assert.True(page.HasBefore); Assert.False(page.HasMore);
     }
 }

@@ -20,7 +20,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
     private readonly IReadOnlySet<string> _executableScopes;
     private readonly Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? _authenticatedToolHandler;
     private readonly Func<AgentEnvelope, CanonicalCommandIntent, CancellationToken, TerminalOutputDeltaHandler?, Task<ToolResult>>? _authenticatedTerminalHandler;
-    private readonly Func<string, string?, JsonObject>? _sessionTasksHandler;
+    private readonly Func<string, SessionTaskRequest, JsonObject>? _sessionTasksHandler;
     private readonly Func<string, Task>? _sessionClosedHandler;
     private readonly Func<string, Task>? _sessionGrantsRevokedHandler;
     private readonly PendingApprovalStore _pendingV2;
@@ -67,7 +67,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
         BrokerSession session,
         IReadOnlySet<string> executableScopes,
         Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? authenticatedToolHandler = null,
-        Func<string, string?, JsonObject>? sessionTasksHandler = null,
+        Func<string, SessionTaskRequest, JsonObject>? sessionTasksHandler = null,
         Func<string, Task>? sessionClosedHandler = null,
         PendingApprovalStore? pendingV2Store = null,
         ApprovalTokenService? approvalTokenService = null,
@@ -163,14 +163,14 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
         UnderLifecycleAsync(() => CloseRunCore(request), cancellationToken);
 
     /// <summary>
-    /// Session-scoped task control. The kill id is validated here (length and
-    /// NUL fail closed) before it reaches the execution service.
+    /// Session-scoped task control. Task ids are validated here (length and NUL
+    /// fail closed) before they reach the execution service.
     /// </summary>
     public Task<SessionTasksResult> SessionTasksAsync(
         string sessionId,
-        string? killExecutionId,
+        SessionTaskRequest request,
         CancellationToken cancellationToken) =>
-        UnderLifecycleAsync(() => SessionTasksCore(sessionId, killExecutionId), cancellationToken);
+        UnderLifecycleAsync(() => SessionTasksCore(sessionId, request), cancellationToken);
 
     public Task<SessionGrantsRevokeResult> RevokeSessionGrantsAsync(
         string ownerSessionId,
@@ -386,7 +386,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
         return new SessionGrantsRevokeResult(null, Revoked: true, ErrorCode: null, SafeSummary: "session grants revoked");
     }
 
-    private SessionTasksResult SessionTasksCore(string sessionId, string? killExecutionId)
+    private SessionTasksResult SessionTasksCore(string sessionId, SessionTaskRequest request)
     {
         if (!_session.Owns(sessionId))
         {
@@ -398,21 +398,34 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
             return SessionTasksResult.Refused(new RuntimeError("phase_not_available", "session tasks are not available"));
         }
 
-        if (killExecutionId is { } kill
-            && (kill.Length > RuAgent.Protocol.TerminalLimits.MaxExecutionIdChars || kill.Contains('\0')))
+        if (request.KillExecutionId is { } kill && !IsValidTaskId(kill))
         {
             return SessionTasksResult.Failure("invalid_arguments", "kill_execution_id is invalid.");
         }
 
+        if (request.ReadExecutionId is { } read && !IsValidTaskId(read))
+        {
+            return SessionTasksResult.Failure("invalid_arguments", "read_execution_id is invalid.");
+        }
+
+        if (request.KillExecutionId is not null && request.ReadExecutionId is not null)
+        {
+            return SessionTasksResult.Failure("invalid_arguments", "one task verb per request.");
+        }
+
         try
         {
-            return SessionTasksResult.Success(_sessionTasksHandler(sessionId, killExecutionId));
+            return SessionTasksResult.Success(_sessionTasksHandler(sessionId, request));
         }
         catch (ArgumentException error)
         {
             return SessionTasksResult.Failure(error.Message);
         }
     }
+
+    private static bool IsValidTaskId(string executionId) =>
+        executionId.Length is > 0 and <= RuAgent.Protocol.TerminalLimits.MaxExecutionIdChars
+        && !executionId.Contains('\0');
 
     private BrokerRunLease ReadRunLease(AgentEnvelope request)
     {
@@ -526,7 +539,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
     private sealed record ToolExecutionBackend(
         IReadOnlySet<string> ExecutableScopes,
         Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? AuthenticatedToolHandler,
-        Func<string, string?, JsonObject>? SessionTasksHandler,
+        Func<string, SessionTaskRequest, JsonObject>? SessionTasksHandler,
         Func<string, Task>? SessionClosedHandler,
         Func<string, Task>? SessionGrantsRevokedHandler = null,
         Func<AgentEnvelope, CanonicalCommandIntent, CancellationToken, TerminalOutputDeltaHandler?, Task<ToolResult>>? AuthenticatedTerminalHandler = null)

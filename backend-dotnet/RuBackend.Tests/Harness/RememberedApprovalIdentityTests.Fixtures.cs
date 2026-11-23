@@ -421,8 +421,8 @@ public sealed partial class RememberedApprovalIdentityTests
             CancellationToken cancellationToken) =>
             inner.CreateAsync(workspaceRoot, policySnapshot, runId, agentSessionId, cancellationToken);
 
-        public Task<JsonObject> ListSessionTasksAsync(string runId, string? killExecutionId, CancellationToken cancellationToken) =>
-            inner.ListSessionTasksAsync(runId, killExecutionId, cancellationToken);
+        public Task<JsonObject> ListSessionTasksAsync(string runId, RuAgent.Protocol.SessionTaskRequest request, CancellationToken cancellationToken) =>
+            inner.ListSessionTasksAsync(runId, request, cancellationToken);
 
         public Task<RuBackend.Harness.Broker.BrokerApprovalProbe> ProbeApprovalAsync(string runId, string hostApprovalId, CancellationToken cancellationToken) =>
             inner.ProbeApprovalAsync(runId, hostApprovalId, cancellationToken);

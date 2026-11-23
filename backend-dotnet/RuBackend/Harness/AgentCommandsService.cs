@@ -206,7 +206,7 @@ public sealed partial class AgentCommandsService
                             new { name = "/help", arguments = "", description = "List typed Agent commands." },
                             new { name = "/skills", arguments = "", description = "List workspace skills (name + description)." },
                             new { name = "/skill", arguments = "<id> [arguments]", description = "Activate a skill workflow in this run." },
-                            new { name = "/tasks", arguments = "[kill <execution_id>]", description = "List this session's background tasks or stop one." },
+                            new { name = "/tasks", arguments = "kill <execution_id> | read <execution_id> [offset] [limit]", description = "List this session's background tasks, stop one, or read one task's output." },
                         },
                     },
                     run.Version);
@@ -253,11 +253,18 @@ public sealed partial class AgentCommandsService
             return BoundedError(503, "broker_gateway_unavailable", "The Broker is not available.");
         }
 
+        // One bounded verb per command: stop one task, or page one task's
+        // retained output. The Broker owns both semantics.
+        var request = new RuAgent.Protocol.SessionTaskRequest(
+            KillExecutionId: command.TaskKillId,
+            ReadExecutionId: command.TaskReadId,
+            Offset: command.TaskReadOffset,
+            Limit: command.TaskReadLimit);
         JsonObject payload;
         try
         {
             payload = await _brokerGateways
-                .ListSessionTasksAsync(runIdRaw, command.TaskKillId, cancellationToken)
+                .ListSessionTasksAsync(runIdRaw, request, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (ToolTransportException error)
@@ -271,7 +278,11 @@ public sealed partial class AgentCommandsService
             return BoundedError(409, code, "Session task control failed.");
         }
 
-        return CommandSucceeded(runIdRaw, "tasks", payload, run.Version);
+        return CommandSucceeded(
+            runIdRaw,
+            command.TaskReadId is null ? "tasks" : "task_output",
+            payload,
+            run.Version);
     }
 
     private string? ResolveRunWorkspaceRoot(RunId runId) =>

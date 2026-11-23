@@ -139,7 +139,7 @@ public sealed class ChangesTabProjectionTests
 
         Assert.True(rows[0].IsExpanded);
         Assert.Equal(2, rows[0].Edits.Count);
-        Assert.Equal(3, rows[0].Added);
+        Assert.Equal(2, rows[0].Added);
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public sealed class ChangesTabProjectionTests
     }
 
     [Fact]
-    public void Rows_carry_one_hunk_per_edit_and_the_expansion_starts_folded()
+    public void Rows_carry_the_newest_hunk_and_the_expansion_starts_folded()
     {
         var projection = ChangesTabProjection.Project(new[]
         {
@@ -249,7 +249,7 @@ public sealed class ChangesTabProjectionTests
     }
 
     [Fact]
-    public void A_file_edited_several_times_opens_one_hunk_per_edit_newest_first()
+    public void A_file_edited_several_times_opens_only_the_newest_edit()
     {
         var projection = ChangesTabProjection.Project(new[]
         {
@@ -261,16 +261,18 @@ public sealed class ChangesTabProjectionTests
         var row = Assert.Single(projection.Rows);
         Assert.Equal(3, row.Edits.Count);
 
-        // One hunk per edit, newest first, each with its own place in the file.
-        Assert.Equal(new[] { "three", "two", "one" }, row.PreviewEdits.Select(hunk => hunk.BeforeText));
-        Assert.Equal(new[] { "four", "three", "two" }, row.PreviewEdits.Select(hunk => hunk.AfterText));
-        Assert.Equal(new int?[] { 90, 40, 10 }, row.PreviewEdits.Select(hunk => hunk.StartLine));
+        // The newest edit is the one a reader came for; the older ones stay in the row's
+        // identity list for reveal but are not drawn.
+        var hunk = Assert.Single(row.PreviewEdits);
+        Assert.Equal("three", hunk.BeforeText);
+        Assert.Equal("four", hunk.AfterText);
+        Assert.Equal(90, hunk.StartLine);
 
-        // The numbers beside the file are the hunks it draws, so they always add up.
-        Assert.Equal(6, row.Added);
-        Assert.Equal(7, row.Removed);
-        Assert.Equal(6, projection.Added);
-        Assert.Equal(7, projection.Removed);
+        // The numbers beside the file and the totals are that hunk's own counts.
+        Assert.Equal(1, row.Added);
+        Assert.Equal(4, row.Removed);
+        Assert.Equal(1, projection.Added);
+        Assert.Equal(4, projection.Removed);
     }
 
     [Fact]
@@ -333,7 +335,7 @@ public sealed class ChangesTabProjectionTests
             Edit("again.txt", added: 3, detail: "@@ b ==> c"),
         });
 
-        Assert.Equal(4, Assert.Single(projection.Rows).Added);
+        Assert.Equal(3, Assert.Single(projection.Rows).Added);
     }
 
     [Fact]

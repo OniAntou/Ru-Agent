@@ -26,8 +26,8 @@ public static class ChangesTabProjection
     public const int MaxRows = 100;
 
     /// <summary>
-    /// Edits kept per file row for identity and reveal lookup; the row draws one hunk per
-    /// recorded edit, newest first.
+    /// Edits kept per file row for identity and reveal lookup; the row draws the newest
+    /// recorded edit's hunk only.
     /// </summary>
     public const int MaxEditsPerRow = 25;
 
@@ -129,36 +129,32 @@ public static class ChangesTabProjection
     }
 
     /// <summary>
-    /// The hunks one row shows, newest first, and the numbers beside it. A file with no
-    /// recorded text (an image, another tool's edit) keeps the counts its tool reported:
-    /// that is all the evidence left when there is no hunk to add up.
+    /// The one hunk a row shows — its newest recorded edit — and the numbers beside it: that
+    /// edit's own counts, so the number and the block under it stay one story. A file whose
+    /// edits recorded no text (an image, another tool's edit) keeps the counts its tool
+    /// reported, since there is no hunk to read them from.
     /// </summary>
     private static (ChangesTabEdit[] Hunks, int? Added, int? Removed) PreviewOf(
         IReadOnlyList<AgentActivityItem> fileEdits)
     {
+        if (fileEdits.LastOrDefault(edit => edit.HasEditPreview) is not { } newest)
+        {
+            return (Array.Empty<ChangesTabEdit>(),
+                SumKnown(fileEdits.Select(edit => edit.Added)),
+                SumKnown(fileEdits.Select(edit => edit.Removed)));
+        }
+
         // An edit made through an absolute path carries only its basename; the row's own
         // name picks the syntax colors when the edit has none.
-        string syntaxFile = fileEdits[^1].FileName ?? string.Empty;
-        var hunks = fileEdits
-            .Where(edit => edit.HasEditPreview)
-            .Reverse()
-            .Take(MaxEditsPerRow)
-            .Select(edit => new ChangesTabEdit(
-                edit.ActivityId,
-                edit.EditBeforeText,
-                edit.EditAfterText,
-                edit.LineStart,
-                edit.Added,
-                edit.Removed,
-                edit.FileName is { Length: > 0 } ? edit.FileName : syntaxFile))
-            .ToArray();
-        return hunks.Length == 0
-            ? (hunks,
-                SumKnown(fileEdits.Select(edit => edit.Added)),
-                SumKnown(fileEdits.Select(edit => edit.Removed)))
-            : (hunks,
-                SumKnown(hunks.Select(hunk => hunk.Added)),
-                SumKnown(hunks.Select(hunk => hunk.Removed)));
+        var hunk = new ChangesTabEdit(
+            newest.ActivityId,
+            newest.EditBeforeText,
+            newest.EditAfterText,
+            newest.LineStart,
+            newest.Added,
+            newest.Removed,
+            newest.FileName is { Length: > 0 } ? newest.FileName : fileEdits[^1].FileName ?? string.Empty);
+        return ([hunk], hunk.Added, hunk.Removed);
     }
 
     private static ChangesTabRow Row(

@@ -72,9 +72,8 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
     public IReadOnlyList<ChangesTabEdit> Edits { get; }
 
     /// <summary>
-    /// The hunks the expansion draws: one per edit that recorded text, newest first. Where
-    /// it landed and what it cost travel on each <see cref="ChangesTabEdit"/>, so a hunk is
-    /// self-describing instead of borrowing a single combined comparison.
+    /// The hunk the expansion draws: the file's newest edit that recorded text, if any. The
+    /// numbers beside the row are that edit's own counts, so the block and the number agree.
     /// </summary>
     public IReadOnlyList<ChangesTabEdit> PreviewEdits { get; }
 

@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and offers Copy path and Reveal in File Explorer. PDFs take a typed page number and
   images and PDF pages take −/%/+ zoom.
 
+- **feat(gui)**: A file in the Changes tab expands to its newest recorded edit only: one
+  hunk with its own unified header, and the counts beside the file are that hunk's counts,
+  so the number always describes the block under it. Earlier edits stay in the row's
+  identity list for reveal; they are no longer drawn.
+
 - **feat(gui)**: An edit's diff block prints its own unified header
   (`@@ -42,3 +42,4 @@`) and tints every changed line — a new file included — instead of
   a caption beside a mostly plain block. The Changes tab and the chat now read like the

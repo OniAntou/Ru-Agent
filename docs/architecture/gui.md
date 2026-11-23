@@ -1087,12 +1087,12 @@ most recently edited file first. A file whose latest recorded edit is a deletion
 is omitted from the rows and the totals; a later write or restore brings it back.
 Rows group by the edit's `relative_path`; an edit
 made through an absolute path carries only its basename and joins the one relative
-path with that name when exactly one exists, otherwise it groups by name alone. A row sums the line counts of the
-hunks it draws (`—` when none reported one), shows "N edits" when there are several, and expands
-to one hunk per recorded edit, newest first, each drawing its own unified-diff header — so the numbers beside a file always add up to the blocks under it,
-and the session totals are the sum of those hunks. A file with no recorded text
-before/after has nothing to expand and keeps the counts its tool reported. Up to 25 edit identities
-per row are retained for reveal and navigation, while totals are that sum. A row shows its folder under the name, and its menu opens a preview,
+path with that name when exactly one exists, otherwise it groups by name alone. A row carries the newest recorded edit's
+line counts (`—` when none reported one), shows "N edits" when there are several, and expands
+to that edit's hunk, which draws its own unified-diff header — so the number beside a file
+describes the block under it. The session totals are the sum of those hunks. A file with no
+recorded text before/after has nothing to expand and keeps the counts its tool reported. Up to
+25 edit identities per row are retained for reveal and navigation. A row shows its folder under the name, and its menu opens a preview,
 reveals the file in File Explorer or copies its path; preview and reveal resolve the
 relative path against the session workspace and refuse anything outside it, so a
 bare basename never opens a file. Agent scratch files (`.tmp*`, `tmp_*`, `_tmp*`,

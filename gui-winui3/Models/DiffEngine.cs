@@ -138,8 +138,50 @@ namespace RuApp.Models
                 if (!line.IsRemoved) newCount++;
             }
 
+            return Header(startLine, oldCount, newCount);
+        }
+
+        /// <summary>The header for a rendered range of <paramref name="oldCount"/> old and
+        /// <paramref name="newCount"/> new lines starting at <paramref name="startLine"/>.</summary>
+        public static string Header(int startLine, int oldCount, int newCount)
+        {
             int start = Math.Max(1, startLine);
             return "@@ -" + Range(start, oldCount) + " +" + Range(start, newCount) + " @@";
+        }
+
+        /// <summary>
+        /// Where a recorded fragment sits in a file: the 0-based index of its first line, or
+        /// -1 when the file no longer contains it. <paramref name="preferredLine"/> (1-based)
+        /// picks the nearest occurrence when the fragment appears more than once.
+        /// </summary>
+        public static int Locate(IReadOnlyList<string> fileLines, string? fragment, int preferredLine)
+        {
+            ArgumentNullException.ThrowIfNull(fileLines);
+            var wanted = SplitLines(fragment);
+            if (wanted.Count == 0 || wanted.Count > fileLines.Count) return -1;
+            int best = -1;
+            int bestDistance = int.MaxValue;
+            int preferred = Math.Max(1, preferredLine) - 1;
+            for (int start = 0; start + wanted.Count <= fileLines.Count; start++)
+            {
+                if (!Matches(fileLines, wanted, start)) continue;
+                int distance = Math.Abs(start - preferred);
+                if (distance >= bestDistance) continue;
+                best = start;
+                bestDistance = distance;
+            }
+
+            return best;
+        }
+
+        private static bool Matches(IReadOnlyList<string> fileLines, IReadOnlyList<string> wanted, int start)
+        {
+            for (int index = 0; index < wanted.Count; index++)
+            {
+                if (!string.Equals(fileLines[start + index], wanted[index], StringComparison.Ordinal)) return false;
+            }
+
+            return true;
         }
 
         private static string Range(int start, int count) => count switch
@@ -149,7 +191,7 @@ namespace RuApp.Models
             _ => start.ToString(CultureInfo.InvariantCulture) + "," + count.ToString(CultureInfo.InvariantCulture),
         };
 
-        private static List<string> SplitLines(string? text)
+        internal static List<string> SplitLines(string? text)
         {
             if (string.IsNullOrEmpty(text))
             {

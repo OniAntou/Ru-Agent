@@ -860,23 +860,16 @@
                                                 </StackPanel>
                                             </Border>
                                             </Grid>
-                                            <!-- One hunk per recorded edit, newest first. Each names its
-                                                 own place and cost, so the numbers on the row are the
-                                                 sum of exactly these blocks. -->
-                                            <ItemsControl
+                                            <!-- The newest recorded edit of this file, drawn whole
+                                                 over the file on disk when the view could read it. -->
+                                            <controls:FileEditPreviewControl
                                                 Margin="0,2,0,6"
-                                                ItemsSource="{x:Bind PreviewEdits, Mode=OneWay}"
-                                                Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="models:ChangesTabEdit">
-                                                        <controls:FileEditPreviewControl Margin="0,0,0,8"
-                                                                                         BeforeText="{x:Bind BeforeText}"
-                                                                                         AfterText="{x:Bind AfterText}"
-                                                                                         StartLine="{x:Bind StartLine}"
-                                                                                         SyntaxFile="{x:Bind FileName}" />
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
+                                                Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                BeforeText="{x:Bind PreviewBeforeText, Mode=OneWay}"
+                                                AfterText="{x:Bind PreviewAfterText, Mode=OneWay}"
+                                                StartLine="{x:Bind PreviewStartLine, Mode=OneWay}"
+                                                ContextText="{x:Bind CurrentText, Mode=OneWay}"
+                                                SyntaxFile="{x:Bind FileName}" />
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

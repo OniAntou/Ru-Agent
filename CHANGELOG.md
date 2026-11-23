@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and offers Copy path and Reveal in File Explorer. PDFs take a typed page number and
   images and PDF pages take −/%/+ zoom.
 
+- **feat(gui)**: A changed file's diff draws the whole file with the edit in place instead of
+  one lonely fragment. Opening a row reads the file through the same workspace-bounded,
+  read-only open the preview uses, finds the recorded fragment in it, and draws the change
+  surrounded by its context; a file longer than 400 lines keeps a 40-line window with
+  "… N lines" markers. A file that is gone, binary, oversized, or no longer contains the
+  fragment falls back to the recorded fragment alone.
+
 - **feat(gui)**: A file in the Changes tab expands to its newest recorded edit only: one
   hunk with its own unified header, and the counts beside the file are that hunk's counts,
   so the number always describes the block under it. Earlier edits stay in the row's

@@ -257,6 +257,7 @@ namespace RuApp.Controls
             {
                 row.IsExpanded = !row.IsExpanded;
                 PlayChangeRowExpansion(source, row.IsExpanded);
+                if (row.IsExpanded) _ = LoadRowTextAsync(row);
             }
         }
 

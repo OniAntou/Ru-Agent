@@ -134,12 +134,12 @@ public static class ChangesTabProjection
     /// edits recorded no text (an image, another tool's edit) keeps the counts its tool
     /// reported, since there is no hunk to read them from.
     /// </summary>
-    private static (ChangesTabEdit[] Hunks, int? Added, int? Removed) PreviewOf(
+    private static (ChangesTabEdit? Hunk, int? Added, int? Removed) PreviewOf(
         IReadOnlyList<AgentActivityItem> fileEdits)
     {
         if (fileEdits.LastOrDefault(edit => edit.HasEditPreview) is not { } newest)
         {
-            return (Array.Empty<ChangesTabEdit>(),
+            return (null,
                 SumKnown(fileEdits.Select(edit => edit.Added)),
                 SumKnown(fileEdits.Select(edit => edit.Removed)));
         }
@@ -154,12 +154,12 @@ public static class ChangesTabProjection
             newest.Added,
             newest.Removed,
             newest.FileName is { Length: > 0 } ? newest.FileName : fileEdits[^1].FileName ?? string.Empty);
-        return ([hunk], hunk.Added, hunk.Removed);
+        return (hunk, hunk.Added, hunk.Removed);
     }
 
     private static ChangesTabRow Row(
         List<AgentActivityItem> fileEdits,
-        (ChangesTabEdit[] Hunks, int? Added, int? Removed) preview,
+        (ChangesTabEdit? Hunk, int? Added, int? Removed) preview,
         string? focusedActivityId,
         string? relativePath)
     {
@@ -177,7 +177,7 @@ public static class ChangesTabProjection
             preview.Removed,
             newestFirst.Select(edit => new ChangesTabEdit(edit.ActivityId, edit.EditBeforeText, edit.EditAfterText,
                 edit.LineStart, edit.Added, edit.Removed, edit.FileName)).ToArray(),
-            preview.Hunks,
+            preview.Hunk,
             fileEdits[0].ActivityId,
             relativePath);
     }

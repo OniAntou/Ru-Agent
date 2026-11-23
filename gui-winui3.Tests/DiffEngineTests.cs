@@ -52,6 +52,19 @@ namespace RuApp.Tests
         }
 
         [Fact]
+        public void Locate_finds_a_fragment_in_the_file_and_prefers_the_reported_line()
+        {
+            var file = new[] { "a", "b", "c", "a", "b", "d" };
+
+            // "a b" appears twice; the reported line decides which one the edit meant.
+            Assert.Equal(3, DiffEngine.Locate(file, "a\nb", 4));
+            Assert.Equal(0, DiffEngine.Locate(file, "a\nb", 1));
+            Assert.Equal(2, DiffEngine.Locate(file, "c", 1));
+            Assert.Equal(-1, DiffEngine.Locate(file, "gone", 1));
+            Assert.Equal(-1, DiffEngine.Locate(file, string.Empty, 1));
+        }
+
+        [Fact]
         public void Compute_produces_unified_diff_matching_reference_image()
         {
             var before =

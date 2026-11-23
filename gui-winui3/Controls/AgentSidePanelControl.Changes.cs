@@ -24,6 +24,7 @@ public sealed partial class AgentSidePanelControl
         var row = Changes.FirstOrDefault(change => change.Contains(activityId));
         if (row is null) return;
         row.IsExpanded = true;
+        _ = LoadRowTextAsync(row);
         DispatcherQueue.TryEnqueue(() =>
         {
             if (generation != _changeRevealGeneration || !Changes.Contains(row)
@@ -151,6 +152,35 @@ public sealed partial class AgentSidePanelControl
         if (sender is not FrameworkElement { Tag: ChangesTabRow row } source) return;
         row.IsExpanded = !row.IsExpanded;
         PlayChangeRowExpansion(source, row.IsExpanded);
+        if (row.IsExpanded) _ = LoadRowTextAsync(row);
+    }
+
+    /// <summary>
+    /// Gives an opening row the file it changed, so its diff can draw the whole file with
+    /// the edit in place instead of one fragment. The read reuses the preview's
+    /// workspace-bounded, read-only open, and a file that is gone, binary or oversized just
+    /// leaves the row with the recorded fragment.
+    /// </summary>
+    private async Task LoadRowTextAsync(ChangesTabRow row)
+    {
+        if (row.CurrentText is not null) return;
+        if (_workspacePath is not { } workspace
+            || ChangesTabFiles.Resolve(workspace, row.RelativePath) is not { } path
+            || !FilePreviewSource.IsTextual(path)) return;
+        try
+        {
+            string text = await Task.Run(() =>
+            {
+                using var stream = FilePreviewSource.Open(workspace, path);
+                using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true);
+                return reader.ReadToEnd();
+            });
+            row.CurrentText = text;
+        }
+        catch (Exception error)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[AgentSidePanel] Change text failed: {error.GetType().Name}");
+        }
     }
 
     /// <summary>

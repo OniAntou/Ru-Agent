@@ -235,7 +235,7 @@ public sealed class ChangesTabProjectionTests
         });
 
         var row = projection.Rows[0];
-        var hunk = Assert.Single(row.PreviewEdits);
+        var hunk = row.PreviewEdit!;
         Assert.Equal(3, row.Added);
         Assert.Equal(1, row.Removed);
         Assert.Equal(42, hunk.StartLine);
@@ -263,7 +263,7 @@ public sealed class ChangesTabProjectionTests
 
         // The newest edit is the one a reader came for; the older ones stay in the row's
         // identity list for reveal but are not drawn.
-        var hunk = Assert.Single(row.PreviewEdits);
+        var hunk = row.PreviewEdit!;
         Assert.Equal("three", hunk.BeforeText);
         Assert.Equal("four", hunk.AfterText);
         Assert.Equal(90, hunk.StartLine);
@@ -288,7 +288,7 @@ public sealed class ChangesTabProjectionTests
 
         var row = Assert.Single(projection.Rows);
         Assert.True(row.HasPreview);
-        var hunk = Assert.Single(row.PreviewEdits);
+        var hunk = row.PreviewEdit!;
         Assert.Equal("one", hunk.BeforeText);
         Assert.Equal("two", hunk.AfterText);
         Assert.Equal(5, row.Added);

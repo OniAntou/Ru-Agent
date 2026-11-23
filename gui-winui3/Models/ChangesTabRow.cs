@@ -29,7 +29,7 @@ public sealed record ChangesTabEdit(
 public sealed class ChangesTabRow : INotifyPropertyChanged
 {
     public ChangesTabRow(string fileName, int? added, int? removed, IReadOnlyList<ChangesTabEdit> edits,
-        IReadOnlyList<ChangesTabEdit>? previewEdits = null, string? firstActivityId = null, string? relativePath = null)
+        ChangesTabEdit? previewEdit = null, string? firstActivityId = null, string? relativePath = null)
     {
         FileName = fileName;
         RelativePath = relativePath;
@@ -40,10 +40,9 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
         Removed = removed;
         Edits = edits;
         FirstActivityId = firstActivityId ?? (edits.Count > 0 ? edits[^1].ActivityId : string.Empty);
-        // The row draws one hunk per recorded edit, newest first, so the numbers beside the
-        // file add up to what the expansion contains. The newest-first Edits list is only
-        // the identity/cap window; callers project the hunks from the full list.
-        PreviewEdits = previewEdits ?? edits.Where(edit => edit.HasPreview).ToArray();
+        // The row draws one hunk: the file's newest recorded edit. The newest-first Edits list
+        // is only the identity/cap window; callers project the hunk from the full list.
+        PreviewEdit = previewEdit ?? edits.FirstOrDefault(edit => edit.HasPreview);
     }
 
     public string FileName { get; }
@@ -75,13 +74,22 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
     /// The hunk the expansion draws: the file's newest edit that recorded text, if any. The
     /// numbers beside the row are that edit's own counts, so the block and the number agree.
     /// </summary>
-    public IReadOnlyList<ChangesTabEdit> PreviewEdits { get; }
+    public ChangesTabEdit? PreviewEdit { get; }
+
+    /// <summary>The recorded "before" of the drawn hunk; empty when there is none.</summary>
+    public string PreviewBeforeText => PreviewEdit?.BeforeText ?? string.Empty;
+
+    /// <summary>The recorded "after" of the drawn hunk; empty when there is none.</summary>
+    public string PreviewAfterText => PreviewEdit?.AfterText ?? string.Empty;
+
+    /// <summary>The line the drawn hunk reported, when it reported one.</summary>
+    public int? PreviewStartLine => PreviewEdit?.StartLine;
 
     /// <summary>
     /// Whether the row has a diff to show. An image or other edit with no text before/after
     /// has nothing to draw, so it is not expandable.
     /// </summary>
-    public bool HasPreview => PreviewEdits.Count > 0;
+    public bool HasPreview => PreviewEdit is not null;
 
     /// <summary>The file's first edit in the session: with the name, it identifies the row across refreshes.</summary>
     public string FirstActivityId { get; }
@@ -94,7 +102,7 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
     public bool HasSameContent(ChangesTabRow other) =>
         Key == other.Key && FileName == other.FileName && RelativePath == other.RelativePath
         && Added == other.Added && Removed == other.Removed
-        && Edits.SequenceEqual(other.Edits) && PreviewEdits.SequenceEqual(other.PreviewEdits);
+        && Edits.SequenceEqual(other.Edits) && Equals(PreviewEdit, other.PreviewEdit);
 
     public string AddedDeltaText => TurnChangesProjection.FormatCount(Added, "+");
 
@@ -119,6 +127,24 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
         : $"{RelativePath ?? FileName}, {Edits.Count} edits";
 
     public string AccessibleName => $"{ToolTipText}, added {AddedDeltaText}, removed {RemovedDeltaText}. Toggle changes";
+
+    private string? _currentText;
+
+    /// <summary>
+    /// The file as it stands on disk, supplied by the view when the row opens so the diff
+    /// can show the whole file with the edit in place. Null until it is read, and left null
+    /// when the file is gone or unreadable — the recorded fragment is still drawn then.
+    /// </summary>
+    public string? CurrentText
+    {
+        get => _currentText;
+        set
+        {
+            if (string.Equals(_currentText, value, StringComparison.Ordinal)) return;
+            _currentText = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentText)));
+        }
+    }
 
     private bool _isExpanded;
 

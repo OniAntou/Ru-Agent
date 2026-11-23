@@ -422,9 +422,8 @@ public sealed class AgentSidePanelUiContractTests
         Assert.DoesNotContain("GridLength(44", source, StringComparison.Ordinal);
         Assert.Contains("double numberWidth", source, StringComparison.Ordinal);
         var panel = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
-        var hunks = Assert.Single(panel.Descendants(), element => element.Name.LocalName == "ItemsControl"
-            && GuiSource.AttributeValue(element, "ItemsSource")?.Contains("PreviewEdits", StringComparison.Ordinal) == true);
-        Assert.Equal("0,2,0,6", GuiSource.AttributeValue(hunks, "Margin"));
+        var hosted = Assert.Single(panel.Descendants(), element => element.Name.LocalName == "FileEditPreviewControl");
+        Assert.Equal("0,2,0,6", GuiSource.AttributeValue(hosted, "Margin"));
     }
 
     [Fact]
@@ -438,11 +437,12 @@ public sealed class AgentSidePanelUiContractTests
         Assert.DoesNotContain("HasNoPreview", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("HasNoPreview", GuiSource.Text("Models", "ChangesTabRow.cs"), StringComparison.Ordinal);
 
-        // Expanding a file shows one hunk per recorded edit, each drawing its own unified
-        // header, so the numbers on the row are the sum of what is drawn.
-        Assert.Contains("ItemsSource=\"{x:Bind PreviewEdits, Mode=OneWay}\"", markup, StringComparison.Ordinal);
-        Assert.Contains("BeforeText=\"{x:Bind BeforeText}\"", markup, StringComparison.Ordinal);
-        Assert.Contains("AfterText=\"{x:Bind AfterText}\"", markup, StringComparison.Ordinal);
+        // Expanding a file shows its newest recorded edit, drawn over the file on disk when
+        // the view could read it.
+        Assert.Contains("BeforeText=\"{x:Bind PreviewBeforeText, Mode=OneWay}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("AfterText=\"{x:Bind PreviewAfterText, Mode=OneWay}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("ContextText=\"{x:Bind CurrentText, Mode=OneWay}\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("ItemsSource=\"{x:Bind PreviewEdits", markup, StringComparison.Ordinal);
         Assert.Contains(
             "Visibility=\"{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}\"",
             markup,

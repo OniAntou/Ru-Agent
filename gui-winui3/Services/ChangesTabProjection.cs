@@ -8,8 +8,8 @@ namespace RuApp.Services;
 /// session totals the card and the tab header share.
 /// </summary>
 /// <param name="Rows">One row per file, most recently edited first, capped at <see cref="ChangesTabProjection.MaxRows"/>.</param>
-/// <param name="Added">Added lines summed over every completed edit.</param>
-/// <param name="Removed">Removed lines summed over every completed edit.</param>
+/// <param name="Added">Added lines of the hunks every row shows, summed over every file.</param>
+/// <param name="Removed">Removed lines of the hunks every row shows, summed over every file.</param>
 public sealed record ChangesTabProjectionResult(
     IReadOnlyList<ChangesTabRow> Rows,
     int Added,
@@ -26,8 +26,8 @@ public static class ChangesTabProjection
     public const int MaxRows = 100;
 
     /// <summary>
-    /// Edits kept per file row for identity and reveal lookup; the row draws one
-    /// comparison between the file's oldest and newest recorded version instead.
+    /// Edits kept per file row for identity and reveal lookup; the row draws one hunk per
+    /// recorded edit, newest first.
     /// </summary>
     public const int MaxEditsPerRow = 25;
 
@@ -98,14 +98,21 @@ public static class ChangesTabProjection
         }
 
         var live = completed.Where(edit => !deleted.Contains(FileKey(edit))).ToList();
-        int added = live.Sum(edit => edit.Added ?? 0);
-        int removed = live.Sum(edit => edit.Removed ?? 0);
 
         var groups = live
             .Select((edit, order) => (Edit: edit, Order: order))
             .GroupBy(item => FileKey(item.Edit), StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(group => group.Max(item => item.Order))
             .ToList();
+
+        // The numbers beside a file, and the totals under the tab, describe the hunks each
+        // row draws: one per recorded edit, so a total is the sum of what the reader can see.
+        var previews = groups.ToDictionary(
+            group => group,
+            group => PreviewOf(group.Select(item => item.Edit).ToList()));
+        int added = previews.Values.Sum(preview => preview.Added ?? 0);
+        int removed = previews.Values.Sum(preview => preview.Removed ?? 0);
+
         var visible = groups.Take(MaxRows).ToList();
         // A click on an older turn must still reveal its edit without lifting
         // the session panel's row bound or changing its session-wide totals.
@@ -116,12 +123,49 @@ public static class ChangesTabProjection
             visible[^1] = focused;
         }
 
-        var rows = visible.Select(group => Row(group.Select(item => item.Edit).ToList(), focusedActivityId,
-            group.Any(item => item.Edit.RelativePath is not null) ? group.Key : null)).ToList();
+        var rows = visible.Select(group => Row(group.Select(item => item.Edit).ToList(), previews[group],
+            focusedActivityId, group.Any(item => item.Edit.RelativePath is not null) ? group.Key : null)).ToList();
         return new ChangesTabProjectionResult(rows, added, removed);
     }
 
-    private static ChangesTabRow Row(List<AgentActivityItem> fileEdits, string? focusedActivityId, string? relativePath)
+    /// <summary>
+    /// The hunks one row shows, newest first, and the numbers beside it. A file with no
+    /// recorded text (an image, another tool's edit) keeps the counts its tool reported:
+    /// that is all the evidence left when there is no hunk to add up.
+    /// </summary>
+    private static (ChangesTabEdit[] Hunks, int? Added, int? Removed) PreviewOf(
+        IReadOnlyList<AgentActivityItem> fileEdits)
+    {
+        // An edit made through an absolute path carries only its basename; the row's own
+        // name picks the syntax colors when the edit has none.
+        string syntaxFile = fileEdits[^1].FileName ?? string.Empty;
+        var hunks = fileEdits
+            .Where(edit => edit.HasEditPreview)
+            .Reverse()
+            .Take(MaxEditsPerRow)
+            .Select(edit => new ChangesTabEdit(
+                edit.ActivityId,
+                edit.EditBeforeText,
+                edit.EditAfterText,
+                edit.LineStart,
+                edit.Added,
+                edit.Removed,
+                edit.FileName is { Length: > 0 } ? edit.FileName : syntaxFile))
+            .ToArray();
+        return hunks.Length == 0
+            ? (hunks,
+                SumKnown(fileEdits.Select(edit => edit.Added)),
+                SumKnown(fileEdits.Select(edit => edit.Removed)))
+            : (hunks,
+                SumKnown(hunks.Select(hunk => hunk.Added)),
+                SumKnown(hunks.Select(hunk => hunk.Removed)));
+    }
+
+    private static ChangesTabRow Row(
+        List<AgentActivityItem> fileEdits,
+        (ChangesTabEdit[] Hunks, int? Added, int? Removed) preview,
+        string? focusedActivityId,
+        string? relativePath)
     {
         var newestFirst = fileEdits.AsEnumerable().Reverse().Take(MaxEditsPerRow).ToList();
         // The focused edit stays reachable even when it is older than the row's cap.
@@ -131,26 +175,15 @@ public static class ChangesTabProjection
             newestFirst[^1] = focused;
         }
 
-        // The row compares the file's recorded versions. Prefer the first and last edit
-        // that actually carries a preview: an edit whose detail is unavailable (an
-        // older/other tool shape) must not hide a comparison the rest of the row has.
-        var previewEdits = fileEdits.Where(edit => edit.HasEditPreview).ToArray();
-        var beforeSource = previewEdits.Length > 0 ? previewEdits[0] : fileEdits[0];
-        var afterSource = previewEdits.Length > 0 ? previewEdits[^1] : fileEdits[^1];
         return new ChangesTabRow(
             fileEdits[^1].FileName is { Length: > 0 } name ? name.Replace('\\', '/') : UnnamedFile,
-            SumKnown(fileEdits.Select(edit => edit.Added)),
-            SumKnown(fileEdits.Select(edit => edit.Removed)),
+            preview.Added,
+            preview.Removed,
             newestFirst.Select(edit => new ChangesTabEdit(edit.ActivityId, edit.EditBeforeText, edit.EditAfterText,
                 edit.LineStart, edit.Added, edit.Removed, edit.FileName)).ToArray(),
+            preview.Hunks,
             fileEdits[0].ActivityId,
-            relativePath,
-            // One comparison, not a log of every edit: the earliest recorded version that
-            // has evidence against the latest one, taken before the per-row cap narrows
-            // the stored edit window.
-            previewBeforeText: beforeSource.EditBeforeText,
-            previewAfterText: afterSource.EditAfterText,
-            previewStartLine: beforeSource.LineStart);
+            relativePath);
     }
 
     /// <summary>The sum of the known counts, or null when no edit of the file reported one.</summary>

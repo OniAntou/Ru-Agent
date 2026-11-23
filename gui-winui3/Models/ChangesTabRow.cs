@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Globalization;
+using Microsoft.UI.Xaml;
 using RuApp.Services;
 
 namespace RuApp.Models;
@@ -14,6 +16,42 @@ public sealed record ChangesTabEdit(
     string? FileName = null)
 {
     public bool HasPreview => BeforeText.Length > 0 || AfterText.Length > 0;
+
+    /// <summary>
+    /// Where this edit landed and what it reported, e.g. "line 42 · +3 −1". Each hunk names
+    /// its own place, because a row now shows one hunk per edit instead of one comparison.
+    /// </summary>
+    public string Caption
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (StartLine is { } line)
+            {
+                parts.Add("line " + line.ToString(CultureInfo.InvariantCulture));
+            }
+
+            var counts = new List<string>();
+            if (Added is int added && added > 0)
+            {
+                counts.Add("+" + added.ToString("N0", CultureInfo.InvariantCulture));
+            }
+
+            if (Removed is int removed && removed > 0)
+            {
+                counts.Add("−" + removed.ToString("N0", CultureInfo.InvariantCulture));
+            }
+
+            if (counts.Count > 0)
+            {
+                parts.Add(string.Join(" ", counts));
+            }
+
+            return string.Join(" · ", parts);
+        }
+    }
+
+    public Visibility CaptionVisibility => Caption.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 }
 
 /// <summary>
@@ -29,8 +67,7 @@ public sealed record ChangesTabEdit(
 public sealed class ChangesTabRow : INotifyPropertyChanged
 {
     public ChangesTabRow(string fileName, int? added, int? removed, IReadOnlyList<ChangesTabEdit> edits,
-        string? firstActivityId = null, string? relativePath = null,
-        string? previewBeforeText = null, string? previewAfterText = null, int? previewStartLine = null)
+        IReadOnlyList<ChangesTabEdit>? previewEdits = null, string? firstActivityId = null, string? relativePath = null)
     {
         FileName = fileName;
         RelativePath = relativePath;
@@ -41,14 +78,10 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
         Removed = removed;
         Edits = edits;
         FirstActivityId = firstActivityId ?? (edits.Count > 0 ? edits[^1].ActivityId : string.Empty);
-        // The row compares the file's oldest recorded version with its newest instead of
-        // listing every edit. Callers project both ends from the full edit list; the
-        // newest-first Edits list is only the identity/cap window and a test fallback.
-        PreviewBeforeText = previewBeforeText
-            ?? (edits.Count > 0 ? edits[^1].BeforeText : string.Empty);
-        PreviewAfterText = previewAfterText
-            ?? (edits.Count > 0 ? edits[0].AfterText : string.Empty);
-        PreviewStartLine = previewStartLine ?? (edits.Count > 0 ? edits[^1].StartLine : null);
+        // The row draws one hunk per recorded edit, newest first, so the numbers beside the
+        // file add up to what the expansion contains. The newest-first Edits list is only
+        // the identity/cap window; callers project the hunks from the full list.
+        PreviewEdits = previewEdits ?? edits.Where(edit => edit.HasPreview).ToArray();
     }
 
     public string FileName { get; }
@@ -76,20 +109,18 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
     /// <summary>Newest first; the row's identity and reveal window, not its display list.</summary>
     public IReadOnlyList<ChangesTabEdit> Edits { get; }
 
-    /// <summary>Before text of the file's oldest recorded edit.</summary>
-    public string PreviewBeforeText { get; }
-
-    /// <summary>After text of the file's newest recorded edit.</summary>
-    public string PreviewAfterText { get; }
-
-    /// <summary>The line the oldest edit started at, for the combined preview.</summary>
-    public int? PreviewStartLine { get; }
+    /// <summary>
+    /// The hunks the expansion draws: one per edit that recorded text, newest first. Where
+    /// it landed and what it cost travel on each <see cref="ChangesTabEdit"/>, so a hunk is
+    /// self-describing instead of borrowing a single combined comparison.
+    /// </summary>
+    public IReadOnlyList<ChangesTabEdit> PreviewEdits { get; }
 
     /// <summary>
-    /// Whether the row has a version comparison to show. An image or other edit with no
-    /// text before/after has nothing to draw, so it is not expandable.
+    /// Whether the row has a diff to show. An image or other edit with no text before/after
+    /// has nothing to draw, so it is not expandable.
     /// </summary>
-    public bool HasPreview => PreviewBeforeText.Length > 0 || PreviewAfterText.Length > 0;
+    public bool HasPreview => PreviewEdits.Count > 0;
 
     /// <summary>The file's first edit in the session: with the name, it identifies the row across refreshes.</summary>
     public string FirstActivityId { get; }
@@ -102,7 +133,7 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
     public bool HasSameContent(ChangesTabRow other) =>
         Key == other.Key && FileName == other.FileName && RelativePath == other.RelativePath
         && Added == other.Added && Removed == other.Removed
-        && Edits.SequenceEqual(other.Edits);
+        && Edits.SequenceEqual(other.Edits) && PreviewEdits.SequenceEqual(other.PreviewEdits);
 
     public string AddedDeltaText => TurnChangesProjection.FormatCount(Added, "+");
 

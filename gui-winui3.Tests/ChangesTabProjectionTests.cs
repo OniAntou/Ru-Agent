@@ -227,7 +227,7 @@ public sealed class ChangesTabProjectionTests
     }
 
     [Fact]
-    public void Rows_carry_the_oldest_and_newest_versions_and_the_expansion_starts_folded()
+    public void Rows_carry_one_hunk_per_edit_and_the_expansion_starts_folded()
     {
         var projection = ChangesTabProjection.Project(new[]
         {
@@ -235,13 +235,13 @@ public sealed class ChangesTabProjectionTests
         });
 
         var row = projection.Rows[0];
-        var edit = Assert.Single(row.Edits);
+        var hunk = Assert.Single(row.PreviewEdits);
         Assert.Equal(3, row.Added);
         Assert.Equal(1, row.Removed);
-        Assert.Equal(42, edit.StartLine);
-        Assert.Equal(42, row.PreviewStartLine);
-        Assert.Equal("old-line", row.PreviewBeforeText);
-        Assert.Equal("new-line", row.PreviewAfterText);
+        Assert.Equal(42, hunk.StartLine);
+        Assert.Equal("old-line", hunk.BeforeText);
+        Assert.Equal("new-line", hunk.AfterText);
+        Assert.Equal("line 42 · +3 −1", hunk.Caption);
         Assert.True(row.HasPreview);
         Assert.False(row.IsExpanded);
 
@@ -250,7 +250,7 @@ public sealed class ChangesTabProjectionTests
     }
 
     [Fact]
-    public void A_file_edited_several_times_compares_only_its_oldest_and_newest_versions()
+    public void A_file_edited_several_times_opens_one_hunk_per_edit_newest_first()
     {
         var projection = ChangesTabProjection.Project(new[]
         {
@@ -262,19 +262,23 @@ public sealed class ChangesTabProjectionTests
         var row = Assert.Single(projection.Rows);
         Assert.Equal(3, row.Edits.Count);
 
-        // One combined comparison, not a log of each edit: the first recorded version
-        // against the latest one, starting where the first edit started.
-        Assert.Equal("one", row.PreviewBeforeText);
-        Assert.Equal("four", row.PreviewAfterText);
-        Assert.Equal(10, row.PreviewStartLine);
-        Assert.True(row.HasPreview);
+        // One hunk per edit, newest first, each with its own place in the file.
+        Assert.Equal(new[] { "three", "two", "one" }, row.PreviewEdits.Select(hunk => hunk.BeforeText));
+        Assert.Equal(new[] { "four", "three", "two" }, row.PreviewEdits.Select(hunk => hunk.AfterText));
+        Assert.Equal(new int?[] { 90, 40, 10 }, row.PreviewEdits.Select(hunk => hunk.StartLine));
+
+        // The numbers beside the file are the hunks it draws, so they always add up.
+        Assert.Equal(6, row.Added);
+        Assert.Equal(7, row.Removed);
+        Assert.Equal(6, projection.Added);
+        Assert.Equal(7, projection.Removed);
     }
 
     [Fact]
-    public void A_file_whose_newest_edit_has_no_evidence_still_opens_with_the_available_preview()
+    public void An_edit_without_recorded_text_draws_no_hunk_and_is_not_counted()
     {
-        // An edit shape whose detail was not recorded (older builds, another tool) must
-        // not hide the preview an earlier edit of the same file carries.
+        // An edit shape whose detail was not recorded (older builds, another tool) has
+        // nothing to draw, so it must not inflate the numbers the reader can add up.
         var projection = ChangesTabProjection.Project(new[]
         {
             Edit("notes.txt", added: 5, detail: "@@ one ==> two"),
@@ -283,8 +287,11 @@ public sealed class ChangesTabProjectionTests
 
         var row = Assert.Single(projection.Rows);
         Assert.True(row.HasPreview);
-        Assert.Equal("one", row.PreviewBeforeText);
-        Assert.Equal("two", row.PreviewAfterText);
+        var hunk = Assert.Single(row.PreviewEdits);
+        Assert.Equal("one", hunk.BeforeText);
+        Assert.Equal("two", hunk.AfterText);
+        Assert.Equal(5, row.Added);
+        Assert.Null(row.Removed);
     }
 
     [Fact]

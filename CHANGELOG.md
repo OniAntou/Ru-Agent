@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and offers Copy path and Reveal in File Explorer. PDFs take a typed page number and
   images and PDF pages take −/%/+ zoom.
 
+- **feat(gui)**: The Changes tab expands a file into one hunk per recorded edit — newest
+  first, each captioned with its own line and `+`/`−` counts — instead of one comparison
+  between the file's first and last recorded version. The numbers beside a file, and the
+  session totals, are now the sum of the hunks the rows draw, so a `+8 −1` row adds up
+  from what opens under it and a removed line is shown in the hunk that removed it. An
+  edit with no recorded text draws no hunk and no longer inflates those numbers.
+
 - **feat(gui)**: The Changes tab's edit diff is a flat code surface too: the bordered,
   rounded box around it is gone, so the horizontal bar now sits under the block instead
   of inside a card. A long line stays one row and scrolls sideways, matching the Preview

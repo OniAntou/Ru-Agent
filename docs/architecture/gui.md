@@ -1087,11 +1087,13 @@ most recently edited file first. A file whose latest recorded edit is a deletion
 is omitted from the rows and the totals; a later write or restore brings it back.
 Rows group by the edit's `relative_path`; an edit
 made through an absolute path carries only its basename and joins the one relative
-path with that name when exactly one exists, otherwise it groups by name alone. A row sums its edits' known line counts
-(`—` when none reported one), shows "N edits" when there are several, and expands
-to one diff between that file's oldest recorded version and its newest; a file
-with no recorded text before/after has nothing to expand. Up to 25 edit identities
-per row are retained for reveal and navigation, while totals cover every edit. A row shows its folder under the name, and its menu opens a preview,
+path with that name when exactly one exists, otherwise it groups by name alone. A row sums the line counts of the
+hunks it draws (`—` when none reported one), shows "N edits" when there are several, and expands
+to one hunk per recorded edit, newest first, each captioned with its own line and
+`+`/`−` counts — so the numbers beside a file always add up to the blocks under it,
+and the session totals are the sum of those hunks. A file with no recorded text
+before/after has nothing to expand and keeps the counts its tool reported. Up to 25 edit identities
+per row are retained for reveal and navigation, while totals are that sum. A row shows its folder under the name, and its menu opens a preview,
 reveals the file in File Explorer or copies its path; preview and reveal resolve the
 relative path against the session workspace and refuse anything outside it, so a
 bare basename never opens a file. Agent scratch files (`.tmp*`, `tmp_*`, `_tmp*`,
@@ -1110,7 +1112,7 @@ Changes tab. There is no separate turn reader, file picker or back navigation.
 Clicking a file scrolls to the row holding its latest recorded edit in
 the normal session list and expands it when it has a text comparison. An older selected edit's file can replace the oldest
 visible row within the 100-row cap, and the edit itself stays within its row's
-25-edit cap; session totals still cover every edit. Live refreshes retain expanded
+25-edit cap; session totals are the sum of the hunks the rows draw. Live refreshes retain expanded
 diffs. Explicit turn navigation opens an overlay on narrow windows instead of
 suppressing the panel. Session reset or tab closure clears the navigation target.
 It uses recorded data only, with no file writes, new endpoint or permission changes.

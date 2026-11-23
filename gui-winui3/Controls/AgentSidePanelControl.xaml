@@ -860,13 +860,30 @@
                                                 </StackPanel>
                                             </Border>
                                             </Grid>
-                                            <controls:FileEditPreviewControl
+                                            <!-- One hunk per recorded edit, newest first. Each names its
+                                                 own place and cost, so the numbers on the row are the
+                                                 sum of exactly these blocks. -->
+                                            <ItemsControl
                                                 Margin="0,2,0,6"
-                                                Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                BeforeText="{x:Bind PreviewBeforeText, Mode=OneWay}"
-                                                AfterText="{x:Bind PreviewAfterText, Mode=OneWay}"
-                                                StartLine="{x:Bind PreviewStartLine, Mode=OneWay}"
-                                                SyntaxFile="{x:Bind FileName}" />
+                                                ItemsSource="{x:Bind PreviewEdits, Mode=OneWay}"
+                                                Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="models:ChangesTabEdit">
+                                                        <StackPanel Margin="0,0,0,8">
+                                                            <TextBlock Text="{x:Bind Caption}"
+                                                                       Visibility="{x:Bind CaptionVisibility}"
+                                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                                       FontSize="10.5"
+                                                                       Foreground="{StaticResource RuMutedBrush}"
+                                                                       Margin="0,0,0,2" />
+                                                            <controls:FileEditPreviewControl BeforeText="{x:Bind BeforeText}"
+                                                                                             AfterText="{x:Bind AfterText}"
+                                                                                             StartLine="{x:Bind StartLine}"
+                                                                                             SyntaxFile="{x:Bind FileName}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
